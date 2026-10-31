@@ -37,6 +37,7 @@ const specs = [
   'e2e/move-col-flash-sse.spec.ts',
   'e2e/palette-root-focus.spec.ts',
   'e2e/palette-home-end.spec.ts',
+  'e2e/open-type-view-ready.spec.ts',
   'e2e/legacy-model-workspace.spec.ts',
   'e2e/dangling-model-workspace.spec.ts',
   'e2e/inline-cell-edit.spec.ts',
@@ -96,6 +97,7 @@ const measuredSeconds = {
   'e2e/template-picker.spec.ts': 25,
   'e2e/user-menu.spec.ts': 25,
   'e2e/delete-workspace.spec.ts': 28,
+  'e2e/open-type-view-ready.spec.ts': 25,
   'e2e/shortcut-registry.spec.ts': 20,
 }
 
