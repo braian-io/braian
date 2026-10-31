@@ -22,7 +22,7 @@ export type NewVersionAvailable = {
 /**
  * Detects a newer web deploy while this tab stays open.
  * Polls {@link DEPLOYED_BUILD_URL} with TanStack Query (interval + window focus).
- * No UI — callers (status-bar message after #141) decide how to surface it.
+ * StatusBar surfaces an update notice + Reload; Ctrl+K lists Reload to new version.
  */
 export function useNewVersionAvailable(): NewVersionAvailable {
   const clientBuildId = appBuildId()
