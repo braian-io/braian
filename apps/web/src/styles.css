@@ -399,6 +399,19 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
 .pane-chrome { margin-left: auto; display: flex; gap: 2px; opacity: 0; }
 .pane:hover .pane-chrome, .pane.focused .pane-chrome, .pane-chrome:focus-within { opacity: 1; }
 .pane-chrome .icon-btn { width: 22px; padding: 0; justify-content: center; }
+.pane-source {
+  flex: 0 1 auto;
+  max-width: 220px;
+  margin-left: 8px;
+  margin-right: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 22px;
+  color: var(--muted);
+  align-self: center;
+}
 .pane-body {
   position: relative;
   min-height: 0;
