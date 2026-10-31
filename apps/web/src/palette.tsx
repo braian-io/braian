@@ -13,6 +13,7 @@ import { emitSavedSelection, requestNewSelection, selectionMatchesType } from '.
 import { workspaceDisplayName } from './demo-labels'
 import { sourceLabel, suggestedTitle } from './field-diff'
 import { copy, uiLanguage } from './i18n'
+import { chordForCommand } from './shortcuts'
 import { mergeFrecency, readFrecency, touch, writeFrecency } from './frecency'
 import { withModelCommand } from './model-command'
 import { askIndex, filterPaletteRows, visibleRows, groupTitle, type PaletteGroup, type PaletteItem } from './palette-model'
@@ -1098,16 +1099,16 @@ function buildCatalog(
     { id: 'model:allowed-trees', group: 'views', title: copy.allowedTrees, subtitle: 'Choose the trees a type may use', keywords: ['tree', 'structure', 'type'] },
     { id: 'theme:light', group: 'views', title: 'Light', subtitle: 'Switch theme', shortcut: undefined },
     { id: 'theme:dark', group: 'views', title: 'Dark', subtitle: 'Switch theme' },
-    { id: 'layout:move_view_left', group: 'views', title: 'Move view left', subtitle: 'Move the focused view left', kbd: 'Ctrl+Alt+←', shortcut: 'Ctrl+Alt+Left' },
-    { id: 'layout:move_view_right', group: 'views', title: 'Move view right', subtitle: 'Move the focused view right', kbd: 'Ctrl+Alt+→', shortcut: 'Ctrl+Alt+Right' },
-    { id: 'layout:move_view_up', group: 'views', title: 'Move view up', subtitle: 'Move the focused view up', kbd: 'Ctrl+Alt+↑', shortcut: 'Ctrl+Alt+Up' },
-    { id: 'layout:move_view_down', group: 'views', title: 'Move view down', subtitle: 'Move the focused view down', kbd: 'Ctrl+Alt+↓', shortcut: 'Ctrl+Alt+Down' },
-    { id: 'layout:focus:left', group: 'views', title: 'Focus pane left', subtitle: 'Focus the neighbour on the left', kbd: 'Alt+←', shortcut: 'Alt+Left' },
-    { id: 'layout:focus:right', group: 'views', title: 'Focus pane right', subtitle: 'Focus the neighbour on the right', kbd: 'Alt+→', shortcut: 'Alt+Right' },
-    { id: 'layout:focus:up', group: 'views', title: 'Focus pane up', subtitle: 'Focus the neighbour above', kbd: 'Alt+↑', shortcut: 'Alt+Up' },
-    { id: 'layout:focus:down', group: 'views', title: 'Focus pane down', subtitle: 'Focus the neighbour below', kbd: 'Alt+↓', shortcut: 'Alt+Down' },
-    { id: 'layout:zoom', group: 'views', title: 'Maximize pane', subtitle: 'Show only the focused pane', kbd: 'Ctrl+Alt+Z', shortcut: 'Ctrl+Alt+Z' },
-    { id: 'layout:close_view', group: 'views', title: 'Close view', subtitle: 'Close the focused view', kbd: 'Ctrl+Alt+W', shortcut: 'Ctrl+Alt+W' },
+    { id: 'layout:move_view_left', group: 'views', title: 'Move view left', subtitle: 'Move the focused view left', kbd: chordForCommand('layout:move_view_left'), shortcut: chordForCommand('layout:move_view_left') },
+    { id: 'layout:move_view_right', group: 'views', title: 'Move view right', subtitle: 'Move the focused view right', kbd: chordForCommand('layout:move_view_right'), shortcut: chordForCommand('layout:move_view_right') },
+    { id: 'layout:move_view_up', group: 'views', title: 'Move view up', subtitle: 'Move the focused view up', kbd: chordForCommand('layout:move_view_up'), shortcut: chordForCommand('layout:move_view_up') },
+    { id: 'layout:move_view_down', group: 'views', title: 'Move view down', subtitle: 'Move the focused view down', kbd: chordForCommand('layout:move_view_down'), shortcut: chordForCommand('layout:move_view_down') },
+    { id: 'layout:focus:left', group: 'views', title: 'Focus pane left', subtitle: 'Focus the neighbour on the left', kbd: chordForCommand('layout:focus:left'), shortcut: chordForCommand('layout:focus:left') },
+    { id: 'layout:focus:right', group: 'views', title: 'Focus pane right', subtitle: 'Focus the neighbour on the right', kbd: chordForCommand('layout:focus:right'), shortcut: chordForCommand('layout:focus:right') },
+    { id: 'layout:focus:up', group: 'views', title: 'Focus pane up', subtitle: 'Focus the neighbour above', kbd: chordForCommand('layout:focus:up'), shortcut: chordForCommand('layout:focus:up') },
+    { id: 'layout:focus:down', group: 'views', title: 'Focus pane down', subtitle: 'Focus the neighbour below', kbd: chordForCommand('layout:focus:down'), shortcut: chordForCommand('layout:focus:down') },
+    { id: 'layout:zoom', group: 'views', title: 'Maximize pane', subtitle: 'Show only the focused pane', kbd: chordForCommand('layout:zoom'), shortcut: chordForCommand('layout:zoom') },
+    { id: 'layout:close_view', group: 'views', title: 'Close view', subtitle: 'Close the focused view', kbd: chordForCommand('layout:close_view'), shortcut: chordForCommand('layout:close_view') },
     { id: 'layout:reset_layout', group: 'views', title: 'Reset layout', subtitle: 'Restore the saved workspace layout' },
     { id: 'workspace:delete', group: 'views', title: 'Delete workspace', subtitle: 'Remove the active workspace and its layout', keywords: ['delete', 'remove', 'workspace'] },
     addViewRootItem(),
@@ -1118,8 +1119,8 @@ function buildCatalog(
       group: 'views',
       title: 'Send feedback',
       subtitle: 'Report a bug or share an idea',
-      kbd: 'Ctrl+Shift+B',
-      shortcut: 'Ctrl+Shift+B',
+      kbd: chordForCommand('feedback:send'),
+      shortcut: chordForCommand('feedback:send'),
     })
   }
   if (objectId) {
@@ -1156,6 +1157,8 @@ function columnEntries(columns: UiColumn[], activeColumn: string | null): Palett
         title: `${copy.moveColumnLeft} · ${header}`,
         subtitle: header,
         keywords: ['column', 'move', 'left', 'reorder', header],
+        kbd: chordForCommand('column:move-left'),
+        shortcut: chordForCommand('column:move-left'),
       },
       {
         id: 'column:move-right',
@@ -1163,6 +1166,8 @@ function columnEntries(columns: UiColumn[], activeColumn: string | null): Palett
         title: `${copy.moveColumnRight} · ${header}`,
         subtitle: header,
         keywords: ['column', 'move', 'right', 'reorder', header],
+        kbd: chordForCommand('column:move-right'),
+        shortcut: chordForCommand('column:move-right'),
       },
     )
   }
