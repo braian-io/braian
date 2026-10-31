@@ -36,6 +36,7 @@ import {
 import { applyUiResult, dispatchUi, uiOperations } from './ui-bus'
 import { readUiContext, type UiColumn } from './ui-context'
 import { runCommand } from './command-registry'
+import { newVersionGateOpen } from './new-version-gate'
 import { FieldsMode, type FieldsPaletteOpen } from './fields/fields-mode'
 import { readFieldsHost, subscribeFieldsHost } from './fields-host'
 import { makeViewColumn, parseColumnId } from './fields/columns'
@@ -704,6 +705,11 @@ export function CommandPalette({
     if (id === 'session:sign-out') {
       void runCommand('session:sign-out')
       onClose()
+      return
+    }
+    if (id === 'session:reload-new-version') {
+      void runCommand('session:reload-new-version')
+      onClose()
     }
   }
 
@@ -1134,6 +1140,15 @@ function buildCatalog(
       subtitle: 'End this session',
       keywords: ['logout', 'log out', 'sign out', 'session'],
     },
+    ...(newVersionGateOpen()
+      ? [{
+          id: 'session:reload-new-version',
+          group: 'views' as const,
+          title: copy.reloadToNewVersion,
+          subtitle: copy.newVersionAvailable,
+          keywords: ['reload', 'refresh', 'new version', 'update', 'deploy'],
+        }]
+      : []),
     { id: 'layout:move_view_left', group: 'views', title: 'Move view left', subtitle: 'Move the focused view left', kbd: chordForCommand('layout:move_view_left'), shortcut: chordForCommand('layout:move_view_left') },
     { id: 'layout:move_view_right', group: 'views', title: 'Move view right', subtitle: 'Move the focused view right', kbd: chordForCommand('layout:move_view_right'), shortcut: chordForCommand('layout:move_view_right') },
     { id: 'layout:move_view_up', group: 'views', title: 'Move view up', subtitle: 'Move the focused view up', kbd: chordForCommand('layout:move_view_up'), shortcut: chordForCommand('layout:move_view_up') },
