@@ -475,6 +475,14 @@ export const registryCommands: RegistryCommand[] = [
     // No chord: Ctrl+K is palette:search. Open Add view from the palette / dock menu.
   },
   {
+    id: 'view:select-source',
+    title: copy.selectSource,
+    contexts: ['dock-view'],
+    group: 'views',
+    keywords: ['data', 'source', 'type', 'select'],
+    when: (target) => !target.viewType || target.viewType === 'object_table',
+  },
+  {
     id: 'workspace:new',
     title: copy.newWorkspace,
     contexts: ['tab'],
