@@ -1,6 +1,7 @@
 import tailwindcss from '@tailwindcss/vite'
 import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import viteReact from '@vitejs/plugin-react'
+import { execSync } from 'node:child_process'
 import { writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, URL } from 'node:url'
@@ -9,12 +10,25 @@ import { defineConfig } from 'vite'
 
 const api = process.env.BRAIAN_API_PROXY ?? 'http://127.0.0.1:8090'
 
+function gitShortSha(): string | undefined {
+  try {
+    const sha = execSync('git rev-parse --short HEAD', {
+      cwd: path.dirname(fileURLToPath(import.meta.url)),
+      stdio: ['ignore', 'pipe', 'ignore'],
+      encoding: 'utf8',
+    }).trim()
+    return sha || undefined
+  } catch {
+    return undefined
+  }
+}
+
 /** Same id is baked into the JS bundle and written to /version.json for polling. */
 const braianBuildId =
   process.env.BRAIAN_BUILD_ID ??
   process.env.GITHUB_SHA ??
-  // Prod autodeploy does not set the env vars today; a unique id per Vite
-  // process still lets open tabs notice the next deploy.
+  gitShortSha() ??
+  // Last resort when git is unavailable; a unique id still lets open tabs notice the next deploy.
   `build-${Date.now().toString(36)}`
 
 function braianVersionJsonPlugin(buildId: string): Plugin {

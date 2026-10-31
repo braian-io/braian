@@ -1,4 +1,5 @@
 import { copy } from './i18n'
+import { newVersionGateOpen } from './new-version-gate'
 import { chordForCommand } from './shortcuts'
 
 /** Surfaces that can open a context menu. */
@@ -132,6 +133,15 @@ export const registryCommands: RegistryCommand[] = [
     group: 'views',
     keywords: ['logout', 'log out', 'sign out', 'session'],
     palette: true,
+  },
+  {
+    id: 'session:reload-new-version',
+    title: copy.reloadToNewVersion,
+    contexts: ['empty', 'object-detail', 'import', 'dock-view', 'tab'],
+    group: 'views',
+    keywords: ['reload', 'refresh', 'new version', 'update', 'deploy'],
+    palette: true,
+    when: () => newVersionGateOpen(),
   },
   {
     id: 'object:new',
