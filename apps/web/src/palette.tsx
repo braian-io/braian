@@ -66,6 +66,12 @@ type ProposalPreview = {
   error?: string
 }
 
+
+/** True when the key event targets the palette query field (caret / selection). */
+function isPaletteQueryInput(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && target.matches('[data-testid="palette-input"], [cmdk-input]')
+}
+
 export function CommandPalette({
   session,
   workspaces,
@@ -813,6 +819,12 @@ export function CommandPalette({
       const actions = secondaryOf(activeRow)
       setStack((current) => [...current, { label: activeRow.title, rows: actions }])
       setActive(0)
+      return
+    }
+    // Home/End in the query field: leave caret/selection to the browser (#132 pattern).
+    // cmdk also hardcodes Home/End → first/last with no disable prop (only vimBindings for n/j/p/k);
+    // CommandInput stopPropagation blocks that on bubble — this early return skips our list jump.
+    if ((event.key === 'Home' || event.key === 'End') && isPaletteQueryInput(event.target)) {
       return
     }
     if (!['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End', 'Enter'].includes(event.key)) return
