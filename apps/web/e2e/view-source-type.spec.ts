@@ -15,7 +15,6 @@ test.describe('view source all-of-type (Notion 103 PR 1)', () => {
     test.setTimeout(120_000)
     await login(page)
 
-    // Focus the Products (or Articles) object table if needed.
     await page.keyboard.press('Control+k')
     await expect(page.getByTestId('command-palette')).toBeVisible()
     await page.getByTestId('palette-input').fill('Data source')
@@ -28,7 +27,6 @@ test.describe('view source all-of-type (Notion 103 PR 1)', () => {
     await root.click()
     await expect(page.getByTestId('command-palette').locator('.hit').filter({ hasText: 'All ' }).first()).toBeVisible()
 
-    // Prefer Products if listed; otherwise first All … row that is not the current source.
     const products = page.getByTestId('command-palette').locator('.hit').filter({ hasText: 'All Products' })
     if (await products.count()) {
       await products.first().click()
@@ -37,13 +35,13 @@ test.describe('view source all-of-type (Notion 103 PR 1)', () => {
     }
     await expect(page.getByTestId('command-palette')).toHaveCount(0)
 
-    await expect(page.getByTestId('view-source-label')).toBeVisible({ timeout: 30_000 })
-    const label = (await page.getByTestId('view-source-label').innerText()).trim()
+    const focused = page.locator('.pane.focused')
+    await expect(focused.getByTestId('view-source-label')).toBeVisible({ timeout: 30_000 })
+    const label = (await focused.getByTestId('view-source-label').innerText()).trim()
     expect(label.startsWith('All ')).toBe(true)
 
-    // Three-dot › Select source opens the same submenu via the registry.
-    await page.locator('.pane.focused, .pane').first().hover()
-    await page.getByTestId('view-menu').click()
+    await focused.hover()
+    await focused.getByTestId('view-menu').click()
     await expect(page.getByTestId('context-menu')).toBeVisible()
     await page.getByTestId('context-menu').getByRole('menuitem', { name: 'Select source' }).click()
     await expect(page.getByTestId('command-palette')).toBeVisible()
@@ -52,16 +50,17 @@ test.describe('view source all-of-type (Notion 103 PR 1)', () => {
     const articles = page.getByTestId('command-palette').locator('.hit').filter({ hasText: 'All Articles' })
     if (await articles.count()) {
       await articles.first().click()
-      await expect(page.getByTestId('view-source-label')).toHaveText('All Articles', { timeout: 30_000 })
+      await expect(page.locator('.pane.focused').getByTestId('view-source-label')).toHaveText('All Articles', {
+        timeout: 30_000,
+      })
     } else {
       await page.keyboard.press('Escape')
     }
 
-    // F5 keeps the bound source on the focused object_table.
     await page.reload()
     await expect(page.getByTestId('object-table')).toBeVisible({ timeout: 60_000 })
-    await expect(page.getByTestId('view-source-label')).toBeVisible({ timeout: 30_000 })
-    const after = (await page.getByTestId('view-source-label').innerText()).trim()
+    await expect(page.locator('.pane.focused').getByTestId('view-source-label')).toBeVisible({ timeout: 30_000 })
+    const after = (await page.locator('.pane.focused').getByTestId('view-source-label').innerText()).trim()
     expect(after.startsWith('All ')).toBe(true)
   })
 })
