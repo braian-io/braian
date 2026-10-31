@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { copy } from './i18n'
+import { setNewVersionGate } from './new-version-gate'
 import { statusMessage, type LiveState } from './status-message'
+import { useNewVersionAvailable } from './use-new-version-available'
 import { useWriteStatus } from './write-status'
 
 /** True while the browser reports a network connection. */
@@ -19,9 +21,14 @@ export function useOnline(): boolean {
   return online
 }
 
+function reloadPage() {
+  window.location.reload()
+}
+
 /** Shows something only when it is needed. Empty when saved and connected. */
 export function StatusBar({ online, live, locked }: { online: boolean; live: LiveState; locked: boolean }) {
   const writes = useWriteStatus()
+  const version = useNewVersionAvailable()
   const [showSaving, setShowSaving] = useState(false)
   useEffect(() => {
     if (writes.pending === 0) {
@@ -32,9 +39,31 @@ export function StatusBar({ online, live, locked }: { online: boolean; live: Liv
     const timer = window.setTimeout(() => setShowSaving(true), 300)
     return () => window.clearTimeout(timer)
   }, [writes.pending])
+  useEffect(() => {
+    setNewVersionGate(version.available)
+    return () => setNewVersionGate(false)
+  }, [version.available])
+  const update = version.available
+    ? {
+        text: copy.newVersionAvailable,
+        action: { label: copy.reloadPage, onClick: reloadPage },
+      }
+    : null
   const message = statusMessage(
-    { saving: showSaving, online, live, saveError: writes.error, locked },
-    { reconnecting: copy.reconnecting, saving: copy.saving, saveFailed: copy.saveFailed, locked: copy.locked },
+    {
+      saving: showSaving,
+      online,
+      live,
+      saveError: writes.error,
+      locked,
+      update,
+    },
+    {
+      reconnecting: copy.reconnecting,
+      saving: copy.saving,
+      saveFailed: copy.saveFailed,
+      locked: copy.locked,
+    },
   )
   return (
     <span
@@ -46,6 +75,16 @@ export function StatusBar({ online, live, locked }: { online: boolean; live: Liv
       aria-live="polite"
     >
       {message?.text ?? ''}
+      {message?.action ? (
+        <button
+          type="button"
+          className="status-bar-action"
+          data-testid="status-bar-action"
+          onClick={message.action.onClick}
+        >
+          {message.action.label}
+        </button>
+      ) : null}
     </span>
   )
 }

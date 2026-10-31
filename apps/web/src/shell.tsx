@@ -375,6 +375,9 @@ export function Shell() {
       registerCommandRunner('session:sign-out', () => {
         signOutRef.current()
       }),
+      registerCommandRunner('session:reload-new-version', () => {
+        window.location.reload()
+      }),
       registerCommandRunner('layout:reset_layout', () => applyRef.current('reset_layout', {})),
       registerCommandRunner('workspace:delete', () => { requestDeleteActiveRef.current() }),
 
