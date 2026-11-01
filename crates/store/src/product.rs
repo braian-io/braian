@@ -1883,6 +1883,8 @@ fn workspace_json(row: &tokio_postgres::Row) -> Value {
         "share_token": row.get::<_, Option<String>>("share_token"),
         "layout": row.get::<_, Value>("layout"),
         "owner_id": row.get::<_, Uuid>("owner_id"),
+        // Structured workspace catalog (Notion 117). Keep catalog_id for older clients.
+        "catalog_id": catalog_id,
         "catalog": { "catalogId": catalog_id },
     })
 }

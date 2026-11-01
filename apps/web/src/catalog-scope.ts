@@ -23,7 +23,9 @@ export function catalogKeyOf(
   const id = effectiveCatalogId(viewCatalogOverrideRef(state), workspaceCatalog ?? null)
   if (idToKey?.[id]) return idToKey[id]
   if (id === MASTER_CATALOG_ID) return 'master'
-  return idToKey?.[id] || 'master'
+  // Non-master id without a key map: do not pretend master (that mixed SAP rows
+  // into Master e2e). Empty string means "catalogs list not ready yet".
+  return idToKey?.[id] ?? ''
 }
 
 export function workspaceCatalogRef(workspace: unknown): CatalogRef | null {

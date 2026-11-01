@@ -28,4 +28,8 @@ describe('catalogKeyOf via shared resolver', () => {
     expect(catalogKeyOf({}, null, keys)).toBe('master')
     expect(workspaceCatalogRef({})).toBeNull()
   })
+
+  it('does not fall back to master for an unmapped non-master id', () => {
+    expect(catalogKeyOf({}, { catalogId: SAP_CATALOG_ID }, {})).toBe('')
+  })
 })

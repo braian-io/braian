@@ -255,6 +255,7 @@ export function ObjectTable({
 
   const idToKey = useCatalogIdToKey()
   const catalogKey = catalogKeyOf(view.state, workspaceCatalogRef(workspace), idToKey)
+  const catalogReady = catalogKey.length > 0
   const selectedOwners = useQuery({
     queryKey: ['object-origin', session.objectId],
     queryFn: async () => {
@@ -268,6 +269,7 @@ export function ObjectTable({
   const defs = useQuery({
     queryKey: ['definitions', catalogKey],
     queryFn: () => inCatalog(catalogKey, () => api.get('/v1/definitions')),
+    enabled: catalogReady,
   })
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -461,6 +463,7 @@ export function ObjectTable({
   const probe = useQuery({
     queryKey: ['objects', catalogKey, queryText, filterBy, sortBy, groupField, 1],
     queryFn: () => inCatalog(catalogKey, () => loadPage(queryText, filterBy, sortBy, groupField, 1)),
+    enabled: catalogReady,
     placeholderData: (previous) => previous,
   })
   const found = Number(probe.data?.found ?? 0)
@@ -478,6 +481,7 @@ export function ObjectTable({
     queries: pages.map((page) => ({
       queryKey: ['objects', catalogKey, queryText, filterBy, sortBy, groupField, page],
       queryFn: () => inCatalog(catalogKey, () => loadPage(queryText, filterBy, sortBy, groupField, page)),
+      enabled: catalogReady,
       placeholderData: (previous: Awaited<ReturnType<typeof loadPage>> | undefined) => previous,
     })),
   })
@@ -976,9 +980,9 @@ export function ObjectTable({
   // When Status/Type grouping is on, rows live in groupedRows — byIndex stays empty.
   const pageRowIds = (groupBy ? groupedRows : Array.from(byIndex.values())).map((row) => row.id)
   const pathValues = useQuery({
-    queryKey: ['path-values', typeKey, pathValueColumns, pageRowIds],
-    queryFn: () => fetchPathValues({ ids: pageRowIds, paths: pathValueColumns, typeKey }),
-    enabled: pathValueColumns.length > 0 && pageRowIds.length > 0 && Boolean(typeKey),
+    queryKey: ['path-values', catalogKey, typeKey, pathValueColumns, pageRowIds],
+    queryFn: () => inCatalog(catalogKey, () => fetchPathValues({ ids: pageRowIds, paths: pathValueColumns, typeKey })),
+    enabled: catalogReady && pathValueColumns.length > 0 && pageRowIds.length > 0 && Boolean(typeKey),
     // Keep the last page of hop/localized cells while a live refresh refetches,
     // so Description and Version can swap together instead of flashing '—'.
     placeholderData: (previous) => previous,
