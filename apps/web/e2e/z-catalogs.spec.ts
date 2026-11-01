@@ -39,32 +39,44 @@ const PRODUCTS_WORKSPACE_ID = '018f2000-0000-7000-8000-000000000003'
 /** Reset Products workspace catalog via API (no UI). File is named z-catalogs so
  * Playwright's alphabetical order keeps it last with workers=1 shared DB. */
 async function restoreProductsMaster(page: Page) {
-  await page.evaluate(
+  const result = await page.evaluate(
     async ({ workspaceId, catalogId }) => {
       const res = await fetch(`/v1/workspaces/${workspaceId}`, { credentials: 'include' })
-      if (!res.ok) return
+      if (!res.ok) return { ok: false, step: 'get', status: res.status }
       const ws = await res.json() as {
         name?: string
         locked?: boolean
         share_token?: string | null
         layout?: unknown
+        catalog?: { catalogId?: string }
       }
-      await fetch('/v1/workspaces', {
+      const post = await fetch('/v1/workspaces', {
         method: 'POST',
         credentials: 'include',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           id: workspaceId,
-          name: ws.name,
+          name: ws.name ?? 'Products',
           locked: ws.locked ?? false,
           share_token: ws.share_token ?? undefined,
           layout: ws.layout ?? {},
           catalog: { catalogId },
         }),
       })
+      if (!post.ok) {
+        return { ok: false, step: 'post', status: post.status, body: await post.text() }
+      }
+      const verify = await fetch(`/v1/workspaces/${workspaceId}`, { credentials: 'include' })
+      if (!verify.ok) return { ok: false, step: 'verify-get', status: verify.status }
+      const after = await verify.json() as { catalog?: { catalogId?: string } }
+      const got = after.catalog?.catalogId
+      return { ok: got === catalogId, step: 'verify', got }
     },
     { workspaceId: PRODUCTS_WORKSPACE_ID, catalogId: MASTER_CATALOG_ID },
   )
+  if (!result.ok) {
+    throw new Error(`restoreProductsMaster failed: ${JSON.stringify(result)}`)
+  }
 }
 
 test.afterEach(async ({ page }) => {
@@ -142,9 +154,18 @@ test('sources workspace, merge profile and a locked brand', async ({ page }) => 
   await page.getByRole('button', { name: 'Merge runs' }).click()
   await expect(page.getByTestId('merge-runs-view')).toBeVisible()
 
+  // Earlier specs may leave Products on SAP and/or a sticky quick-filter.
+  await restoreProductsMaster(page)
   await page.locator('nav.tabs').getByRole('button', { name: /Products/ }).click()
-  const row = page.getByTestId('object-row').filter({ hasText: 'PROD-OAT' }).first()
-  await expect(row).toBeVisible()
+  await expect(page.getByTestId('catalog-selector')).toContainText(/Master catalog/i)
+  const table = page.getByTestId('object-table').first()
+  await expect(table).toBeVisible({ timeout: 30_000 })
+  const filter = table.getByTestId('quick-filter')
+  if (await filter.count()) {
+    await filter.fill('PROD-OAT')
+  }
+  const row = table.getByTestId('object-row').filter({ hasText: 'PROD-OAT' }).first()
+  await expect(row).toBeVisible({ timeout: 60_000 })
   await row.click()
   await expect(page.getByTestId('locked-field')).toContainText('Owned by sap-brand')
   await expect(page.getByTestId('field-origin')).toContainText('PROD-OAT')
