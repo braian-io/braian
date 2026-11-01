@@ -22,6 +22,8 @@ jobs:
           bash scripts/ci-changes.test.sh
           bash scripts/ci-aggregate.test.sh
           bash scripts/ci-hurl.test.sh
+          bash scripts/ci-dirty-rust.test.sh
+          bash scripts/ci-guard-bins.test.sh
       # Heavy steps stay in this job so a required check still completes green
       # when the diff is docs, markdown, the landing page, or web-only.
       # Web-only diffs do not compile Rust; stack still runs e2e on a cached binary.
@@ -64,24 +66,28 @@ jobs:
           cache-on-failure: "true"
           # Restore order is this ref, then the PR base, then main. An exact
           # hit is not uploaded again, so a PR does not copy main's cache.
+          # The key hashes Cargo.lock and rustc, not .rs sources, so this can
+          # restore a target/ built from an older main commit.
           save-if: ${{ steps.rust-cache-lookup.outputs.cache-hit != 'true' }}
-
-      - name: Dirty changed Rust sources after cache restore
+      # Source hash in the key, with a lockfile prefix as the fallback.
+      # A push to main that changes Rust stores a new entry. The next job
+      # restores that entry exactly, or the newest target for the same
+      # lockfile. This runs after rust-cache so a hit replaces a stale
+      # target/ from the registry cache. rust-cache strips loose files in
+      # target/ on upload; the marker is kept by the save step below.
+      - name: Restore Rust target
+        id: target-cache
         if: steps.changes.outputs.mode == 'full'
-        run: |
-          # Shared main cache + pinned 2020 mtimes otherwise skip recompiling
-          # crates this PR changed (e.g. openapi_spec vs docs/api/openapi.json).
-          base="${{ github.event.pull_request.base.sha }}"
-          if [ -z "$base" ]; then
-            base="${{ github.event.before }}"
-          fi
-          if [ -n "$base" ] && git cat-file -e "$base^{commit}" 2>/dev/null; then
-            git diff --diff-filter=d --name-only "$base" -- crates docs/api Cargo.toml Cargo.lock rust-toolchain.toml               | while IFS= read -r f; do
-                  [ -e "$f" ] && touch "$f"
-                done
-          else
-            find crates docs/api -type f \( -name '*.rs' -o -name 'openapi.json' \) -exec touch {} +
-          fi
+        uses: actions/cache/restore@v4
+        with:
+          path: target
+          key: braian-target-v1-${{ runner.os }}-${{ github.job }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-${{ hashFiles('Cargo.toml', 'crates/**', 'docs/api/**', 'testdata/**') }}
+          restore-keys: |
+            braian-target-v1-${{ runner.os }}-${{ github.job }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
+            braian-target-v1-${{ runner.os }}-${{ github.job }}-
+      - name: Dirty Rust sources newer than the cached target
+        if: steps.changes.outputs.mode == 'full'
+        run: bash scripts/ci-dirty-rust.sh
       - name: Start Postgres
         if: steps.changes.outputs.mode == 'full'
         run: |
@@ -128,6 +134,15 @@ jobs:
       - name: rules måste kompilera till WebAssembly
         if: steps.changes.outputs.mode == 'full'
         run: cargo build -p braian-rules -p braian-rules-wasm --target wasm32-unknown-unknown
+      - name: Record Rust target commit
+        if: success() && steps.changes.outputs.mode == 'full'
+        run: bash scripts/ci-dirty-rust.sh stamp
+      - name: Save Rust target
+        if: success() && steps.changes.outputs.mode == 'full' && steps.target-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: target
+          key: braian-target-v1-${{ runner.os }}-${{ github.job }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-${{ hashFiles('Cargo.toml', 'crates/**', 'docs/api/**', 'testdata/**') }}
 
   phase-1:
     runs-on: ubuntu-latest
@@ -168,24 +183,21 @@ jobs:
           cache-on-failure: "true"
           # Restore order is this ref, then the PR base, then main. An exact
           # hit is not uploaded again, so a PR does not copy main's cache.
+          # The key hashes Cargo.lock and rustc, not .rs sources.
           save-if: ${{ steps.rust-cache-lookup.outputs.cache-hit != 'true' }}
-
-      - name: Dirty changed Rust sources after cache restore
+      - name: Restore Rust target
+        id: target-cache
         if: steps.changes.outputs.mode == 'full'
-        run: |
-          # Shared main cache + pinned 2020 mtimes otherwise skip recompiling
-          # crates this PR changed (e.g. openapi_spec vs docs/api/openapi.json).
-          base="${{ github.event.pull_request.base.sha }}"
-          if [ -z "$base" ]; then
-            base="${{ github.event.before }}"
-          fi
-          if [ -n "$base" ] && git cat-file -e "$base^{commit}" 2>/dev/null; then
-            git diff --diff-filter=d --name-only "$base" -- crates docs/api Cargo.toml Cargo.lock rust-toolchain.toml               | while IFS= read -r f; do
-                  [ -e "$f" ] && touch "$f"
-                done
-          else
-            find crates docs/api -type f \( -name '*.rs' -o -name 'openapi.json' \) -exec touch {} +
-          fi
+        uses: actions/cache/restore@v4
+        with:
+          path: target
+          key: braian-target-v1-${{ runner.os }}-${{ github.job }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-${{ hashFiles('Cargo.toml', 'crates/**', 'docs/api/**', 'testdata/**') }}
+          restore-keys: |
+            braian-target-v1-${{ runner.os }}-${{ github.job }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
+            braian-target-v1-${{ runner.os }}-${{ github.job }}-
+      - name: Dirty Rust sources newer than the cached target
+        if: steps.changes.outputs.mode == 'full'
+        run: bash scripts/ci-dirty-rust.sh
       - uses: actions/setup-node@v4
         if: steps.changes.outputs.mode == 'full'
         with:
@@ -198,6 +210,15 @@ jobs:
         if: steps.changes.outputs.mode == 'full'
       - run: just test-wasm
         if: steps.changes.outputs.mode == 'full'
+      - name: Record Rust target commit
+        if: success() && steps.changes.outputs.mode == 'full'
+        run: bash scripts/ci-dirty-rust.sh stamp
+      - name: Save Rust target
+        if: success() && steps.changes.outputs.mode == 'full' && steps.target-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: target
+          key: braian-target-v1-${{ runner.os }}-${{ github.job }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-${{ hashFiles('Cargo.toml', 'crates/**', 'docs/api/**', 'testdata/**') }}
 
   # One profile.ci build. Shards and the load job restore the same exact
   # binary key and do not compile. shared-key stays `stack` so a pull request
@@ -229,7 +250,11 @@ jobs:
           # Exact key only. No restore-keys: a prefix match would replay a
           # binary from older Rust. actions/cache looks up this ref, then the
           # PR base, then main.
-          key: braian-bins-v1-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'crates/**', 'testdata/**') }}
+          # crates/** already covers crates/store/migrations. No migration
+          # tree lives outside crates/. This hash was not the stale-rlib
+          # failure: that build missed and compiled. v2 drops binaries
+          # linked before the mtime fix, so this run compiles for real.
+          key: braian-bins-v2-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'crates/**', 'testdata/**') }}
       - name: Plan Rust build
         id: plan
         if: steps.changes.outputs.mode != 'skip'
@@ -276,36 +301,43 @@ jobs:
           # Restore order is this ref, then the PR base, then main. An exact
           # hit is not uploaded again, so a PR does not copy main's cache.
           save-if: ${{ steps.rust-cache-lookup.outputs.cache-hit != 'true' }}
-      - name: Dirty changed Rust sources after cache restore
+      # Same source-hash target cache as the rust job. `stack` is shared
+      # with load; github.job would split them.
+      - name: Restore Rust target
+        id: target-cache
         if: steps.plan.outputs.compile == 'true'
-        run: |
-          # Shared main cache + pinned 2020 mtimes otherwise skip recompiling
-          # crates this PR changed (e.g. openapi_spec vs docs/api/openapi.json).
-          base="${{ github.event.pull_request.base.sha }}"
-          if [ -z "$base" ]; then
-            base="${{ github.event.before }}"
-          fi
-          if [ -n "$base" ] && git cat-file -e "$base^{commit}" 2>/dev/null; then
-            git diff --diff-filter=d --name-only "$base" -- crates docs/api Cargo.toml Cargo.lock rust-toolchain.toml               | while IFS= read -r f; do
-                  [ -e "$f" ] && touch "$f"
-                done
-          else
-            find crates docs/api -type f \( -name '*.rs' -o -name 'openapi.json' \) -exec touch {} +
-          fi
+        uses: actions/cache/restore@v4
+        with:
+          path: target
+          key: braian-target-v1-${{ runner.os }}-stack-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-${{ hashFiles('Cargo.toml', 'crates/**', 'docs/api/**', 'testdata/**') }}
+          restore-keys: |
+            braian-target-v1-${{ runner.os }}-stack-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
+            braian-target-v1-${{ runner.os }}-stack-
+      - name: Dirty Rust sources newer than the cached target
+        if: steps.plan.outputs.compile == 'true'
+        run: bash scripts/ci-dirty-rust.sh
       - name: Build profile.ci binaries
         if: steps.plan.outputs.compile == 'true'
         run: |
           cargo build --profile ci --locked -p braian-bench -p braian-server
+          bash scripts/ci-guard-bins.sh
+          bash scripts/ci-dirty-rust.sh stamp
           mkdir -p "${RUNNER_TEMP}/ci-bins"
           cp -a target/ci/braian target/ci/braian-bench "${RUNNER_TEMP}/ci-bins/"
           test -x "${RUNNER_TEMP}/ci-bins/braian"
           test -x "${RUNNER_TEMP}/ci-bins/braian-bench"
+      - name: Save Rust target
+        if: success() && steps.plan.outputs.compile == 'true' && steps.target-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: target
+          key: braian-target-v1-${{ runner.os }}-stack-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-${{ hashFiles('Cargo.toml', 'crates/**', 'docs/api/**', 'testdata/**') }}
       - name: Save release binaries
-        if: steps.plan.outputs.compile == 'true' && steps.bin-cache.outputs.cache-hit != 'true'
+        if: success() && steps.plan.outputs.compile == 'true' && steps.bin-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}/ci-bins
-          key: braian-bins-v1-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'crates/**', 'testdata/**') }}
+          key: braian-bins-v2-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'crates/**', 'testdata/**') }}
 
   # Phase 2, phase 3, and the profile.ci store/indexer tests. Not on the e2e
   # critical path: shards restore the binary as soon as `bins` has saved it.
@@ -320,7 +352,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/ci-bins
-          key: braian-bins-v1-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'crates/**', 'testdata/**') }}
+          key: braian-bins-v2-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'crates/**', 'testdata/**') }}
       - name: Require cached binaries
         run: |
           test -x "${RUNNER_TEMP}/ci-bins/braian"
@@ -369,19 +401,17 @@ jobs:
           cache-on-failure: "true"
           # A hit is main's or bins' cache. Uploading it again spends the quota.
           save-if: ${{ steps.rust-cache-lookup.outputs.cache-hit != 'true' }}
-      - name: Dirty changed Rust sources after cache restore
-        run: |
-          base="${{ github.event.pull_request.base.sha }}"
-          if [ -z "$base" ]; then
-            base="${{ github.event.before }}"
-          fi
-          if [ -n "$base" ] && git cat-file -e "$base^{commit}" 2>/dev/null; then
-            git diff --diff-filter=d --name-only "$base" -- crates docs/api Cargo.toml Cargo.lock rust-toolchain.toml               | while IFS= read -r f; do
-                  [ -e "$f" ] && touch "$f"
-                done
-          else
-            find crates docs/api -type f \( -name '*.rs' -o -name 'openapi.json' \) -exec touch {} +
-          fi
+      - name: Restore Rust target
+        id: target-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: target
+          key: braian-target-v1-${{ runner.os }}-stack-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-${{ hashFiles('Cargo.toml', 'crates/**', 'docs/api/**', 'testdata/**') }}
+          restore-keys: |
+            braian-target-v1-${{ runner.os }}-stack-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
+            braian-target-v1-${{ runner.os }}-stack-
+      - name: Dirty Rust sources newer than the cached target
+        run: bash scripts/ci-dirty-rust.sh
       - name: Wait for services
         run: docker compose up -d --wait postgres typesense
       - name: Phase 2 load
@@ -429,7 +459,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/ci-bins
-          key: braian-bins-v1-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'crates/**', 'testdata/**') }}
+          key: braian-bins-v2-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'crates/**', 'testdata/**') }}
       - name: Require cached server binary
         run: test -x "${RUNNER_TEMP}/ci-bins/braian"
       - name: Start Postgres and Typesense
