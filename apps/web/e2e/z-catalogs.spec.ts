@@ -135,13 +135,26 @@ test('pane-source differs label; override survives a global switch', async ({ pa
   await expect(page.getByTestId('catalog-selector')).toContainText(/Master catalog/i)
   // Override stays SAP: label shows the differ suffix, and the view document is untouched.
   await expect(label).toContainText(/All Products · SAP/)
+  // No GET /v1/views/{id}; the override lives on the workspace document's views[].
   const override = await page.evaluate(async () => {
-    const res = await fetch('/v1/views/018f2000-0000-7000-8000-000000000801', { credentials: 'include' })
-    if (!res.ok) return null
-    const view = await res.json() as { state?: { catalogOverride?: { catalogId?: string } } }
-    return view.state?.catalogOverride?.catalogId ?? null
+    const res = await fetch('/v1/workspaces/018f2000-0000-7000-8000-000000000008', { credentials: 'include' })
+    if (!res.ok) return { ok: false, status: res.status }
+    const ws = await res.json() as {
+      catalog?: { catalogId?: string }
+      views?: { id?: string; state?: { catalogOverride?: { catalogId?: string } } }[]
+    }
+    const view = (ws.views ?? []).find((row) => row.id === '018f2000-0000-7000-8000-000000000801')
+    return {
+      ok: true,
+      workspaceCatalog: ws.catalog?.catalogId ?? null,
+      override: view?.state?.catalogOverride?.catalogId ?? null,
+    }
   })
-  expect(override).toBe('018f1000-0000-7000-8000-000000000002')
+  expect(override).toEqual({
+    ok: true,
+    workspaceCatalog: '018f1000-0000-7000-8000-000000000001',
+    override: '018f1000-0000-7000-8000-000000000002',
+  })
   await page.screenshot({ path: 'test-results/117-pane-source-differs.png' })
   await expect(page.getByTestId('catalog-chip')).toHaveCount(0)
 
