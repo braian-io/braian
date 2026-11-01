@@ -6,9 +6,15 @@ import { StandardEditableTable, type StandardColumn } from '../standard-editable
 type Saved = { id: string; name: string; type: string; headers: unknown; columns: unknown; empty_clears: boolean }
 
 /** Saved import mappings: shared by everyone, listed here so they can be renamed or deleted. */
+function useActiveRowId() {
+  const [activeRowId, setActiveRowId] = useState<string | null>(null)
+  return { activeRowId, setActiveRowId }
+}
+
 export function ImportMappingsView() {
   const queryClient = useQueryClient()
   const [filter, setFilter] = useState('')
+  const { activeRowId, setActiveRowId } = useActiveRowId()
   const [drafts, setDrafts] = useState<Record<string, Saved>>({})
   const [error, setError] = useState('')
   const list = useQuery({ queryKey: ['import-mappings'], queryFn: () => api.get('/v1/import-mappings') })
@@ -90,7 +96,12 @@ export function ImportMappingsView() {
         draftRows={drafts}
         onDraftRowsChange={onDraftRowsChange}
         filterValue={filter}
-        onFilterChange={setFilter}
+        onFilterChange={(value) => {
+          setFilter(value)
+          setActiveRowId(null)
+        }}
+        activeRowId={activeRowId}
+        onActivateRow={(row) => setActiveRowId(row.id)}
         getRowTestId={(row) => `import-mapping-${row.id}`}
         emptyLabel="No saved mappings yet. Save one from the mapping step of an import."
       />
