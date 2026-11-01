@@ -33,6 +33,26 @@ async function pickCatalog(page: Page, name: RegExp) {
   await menu.getByRole('menuitem', { name }).click()
 }
 
+/** Playwright runs files alphabetically with one shared DB (workers=1). Tests that
+ * flip Products to SAP must put Master back or later specs lose Mature cheddar. */
+async function restoreProductsMaster(page: Page) {
+  await page.locator('nav.tabs').getByRole('button', { name: /Products/ }).click()
+  const selector = page.getByTestId('catalog-selector')
+  await expect(selector).toBeVisible({ timeout: 30_000 })
+  if (!(await selector.innerText()).match(/Master catalog/i)) {
+    await pickCatalog(page, /Master catalog/)
+  }
+  await expect(selector).toContainText(/Master catalog/i)
+}
+
+test.afterEach(async ({ page }) => {
+  try {
+    await restoreProductsMaster(page)
+  } catch {
+    // Login may have failed; nothing to restore.
+  }
+})
+
 test('header catalog selector switches the workspace catalog', async ({ page }) => {
   await login(page)
   await page.locator('nav.tabs').getByRole('button', { name: /Products/ }).click()
