@@ -24,7 +24,10 @@ mod split;
 pub mod testing;
 mod types;
 
-pub use catalog_resolve::{CatalogRef, default_catalog_id, effective_catalog_id, view_catalog_override, workspace_catalog_ref};
+pub use catalog_resolve::{
+    CatalogRef, default_catalog_id, effective_catalog_id, view_catalog_override,
+    workspace_catalog_ref,
+};
 pub use catalogs::{CatalogKind, CatalogRecord};
 pub use error::{Conflict, Error};
 pub use ids::{

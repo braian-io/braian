@@ -52,9 +52,7 @@ pub fn effective_catalog_id(
 /// Read an explicit `catalogOverride` from view state JSON.
 /// Legacy `catalog: "sap"` is NOT an override.
 pub fn view_catalog_override(state: &Value) -> Option<CatalogRef> {
-    state
-        .get("catalogOverride")
-        .and_then(CatalogRef::from_json)
+    state.get("catalogOverride").and_then(CatalogRef::from_json)
 }
 
 pub fn workspace_catalog_ref(workspace: &Value) -> Option<CatalogRef> {

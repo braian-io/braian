@@ -67,17 +67,20 @@ export function CatalogsView() {
     <div className="catalog-admin" data-testid="catalogs-view">
       <h2>{copy.catalogs}</h2>
       <ul>
-        {(catalogs.data ?? []).map((row) => (
-          <li key={row.key}>
+        {(catalogs.data ?? []).map((row) => {
+          const catalogKey = row.key || row.id || ''
+          return (
+          <li key={catalogKey}>
             <strong>{row.name}</strong> <span>{row.key}</span> <span>{row.kind}</span>
-            {row.kind === 'source' ? (
+            {row.kind === 'source' && catalogKey ? (
               <>
-                <button type="button" onClick={() => infer.mutate(row.key)}>{copy.inferModel}</button>
-                <button type="button" onClick={() => cleanup.mutate(row.key)}>{copy.cleanupCatalog}</button>
+                <button type="button" onClick={() => infer.mutate(catalogKey)}>{copy.inferModel}</button>
+                <button type="button" onClick={() => cleanup.mutate(catalogKey)}>{copy.cleanupCatalog}</button>
               </>
             ) : null}
           </li>
-        ))}
+          )
+        })}
       </ul>
       <form
         onSubmit={(event) => {
