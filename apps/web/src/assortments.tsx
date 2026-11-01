@@ -12,7 +12,7 @@ import {
 } from './assortment-filter'
 import { Button } from './components/ui/button'
 import { openSharedContextMenu } from './shared-context-menu'
-import { Dialog, DialogContent, DialogTitle } from './components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
 import { Input } from './components/ui/input'
 import { assortmentDisplayName } from './demo-labels'
 import { searchDocuments, structureCaption } from './graph-scene'
@@ -88,23 +88,30 @@ export function NewSelectionDialog({ session }: { session: SelectionSession }) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent data-testid="new-selection" aria-describedby={undefined}>
-        <DialogTitle>{copy.newSelection}</DialogTitle>
+      <DialogContent data-testid="new-selection">
+        <DialogTitle className="pr-8">{copy.newSelection}</DialogTitle>
+        <DialogDescription>
+          Name a saved selection for the current filters and choose which object type it applies to.
+        </DialogDescription>
         <form
+          className="form"
           onSubmit={(event) => {
             event.preventDefault()
             void save()
           }}
         >
-          <Input
-            data-testid="assortment-name"
-            value={name}
-            autoFocus
-            aria-label={copy.assortment}
-            placeholder={copy.assortment}
-            onChange={(event) => setName(event.target.value)}
-          />
-          <label className="field">
+          <label className="model-field">
+            <span>{copy.assortment}</span>
+            <Input
+              data-testid="assortment-name"
+              value={name}
+              autoFocus
+              aria-label={copy.assortment}
+              placeholder={copy.assortment}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </label>
+          <label className="model-field">
             <span>{copy.type}</span>
             <select
               aria-label={copy.type}
@@ -113,11 +120,16 @@ export function NewSelectionDialog({ session }: { session: SelectionSession }) {
               onChange={(event) => setTypeKey(event.target.value)}
             >
               {types.map((type) => (
-                <option key={type.key} value={type.key}>{type.plural || type.key}</option>
+                <option key={type.key} value={type.key}>
+                  {type.plural || type.key}
+                </option>
               ))}
             </select>
           </label>
           <div className="dialog-actions">
+            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
+              {copy.cancel}
+            </Button>
             <Button type="submit">{copy.saveAssortment}</Button>
           </div>
         </form>
