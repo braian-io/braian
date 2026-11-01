@@ -17,7 +17,13 @@ test.describe('view source all-of-type (Notion 103 PR 1)', () => {
 
     await page.keyboard.press('Control+k')
     await expect(page.getByTestId('command-palette')).toBeVisible()
+    // Search results replace the list when they arrive. Clicking before that
+    // response lands hits a row that is gone, and the type submenu never opens.
+    const searchReady = page.waitForResponse(
+      (response) => response.url().includes('/v1/search') && response.request().method() === 'GET' && response.ok(),
+    )
     await page.getByTestId('palette-input').fill('Data source')
+    await searchReady
     const root = page
       .getByTestId('command-palette')
       .locator('.hit')
