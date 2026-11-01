@@ -120,7 +120,7 @@ test('Ctrl+K Switch catalog opens straight into the catalog list', async ({ page
   await expect(page.getByTestId('catalog-selector')).toContainText(/SAP/i)
 })
 
-test('pane-source shows catalog only when the view override differs', async ({ page }) => {
+test('pane-source differs label; override survives a global switch', async ({ page }) => {
   await login(page)
   await page.getByRole('button', { name: 'Sources' }).click()
   await expect(page.getByTestId('catalog-selector')).toContainText(/SAP/i)
@@ -133,7 +133,15 @@ test('pane-source shows catalog only when the view override differs', async ({ p
 
   await pickCatalog(page, /Master catalog/)
   await expect(page.getByTestId('catalog-selector')).toContainText(/Master catalog/i)
+  // Override stays SAP: label shows the differ suffix, and the view document is untouched.
   await expect(label).toContainText(/All Products · SAP/)
+  const override = await page.evaluate(async () => {
+    const res = await fetch('/v1/views/018f2000-0000-7000-8000-000000000801', { credentials: 'include' })
+    if (!res.ok) return null
+    const view = await res.json() as { state?: { catalogOverride?: { catalogId?: string } } }
+    return view.state?.catalogOverride?.catalogId ?? null
+  })
+  expect(override).toBe('018f1000-0000-7000-8000-000000000002')
   await page.screenshot({ path: 'test-results/117-pane-source-differs.png' })
   await expect(page.getByTestId('catalog-chip')).toHaveCount(0)
 
@@ -147,6 +155,9 @@ test('sources workspace, merge profile and a locked brand', async ({ page }) => 
   await page.getByRole('button', { name: 'Sources' }).click()
   await expect(page.getByTestId('catalogs-view')).toContainText('SAP ERP')
   await expect(page.getByTestId('catalogs-view')).toContainText('Supplier Nordic')
+  // The pane-source spec above activates the center "Products" (SAP) tab and that
+  // active tab persists in the shared e2e DB. Re-select Merge profiles explicitly.
+  await page.locator('.pane-tab-list').getByRole('button', { name: 'Merge profiles' }).click()
   await expect(page.getByTestId('merge-profiles-view')).toContainText('SAP brand')
   await expect(page.getByTestId('ownership-view')).toBeVisible()
   await expect(page.getByTestId('merge-runs-view')).toHaveCount(0)
