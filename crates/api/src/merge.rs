@@ -18,7 +18,9 @@ use crate::auth::{Auth, Role};
 use crate::platform::require;
 use crate::problem::{Problem, store_status};
 use crate::state::AppState;
-use crate::wire::{create_values, patch_from_wire, resolve_group, resolve_structure, type_key, values_to_wire};
+use crate::wire::{
+    create_values, patch_from_wire, resolve_group, resolve_structure, type_key, values_to_wire,
+};
 
 const PAGE: i64 = 500;
 
@@ -76,10 +78,20 @@ pub async fn post_profile(
     Json(body): Json<PutProfile>,
 ) -> Result<(StatusCode, Json<Value>), Problem> {
     require(&identity, Role::Editor)?;
-    let spec: ProfileSpec = serde_json::from_value(body.spec.clone())
-        .map_err(|error| Problem::new(StatusCode::BAD_REQUEST, "invalid_profile", error.to_string()))?;
-    spec.check()
-        .map_err(|error| Problem::new(StatusCode::BAD_REQUEST, "invalid_profile", error.to_string()))?;
+    let spec: ProfileSpec = serde_json::from_value(body.spec.clone()).map_err(|error| {
+        Problem::new(
+            StatusCode::BAD_REQUEST,
+            "invalid_profile",
+            error.to_string(),
+        )
+    })?;
+    spec.check().map_err(|error| {
+        Problem::new(
+            StatusCode::BAD_REQUEST,
+            "invalid_profile",
+            error.to_string(),
+        )
+    })?;
     if body.mode != "manual" && body.mode != "continuous" {
         return Err(Problem::new(
             StatusCode::BAD_REQUEST,
@@ -111,7 +123,12 @@ pub async fn post_profile(
         )
         .await
         .map_err(store_status)?;
-    if let Some(schedule) = body.schedule.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
+    if let Some(schedule) = body
+        .schedule
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
         state
             .store
             .set_profile_schedule(&saved.key, Some(schedule))
@@ -156,7 +173,9 @@ pub async fn get_ownership(
     Auth(identity): Auth,
 ) -> Result<Json<Value>, Problem> {
     require(&identity, Role::Viewer)?;
-    Ok(Json(state.store.ownership_rules().await.map_err(store_status)?))
+    Ok(Json(
+        state.store.ownership_rules().await.map_err(store_status)?,
+    ))
 }
 
 pub async fn post_ownership(
@@ -189,7 +208,9 @@ pub async fn run_profile(
     require(&identity, Role::Editor)?;
     let mut actor = identity.actor.clone();
     actor.source = "merge".into();
-    Ok(Json(apply_profile(&state.store, &actor, &key, body.dry_run).await?))
+    Ok(Json(
+        apply_profile(&state.store, &actor, &key, body.dry_run).await?,
+    ))
 }
 
 pub async fn profile_rows(
@@ -218,7 +239,11 @@ pub async fn apply_profile(
 ) -> Result<Value, Problem> {
     let profile = require_profile(store, key).await?;
     let spec: ProfileSpec = serde_json::from_value(profile.spec.clone()).map_err(|error| {
-        Problem::new(StatusCode::UNPROCESSABLE_ENTITY, "invalid_profile", error.to_string())
+        Problem::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_profile",
+            error.to_string(),
+        )
     })?;
     let source_store = store.with_catalog(profile.source_catalog_id);
     let master_store = store.with_catalog(MASTER_CATALOG_ID);
@@ -235,7 +260,10 @@ pub async fn apply_profile(
             .and_then(|structure| source.groups.get(structure))
             .map(String::as_str);
         let planned = plan(&spec, &source.values, source_group, source.deleted, &index);
-        let may_create = spec.owns_existence_for.iter().any(|item| item == &source.type_key);
+        let may_create = spec
+            .owns_existence_for
+            .iter()
+            .any(|item| item == &source.type_key);
         let action = if planned.create && !may_create {
             "skip"
         } else {
@@ -261,7 +289,9 @@ pub async fn apply_profile(
                 .await
                 {
                     write_error = Some(message);
-                } else if let Some(text) = source.values.get(&spec.master_key).and_then(Value::as_str) {
+                } else if let Some(text) =
+                    source.values.get(&spec.master_key).and_then(Value::as_str)
+                {
                     master_key = Some(text.to_owned());
                 }
             } else if !planned.create {
@@ -294,7 +324,13 @@ pub async fn apply_profile(
             "dry_run": dry_run,
         });
         store
-            .record_merge_row(profile.id, &source.key, master_key.as_deref(), action, &detail)
+            .record_merge_row(
+                profile.id,
+                &source.key,
+                master_key.as_deref(),
+                action,
+                &detail,
+            )
             .await
             .map_err(store_status)?;
         rows.push(json!({
@@ -326,7 +362,13 @@ async fn require_profile(store: &Store, key: &str) -> Result<MergeProfile, Probl
         .merge_profile_by_key(key)
         .await
         .map_err(store_status)?
-        .ok_or_else(|| Problem::new(StatusCode::NOT_FOUND, "profile_not_found", format!("no profile {key}")))
+        .ok_or_else(|| {
+            Problem::new(
+                StatusCode::NOT_FOUND,
+                "profile_not_found",
+                format!("no profile {key}"),
+            )
+        })
 }
 
 async fn load_model(store: &Store) -> Result<(CompiledModel, DefinitionSet), Problem> {
@@ -341,7 +383,10 @@ async fn load_wire(
     defs: &DefinitionSet,
 ) -> Result<Vec<WireObject>, Problem> {
     let heads = store.list_object_heads(PAGE).await.map_err(store_status)?;
-    let ids: Vec<ObjectId> = heads.iter().map(|(id, _, _, _)| ObjectId::from_uuid(*id)).collect();
+    let ids: Vec<ObjectId> = heads
+        .iter()
+        .map(|(id, _, _, _)| ObjectId::from_uuid(*id))
+        .collect();
     let stored = store.get_objects(&ids).await.map_err(store_status)?;
     let mut out = Vec::with_capacity(stored.len());
     for object in stored {
@@ -441,8 +486,10 @@ async fn create_master(
     let stored_values = create_values(model, &wire).map_err(|error| error.detail.clone())?;
     let mut groups = BTreeMap::new();
     if let (Some(structure), Some(group)) = (&spec.structure, &planned.group) {
-        let structure_id = resolve_structure(model, defs, structure).map_err(|error| error.detail.clone())?;
-        let group_id = resolve_group(defs, structure_id, group).map_err(|error| error.detail.clone())?;
+        let structure_id =
+            resolve_structure(model, defs, structure).map_err(|error| error.detail.clone())?;
+        let group_id =
+            resolve_group(defs, structure_id, group).map_err(|error| error.detail.clone())?;
         groups.insert(structure_id, group_id);
     }
     let type_id = model
@@ -460,9 +507,12 @@ async fn create_master(
         return Err(errors[0].message.clone());
     }
     let origin = origin_json(profile, source);
-    scope_origin(origin, master.write_batch(actor, vec![ObjectOp::Create(object.clone())]))
-        .await
-        .map_err(|error| error.to_string())?;
+    scope_origin(
+        origin,
+        master.write_batch(actor, vec![ObjectOp::Create(object.clone())]),
+    )
+    .await
+    .map_err(|error| error.to_string())?;
     master
         .put_merge_link(profile.id, source.id.as_uuid(), object.id.as_uuid())
         .await
@@ -472,7 +522,9 @@ async fn create_master(
 
 fn mapped_groups(spec: &ProfileSpec, planned: &MergePlan) -> BTreeMap<String, Option<String>> {
     match (&spec.structure, &planned.group) {
-        (Some(structure), Some(group)) => BTreeMap::from([(structure.clone(), Some(group.clone()))]),
+        (Some(structure), Some(group)) => {
+            BTreeMap::from([(structure.clone(), Some(group.clone()))])
+        }
         _ => BTreeMap::new(),
     }
 }
@@ -494,7 +546,11 @@ async fn apply_one(
     let Some(found) = masters_of_type(master, planned, master_key).await? else {
         return Ok(());
     };
-    let Some(stored) = master.get_by_key(found, master_key).await.map_err(store_status)? else {
+    let Some(stored) = master
+        .get_by_key(found, master_key)
+        .await
+        .map_err(store_status)?
+    else {
         return Ok(());
     };
     if planned.values.is_empty() || planned.delete {

@@ -5368,7 +5368,12 @@ async fn run_operation(
     match name {
         "catalog.list" => {
             let catalogs = state.store.catalogs().await.map_err(store_status)?;
-            Ok(json!(catalogs.iter().map(|catalog| catalog.to_json()).collect::<Vec<_>>()))
+            Ok(json!(
+                catalogs
+                    .iter()
+                    .map(|catalog| catalog.to_json())
+                    .collect::<Vec<_>>()
+            ))
         }
         "merge_profile.get" => {
             let key = args.get("key").and_then(Value::as_str).unwrap_or("");
@@ -5377,7 +5382,9 @@ async fn run_operation(
                 .merge_profile_by_key(key)
                 .await
                 .map_err(store_status)?
-                .ok_or_else(|| Problem::new(StatusCode::NOT_FOUND, "profile_not_found", key.to_owned()))?;
+                .ok_or_else(|| {
+                    Problem::new(StatusCode::NOT_FOUND, "profile_not_found", key.to_owned())
+                })?;
             Ok(json!({
                 "key": profile.key,
                 "name": profile.name,
@@ -5393,8 +5400,16 @@ async fn run_operation(
                 .merge_profile_by_key(key)
                 .await
                 .map_err(store_status)?
-                .ok_or_else(|| Problem::new(StatusCode::NOT_FOUND, "profile_not_found", key.to_owned()))?;
-            Ok(json!(state.store.merge_run_rows(profile.id, 200).await.map_err(store_status)?))
+                .ok_or_else(|| {
+                    Problem::new(StatusCode::NOT_FOUND, "profile_not_found", key.to_owned())
+                })?;
+            Ok(json!(
+                state
+                    .store
+                    .merge_run_rows(profile.id, 200)
+                    .await
+                    .map_err(store_status)?
+            ))
         }
         "merge.dry_run" | "merge.run" => {
             let key = args.get("key").and_then(Value::as_str).unwrap_or("");
@@ -5404,7 +5419,11 @@ async fn run_operation(
         }
         "catalog.cleanup" => {
             let key = args.get("key").and_then(Value::as_str).unwrap_or("");
-            let catalog = state.store.require_catalog(key).await.map_err(store_status)?;
+            let catalog = state
+                .store
+                .require_catalog(key)
+                .await
+                .map_err(store_status)?;
             if catalog.kind != braian_store::CatalogKind::Source {
                 return Err(Problem::new(
                     StatusCode::UNPROCESSABLE_ENTITY,

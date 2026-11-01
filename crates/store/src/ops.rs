@@ -3162,7 +3162,10 @@ fn map_unique(error: tokio_postgres::Error, type_id: TypeId, key: &str) -> Error
         && db.code() == &tokio_postgres::error::SqlState::UNIQUE_VIOLATION
     {
         let constraint = db.constraint();
-        if constraint.is_none() || constraint == Some("objects_type_id_key_active") {
+        if constraint.is_none()
+            || constraint == Some("objects_type_id_key_active")
+            || constraint == Some("objects_catalog_type_key_active")
+        {
             return Error::DuplicateKey {
                 type_id,
                 key: key.to_owned(),

@@ -38,7 +38,7 @@ import { fetchColumnPrefs, isHopPath, orderHiddenToDocument, ensureSystemColumns
 import { columnPrefsMutationKey, columnPrefsQueryKey, useSaveColumnPrefs } from './column-prefs-mutation'
 import { readPathFromDoc, summarizePathValues } from './path-cell'
 import { cellPathValues, fetchPathValues } from './path-values'
-import { shouldHoldTablePaint } from './table-live-paint'
+import { shouldHoldTablePaint, shouldRefreshTableSnapshot } from './table-live-paint'
 import { searchPeerArticles, type PeerPickOption } from './peer-search'
 import { FieldDiff } from './field-diff-view'
 import { copy, uiLanguage } from './i18n'
@@ -999,16 +999,31 @@ export function ObjectTable({
     byIndex: Map<number, ObjRow>
     groupedRows: ObjRow[]
   } | null>(null)
-  if (!tableBusy || !stableTableRef.current) {
+  const held = stableTableRef.current
+  const liveRowCount = byIndex.size + groupedRows.length
+  const heldRowCount = held ? held.byIndex.size + held.groupedRows.length : 0
+  if (
+    shouldRefreshTableSnapshot({
+      tableBusy,
+      hasSnapshot: held != null,
+      heldRowCount,
+      liveRowCount,
+    })
+  ) {
     stableTableRef.current = {
       pathValues: pathValues.data,
       byIndex: new Map(byIndex),
       groupedRows: [...groupedRows],
     }
   }
-  const paintPathValues = tableBusy ? stableTableRef.current.pathValues : pathValues.data
+  const painted = stableTableRef.current ?? {
+    pathValues: pathValues.data,
+    byIndex,
+    groupedRows,
+  }
+  const paintPathValues = tableBusy ? painted.pathValues : pathValues.data
   const rowAtPainted = (index: number) =>
-    groupBy ? stableTableRef.current!.groupedRows[index] : stableTableRef.current!.byIndex.get(index)
+    groupBy ? painted.groupedRows[index] : painted.byIndex.get(index)
   const cellDisplayText = (row: ObjRow, id: string) => {
     const apiPath = parseColumnId(id).path
     if (columnNeedsPathValues(id)) {

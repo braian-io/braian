@@ -51,8 +51,9 @@ fn medium_search_document_keeps_filter_fields_and_drops_searchable_only_copies()
     assert_eq!(omitted_fields, 50);
     assert_eq!(own_fields, 518);
     // Unit and range ends add 60 fields (312 → 372) and 3_335 bytes (18_898 → 22_233).
+    // The assortment structure key is three letters longer than catalog.
     assert_eq!(keys, 372);
-    assert_eq!(bytes, 22_233);
+    assert_eq!(bytes, 22_236);
     assert_eq!(
         defs.attributes
             .iter()

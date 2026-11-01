@@ -37,7 +37,9 @@ pub async fn list_catalogs(
 ) -> Result<Json<Vec<serde_json::Value>>, Problem> {
     require(&identity, Role::Viewer)?;
     let catalogs = state.store.catalogs().await.map_err(store_status)?;
-    Ok(Json(catalogs.iter().map(|catalog| catalog.to_json()).collect()))
+    Ok(Json(
+        catalogs.iter().map(|catalog| catalog.to_json()).collect(),
+    ))
 }
 
 pub async fn get_catalog(
@@ -114,7 +116,12 @@ pub async fn infer_model(
         .store
         .definition_set()
         .await
-        .map(|defs| defs.attributes.iter().map(|attribute| attribute.key.clone()).collect())
+        .map(|defs| {
+            defs.attributes
+                .iter()
+                .map(|attribute| attribute.key.clone())
+                .collect()
+        })
         .unwrap_or_default();
     let revision = state
         .store
@@ -122,15 +129,21 @@ pub async fn infer_model(
         .await
         .map_err(store_status)?
         .unwrap_or(0);
-    let heads = state.store.list_object_heads(200).await.map_err(store_status)?;
+    let heads = state
+        .store
+        .list_object_heads(200)
+        .await
+        .map_err(store_status)?;
     let ids: Vec<braian_model::ObjectId> = heads
         .iter()
         .map(|(id, _, _, _)| braian_model::ObjectId::from_uuid(*id))
         .collect();
     let stored = state.store.get_objects(&ids).await.map_err(store_status)?;
-    let mut samples: std::collections::BTreeMap<String, Vec<serde_json::Value>> = std::collections::BTreeMap::new();
+    let mut samples: std::collections::BTreeMap<String, Vec<serde_json::Value>> =
+        std::collections::BTreeMap::new();
     if let Ok(defs) = state.store.definition_set().await {
-        let model = braian_rules::CompiledModel::compile(&defs).map_err(crate::problem::Problem::definitions)?;
+        let model = braian_rules::CompiledModel::compile(&defs)
+            .map_err(crate::problem::Problem::definitions)?;
         for object in &stored {
             let wire = crate::wire::values_to_wire(&model, &[], &object.object.values, true);
             for (key, value) in wire {
@@ -162,10 +175,16 @@ pub async fn infer_model(
     }
     state
         .store
-        .put_model_draft(user_id, i64::try_from(revision).unwrap_or(0), &serde_json::Value::Array(steps.clone()))
+        .put_model_draft(
+            user_id,
+            i64::try_from(revision).unwrap_or(0),
+            &serde_json::Value::Array(steps.clone()),
+        )
         .await
         .map_err(store_status)?;
-    Ok(Json(serde_json::json!({ "steps": steps, "base_revision": revision })))
+    Ok(Json(
+        serde_json::json!({ "steps": steps, "base_revision": revision }),
+    ))
 }
 
 pub async fn cleanup_catalog(
@@ -229,12 +248,17 @@ pub(crate) fn infer_kind(samples: &[serde_json::Value]) -> &'static str {
     if samples.iter().all(serde_json::Value::is_boolean) {
         return "boolean";
     }
-    if samples.iter().all(|value| value.is_number() || value.get("value").is_some()) {
+    if samples
+        .iter()
+        .all(|value| value.is_number() || value.get("value").is_some())
+    {
         return "number";
     }
     if samples.iter().all(|value| {
         value.as_str().is_some_and(|text| {
-            text.len() == 10 && text.as_bytes().get(4) == Some(&b'-') && text.as_bytes().get(7) == Some(&b'-')
+            text.len() == 10
+                && text.as_bytes().get(4) == Some(&b'-')
+                && text.as_bytes().get(7) == Some(&b'-')
         })
     }) {
         return "date";

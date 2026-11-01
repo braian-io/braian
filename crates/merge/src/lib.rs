@@ -189,7 +189,10 @@ pub fn plan(
     source_deleted: bool,
     masters: &BTreeMap<String, Vec<String>>,
 ) -> MergePlan {
-    let outcome = match_master(match_key(source_values, &spec.match_attributes).as_deref(), masters);
+    let outcome = match_master(
+        match_key(source_values, &spec.match_attributes).as_deref(),
+        masters,
+    );
     let mut plan = MergePlan {
         outcome,
         values: Map::new(),
@@ -259,7 +262,8 @@ fn transform_value(
         }
         return Ok(raw.clone());
     };
-    let text = scalar_text(raw).ok_or_else(|| format!("value list {} needs a code", mapping.source))?;
+    let text =
+        scalar_text(raw).ok_or_else(|| format!("value list {} needs a code", mapping.source))?;
     let Some(code) = list.codes.get(&text) else {
         return Err(format!("code {text} is not mapped"));
     };
@@ -342,10 +346,8 @@ mod tests {
         let mut source = Map::new();
         source.insert("EAN11".into(), json!("7310865001234"));
         source.insert("NETPR".into(), json!("1"));
-        let masters = BTreeMap::from([(
-            "7310865001234".into(),
-            vec!["ART-1".into(), "ART-2".into()],
-        )]);
+        let masters =
+            BTreeMap::from([("7310865001234".into(), vec!["ART-1".into(), "ART-2".into()])]);
         let plan = plan(&spec(), &source, None, false, &masters);
         assert!(plan.values.is_empty());
         assert!(matches!(plan.outcome, MatchOutcome::Ambiguous { .. }));

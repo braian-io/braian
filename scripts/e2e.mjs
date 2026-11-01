@@ -36,6 +36,7 @@ const specs = [
   'e2e/table-flash-sort-palette.spec.ts',
   'e2e/move-col-flash-sse.spec.ts',
   'e2e/palette-root-focus.spec.ts',
+  'e2e/palette-home-end.spec.ts',
   'e2e/open-type-view-ready.spec.ts',
   'e2e/legacy-model-workspace.spec.ts',
   'e2e/dangling-model-workspace.spec.ts',
@@ -49,6 +50,8 @@ const specs = [
   'e2e/template-picker.spec.ts',
   'e2e/shortcut-registry.spec.ts',
   'e2e/user-menu.spec.ts',
+  'e2e/new-version-status.spec.ts',
+  'e2e/view-source-type.spec.ts',
 ]
 
 function workerCount() {
@@ -86,6 +89,7 @@ const measuredSeconds = {
   'e2e/table-flash-sort-palette.spec.ts': 16,
   'e2e/move-col-flash-sse.spec.ts': 9,
   'e2e/palette-root-focus.spec.ts': 10,
+  'e2e/palette-home-end.spec.ts': 25,
   'e2e/legacy-model-workspace.spec.ts': 17,
   'e2e/dangling-model-workspace.spec.ts': 10,
   'e2e/inline-cell-edit.spec.ts': 7,
@@ -94,6 +98,8 @@ const measuredSeconds = {
   'e2e/cell-edit-key-guard.spec.ts': 4,
   'e2e/template-picker.spec.ts': 25,
   'e2e/user-menu.spec.ts': 25,
+  'e2e/new-version-status.spec.ts': 20,
+  'e2e/view-source-type.spec.ts': 35,
   'e2e/delete-workspace.spec.ts': 28,
   'e2e/open-type-view-ready.spec.ts': 25,
   'e2e/shortcut-registry.spec.ts': 20,

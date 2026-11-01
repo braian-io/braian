@@ -18,6 +18,12 @@ import { mergeFrecency, readFrecency, touch, writeFrecency } from './frecency'
 import { withModelCommand } from './model-command'
 import { askIndex, filterPaletteRows, visibleRows, groupTitle, type PaletteGroup, type PaletteItem } from './palette-model'
 import { addViewRootItem, addViewSubmenuRows, isAddViewRoot, parseAddViewChoice } from './palette-add-view'
+import {
+  isSelectSourceRoot,
+  parseSelectSourceChoice,
+  selectSourceRootItem,
+  selectSourceSubmenuRows,
+} from './palette-select-source'
 import { isNewFromTemplateRoot, newFromTemplateRootItem, newFromTemplateSubmenuRows } from './palette-new-from-template'
 import { publishProposal } from './proposal-bus'
 import { modelFocus, openModelDialog, requestDiscardDraft, requestReview, stageModel } from './model-stage'
@@ -36,6 +42,7 @@ import {
 import { applyUiResult, dispatchUi, uiOperations } from './ui-bus'
 import { readUiContext, type UiColumn } from './ui-context'
 import { runCommand } from './command-registry'
+import { newVersionGateOpen } from './new-version-gate'
 import { FieldsMode, type FieldsPaletteOpen } from './fields/fields-mode'
 import { readFieldsHost, subscribeFieldsHost } from './fields-host'
 import { makeViewColumn, parseColumnId } from './fields/columns'
@@ -65,6 +72,12 @@ type ProposalPreview = {
   error?: string
 }
 
+
+/** True when the key event targets the palette query field (caret / selection). */
+function isPaletteQueryInput(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && target.matches('[data-testid="palette-input"], [cmdk-input]')
+}
+
 export function CommandPalette({
   session,
   workspaces,
@@ -77,7 +90,9 @@ export function CommandPalette({
   focusViewId,
   onPrepareAddView,
   startAddView,
+  startSelectSource,
   startNewFromTemplate,
+  onSelectSourceType,
   onClose,
   fieldsMode,
   fieldsEditColumnId,
@@ -94,7 +109,9 @@ export function CommandPalette({
   focusViewId?: string | null
   onPrepareAddView?: () => void
   startAddView?: boolean
+  startSelectSource?: boolean
   startNewFromTemplate?: boolean
+  onSelectSourceType?: (typeId: string) => void
   onClose: () => void
   fieldsMode?: boolean
   fieldsEditColumnId?: string | null
@@ -172,7 +189,7 @@ export function CommandPalette({
   const tableColumns = useMemo(() => readUiContext().columns, [])
   const catalog = useMemo(
     () => [
-      ...buildCatalog(workspaces, views, session.objectId, types, selectedSingular, selectedKey, suggestionTotal, feedbackEnabled, theme),
+      ...buildCatalog(workspaces, views, session.objectId, types, selectedSingular, selectedKey, suggestionTotal, feedbackEnabled, theme, focusViewId),
       {
         id: 'catalog:switch',
         group: 'views' as const,
@@ -280,6 +297,17 @@ export function CommandPalette({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startNewFromTemplate])
 
+  useEffect(() => {
+    if (!startSelectSource) return
+    setStack([{
+      label: `${copy.dataSource} ›`,
+      rows: selectSourceSubmenuRows(types),
+    }])
+    setActive(0)
+    // Mount-only: dock menu Select source opens the submenu immediately.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startSelectSource])
+
   const rootRows = withModelCommand(query, visibleRows(query, catalog, hits, frecency))
   const stackRows = stack.at(-1)?.rows
   const rows = stackRows ? filterPaletteRows(stackRows, query) : rootRows
@@ -360,6 +388,22 @@ export function CommandPalette({
           ...(target ? { target } : {}),
         })
       }
+      onClose()
+      return
+    }
+
+    if (isSelectSourceRoot(id)) {
+      setStack((current) => [...current, {
+        label: item.title,
+        rows: selectSourceSubmenuRows(types),
+      }])
+      setQuery('')
+      setActive(0)
+      return
+    }
+    const sourceChoice = parseSelectSourceChoice(id)
+    if (sourceChoice) {
+      onSelectSourceType?.(sourceChoice.typeId)
       onClose()
       return
     }
@@ -738,6 +782,11 @@ export function CommandPalette({
     if (id === 'session:sign-out') {
       void runCommand('session:sign-out')
       onClose()
+      return
+    }
+    if (id === 'session:reload-new-version') {
+      void runCommand('session:reload-new-version')
+      onClose()
     }
   }
 
@@ -841,6 +890,12 @@ export function CommandPalette({
       const actions = secondaryOf(activeRow)
       setStack((current) => [...current, { label: activeRow.title, rows: actions }])
       setActive(0)
+      return
+    }
+    // Home/End in the query field: leave caret/selection to the browser (#132 pattern).
+    // cmdk also hardcodes Home/End → first/last with no disable prop (only vimBindings for n/j/p/k);
+    // CommandInput stopPropagation blocks that on bubble — this early return skips our list jump.
+    if ((event.key === 'Home' || event.key === 'End') && isPaletteQueryInput(event.target)) {
       return
     }
     if (!['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End', 'Enter'].includes(event.key)) return
@@ -1105,7 +1160,10 @@ function buildCatalog(
   suggestions: number,
   feedbackEnabled?: boolean,
   theme: 'dark' | 'light' = 'dark',
+  focusViewId?: string | null,
 ): PaletteItem[] {
+  const focused = focusViewId ? views.find((view) => view.id === focusViewId) : undefined
+  const showSelectSource = !focused || focused.type === 'object_table'
   const items: PaletteItem[] = [
     ...(suggestions > 0
       ? [{
@@ -1168,6 +1226,15 @@ function buildCatalog(
       subtitle: 'End this session',
       keywords: ['logout', 'log out', 'sign out', 'session'],
     },
+    ...(newVersionGateOpen()
+      ? [{
+          id: 'session:reload-new-version',
+          group: 'views' as const,
+          title: copy.reloadToNewVersion,
+          subtitle: copy.newVersionAvailable,
+          keywords: ['reload', 'refresh', 'new version', 'update', 'deploy'],
+        }]
+      : []),
     { id: 'layout:move_view_left', group: 'views', title: 'Move view left', subtitle: 'Move the focused view left', kbd: chordForCommand('layout:move_view_left'), shortcut: chordForCommand('layout:move_view_left') },
     { id: 'layout:move_view_right', group: 'views', title: 'Move view right', subtitle: 'Move the focused view right', kbd: chordForCommand('layout:move_view_right'), shortcut: chordForCommand('layout:move_view_right') },
     { id: 'layout:move_view_up', group: 'views', title: 'Move view up', subtitle: 'Move the focused view up', kbd: chordForCommand('layout:move_view_up'), shortcut: chordForCommand('layout:move_view_up') },
@@ -1181,6 +1248,7 @@ function buildCatalog(
     { id: 'layout:reset_layout', group: 'views', title: 'Reset layout', subtitle: 'Restore the saved workspace layout' },
     { id: 'workspace:delete', group: 'views', title: 'Delete workspace', subtitle: 'Remove the active workspace and its layout', keywords: ['delete', 'remove', 'workspace'] },
     addViewRootItem(),
+    ...(showSelectSource ? [selectSourceRootItem()] : []),
   ]
   if (feedbackEnabled) {
     items.push({

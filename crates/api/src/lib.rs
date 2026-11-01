@@ -7,10 +7,9 @@
 //! Objects are created, patched, read and deleted with validation always on.
 
 mod attribute_catalog;
-mod catalogs;
-pub mod merge;
 mod auth;
 mod bulk_gate;
+mod catalogs;
 mod column_prefs;
 mod definitions;
 mod deletes;
@@ -21,6 +20,7 @@ mod http_schema;
 pub mod import;
 mod keys;
 mod links;
+pub mod merge;
 mod model_draft;
 mod model_proposal;
 mod objects;
@@ -137,14 +137,23 @@ fn build_router(state: AppState) -> axum::Router {
                 .delete(definitions::delete_unit_family_route),
         )
         .route("/v1/languages", put(definitions::put_languages))
-        .route("/v1/catalogs", get(catalogs::list_catalogs).post(catalogs::post_catalog))
+        .route(
+            "/v1/catalogs",
+            get(catalogs::list_catalogs).post(catalogs::post_catalog),
+        )
         .route("/v1/catalogs/{key}", get(catalogs::get_catalog))
         .route("/v1/infer", post(catalogs::infer_model))
         .route("/v1/cleanup", post(catalogs::cleanup_catalog))
         .route("/v1/merge/links", post(merge::post_link))
         .route("/v1/merge/links/remove", post(merge::remove_link))
-        .route("/v1/merge/profiles", get(merge::list_profiles).post(merge::post_profile))
-        .route("/v1/merge/ownership", get(merge::get_ownership).post(merge::post_ownership))
+        .route(
+            "/v1/merge/profiles",
+            get(merge::list_profiles).post(merge::post_profile),
+        )
+        .route(
+            "/v1/merge/ownership",
+            get(merge::get_ownership).post(merge::post_ownership),
+        )
         .route("/v1/merge/profiles/{key}/run", post(merge::run_profile))
         .route("/v1/merge/profiles/{key}/rows", get(merge::profile_rows))
         .route("/v1/resolve/{kind}/{id_or_key}", get(keys::resolve_ref))
@@ -248,7 +257,11 @@ async fn scope_catalog(
 fn catalog_prefix(path: &str) -> Option<(String, String)> {
     let rest = path.strip_prefix("/v1/catalogs/")?;
     let (key, tail) = rest.split_once('/')?;
-    if key.is_empty() || !key.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-') {
+    if key.is_empty()
+        || !key
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-')
+    {
         return None;
     }
     Some((key.to_owned(), tail.to_owned()))

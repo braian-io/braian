@@ -934,17 +934,21 @@ struct Counter {
 
 impl Counter {
     fn json(&self, total: u64) -> Value {
-        json!({
+        let mut body = json!({
             "new": self.new,
             "changed": self.changed,
             "stale": 0,
             "excluded": 0,
             "failed": self.failed,
             "unchanged": self.unchanged,
-            "delete": self.deleted,
             "processed": self.processed,
             "total": total,
-        })
+        });
+        // A normal import has no delete rows. Snapshot imports record them.
+        if self.deleted > 0 {
+            body["delete"] = json!(self.deleted);
+        }
+        body
     }
 }
 

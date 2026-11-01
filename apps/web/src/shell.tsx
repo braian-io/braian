@@ -64,6 +64,7 @@ import {
 import { healDataModelWorkspace, isKnownViewType, layoutHasMissingViews, migrateLegacyModelViews } from './model-workspace-migrate'
 import { persistWorkspaceMigration } from './workspace-migration-persist'
 import { commandPlaceholder, displayViewTitle, migrateSavedWorkspace, singularOf, typeNames } from './type-labels'
+import { applyTypeSource, viewSourceLabel } from './view-source'
 import { onUi } from './ui-bus'
 import { panesFromCatalog, publishFrame, publishMarked } from './ui-context'
 import {
@@ -190,6 +191,7 @@ export function Shell() {
   }, [])
 
   const [paletteStartAddView, setPaletteStartAddView] = useState(false)
+  const [paletteStartSelectSource, setPaletteStartSelectSource] = useState(false)
   const [paletteStartNewFromTemplate, setPaletteStartNewFromTemplate] = useState(false)
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [feedbackCapture, setFeedbackCapture] = useState<FeedbackCapture | null>(null)
@@ -209,6 +211,7 @@ export function Shell() {
   const loadedFor = useRef('')
   const applyRef = useRef<(name: string, args: Record<string, unknown>) => void>(() => {})
   const openTypeViewRef = useRef<(typeId: string) => void>(() => {})
+  const applyViewTypeSourceRef = useRef<(typeId: string, viewId?: string) => Promise<void>>(async () => undefined)
   const migratedRef = useRef(new Set<string>())
   const ensuredTypes = useRef(new Set<string>())
   const workspaceIdRef = useRef<string | null>(null)
@@ -376,6 +379,9 @@ export function Shell() {
       registerCommandRunner('session:sign-out', () => {
         signOutRef.current()
       }),
+      registerCommandRunner('session:reload-new-version', () => {
+        window.location.reload()
+      }),
       registerCommandRunner('layout:reset_layout', () => applyRef.current('reset_layout', {})),
       registerCommandRunner('workspace:delete', () => { requestDeleteActiveRef.current() }),
 
@@ -401,12 +407,26 @@ export function Shell() {
         const focus = docRef.current?.focus
         placeOverride.current = focus ? { target: focus, zone: 'center' } : { zone: 'center' }
         setPaletteStartNewFromTemplate(false)
+        setPaletteStartSelectSource(false)
         setPaletteStartAddView(true)
         setPaletteMode('list')
+      }),
+      registerCommandRunner('view:select-source', (target) => {
+        const typeId = typeof target.typeId === 'string' ? target.typeId : typeof target.typeKey === 'string' ? target.typeKey : ''
+        if (typeId) {
+          void applyViewTypeSourceRef.current(typeId, typeof target.viewId === 'string' ? target.viewId : undefined)
+          return
+        }
+        setPaletteStartAddView(false)
+        setPaletteStartNewFromTemplate(false)
+        setPaletteStartSelectSource(true)
+        setPaletteMode('list')
+        setPaletteEpoch((value) => value + 1)
       }),
       registerCommandRunner('workspace:new', () => {
         setFieldsEditColumnId(null)
         setPaletteStartAddView(false)
+        setPaletteStartSelectSource(false)
         setPaletteStartNewFromTemplate(true)
         setPaletteMode('list')
         setPaletteEpoch((value) => value + 1)
@@ -1070,6 +1090,45 @@ export function Shell() {
   }
   const typeCatalog = typeNames(defs.data)
   const openTypeKey = String(opened.data?.type ?? '')
+
+  applyViewTypeSourceRef.current = async (typeToken: string, viewId?: string) => {
+    const surfaceNow = workspaceRef.current
+    if (!surfaceNow || surfaceNow.locked) return
+    const types = typeNames(queryClient.getQueryData<Json>(['definitions']))
+    const type = types.find((item) => item.id === typeToken || item.key === typeToken)
+    if (!type) return
+    const focus = viewId || docRef.current?.focus
+    let views: View[] = viewRows(surfaceNow.views)
+    const target = views.find((view) => view.id === focus && view.type === 'object_table')
+      ?? views.find((view) => view.type === 'object_table')
+    if (!target) return
+    const nextState = applyTypeSource(target.state, type)
+    const updated: View = { ...target, title: type.plural, state: freeObject(nextState) }
+    await api.post('/v1/views', {
+      body: {
+        id: updated.id,
+        workspace_id: surfaceNow.id,
+        type: updated.type,
+        title: updated.title,
+        pane: updated.pane ?? 'center',
+        position: updated.position ?? 0,
+        state: freeObject(updated.state),
+      },
+    })
+    views = views.map((view) => (view.id === updated.id ? updated : view))
+    const nextSurface = {
+      ...surfaceNow,
+      views: views.map((view) => ({
+        ...view,
+        pane: view.pane ?? 'center',
+        position: view.position ?? 0,
+        state: freeObject(view.state),
+      })),
+    }
+    workspaceRef.current = nextSurface
+    queryClient.setQueryData(['workspace', surfaceNow.id], nextSurface)
+  }
+
   openTypeViewRef.current = (typeId: string) => {
     const surfaceNow = workspaceRef.current
     const docNow = docRef.current
@@ -1183,7 +1242,7 @@ export function Shell() {
         {doc && surface && !layoutHealPending ? (
           <WorkspaceDock
             doc={doc}
-            views={viewRows(surface.views).map((view) => ({ ...view, title: displayViewTitle(view, typeCatalog, openTypeKey) }))}
+            views={viewRows(surface.views).map((view) => ({ ...view, title: displayViewTitle(view, typeCatalog, openTypeKey), sourceLabel: viewSourceLabel(view, typeCatalog) }))}
             onChange={commitDoc}
             renderView={(item) => {
               const full = viewRows(surface.views).find((view) => view.id === item.id)
@@ -1192,6 +1251,7 @@ export function Shell() {
             onAddView={(target) => {
               placeOverride.current = { target, zone: 'center' }
               setPaletteStartNewFromTemplate(false)
+              setPaletteStartSelectSource(false)
               setPaletteStartAddView(true)
               setPaletteMode('list')
             }}
@@ -1230,7 +1290,7 @@ export function Shell() {
               fieldsMode={paletteMode === 'fields'}
               fieldsEditColumnId={fieldsEditColumnId}
               onFieldsConsumed={() => setFieldsEditColumnId(null)}
-          key={`${paletteMode}:${paletteEpoch}:${paletteStartAddView ? 'add-view' : paletteStartNewFromTemplate ? 'new-template' : 'root'}`}
+          key={`${paletteMode}:${paletteEpoch}:${paletteStartAddView ? 'add-view' : paletteStartSelectSource ? 'select-source' : paletteStartNewFromTemplate ? 'new-template' : 'root'}`}
           ai={paletteMode === 'ai'}
           session={session}
           workspaces={orderedWorkspaces}
@@ -1241,7 +1301,9 @@ export function Shell() {
           onSignOut={() => { void runCommand('session:sign-out') }}
           focusViewId={doc?.focus ?? null}
           startAddView={paletteStartAddView}
+          startSelectSource={paletteStartSelectSource}
           startNewFromTemplate={paletteStartNewFromTemplate}
+          onSelectSourceType={(typeId) => { void applyViewTypeSourceRef.current(typeId) }}
           onPrepareAddView={() => {
             const focus = docRef.current?.focus
             placeOverride.current = focus ? { target: focus, zone: 'center' } : { zone: 'center' }
@@ -1249,6 +1311,7 @@ export function Shell() {
           onClose={() => {
             placeOverride.current = undefined
             setPaletteStartAddView(false)
+            setPaletteStartSelectSource(false)
             setPaletteStartNewFromTemplate(false)
             setPaletteMode(null)
           }}
@@ -1379,7 +1442,10 @@ function Login({ onDone }: { onDone: () => void }) {
 function ViewBody({ view, session, workspace }: { view: View; session: Session; workspace: Workspace }) {
   if (view.type === 'structure_tree') return <StructureTree session={session} view={view} />
   if (view.type === 'assortment_list') return <AssortmentList session={session} />
-  if (view.type === 'object_table') return <ObjectTable session={session} view={view} workspace={workspace} />
+  if (view.type === 'object_table') {
+    const sourceKey = String(view.state?.type_key ?? view.state?.object_type ?? '')
+    return <ObjectTable key={`${view.id}:${sourceKey}`} session={session} view={view} workspace={workspace} />
+  }
   if (view.type === 'object_detail') return <ObjectDetail session={session} />
   if (view.type === 'graph') return <GraphView session={session} />
   if (view.type === 'history') return <HistoryView session={session} />

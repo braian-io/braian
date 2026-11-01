@@ -178,19 +178,13 @@ impl Store {
             let id: uuid::Uuid = row.get("id");
             found.insert(
                 id,
-                (
-                    CatalogId::from_uuid(row.get("catalog_id")),
-                    row.get("key"),
-                ),
+                (CatalogId::from_uuid(row.get("catalog_id")), row.get("key")),
             );
         }
         Ok(found)
     }
 
-    pub async fn object_catalog(
-        &self,
-        id: uuid::Uuid,
-    ) -> Result<Option<CatalogId>, Error> {
+    pub async fn object_catalog(&self, id: uuid::Uuid) -> Result<Option<CatalogId>, Error> {
         let client = self.checkout().await?;
         let row = client
             .query_opt("SELECT catalog_id FROM objects WHERE id = $1", &[&id])

@@ -111,7 +111,9 @@ impl Store {
                 &[],
             )
             .await?;
-        Ok(row.map(|row| row.get(0)).unwrap_or(Value::Array(Vec::new())))
+        Ok(row
+            .map(|row| row.get(0))
+            .unwrap_or(Value::Array(Vec::new())))
     }
 
     pub async fn put_ownership_rules(&self, rules: &Value) -> Result<i64, Error> {
@@ -151,7 +153,11 @@ impl Store {
         Ok(())
     }
 
-    pub async fn set_profile_schedule(&self, key: &str, schedule: Option<&str>) -> Result<(), Error> {
+    pub async fn set_profile_schedule(
+        &self,
+        key: &str,
+        schedule: Option<&str>,
+    ) -> Result<(), Error> {
         let client = self.checkout().await?;
         client
             .execute(
@@ -227,7 +233,11 @@ impl Store {
         Ok(())
     }
 
-    pub async fn delete_merge_link(&self, profile_id: Uuid, source_object_id: Uuid) -> Result<u64, Error> {
+    pub async fn delete_merge_link(
+        &self,
+        profile_id: Uuid,
+        source_object_id: Uuid,
+    ) -> Result<u64, Error> {
         let client = self.checkout().await?;
         let removed = client
             .execute(

@@ -444,6 +444,19 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
 .catalog-admin input, .catalog-admin select, .catalog-admin textarea { font: inherit; }
 .catalog-admin ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
 .field.locked .control { opacity: 0.75; }
+.pane-source {
+  flex: 0 1 auto;
+  max-width: 220px;
+  margin-left: 8px;
+  margin-right: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 22px;
+  color: var(--muted);
+  align-self: center;
+}
 .pane-body {
   position: relative;
   min-height: 0;
@@ -521,6 +534,9 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
 .status-bar { flex: none; font-size: 11px; color: var(--muted); }
 .status-bar[data-kind='offline'], .status-bar[data-kind='error'] { color: var(--danger); }
 .status-bar[data-kind='saving'] { color: var(--text-2); }
+.status-bar[data-kind='update'] { color: var(--text-2); }
+.status-bar-action { margin-left: 8px; font: inherit; color: var(--accent); background: transparent; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
+.status-bar-action:hover { color: var(--text); }
 .draft-bar {
   display: flex;
   gap: 12px;

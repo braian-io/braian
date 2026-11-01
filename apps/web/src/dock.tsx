@@ -29,7 +29,7 @@ import {
   type Zone,
 } from './layout'
 
-export type DockView = { id: string; title: string; type: string; state?: { catalog?: string } }
+export type DockView = { id: string; title: string; type: string; state?: { catalog?: string }; sourceLabel?: string }
 
 type Hover =
   | { kind: 'edge'; zone: Exclude<Zone, 'center'> }
@@ -409,6 +409,15 @@ function Pane({ frame, leaf }: { frame: Frame; leaf: Leaf }) {
             </Tooltip>
           ))}
         </div>
+        {(() => {
+          const label = frame.viewList.find((view) => view.id === activeId)?.sourceLabel
+          if (!label) return null
+          return (
+            <span className="pane-source" data-testid="view-source-label" title={label}>
+              {label}
+            </span>
+          )
+        })()}
         <div className="pane-chrome">
           {activeId ? (
             <CatalogChip
@@ -420,6 +429,7 @@ function Pane({ frame, leaf }: { frame: Frame; leaf: Leaf }) {
             type="button"
             className="icon-btn"
             aria-label={copy.viewMenu}
+            data-testid="view-menu"
             onClick={(event) => activeId && frame.onMenu({ x: event.clientX, y: event.clientY + 8, view: activeId })}
           >
             <MoreHorizontal size={14} aria-hidden="true" />

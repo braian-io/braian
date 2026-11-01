@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
 
 use deadpool_postgres::{Manager, Pool};
@@ -7,8 +7,8 @@ use tokio::sync::RwLock;
 use tokio_postgres::NoTls;
 
 use crate::error::Error;
-use crate::ids::{CatalogId, MASTER_CATALOG_ID};
 use crate::gauge::{self, Gauge};
+use crate::ids::{CatalogId, MASTER_CATALOG_ID};
 use crate::pressure::{self, InteractiveGuard, InteractiveLoad, YieldLimits};
 use crate::split::StorageForm;
 use crate::types::CachedDefs;
@@ -256,7 +256,9 @@ impl Store {
         client
             .execute("SELECT set_config('braian.catalog', $1, false)", &[&id])
             .await?;
-        let origin = REQUEST_ORIGIN.try_with(|value| value.clone()).unwrap_or_default();
+        let origin = REQUEST_ORIGIN
+            .try_with(|value| value.clone())
+            .unwrap_or_default();
         client
             .execute("SELECT set_config('braian.origin', $1, false)", &[&origin])
             .await?;

@@ -104,9 +104,9 @@ impl Store {
         let client = self.checkout().await?;
         client
             .execute(
-            "DELETE FROM model_drafts WHERE user_id = $1 AND catalog_id = braian_catalog()",
-            &[&user_id],
-        )
+                "DELETE FROM model_drafts WHERE user_id = $1 AND catalog_id = braian_catalog()",
+                &[&user_id],
+            )
             .await?;
         Ok(())
     }

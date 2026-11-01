@@ -267,7 +267,10 @@ impl ModelCache {
             defs,
             model,
         });
-        self.inner.write().await.insert(catalog, Arc::clone(&cached));
+        self.inner
+            .write()
+            .await
+            .insert(catalog, Arc::clone(&cached));
         Ok(cached)
     }
 

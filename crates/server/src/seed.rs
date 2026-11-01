@@ -159,12 +159,24 @@ async fn seed_sources(
     use braian_store::{CatalogId, CatalogKind};
     let sources = [
         (2u128, "sap", "SAP ERP", include_str!("../demo/sap.json")),
-        (3, "supplier-nordic", "Supplier Nordic", include_str!("../demo/supplier-nordic.json")),
-        (4, "supplier-alpine", "Supplier Alpine", include_str!("../demo/supplier-alpine.json")),
+        (
+            3,
+            "supplier-nordic",
+            "Supplier Nordic",
+            include_str!("../demo/supplier-nordic.json"),
+        ),
+        (
+            4,
+            "supplier-alpine",
+            "Supplier Alpine",
+            include_str!("../demo/supplier-alpine.json"),
+        ),
     ];
     let mut created = false;
     for (n, key, name, file) in sources {
-        let id = CatalogId::from_uuid(Uuid::from_u128(0x018f_1000_0000_7000_8000_0000_0000_0000 + n));
+        let id = CatalogId::from_uuid(Uuid::from_u128(
+            0x018f_1000_0000_7000_8000_0000_0000_0000 + n,
+        ));
         if store.catalog_by_key(key).await?.is_none() {
             store
                 .create_catalog(id, key, name, CatalogKind::Source, true)
@@ -175,10 +187,18 @@ async fn seed_sources(
             .await?
             .ok_or_else(|| anyhow::anyhow!("{key} catalog is missing"))?;
         let scoped = store.with_catalog(catalog.id);
-        if scoped.definition_set().await.is_err() {
-            scoped.put_definitions(actor, defs).await?;
-        }
-        if seed_source_file(&scoped, actor, model, defs.model_revision, file).await? {
+        // A new source catalog starts at revision 1. The master may already be
+        // further ahead after an upgrade, and that number is not valid here.
+        let source_revision = match scoped.definition_set().await {
+            Ok(existing) => existing.model_revision,
+            Err(_) => {
+                let mut copy = defs.clone();
+                copy.model_revision = 1;
+                scoped.put_definitions(actor, &copy).await?;
+                1
+            }
+        };
+        if seed_source_file(&scoped, actor, model, source_revision, file).await? {
             created = true;
         }
     }
@@ -206,7 +226,12 @@ async fn seed_sources(
             )
             .await?;
     }
-    if store.ownership_rules().await?.as_array().is_some_and(|rules| rules.is_empty()) {
+    if store
+        .ownership_rules()
+        .await?
+        .as_array()
+        .is_some_and(|rules| rules.is_empty())
+    {
         store
             .put_ownership_rules(&json!([{
                 "attribute": "brand",
@@ -235,6 +260,12 @@ async fn seed_source_file(
     let type_id = model
         .type_id("product")
         .ok_or_else(|| anyhow::anyhow!("product type is missing"))?;
+    // An upgraded model may not carry every demo attribute. Keep the values that apply.
+    let applicable: HashSet<AttributeId> = model
+        .applicable_ids(type_id, &BTreeMap::new())
+        .unwrap_or_default()
+        .into_iter()
+        .collect();
     let mut created = false;
     for row in rows {
         let key = row["key"].as_str().unwrap_or("");
@@ -249,6 +280,9 @@ async fn seed_source_file(
             let Some(attribute) = model.attribute_by_key(name) else {
                 continue;
             };
+            if !applicable.contains(&attribute.id) {
+                continue;
+            }
             values.insert(attribute.id, value.clone());
         }
         let object = Object {
@@ -260,9 +294,14 @@ async fn seed_source_file(
         };
         let errors = model.validate(&object);
         if !errors.is_empty() {
-            return Err(anyhow::anyhow!("source {key} failed validation: {}", errors[0].message));
+            return Err(anyhow::anyhow!(
+                "source {key} failed validation: {}",
+                errors[0].message
+            ));
         }
-        store.write_batch(actor, vec![ObjectOp::Create(object)]).await?;
+        store
+            .write_batch(actor, vec![ObjectOp::Create(object)])
+            .await?;
         created = true;
     }
     Ok(created)

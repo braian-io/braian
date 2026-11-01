@@ -38,7 +38,8 @@ pub async fn run(state: AppState, session_id: Uuid, job_id: Uuid, mut actor: Act
         return;
     };
     let counters = session.counters.clone();
-    let total = counter(&counters, "new") + counter(&counters, "changed") + counter(&counters, "delete");
+    let total =
+        counter(&counters, "new") + counter(&counters, "changed") + counter(&counters, "delete");
     let total_i = i32::try_from(total).unwrap_or(i32::MAX);
     emit_job(&state, job_id, "running", 0, total_i);
     let batch = match store.open_batch(&actor).await {
@@ -368,7 +369,10 @@ async fn write_deletes(
         let Some(id) = row.object_id else {
             continue;
         };
-        let Some(version) = row.base_version.and_then(|version| u64::try_from(version).ok()) else {
+        let Some(version) = row
+            .base_version
+            .and_then(|version| u64::try_from(version).ok())
+        else {
             continue;
         };
         ops.push((

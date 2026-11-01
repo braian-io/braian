@@ -219,7 +219,16 @@ pub async fn create_object(
         receipt.last_seq,
         &body.object_type,
     );
-    Ok(object_response(&state, &cached, &stored, receipt.last_seq, false, true, None).await)
+    Ok(object_response(
+        &state,
+        &cached,
+        &stored,
+        receipt.last_seq,
+        false,
+        true,
+        None,
+    )
+    .await)
 }
 
 #[utoipa::path(
@@ -777,7 +786,8 @@ async fn reject_owned_fields(
     let linked_ref: Vec<&str> = linked.iter().map(String::as_str).collect();
     for attribute in values.keys() {
         for rule in list {
-            let Ok(parsed) = serde_json::from_value::<braian_merge::OwnershipRule>(rule.clone()) else {
+            let Ok(parsed) = serde_json::from_value::<braian_merge::OwnershipRule>(rule.clone())
+            else {
                 continue;
             };
             if &parsed.attribute != attribute {
@@ -797,7 +807,10 @@ async fn reject_owned_fields(
 
 /// A catalog that is not editable rejects a person's manual edit.
 /// Import and merge set their own actor source and are allowed through.
-async fn catalog_is_editable(state: &AppState, identity: &crate::auth::Identity) -> Result<(), Problem> {
+async fn catalog_is_editable(
+    state: &AppState,
+    identity: &crate::auth::Identity,
+) -> Result<(), Problem> {
     let Ok(Some(catalog)) = state.store.catalog_by_id(state.store.catalog_id()).await else {
         return Ok(());
     };
@@ -889,7 +902,8 @@ async fn owner_map(state: &AppState, id: ObjectId) -> Result<Value, Problem> {
     let mut owners = serde_json::Map::new();
     if let Some(list) = rules.as_array() {
         for rule in list {
-            let Ok(parsed) = serde_json::from_value::<braian_merge::OwnershipRule>(rule.clone()) else {
+            let Ok(parsed) = serde_json::from_value::<braian_merge::OwnershipRule>(rule.clone())
+            else {
                 continue;
             };
             let attribute = parsed.attribute.clone();

@@ -349,6 +349,7 @@ describe('active row', () => {
 
     fireEvent.keyDown(input, { key: 'ArrowDown' })
     fireEvent.keyDown(input, { key: 'ArrowDown' })
+    fireEvent.keyDown(input, { key: 'ArrowDown' })
     expect(screen.getByTestId('palette-active').textContent).toBe('Split beside the table')
 
     fireEvent.mouseEnter(screen.getAllByRole('option')[0]!)

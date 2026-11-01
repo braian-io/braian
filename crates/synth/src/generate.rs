@@ -27,7 +27,9 @@ pub(crate) struct Prepared {
 pub(crate) fn prepare(defs: &DefinitionSet, tier: Tier, seed: u64) -> Prepared {
     let model = CompiledModel::compile(defs).expect("synthetic definitions compile");
     let type_id = model.type_id("item").expect("type item");
-    let catalog = model.structure_id("assortment").expect("structure assortment");
+    let catalog = model
+        .structure_id("assortment")
+        .expect("structure assortment");
     let channel = model.structure_id("webshop").expect("structure webshop");
     let leaf = model.group_id("assortment", "leaf").expect("group leaf");
     let flat = model.group_id("webshop", "flat").expect("group flat");

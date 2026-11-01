@@ -91,7 +91,10 @@ impl Store {
     pub async fn mark_import_snapshot(&self, id: Uuid) -> Result<(), Error> {
         let client = self.checkout().await?;
         client
-            .execute("UPDATE import_sessions SET snapshot = true WHERE id = $1", &[&id])
+            .execute(
+                "UPDATE import_sessions SET snapshot = true WHERE id = $1",
+                &[&id],
+            )
             .await?;
         Ok(())
     }

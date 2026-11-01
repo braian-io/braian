@@ -574,7 +574,16 @@ mod tests {
             true,
         )
         .unwrap();
-        create_group(defs, gid(4), "assortment", "leaf", "Leaf", Some("child"), true).unwrap();
+        create_group(
+            defs,
+            gid(4),
+            "assortment",
+            "leaf",
+            "Leaf",
+            Some("child"),
+            true,
+        )
+        .unwrap();
         let structure = defs.structures.iter_mut().next().unwrap();
         structure.classes.push(Class {
             id: cid(10),
