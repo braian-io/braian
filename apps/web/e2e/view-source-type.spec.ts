@@ -10,18 +10,20 @@ async function login(page: Page) {
   await expect(page.getByTestId('object-table')).toBeVisible({ timeout: 60_000 })
 }
 
+async function openProducts(page: Page) {
+  await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
+  await expect(page.getByTestId('object-table')).toBeVisible()
+}
+
 test.describe('view source all-of-type (Notion 103 PR 1)', () => {
   test('Ctrl+K Data source and view menu Select source change the type source', async ({ page }) => {
     test.setTimeout(120_000)
-    // The type submenu is copied from the definition list at the moment of the
-    // click. The object table can paint first, so wait until that GET has
-    // landed or the submenu is empty for the rest of the test.
-    const defsReady = page.waitForResponse(
-      (response) =>
-        response.url().includes('/v1/definitions') && response.request().method() === 'GET' && response.ok(),
-    )
     await login(page)
-    await defsReady
+    // Data source is only offered when the focused pane is an object table.
+    // A fresh seed focuses another pane, and the only "Data source" hit is
+    // then Ask AI. Earlier files on a shared database left Products focused.
+    await openProducts(page)
+    await expect(page.getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
 
     await page.keyboard.press('Control+k')
     await expect(page.getByTestId('command-palette')).toBeVisible()
@@ -30,11 +32,10 @@ test.describe('view source all-of-type (Notion 103 PR 1)', () => {
       .getByTestId('command-palette')
       .locator('.hit')
       .filter({ hasText: 'Data source' })
+      .filter({ hasNotText: 'Ask AI' })
       .first()
     await expect(root).toBeVisible()
     await root.click()
-    const paletteText = await page.getByTestId('command-palette').innerText()
-    console.log(`PALETTE DUMP\n${paletteText}\nPALETTE DUMP END`)
     await expect(page.getByTestId('command-palette').locator('.hit').filter({ hasText: 'All ' }).first()).toBeVisible()
 
     const products = page.getByTestId('command-palette').locator('.hit').filter({ hasText: 'All Products' })
