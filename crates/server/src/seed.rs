@@ -143,6 +143,21 @@ pub async fn run(store: &Store, search: Option<&Typesense>) -> anyhow::Result<()
     }
 
     seed_sources(store, &actor, &defs, &model).await?;
+    // Sources workspace follows the SAP catalog globally; its SAP table still
+    // carries an explicit catalogOverride so e2e can prove overrides survive a
+    // global switch.
+    {
+        let sap = store
+            .catalog_by_key("sap")
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("sap catalog is missing"))?;
+        store
+            .set_workspace_catalog(
+                Uuid::parse_str("018f2000-0000-7000-8000-000000000008")?,
+                sap.id,
+            )
+            .await?;
+    }
 
     if let Some(search) = search {
         braian_indexer::reindex(store, search).await?;
@@ -379,6 +394,24 @@ async fn seed_demo_surface(
                 &layout(id),
             )
             .await?;
+    }
+    // Workspace-global catalog (Notion 117 UI). Standard workspaces stay on
+    // master (INSERT stamp). Sources is pointed at SAP after seed_sources
+    // creates that catalog — see seed() below.
+    {
+        use braian_store::MASTER_CATALOG_ID;
+        for id in [
+            "018f2000-0000-7000-8000-000000000002", // Data model
+            "018f2000-0000-7000-8000-000000000003", // Products
+            "018f2000-0000-7000-8000-000000000005", // Articles
+            "018f2000-0000-7000-8000-000000000007", // Suppliers
+            "018f2000-0000-7000-8000-000000000004", // Review
+            "018f2000-0000-7000-8000-000000000008", // Sources (master until seed_sources)
+        ] {
+            store
+                .set_workspace_catalog(Uuid::parse_str(id)?, MASTER_CATALOG_ID)
+                .await?;
+        }
     }
     // Removed demo views: drop them from databases seeded before. View first, then its type.
     store
@@ -834,7 +867,15 @@ async fn save_views(store: &Store, defs: &DefinitionSet) -> anyhow::Result<()> {
             "SAP",
             "center",
             0,
-            json!({"columns": ["number", "name", "brand"], "sort": "number", "object_type": "product", "type_key": "product", "catalog": "sap"}),
+            json!({
+                "columns": ["number", "name", "brand"],
+                "sort": "number",
+                "object_type": "product",
+                "type_key": "product",
+                "catalogOverride": {
+                    "catalogId": "018f1000-0000-7000-8000-000000000002"
+                }
+            }),
         ),
         (
             "018f2000-0000-7000-8000-000000000802",

@@ -25,6 +25,14 @@ import {
   selectSourceSubmenuRows,
 } from './palette-select-source'
 import { isNewFromTemplateRoot, newFromTemplateRootItem, newFromTemplateSubmenuRows } from './palette-new-from-template'
+import {
+  isSwitchCatalogRoot,
+  parseSwitchCatalogChoice,
+  switchCatalogRootItem,
+  switchCatalogSubmenuRows,
+} from './palette-switch-catalog'
+import { useCatalogsQuery } from './catalog-list'
+import { MASTER_CATALOG_ID } from './catalog-ref'
 import { publishProposal } from './proposal-bus'
 import { modelFocus, openModelDialog, requestDiscardDraft, requestReview, stageModel } from './model-stage'
 import { isStandardAttribute, queueViewType, requestAttributeAction } from './attribute-actions'
@@ -92,6 +100,8 @@ export function CommandPalette({
   startAddView,
   startSelectSource,
   startNewFromTemplate,
+  startSwitchCatalog,
+  workspaceCatalogId,
   onSelectSourceType,
   onClose,
   fieldsMode,
@@ -111,6 +121,8 @@ export function CommandPalette({
   startAddView?: boolean
   startSelectSource?: boolean
   startNewFromTemplate?: boolean
+  startSwitchCatalog?: boolean
+  workspaceCatalogId?: string
   onSelectSourceType?: (typeId: string) => void
   onClose: () => void
   fieldsMode?: boolean
@@ -187,16 +199,18 @@ export function CommandPalette({
   const selectedSingular = singularOf(defs.data, selectedKey, uiLanguage) || (types.length === 1 ? types[0]?.singular ?? '' : '')
   // Columns of the open table, read once when the palette opens.
   const tableColumns = useMemo(() => readUiContext().columns, [])
+  const catalogsList = useCatalogsQuery()
+  const catalogOptions = (catalogsList.data ?? []).map((row) => ({
+    id: row.id || MASTER_CATALOG_ID,
+    key: row.key || 'master',
+    name: row.name || row.key || 'master',
+    kind: row.kind,
+  }))
+  const currentCatalogName = catalogOptions.find((row) => row.id === (workspaceCatalogId || MASTER_CATALOG_ID))?.name
   const catalog = useMemo(
     () => [
       ...buildCatalog(workspaces, views, session.objectId, types, selectedSingular, selectedKey, suggestionTotal, feedbackEnabled, theme, focusViewId),
-      {
-        id: 'catalog:switch',
-        group: 'views' as const,
-        title: `${copy.catalog} ›`,
-        subtitle: copy.masterCatalog,
-        keywords: ['catalog', 'source', 'master'],
-      },
+      switchCatalogRootItem(currentCatalogName),
       {
         id: 'selections',
         group: 'views' as const,
@@ -308,6 +322,17 @@ export function CommandPalette({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startSelectSource])
 
+  useEffect(() => {
+    if (!startSwitchCatalog) return
+    setStack([{
+      label: `${copy.switchCatalog} ›`,
+      rows: switchCatalogSubmenuRows(catalogOptions),
+    }])
+    setActive(0)
+    // Re-run when catalogs finish loading so the submenu is not stuck on the
+    // master-only fallback from the first paint.
+  }, [startSwitchCatalog, catalogOptions])
+
   const rootRows = withModelCommand(query, visibleRows(query, catalog, hits, frecency))
   const stackRows = stack.at(-1)?.rows
   const rows = stackRows ? filterPaletteRows(stackRows, query) : rootRows
@@ -329,32 +354,27 @@ export function CommandPalette({
       touch(remembered)
       void api.post('/v1/frecency', { body: { id: remembered } }).catch(() => undefined)
     }
-    if (id === 'catalog:switch') {
-      void fetch('/v1/catalogs', { credentials: 'include' })
-        .then((response) => (response.ok ? response.json() : []))
-        .then((listed: Array<{ key?: string; name?: string }>) => {
-          const rows = (Array.isArray(listed) ? listed : []).map((row) => ({
-            id: `catalog:${row.key ?? ''}`,
-            sourceId: `catalog:${row.key ?? ''}`,
-            group: 'views' as const,
-            title: row.name || row.key || '',
-            subtitle: row.key || '',
-            keywords: ['catalog'],
-          }))
-          setStack((current) => [...current, { label: copy.catalog, rows }])
-          setQuery('')
-          setActive(0)
-        })
+    if (isSwitchCatalogRoot(id)) {
+      setStack((current) => [...current, {
+        label: `${copy.switchCatalog} ›`,
+        rows: switchCatalogSubmenuRows(catalogOptions),
+      }])
+      setQuery('')
+      setActive(0)
       return
     }
-    if (id.startsWith('catalog:') && focusViewId) {
-      window.dispatchEvent(
-        new CustomEvent('braian-set-catalog', {
-          detail: { viewId: focusViewId, catalog: id.slice('catalog:'.length) },
-        }),
-      )
-      onClose()
-      return
+    {
+      const catalogId = parseSwitchCatalogChoice(id)
+      if (catalogId) {
+        // Palette Switch catalog sets the workspace-global catalog (not a view override).
+        window.dispatchEvent(
+          new CustomEvent('braian-set-catalog', {
+            detail: { scope: 'workspace', catalogId },
+          }),
+        )
+        onClose()
+        return
+      }
     }
     if (isAddViewRoot(id)) {
       onPrepareAddView?.()
@@ -852,7 +872,7 @@ export function CommandPalette({
       event.preventDefault()
       event.stopPropagation()
       // Opened straight into New from template: Esc closes the palette.
-      if (startNewFromTemplate && mode === 'list' && stack.length > 0) {
+      if ((startNewFromTemplate || startSwitchCatalog) && mode === 'list' && stack.length > 0) {
         onClose()
         return
       }

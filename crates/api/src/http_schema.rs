@@ -225,6 +225,8 @@ pub struct WorkspaceRow {
     pub share_token: Option<String>,
     pub layout: FreeObject,
     pub owner_id: Uuid,
+    /// Workspace-global catalog `{ "catalogId": "<uuid>" }`.
+    pub catalog: FreeObject,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub views: Option<Vec<WorkspaceView>>,
 }

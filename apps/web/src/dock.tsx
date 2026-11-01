@@ -7,8 +7,6 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './comp
 import { viewDisplayTitle } from './demo-labels'
 import { looksLikeRawViewId } from './model-workspace-migrate'
 import { copy } from './i18n'
-import { CatalogChip } from './catalog-chip'
-import { catalogKeyOf } from './catalog-scope'
 import { openSharedContextMenu } from './shared-context-menu'
 import {
   activate,
@@ -419,12 +417,6 @@ function Pane({ frame, leaf }: { frame: Frame; leaf: Leaf }) {
           )
         })()}
         <div className="pane-chrome">
-          {activeId ? (
-            <CatalogChip
-              viewId={activeId}
-              catalog={catalogKeyOf(frame.viewList.find((view) => view.id === activeId)?.state)}
-            />
-          ) : null}
           <button
             type="button"
             className="icon-btn"
