@@ -2,10 +2,15 @@
 // The demo database used by `just dev` is not written.
 //
 // BRAIAN_BIN, when set, is the server binary. CI points it at the profile.ci
-// binary built for Phase 2 so this script does not compile.
-// BRAIAN_E2E_WORKERS (default 1) starts one database, API and Vite per worker
-// and runs that worker's files against only that server. Workers stay at 1
-// inside each Playwright process so tests in one file keep their order.
+// binary built once per workflow so this script does not compile.
+// BRAIAN_E2E_SHARDS / BRAIAN_E2E_SHARD select one weighted bin. CI gives each
+// shard its own runner, Postgres and Typesense.
+// BRAIAN_E2E_WORKERS (default 1) splits that bin across processes. Workers stay
+// at 1 inside each Playwright process so tests in one file keep their order.
+// BRAIAN_E2E_ISOLATE=1 (also the default when there is more than one shard or
+// worker) drops the database and starts a new API, seed and search alias
+// before every spec file. A shared database lets an earlier file's saved view
+// columns make a later file edit the wrong row.
 
 import { execFileSync, spawn } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
@@ -57,11 +62,21 @@ const specs = [
   'e2e/catalogs.spec.ts',
 ]
 
-function workerCount() {
-  const raw = process.env.BRAIAN_E2E_WORKERS || '1'
+function positiveInt(name, fallback) {
+  const raw = process.env[name] || fallback
   const parsed = Number(raw)
   if (!Number.isInteger(parsed) || parsed < 1) {
-    console.error(`BRAIAN_E2E_WORKERS must be a positive integer, got ${raw}`)
+    console.error(`${name} must be a positive integer, got ${raw}`)
+    process.exit(1)
+  }
+  return parsed
+}
+
+function shardIndex(count) {
+  const raw = process.env.BRAIAN_E2E_SHARD || '0'
+  const parsed = Number(raw)
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed >= count) {
+    console.error(`BRAIAN_E2E_SHARD must be an integer in 0..${count - 1}, got ${raw}`)
     process.exit(1)
   }
   return parsed
@@ -125,7 +140,8 @@ function fileWeight(file) {
 // Longest-first assignment. Each file still runs on one database, in its
 // original relative order. The previous list-order pack left field-picker
 // and layout on the same worker, so that process ran about a minute longer.
-function partition(list, workers) {
+// Empty bins stay in place so shard N is stable.
+function assign(list, workers) {
   const bins = Array.from({ length: workers }, () => ({ files: [], weight: 0 }))
   const ranked = [...list].sort((a, b) => fileWeight(b) - fileWeight(a) || list.indexOf(a) - list.indexOf(b))
   for (const file of ranked) {
@@ -137,9 +153,11 @@ function partition(list, workers) {
     lightest.weight += fileWeight(file)
   }
   const order = new Map(list.map((file, index) => [file, index]))
-  return bins
-    .filter((bin) => bin.files.length > 0)
-    .map((bin) => bin.files.sort((a, b) => order.get(a) - order.get(b)))
+  return bins.map((bin) => bin.files.sort((a, b) => order.get(a) - order.get(b)))
+}
+
+function partition(list, workers) {
+  return assign(list, workers).filter((files) => files.length > 0)
 }
 
 function withDatabase(url, name) {
@@ -217,14 +235,31 @@ if (!source) {
 }
 
 const binary = resolveBinary()
-const workers = workerCount()
-const groups = partition(specs, workers)
-console.log(`e2e workers ${groups.length} (Playwright processes, 1 browser worker each)`)
+const shardCount = positiveInt('BRAIAN_E2E_SHARDS', '1')
+const shard = shardIndex(shardCount)
+const shardFiles = assign(specs, shardCount)[shard]
+const workers = positiveInt('BRAIAN_E2E_WORKERS', '1')
+// More than one shard or worker means this process must not keep mutations
+// another file will read. CI sets BRAIAN_E2E_ISOLATE=1 as well.
+const isolate =
+  process.env.BRAIAN_E2E_ISOLATE === '1' || shardCount > 1 || workers > 1
+const groups = partition(shardFiles, workers)
+console.log(`e2e shard ${shard}/${shardCount} isolate=${isolate ? 1 : 0} workers=${groups.length}`)
 for (const [index, files] of groups.entries()) {
   const weight = files.reduce((sum, file) => sum + fileWeight(file), 0)
   console.log(`e2e slot ${index} weight=${weight}s files=${files.join(' ')}`)
 }
-if (process.env.BRAIAN_E2E_PLAN === '1') process.exit(0)
+if (process.env.BRAIAN_E2E_PLAN === '1') {
+  for (const [index, files] of assign(specs, shardCount).entries()) {
+    const weight = files.reduce((sum, file) => sum + fileWeight(file), 0)
+    console.log(`e2e plan shard ${index} weight=${weight}s files=${files.join(' ')}`)
+  }
+  process.exit(0)
+}
+if (shardFiles.length === 0) {
+  console.log(`e2e shard ${shard} has no files`)
+  process.exit(0)
+}
 
 const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
 const windows = process.platform === 'win32'
@@ -339,10 +374,39 @@ function waitExit(child) {
   })
 }
 
+// The first /v1/definitions on a fresh process compiles the model. A spec that
+// opens a palette submenu copies the type list it sees at the click. If that
+// request is still in flight, the submenu stays empty. Warm it before the browser.
+async function warmDefinitions(apiPort) {
+  const token = process.env.BRAIAN_DEMO_TOKEN
+  if (!token) return
+  const url = `http://127.0.0.1:${apiPort}/v1/definitions`
+  const headers = { Authorization: `Bearer ${token}` }
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    try {
+      const response = await fetch(url, { headers })
+      if (response.ok) {
+        const body = await response.json()
+        if (Array.isArray(body.types) && body.types.length > 0) {
+          console.log(`e2e warm definitions types=${body.types.length}`)
+          return
+        }
+      } else if (attempt === 0 || attempt === 29) {
+        console.log(`e2e warm definitions HTTP ${response.status}`)
+      }
+    } catch {
+      // the listener is up; the route may still be settling
+    }
+    await delay(500)
+  }
+  throw new Error(`definitions were not ready at ${url}`)
+}
+
 async function withApi(slot, files, alias) {
   const api = spawnLogged(binary, ['all'], apiEnvFor(slot.db, slot.apiPort, alias))
   try {
     await waitFor(`http://127.0.0.1:${slot.apiPort}/healthz`)
+    await warmDefinitions(slot.apiPort)
     console.log(`e2e db=${slot.db} alias=${alias} api=${slot.apiPort} web=${slot.webPort} files=${files.join(' ')}`)
     return await runPlaywright(files, `http://127.0.0.1:${slot.webPort}`)
   } finally {
@@ -354,16 +418,18 @@ async function withApi(slot, files, alias) {
 
 async function runSlot(slot) {
   await waitFor(`http://127.0.0.1:${slot.webPort}/`)
-  if (groups.length === 1) {
+  if (!isolate) {
     ensureDatabase(slot.db)
     return withApi(slot, slot.files, slot.alias)
   }
-  // Each file gets a reseeded database and its own Typesense alias. Files that
-  // share a database leave a second object table, and the next file's strict
-  // lookup fails.
+  // Each file gets a reseeded database and its own Typesense alias. `braian all`
+  // seeds and reindexes before it listens, so /healthz means the alias is the
+  // seed, not an empty collection. A new Playwright process drops browser
+  // state from the previous file. Files that share a database leave saved
+  // views behind, and the next file opens the wrong row.
   for (let i = 0; i < slot.files.length; i += 1) {
     resetDatabase(slot.db)
-    const alias = `${slot.alias}_${i}`
+    const alias = `${slot.alias}_s${shard}_${i}`
     const status = await withApi(slot, [slot.files[i]], alias)
     if (status !== 0) return status
   }

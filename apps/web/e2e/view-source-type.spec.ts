@@ -10,10 +10,22 @@ async function login(page: Page) {
   await expect(page.getByTestId('object-table')).toBeVisible({ timeout: 60_000 })
 }
 
+async function openProducts(page: Page) {
+  await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
+  await expect(page.getByTestId('object-table')).toBeVisible()
+}
+
 test.describe('view source all-of-type (Notion 103 PR 1)', () => {
   test('Ctrl+K Data source and view menu Select source change the type source', async ({ page }) => {
     test.setTimeout(120_000)
     await login(page)
+    // Data source is only offered when the focused pane is an object table.
+    // A fresh seed focuses another pane, and the only "Data source" hit is
+    // then Ask AI. Earlier files on a shared database left Products focused.
+    await openProducts(page)
+    await expect(page.getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
+    // The workspace tab can show the table while focus stays on another pane.
+    await page.getByTestId('object-table').click({ position: { x: 24, y: 24 } })
 
     await page.keyboard.press('Control+k')
     await expect(page.getByTestId('command-palette')).toBeVisible()
@@ -22,6 +34,7 @@ test.describe('view source all-of-type (Notion 103 PR 1)', () => {
       .getByTestId('command-palette')
       .locator('.hit')
       .filter({ hasText: 'Data source' })
+      .filter({ hasNotText: 'Ask AI' })
       .first()
     await expect(root).toBeVisible()
     await root.click()
