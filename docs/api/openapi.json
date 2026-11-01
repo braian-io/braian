@@ -11381,6 +11381,17 @@
           "name"
         ],
         "properties": {
+          "catalog": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/FreeObject",
+                "description": "Workspace-global catalog `{ \"catalogId\": \"<uuid>\" }`. Views without\n`catalogOverride` follow it."
+              }
+            ]
+          },
           "id": {
             "type": [
               "string",
@@ -11436,9 +11447,14 @@
           "name",
           "locked",
           "layout",
-          "owner_id"
+          "owner_id",
+          "catalog"
         ],
         "properties": {
+          "catalog": {
+            "$ref": "#/components/schemas/FreeObject",
+            "description": "Workspace-global catalog `{ \"catalogId\": \"<uuid>\" }`."
+          },
           "id": {
             "type": "string",
             "format": "uuid"

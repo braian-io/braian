@@ -2894,7 +2894,6 @@ export interface components {
             url: string;
         };
         WorkspaceBody: {
-            /** Workspace-global catalog `{ catalogId }`. */
             catalog?: null | components["schemas"]["FreeObject"];
             /** Format: uuid */
             id?: string | null;
@@ -2907,7 +2906,7 @@ export interface components {
             workspaces: components["schemas"]["WorkspaceRow"][];
         };
         WorkspaceRow: {
-            /** Workspace-global catalog `{ catalogId }`. */
+            /** @description Workspace-global catalog `{ "catalogId": "<uuid>" }`. */
             catalog: components["schemas"]["FreeObject"];
             /** Format: uuid */
             id: string;
