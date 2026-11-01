@@ -12,12 +12,16 @@ async function login(page: Page) {
 
 /** Open the header picker only after /v1/catalogs has returned source rows. */
 async function waitForCatalogs(page: Page) {
-  await page.waitForFunction(async () => {
-    const response = await fetch('/v1/catalogs', { credentials: 'include' })
-    if (!response.ok) return false
-    const rows = await response.json()
-    return Array.isArray(rows) && rows.some((row: { key?: string }) => row.key === 'sap')
-  })
+  await expect
+    .poll(async () => {
+      const response = await page.evaluate(async () => {
+        const res = await fetch('/v1/catalogs', { credentials: 'include' })
+        if (!res.ok) return [] as { key?: string }[]
+        return (await res.json()) as { key?: string }[]
+      })
+      return Array.isArray(response) && response.some((row) => row.key === 'sap')
+    }, { timeout: 30_000 })
+    .toBe(true)
 }
 
 async function pickCatalog(page: Page, name: RegExp) {
