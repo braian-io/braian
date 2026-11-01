@@ -182,9 +182,7 @@ pub async fn create_object(
     if !errors.is_empty() && !source_accepts_invalid(&state).await {
         return Err(Problem::validation(errors, Vec::new()));
     }
-    if let Err(problem) = catalog_is_editable(&state, &identity).await {
-        return Err(problem);
-    }
+    catalog_is_editable(&state, &identity).await?;
     if !identity.may_commit() {
         return file_suggestion(
             &state,
@@ -315,17 +313,17 @@ pub async fn batch_get(
             continue;
         }
         let seq = seqs.get(&stored.object.id).copied().unwrap_or(0);
-        objects.push(object_body(
-            &cached,
-            &stored,
+        objects.push(object_body(ObjectBody {
+            cached: &cached,
+            stored: &stored,
             seq,
-            include,
-            full_values,
-            audits.get(&stored.object.id),
-            Vec::new(),
-            None,
-            None,
-        ));
+            include_inapplicable: include,
+            validate: full_values,
+            audit: audits.get(&stored.object.id),
+            links: Vec::new(),
+            owners: None,
+            origin: None,
+        }));
     }
     Ok(Json(BatchGetResponse { objects }))
 }
@@ -365,12 +363,8 @@ pub async fn patch_object(
         if !report.errors.is_empty() && !source_accepts_invalid(&state).await {
             return Err(Problem::validation(report.errors, report.warnings));
         }
-        if let Err(problem) = catalog_is_editable(&state, &identity).await {
-            return Err(problem);
-        }
-        if let Err(problem) = reject_owned_fields(&state, &identity, id, &body.values).await {
-            return Err(problem);
-        }
+        catalog_is_editable(&state, &identity).await?;
+        reject_owned_fields(&state, &identity, id, &body.values).await?;
         if !identity.may_commit() {
             return file_suggestion(
                 &state,
@@ -737,17 +731,17 @@ pub(crate) async fn object_response(
     } else {
         None
     };
-    let body = object_body(
+    let body = object_body(ObjectBody {
         cached,
         stored,
         seq,
         include_inapplicable,
         validate,
-        audit.as_ref(),
+        audit: audit.as_ref(),
         links,
         owners,
         origin,
-    );
+    });
     (
         StatusCode::OK,
         [(header::ETAG, etag(stored.version))],
@@ -836,17 +830,30 @@ pub(crate) async fn load_object(state: &AppState, id: ObjectId) -> Result<Stored
     }
 }
 
-fn object_body(
-    cached: &CachedModel,
-    stored: &StoredObject,
+struct ObjectBody<'a> {
+    cached: &'a CachedModel,
+    stored: &'a StoredObject,
     seq: i64,
     include_inapplicable: bool,
     validate: bool,
-    audit: Option<&braian_store::ObjectAudit>,
+    audit: Option<&'a braian_store::ObjectAudit>,
     links: Vec<crate::links::LinkSide>,
     owners: Option<Value>,
     origin: Option<Value>,
-) -> ObjectResponse {
+}
+
+fn object_body(body: ObjectBody<'_>) -> ObjectResponse {
+    let ObjectBody {
+        cached,
+        stored,
+        seq,
+        include_inapplicable,
+        validate,
+        audit,
+        links,
+        owners,
+        origin,
+    } = body;
     let applicable = cached
         .model
         .applicable_ids(stored.object.type_id, &stored.object.groups)

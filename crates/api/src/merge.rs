@@ -274,20 +274,19 @@ pub async fn apply_profile(
             _ => None,
         };
         let mut write_error = None;
+        let write = MergeWrite {
+            master: &master_store,
+            model: &master_model,
+            defs: &master_defs,
+            actor,
+            profile: &profile,
+            spec: &spec,
+            source,
+            planned: &planned,
+        };
         if !dry_run && planned.errors.is_empty() {
             if planned.create && may_create {
-                if let Err(message) = create_master(
-                    &master_store,
-                    &master_model,
-                    &master_defs,
-                    actor,
-                    &profile,
-                    &spec,
-                    source,
-                    &planned,
-                )
-                .await
-                {
+                if let Err(message) = create_master(&write).await {
                     write_error = Some(message);
                 } else if let Some(text) =
                     source.values.get(&spec.master_key).and_then(Value::as_str)
@@ -295,18 +294,7 @@ pub async fn apply_profile(
                     master_key = Some(text.to_owned());
                 }
             } else if !planned.create {
-                apply_one(
-                    &master_store,
-                    &master_model,
-                    &master_defs,
-                    actor,
-                    &profile,
-                    &spec,
-                    source,
-                    &planned,
-                    master_key.as_deref(),
-                )
-                .await?;
+                apply_one(&write, master_key.as_deref()).await?;
             }
         }
         let mut errors: Vec<Value> = planned
@@ -460,16 +448,28 @@ fn action_of(planned: &MergePlan) -> &'static str {
     }
 }
 
-async fn create_master(
-    master: &Store,
-    model: &CompiledModel,
-    defs: &DefinitionSet,
-    actor: &Actor,
-    profile: &MergeProfile,
-    spec: &ProfileSpec,
-    source: &WireObject,
-    planned: &MergePlan,
-) -> Result<(), String> {
+struct MergeWrite<'a> {
+    master: &'a Store,
+    model: &'a CompiledModel,
+    defs: &'a DefinitionSet,
+    actor: &'a Actor,
+    profile: &'a MergeProfile,
+    spec: &'a ProfileSpec,
+    source: &'a WireObject,
+    planned: &'a MergePlan,
+}
+
+async fn create_master(write: &MergeWrite<'_>) -> Result<(), String> {
+    let MergeWrite {
+        master,
+        model,
+        defs,
+        actor,
+        profile,
+        spec,
+        source,
+        planned,
+    } = write;
     let mut values = Map::new();
     for (key, value) in &source.values {
         if value.is_null() || model.attribute_by_key(key).is_none() {
@@ -529,17 +529,17 @@ fn mapped_groups(spec: &ProfileSpec, planned: &MergePlan) -> BTreeMap<String, Op
     }
 }
 
-async fn apply_one(
-    master: &Store,
-    model: &CompiledModel,
-    defs: &DefinitionSet,
-    actor: &Actor,
-    profile: &MergeProfile,
-    spec: &ProfileSpec,
-    source: &WireObject,
-    planned: &MergePlan,
-    master_key: Option<&str>,
-) -> Result<(), Problem> {
+async fn apply_one(write: &MergeWrite<'_>, master_key: Option<&str>) -> Result<(), Problem> {
+    let MergeWrite {
+        master,
+        model,
+        defs,
+        actor,
+        profile,
+        spec,
+        source,
+        planned,
+    } = write;
     let Some(master_key) = master_key else {
         return Ok(());
     };
