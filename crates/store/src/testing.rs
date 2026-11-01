@@ -186,7 +186,7 @@ fn template_name() -> String {
         include_str!("../migrations/V33__catalogs.sql"),
         include_str!("../migrations/V34__merge.sql"),
         include_str!("../migrations/V35__catalog_ops.sql"),
-        include_str!("../migrations/V37__dynamic_selections.sql"),
+        include_str!("../migrations/V36__dynamic_selections.sql"),
     ];
     for sql in sqls {
         for byte in sql.as_bytes() {
