@@ -13,17 +13,19 @@ async function login(page: Page) {
 test.describe('view source all-of-type (Notion 103 PR 1)', () => {
   test('Ctrl+K Data source and view menu Select source change the type source', async ({ page }) => {
     test.setTimeout(120_000)
+    // The type submenu is copied from the definition list at the moment of the
+    // click. The object table can paint first, so wait until that GET has
+    // landed or the submenu is empty for the rest of the test.
+    const defsReady = page.waitForResponse(
+      (response) =>
+        response.url().includes('/v1/definitions') && response.request().method() === 'GET' && response.ok(),
+    )
     await login(page)
+    await defsReady
 
     await page.keyboard.press('Control+k')
     await expect(page.getByTestId('command-palette')).toBeVisible()
-    // Search results replace the list when they arrive. Clicking before that
-    // response lands hits a row that is gone, and the type submenu never opens.
-    const searchReady = page.waitForResponse(
-      (response) => response.url().includes('/v1/search') && response.request().method() === 'GET' && response.ok(),
-    )
     await page.getByTestId('palette-input').fill('Data source')
-    await searchReady
     const root = page
       .getByTestId('command-palette')
       .locator('.hit')
