@@ -7,6 +7,7 @@ import { ChevronDown, ChevronRight, File, Folder, FolderOpen } from 'lucide-reac
 import { StatusBar, useOnline } from './status-bar'
 import { isConnected, type LiveState } from './status-message'
 import { UserMenu } from './user-menu'
+import { CatalogSelector } from './catalog-selector'
 import { api, freeObject, jsonRecord, keepaliveJsonPut, operationId, recordTitle, textValue, type Json } from './api'
 import { AssortmentList, NewSelectionDialog } from './assortments'
 import { humanizeLive, objectIdFromLive } from './activity'
@@ -65,6 +66,9 @@ import { healDataModelWorkspace, isKnownViewType, layoutHasMissingViews, migrate
 import { persistWorkspaceMigration } from './workspace-migration-persist'
 import { commandPlaceholder, displayViewTitle, migrateSavedWorkspace, singularOf, typeNames } from './type-labels'
 import { applyTypeSource, viewSourceLabel } from './view-source'
+import { MASTER_CATALOG_ID } from './catalog-ref'
+import { workspaceCatalogRef } from './catalog-scope'
+import { useCatalogNamesById } from './catalog-list'
 import { onUi } from './ui-bus'
 import { panesFromCatalog, publishFrame, publishMarked } from './ui-context'
 import {
@@ -92,7 +96,7 @@ import {
 
 type View = { id: string; type: string; title: string; pane?: string; position?: number; state: Json }
 type ListedWorkspace = { id: string; name: string; locked?: boolean; share_token?: string | null; layout?: Json | null; owner_id?: string }
-type Workspace = { id: string; name: string; locked: boolean; share_token?: string | null; layout: Json; owner_id?: string; views?: View[] | null }
+type Workspace = { id: string; name: string; locked: boolean; share_token?: string | null; layout: Json; owner_id?: string; catalog?: { catalogId?: string } | null; views?: View[] | null }
 
 function viewRows<T>(views: readonly T[] | null | undefined): T[] {
   return views ? [...views] : []
@@ -193,6 +197,8 @@ export function Shell() {
   const [paletteStartAddView, setPaletteStartAddView] = useState(false)
   const [paletteStartSelectSource, setPaletteStartSelectSource] = useState(false)
   const [paletteStartNewFromTemplate, setPaletteStartNewFromTemplate] = useState(false)
+  const [paletteStartSwitchCatalog, setPaletteStartSwitchCatalog] = useState(false)
+  const catalogNamesById = useCatalogNamesById(me.isSuccess)
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [feedbackCapture, setFeedbackCapture] = useState<FeedbackCapture | null>(null)
   const [help, setHelp] = useState(false)
@@ -407,6 +413,7 @@ export function Shell() {
         const focus = docRef.current?.focus
         placeOverride.current = focus ? { target: focus, zone: 'center' } : { zone: 'center' }
         setPaletteStartNewFromTemplate(false)
+        setPaletteStartSwitchCatalog(false)
         setPaletteStartSelectSource(false)
         setPaletteStartAddView(true)
         setPaletteMode('list')
@@ -419,6 +426,7 @@ export function Shell() {
         }
         setPaletteStartAddView(false)
         setPaletteStartNewFromTemplate(false)
+        setPaletteStartSwitchCatalog(false)
         setPaletteStartSelectSource(true)
         setPaletteMode('list')
         setPaletteEpoch((value) => value + 1)
@@ -427,7 +435,17 @@ export function Shell() {
         setFieldsEditColumnId(null)
         setPaletteStartAddView(false)
         setPaletteStartSelectSource(false)
+        setPaletteStartSwitchCatalog(false)
         setPaletteStartNewFromTemplate(true)
+        setPaletteMode('list')
+        setPaletteEpoch((value) => value + 1)
+      }),
+      registerCommandRunner('catalog:switch', () => {
+        setFieldsEditColumnId(null)
+        setPaletteStartAddView(false)
+        setPaletteStartSelectSource(false)
+        setPaletteStartNewFromTemplate(false)
+        setPaletteStartSwitchCatalog(true)
         setPaletteMode('list')
         setPaletteEpoch((value) => value + 1)
       }),
@@ -510,23 +528,63 @@ export function Shell() {
 
   useEffect(() => {
     const onSet = (event: Event) => {
-      const detail = (event as CustomEvent<{ viewId?: string; catalog?: string }>).detail
+      const detail = (event as CustomEvent<{
+        viewId?: string
+        catalogId?: string
+        catalog?: string
+        scope?: 'workspace' | 'view'
+      }>).detail
       const surfaceNow = workspaceRef.current
-      if (!detail?.viewId || !detail.catalog || !surfaceNow) return
-      const found = viewRows(surfaceNow.views).find((view) => view.id === detail.viewId)
-      if (!found) return
-      const state = freeObject({ ...found.state, catalog: detail.catalog })
-      void api.post('/v1/views', {
-        body: {
-          id: found.id,
-          workspace_id: surfaceNow.id,
-          type: found.type,
-          title: found.title,
-          pane: found.pane ?? 'center',
-          position: found.position ?? 0,
-          state,
-        },
-      }).then(() => queryClient.invalidateQueries({ queryKey: ['workspace', surfaceNow.id] }))
+      if (!surfaceNow) return
+      const raw = detail?.catalogId || (typeof detail?.catalog === 'string' ? detail.catalog : undefined)
+      if (!raw) return
+      const looksLikeUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw)
+      const resolveId = async (): Promise<string | null> => {
+        if (looksLikeUuid) return raw
+        const response = await fetch('/v1/catalogs', { credentials: 'include' })
+        if (!response.ok) return null
+        const listed = (await response.json()) as Array<{ id?: string; key?: string }>
+        return listed.find((row) => row.key === raw)?.id ?? null
+      }
+      void resolveId().then((catalogId) => {
+        if (!catalogId) return
+        const scope = detail.scope === 'view' || detail.viewId ? 'view' : 'workspace'
+        if (scope === 'view') {
+          const viewId = detail.viewId || docRef.current?.focus
+          if (!viewId) return
+          const found = viewRows(surfaceNow.views).find((view) => view.id === viewId)
+          if (!found) return
+          const state = freeObject({ ...found.state, catalogOverride: { catalogId } })
+          delete (state as { catalog?: unknown }).catalog
+          void api.post('/v1/views', {
+            body: {
+              id: found.id,
+              workspace_id: surfaceNow.id,
+              type: found.type,
+              title: found.title,
+              pane: found.pane ?? 'center',
+              position: found.position ?? 0,
+              state,
+            },
+          }).then(() => queryClient.invalidateQueries({ queryKey: ['workspace', surfaceNow.id] }))
+          return
+        }
+        void api.post('/v1/workspaces', {
+          body: {
+            id: surfaceNow.id,
+            name: surfaceNow.name,
+            locked: surfaceNow.locked,
+            share_token: surfaceNow.share_token ?? undefined,
+            layout: surfaceNow.layout ?? {},
+            catalog: { catalogId },
+          },
+        }).then(() => {
+          void queryClient.invalidateQueries({ queryKey: ['workspace', surfaceNow.id] })
+          void queryClient.invalidateQueries({ queryKey: ['workspaces'] })
+          void queryClient.invalidateQueries({ queryKey: ['objects'] })
+          void queryClient.invalidateQueries({ queryKey: ['definitions'] })
+        })
+      })
     }
     window.addEventListener('braian-set-catalog', onSet)
     return () => window.removeEventListener('braian-set-catalog', onSet)
@@ -834,10 +892,19 @@ export function Shell() {
   useEffect(() => {
     return onUi((event) => {
       if (event.name === 'ui.set_theme') setTheme(event.args.theme === 'light' ? 'light' : 'dark')
-      if (event.name === 'ui.set_catalog' && typeof event.args.catalog === 'string') {
-        const viewId = docRef.current?.focus
-        if (viewId) {
-          window.dispatchEvent(new CustomEvent('braian-set-catalog', { detail: { viewId, catalog: event.args.catalog } }))
+      if (event.name === 'ui.set_catalog') {
+        const catalogId = typeof event.args.catalogId === 'string'
+          ? event.args.catalogId
+          : typeof event.args.catalog === 'string'
+            ? event.args.catalog
+            : undefined
+        if (catalogId) {
+          const viewId = typeof event.args.viewId === 'string' ? event.args.viewId : undefined
+          window.dispatchEvent(new CustomEvent('braian-set-catalog', {
+            detail: viewId
+              ? { scope: 'view', viewId, catalogId }
+              : { scope: 'workspace', catalogId },
+          }))
         }
       }
       if (event.name === 'ui.open_workspace' && typeof event.args.id === 'string') setWorkspaceId(event.args.id)
@@ -1227,6 +1294,15 @@ export function Shell() {
           ))}
         </nav>
         <span className="spacer" />
+        <CatalogSelector
+          catalogId={workspaceCatalogRef(workspace.data)?.catalogId || MASTER_CATALOG_ID}
+          disabled={Boolean(workspace.data?.locked)}
+          onSelect={(catalogId) => {
+            window.dispatchEvent(new CustomEvent('braian-set-catalog', {
+              detail: { scope: 'workspace', catalogId },
+            }))
+          }}
+        />
         <UserMenu
           name={user.display_name}
           email={user.email}
@@ -1242,7 +1318,7 @@ export function Shell() {
         {doc && surface && !layoutHealPending ? (
           <WorkspaceDock
             doc={doc}
-            views={viewRows(surface.views).map((view) => ({ ...view, title: displayViewTitle(view, typeCatalog, openTypeKey), sourceLabel: viewSourceLabel(view, typeCatalog) }))}
+            views={viewRows(surface.views).map((view) => ({ ...view, title: displayViewTitle(view, typeCatalog, openTypeKey), sourceLabel: viewSourceLabel(view, typeCatalog, workspaceCatalogRef(surface), catalogNamesById) }))}
             onChange={commitDoc}
             renderView={(item) => {
               const full = viewRows(surface.views).find((view) => view.id === item.id)
@@ -1290,7 +1366,7 @@ export function Shell() {
               fieldsMode={paletteMode === 'fields'}
               fieldsEditColumnId={fieldsEditColumnId}
               onFieldsConsumed={() => setFieldsEditColumnId(null)}
-          key={`${paletteMode}:${paletteEpoch}:${paletteStartAddView ? 'add-view' : paletteStartSelectSource ? 'select-source' : paletteStartNewFromTemplate ? 'new-template' : 'root'}`}
+          key={`${paletteMode}:${paletteEpoch}:${paletteStartAddView ? 'add-view' : paletteStartSelectSource ? 'select-source' : paletteStartNewFromTemplate ? 'new-template' : paletteStartSwitchCatalog ? 'switch-catalog' : 'root'}`}
           ai={paletteMode === 'ai'}
           session={session}
           workspaces={orderedWorkspaces}
@@ -1303,6 +1379,8 @@ export function Shell() {
           startAddView={paletteStartAddView}
           startSelectSource={paletteStartSelectSource}
           startNewFromTemplate={paletteStartNewFromTemplate}
+          startSwitchCatalog={paletteStartSwitchCatalog}
+          workspaceCatalogId={workspaceCatalogRef(workspace.data)?.catalogId || MASTER_CATALOG_ID}
           onSelectSourceType={(typeId) => { void applyViewTypeSourceRef.current(typeId) }}
           onPrepareAddView={() => {
             const focus = docRef.current?.focus
@@ -1313,6 +1391,7 @@ export function Shell() {
             setPaletteStartAddView(false)
             setPaletteStartSelectSource(false)
             setPaletteStartNewFromTemplate(false)
+            setPaletteStartSwitchCatalog(false)
             setPaletteMode(null)
           }}
         />

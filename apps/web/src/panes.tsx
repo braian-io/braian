@@ -3,7 +3,8 @@ import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/rea
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { History as HistoryIcon } from 'lucide-react'
 import { ApiError, api, catalogName, failureLines, freeObject, jsonRecord, recordNumber, recordTitle, searchQuery, textValue, type Json } from './api'
-import { catalogKeyOf, inCatalog } from './catalog-scope'
+import { catalogKeyOf, inCatalog, workspaceCatalogRef } from './catalog-scope'
+import { useCatalogIdToKey } from './catalog-list'
 import { newObjectBody } from './new-object'
 import { attributeByKey, indexSort, readIndexed, sortKeyForColumnId } from './index-fields'
 import { cellEditShouldPatch, cellEditValuesBody, isEditingCell, isEditableColumn, resolveCellEditInitial, valueListKeyForColumn, columnBaseKey } from './cell-edit'
@@ -90,7 +91,7 @@ export type PanesView = {
   state: Json
 }
 
-export type PanesWorkspace = { id: string; locked?: boolean }
+export type PanesWorkspace = { id: string; locked?: boolean; catalog?: { catalogId?: string } | null }
 
 type ObjRow = { id: string; key: string; type: string; version: string; name: string; status: string; doc: Json }
 
@@ -252,7 +253,8 @@ export function ObjectTable({
     staleTime: 30_000,
   })
 
-  const catalogKey = catalogKeyOf(view.state as { catalog?: string })
+  const idToKey = useCatalogIdToKey()
+  const catalogKey = catalogKeyOf(view.state, workspaceCatalogRef(workspace), idToKey)
   const selectedOwners = useQuery({
     queryKey: ['object-origin', session.objectId],
     queryFn: async () => {

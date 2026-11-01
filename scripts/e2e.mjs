@@ -101,7 +101,7 @@ const measuredSeconds = {
   'e2e/user-menu.spec.ts': 25,
   'e2e/new-version-status.spec.ts': 20,
   'e2e/view-source-type.spec.ts': 35,
-  'e2e/catalogs.spec.ts': 8,
+  'e2e/catalogs.spec.ts': 45,
   'e2e/delete-workspace.spec.ts': 28,
   'e2e/open-type-view-ready.spec.ts': 25,
   'e2e/shortcut-registry.spec.ts': 20,

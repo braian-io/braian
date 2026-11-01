@@ -4,6 +4,7 @@ export const uiLanguage = 'en' as const
 export const copy = {
   product: 'Braian',
   catalog: 'Catalog',
+  switchCatalog: 'Switch catalog',
   masterCatalog: 'Master catalog',
   catalogs: 'Catalogs',
   mergeProfiles: 'Merge profiles',

@@ -351,6 +351,25 @@ impl Store {
         Ok(())
     }
 
+    /// Sets the workspace-global catalog. Views without catalogOverride follow it.
+    pub async fn set_workspace_catalog(
+        &self,
+        id: Uuid,
+        catalog_id: crate::ids::CatalogId,
+    ) -> Result<(), Error> {
+        let client = self.checkout().await?;
+        let updated = client
+            .execute(
+                "UPDATE workspaces SET catalog_id = $2 WHERE id = $1",
+                &[&id, &catalog_id.as_uuid()],
+            )
+            .await?;
+        if updated == 0 {
+            return Err(Error::Data(format!("workspace {id} not found")));
+        }
+        Ok(())
+    }
+
     pub async fn assign_workspace(&self, workspace_id: Uuid, user_id: Uuid) -> Result<(), Error> {
         let client = self.checkout().await?;
         client
@@ -1856,6 +1875,7 @@ fn user_from_row_at(row: &tokio_postgres::Row, start: usize) -> UserRecord {
 }
 
 fn workspace_json(row: &tokio_postgres::Row) -> Value {
+    let catalog_id: Uuid = row.get("catalog_id");
     serde_json::json!({
         "id": row.get::<_, Uuid>("id"),
         "name": row.get::<_, String>("name"),
@@ -1863,7 +1883,7 @@ fn workspace_json(row: &tokio_postgres::Row) -> Value {
         "share_token": row.get::<_, Option<String>>("share_token"),
         "layout": row.get::<_, Value>("layout"),
         "owner_id": row.get::<_, Uuid>("owner_id"),
-        "catalog_id": row.get::<_, Uuid>("catalog_id"),
+        "catalog": { "catalogId": catalog_id },
     })
 }
 
