@@ -49,6 +49,10 @@ export type StandardEditableTableProps<T extends { id: string }> = {
   onReviewAndSave?: () => void | Promise<void>
   /** Called when a row is activated (click / Enter on non-edit). */
   onActivateRow?: (row: T) => void
+  /**
+   * Controlled active row. When omitted, the table keeps its own selection
+   * so click / arrow keys still show `.standard-grid-row.on`.
+   */
   activeRowId?: string | null
   filterValue?: string
   onFilterChange?: (value: string) => void
@@ -90,7 +94,7 @@ export function StandardEditableTable<T extends { id: string }>({
   newRowLabel = copy.newRow,
   onReviewAndSave,
   onActivateRow,
-  activeRowId,
+  activeRowId: activeRowIdProp,
   filterValue,
   onFilterChange,
   testId = 'standard-editable-table',
@@ -109,8 +113,19 @@ export function StandardEditableTable<T extends { id: string }>({
 }: StandardEditableTableProps<T>) {
   const [editing, setEditing] = useState<EditCell | null>(null)
   const [editValue, setEditValue] = useState('')
+  const [internalActiveRowId, setInternalActiveRowId] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement | HTMLSelectElement | null>(null)
   const dirty = Object.keys(draftRows).length > 0
+  const controlled = activeRowIdProp !== undefined
+  const activeRowId = controlled ? activeRowIdProp : internalActiveRowId
+
+  const activateRow = useCallback(
+    (row: T) => {
+      if (!controlled) setInternalActiveRowId(row.id)
+      onActivateRow?.(row)
+    },
+    [controlled, onActivateRow],
+  )
 
   const merged = useMemo(() => {
     const byId = new Map(rows.map((row) => [row.id, row]))
@@ -198,7 +213,7 @@ export function StandardEditableTable<T extends { id: string }>({
     onDraftRowsChange({ ...draftRows, [row.id]: row })
     const first = editableColumnsFor(row)[0]
     queueMicrotask(() => {
-      onActivateRow?.(row)
+      activateRow(row)
       if (first) beginEdit(row, first)
     })
   }
@@ -227,7 +242,7 @@ export function StandardEditableTable<T extends { id: string }>({
   const openMenu = (row: T | null, x: number, y: number) => {
     const context = resolveContext(row)
     if (!context) return
-    if (row) onActivateRow?.(row)
+    if (row) activateRow(row)
     openSharedContextMenu({
       context,
       x,
@@ -265,7 +280,7 @@ export function StandardEditableTable<T extends { id: string }>({
       const next = filtered[index + (event.key === 'ArrowDown' ? 1 : -1)]
       if (!next) return
       event.preventDefault()
-      onActivateRow?.(next)
+      activateRow(next)
       const grid = event.currentTarget.parentElement
       queueMicrotask(() => {
         const el = grid?.querySelector<HTMLElement>(`[data-row-id="${CSS.escape(next.id)}"]`)
@@ -276,7 +291,7 @@ export function StandardEditableTable<T extends { id: string }>({
     if (event.key === 'Enter' || event.key === 'F2') {
       const column = editableColumnsFor(row)[0]
       if (!column) {
-        if (event.key === 'Enter') onActivateRow?.(row)
+        if (event.key === 'Enter') activateRow(row)
         return
       }
       event.preventDefault()
@@ -333,7 +348,7 @@ export function StandardEditableTable<T extends { id: string }>({
               data-row-id={row.id}
               data-key={getRowKeyAttr?.(row)}
               data-draft={isDraft ? 'true' : undefined}
-              onClick={() => onActivateRow?.(row)}
+              onClick={() => activateRow(row)}
               onContextMenu={(event) => onRowContextMenu(event, row)}
               onKeyDown={(event) => onRowKey(event, row)}
             >
