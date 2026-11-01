@@ -24,6 +24,8 @@ test.describe('view source all-of-type (Notion 103 PR 1)', () => {
     // then Ask AI. Earlier files on a shared database left Products focused.
     await openProducts(page)
     await expect(page.getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
+    // The workspace tab can show the table while focus stays on another pane.
+    await page.getByTestId('object-table').click({ position: { x: 24, y: 24 } })
 
     await page.keyboard.press('Control+k')
     await expect(page.getByTestId('command-palette')).toBeVisible()
