@@ -33,16 +33,38 @@ async function pickCatalog(page: Page, name: RegExp) {
   await menu.getByRole('menuitem', { name }).click()
 }
 
-/** Playwright runs files alphabetically with one shared DB (workers=1). Tests that
- * flip Products to SAP must put Master back or later specs lose Mature cheddar. */
+const MASTER_CATALOG_ID = '018f1000-0000-7000-8000-000000000001'
+const PRODUCTS_WORKSPACE_ID = '018f2000-0000-7000-8000-000000000003'
+
+/** Reset Products workspace catalog via API (no UI). File is named z-catalogs so
+ * Playwright's alphabetical order keeps it last with workers=1 shared DB. */
 async function restoreProductsMaster(page: Page) {
-  await page.locator('nav.tabs').getByRole('button', { name: /Products/ }).click()
-  const selector = page.getByTestId('catalog-selector')
-  await expect(selector).toBeVisible({ timeout: 30_000 })
-  if (!(await selector.innerText()).match(/Master catalog/i)) {
-    await pickCatalog(page, /Master catalog/)
-  }
-  await expect(selector).toContainText(/Master catalog/i)
+  await page.evaluate(
+    async ({ workspaceId, catalogId }) => {
+      const res = await fetch(`/v1/workspaces/${workspaceId}`, { credentials: 'include' })
+      if (!res.ok) return
+      const ws = await res.json() as {
+        name?: string
+        locked?: boolean
+        share_token?: string | null
+        layout?: unknown
+      }
+      await fetch('/v1/workspaces', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: workspaceId,
+          name: ws.name,
+          locked: ws.locked ?? false,
+          share_token: ws.share_token ?? undefined,
+          layout: ws.layout ?? {},
+          catalog: { catalogId },
+        }),
+      })
+    },
+    { workspaceId: PRODUCTS_WORKSPACE_ID, catalogId: MASTER_CATALOG_ID },
+  )
 }
 
 test.afterEach(async ({ page }) => {
