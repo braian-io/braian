@@ -205,6 +205,7 @@ impl Store {
             )
             .await?;
         crate::ops::backfill_attribute_parts(&mut client).await?;
+        crate::view_repair::repair_link_and_catalog_views(&mut client).await?;
         drop(client);
         handle.abort();
 

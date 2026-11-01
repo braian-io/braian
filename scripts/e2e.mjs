@@ -59,6 +59,7 @@ const specs = [
   'e2e/user-menu.spec.ts',
   'e2e/new-version-status.spec.ts',
   'e2e/view-source-type.spec.ts',
+  'e2e/link-source-repair.spec.ts',
   'e2e/z-catalogs.spec.ts',
 ]
 

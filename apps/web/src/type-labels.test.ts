@@ -103,6 +103,43 @@ describe('type labels', () => {
     expect(migrateSavedWorkspace({ name: 'Enrich objects' }, [], types).name).toBeUndefined()
   })
 
+  it('labels link types distinctly and remaps link-bound tables', () => {
+    const linkDefs: Json = {
+      ...defs,
+      types: [
+        ...(defs.types as Json[]),
+        {
+          id: '210',
+          key: 'product_articles',
+          kind: 'link',
+          singular: { en: 'Product' },
+          plural: { en: 'Products' },
+          link: {
+            from_types: ['200'],
+            to_types: ['201'],
+            from_label: { key: 'product', labels: { en: 'Product' } },
+            to_label: { key: 'articles', labels: { en: 'Articles' } },
+          },
+        },
+      ],
+    }
+    const types = typeNames(linkDefs, 'en')
+    const link = types.find((item) => item.key === 'product_articles')
+    expect(link?.plural).toBe('Product–Articles')
+    expect(link?.linkFrom).toEqual({ id: '200', key: 'product' })
+    expect(typeViewPaletteItems(types).map((item) => item.id)).not.toContain('type-view:210')
+
+    const migration = migrateSavedWorkspace(
+      { name: 'Articles' },
+      [{ id: 'products', type: 'object_table', title: 'Products', state: { object_type: '210', type_key: 'product_articles' } }],
+      types,
+    )
+    expect(migration.changed).toBe(true)
+    expect(migration.views).toEqual([
+      { id: 'products', title: 'Products', state: { object_type: '200', type_key: 'product' } },
+    ])
+  })
+
   it('names list and detail views from the open type', () => {
     const types = typeNames(defs, 'en')
     expect(displayViewTitle({ type: 'object_table', title: 'Objects', state: { type_key: 'article' } }, types)).toBe('Articles')

@@ -55,6 +55,31 @@ pub fn view_catalog_override(state: &Value) -> Option<CatalogRef> {
     state.get("catalogOverride").and_then(CatalogRef::from_json)
 }
 
+/// Rewrite a legacy string `catalog` key (e.g. `"sap"`) into the structured
+/// `catalogOverride: { "catalogId": "..." }` the resolver now reads.
+///
+/// A state that already carries an explicit `catalogOverride`, or whose key has
+/// no catalog, is left alone. Returns true when the document changed.
+pub fn normalize_legacy_catalog(
+    state: &mut Value,
+    catalog_id_by_key: impl Fn(&str) -> Option<CatalogId>,
+) -> bool {
+    let Some(object) = state.as_object_mut() else {
+        return false;
+    };
+    if object.contains_key("catalogOverride") {
+        return false;
+    }
+    let Some(key) = object.get("catalog").and_then(Value::as_str) else {
+        return false;
+    };
+    let Some(id) = catalog_id_by_key(key) else {
+        return false;
+    };
+    object.insert("catalogOverride".into(), CatalogRef::new(id).to_json());
+    true
+}
+
 pub fn workspace_catalog_ref(workspace: &Value) -> Option<CatalogRef> {
     workspace.get("catalog").and_then(CatalogRef::from_json)
 }
@@ -114,5 +139,26 @@ mod tests {
     fn rejects_label_shaped_refs() {
         assert!(CatalogRef::from_json(&json!("SAP ERP")).is_none());
         assert!(CatalogRef::from_json(&json!({ "name": "SAP" })).is_none());
+    }
+
+    #[test]
+    fn normalizes_legacy_catalog_key_into_override() {
+        let mut state = json!({ "catalog": "sap", "type_key": "product" });
+        assert!(normalize_legacy_catalog(&mut state, |key| {
+            (key == "sap").then_some(sap())
+        }));
+        assert_eq!(
+            state["catalogOverride"],
+            json!({ "catalogId": sap().as_uuid() })
+        );
+        // Idempotent: an existing override stops the second pass.
+        assert!(!normalize_legacy_catalog(&mut state, |_| Some(sap())));
+    }
+
+    #[test]
+    fn legacy_catalog_key_without_a_catalog_is_left_alone() {
+        let mut state = json!({ "catalog": "ghost" });
+        assert!(!normalize_legacy_catalog(&mut state, |_| None));
+        assert!(state.get("catalogOverride").is_none());
     }
 }
