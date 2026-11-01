@@ -198,8 +198,10 @@ test.describe('move column, pathValues flash, live row sweep', () => {
     const descBefore = (await descA.textContent())?.trim() || ''
 
     // Edit Description on tab B
+    await rowB.scrollIntoViewIfNeeded()
     await descCellB.dblclick()
-    const editor = pageB.locator('[data-testid^="cell-editor-description"]').first()
+    // Scope to the cheddar row — page-wide .first() can catch another virtualized editor.
+    const editor = rowB.locator('[data-testid^="cell-editor-description"]').first()
     await expect(editor).toBeVisible()
     await expect(editor).toHaveValue(/firm cow'?s-milk cheddar/i)
     const nextText = `Live sweep ${Date.now()}`

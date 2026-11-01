@@ -342,7 +342,7 @@ fn registry() -> &'static [Operation] {
         },
         Operation {
             name: "ui.set_catalog",
-            title: "Switch the focused view to a catalog",
+            title: "Switch the workspace catalog, or a view override when viewId is set",
             permission: Role::Viewer,
             needs_approval: false,
         },
@@ -2286,6 +2286,27 @@ async fn save_workspace(
         )
         .await
         .map_err(store_status)?;
+    if let Some(catalog_value) = body.catalog.as_ref() {
+        let catalog_ref = braian_store::CatalogRef::from_json(catalog_value).ok_or_else(|| {
+            Problem::new(
+                StatusCode::BAD_REQUEST,
+                "invalid_catalog",
+                "catalog must be { catalogId }",
+            )
+        })?;
+        // Ensure the catalog exists.
+        state
+            .store
+            .catalog_by_id(catalog_ref.catalog_id)
+            .await
+            .map_err(store_status)?
+            .ok_or_else(|| Problem::new(StatusCode::NOT_FOUND, "catalog_not_found", "catalog"))?;
+        state
+            .store
+            .set_workspace_catalog(id, catalog_ref.catalog_id)
+            .await
+            .map_err(store_status)?;
+    }
     Ok(Json(json!({ "id": id })))
 }
 
@@ -6223,6 +6244,10 @@ pub(crate) struct WorkspaceBody {
     share_token: Option<String>,
     #[schema(value_type = Option<crate::http_schema::FreeObject>)]
     layout: Option<Value>,
+    /// Workspace-global catalog `{ "catalogId": "<uuid>" }`. Views without
+    /// `catalogOverride` follow it.
+    #[schema(value_type = Option<crate::http_schema::FreeObject>)]
+    catalog: Option<Value>,
 }
 
 #[derive(Deserialize, IntoParams)]

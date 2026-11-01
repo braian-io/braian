@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useCatalogsQuery } from '../catalog-list'
 import { useState } from 'react'
 import { copy } from '../i18n'
 
@@ -39,7 +40,7 @@ async function sendJson(path: string, body: unknown) {
 
 export function CatalogsView() {
   const queryClient = useQueryClient()
-  const catalogs = useQuery({ queryKey: ['catalogs'], queryFn: () => getJson<CatalogRow[]>('/v1/catalogs') })
+  const catalogs = useCatalogsQuery()
   const [key, setKey] = useState('')
   const [name, setName] = useState('')
   const [editable, setEditable] = useState(true)
@@ -66,17 +67,20 @@ export function CatalogsView() {
     <div className="catalog-admin" data-testid="catalogs-view">
       <h2>{copy.catalogs}</h2>
       <ul>
-        {(catalogs.data ?? []).map((row) => (
-          <li key={row.key}>
+        {(catalogs.data ?? []).map((row) => {
+          const catalogKey = row.key || row.id || ''
+          return (
+          <li key={catalogKey}>
             <strong>{row.name}</strong> <span>{row.key}</span> <span>{row.kind}</span>
-            {row.kind === 'source' ? (
+            {row.kind === 'source' && catalogKey ? (
               <>
-                <button type="button" onClick={() => infer.mutate(row.key)}>{copy.inferModel}</button>
-                <button type="button" onClick={() => cleanup.mutate(row.key)}>{copy.cleanupCatalog}</button>
+                <button type="button" onClick={() => infer.mutate(catalogKey)}>{copy.inferModel}</button>
+                <button type="button" onClick={() => cleanup.mutate(catalogKey)}>{copy.cleanupCatalog}</button>
               </>
             ) : null}
           </li>
-        ))}
+          )
+        })}
       </ul>
       <form
         onSubmit={(event) => {
@@ -110,7 +114,7 @@ const emptySpec = (): Spec => ({
 export function MergeProfilesView() {
   const queryClient = useQueryClient()
   const profiles = useQuery({ queryKey: ['merge-profiles'], queryFn: () => getJson<ProfileRow[]>('/v1/merge/profiles') })
-  const catalogs = useQuery({ queryKey: ['catalogs'], queryFn: () => getJson<CatalogRow[]>('/v1/catalogs') })
+  const catalogs = useCatalogsQuery()
   const [draft, setDraft] = useState({
     key: '',
     name: '',

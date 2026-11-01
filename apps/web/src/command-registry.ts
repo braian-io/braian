@@ -483,6 +483,13 @@ export const registryCommands: RegistryCommand[] = [
     when: (target) => !target.viewType || target.viewType === 'object_table',
   },
   {
+    id: 'catalog:switch',
+    title: copy.switchCatalog,
+    contexts: ['tab', 'empty', 'dock-view'],
+    group: 'views',
+    keywords: ['catalog', 'source', 'master', 'switch', 'byt'],
+  },
+  {
     id: 'workspace:new',
     title: copy.newWorkspace,
     contexts: ['tab'],

@@ -4,6 +4,7 @@
 //! how those documents are split. Spike 1 measured every form; see
 //! `docs/measurements/2026-10-24-spike-1-storage.md`.
 
+mod catalog_resolve;
 mod catalogs;
 mod conflict;
 mod error;
@@ -23,6 +24,10 @@ mod split;
 pub mod testing;
 mod types;
 
+pub use catalog_resolve::{
+    CatalogRef, default_catalog_id, effective_catalog_id, view_catalog_override,
+    workspace_catalog_ref,
+};
 pub use catalogs::{CatalogKind, CatalogRecord};
 pub use error::{Conflict, Error};
 pub use ids::{

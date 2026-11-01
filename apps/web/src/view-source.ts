@@ -1,4 +1,5 @@
 import type { Json } from './api'
+import { catalogOverrideDiffers, viewCatalogOverrideRef, type CatalogRef } from './catalog-ref'
 import { copy } from './i18n'
 import { typeOfView, type TypeName } from './type-labels'
 
@@ -11,15 +12,24 @@ export function applyTypeSource(state: Json | undefined, type: TypeName): Json {
   }
 }
 
-/** Header / demo label for a type-sourced object table. Empty when unbound. */
+/**
+ * Header label for a type-sourced object table.
+ * Appends " · {Catalog}" only when catalogOverride differs from the workspace catalog.
+ */
 export function viewSourceLabel(
   view: { type: string; state?: Json },
   types: TypeName[],
+  workspaceCatalog?: CatalogRef | null,
+  catalogNamesById?: Record<string, string>,
 ): string {
   if (view.type !== 'object_table') return ''
   const bound = typeOfView(view, types)
   if (!bound) return ''
-  return copy.allOfType.replace('{type}', bound.plural)
+  const base = copy.allOfType.replace('{type}', bound.plural)
+  const override = viewCatalogOverrideRef(view.state)
+  if (!catalogOverrideDiffers(override, workspaceCatalog ?? null) || !override) return base
+  const name = catalogNamesById?.[override.catalogId] || override.catalogId
+  return `${base} · ${name}`
 }
 
 export function isObjectTableView(view: { type: string }) {
