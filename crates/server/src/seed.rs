@@ -610,7 +610,7 @@ async fn save_seed_assortment(
     }
     braian_model::translate_assortment_query(&mut query, defs);
     store
-        .save_assortment(id, owner, type_id, name, &query)
+        .save_assortment(id, owner, type_id, name, "manual", &query)
         .await?;
     Ok(())
 }
@@ -2249,6 +2249,7 @@ mod tests {
                 user.id,
                 id("018f0000-0000-7000-8000-000000000201"),
                 "Aged cheese",
+                "manual",
                 &json!({ "group": "food:cheese" }),
             )
             .await

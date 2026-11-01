@@ -180,6 +180,13 @@ fn template_name() -> String {
         include_str!("../migrations/V27__model_table_view_types.sql"),
         include_str!("../migrations/V28__import_drafts.sql"),
         include_str!("../migrations/V29__import_overrides_and_mappings.sql"),
+        include_str!("../migrations/V30__proposal_list_view.sql"),
+        include_str!("../migrations/V31__import_rows_unchanged.sql"),
+        include_str!("../migrations/V32__review_proposal_view_title.sql"),
+        include_str!("../migrations/V33__catalogs.sql"),
+        include_str!("../migrations/V34__merge.sql"),
+        include_str!("../migrations/V35__catalog_ops.sql"),
+        include_str!("../migrations/V37__dynamic_selections.sql"),
     ];
     for sql in sqls {
         for byte in sql.as_bytes() {
