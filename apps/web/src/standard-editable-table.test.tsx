@@ -182,6 +182,27 @@ describe('standard editable table', () => {
     expect(onActivate).toHaveBeenCalledWith(expect.objectContaining({ id: '1' }))
   })
 
+
+  it('keeps an internal active row when activeRowId is omitted', () => {
+    render(
+      <StandardEditableTable
+        columns={columns}
+        rows={[
+          { id: '1', name: 'Colour', kind: 'value_list' },
+          { id: '2', name: 'Size', kind: 'text' },
+        ]}
+        editable={false}
+      />,
+    )
+    const rows = screen.getAllByTestId('standard-grid-row')
+    fireEvent.click(rows[0])
+    expect(rows[0].classList.contains('on')).toBe(true)
+    fireEvent.keyDown(rows[0], { key: 'ArrowDown' })
+    const after = screen.getAllByTestId('standard-grid-row')
+    expect(after[1].classList.contains('on')).toBe(true)
+    expect(after[0].classList.contains('on')).toBe(false)
+  })
+
 })
 
 describe('value list master detail helpers', () => {

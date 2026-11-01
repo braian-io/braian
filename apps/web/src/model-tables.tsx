@@ -354,6 +354,7 @@ export function ValueListsTable({ onOpenList }: { onOpenList?: (key: string) => 
 export function ValueListValuesTable({ listKey }: { listKey: string }) {
   const { stored, defs } = useModelDefs()
   const [filter, setFilter] = useState('')
+  const { activeRowId, setActiveRowId } = useActiveRowId()
   const [draftRows, setDraftRows] = useState<Record<string, OptionRow>>({})
   const rows = useMemo(() => valueListOptions(defs, listKey), [defs, listKey])
 
@@ -392,7 +393,12 @@ export function ValueListValuesTable({ listKey }: { listKey: string }) {
       })}
       newRowLabel={copy.valueListValues}
       filterValue={filter}
-      onFilterChange={setFilter}
+      onFilterChange={(value) => {
+        setFilter(value)
+        setActiveRowId(null)
+      }}
+      activeRowId={activeRowId}
+      onActivateRow={(row) => setActiveRowId(row.id)}
       menuContext={(row) => (row?.code ? 'model-option' : 'model-list')}
       getMenuTarget={(row) => ({
         listKey: row?.listKey || listKey,
