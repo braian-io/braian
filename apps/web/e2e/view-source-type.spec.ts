@@ -33,6 +33,8 @@ test.describe('view source all-of-type (Notion 103 PR 1)', () => {
       .first()
     await expect(root).toBeVisible()
     await root.click()
+    const paletteText = await page.getByTestId('command-palette').innerText()
+    console.log(`PALETTE DUMP\n${paletteText}\nPALETTE DUMP END`)
     await expect(page.getByTestId('command-palette').locator('.hit').filter({ hasText: 'All ' }).first()).toBeVisible()
 
     const products = page.getByTestId('command-palette').locator('.hit').filter({ hasText: 'All Products' })
