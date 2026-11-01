@@ -1,8 +1,64 @@
-# Status 2026-10-25
+# Status 2026-11-01
+
+Bas: `origin/main` tip `8300319` (merge av #145). Senaste migrering i repot: `V32__review_proposal_view_title.sql`.
 
 Braian går att starta lokalt och att klicka igenom. Postgres är källan och ändringsloggen. Indexer, sök, auth, förslag och webbgränssnittet sitter på samma kedja. Flödet står i `docs/events.md`. Demokatalogen som `just dev` visar är bara seed: hjälteobjekt plus 240 syntetiska livsmedel (leverantörer, produkter och artiklar). Etiketter finns på sv/en/de och objektdata är engelska. Strukturen heter Food, leverantörer står utanför trädet och pekas ut med länkar. Tester skriver i databasen `braian_e2e` och sökaliaset `braian_e2e`, inte i demon.
 
 Skalprovet (5 000 skrivningar i sekunden, 1 miljon och 10 miljoner objekt) är inte gjort. En virtuell tabell mot 100 013 objekt är mätt, se `docs/measurements/2026-10-25-table-100k.md`.
+
+
+## Levererat sedan 2026-10-25 (verifierat via `git log` på main)
+
+Endast mergade PR:er i intervallet #104–#145. #103, #121, #122, #127, #129 och #131 stängdes utan merge och räknas inte som levererade. Inga öppna PR:er mot main vid skrivtillfället.
+
+### Tabell, fältväljare och kolumnpreferenser
+- #104–#105: Fields ›-prototyp och riktig fältväljare med hop-kolumner och prefs v2.
+- #106–#111, #113, #115, #117–#119: demo- och flikbuggar i fältväljaren, pathValues, keep-alive/dirty-gate för multitab, sort/filter, nested Fields ›, move-column/SSE.
+- #112: kolumnpreferenser sparas med TanStack Query-mutationer.
+- #114: systemfält i Fields › och dnd-kit kolumndrag.
+
+### Datamodell-arbetsytor
+- #123: legacy Data model-arbetsytor återställs till standardmallen.
+- #125–#126: läker layouts med hängande view-id:n, utan Unavailable-flash.
+- #130: radmarkering, hover och piltangenter i Data model-tabellen.
+
+### Celleditor
+- #128: caret kvar vid cellredigering; PATCH av lokaliserat namn.
+- #132: tangentbord blockeras medan en cell-editor är öppen.
+- #134: Status som Select; systemkolumner går inte att redigera inline.
+- #139: cell-editor väntar tills path-values är laddade (Notion 111).
+
+### Arbetsytor, mallar och behörighet
+- #135: aktiv arbetsyta överlever omladdning (Notion 106).
+- #136: ta bort arbetsyta (Notion 110).
+- #137: membership-grindar för workspace/view (följd till #136).
+- #138: New from template öppnas som undermeny i paletten.
+- #142: openTypeView väntar tills workspace-dokumentet är klart (Notion 112).
+
+### Tangentbord, register och Ctrl+K
+- #120: Ctrl+K öppnar alltid palettroten med synk fokus.
+- #140: shortcut-register med Ctrl+Shift kolumnflytt (Notion 107).
+- #143: Home/End flyttar caret i Ctrl+K-frågefältet.
+
+### Statusrad och ny version
+- #144: statusraden erbjuder Reload när en nyare deploy finns (Notion 113).
+
+### Vyer / datakällor
+- #145: object_table-källa = alla objekt av en typ; Ctrl+K Data source, trepunktsmeny Select source, rubriketikett (Notion 103 PR 1).
+
+### Import och header
+- #141: import som utkast (drafts) + städad header (Notion 46 + 114).
+
+### API-klient, store och CI
+- #116: typad OpenAPI-klient för webbappen.
+- #124: store byggs om när inbäddade migreringar ändras.
+- #133: CI återanvänder release-binären och kortar stack-jobbet.
+
+## Öppet
+
+- **Kataloger (Notion 117)** och **usage (Notion 45)** — Glenn bygger själv.
+- **Notion 103 PR 2:** vyns källa = det som är länkat till den markerade raden i en annan vy.
+- **Notion 103 PR 3:** kedjor (med cykelskydd) + Articles/Products-mallar med länkade paneler.
 
 ## Så här kör du
 
