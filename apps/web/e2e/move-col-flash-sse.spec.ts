@@ -186,21 +186,36 @@ test.describe('move column, pathValues flash, live row sweep', () => {
 
     const rowA = pageA.getByTestId('object-row').filter({ hasText: 'Mature cheddar' }).first()
     const rowB = pageB.getByTestId('object-row').filter({ hasText: 'Mature cheddar' }).first()
-    await expect(rowA.locator('[data-testid^="path-cell-description"]').first()).toBeVisible({
-      timeout: 30_000,
-    })
+    const descA = rowA.locator('[data-testid^="path-cell-description"]').first()
+    // Description is a pathValues column. The editor copies the loaded text once;
+    // opening it before that batch paints seeds an empty draft and Enter does not
+    // change the cheddar sentence the other tab is watching.
+    await expect(descA).toContainText(/firm cow'?s-milk cheddar/i, { timeout: 30_000 })
+    const descCellB = rowB.locator('[data-column^="description"]').first()
+    await expect(descCellB).toContainText(/firm cow'?s-milk cheddar/i, { timeout: 30_000 })
+    await expect(descCellB.locator('[data-loading="true"]')).toHaveCount(0)
     const versionBefore = (await rowA.locator('[data-column="version"]').textContent())?.trim() || ''
-    const descBefore =
-      (await rowA.locator('[data-testid^="path-cell-description"]').first().textContent())?.trim() || ''
+    const descBefore = (await descA.textContent())?.trim() || ''
 
     // Edit Description on tab B
-    const descCellB = rowB.locator('[data-column^="description"]').first()
     await descCellB.dblclick()
     const editor = pageB.locator('[data-testid^="cell-editor-description"]').first()
     await expect(editor).toBeVisible()
+    await expect(editor).toHaveValue(/firm cow'?s-milk cheddar/i)
     const nextText = `Live sweep ${Date.now()}`
     await editor.fill(nextText)
+    // Enter commits the React draft, not the DOM value. Wait until the controlled
+    // input shows the new text so the key handler closes over that draft.
+    await expect(editor).toHaveValue(nextText)
+    const saved = pageB.waitForResponse(
+      (res) =>
+        res.url().includes('/v1/objects/') &&
+        res.request().method() === 'PATCH' &&
+        res.ok(),
+      { timeout: 30_000 },
+    )
     await editor.press('Enter')
+    await saved
     await expect(pageB.locator('[data-testid^="cell-editor-description"]')).toHaveCount(0)
 
     // On tab A both cells must land together: once Description matches, Version must already differ.

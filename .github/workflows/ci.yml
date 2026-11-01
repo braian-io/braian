@@ -18,7 +18,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Classify CI diffs
-        run: bash scripts/ci-changes.test.sh
+        run: |
+          bash scripts/ci-changes.test.sh
+          bash scripts/ci-aggregate.test.sh
+          bash scripts/ci-hurl.test.sh
       # Heavy steps stay in this job so a required check still completes green
       # when the diff is docs, markdown, the landing page, or web-only.
       # Web-only diffs do not compile Rust; stack still runs e2e on a cached binary.
@@ -196,13 +199,15 @@ jobs:
       - run: just test-wasm
         if: steps.changes.outputs.mode == 'full'
 
-  # Phase 2, phase 3, profile.ci store/indexer tests, and Playwright.
-  # One `ci` build feeds demo-2, demo-3 and e2e. `cargo test` defaults to the
-  # separate `test` profile, so the store and indexer tests pass `--profile ci`
-  # and reuse that build. profile.ci keeps debug assertions and overflow checks.
-  stack:
+  # One profile.ci build. Shards and the load job restore the same exact
+  # binary key and do not compile. shared-key stays `stack` so a pull request
+  # still hits the cache pushed from main under the old job name.
+  # Web-only diffs restore main's binary and skip this compile.
+  bins:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 45
+    outputs:
+      mode: ${{ steps.changes.outputs.mode }}
     steps:
       - uses: actions/checkout@v4
       - name: Detect code changes
@@ -216,7 +221,7 @@ jobs:
           git fetch --no-tags --depth=1 origin "${{ github.event.pull_request.base.sha }}"
           git diff --name-only "${{ github.event.pull_request.base.sha }}" HEAD | bash scripts/ci-changes.sh | tee -a "$GITHUB_OUTPUT"
       - name: Restore release binaries
-        id: bins
+        id: bin-cache
         if: steps.changes.outputs.mode != 'skip'
         uses: actions/cache/restore@v4
         with:
@@ -230,7 +235,7 @@ jobs:
         if: steps.changes.outputs.mode != 'skip'
         run: |
           mode="${{ steps.changes.outputs.mode }}"
-          hit="${{ steps.bins.outputs.cache-hit }}"
+          hit="${{ steps.bin-cache.outputs.cache-hit }}"
           echo "mode=$mode bin-cache-hit=$hit"
           # The cache key is a hash of the Rust sources. A hit is this tree's
           # binary, including on a full diff that did not touch Rust. A miss
@@ -242,38 +247,37 @@ jobs:
             echo "Release binary cache hit for this Rust hash; cargo build skipped."
           fi
       - name: Stabilize Rust source mtimes
-        if: steps.changes.outputs.mode == 'full'
+        if: steps.plan.outputs.compile == 'true'
         run: |
           # Cargo fingerprints local crates by mtime. A fresh checkout is newer
           # than the cached fingerprints, so workspace crates recompile on every
           # hit. Pin the mtimes before restore and before the build.
           find crates docs/api testdata Cargo.toml Cargo.lock rust-toolchain.toml -exec touch -d '2020-01-01T00:00:00Z' {} +
       - run: rustup show
-        if: steps.changes.outputs.mode == 'full'
+        if: steps.plan.outputs.compile == 'true'
       - name: Check Rust cache
         id: rust-cache-lookup
-        if: steps.changes.outputs.mode == 'full'
+        if: steps.plan.outputs.compile == 'true'
         uses: Swatinem/rust-cache@v2
         with:
           lookup-only: "true"
           prefix-key: v2-rust-ci
-          shared-key: ${{ github.job }}
+          shared-key: stack
           cache-all-crates: "true"
           cache-workspace-crates: "true"
       - uses: Swatinem/rust-cache@v2
-        if: steps.changes.outputs.mode == 'full'
+        if: steps.plan.outputs.compile == 'true'
         with:
           prefix-key: v2-rust-ci
-          shared-key: ${{ github.job }}
+          shared-key: stack
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           cache-on-failure: "true"
           # Restore order is this ref, then the PR base, then main. An exact
           # hit is not uploaded again, so a PR does not copy main's cache.
           save-if: ${{ steps.rust-cache-lookup.outputs.cache-hit != 'true' }}
-
       - name: Dirty changed Rust sources after cache restore
-        if: steps.changes.outputs.mode == 'full'
+        if: steps.plan.outputs.compile == 'true'
         run: |
           # Shared main cache + pinned 2020 mtimes otherwise skip recompiling
           # crates this PR changed (e.g. openapi_spec vs docs/api/openapi.json).
@@ -288,10 +292,41 @@ jobs:
           else
             find crates docs/api -type f \( -name '*.rs' -o -name 'openapi.json' \) -exec touch {} +
           fi
-      - name: Services and release build
-        if: steps.changes.outputs.mode != 'skip'
+      - name: Build profile.ci binaries
+        if: steps.plan.outputs.compile == 'true'
         run: |
-          set -euo pipefail
+          cargo build --profile ci --locked -p braian-bench -p braian-server
+          mkdir -p "${RUNNER_TEMP}/ci-bins"
+          cp -a target/ci/braian target/ci/braian-bench "${RUNNER_TEMP}/ci-bins/"
+          test -x "${RUNNER_TEMP}/ci-bins/braian"
+          test -x "${RUNNER_TEMP}/ci-bins/braian-bench"
+      - name: Save release binaries
+        if: steps.plan.outputs.compile == 'true' && steps.bin-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/ci-bins
+          key: braian-bins-v1-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'crates/**', 'testdata/**') }}
+
+  # Phase 2, phase 3, and the profile.ci store/indexer tests. Not on the e2e
+  # critical path: shards restore the binary as soon as `bins` has saved it.
+  load:
+    needs: bins
+    if: needs.bins.outputs.mode == 'full'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore release binaries
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/ci-bins
+          key: braian-bins-v1-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'crates/**', 'testdata/**') }}
+      - name: Require cached binaries
+        run: |
+          test -x "${RUNNER_TEMP}/ci-bins/braian"
+          test -x "${RUNNER_TEMP}/ci-bins/braian-bench"
+      - name: Start Postgres and Typesense
+        run: |
           cat > .env << 'EOF'
           POSTGRES_USER=braian
           POSTGRES_PASSWORD=braian
@@ -303,57 +338,64 @@ jobs:
           BRAIAN_TEST_DATABASE_URL=postgres://braian:braian@localhost:5433/postgres
           TYPESENSE_URL=http://localhost:8108
           EOF
-          docker compose up -d --wait postgres typesense > "${RUNNER_TEMP}/docker.log" 2>&1 &
-          docker_pid=$!
-          hurl_pid=""
-          if [ "${{ steps.changes.outputs.mode }}" = full ]; then
-            (
-              sudo apt-get update
-              # Hurl 8.0.1 links libxml2.so.2; Ubuntu 26.04+ provides libxml2.so.16 via libxml2-16.
-              sudo apt-get install -y libxml2-16 || sudo apt-get install -y libxml2
-              if [ ! -f /usr/lib/x86_64-linux-gnu/libxml2.so.2 ] && [ -f /usr/lib/x86_64-linux-gnu/libxml2.so.16 ]; then
-                sudo ln -sf /usr/lib/x86_64-linux-gnu/libxml2.so.16 /usr/lib/x86_64-linux-gnu/libxml2.so.2
-              fi
-              curl -fsSL -o /tmp/hurl.tar.gz https://github.com/Orange-OpenSource/hurl/releases/download/8.0.1/hurl-8.0.1-x86_64-unknown-linux-gnu.tar.gz
-              tar -xzf /tmp/hurl.tar.gz -C /tmp
-              sudo find /tmp -type f -name hurl -exec mv {} /usr/local/bin/hurl \;
-              sudo chmod +x /usr/local/bin/hurl
-              hurl --version
-            ) > "${RUNNER_TEMP}/hurl.log" 2>&1 &
-            hurl_pid=$!
-          fi
-          if [ "${{ steps.plan.outputs.compile }}" = true ]; then
-            cargo build --profile ci --locked -p braian-bench -p braian-server
-            mkdir -p "${RUNNER_TEMP}/ci-bins"
-            cp -a target/ci/braian target/ci/braian-bench "${RUNNER_TEMP}/ci-bins/"
-            test -x "${RUNNER_TEMP}/ci-bins/braian"
-            test -x "${RUNNER_TEMP}/ci-bins/braian-bench"
-          fi
-          wait "$docker_pid" || { cat "${RUNNER_TEMP}/docker.log"; exit 1; }
-          if [ -n "$hurl_pid" ]; then
-            wait "$hurl_pid" || { cat "${RUNNER_TEMP}/hurl.log"; exit 1; }
-          fi
-      - name: Save release binaries
-        if: steps.plan.outputs.compile == 'true' && steps.bins.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+          docker compose up -d postgres typesense
+      - name: Cache hurl
+        uses: actions/cache@v4
         with:
-          path: ${{ runner.temp }}/ci-bins
-          key: braian-bins-v1-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'crates/**', 'testdata/**') }}
+          path: ${{ runner.temp }}/hurl-bin
+          key: hurl-8.0.1-${{ runner.os }}-x86_64
+      - name: Install hurl
+        env:
+          HURL_CACHE_DIR: ${{ runner.temp }}/hurl-bin
+        run: bash scripts/ci-hurl.sh
+      - name: Stabilize Rust source mtimes
+        run: find crates docs/api testdata Cargo.toml Cargo.lock rust-toolchain.toml -exec touch -d '2020-01-01T00:00:00Z' {} +
+      - run: rustup show
+      - name: Check Rust cache
+        id: rust-cache-lookup
+        uses: Swatinem/rust-cache@v2
+        with:
+          lookup-only: "true"
+          prefix-key: v2-rust-ci
+          shared-key: stack
+          cache-all-crates: "true"
+          cache-workspace-crates: "true"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: v2-rust-ci
+          shared-key: stack
+          cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          cache-on-failure: "true"
+          # A hit is main's or bins' cache. Uploading it again spends the quota.
+          save-if: ${{ steps.rust-cache-lookup.outputs.cache-hit != 'true' }}
+      - name: Dirty changed Rust sources after cache restore
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          if [ -z "$base" ]; then
+            base="${{ github.event.before }}"
+          fi
+          if [ -n "$base" ] && git cat-file -e "$base^{commit}" 2>/dev/null; then
+            git diff --diff-filter=d --name-only "$base" -- crates docs/api Cargo.toml Cargo.lock rust-toolchain.toml               | while IFS= read -r f; do
+                  [ -e "$f" ] && touch "$f"
+                done
+          else
+            find crates docs/api -type f \( -name '*.rs' -o -name 'openapi.json' \) -exec touch {} +
+          fi
+      - name: Wait for services
+        run: docker compose up -d --wait postgres typesense
       - name: Phase 2 load
-        if: steps.changes.outputs.mode == 'full'
         env:
           DATABASE_URL: postgres://braian:braian@localhost:5433/braian
         run: |
           test -x "${RUNNER_TEMP}/ci-bins/braian-bench"
           "${RUNNER_TEMP}/ci-bins/braian-bench" demo-2 --tier light --count 100000
       - name: Phase 3 Hurl
-        if: steps.changes.outputs.mode == 'full'
         env:
           DATABASE_URL: postgres://braian:braian@localhost:5433/braian
         run: |
           "${RUNNER_TEMP}/ci-bins/braian-bench" demo-3
       - name: Change log resumes, coalesces and wakes listeners
-        if: steps.changes.outputs.mode == 'full'
         run: |
           cargo test --profile ci --locked -p braian-store -p braian-api --test change_log -- --test-threads=1
           cargo test --profile ci --locked -p braian-indexer -p braian-api --test log -- --test-threads=1
@@ -361,46 +403,78 @@ jobs:
           BRAIAN_TEST_DATABASE_URL: postgres://braian:braian@localhost:5433/postgres
           DATABASE_URL: postgres://braian:braian@localhost:5433/braian
       - name: Indexer converges and reindex swaps the alias
-        if: steps.changes.outputs.mode == 'full'
         run: cargo test --profile ci --locked -p braian-indexer -p braian-api --test converge -- --test-threads=1
         env:
           BRAIAN_TEST_DATABASE_URL: postgres://braian:braian@localhost:5433/postgres
           DATABASE_URL: postgres://braian:braian@localhost:5433/braian
           TYPESENSE_URL: http://localhost:8108
           TYPESENSE_API_KEY: ci
+
+  # Six runners, each with its own Postgres, Typesense and seed. Four bins
+  # still put about three minutes of measured spec time on the heaviest one
+  # (field-picker plus the next longest files). fail-fast is off so one
+  # failure does not cancel the others into a skipped-looking green.
+  e2e:
+    needs: bins
+    if: needs.bins.outputs.mode != 'skip'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore release binaries
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/ci-bins
+          key: braian-bins-v1-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'crates/**', 'testdata/**') }}
+      - name: Require cached server binary
+        run: test -x "${RUNNER_TEMP}/ci-bins/braian"
+      - name: Start Postgres and Typesense
+        run: |
+          cat > .env << 'EOF'
+          POSTGRES_USER=braian
+          POSTGRES_PASSWORD=braian
+          POSTGRES_DB=braian
+          POSTGRES_READONLY_PASSWORD=braian-readonly
+          POSTGRES_HOST_PORT=5433
+          TYPESENSE_API_KEY=ci
+          DATABASE_URL=postgres://braian:braian@localhost:5433/braian
+          BRAIAN_TEST_DATABASE_URL=postgres://braian:braian@localhost:5433/postgres
+          TYPESENSE_URL=http://localhost:8108
+          EOF
+          docker compose up -d postgres typesense
       - uses: pnpm/action-setup@v4
-        if: steps.changes.outputs.mode != 'skip'
         with:
           version: 10.25.0
       - uses: actions/setup-node@v4
-        if: steps.changes.outputs.mode != 'skip'
         with:
           node-version: 22
           cache: pnpm
       - name: Install npm dependencies
-        if: steps.changes.outputs.mode != 'skip'
         run: pnpm install --frozen-lockfile
       - name: Playwright version
         id: playwright-version
-        if: steps.changes.outputs.mode != 'skip'
         run: |
           version=$(pnpm --dir apps/web exec node -p "require('@playwright/test/package.json').version")
           echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: Cache Playwright browsers
         id: playwright-cache
-        if: steps.changes.outputs.mode != 'skip'
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
       - name: Install Playwright browsers
-        if: steps.changes.outputs.mode != 'skip' && steps.playwright-cache.outputs.cache-hit != 'true'
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: pnpm --dir apps/web exec playwright install --with-deps chromium
       - name: Install Playwright system dependencies
-        if: steps.changes.outputs.mode != 'skip' && steps.playwright-cache.outputs.cache-hit == 'true'
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
         run: pnpm --dir apps/web exec playwright install-deps chromium
-      - name: Playwright smoke against an isolated database
-        if: steps.changes.outputs.mode != 'skip'
+      - name: Wait for services
+        run: docker compose up -d --wait postgres typesense
+      - name: Playwright shard
         env:
           DATABASE_URL: postgres://braian:braian@localhost:5433/braian
           POSTGRES_USER: braian
@@ -410,14 +484,31 @@ jobs:
           BRAIAN_DEMO_PASSWORD: braian-demo
           BRAIAN_DEMO_TOKEN: braian-demo-token
           BRAIAN_AGENT_MOCK: "1"
-          # One Playwright process and one database, in the historical file order.
-          # Two processes were not faster: reseeding around every file cost more
-          # than the overlap, and a third process slowed the long specs.
+          BRAIAN_E2E_SHARDS: "6"
+          BRAIAN_E2E_SHARD: ${{ matrix.shard }}
           BRAIAN_E2E_WORKERS: "1"
+          BRAIAN_E2E_ISOLATE: "1"
           BRAIAN_BIN: ${{ runner.temp }}/ci-bins/braian
         run: |
           test -x "${BRAIAN_BIN}"
           node scripts/e2e.mjs
+
+  # Required check name stays `stack`. A cancelled or skipped shard is red,
+  # except the path-filter skip (mode=skip), where e2e and load are meant to skip.
+  stack:
+    needs: [bins, e2e, load]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Required check
+        env:
+          MODE: ${{ needs.bins.outputs.mode }}
+          BINS: ${{ needs.bins.result }}
+          E2E: ${{ needs.e2e.result }}
+          LOAD: ${{ needs.load.result }}
+        run: bash scripts/ci-aggregate.sh "$MODE" "$BINS" "$E2E" "$LOAD"
 
   web:
     runs-on: ubuntu-latest
