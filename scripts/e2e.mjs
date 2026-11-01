@@ -370,10 +370,39 @@ function waitExit(child) {
   })
 }
 
+// The first /v1/definitions on a fresh process compiles the model. A spec that
+// opens a palette submenu copies the type list it sees at the click. If that
+// request is still in flight, the submenu stays empty. Warm it before the browser.
+async function warmDefinitions(apiPort) {
+  const token = process.env.BRAIAN_DEMO_TOKEN
+  if (!token) return
+  const url = `http://127.0.0.1:${apiPort}/v1/definitions`
+  const headers = { Authorization: `Bearer ${token}` }
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    try {
+      const response = await fetch(url, { headers })
+      if (response.ok) {
+        const body = await response.json()
+        if (Array.isArray(body.types) && body.types.length > 0) {
+          console.log(`e2e warm definitions types=${body.types.length}`)
+          return
+        }
+      } else if (attempt === 0 || attempt === 29) {
+        console.log(`e2e warm definitions HTTP ${response.status}`)
+      }
+    } catch {
+      // the listener is up; the route may still be settling
+    }
+    await delay(500)
+  }
+  throw new Error(`definitions were not ready at ${url}`)
+}
+
 async function withApi(slot, files, alias) {
   const api = spawnLogged(binary, ['all'], apiEnvFor(slot.db, slot.apiPort, alias))
   try {
     await waitFor(`http://127.0.0.1:${slot.apiPort}/healthz`)
+    await warmDefinitions(slot.apiPort)
     console.log(`e2e db=${slot.db} alias=${alias} api=${slot.apiPort} web=${slot.webPort} files=${files.join(' ')}`)
     return await runPlaywright(files, `http://127.0.0.1:${slot.webPort}`)
   } finally {

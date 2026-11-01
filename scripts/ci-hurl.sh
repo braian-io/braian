@@ -20,7 +20,7 @@ if [ ! -x "$cache_dir/hurl" ]; then
   curl -fsSL -o "$extract/hurl.tar.gz" \
     "https://github.com/Orange-OpenSource/hurl/releases/download/${version}/hurl-${version}-x86_64-unknown-linux-gnu.tar.gz"
   tar -xzf "$extract/hurl.tar.gz" -C "$extract"
-  bin="$extract/hurl-${version}-x86_64-unknown-linux-gnu/hurl"
+  bin="$extract/hurl-${version}-x86_64-unknown-linux-gnu/bin/hurl"
   if [ ! -f "$bin" ]; then
     echo "hurl binary missing at $bin" >&2
     exit 1
