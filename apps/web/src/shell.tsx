@@ -1163,7 +1163,7 @@ export function Shell() {
     if (!surfaceNow || surfaceNow.locked) return
     const types = typeNames(queryClient.getQueryData<Json>(['definitions']))
     const type = types.find((item) => item.id === typeToken || item.key === typeToken)
-    if (!type) return
+    if (!type || type.kind === 'link') return
     const focus = viewId || docRef.current?.focus
     let views: View[] = viewRows(surfaceNow.views)
     const target = views.find((view) => view.id === focus && view.type === 'object_table')
@@ -1207,7 +1207,7 @@ export function Shell() {
     }
     clearQueuedOpenTypeView()
     const type = typeNames(queryClient.getQueryData<Json>(['definitions'])).find((item) => item.id === typeId)
-    if (!type) return
+    if (!type || type.kind === 'link') return
     void (async () => {
       let views: View[] = viewRows(surfaceNow.views)
       let found = views.find((view) => view.type === 'object_table' && (String(view.state.object_type ?? '') === type.id || String(view.state.type_key ?? '') === type.key))

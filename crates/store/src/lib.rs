@@ -23,6 +23,7 @@ mod session;
 mod split;
 pub mod testing;
 mod types;
+mod view_repair;
 
 pub use catalog_resolve::{
     CatalogRef, default_catalog_id, effective_catalog_id, view_catalog_override,

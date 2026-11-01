@@ -14,6 +14,8 @@ export type TypeName = {
   structures?: string[]
   /** Label of the only allowed tree, when there is exactly one. */
   structureLabel?: string
+  /** For `link` types, the source entity a table should list instead. */
+  linkFrom?: { id: string; key: string }
 }
 
 export type SavedView = {
@@ -79,11 +81,41 @@ function pluralStored(map: unknown, language: string) {
   return language === 'en' ? '' : exactLabel(map, 'en')
 }
 
+function linkEndLabel(link: Json | undefined, side: 'from_label' | 'to_label', language: string) {
+  if (!link || typeof link !== 'object') return ''
+  const label = (link as { from_label?: Json; to_label?: Json })[side]
+  if (!label || typeof label !== 'object') return ''
+  const text = stored((label as { labels?: unknown }).labels, language)
+  if (text) return text
+  return String((label as { key?: unknown }).key ?? '')
+}
+
+/** Distinct display name for a link type: `from–to`, never the entity plural. */
+function linkTypeLabel(item: Json, language: string) {
+  const link = item.link as Json | undefined
+  if (!link || typeof link !== 'object') return ''
+  const from = linkEndLabel(link, 'from_label', language)
+  const to = linkEndLabel(link, 'to_label', language)
+  if (!from || !to) return ''
+  return `${from}–${to}`
+}
+
+/** Source entity (`from_types[0]`) a table bound to a link type should list. */
+function linkSource(item: Json, defs: Json | undefined) {
+  const link = item.link as Json | undefined
+  if (!link || typeof link !== 'object') return undefined
+  const fromTypes = (link as { from_types?: unknown }).from_types
+  const first = Array.isArray(fromTypes) ? String(fromTypes[0] ?? '') : ''
+  if (!first) return undefined
+  const source = ((defs?.types as Json[]) ?? []).find((row) => String(row.id ?? '') === first)
+  return { id: first, key: String(source?.key ?? '') }
+}
+
 export function typeNames(defs: Json | undefined, language = 'en'): TypeName[] {
   return ((defs?.types as Json[]) ?? []).map((item) => {
     const key = String(item.key ?? '')
-    const singular = stored(item.singular, language) || stored(item.labels, language) || key
-    const plural = pluralStored(item.plural, language) || defaultPlural(singular)
+    let singular = stored(item.singular, language) || stored(item.labels, language) || key
+    let plural = pluralStored(item.plural, language) || defaultPlural(singular)
     const structures = Array.isArray(item.structures)
       ? item.structures.map((id) => String(id))
       : undefined
@@ -96,7 +128,16 @@ export function typeNames(defs: Json | undefined, language = 'en'): TypeName[] {
       structureLabel = stored(structure?.labels, language) || String(structure?.key ?? '') || undefined
     }
     const kind = item.kind === 'link' ? 'link' : 'entity'
-    return { id: String(item.id ?? ''), key, singular, plural, kind, structures, structureLabel }
+    let linkFrom: { id: string; key: string } | undefined
+    if (kind === 'link') {
+      const label = linkTypeLabel(item, language)
+      if (label) {
+        singular = label
+        plural = label
+      }
+      linkFrom = linkSource(item, defs)
+    }
+    return { id: String(item.id ?? ''), key, singular, plural, kind, structures, structureLabel, linkFrom }
   })
 }
 
@@ -127,18 +168,29 @@ export function migrateSavedWorkspace(
   const primary = types[0]
   const nextViews: WorkspaceMigration['views'] = []
   let changed = false
-  if (primary) {
-    for (const view of views) {
-      if (view.type !== 'object_table' || !isGenericObjectTitle(view.title)) continue
-      const state = { ...(view.state ?? {}), object_type: primary.id, type_key: primary.key }
+  for (const view of views) {
+    if (view.type !== 'object_table') continue
+    const bound = typeOfView(view, types)
+    if (bound?.kind === 'link' && bound.linkFrom) {
+      const state = { ...(view.state ?? {}), object_type: bound.linkFrom.id, type_key: bound.linkFrom.key }
       const already =
-        view.title === primary.plural
-        && String(view.state?.object_type ?? '') === primary.id
-        && String(view.state?.type_key ?? '') === primary.key
-      if (already) continue
-      changed = true
-      nextViews.push({ id: view.id, title: primary.plural, state })
+        String(view.state?.object_type ?? '') === bound.linkFrom.id
+        && String(view.state?.type_key ?? '') === bound.linkFrom.key
+      if (!already) {
+        changed = true
+        nextViews.push({ id: view.id, title: view.title, state })
+      }
+      continue
     }
+    if (!primary || !isGenericObjectTitle(view.title)) continue
+    const state = { ...(view.state ?? {}), object_type: primary.id, type_key: primary.key }
+    const already =
+      view.title === primary.plural
+      && String(view.state?.object_type ?? '') === primary.id
+      && String(view.state?.type_key ?? '') === primary.key
+    if (already) continue
+    changed = true
+    nextViews.push({ id: view.id, title: primary.plural, state })
   }
   return { changed, name: undefined, views: nextViews }
 }
@@ -163,7 +215,7 @@ export function displayViewTitle(
 
 export function typeViewPaletteItems(types: TypeName[]): PaletteItem[] {
   return types
-    .filter((type) => type.id)
+    .filter((type) => type.id && type.kind !== 'link')
     .map((type) => ({
       id: `type-view:${type.id}`,
       group: 'views' as const,
