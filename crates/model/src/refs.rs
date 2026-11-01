@@ -733,14 +733,14 @@ mod tests {
 
         let mut query = serde_json::json!({
             "type": "item",
-            "group": "catalog:child",
+            "group": "assortment:child",
             "filter": "type_key:=item"
         });
         translate_assortment_query(&mut query, &defs);
         translate_assortment_query(&mut query, &defs);
         assert!(query.get("type").is_none());
-        let catalog = resolve(&defs, RefKind::Structure, "catalog", None).unwrap();
-        let child = resolve(&defs, RefKind::Group, "child", Some("catalog")).unwrap();
+        let catalog = resolve(&defs, RefKind::Structure, "assortment", None).unwrap();
+        let child = resolve(&defs, RefKind::Group, "child", Some("assortment")).unwrap();
         assert_eq!(query["group"], format!("{}:{}", catalog.id, child.id));
         assert_eq!(query["filter"], format!("type_key:={}", item.id));
     }

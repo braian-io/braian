@@ -10,7 +10,7 @@ const defs: Json = {
   unit_families: [{ id: 'mass', key: 'mass' }],
   structures: [
     {
-      key: 'catalog',
+      key: 'assortment',
       classes: [
         { id: 'c-tool', key: 'Power tool', attributes: ['a-weight'] },
         { id: 'c-drill', key: 'Drill', parent: 'c-tool', attributes: ['a-voltage'] },

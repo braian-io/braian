@@ -352,40 +352,60 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
   border-radius: var(--r-lg);
   box-shadow: var(--inset);
   position: relative;
+  isolation: isolate;
   overflow: hidden;
 }
-.pane.focused {
-  box-shadow: var(--inset), inset 0 0 0 2px var(--accent);
-  outline: none;
+.pane.focused { outline: none; }
+/* Children paint their own backgrounds, so an inset shadow on the pane would be covered by the tab strip. */
+.pane.focused::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 2px var(--accent);
+  pointer-events: none;
 }
 .pane-tabs {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   height: 32px;
   min-height: 32px;
   max-height: 32px;
   padding: 0 6px;
   background: var(--surface);
+  overflow: hidden;
+}
+.pane-tab-list {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 1 auto;
+  min-width: 0;
+  height: 100%;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
-  scrollbar-color: transparent transparent;
 }
-.pane-tabs::-webkit-scrollbar,
-.pane:hover .pane-tabs::-webkit-scrollbar,
-.pane:hover .pane-tabs::-webkit-scrollbar-thumb,
-.pane-tabs::-webkit-scrollbar-thumb,
-.pane-tabs::-webkit-scrollbar-button,
-.pane-tabs::-webkit-scrollbar-corner {
-  display: none;
-  width: 0;
-  height: 0;
-  background: transparent;
+.pane-tab-list::-webkit-scrollbar { display: none; }
+@property --tab-fade-start { syntax: '<length>'; inherits: false; initial-value: 0px; }
+@property --tab-fade-end { syntax: '<length>'; inherits: false; initial-value: 0px; }
+@keyframes tab-fade {
+  0% { --tab-fade-start: 0px; --tab-fade-end: 24px; }
+  10%, 90% { --tab-fade-start: 24px; --tab-fade-end: 24px; }
+  100% { --tab-fade-start: 24px; --tab-fade-end: 0px; }
 }
-.pane-tab { display: inline-flex; align-items: center; gap: 4px; max-width: 180px; }
+/* The scroll timeline is inactive when the tabs fit, so the fades stay at 0px. */
+@supports (animation-timeline: scroll()) {
+  .pane-tab-list {
+    mask-image: linear-gradient(to right, transparent, #000 var(--tab-fade-start), #000 calc(100% - var(--tab-fade-end)), transparent);
+    animation: tab-fade linear both;
+    animation-timeline: scroll(self inline);
+  }
+}
+.pane-tab { display: inline-flex; align-items: center; flex: none; gap: 4px; max-width: 180px; }
 .pane-tab > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pane.focused .pane-tab.active { box-shadow: inset 0 2px 0 var(--accent); }
 .tab-x {
   display: inline-flex;
   align-items: center;
@@ -396,9 +416,34 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
   color: var(--muted);
 }
 .pane-tab:hover .tab-x, .pane-tab.active .tab-x { opacity: 1; }
-.pane-chrome { margin-left: auto; display: flex; gap: 2px; opacity: 0; }
+.pane-chrome { margin-left: auto; display: flex; flex: none; gap: 2px; opacity: 0; }
 .pane:hover .pane-chrome, .pane.focused .pane-chrome, .pane-chrome:focus-within { opacity: 1; }
 .pane-chrome .icon-btn { width: 22px; padding: 0; justify-content: center; }
+.pane-chrome .catalog-chip.select-trigger {
+  width: auto;
+  max-width: 9rem;
+  height: 22px;
+  padding: 0 4px 0 8px;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--muted);
+  background: transparent;
+  box-shadow: none;
+}
+.pane-chrome .catalog-chip.select-trigger > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pane-chrome .catalog-chip.select-trigger:hover { background: var(--hover); color: var(--text); }
+.pane-chrome .catalog-chip.select-trigger[data-kind='source'] {
+  color: var(--text);
+  background: var(--accent-dim);
+}
+.catalog-admin { display: flex; flex-direction: column; gap: 8px; padding: 12px; overflow: auto; }
+.catalog-admin input, .catalog-admin select, .catalog-admin textarea { font: inherit; }
+.catalog-admin ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.field.locked .control { opacity: 0.75; }
 .pane-source {
   flex: 0 1 auto;
   max-width: 220px;
@@ -599,6 +644,7 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
   max-height: 28px;
   overflow: clip;
   background: var(--surface);
+  box-shadow: inset 0 -1px 0 var(--border);
   z-index: 1;
   color: var(--muted);
   font-weight: 500;
@@ -649,6 +695,8 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
   padding-left: 8px;
   padding-right: 4px;
   border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 .head .cell.column-header-cell .column-header-btn:hover,
 .head .cell.column-header-cell .column-header-btn:focus-visible {
@@ -671,22 +719,16 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   background-clip: padding-box;
 }
-/* Active row is one state: fill plus border. DOM focus stays on the grid, so this border moves with the row. */
+/* Active row is one state: fill plus top and bottom rules. DOM focus stays on the grid, so the rules move with the row.
+   No side edges: rows are wider than the viewport when the grid scrolls sideways, and a box would lose its right edge. */
 .row.selected {
   background: var(--accent-dim);
-  box-shadow: inset 2px 0 0 var(--accent);
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
+  box-shadow: inset 0 1px 0 var(--accent), inset 0 -1px 0 var(--accent);
 }
 .row.picked { box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 55%, transparent); }
 .row:hover:not(.selected) { background: var(--hover); }
 .row:focus,
 .row:focus-visible { outline: none; }
-.row.selected:focus,
-.row.selected:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
 .grid:focus,
 .grid:focus-visible { outline: none; }
 .draft-user { background: var(--amber-bg); border-radius: var(--r-md); }
@@ -1144,7 +1186,19 @@ canvas.graph.panning { cursor: grabbing; }
 .graph-inspector dl > div { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 6px; }
 .graph-inspector dt { color: var(--muted); }
 .graph-inspector dd { margin: 0; overflow-wrap: anywhere; }
-.graph-inspector .graph-action { width: 100%; }
+.graph-inspector .graph-action { width: 100%; flex: none; }
+.graph-inspector .graph-action:not(.primary) {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 0 8px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-2);
+}
+.graph-inspector .graph-action:not(.primary):hover { background: var(--hover); color: var(--text); }
+.graph-inspector .graph-action:not(.primary) svg { flex: none; color: var(--muted); }
 .graph-inspector .icon-btn { width: 28px; height: 28px; padding: 0; flex: none; justify-content: center; }
 .graph-kicker { display: flex; align-items: center; gap: 6px; margin: 0; min-width: 0; color: var(--text-2); font-size: 12px; }
 .graph-kicker-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1183,15 +1237,10 @@ canvas.graph.panning { cursor: grabbing; }
   }
   .legend-chip { flex: none; gap: 4px; padding: 0 6px; }
   .legend-chip .legend-label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
+    max-width: 12ch;
     overflow: hidden;
-    clip: rect(0, 0, 0, 0);
+    text-overflow: ellipsis;
     white-space: nowrap;
-    border: 0;
   }
   .graph-inspector[data-placement='sheet'],
   .graph-inspector[data-placement='side'] {
@@ -1263,8 +1312,9 @@ canvas.graph.panning { cursor: grabbing; }
 .menu-note { margin: 0; padding: 4px 8px; color: var(--text-2); font-size: 12px; }
 .menu button:focus-visible { background: var(--accent-dim); outline: none; }
 /* The active cell in the active row: where Shift+F10 opens the menu. */
-.row.selected .cell.active-cell { box-shadow: inset 0 0 0 1px var(--accent); }
-.head .cell.column-active {
+/* Cell and column markers only matter while the keyboard is in the grid. */
+.grid:focus-within .row.selected .cell.active-cell { box-shadow: inset 0 0 0 1px var(--accent); }
+.grid:focus-within .head .cell.column-active {
   box-shadow: inset 0 -2px 0 var(--accent);
   color: var(--accent);
 }
@@ -1325,12 +1375,14 @@ canvas.graph.panning { cursor: grabbing; }
   white-space: nowrap;
 }
 .palette-list { display: grid; gap: 0; max-height: min(52vh, 440px); overflow: auto; }
-.palette-group [cmdk-group-heading] {
-  padding: 8px 10px 2px;
+.palette-heading {
+  padding: 10px 10px 4px;
   font-size: 11px;
+  line-height: 14px;
   color: var(--muted);
   font-weight: 500;
 }
+.palette-group:first-child .palette-heading { padding-top: 6px; }
 .hit {
   display: flex;
   align-items: center;
@@ -1386,15 +1438,26 @@ canvas.graph.panning { cursor: grabbing; }
 .chart { height: 220px; }
 .timeline { display: grid; gap: 4px; align-content: start; }
 .timeline article {
-  border-left: 2px solid var(--accent);
-  padding: 4px 8px;
+  padding: 6px 10px;
   background: var(--raised);
+  border-left: 2px solid var(--border);
   border-radius: 0 var(--r-md) var(--r-md) 0;
   font-size: 12px;
   cursor: pointer;
 }
-.history-head { display: flex; justify-content: flex-end; }
+.timeline article:hover { background: var(--hover); }
+.timeline article.selected { background: var(--accent-dim); border-left-color: var(--accent); }
+.history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 28px;
+  margin-bottom: 6px;
+}
+.history-head button { display: inline-flex; align-items: center; gap: 6px; }
 .history-head button[aria-pressed='true'] { background: var(--accent-dim); color: var(--text); }
+.history-created { color: var(--muted); }
 .history-line { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .history-line strong { font-weight: 600; }
 .history-line time { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -1551,9 +1614,18 @@ kbd {
 .ai-answer strong { font-weight: 600; color: var(--text); }
 .mark { background: var(--accent-dim); color: var(--text); border-radius: var(--r-sm); }
 
-.state { display: grid; gap: 4px; justify-items: start; padding: 12px 4px; animation: rise var(--dur) var(--ease); }
-.state strong { font-size: 14px; font-weight: 600; }
-.state p { margin: 0; color: var(--muted); font-size: 12px; }
+.state {
+  display: grid;
+  gap: 6px;
+  align-content: center;
+  justify-items: center;
+  min-height: 100%;
+  padding: 24px 16px;
+  text-align: center;
+  animation: rise var(--dur) var(--ease);
+}
+.state strong { max-width: 32ch; font-size: 13px; font-weight: 500; color: var(--text-2); }
+.state p { max-width: 40ch; margin: 0; color: var(--muted); font-size: 12px; }
 .state-mark {
   width: 28px;
   height: 28px;
@@ -2104,15 +2176,10 @@ button[aria-disabled="true"]:hover,
 .standard-grid-row:hover:not(.on):not(.draft) { background: var(--hover); }
 .standard-grid-row.on {
   background: var(--accent-dim);
-  box-shadow: inset 2px 0 0 var(--accent);
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
+  box-shadow: inset 0 1px 0 var(--accent), inset 0 -1px 0 var(--accent);
 }
 .standard-grid-row.on:focus,
-.standard-grid-row.on:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
+.standard-grid-row.on:focus-visible { outline: none; }
 .standard-grid-row.draft { background: color-mix(in oklab, var(--warn, #c90) 10%, transparent); }
 .standard-grid-cell {
   flex: 1;
@@ -2123,7 +2190,7 @@ button[aria-disabled="true"]:hover,
   font-size: 13px;
 }
 .standard-grid-cell.truncate { max-width: 280px; }
-.standard-grid-cell.head { font-weight: 500; }
+.standard-grid-cell.column-head { font-weight: 500; }
 .standard-grid-cell input,
 .standard-grid-cell select {
   width: 100%;

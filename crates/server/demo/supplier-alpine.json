@@ -1,0 +1,12 @@
+[
+  {
+    "id": "018f1000-0000-7000-8000-0000000000c1",
+    "key": "SAP-1001",
+    "values": {
+      "number": "SAP-1001",
+      "brand": "Alpine Coop",
+      "name": { "en": "Alpine cheese" },
+      "ingredients": { "en": "Milk, salt, cultures." }
+    }
+  }
+]

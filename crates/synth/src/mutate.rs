@@ -116,12 +116,12 @@ fn apply(
             located(None, None, None, ErrorCode::UnknownStructure)
         }
         Mutation::UnknownGroup => {
-            let channel = model.structure_id("channel").expect("channel");
+            let channel = model.structure_id("webshop").expect("webshop");
             let mut without = object.groups.clone();
             without.remove(&channel);
             let still: HashSet<_> = model
                 .applicable_ids(object.type_id, &without)
-                .expect("catalog placement")
+                .expect("assortment placement")
                 .into_iter()
                 .collect();
             broken.values.retain(|id, _| still.contains(id));

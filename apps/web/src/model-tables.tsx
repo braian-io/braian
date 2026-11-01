@@ -374,7 +374,7 @@ export function ValueListValuesTable({ listKey }: { listKey: string }) {
     },
   ]
 
-  if (!listKey) return <StateNote tone="empty" title={copy.pickModel} />
+  if (!listKey) return <StateNote tone="empty" title={copy.pickValueList} />
   if (stored.isPending) return <StateNote tone="loading" title={copy.loadingModel} />
 
   return (
@@ -548,5 +548,5 @@ export function ModelTableView({ view }: { view: { type: string; state: Json } }
   if (view.type === 'value_lists') return <ValueListsTable />
   if (view.type === 'value_list_values') return <ValueListValuesTable listKey={String(view.state.list_key ?? '')} />
   if (view.type === 'units') return <UnitsTable />
-  return <StateNote tone="empty" title={copy.pickModel} />
+  return <StateNote tone="empty" title={copy.unknownView} />
 }

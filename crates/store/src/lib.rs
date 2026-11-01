@@ -4,6 +4,7 @@
 //! how those documents are split. Spike 1 measured every form; see
 //! `docs/measurements/2026-10-24-spike-1-storage.md`.
 
+mod catalogs;
 mod conflict;
 mod error;
 mod gauge;
@@ -11,6 +12,7 @@ mod ids;
 mod imports;
 mod links;
 mod log;
+mod merge;
 mod ops;
 mod pressure;
 mod product;
@@ -21,15 +23,20 @@ mod split;
 pub mod testing;
 mod types;
 
+pub use catalogs::{CatalogKind, CatalogRecord};
 pub use error::{Conflict, Error};
-pub use ids::{Actor, BatchId, BatchKind, ChangeOp, PrincipalId, PrincipalKind, SYSTEM_PRINCIPAL};
+pub use ids::{
+    Actor, BatchId, BatchKind, CatalogId, ChangeOp, MASTER_CATALOG_ID, PrincipalId, PrincipalKind,
+    SYSTEM_PRINCIPAL,
+};
 pub use imports::{ImportRowIn, ImportRowOut, ImportSession, SavedMapping};
 pub use log::{ChangeListener, LogClaim, LogEvent};
+pub use merge::MergeProfile;
 pub use ops::{ProposalLock, ProposalWrite};
 pub use pressure::InteractiveGuard;
 pub use product::{AttributeUsageCount, HistoryEntry, ProposalRow, UserRecord};
 pub use scan::{EXPORT_CHUNK, ExportObject, ExportOrder, ExportScan};
-pub use session::{DbLane, HeldConnection, PoolConfig, Store};
+pub use session::{DbLane, HeldConnection, PoolConfig, Store, scope_origin};
 pub use split::StorageForm;
 
 /// Connections used to create the databases the spike and the tests measure.

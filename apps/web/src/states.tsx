@@ -9,12 +9,13 @@ export function StateNote({
   detail?: string
   testId?: string
 }) {
-  const mark = tone === 'error' ? '!' : tone === 'loading' ? '…' : '·'
   return (
     <div className={`state state-${tone}`} data-testid={testId ?? `state-${tone}`}>
-      <span className="state-mark" aria-hidden="true">
-        {mark}
-      </span>
+      {tone === 'error' ? (
+        <span className="state-mark" aria-hidden="true">
+          !
+        </span>
+      ) : null}
       <strong>{title}</strong>
       {detail ? <p>{detail}</p> : null}
     </div>

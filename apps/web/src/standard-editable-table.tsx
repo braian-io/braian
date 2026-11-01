@@ -308,7 +308,7 @@ export function StandardEditableTable<T extends { id: string }>({
           {columns.map((column) => (
             <div
               key={column.id}
-              className={column.truncate ? 'standard-grid-cell head truncate' : 'standard-grid-cell head'}
+              className={column.truncate ? 'standard-grid-cell column-head truncate' : 'standard-grid-cell column-head'}
               role="columnheader"
               data-column={column.id}
               title={column.header}

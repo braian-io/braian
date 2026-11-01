@@ -38,7 +38,8 @@ pub async fn run(state: AppState, session_id: Uuid, job_id: Uuid, mut actor: Act
         return;
     };
     let counters = session.counters.clone();
-    let total = counter(&counters, "new") + counter(&counters, "changed");
+    let total =
+        counter(&counters, "new") + counter(&counters, "changed") + counter(&counters, "delete");
     let total_i = i32::try_from(total).unwrap_or(i32::MAX);
     emit_job(&state, job_id, "running", 0, total_i);
     let batch = match store.open_batch(&actor).await {
@@ -70,6 +71,23 @@ pub async fn run(state: AppState, session_id: Uuid, job_id: Uuid, mut actor: Act
         &actor,
         "new",
         NEW_CHUNK,
+        &mut done,
+        total_i,
+        &mut errors,
+    )
+    .await
+    {
+        return;
+    }
+    if !write_status(
+        &state,
+        &store,
+        session_id,
+        job_id,
+        batch,
+        &actor,
+        "delete",
+        CHANGE_CHUNK,
         &mut done,
         total_i,
         &mut errors,
@@ -208,6 +226,8 @@ async fn write_status(
         after = rows.last().map(|row| row.row_no).unwrap_or(after);
         if status == "new" {
             write_new(state, store, session_id, batch, actor, &rows, errors).await;
+        } else if status == "delete" {
+            write_deletes(state, store, session_id, batch, actor, &rows, errors).await;
         } else {
             write_ops(state, store, session_id, batch, actor, &rows, errors).await;
         }
@@ -333,6 +353,56 @@ async fn write_ops(
         }
     }
     apply_imported_links(state, store, batch, actor, rows, errors).await;
+}
+
+async fn write_deletes(
+    state: &AppState,
+    store: &braian_store::Store,
+    session_id: Uuid,
+    batch: braian_store::BatchId,
+    actor: &Actor,
+    rows: &[ImportRowOut],
+    errors: &mut Vec<Value>,
+) {
+    let mut ops = Vec::new();
+    for row in rows {
+        let Some(id) = row.object_id else {
+            continue;
+        };
+        let Some(version) = row
+            .base_version
+            .and_then(|version| u64::try_from(version).ok())
+        else {
+            continue;
+        };
+        ops.push((
+            row.row_no,
+            ObjectOp::Delete {
+                id: ObjectId::from_uuid(id),
+                base_version: Some(version),
+            },
+        ));
+    }
+    let plain: Vec<ObjectOp> = ops.iter().map(|(_, op)| op.clone()).collect();
+    if plain.is_empty() {
+        return;
+    }
+    if let Err(error) = store.write_ops(batch, actor, plain).await {
+        errors.push(json!({ "message": error.to_string() }));
+        for (row_no, op) in ops {
+            if let Err(error) = store.write_ops(batch, actor, vec![op]).await {
+                let _ = state
+                    .store
+                    .mark_import_row(
+                        session_id,
+                        row_no,
+                        "failed",
+                        &json!([{ "code": "write_failed", "message": error.to_string() }]),
+                    )
+                    .await;
+            }
+        }
+    }
 }
 
 fn op_for(row: &ImportRowOut) -> Option<ObjectOp> {

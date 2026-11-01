@@ -1,6 +1,7 @@
 import createClient from 'openapi-fetch'
 import type { FetchResponse, MaybeOptionalInit } from 'openapi-fetch'
 import type { paths } from './schema'
+import { scopePath } from '../catalog-scope'
 
 import { isWrite, writeSettled, writeStarted } from '../write-status'
 
@@ -17,13 +18,14 @@ export const client = createClient<paths>({
   credentials: 'include',
   fetch: async (request) => {
     const url = new URL(request.url)
+    const pathname = scopePath(url.pathname)
     const method = request.method.toUpperCase()
     const raw = method === 'GET' || method === 'HEAD' ? '' : await request.text()
     // `new Headers` here, not `request.headers`: openapi-fetch's Request is built
     // in the library realm, and column-prefs tests tell a TanStack mutate apart
     // from keepaliveJsonPut by `init.headers instanceof Headers`.
     const headers = new Headers(request.headers)
-    return fetch(`${url.pathname}${url.search}`, {
+    return fetch(`${pathname}${url.search}`, {
       method,
       headers,
       body: raw ? raw : undefined,

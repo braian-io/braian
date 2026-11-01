@@ -247,6 +247,37 @@ Spike 3 and Step 1.5 are the same thing: the whole chain under load.
 
 This closes the runnable core. Scale proof stays a later measurement, not a blocker.
 
+## Phases 7–12 – Catalogs and merge
+
+A catalog is a dimension on the same tables. The master catalog keeps the
+unprefixed `/v1` routes. A source catalog is reached at `/v1/catalogs/{key}/...`.
+Each catalog has its own definition chain, object keys and Typesense alias.
+The master alias is unchanged. A source alias is `{base}_{key}`.
+
+- **Phase 7.** `V33__catalogs.sql`, store scope, catalog CRUD, indexer per catalog,
+  view state `catalog`, catalog chip and Ctrl+K "Catalog". `just demo-7`.
+- **Phase 8.** A source catalog accepts a value that fails a rule and stores it.
+  A catalog with `editable = false` rejects a person's edit. Import sessions can
+  be marked `snapshot`. A snapshot save soft-deletes keys of that type that the
+  file does not contain. `just demo-8`.
+- **Phase 9.** `braian-merge` plans a match, a transform and an owner. `V34__merge.sql`
+  stores profiles, revisions, ownership, links, run rows and a consumer cursor.
+  `just demo-9`.
+- **Phase 10.** `POST /v1/merge/profiles/{key}/run` writes the owned attributes,
+  creates a master object when the profile owns existence for that type, and
+  stamps `changes.origin`. `braian all` and `braian merger` reconcile continuous
+  profiles and due schedules. `just demo-10`. The in-memory plan cost is in
+  `docs/measurements/2026-10-31-merge-plan.md`. A Postgres run of 100 000 objects
+  has not been measured.
+- **Phase 11.** The catalog chip and the command palette switch the view's catalog.
+  Sources has views for catalogs, profiles, ownership and merge runs. Owned fields
+  are locked on the object form. `just demo-11`.
+- **Phase 12.** Seed creates `sap`, `supplier-nordic` and `supplier-alpine` from
+  `crates/server/demo/*.json`, the `sap-brand` profile, and merges that profile
+  once. `just demo-12`.
+
+See [catalogs.md](catalogs.md).
+
 ## After the core (outline)
 
 Each of these follows the same demo and test pattern when it is planned in detail.

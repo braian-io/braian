@@ -5,13 +5,20 @@
 1. Kopiera `.env.example` till `.env` och byt alla värden. `.env` är gitignorerad.
 2. Öppna repot i devcontainern (Cursor/VS Code: "Reopen in Container").
    Postgres och Typesense startar automatiskt.
-3. `pnpm install` en gång, sedan `just dev`. `just` listar alla kommandon.
+3. `pnpm install` en gång, sedan `just dev` (eller `pnpm dev` / `npm run dev` i reporoten).
+   `just` listar alla kommandon. Backend byggs om vid sparade Rust-ändringar när
+   `cargo-watch` finns (`cargo install cargo-watch` på Windows utan devcontainer).
 
 På Windows går bind mounts från `C:\` långsamt. Klona hellre repot i WSL-filsystemet,
 eller använd "Clone Repository in Container Volume". `target/` ligger alltid i en egen volym.
 
 `just` installeras med `winget install --id Casey.Just` eller `scoop install just`.
 Saknas `just` kör `.\scripts\up.ps1` och `.\scripts\dev.ps1` samma sak.
+
+På Windows: kör `.\scripts\dev.ps1` eller `pnpm dev` i en vanlig terminal (PowerShell/CMD),
+inte via `Start-Process` med en annan arbetskatalog. OneDrive-synkade klones kan ge
+`Start-Process` / `ECONNRESET` i Vite; prova en lokal klon (`C:\git\…`) eller rensa
+`apps/web/node_modules/.vite` efter flytt av repot.
 
 ## Tjänster
 
@@ -26,7 +33,7 @@ Saknas `just` kör `.\scripts\up.ps1` och `.\scripts\dev.ps1` samma sak.
 | --- | --- |
 | `just up` / `just down` | Starta och stoppa infrastrukturen |
 | `just nuke` | Radera all lokal data |
-| `just dev` | Migrationer, demodata, API, indexer och webbgränssnittet |
+| `just dev` / `pnpm dev` | Migrationer, demodata, API, indexer och webb (Vite hot reload; backend via `cargo watch` när verktyget finns). `BRAIAN_DEV_NO_WATCH=1` stänger av watch. Ett backend-fel stoppar inte Vite. |
 | `just check` | Format, clippy, och att `rules` kompilerar till WebAssembly |
 | `just test` | Alla tester |
 | `just demo-1` | Fas 1: generera tunga objekt och validera dem i Rust och WebAssembly |

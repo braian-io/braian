@@ -168,12 +168,12 @@ fn groups(
 ) -> std::collections::BTreeMap<braian_model::StructureId, braian_model::GroupId> {
     std::collections::BTreeMap::from([
         (
-            model.structure_id("catalog").unwrap(),
-            model.group_id("catalog", "leaf").unwrap(),
+            model.structure_id("assortment").unwrap(),
+            model.group_id("assortment", "leaf").unwrap(),
         ),
         (
-            model.structure_id("channel").unwrap(),
-            model.group_id("channel", "flat").unwrap(),
+            model.structure_id("webshop").unwrap(),
+            model.group_id("webshop", "flat").unwrap(),
         ),
     ])
 }

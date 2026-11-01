@@ -30,10 +30,9 @@ export function historyActor(row: Json): { person: string; via: '' | 'agent' | '
   return { person: actor, via: '' }
 }
 
-export function historyTitle(row: Json): string {
+export function historyWho(row: Json): string {
   const { person, via } = historyActor(row)
-  const who = via === 'agent' ? `${person} ${copy.viaAgent}` : via === 'import' ? `${person} ${copy.viaImport}` : person
-  return isCreate(row) ? `${copy.createdBy} ${who}` : who
+  return via === 'agent' ? `${person} ${copy.viaAgent}` : via === 'import' ? `${person} ${copy.viaImport}` : person
 }
 
 export function isCreate(row: Json): boolean {

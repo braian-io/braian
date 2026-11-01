@@ -33,6 +33,8 @@ enum Command {
     Seed,
     /// API, indexer and seed.
     All,
+    /// Reconciles continuous merge profiles onto the master catalog.
+    Merger,
     /// Print the OpenAPI document as JSON.
     Openapi {
         #[arg(long)]
@@ -83,6 +85,7 @@ async fn main() -> anyhow::Result<()> {
             let store = connect().await?;
             seed::run(&store, typesense().as_ref()).await
         }
+        Command::Merger => merger().await,
         Command::All => {
             let (state, addr) = prepare(true).await?;
             let store = state.store.clone();
@@ -96,6 +99,12 @@ async fn main() -> anyhow::Result<()> {
             } else {
                 tracing::warn!("TYPESENSE_URL is not set; indexer is off");
             }
+            let merge_store = store.clone();
+            tokio::spawn(async move {
+                if let Err(error) = run_merger(merge_store).await {
+                    tracing::error!(%error, "merger stopped");
+                }
+            });
             serve(state, addr).await
         }
         Command::Openapi { .. } => unreachable!("handled above"),
@@ -173,6 +182,41 @@ fn typesense() -> Option<Typesense> {
             }
         }
         _ => None,
+    }
+}
+
+async fn merger() -> anyhow::Result<()> {
+    run_merger(connect().await?).await
+}
+
+async fn run_merger(store: braian_store::Store) -> anyhow::Result<()> {
+    let actor = braian_store::Actor {
+        actor: braian_store::SYSTEM_PRINCIPAL,
+        on_behalf_of: None,
+        kind: braian_store::BatchKind::Bulk,
+        source: "merge".into(),
+    };
+    loop {
+        let seq = store.safe_change_seq().await?;
+        let seen = store.consumer_seq("merger").await?;
+        if seq > seen {
+            for profile in store.merge_profiles().await? {
+                if profile.mode != "continuous" {
+                    continue;
+                }
+                braian_api::merge::apply_profile(&store, &actor, &profile.key, false)
+                    .await
+                    .map_err(|error| anyhow::anyhow!("merge {}: {error:?}", profile.key))?;
+            }
+            store.set_consumer_seq("merger", seq).await?;
+        }
+        for key in store.due_profiles().await? {
+            braian_api::merge::apply_profile(&store, &actor, &key, false)
+                .await
+                .map_err(|error| anyhow::anyhow!("scheduled merge {key}: {error:?}"))?;
+            store.mark_profile_ran(&key).await?;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     }
 }
 

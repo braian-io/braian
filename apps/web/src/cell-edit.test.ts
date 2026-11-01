@@ -136,6 +136,8 @@ describe('isEditableColumn', () => {
     expect(isEditableColumn('name')).toBe(true)
     expect(isEditableColumn('name@en')).toBe(true)
     expect(isEditableColumn('status')).toBe(true)
+    expect(isEditableColumn('brand', new Set(['brand']))).toBe(false)
+    expect(isEditableColumn('name', new Set(['brand']))).toBe(true)
   })
 })
 

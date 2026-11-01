@@ -142,10 +142,169 @@ pub async fn run(store: &Store, search: Option<&Typesense>) -> anyhow::Result<()
         seed_catalog(store, &actor, &links, target).await?;
     }
 
+    seed_sources(store, &actor, &defs, &model).await?;
+
     if let Some(search) = search {
         braian_indexer::reindex(store, search).await?;
     }
     Ok(())
+}
+
+async fn seed_sources(
+    store: &Store,
+    actor: &Actor,
+    defs: &DefinitionSet,
+    model: &CompiledModel,
+) -> anyhow::Result<()> {
+    use braian_store::{CatalogId, CatalogKind};
+    let sources = [
+        (2u128, "sap", "SAP ERP", include_str!("../demo/sap.json")),
+        (
+            3,
+            "supplier-nordic",
+            "Supplier Nordic",
+            include_str!("../demo/supplier-nordic.json"),
+        ),
+        (
+            4,
+            "supplier-alpine",
+            "Supplier Alpine",
+            include_str!("../demo/supplier-alpine.json"),
+        ),
+    ];
+    let mut created = false;
+    for (n, key, name, file) in sources {
+        let id = CatalogId::from_uuid(Uuid::from_u128(
+            0x018f_1000_0000_7000_8000_0000_0000_0000 + n,
+        ));
+        if store.catalog_by_key(key).await?.is_none() {
+            store
+                .create_catalog(id, key, name, CatalogKind::Source, true)
+                .await?;
+        }
+        let catalog = store
+            .catalog_by_key(key)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("{key} catalog is missing"))?;
+        let scoped = store.with_catalog(catalog.id);
+        // A new source catalog starts at revision 1. The master may already be
+        // further ahead after an upgrade, and that number is not valid here.
+        let source_revision = match scoped.definition_set().await {
+            Ok(existing) => existing.model_revision,
+            Err(_) => {
+                let mut copy = defs.clone();
+                copy.model_revision = 1;
+                scoped.put_definitions(actor, &copy).await?;
+                1
+            }
+        };
+        if seed_source_file(&scoped, actor, model, source_revision, file).await? {
+            created = true;
+        }
+    }
+    let sap = store
+        .catalog_by_key("sap")
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("sap catalog is missing"))?;
+    if store.merge_profile_by_key("sap-brand").await?.is_none() {
+        let spec = json!({
+            "match_attributes": ["number"],
+            "master_key": "number",
+            "attributes": [{ "source": "brand", "target": "brand" }],
+            "on_no_match": "create",
+            "on_delete": "ignore",
+            "owns_existence_for": ["product"]
+        });
+        store
+            .put_merge_profile(
+                Uuid::now_v7(),
+                "sap-brand",
+                "SAP brand",
+                sap.id,
+                &spec,
+                "manual",
+            )
+            .await?;
+    }
+    if store
+        .ownership_rules()
+        .await?
+        .as_array()
+        .is_some_and(|rules| rules.is_empty())
+    {
+        store
+            .put_ownership_rules(&json!([{
+                "attribute": "brand",
+                "profiles": ["sap-brand"]
+            }]))
+            .await?;
+    }
+    if created {
+        let mut merge_actor = actor.clone();
+        merge_actor.source = "merge".into();
+        braian_api::merge::apply_profile(store, &merge_actor, "sap-brand", false)
+            .await
+            .map_err(|error| anyhow::anyhow!("merge sap-brand: {error:?}"))?;
+    }
+    Ok(())
+}
+
+async fn seed_source_file(
+    store: &Store,
+    actor: &Actor,
+    model: &CompiledModel,
+    revision: u64,
+    file: &str,
+) -> anyhow::Result<bool> {
+    let rows: Vec<Value> = serde_json::from_str(file)?;
+    let type_id = model
+        .type_id("product")
+        .ok_or_else(|| anyhow::anyhow!("product type is missing"))?;
+    // An upgraded model may not carry every demo attribute. Keep the values that apply.
+    let applicable: HashSet<AttributeId> = model
+        .applicable_ids(type_id, &BTreeMap::new())
+        .unwrap_or_default()
+        .into_iter()
+        .collect();
+    let mut created = false;
+    for row in rows {
+        let key = row["key"].as_str().unwrap_or("");
+        if key.is_empty() || store.get_by_key(type_id, key).await?.is_some() {
+            continue;
+        }
+        let mut values = BTreeMap::new();
+        let Some(raw) = row["values"].as_object() else {
+            continue;
+        };
+        for (name, value) in raw {
+            let Some(attribute) = model.attribute_by_key(name) else {
+                continue;
+            };
+            if !applicable.contains(&attribute.id) {
+                continue;
+            }
+            values.insert(attribute.id, value.clone());
+        }
+        let object = Object {
+            id: ObjectId::from_uuid(Uuid::parse_str(row["id"].as_str().unwrap_or_default())?),
+            type_id,
+            model_revision: revision,
+            groups: BTreeMap::new(),
+            values,
+        };
+        let errors = model.validate(&object);
+        if !errors.is_empty() {
+            return Err(anyhow::anyhow!(
+                "source {key} failed validation: {}",
+                errors[0].message
+            ));
+        }
+        store
+            .write_batch(actor, vec![ObjectOp::Create(object)])
+            .await?;
+        created = true;
+    }
+    Ok(created)
 }
 
 async fn ensure_definitions(store: &Store, actor: &Actor) -> anyhow::Result<DefinitionSet> {
@@ -201,6 +360,12 @@ async fn seed_demo_surface(
             "Review",
             false,
             "braian-review",
+        ),
+        (
+            "018f2000-0000-7000-8000-000000000008",
+            "Sources",
+            false,
+            "braian-sources",
         ),
     ];
     for (id, name, locked, share) in workspaces {
@@ -353,6 +518,21 @@ fn layout(workspace: &str) -> Value {
                     "018f2000-0000-7000-8000-000000000204",
                 ]),
                 tabs(&["018f2000-0000-7000-8000-000000000203"]),
+            ),
+        ),
+        "018f2000-0000-7000-8000-000000000008" => split(
+            "horizontal",
+            0.22,
+            tabs(&["018f2000-0000-7000-8000-000000000802"]),
+            split(
+                "horizontal",
+                0.62,
+                tabs(&[
+                    "018f2000-0000-7000-8000-000000000803",
+                    "018f2000-0000-7000-8000-000000000801",
+                    "018f2000-0000-7000-8000-000000000805",
+                ]),
+                tabs(&["018f2000-0000-7000-8000-000000000804"]),
             ),
         ),
         "018f2000-0000-7000-8000-000000000004" => split(
@@ -644,6 +824,51 @@ async fn save_views(store: &Store, defs: &DefinitionSet) -> anyhow::Result<()> {
             "history",
             "History",
             "right",
+            2,
+            json!({}),
+        ),
+        (
+            "018f2000-0000-7000-8000-000000000801",
+            "018f2000-0000-7000-8000-000000000008",
+            "object_table",
+            "SAP",
+            "center",
+            0,
+            json!({"columns": ["number", "name", "brand"], "sort": "number", "object_type": "product", "type_key": "product", "catalog": "sap"}),
+        ),
+        (
+            "018f2000-0000-7000-8000-000000000802",
+            "018f2000-0000-7000-8000-000000000008",
+            "catalogs",
+            "Catalogs",
+            "left",
+            0,
+            json!({}),
+        ),
+        (
+            "018f2000-0000-7000-8000-000000000803",
+            "018f2000-0000-7000-8000-000000000008",
+            "merge_profiles",
+            "Merge profiles",
+            "center",
+            0,
+            json!({}),
+        ),
+        (
+            "018f2000-0000-7000-8000-000000000804",
+            "018f2000-0000-7000-8000-000000000008",
+            "ownership_rules",
+            "Ownership",
+            "right",
+            0,
+            json!({}),
+        ),
+        (
+            "018f2000-0000-7000-8000-000000000805",
+            "018f2000-0000-7000-8000-000000000008",
+            "merge_runs",
+            "Merge runs",
+            "center",
             2,
             json!({}),
         ),

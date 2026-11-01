@@ -157,7 +157,7 @@ pub fn definitions_with(tier: Tier, seed: u64, budget: IndexBudget) -> Definitio
         structures: vec![
             Structure {
                 id: catalog,
-                key: "catalog".to_owned(),
+                key: "assortment".to_owned(),
                 labels: BTreeMap::new(),
                 groups: vec![
                     Group {
@@ -190,7 +190,7 @@ pub fn definitions_with(tier: Tier, seed: u64, budget: IndexBudget) -> Definitio
             },
             Structure {
                 id: channel,
-                key: "channel".to_owned(),
+                key: "webshop".to_owned(),
                 labels: BTreeMap::new(),
                 groups: vec![Group {
                     id: flat,

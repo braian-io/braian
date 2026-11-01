@@ -80,7 +80,8 @@ pub struct ExportObject {
 }
 
 const WHERE: &str = r#"
-o.deleted_at IS NULL
+o.catalog_id = braian_catalog()
+AND o.deleted_at IS NULL
 AND ($1::uuid[] IS NULL OR o.id = ANY($1))
 AND ($2::uuid IS NULL OR o.type_id = $2)
 AND (
@@ -119,7 +120,7 @@ fn order_sql(order: ExportOrder) -> &'static str {
 impl Store {
     /// How many objects match. Uses this store's lane and returns the connection.
     pub async fn count_export(&self, scan: &ExportScan) -> Result<i64, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let sql = format!("SELECT count(*) FROM objects o WHERE {WHERE}");
         let pattern = key_param(scan);
         let params = binds(scan, &pattern);
@@ -138,7 +139,7 @@ impl Store {
         F: FnMut(Vec<ExportObject>) -> Fut,
         Fut: Future<Output = Result<(), Error>>,
     {
-        let mut client = self.pool().get().await?;
+        let mut client = self.checkout().await?;
         let tx = client.build_transaction().read_only(true).start().await?;
         let declare = format!(
             "DECLARE export_cur NO SCROLL CURSOR FOR \
@@ -193,7 +194,7 @@ impl Store {
         if ids.is_empty() {
             return Ok(BTreeMap::new());
         }
-        let mut client = self.pool().get().await?;
+        let mut client = self.checkout().await?;
         let tx = client.build_transaction().read_only(true).start().await?;
         let hops = link_hop_values(&tx, self.form(), ids).await?;
         tx.commit().await?;
@@ -208,7 +209,7 @@ impl Store {
         if ids.is_empty() {
             return Ok(BTreeMap::new());
         }
-        let mut client = self.pool().get().await?;
+        let mut client = self.checkout().await?;
         let tx = client.build_transaction().read_only(true).start().await?;
         let hops = link_hop_entries(&tx, self.form(), ids).await?;
         tx.commit().await?;

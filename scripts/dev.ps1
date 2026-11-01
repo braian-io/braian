@@ -1,5 +1,5 @@
-# Loads .env, then starts the API, indexer and Vite.
-# Same as `just dev`, for a Windows shell that does not have just yet.
+# Loads .env, then starts the API, indexer and Vite (same as `just dev` / `pnpm dev`).
+# Backend rebuilds on saved Rust changes when cargo-watch is installed.
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 Set-Location $root

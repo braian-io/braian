@@ -2351,6 +2351,8 @@ export interface components {
             links?: components["schemas"]["LinkSide"][];
             /** Format: int64 */
             model_revision: number;
+            origin?: null | components["schemas"]["FreeObject"];
+            owners?: null | components["schemas"]["FreeObject"];
             /** Format: int64 */
             seq: number;
             type: string;

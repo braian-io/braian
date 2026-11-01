@@ -187,7 +187,7 @@ impl crate::session::Store {
         if ids.is_empty() {
             return Ok(HashMap::new());
         }
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let rows = client
             .query(
                 "SELECT l.link_type_id, l.from_id AS endpoint, true AS outgoing, COALESCE(peer.key, '') AS peer_key
@@ -221,12 +221,12 @@ impl crate::session::Store {
     }
 
     pub async fn links_for(&self, id: ObjectId) -> Result<Vec<LinkView>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         links_for(&**client, id).await
     }
 
     pub async fn count_links_touching(&self, id: ObjectId) -> Result<i64, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         count_touching(&**client, id).await
     }
 
@@ -239,7 +239,7 @@ impl crate::session::Store {
         from_one: bool,
         to_one: bool,
     ) -> Result<bool, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let blocked: bool = client
             .query_one(
                 "SELECT EXISTS (
@@ -268,7 +268,7 @@ impl crate::session::Store {
 
     /// `(link rows removed, other objects removed)`.
     pub async fn link_delete_counts(&self, id: ObjectId) -> Result<(i64, i64), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         delete_counts(&**client, id).await
     }
 }

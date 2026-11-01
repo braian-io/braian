@@ -68,7 +68,7 @@ impl Store {
         file_kind: &str,
         model_revision: i64,
     ) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
                 "INSERT INTO import_sessions (id, owner, on_behalf_of, file_name, file_kind, status, model_revision)
@@ -86,12 +86,33 @@ impl Store {
         Ok(())
     }
 
+    /// A snapshot import may remove master keys the file no longer contains.
+    /// A delta import leaves those keys alone. The flag is the record of which.
+    pub async fn mark_import_snapshot(&self, id: Uuid) -> Result<(), Error> {
+        let client = self.checkout().await?;
+        client
+            .execute(
+                "UPDATE import_sessions SET snapshot = true WHERE id = $1",
+                &[&id],
+            )
+            .await?;
+        Ok(())
+    }
+
+    pub async fn import_is_snapshot(&self, id: Uuid) -> Result<bool, Error> {
+        let client = self.checkout().await?;
+        let row = client
+            .query_opt("SELECT snapshot FROM import_sessions WHERE id = $1", &[&id])
+            .await?;
+        Ok(row.is_some_and(|row| row.get::<_, bool>(0)))
+    }
+
     pub async fn count_active_imports(&self, owner: Uuid) -> Result<i64, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let row = client
             .query_one(
                 "SELECT count(*)::bigint FROM import_sessions
-                 WHERE owner = $1
+                 WHERE catalog_id = braian_catalog() AND owner = $1
                    AND status NOT IN ('saved', 'failed', 'cancelled', 'previewed', 'ready')",
                 &[&owner],
             )
@@ -100,7 +121,7 @@ impl Store {
     }
 
     pub async fn import_session(&self, id: Uuid) -> Result<Option<ImportSession>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let Some(row) = client
             .query_opt(
                 "SELECT id, owner, on_behalf_of, file_name, file_kind, file_bytes, status,
@@ -145,7 +166,7 @@ impl Store {
         status: &str,
         error: Option<&str>,
     ) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
                 "UPDATE import_sessions
@@ -171,7 +192,7 @@ impl Store {
         status: &str,
         error: Option<&str>,
     ) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
                 "UPDATE import_sessions
@@ -201,7 +222,7 @@ impl Store {
         rows_parsed: i64,
         parse_done: bool,
     ) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
                 "UPDATE import_sessions
@@ -220,7 +241,7 @@ impl Store {
         usage: &Value,
         status: &str,
     ) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
                 "UPDATE import_sessions
@@ -244,7 +265,7 @@ impl Store {
     }
 
     pub async fn update_import_mapping(&self, id: Uuid, mapping: &Value) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
                 "UPDATE import_sessions SET mapping = $2, updated_at = now() WHERE id = $1",
@@ -261,7 +282,7 @@ impl Store {
         counters: &Value,
         error: Option<&str>,
     ) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
                 "UPDATE import_sessions
@@ -279,7 +300,7 @@ impl Store {
         id: Uuid,
         mapping: &Value,
     ) -> Result<bool, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let row = client
             .query_one(
                 "SELECT (status IN ('diffing', 'previewed') AND diff_mapping = $2)
@@ -291,7 +312,7 @@ impl Store {
     }
 
     pub async fn import_diff_current(&self, id: Uuid, generation: i64) -> Result<bool, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let Some(row) = client
             .query_opt(
                 "SELECT diff_generation = $2 FROM import_sessions WHERE id = $1",
@@ -309,7 +330,7 @@ impl Store {
     /// The generation bumps in the same transaction that clears preview rows, so
     /// a worker still writing the previous mapping cannot append after this.
     pub async fn restart_import_diff(&self, id: Uuid) -> Result<i64, Error> {
-        let mut client = self.pool().get().await?;
+        let mut client = self.checkout().await?;
         let tx = client.transaction().await?;
         let counters = empty_import_counters();
         let row = tx
@@ -341,7 +362,7 @@ impl Store {
         counters: &Value,
         error: Option<&str>,
     ) -> Result<bool, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let updated = client
             .execute(
                 "UPDATE import_sessions
@@ -359,7 +380,7 @@ impl Store {
         generation: i64,
         error: &str,
     ) -> Result<bool, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let updated = client
             .execute(
                 "UPDATE import_sessions
@@ -379,7 +400,7 @@ impl Store {
         job_id: Uuid,
         counters: &Value,
     ) -> Result<bool, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let updated = client
             .execute(
                 "UPDATE import_sessions
@@ -399,7 +420,7 @@ impl Store {
         counters: &Value,
         error: Option<&str>,
     ) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
                 "UPDATE import_sessions
@@ -412,7 +433,7 @@ impl Store {
     }
 
     pub async fn delete_import_session(&self, id: Uuid) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute("DELETE FROM import_sessions WHERE id = $1", &[&id])
             .await?;
@@ -424,7 +445,7 @@ impl Store {
     /// draft a person can come back to, so it lives much longer than the rest.
     /// Open import proposals whose session is gone are discarded.
     pub async fn purge_import_sessions(&self) -> Result<Vec<Uuid>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let rows = client
             .query(
                 "DELETE FROM import_sessions
@@ -609,7 +630,7 @@ impl Store {
         status: &str,
         errors: &Value,
     ) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
                 "UPDATE import_rows SET status = $3, errors = $4
@@ -621,7 +642,7 @@ impl Store {
     }
 
     pub async fn delete_import_rows(&self, session_id: Uuid) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
                 "DELETE FROM import_rows WHERE session_id = $1",
@@ -641,7 +662,7 @@ impl Store {
         generation: i64,
         rows: &[ImportRowIn],
     ) -> Result<bool, Error> {
-        let mut client = self.pool().get().await?;
+        let mut client = self.checkout().await?;
         let tx = client.transaction().await?;
         let Some(row) = tx
             .query_opt(
@@ -709,7 +730,7 @@ impl Store {
         session_id: Uuid,
         status: Option<&str>,
     ) -> Result<i64, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let row = client
             .query_one(
                 "SELECT count(*)::bigint FROM import_rows
@@ -727,7 +748,7 @@ impl Store {
         offset: i64,
         limit: i64,
     ) -> Result<Vec<ImportRowOut>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let rows = client
             .query(
                 "SELECT row_no, status, object_id, object_key, base_version, cells, patch, errors
@@ -748,7 +769,7 @@ impl Store {
         after_row: i32,
         limit: i64,
     ) -> Result<Vec<ImportRowOut>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let rows = client
             .query(
                 "SELECT row_no, status, object_id, object_key, base_version, cells, patch, errors

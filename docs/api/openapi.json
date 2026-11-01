@@ -9561,6 +9561,26 @@
             "format": "int64",
             "minimum": 0
           },
+          "origin": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/FreeObject"
+              }
+            ]
+          },
+          "owners": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/FreeObject"
+              }
+            ]
+          },
           "seq": {
             "type": "integer",
             "format": "int64"

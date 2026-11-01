@@ -233,8 +233,8 @@ function installRowStyles() {
   const end = source.indexOf('.draft-user')
   if (start < 0 || end < start) throw new Error('row selection styles missing')
   const rules = source.slice(start, end)
-  // One rule carries fill and border. Hover is a neutral surface, not that fill.
-  expect(rules).toMatch(/\.row\.selected\s*\{[^}]*background:\s*var\(--accent-dim\)[^}]*outline:\s*2px solid var\(--accent\)/)
+  // One rule carries fill and rules. Hover is a neutral surface, not that fill.
+  expect(rules).toMatch(/\.row\.selected\s*\{[^}]*background:\s*var\(--accent-dim\)[^}]*box-shadow:\s*inset 0 1px 0 var\(--accent\), inset 0 -1px 0 var\(--accent\)/)
   expect(rules).toMatch(/\.row:hover:not\(\.selected\)\s*\{[^}]*background:\s*var\(--hover\)/)
   expect(rules).not.toMatch(/\.row:hover[^{]*\{[^}]*accent/)
   const style = document.createElement('style')
@@ -245,7 +245,7 @@ function installRowStyles() {
 function selectedLook(row: Element) {
   const style = getComputedStyle(row)
   // jsdom keeps these specified values when the color is a custom property.
-  return style.outline.includes('2px solid') && style.boxShadow.includes('inset 2px 0 0')
+  return style.boxShadow.includes('inset 0 1px 0') && style.boxShadow.includes('inset 0 -1px 0')
 }
 
 describe('active row', () => {
@@ -347,6 +347,7 @@ describe('active row', () => {
     const input = await screen.findByTestId('palette-input')
     await waitFor(() => expect(screen.getAllByRole('option').length).toBeGreaterThan(3))
 
+    fireEvent.keyDown(input, { key: 'ArrowDown' })
     fireEvent.keyDown(input, { key: 'ArrowDown' })
     fireEvent.keyDown(input, { key: 'ArrowDown' })
     expect(screen.getByTestId('palette-active').textContent).toBe('Split beside the table')

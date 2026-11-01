@@ -245,7 +245,16 @@ pub async fn post_link(
         receipt.last_seq,
         &body.link_type,
     );
-    Ok(object_response(&state, &cached, &stored, receipt.last_seq, false, true).await)
+    Ok(object_response(
+        &state,
+        &cached,
+        &stored,
+        receipt.last_seq,
+        false,
+        true,
+        None,
+    )
+    .await)
 }
 
 #[utoipa::path(
@@ -326,7 +335,16 @@ pub async fn patch_link(
         receipt.last_seq,
         &type_key(&cached.defs, stored.object.type_id),
     );
-    Ok(object_response(&state, &cached, &stored, receipt.last_seq, false, true).await)
+    Ok(object_response(
+        &state,
+        &cached,
+        &stored,
+        receipt.last_seq,
+        false,
+        true,
+        None,
+    )
+    .await)
 }
 
 #[utoipa::path(

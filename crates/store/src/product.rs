@@ -69,10 +69,10 @@ impl Store {
         &self,
         user_id: Uuid,
     ) -> Result<Option<(i64, serde_json::Value, DateTime<Utc>)>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let row = client
             .query_opt(
-                "SELECT base_revision, steps, updated_at FROM model_drafts WHERE user_id = $1",
+                "SELECT base_revision, steps, updated_at FROM model_drafts WHERE user_id = $1 AND catalog_id = braian_catalog()",
                 &[&user_id],
             )
             .await?;
@@ -85,12 +85,12 @@ impl Store {
         base_revision: i64,
         steps: &serde_json::Value,
     ) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
                 "INSERT INTO model_drafts (user_id, base_revision, steps, updated_at)
                  VALUES ($1, $2, $3, now())
-                 ON CONFLICT (user_id) DO UPDATE
+                 ON CONFLICT (user_id, catalog_id) DO UPDATE
                  SET base_revision = EXCLUDED.base_revision,
                      steps = EXCLUDED.steps,
                      updated_at = now()",
@@ -101,15 +101,18 @@ impl Store {
     }
 
     pub async fn delete_model_draft(&self, user_id: Uuid) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
-            .execute("DELETE FROM model_drafts WHERE user_id = $1", &[&user_id])
+            .execute(
+                "DELETE FROM model_drafts WHERE user_id = $1 AND catalog_id = braian_catalog()",
+                &[&user_id],
+            )
             .await?;
         Ok(())
     }
 
     pub async fn principal_by_handle(&self, handle: &str) -> Result<Option<PrincipalId>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let row = client
             .query_opt("SELECT id FROM principals WHERE handle = $1", &[&handle])
             .await?;
@@ -125,7 +128,7 @@ impl Store {
         display_name: &str,
     ) -> Result<Uuid, Error> {
         let id = Uuid::now_v7();
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
                 "INSERT INTO users (id, principal_id, email, password_hash, role, display_name)
@@ -144,7 +147,7 @@ impl Store {
     }
 
     pub async fn user_id_for_principal(&self, principal: Uuid) -> Result<Option<Uuid>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let row = client
             .query_opt(
                 "SELECT id FROM users WHERE principal_id = $1",
@@ -165,7 +168,7 @@ impl Store {
             .upsert_principal(email, PrincipalKind::Human, display_name)
             .await?;
         let id = Uuid::now_v7();
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
                 "INSERT INTO users (id, principal_id, email, password_hash, role, display_name)
@@ -191,7 +194,7 @@ impl Store {
     }
 
     pub async fn user_by_email(&self, email: &str) -> Result<Option<UserRecord>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let Some(row) = client
             .query_opt(
                 "SELECT id, principal_id, email, password_hash, role, display_name FROM users WHERE email = $1",
@@ -205,7 +208,7 @@ impl Store {
     }
 
     pub async fn user_by_id(&self, id: Uuid) -> Result<Option<UserRecord>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let Some(row) = client
             .query_opt(
                 "SELECT id, principal_id, email, password_hash, role, display_name FROM users WHERE id = $1",
@@ -224,7 +227,7 @@ impl Store {
         token_hash: &[u8],
         expires_at: DateTime<Utc>,
     ) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
                 "INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ($1, $2, $3)",
@@ -235,7 +238,7 @@ impl Store {
     }
 
     pub async fn user_for_session(&self, token_hash: &[u8]) -> Result<Option<UserRecord>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let Some(row) = client
             .query_opt(
                 "SELECT u.id, u.principal_id, u.email, u.password_hash, u.role, u.display_name
@@ -251,7 +254,7 @@ impl Store {
     }
 
     pub async fn delete_session(&self, token_hash: &[u8]) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute("DELETE FROM sessions WHERE token_hash = $1", &[&token_hash])
             .await?;
@@ -277,7 +280,7 @@ impl Store {
                 name,
             )
             .await?;
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
                 "INSERT INTO api_tokens (token_hash, principal_id, owner_user_id, name, kind)
@@ -292,7 +295,7 @@ impl Store {
         &self,
         token_hash: &[u8],
     ) -> Result<Option<(PrincipalId, UserRecord, String)>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let Some(row) = client
             .query_opt(
                 "SELECT t.principal_id, t.kind, u.id, u.principal_id, u.email, u.password_hash, u.role, u.display_name
@@ -318,8 +321,17 @@ impl Store {
         share_token: Option<&str>,
         layout: &Value,
     ) -> Result<(), Error> {
-        let client = self.pool().get().await?;
-        client
+        let mut client = self.checkout().await?;
+        let transaction = client.transaction().await?;
+        if let Some(token) = share_token {
+            transaction
+                .execute(
+                    "UPDATE workspaces SET share_token = NULL WHERE share_token = $1 AND id <> $2",
+                    &[&token, &id],
+                )
+                .await?;
+        }
+        transaction
             .execute(
                 "INSERT INTO workspaces (id, owner_id, name, locked, share_token, layout)
                  VALUES ($1, $2, $3, $4, $5, $6)
@@ -328,18 +340,19 @@ impl Store {
                 &[&id, &owner_id, &name, &locked, &share_token, layout],
             )
             .await?;
-        client
+        transaction
             .execute(
                 "INSERT INTO workspace_members (workspace_id, user_id) VALUES ($1, $2)
                  ON CONFLICT DO NOTHING",
                 &[&id, &owner_id],
             )
             .await?;
+        transaction.commit().await?;
         Ok(())
     }
 
     pub async fn assign_workspace(&self, workspace_id: Uuid, user_id: Uuid) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
                 "INSERT INTO workspace_members (workspace_id, user_id) VALUES ($1, $2)
@@ -355,7 +368,7 @@ impl Store {
         workspace_id: Uuid,
         user_id: Uuid,
     ) -> Result<bool, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let row = client
             .query_opt(
                 "SELECT 1 FROM workspace_members WHERE workspace_id = $1 AND user_id = $2",
@@ -366,7 +379,7 @@ impl Store {
     }
 
     pub async fn delete_workspace(&self, id: Uuid) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute("DELETE FROM workspaces WHERE id = $1", &[&id])
             .await?;
@@ -374,7 +387,7 @@ impl Store {
     }
 
     pub async fn workspace_count_for_user(&self, user_id: Uuid) -> Result<i64, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let row = client
             .query_one(
                 "SELECT COUNT(*)::bigint AS n
@@ -387,10 +400,10 @@ impl Store {
     }
 
     pub async fn list_workspaces(&self, user_id: Uuid) -> Result<Vec<Value>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let rows = client
             .query(
-                "SELECT w.id, w.name, w.locked, w.share_token, w.layout, w.owner_id
+                "SELECT w.id, w.name, w.locked, w.share_token, w.layout, w.owner_id, w.catalog_id
                  FROM workspaces w
                  JOIN workspace_members m ON m.workspace_id = w.id
                  WHERE m.user_id = $1
@@ -402,10 +415,10 @@ impl Store {
     }
 
     pub async fn list_all_workspaces(&self) -> Result<Vec<Value>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let rows = client
             .query(
-                "SELECT id, name, locked, share_token, layout, owner_id FROM workspaces ORDER BY created_at",
+                "SELECT id, name, locked, share_token, layout, owner_id, catalog_id FROM workspaces ORDER BY created_at",
                 &[],
             )
             .await?;
@@ -413,10 +426,10 @@ impl Store {
     }
 
     pub async fn workspace(&self, id: Uuid) -> Result<Option<Value>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let Some(row) = client
             .query_opt(
-                "SELECT id, name, locked, share_token, layout, owner_id FROM workspaces WHERE id = $1",
+                "SELECT id, name, locked, share_token, layout, owner_id, catalog_id FROM workspaces WHERE id = $1",
                 &[&id],
             )
             .await?
@@ -450,7 +463,7 @@ impl Store {
     }
 
     pub async fn workspace_by_share(&self, token: &str) -> Result<Option<Value>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let Some(row) = client
             .query_opt(
                 "SELECT id FROM workspaces WHERE share_token = $1",
@@ -464,7 +477,7 @@ impl Store {
     }
 
     pub async fn workspace_locked(&self, id: Uuid) -> Result<bool, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let row = client
             .query_one("SELECT locked FROM workspaces WHERE id = $1", &[&id])
             .await?;
@@ -477,7 +490,7 @@ impl Store {
         environment: &str,
         workspace_id: Uuid,
     ) -> Result<Option<(Value, DateTime<Utc>)>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let row = client
             .query_opt(
                 "SELECT document, updated_at FROM workspace_states
@@ -495,7 +508,7 @@ impl Store {
         workspace_id: Uuid,
         document: &Value,
     ) -> Result<DateTime<Utc>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let row = client
             .query_one(
                 "INSERT INTO workspace_states (user_id, environment, workspace_id, document, updated_at)
@@ -515,7 +528,7 @@ impl Store {
         environment: &str,
         workspace_id: Uuid,
     ) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
                 "DELETE FROM workspace_states
@@ -528,7 +541,7 @@ impl Store {
 
     /// View type key and state document, when the view exists.
     pub async fn view_workspace_id(&self, id: Uuid) -> Result<Option<Uuid>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let row = client
             .query_opt("SELECT workspace_id FROM views WHERE id = $1", &[&id])
             .await?;
@@ -536,7 +549,7 @@ impl Store {
     }
 
     pub async fn view_row(&self, id: Uuid) -> Result<Option<(String, Value)>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let row = client
             .query_opt("SELECT type_key, state FROM views WHERE id = $1", &[&id])
             .await?;
@@ -549,7 +562,7 @@ impl Store {
         environment: &str,
         view_id: Uuid,
     ) -> Result<Option<(Value, DateTime<Utc>)>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let row = client
             .query_opt(
                 "SELECT document, updated_at FROM view_column_prefs
@@ -567,7 +580,7 @@ impl Store {
         view_id: Uuid,
         document: &Value,
     ) -> Result<DateTime<Utc>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let row = client
             .query_one(
                 "INSERT INTO view_column_prefs (user_id, environment, view_id, document, updated_at)
@@ -587,7 +600,7 @@ impl Store {
         environment: &str,
         view_id: Uuid,
     ) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
                 "DELETE FROM view_column_prefs
@@ -600,7 +613,7 @@ impl Store {
 
     /// Drop every saved column layout for one user (all views / environments).
     pub async fn delete_all_view_column_prefs_for_user(&self, user_id: Uuid) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
                 "DELETE FROM view_column_prefs WHERE user_id = $1",
@@ -621,7 +634,7 @@ impl Store {
         position: i32,
         state: &Value,
     ) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
                 "INSERT INTO views (id, workspace_id, type_key, title, pane, position, state)
@@ -645,7 +658,7 @@ impl Store {
 
     /// Stored view document, without the seed template.
     pub async fn view_state(&self, id: Uuid) -> Result<Option<Value>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let row = client
             .query_opt("SELECT state FROM views WHERE id = $1", &[&id])
             .await?;
@@ -654,7 +667,7 @@ impl Store {
 
     /// Rewrites `views.state` and leaves title, pane and position alone.
     pub async fn update_view_state(&self, id: Uuid, state: &Value) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute("UPDATE views SET state = $2 WHERE id = $1", &[&id, state])
             .await?;
@@ -662,7 +675,7 @@ impl Store {
     }
 
     pub async fn list_view_types(&self) -> Result<Vec<Value>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let rows = client
             .query(
                 "SELECT key, title, builtin, embed_url FROM view_types ORDER BY key",
@@ -688,7 +701,7 @@ impl Store {
         title: &str,
         embed_url: Option<&str>,
     ) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
                 "INSERT INTO view_types (key, title, builtin, embed_url) VALUES ($1, $2, false, $3)
@@ -700,7 +713,7 @@ impl Store {
     }
 
     pub async fn delete_view(&self, id: Uuid) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute("DELETE FROM views WHERE id = $1", &[&id])
             .await?;
@@ -709,7 +722,7 @@ impl Store {
 
     /// Deletes a registered (non-builtin) view type that no view uses.
     pub async fn delete_view_type(&self, key: &str) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
                 "DELETE FROM view_types WHERE key = $1 AND builtin = false
@@ -728,7 +741,7 @@ impl Store {
         name: &str,
         query: &Value,
     ) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
                 "INSERT INTO assortments (id, owner_id, type_id, name, query) VALUES ($1, $2, $3, $4, $5)
@@ -741,7 +754,7 @@ impl Store {
 
     /// Rewrites `assortments.query` and leaves the name and type alone.
     pub async fn update_assortment_query(&self, id: Uuid, query: &Value) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
                 "UPDATE assortments SET query = $2 WHERE id = $1",
@@ -752,7 +765,7 @@ impl Store {
     }
 
     pub async fn list_assortments(&self, type_id: Option<Uuid>) -> Result<Vec<Value>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let rows = client
             .query(
                 "SELECT id, name, type_id, query FROM assortments
@@ -765,7 +778,7 @@ impl Store {
     }
 
     pub async fn assortment(&self, id: Uuid) -> Result<Option<Value>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let Some(row) = client
             .query_opt(
                 "SELECT id, name, type_id, query FROM assortments WHERE id = $1",
@@ -785,7 +798,7 @@ impl Store {
         reads_fields: &[String],
         assortment_id: Option<Uuid>,
     ) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
                 "INSERT INTO job_types (key, title, reads_fields, assortment_id) VALUES ($1, $2, $3, $4)
@@ -799,7 +812,7 @@ impl Store {
 
     /// Removes a job type and its runs. Used when seed drops a type that is not a real runner.
     pub async fn delete_job_type(&self, key: &str) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute("DELETE FROM job_runs WHERE type_key = $1", &[&key])
             .await?;
@@ -810,7 +823,7 @@ impl Store {
     }
 
     pub async fn list_job_types(&self) -> Result<Vec<Value>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let rows = client
             .query(
                 "SELECT key, title, reads_fields, assortment_id FROM job_types ORDER BY key",
@@ -834,13 +847,13 @@ impl Store {
         if groups.is_empty() {
             return Ok(0);
         }
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let row = client
             .query_one(
                 "SELECT count(DISTINCT o.id)::bigint
                  FROM objects o
                  JOIN object_structures s ON s.object_id = o.id
-                 WHERE o.deleted_at IS NULL AND s.group_id = ANY($1)",
+                 WHERE o.catalog_id = braian_catalog() AND o.deleted_at IS NULL AND s.group_id = ANY($1)",
                 &[&groups],
             )
             .await?;
@@ -851,13 +864,13 @@ impl Store {
         if groups.is_empty() {
             return Ok(Vec::new());
         }
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let rows = client
             .query(
                 "SELECT DISTINCT o.id, o.key
                  FROM objects o
                  JOIN object_structures s ON s.object_id = o.id
-                 WHERE o.deleted_at IS NULL AND s.group_id = ANY($1)
+                 WHERE o.catalog_id = braian_catalog() AND o.deleted_at IS NULL AND s.group_id = ANY($1)
                  ORDER BY o.key
                  LIMIT $2",
                 &[&groups, &limit],
@@ -875,7 +888,7 @@ impl Store {
     }
 
     pub async fn frecency(&self, principal: Uuid) -> Result<Value, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let rows = client
             .query(
                 "SELECT command_id, uses, last_at FROM command_frecency WHERE principal_id = $1",
@@ -899,7 +912,7 @@ impl Store {
     }
 
     pub async fn touch_frecency(&self, principal: Uuid, command_id: &str) -> Result<Value, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let row = client
             .query_one(
                 "INSERT INTO command_frecency (principal_id, command_id, uses, last_at)
@@ -920,7 +933,7 @@ impl Store {
     }
 
     pub async fn jobs_touching(&self, fields: &[String]) -> Result<Vec<Value>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let rows = client
             .query(
                 "SELECT key, title, reads_fields FROM job_types WHERE reads_fields && $1",
@@ -948,7 +961,7 @@ impl Store {
         on_behalf_of: Option<PrincipalId>,
         total: i32,
     ) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
                 "INSERT INTO job_runs (id, type_key, status, assortment_id, actor, on_behalf_of, progress_total)
@@ -973,7 +986,7 @@ impl Store {
         log: &str,
         errors: &Value,
     ) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
                 "UPDATE job_runs SET progress_done = $2, log = $3, errors = $4 WHERE id = $1",
@@ -991,7 +1004,7 @@ impl Store {
         log: &str,
         errors: &Value,
     ) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
                 "UPDATE job_runs SET status = $2, progress_done = $3, log = $4, errors = $5, finished_at = now()
@@ -1003,7 +1016,7 @@ impl Store {
     }
 
     pub async fn job_run(&self, id: Uuid) -> Result<Option<Value>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let Some(row) = client
             .query_opt(
                 "SELECT id, type_key, status, progress_done, progress_total, log, errors, created_at, finished_at
@@ -1018,7 +1031,7 @@ impl Store {
     }
 
     pub async fn job_runs(&self, type_key: &str) -> Result<Vec<Value>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let rows = client
             .query(
                 "SELECT id, type_key, status, progress_done, progress_total, log, errors, created_at, finished_at
@@ -1030,7 +1043,7 @@ impl Store {
     }
 
     pub async fn list_proposals(&self) -> Result<Vec<Value>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let rows = client
             .query(
                 "SELECT id, title, source, status, conflict, created_at FROM proposals ORDER BY created_at DESC LIMIT 50",
@@ -1154,7 +1167,7 @@ impl Store {
 
     /// Open proposals still waiting for a person: a total, and a count per object.
     pub async fn pending_summary(&self) -> Result<Value, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let total: i64 = client
             .query_one(
                 "SELECT COUNT(*)::bigint
@@ -1198,7 +1211,7 @@ impl Store {
         conflict: bool,
         rows: &[ProposalRow],
     ) -> Result<(), Error> {
-        let mut client = self.pool().get().await?;
+        let mut client = self.checkout().await?;
         let tx = client.transaction().await?;
         tx.execute(
             "INSERT INTO proposals (id, title, source, status, actor, on_behalf_of, conflict)
@@ -1237,7 +1250,7 @@ impl Store {
     }
 
     pub async fn proposal(&self, id: Uuid) -> Result<Option<Value>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let Some(row) = client
             .query_opt(
                 "SELECT p.id, p.title, p.source, p.status, p.conflict, p.actor, p.on_behalf_of, p.created_at,
@@ -1302,7 +1315,7 @@ impl Store {
         row_ids: &[Uuid],
         status: &str,
     ) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         if row_ids.is_empty() {
             client
                 .execute(
@@ -1341,7 +1354,7 @@ impl Store {
                 to: status.to_owned(),
             });
         }
-        let mut client = self.pool().get().await?;
+        let mut client = self.checkout().await?;
         let tx = client.transaction().await?;
         let row = tx
             .query_opt(
@@ -1390,7 +1403,7 @@ impl Store {
     }
 
     pub async fn set_proposal_title(&self, id: Uuid, title: &str) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
                 "UPDATE proposals SET title = $2 WHERE id = $1",
@@ -1401,7 +1414,7 @@ impl Store {
     }
 
     pub async fn set_proposal_source(&self, id: Uuid, source: &str) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
                 "UPDATE proposals SET source = $2 WHERE id = $1",
@@ -1417,7 +1430,7 @@ impl Store {
         actor: Option<Uuid>,
         limit: i64,
     ) -> Result<Vec<HistoryEntry>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let rows = client
             .query(
                 "SELECT c.seq, c.at, c.batch_id, c.object_id, c.version, c.op, c.diff,
@@ -1458,10 +1471,10 @@ impl Store {
     }
 
     pub async fn keys_with_prefix(&self, prefix: &str) -> Result<Vec<String>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let rows = client
             .query(
-                "SELECT key FROM objects WHERE starts_with(key, $1) AND deleted_at IS NULL",
+                "SELECT key FROM objects WHERE catalog_id = braian_catalog() AND starts_with(key, $1) AND deleted_at IS NULL",
                 &[&prefix],
             )
             .await?;
@@ -1473,7 +1486,7 @@ impl Store {
     /// A row with `type_id`, `structure_id` and `group_id` all empty is the
     /// total. That total uses the same predicate as [`Self::count_attribute_usage`].
     pub async fn attribute_usage_counts(&self) -> Result<Vec<AttributeUsageCount>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let totals = client
             .query(
                 "SELECT keys.attr, count(DISTINCT v.object_id)::bigint
@@ -1547,7 +1560,7 @@ impl Store {
     }
 
     pub async fn count_attribute_usage(&self, attribute_id: Uuid) -> Result<i64, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let row = client
             .query_one(
                 "SELECT count(DISTINCT v.object_id)::bigint
@@ -1564,7 +1577,7 @@ impl Store {
         attribute_id: Uuid,
         limit: i64,
     ) -> Result<Vec<ObjectId>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let rows = client
             .query(
                 "SELECT DISTINCT v.object_id
@@ -1585,11 +1598,11 @@ impl Store {
         after: Option<Uuid>,
         limit: i64,
     ) -> Result<Vec<ObjectId>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let rows = client
             .query(
                 "SELECT id FROM objects
-                 WHERE deleted_at IS NULL
+                 WHERE catalog_id = braian_catalog() AND deleted_at IS NULL
                    AND NOT EXISTS (SELECT 1 FROM links WHERE links.object_id = objects.id)
                    AND ($1::uuid IS NULL OR id > $1)
                  ORDER BY id
@@ -1604,7 +1617,7 @@ impl Store {
     }
 
     pub async fn max_change_seq(&self) -> Result<i64, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let row = client
             .query_one("SELECT COALESCE(MAX(seq), 0) FROM changes", &[])
             .await?;
@@ -1612,18 +1625,21 @@ impl Store {
     }
 
     pub async fn indexer_seq(&self) -> Result<i64, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let row = client
-            .query_one("SELECT seq FROM indexer_progress WHERE id = 1", &[])
+            .query_one(
+                "SELECT seq FROM indexer_progress WHERE catalog_id = braian_catalog()",
+                &[],
+            )
             .await?;
         Ok(row.get(0))
     }
 
     pub async fn set_indexer_seq(&self, seq: i64) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
-                "UPDATE indexer_progress SET seq = GREATEST(seq, $1), updated_at = now() WHERE id = 1",
+                "UPDATE indexer_progress SET seq = GREATEST(seq, $1), updated_at = now() WHERE catalog_id = braian_catalog()",
                 &[&seq],
             )
             .await?;
@@ -1631,18 +1647,21 @@ impl Store {
     }
 
     pub async fn indexer_collection(&self) -> Result<String, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let row = client
-            .query_one("SELECT collection FROM indexer_progress WHERE id = 1", &[])
+            .query_one(
+                "SELECT collection FROM indexer_progress WHERE catalog_id = braian_catalog()",
+                &[],
+            )
             .await?;
         Ok(row.get(0))
     }
 
     pub async fn set_indexer_collection(&self, name: &str) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
-                "UPDATE indexer_progress SET collection = $1, updated_at = now() WHERE id = 1",
+                "UPDATE indexer_progress SET collection = $1, updated_at = now() WHERE catalog_id = braian_catalog()",
                 &[&name],
             )
             .await?;
@@ -1656,7 +1675,7 @@ impl Store {
         secret: &str,
         assortment_id: Option<Uuid>,
     ) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
                 "INSERT INTO webhooks (id, url, secret, assortment_id) VALUES ($1, $2, $3, $4)",
@@ -1667,7 +1686,7 @@ impl Store {
     }
 
     pub async fn list_webhooks(&self) -> Result<Vec<Value>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let rows = client
             .query(
                 "SELECT id, url, assortment_id, enabled FROM webhooks ORDER BY created_at",
@@ -1690,7 +1709,7 @@ impl Store {
     pub async fn enabled_webhooks(
         &self,
     ) -> Result<Vec<(Uuid, String, String, Option<Uuid>)>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let rows = client
             .query(
                 "SELECT id, url, secret, assortment_id FROM webhooks WHERE enabled",
@@ -1705,10 +1724,10 @@ impl Store {
 
     /// Asks the indexer to rebuild the search alias from Postgres.
     pub async fn request_reindex(&self) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
-                "UPDATE indexer_progress SET reindex_requested = true, updated_at = now() WHERE id = 1",
+                "UPDATE indexer_progress SET reindex_requested = true, updated_at = now() WHERE catalog_id = braian_catalog()",
                 &[],
             )
             .await?;
@@ -1717,12 +1736,12 @@ impl Store {
 
     /// Clears a pending reindex request. `true` when this caller won the flag.
     pub async fn take_reindex_request(&self) -> Result<bool, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let row = client
             .query_opt(
                 "UPDATE indexer_progress
                  SET reindex_requested = false, updated_at = now()
-                 WHERE id = 1 AND reindex_requested
+                 WHERE catalog_id = braian_catalog() AND reindex_requested
                  RETURNING id",
                 &[],
             )
@@ -1734,11 +1753,11 @@ impl Store {
         &self,
         limit: i64,
     ) -> Result<Vec<(Uuid, String, Uuid, i64)>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let rows = client
             .query(
                 "SELECT id, key, type_id, version FROM objects
-                 WHERE deleted_at IS NULL AND key IS NOT NULL
+                 WHERE catalog_id = braian_catalog() AND deleted_at IS NULL AND key IS NOT NULL
                    AND NOT EXISTS (SELECT 1 FROM links WHERE links.object_id = objects.id)
                  ORDER BY key
                  LIMIT $1",
@@ -1763,10 +1782,10 @@ impl Store {
         after_id: Option<Uuid>,
         limit: i64,
     ) -> Result<Vec<(Uuid, String, Uuid, i64)>, Error> {
-        let client = self.interactive_pool().get().await?;
+        let client = self.checkout_interactive().await?;
         let pattern = key_contains.map(like_contains);
         let mut sql = String::from(
-            "SELECT id, key, type_id, version FROM objects WHERE deleted_at IS NULL AND key IS NOT NULL AND NOT EXISTS (SELECT 1 FROM links WHERE links.object_id = objects.id)",
+            "SELECT id, key, type_id, version FROM objects WHERE catalog_id = braian_catalog() AND deleted_at IS NULL AND key IS NOT NULL AND NOT EXISTS (SELECT 1 FROM links WHERE links.object_id = objects.id)",
         );
         let mut params: Vec<&(dyn ToSql + Sync)> = Vec::new();
         if let Some(type_id) = type_id.as_ref() {
@@ -1844,6 +1863,7 @@ fn workspace_json(row: &tokio_postgres::Row) -> Value {
         "share_token": row.get::<_, Option<String>>("share_token"),
         "layout": row.get::<_, Value>("layout"),
         "owner_id": row.get::<_, Uuid>("owner_id"),
+        "catalog_id": row.get::<_, Uuid>("catalog_id"),
     })
 }
 

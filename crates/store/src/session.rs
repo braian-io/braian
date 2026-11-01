@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -7,12 +8,39 @@ use tokio_postgres::NoTls;
 
 use crate::error::Error;
 use crate::gauge::{self, Gauge};
+use crate::ids::{CatalogId, MASTER_CATALOG_ID};
 use crate::pressure::{self, InteractiveGuard, InteractiveLoad, YieldLimits};
 use crate::split::StorageForm;
 use crate::types::CachedDefs;
 
 use refinery::embed_migrations;
 embed_migrations!("migrations");
+
+tokio::task_local! {
+    /// Catalog for the current request. Background tasks keep the store's own catalog.
+    static REQUEST_CATALOG: CatalogId;
+    /// JSON written onto `changes.origin` by the insert trigger. Empty means none.
+    static REQUEST_ORIGIN: String;
+}
+
+pub(crate) fn request_catalog() -> Option<CatalogId> {
+    REQUEST_CATALOG.try_with(|id| *id).ok()
+}
+
+pub(crate) async fn scope_catalog<F>(catalog: CatalogId, future: F) -> F::Output
+where
+    F: std::future::Future,
+{
+    REQUEST_CATALOG.scope(catalog, future).await
+}
+
+/// Provenance for writes on this task. The change-log trigger copies it.
+pub async fn scope_origin<F>(origin: String, future: F) -> F::Output
+where
+    F: std::future::Future,
+{
+    REQUEST_ORIGIN.scope(origin, future).await
+}
 
 /// Which connection pool a cloned [`Store`] checks out from.
 ///
@@ -125,7 +153,9 @@ pub struct Store {
     #[expect(dead_code)]
     gauge: Gauge,
     form: StorageForm,
-    definitions: Arc<RwLock<Option<Arc<CachedDefs>>>>,
+    /// Catalog this clone reads and writes. Clones share the definition cache.
+    pub(crate) catalog: CatalogId,
+    definitions: Arc<RwLock<HashMap<CatalogId, Arc<CachedDefs>>>>,
 }
 
 /// One checked-out connection. Drop it to return the connection to the pool.
@@ -199,14 +229,47 @@ impl Store {
             load,
             gauge,
             form,
-            definitions: Arc::new(RwLock::new(None)),
+            catalog: MASTER_CATALOG_ID,
+            definitions: Arc::new(RwLock::new(HashMap::new())),
         })
+    }
+
+    /// Checks out a connection and scopes it to this store's catalog.
+    ///
+    /// Inserts that omit `catalog_id` take the value from `braian.catalog`.
+    /// Pooled connections keep session state, so this runs on every checkout.
+    pub(crate) async fn checkout(&self) -> Result<deadpool_postgres::Object, Error> {
+        let client = self.pool().get().await?;
+        self.bind_catalog(&client).await?;
+        Ok(client)
+    }
+
+    /// The interactive pool, still scoped to this store's catalog.
+    pub(crate) async fn checkout_interactive(&self) -> Result<deadpool_postgres::Object, Error> {
+        let client = self.interactive_pool().get().await?;
+        self.bind_catalog(&client).await?;
+        Ok(client)
+    }
+
+    async fn bind_catalog(&self, client: &deadpool_postgres::Object) -> Result<(), Error> {
+        let id = self.catalog_id().as_uuid().to_string();
+        client
+            .execute("SELECT set_config('braian.catalog', $1, false)", &[&id])
+            .await?;
+        let origin = REQUEST_ORIGIN
+            .try_with(|value| value.clone())
+            .unwrap_or_default();
+        client
+            .execute("SELECT set_config('braian.origin', $1, false)", &[&origin])
+            .await?;
+        Ok(())
     }
 
     /// Same store, checking out connections from the capped bulk pool.
     pub fn on_bulk(&self) -> Self {
         let mut store = self.clone();
         store.lane = DbLane::Bulk;
+        store.catalog = self.catalog_id();
         store
     }
 
@@ -214,6 +277,7 @@ impl Store {
     pub fn on_interactive(&self) -> Self {
         let mut store = self.clone();
         store.lane = DbLane::Interactive;
+        store.catalog = self.catalog_id();
         store
     }
 
@@ -224,6 +288,7 @@ impl Store {
     pub fn on_indexer(&self) -> Self {
         let mut store = self.clone();
         store.lane = DbLane::Indexer;
+        store.catalog = self.catalog_id();
         store
     }
 
@@ -248,8 +313,9 @@ impl Store {
 
     /// Checks out one connection on this store's lane.
     pub async fn hold_connection(&self) -> Result<HeldConnection, Error> {
+        let connection = self.checkout().await?;
         Ok(HeldConnection {
-            _connection: self.pool().get().await?,
+            _connection: connection,
         })
     }
 
@@ -307,17 +373,23 @@ impl Store {
     }
 
     pub(crate) async fn defs(&self) -> Result<Arc<CachedDefs>, Error> {
-        if let Some(cached) = self.definitions.read().await.clone() {
+        if let Some(cached) = self
+            .definitions
+            .read()
+            .await
+            .get(&self.catalog_id())
+            .cloned()
+        {
             return Ok(cached);
         }
         self.refresh_defs().await
     }
 
     pub(crate) async fn refresh_defs(&self) -> Result<Arc<CachedDefs>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let row = client
             .query_opt(
-                "SELECT model_revision, definitions FROM definition_revisions ORDER BY model_revision DESC LIMIT 1",
+                "SELECT model_revision, definitions FROM definition_revisions WHERE catalog_id = braian_catalog() ORDER BY model_revision DESC LIMIT 1",
                 &[],
             )
             .await?;
@@ -334,7 +406,10 @@ impl Store {
             ));
         }
         let group_rows = client
-            .query("SELECT attribute_id, part_group FROM attribute_parts", &[])
+            .query(
+                "SELECT attribute_id, part_group FROM attribute_parts WHERE catalog_id = braian_catalog()",
+                &[],
+            )
             .await?;
         let mut groups = std::collections::HashMap::new();
         for row in group_rows {
@@ -346,12 +421,18 @@ impl Store {
         }
         let groups = crate::split::SplitContext::assign_groups(&set, &groups);
         let cached = Arc::new(CachedDefs::from_groups(set, groups));
-        *self.definitions.write().await = Some(Arc::clone(&cached));
+        self.definitions
+            .write()
+            .await
+            .insert(self.catalog_id(), Arc::clone(&cached));
         Ok(cached)
     }
 
     pub(crate) async fn remember(&self, cached: Arc<CachedDefs>) {
-        *self.definitions.write().await = Some(cached);
+        self.definitions
+            .write()
+            .await
+            .insert(self.catalog_id(), cached);
     }
 
     pub(crate) fn pool(&self) -> &Pool {

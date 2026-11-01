@@ -297,7 +297,7 @@ impl Store {
             return Err(Error::Data("principal handle is empty".into()));
         }
         let id = PrincipalId::new();
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let row = client
             .query_one(
                 "INSERT INTO principals (id, kind, name, handle) VALUES ($1, $2, $3, $4)
@@ -319,7 +319,7 @@ impl Store {
     /// A legacy System integration with a random id is merged onto this row in
     /// the same transaction, so older databases end up with one System row.
     pub async fn ensure_system_principal(&self) -> Result<PrincipalId, Error> {
-        let mut client = self.pool().get().await?;
+        let mut client = self.checkout().await?;
         let tx = client.transaction().await?;
         upsert_system_principal(&tx).await?;
         dedupe_legacy_system_principals(&tx).await?;
@@ -335,7 +335,7 @@ impl Store {
         name: &str,
     ) -> Result<PrincipalId, Error> {
         let id = PrincipalId::new();
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
                 "INSERT INTO principals (id, kind, name) VALUES ($1, $2, $3)",
@@ -350,7 +350,7 @@ impl Store {
         actor: &Actor,
         defs: &DefinitionSet,
     ) -> Result<WriteReceipt, Error> {
-        let mut client = self.pool().get().await?;
+        let mut client = self.checkout().await?;
         let tx = client.transaction().await?;
         let (receipt, groups) = self.write_definitions_in(&tx, actor, defs).await?;
         tx.commit().await?;
@@ -366,7 +366,7 @@ impl Store {
         defs: &DefinitionSet,
         purge: &braian_model::DataPurge,
     ) -> Result<WriteReceipt, Error> {
-        let mut client = self.pool().get().await?;
+        let mut client = self.checkout().await?;
         let tx = client.transaction().await?;
         let (mut receipt, groups) = self.write_definitions_in(&tx, actor, defs).await?;
         let seq = crate::purge::apply(&tx, actor, receipt.batch_id, purge).await?;
@@ -383,7 +383,7 @@ impl Store {
         &self,
         purge: &braian_model::DataPurge,
     ) -> Result<braian_model::ConsequenceCounts, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         crate::purge::measure(&client, purge).await
     }
 
@@ -392,11 +392,11 @@ impl Store {
     /// Runs once, when a stored type has no `structures` field. Value moves and the
     /// new definition revision share one transaction. Search is asked to rebuild.
     pub async fn upgrade_standard_attributes(&self) -> Result<bool, Error> {
-        let mut client = self.pool().get().await?;
+        let mut client = self.checkout().await?;
         let tx = client.transaction().await?;
         let row = tx
             .query_opt(
-                "SELECT model_revision, definitions FROM definition_revisions ORDER BY model_revision DESC LIMIT 1 FOR UPDATE",
+                "SELECT model_revision, definitions FROM definition_revisions WHERE catalog_id = braian_catalog() ORDER BY model_revision DESC LIMIT 1 FOR UPDATE",
                 &[],
             )
             .await?;
@@ -450,7 +450,7 @@ impl Store {
         };
         let (_receipt, groups) = self.write_definitions_in(&tx, &actor, &defs).await?;
         tx.execute(
-            "UPDATE indexer_progress SET reindex_requested = true, updated_at = now() WHERE id = 1",
+            "UPDATE indexer_progress SET reindex_requested = true, updated_at = now() WHERE catalog_id = braian_catalog()",
             &[],
         )
         .await?;
@@ -466,11 +466,11 @@ impl Store {
     /// `object_ref` attributes and does nothing. Search is asked to rebuild because
     /// those values leave the object documents.
     pub async fn upgrade_object_refs(&self) -> Result<bool, Error> {
-        let mut client = self.pool().get().await?;
+        let mut client = self.checkout().await?;
         let tx = client.transaction().await?;
         let row = tx
             .query_opt(
-                "SELECT model_revision, definitions FROM definition_revisions ORDER BY model_revision DESC LIMIT 1 FOR UPDATE",
+                "SELECT model_revision, definitions FROM definition_revisions WHERE catalog_id = braian_catalog() ORDER BY model_revision DESC LIMIT 1 FOR UPDATE",
                 &[],
             )
             .await?;
@@ -501,7 +501,12 @@ impl Store {
                 &[],
             )
             .await?;
-        let object_rows = tx.query("SELECT id, type_id FROM objects", &[]).await?;
+        let object_rows = tx
+            .query(
+                "SELECT id, type_id FROM objects WHERE catalog_id = braian_catalog()",
+                &[],
+            )
+            .await?;
         let mut object_types: HashMap<Uuid, Uuid> = HashMap::new();
         for row in &object_rows {
             object_types.insert(row.get(0), row.get(1));
@@ -644,7 +649,7 @@ impl Store {
             .await?;
         }
         tx.execute(
-            "UPDATE indexer_progress SET reindex_requested = true, updated_at = now() WHERE id = 1",
+            "UPDATE indexer_progress SET reindex_requested = true, updated_at = now() WHERE catalog_id = braian_catalog()",
             &[],
         )
         .await?;
@@ -660,7 +665,7 @@ impl Store {
         type_id: TypeId,
         structure_id: StructureId,
     ) -> Result<i64, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let row = client
             .query_one(
                 "SELECT count(*)
@@ -684,7 +689,7 @@ impl Store {
             return Ok(Vec::new());
         }
         let keys: Vec<Uuid> = ids.iter().map(|id| id.as_uuid()).collect();
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let rows = client
             .query(
                 "SELECT object.id, object.created_at, object.updated_at, object.updated_by,
@@ -717,7 +722,7 @@ impl Store {
     /// only when the previous lease is missing or already due. A live lease
     /// is [`Error::ProposalBusy`].
     pub async fn claim_proposal(&self, id: Uuid) -> Result<ProposalLock, Error> {
-        let mut client = self.pool().get().await?;
+        let mut client = self.checkout().await?;
         let tx = client.transaction().await?;
         let row = tx
             .query_opt(
@@ -753,7 +758,7 @@ impl Store {
     }
 
     async fn release_proposal_claim(&self, id: Uuid, token: Uuid) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
                 "UPDATE proposals
@@ -786,7 +791,7 @@ impl Store {
     }
 
     pub(crate) async fn expire_proposal_claim(&self, id: Uuid) -> Result<(), Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
                 "UPDATE proposals
@@ -812,7 +817,7 @@ impl Store {
         write: ProposalWrite,
         claim: Uuid,
     ) -> Result<Option<WriteReceipt>, Error> {
-        let mut client = self.pool().get().await?;
+        let mut client = self.checkout().await?;
         let tx = client.transaction().await?;
         let outcome = self
             .commit_proposal_row_in(&tx, actor, proposal_id, row_id, status, write, claim)
@@ -987,7 +992,7 @@ impl Store {
         self.ensure_actor(tx, actor).await?;
         let current = tx
             .query_opt(
-                "SELECT model_revision, definitions FROM definition_revisions ORDER BY model_revision DESC LIMIT 1 FOR UPDATE",
+                "SELECT model_revision, definitions FROM definition_revisions WHERE catalog_id = braian_catalog() ORDER BY model_revision DESC LIMIT 1 FOR UPDATE",
                 &[],
             )
             .await?;
@@ -1031,7 +1036,7 @@ impl Store {
     }
 
     pub async fn open_batch(&self, actor: &Actor) -> Result<BatchId, Error> {
-        let mut client = self.pool().get().await?;
+        let mut client = self.checkout().await?;
         let tx = client.transaction().await?;
         self.ensure_actor(&tx, actor).await?;
         let batch = insert_batch(&tx, actor).await?;
@@ -1044,7 +1049,7 @@ impl Store {
         actor: &Actor,
         ops: Vec<ObjectOp>,
     ) -> Result<WriteReceipt, Error> {
-        let mut client = self.pool().get().await?;
+        let mut client = self.checkout().await?;
         let tx = client.transaction().await?;
         self.ensure_actor(&tx, actor).await?;
         let batch = insert_batch(&tx, actor).await?;
@@ -1103,7 +1108,7 @@ impl Store {
         defs: &CachedDefs,
         ops: Vec<ObjectOp>,
     ) -> Result<WriteReceipt, Error> {
-        let mut client = self.pool().get().await?;
+        let mut client = self.checkout().await?;
         let tx = client.transaction().await?;
         if self.lane() == DbLane::Bulk {
             // The batch is already open. The slice commits or rolls back
@@ -1153,7 +1158,7 @@ impl Store {
             return Ok(());
         }
         let defs = self.defs().await?;
-        let mut client = self.pool().get().await?;
+        let mut client = self.checkout().await?;
         let tx = client.transaction().await?;
         // A slice belongs to an open batch that the caller can resume, so it
         // does not need to wait for its own WAL flush. The slice is atomic.
@@ -1200,7 +1205,7 @@ impl Store {
     }
 
     pub async fn get_object(&self, id: ObjectId) -> Result<Option<StoredObject>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let Some(row) = object_row(&**client, id).await? else {
             return Ok(None);
         };
@@ -1227,7 +1232,7 @@ impl Store {
             return Ok(Vec::new());
         }
         let uuids: Vec<Uuid> = ids.iter().map(|id| id.as_uuid()).collect();
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let params: [&(dyn ToSql + Sync); 1] = [&uuids];
         let rows_fut = client.query(
             "SELECT id, type_id, key, version, model_revision, deleted_at
@@ -1313,10 +1318,10 @@ impl Store {
         type_id: TypeId,
         key: &str,
     ) -> Result<Option<StoredObject>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let Some(row) = client
             .query_opt(
-                "SELECT id, type_id, key, version, model_revision, deleted_at FROM objects WHERE type_id = $1 AND key = $2 AND deleted_at IS NULL",
+                "SELECT id, type_id, key, version, model_revision, deleted_at FROM objects WHERE catalog_id = braian_catalog() AND type_id = $1 AND key = $2 AND deleted_at IS NULL",
                 &[&type_id.as_uuid(), &key],
             )
             .await?
@@ -1339,11 +1344,11 @@ impl Store {
         if keys.is_empty() {
             return Ok(HashMap::new());
         }
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let rows = client
             .query(
                 "SELECT id, key FROM objects
-                 WHERE type_id = $1 AND key = ANY($2) AND deleted_at IS NULL",
+                 WHERE catalog_id = braian_catalog() AND type_id = $1 AND key = ANY($2) AND deleted_at IS NULL",
                 &[&type_id.as_uuid(), &keys],
             )
             .await?;
@@ -1369,7 +1374,7 @@ impl Store {
 
     /// Raw part documents for one object. A definition change must not move a value between parts.
     pub async fn stored_parts(&self, id: ObjectId) -> Result<BTreeMap<String, Value>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let rows = client
             .query(
                 "SELECT part, \"values\" FROM object_values
@@ -1402,7 +1407,7 @@ impl Store {
         if from.is_empty() {
             return Ok(0);
         }
-        let mut client = self.pool().get().await?;
+        let mut client = self.checkout().await?;
         let tx = client.transaction().await?;
         self.ensure_actor(&tx, actor).await?;
         let batch = insert_batch(&tx, actor).await?;
@@ -1412,7 +1417,7 @@ impl Store {
                 "SELECT o.id, s.group_id
                  FROM objects o
                  JOIN object_structures s ON s.object_id = o.id
-                 WHERE o.deleted_at IS NULL AND s.structure_id = $1 AND s.group_id = ANY($2)
+                 WHERE o.catalog_id = braian_catalog() AND o.deleted_at IS NULL AND s.structure_id = $1 AND s.group_id = ANY($2)
                  FOR UPDATE OF o",
                 &[&structure.as_uuid(), &from_ids],
             )
@@ -1462,10 +1467,10 @@ impl Store {
         &self,
         limit: i64,
     ) -> Result<Vec<braian_model::DefinitionSet>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let rows = client
             .query(
-                "SELECT definitions FROM definition_revisions ORDER BY model_revision DESC LIMIT $1",
+                "SELECT definitions FROM definition_revisions WHERE catalog_id = braian_catalog() ORDER BY model_revision DESC LIMIT $1",
                 &[&limit],
             )
             .await?;
@@ -1482,13 +1487,14 @@ impl Store {
 
     /// Source recorded on the batch that wrote a definition revision.
     pub async fn definition_batch_source(&self, revision: u64) -> Result<Option<String>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let row = client
             .query_opt(
                 "SELECT batches.source
                  FROM definition_revisions
                  JOIN batches ON batches.id = definition_revisions.batch_id
-                 WHERE definition_revisions.model_revision = $1",
+                 WHERE definition_revisions.catalog_id = braian_catalog()
+                   AND definition_revisions.model_revision = $1",
                 &[&as_i64(revision)?],
             )
             .await?;
@@ -1505,7 +1511,7 @@ impl Store {
     }
 
     pub async fn principal(&self, id: PrincipalId) -> Result<Option<PrincipalRecord>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let Some(row) = client
             .query_opt(
                 "SELECT kind, name, handle FROM principals WHERE id = $1",
@@ -1529,7 +1535,7 @@ impl Store {
             return Ok(Vec::new());
         }
         let uuids: Vec<Uuid> = ids.iter().map(|id| id.as_uuid()).collect();
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let rows = client
             .query(
                 "SELECT id, kind, name, handle FROM principals WHERE id = ANY($1)",
@@ -1551,7 +1557,7 @@ impl Store {
     /// Change log for one object. A create row is rebuilt from `object_values`
     /// version 1 so the stored diff can stay a marker.
     pub async fn changes_for(&self, id: ObjectId) -> Result<Vec<ChangeRow>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let mut rows = stored_changes(&**client, id).await?;
         self.expand_change_rows(&**client, &mut rows).await?;
         Ok(rows)
@@ -1559,13 +1565,13 @@ impl Store {
 
     /// Change rows as written. A create diff is a `$created` marker, not the values.
     pub async fn stored_changes(&self, id: ObjectId) -> Result<Vec<ChangeRow>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         stored_changes(&**client, id).await
     }
 
     /// Highest change sequence for one object. This does not load the diff.
     pub async fn latest_seq(&self, id: ObjectId) -> Result<i64, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let row = client
             .query_opt(
                 "SELECT seq FROM changes WHERE object_id = $1 ORDER BY seq DESC LIMIT 1",
@@ -1581,7 +1587,7 @@ impl Store {
             return Ok(HashMap::new());
         }
         let uuids: Vec<Uuid> = ids.iter().map(|id| id.as_uuid()).collect();
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let rows = client
             .query(
                 "SELECT DISTINCT ON (object_id) object_id, seq
@@ -1615,7 +1621,7 @@ impl Store {
         id: ObjectId,
         version: u64,
     ) -> Result<BTreeMap<braian_model::AttributeId, Value>, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let version = as_i64(version)?;
         let rows = client
             .query(
@@ -1632,7 +1638,7 @@ impl Store {
 
     /// Monthly partition that holds `seq`, for example `changes_2026_10`.
     pub async fn change_partition(&self, seq: i64) -> Result<String, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let row = client
             .query_one(
                 "SELECT tableoid::regclass::text FROM changes WHERE seq = $1",
@@ -1683,7 +1689,7 @@ impl Store {
     }
 
     async fn max_seq(&self, batch: BatchId) -> Result<i64, Error> {
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let row = client
             .query_one(
                 "SELECT COALESCE(MAX(seq), 0) FROM changes WHERE batch_id = $1",
@@ -1782,7 +1788,7 @@ impl Store {
     async fn defs_for(&self, tx: &Transaction<'_>) -> Result<Arc<CachedDefs>, Error> {
         let row = tx
             .query_opt(
-                "SELECT model_revision, definitions FROM definition_revisions ORDER BY model_revision DESC LIMIT 1",
+                "SELECT model_revision, definitions FROM definition_revisions WHERE catalog_id = braian_catalog() ORDER BY model_revision DESC LIMIT 1",
                 &[],
             )
             .await?;
@@ -2887,7 +2893,7 @@ async fn load_groups(
     tx: &Transaction<'_>,
 ) -> Result<HashMap<braian_model::AttributeId, usize>, Error> {
     let rows = tx
-        .query("SELECT attribute_id, part_group FROM attribute_parts", &[])
+        .query("SELECT attribute_id, part_group FROM attribute_parts WHERE catalog_id = braian_catalog()", &[])
         .await?;
     let mut groups = HashMap::new();
     for row in rows {
@@ -2905,7 +2911,7 @@ async fn sync_attribute_parts(
     defs: &braian_model::DefinitionSet,
 ) -> Result<HashMap<braian_model::AttributeId, usize>, Error> {
     let rows = tx
-        .query("SELECT attribute_id, part_group FROM attribute_parts", &[])
+        .query("SELECT attribute_id, part_group FROM attribute_parts WHERE catalog_id = braian_catalog()", &[])
         .await?;
     let mut existing = HashMap::new();
     for row in rows {
@@ -2923,7 +2929,7 @@ async fn sync_attribute_parts(
         let stored = i32::try_from(group)
             .map_err(|_| Error::Data(format!("part group {group} does not fit in integer")))?;
         tx.execute(
-            "INSERT INTO attribute_parts (attribute_id, part_group) VALUES ($1, $2) ON CONFLICT (attribute_id) DO NOTHING",
+            "INSERT INTO attribute_parts (attribute_id, part_group) VALUES ($1, $2) ON CONFLICT (catalog_id, attribute_id) DO NOTHING",
             &[&attribute.id.as_uuid(), &stored],
         )
         .await?;
@@ -2938,7 +2944,7 @@ pub(crate) async fn backfill_attribute_parts(
         .query_one(
             "SELECT
                 EXISTS (SELECT 1 FROM attribute_parts) AS has_parts,
-                (SELECT definitions FROM definition_revisions ORDER BY model_revision DESC LIMIT 1) AS definitions",
+                (SELECT definitions FROM definition_revisions WHERE catalog_id = braian_catalog() ORDER BY model_revision DESC LIMIT 1) AS definitions",
             &[],
         )
         .await?;
@@ -2956,7 +2962,7 @@ pub(crate) async fn backfill_attribute_parts(
             .map_err(|_| Error::Data(format!("part group {group} does not fit in integer")))?;
         client
             .execute(
-                "INSERT INTO attribute_parts (attribute_id, part_group) VALUES ($1, $2) ON CONFLICT (attribute_id) DO NOTHING",
+                "INSERT INTO attribute_parts (attribute_id, part_group) VALUES ($1, $2) ON CONFLICT (catalog_id, attribute_id) DO NOTHING",
                 &[&id.as_uuid(), &stored],
             )
             .await?;
@@ -3156,7 +3162,10 @@ fn map_unique(error: tokio_postgres::Error, type_id: TypeId, key: &str) -> Error
         && db.code() == &tokio_postgres::error::SqlState::UNIQUE_VIOLATION
     {
         let constraint = db.constraint();
-        if constraint.is_none() || constraint == Some("objects_type_id_key_active") {
+        if constraint.is_none()
+            || constraint == Some("objects_type_id_key_active")
+            || constraint == Some("objects_catalog_type_key_active")
+        {
             return Error::DuplicateKey {
                 type_id,
                 key: key.to_owned(),

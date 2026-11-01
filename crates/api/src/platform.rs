@@ -341,6 +341,48 @@ fn registry() -> &'static [Operation] {
             needs_approval: false,
         },
         Operation {
+            name: "ui.set_catalog",
+            title: "Switch the focused view to a catalog",
+            permission: Role::Viewer,
+            needs_approval: false,
+        },
+        Operation {
+            name: "catalog.list",
+            title: "List catalogs",
+            permission: Role::Viewer,
+            needs_approval: false,
+        },
+        Operation {
+            name: "merge_profile.get",
+            title: "Read a merge profile",
+            permission: Role::Viewer,
+            needs_approval: false,
+        },
+        Operation {
+            name: "merge.runs",
+            title: "Read merge run rows",
+            permission: Role::Viewer,
+            needs_approval: false,
+        },
+        Operation {
+            name: "merge.dry_run",
+            title: "Dry-run a merge profile",
+            permission: Role::Editor,
+            needs_approval: false,
+        },
+        Operation {
+            name: "merge.run",
+            title: "Run a merge profile",
+            permission: Role::Editor,
+            needs_approval: false,
+        },
+        Operation {
+            name: "catalog.cleanup",
+            title: "Soft-delete every object in a source catalog",
+            permission: Role::Editor,
+            needs_approval: false,
+        },
+        Operation {
             name: "open_view",
             title: "Open view",
             permission: Role::Viewer,
@@ -901,8 +943,10 @@ const AGENT_UI_EXCLUDED: &[&str] = &[];
 
 /// Operations an agent must not be offered and must not run.
 ///
-/// `accept_proposal` is a person's save. Every other name here deletes data or
-/// a definition that data hangs on. `propose` rejects those steps too.
+/// `accept_proposal` is a person's save. Most other names delete data or a
+/// definition that data hangs on. `merge.run` and `catalog.cleanup` write the
+/// master or wipe a source catalog; a person runs those. `propose` rejects
+/// the delete steps too.
 const AGENT_COMMIT_EXCLUDED: &[&str] = &[
     "accept_proposal",
     "discard_proposal",
@@ -922,6 +966,8 @@ const AGENT_COMMIT_EXCLUDED: &[&str] = &[
     "model.remove_attribute",
     "model.undo",
     "remove_link",
+    "merge.run",
+    "catalog.cleanup",
 ];
 
 fn exposed_to_agent(op: &Operation) -> bool {
@@ -1947,6 +1993,14 @@ async fn search(
             "TYPESENSE_URL is not configured",
         ));
     };
+    let catalog_key = state
+        .store
+        .catalog_by_id(state.store.catalog_id())
+        .await
+        .map_err(store_status)?
+        .map(|catalog| catalog.key)
+        .unwrap_or_else(|| "master".to_owned());
+    let search = search.for_catalog(&catalog_key);
     let mut page = search
         .search(&SearchQuery {
             text: query.q.unwrap_or_default(),
@@ -5271,6 +5325,13 @@ async fn run_operation(
     if op.name.starts_with("ui.") || is_layout_command(op.name) {
         return Ok(ui_command(op.name, args));
     }
+    if from_agent && matches!(name, "merge.run" | "catalog.cleanup") {
+        return Err(Problem::new(
+            StatusCode::FORBIDDEN,
+            "human_required",
+            "a person runs merge and catalog cleanup",
+        ));
+    }
     // The in-app agent calls this with the person's identity (`from_agent`).
     // Hiding the tool is not enough: a call still has to stay a proposal.
     if op.name == "accept_proposal" && (from_agent || !identity.may_commit()) {
@@ -5305,6 +5366,77 @@ async fn run_operation(
         return propose_operation(state, identity, name, &owned).await;
     }
     match name {
+        "catalog.list" => {
+            let catalogs = state.store.catalogs().await.map_err(store_status)?;
+            Ok(json!(
+                catalogs
+                    .iter()
+                    .map(|catalog| catalog.to_json())
+                    .collect::<Vec<_>>()
+            ))
+        }
+        "merge_profile.get" => {
+            let key = args.get("key").and_then(Value::as_str).unwrap_or("");
+            let profile = state
+                .store
+                .merge_profile_by_key(key)
+                .await
+                .map_err(store_status)?
+                .ok_or_else(|| {
+                    Problem::new(StatusCode::NOT_FOUND, "profile_not_found", key.to_owned())
+                })?;
+            Ok(json!({
+                "key": profile.key,
+                "name": profile.name,
+                "spec": profile.spec,
+                "mode": profile.mode,
+                "revision": profile.revision,
+            }))
+        }
+        "merge.runs" => {
+            let key = args.get("key").and_then(Value::as_str).unwrap_or("");
+            let profile = state
+                .store
+                .merge_profile_by_key(key)
+                .await
+                .map_err(store_status)?
+                .ok_or_else(|| {
+                    Problem::new(StatusCode::NOT_FOUND, "profile_not_found", key.to_owned())
+                })?;
+            Ok(json!(
+                state
+                    .store
+                    .merge_run_rows(profile.id, 200)
+                    .await
+                    .map_err(store_status)?
+            ))
+        }
+        "merge.dry_run" | "merge.run" => {
+            let key = args.get("key").and_then(Value::as_str).unwrap_or("");
+            let mut actor = identity.actor.clone();
+            actor.source = "merge".into();
+            crate::merge::apply_profile(&state.store, &actor, key, name == "merge.dry_run").await
+        }
+        "catalog.cleanup" => {
+            let key = args.get("key").and_then(Value::as_str).unwrap_or("");
+            let catalog = state
+                .store
+                .require_catalog(key)
+                .await
+                .map_err(store_status)?;
+            if catalog.kind != braian_store::CatalogKind::Source {
+                return Err(Problem::new(
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "not_a_source",
+                    "cleanup removes objects from a source catalog",
+                ));
+            }
+            let scoped = state.store.with_catalog(catalog.id);
+            let mut actor = identity.actor.clone();
+            actor.source = "cleanup".into();
+            let removed = crate::catalogs::cleanup_objects(&scoped, &actor, &catalog.key).await?;
+            Ok(json!({ "removed": removed }))
+        }
         "model.list_attribute_definitions" => crate::attribute_catalog::list(state).await,
         "list_attribute_paths" => {
             let token = args
@@ -6952,6 +7084,7 @@ mod tests {
         "ui.hide_column",
         "ui.move_column",
         "ui.set_theme",
+        "ui.set_catalog",
         "ui.export",
         "ui.get_context",
         "ui.get_selection",

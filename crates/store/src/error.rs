@@ -58,6 +58,10 @@ pub enum Error {
     UnknownType(TypeId),
     #[error("no definitions stored")]
     NoDefinitions,
+    #[error("catalog {0} was not found")]
+    CatalogNotFound(String),
+    #[error("catalog {0} already exists")]
+    CatalogExists(String),
     #[error("definition revision {got} does not follow {current}")]
     BadRevision { current: u64, got: u64 },
     #[error("definitions: {0}")]

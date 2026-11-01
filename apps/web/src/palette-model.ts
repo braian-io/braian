@@ -1,6 +1,6 @@
 import { score, type FrecencyEntry } from './frecency'
 
-export type PaletteGroup = 'recent' | 'best' | 'object' | 'views' | 'search' | 'ask'
+export type PaletteGroup = 'recent' | 'best' | 'object' | 'model' | 'views' | 'search' | 'ask'
 
 export type PaletteChip = { text: string; tone: 'neutral' | 'ok' | 'warn' | 'danger' | 'info' }
 
@@ -21,6 +21,7 @@ export const groupTitle: Record<Exclude<PaletteGroup, 'ask'>, string> = {
   recent: 'Recent',
   best: 'Best match',
   object: 'On selected object',
+  model: 'Data model',
   views: 'Views & workspaces',
   search: 'Objects',
 }
@@ -62,6 +63,7 @@ export function visibleRows(
     ...recent.map((item) => ({ ...item, group: 'recent' as const })),
     ...(best ? [{ ...best, id: `best:${best.id}`, sourceId: best.id, group: 'best' as const }] : []),
     ...rest.filter((item) => item.group === 'object'),
+    ...rest.filter((item) => item.group === 'model'),
     ...rest.filter((item) => item.group === 'views'),
     ...hits.map((item) => ({ ...item, group: 'search' as const })),
     {

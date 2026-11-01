@@ -103,6 +103,16 @@ impl Typesense {
         &self.alias
     }
 
+    /// Search client for one catalog. The master keeps this client's alias so
+    /// existing collections stay put. A source catalog gets its own alias.
+    pub fn for_catalog(&self, key: &str) -> Self {
+        if key == "master" {
+            return self.clone();
+        }
+        let alias = format!("{}_{key}", self.alias);
+        self.clone().with_alias(alias)
+    }
+
     pub async fn health(&self) -> Result<(), Error> {
         let response = self
             .client

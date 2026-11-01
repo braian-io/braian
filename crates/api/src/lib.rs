@@ -9,6 +9,7 @@
 mod attribute_catalog;
 mod auth;
 mod bulk_gate;
+mod catalogs;
 mod column_prefs;
 mod definitions;
 mod deletes;
@@ -19,6 +20,7 @@ mod http_schema;
 pub mod import;
 mod keys;
 mod links;
+pub mod merge;
 mod model_draft;
 mod model_proposal;
 mod objects;
@@ -32,7 +34,7 @@ mod wire;
 
 use axum::Json;
 use axum::extract::{DefaultBodyLimit, Request, State};
-use axum::http::StatusCode;
+use axum::http::{StatusCode, Uri};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, patch, post, put};
@@ -58,6 +60,14 @@ pub fn router(store: Store, identities: Vec<Identity>) -> axum::Router {
 }
 
 pub fn into_router(state: AppState) -> axum::Router {
+    let scoped = state.clone();
+    let inner = build_router(state);
+    axum::Router::new()
+        .fallback_service(inner)
+        .layer(middleware::from_fn_with_state(scoped, scope_catalog))
+}
+
+fn build_router(state: AppState) -> axum::Router {
     import::spawn_janitor(state.clone());
     let limited = axum::Router::new()
         .route("/healthz", get(health))
@@ -127,6 +137,25 @@ pub fn into_router(state: AppState) -> axum::Router {
                 .delete(definitions::delete_unit_family_route),
         )
         .route("/v1/languages", put(definitions::put_languages))
+        .route(
+            "/v1/catalogs",
+            get(catalogs::list_catalogs).post(catalogs::post_catalog),
+        )
+        .route("/v1/catalogs/{key}", get(catalogs::get_catalog))
+        .route("/v1/infer", post(catalogs::infer_model))
+        .route("/v1/cleanup", post(catalogs::cleanup_catalog))
+        .route("/v1/merge/links", post(merge::post_link))
+        .route("/v1/merge/links/remove", post(merge::remove_link))
+        .route(
+            "/v1/merge/profiles",
+            get(merge::list_profiles).post(merge::post_profile),
+        )
+        .route(
+            "/v1/merge/ownership",
+            get(merge::get_ownership).post(merge::post_ownership),
+        )
+        .route("/v1/merge/profiles/{key}/run", post(merge::run_profile))
+        .route("/v1/merge/profiles/{key}/rows", get(merge::profile_rows))
         .route("/v1/resolve/{kind}/{id_or_key}", get(keys::resolve_ref))
         .route("/v1/model/keys", post(keys::rename_key))
         .route("/v1/links", get(links::list_links).post(links::post_link))
@@ -186,6 +215,76 @@ pub(crate) fn counts_as_interactive(path: &str) -> bool {
         return false;
     }
     true
+}
+
+/// `/v1/catalogs/{key}/...` rewrites to `/v1/...` and scopes the request.
+/// An object route without a catalog prefix uses the object's own catalog.
+async fn scope_catalog(
+    State(state): State<AppState>,
+    mut request: Request,
+    next: Next,
+) -> Response {
+    let path = request.uri().path().to_owned();
+    if let Some((key, tail)) = catalog_prefix(&path) {
+        let catalog = match state.store.catalog_by_key(&key).await {
+            Ok(Some(catalog)) => catalog,
+            Ok(None) => {
+                return crate::problem::Problem::new(
+                    StatusCode::NOT_FOUND,
+                    "catalog_not_found",
+                    key,
+                )
+                .into_response();
+            }
+            Err(error) => return crate::problem::store_status(error).into_response(),
+        };
+        let rewritten = if tail.is_empty() {
+            "/v1".to_owned()
+        } else {
+            format!("/v1/{tail}")
+        };
+        *request.uri_mut() = rewrite_uri(request.uri(), &rewritten);
+        return braian_store::Store::scope_catalog(catalog.id, next.run(request)).await;
+    }
+    if let Some(id) = object_id_in(&path)
+        && let Ok(Some(catalog)) = state.store.object_catalog(id).await
+    {
+        return braian_store::Store::scope_catalog(catalog, next.run(request)).await;
+    }
+    next.run(request).await
+}
+
+fn catalog_prefix(path: &str) -> Option<(String, String)> {
+    let rest = path.strip_prefix("/v1/catalogs/")?;
+    let (key, tail) = rest.split_once('/')?;
+    if key.is_empty()
+        || !key
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-')
+    {
+        return None;
+    }
+    Some((key.to_owned(), tail.to_owned()))
+}
+
+fn object_id_in(path: &str) -> Option<uuid::Uuid> {
+    let rest = path.strip_prefix("/v1/objects/")?;
+    let id = rest.split('/').next()?;
+    uuid::Uuid::parse_str(id).ok()
+}
+
+fn rewrite_uri(uri: &Uri, path: &str) -> Uri {
+    let mut parts = uri.clone().into_parts();
+    let query = uri
+        .query()
+        .map(|query| format!("?{query}"))
+        .unwrap_or_default();
+    parts.path_and_query = Some(
+        format!("{path}{query}")
+            .parse()
+            .unwrap_or_else(|_| path.parse().expect("path")),
+    );
+    Uri::from_parts(parts).unwrap_or_else(|_| uri.clone())
 }
 
 async fn track_interactive(

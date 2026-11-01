@@ -55,6 +55,14 @@ Interactive commits still write through to Typesense via `index_after_commit`. T
 - The extra cost on the write path is one more btree entry (`changes_kind_seq` on `(kind, seq)`) and, per row, the trigger `WHEN` check. The function body and the `NOTIFY` run once per transaction. There is no per-row update on the log.
 - `LISTEN` is per database. Two Braian databases on one Postgres do not see each other’s notifies.
 
+## Origin
+
+A merge write sets the session value `braian.origin` before it inserts. The
+`braian_stamp_origin` trigger copies that JSON onto `changes.origin` when the
+column is still null. Other writes leave the column null. The indexer does not
+read it. `braian merger` stores how far it has reconciled in `consumer_cursor`,
+separate from `index_lane`.
+
 ## Deploying over a host that still has the relay slot
 
 Postgres will not start if `wal_level` is lowered while the logical slot `braian_relay` still exists. Drop the slot while the server is still running at `wal_level=logical`, then start the new compose file. `deploy/drop-relay-slot.sql` does the drop and refuses if the slot is still active. Stop `braian` first so the slot is idle. Migration V3 still creates the publication `braian_changes`. When `wal_level` is not logical that statement warns and still succeeds. Migration V15 drops the publication and also tries to drop the slot. If the slot is active, that step logs a notice and continues; the next Postgres restart will then fail until the slot is gone.

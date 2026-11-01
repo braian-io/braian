@@ -42,6 +42,7 @@ export const uiOperations = [
   'ui.hide_column',
   'ui.move_column',
   'ui.set_theme',
+  'ui.set_catalog',
   'ui.export',
   'ui.get_context',
   'ui.get_selection',
