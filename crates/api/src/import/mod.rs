@@ -112,6 +112,17 @@ pub async fn upload(
         )
         .await
         .map_err(store_status)?;
+    if headers
+        .get("x-import-snapshot")
+        .and_then(|value| value.to_str().ok())
+        == Some("true")
+    {
+        state
+            .store
+            .mark_import_snapshot(id)
+            .await
+            .map_err(store_status)?;
+    }
     let dir = session_dir(id);
     std::fs::create_dir_all(&dir).map_err(|error| {
         Problem::new(

@@ -1,11 +1,11 @@
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use braian_model::{DefinitionSet, ObjectId};
 use braian_rules::CompiledModel;
 use braian_search::Typesense;
-use braian_store::{Error, Store};
+use braian_store::{CatalogId, Error, Store};
 use serde_json::{Value, json};
 use tokio::sync::{RwLock, broadcast, mpsc};
 use uuid::Uuid;
@@ -246,15 +246,16 @@ pub struct CachedModel {
 
 #[derive(Clone, Default)]
 pub struct ModelCache {
-    inner: Arc<RwLock<Option<Arc<CachedModel>>>>,
+    inner: Arc<RwLock<HashMap<CatalogId, Arc<CachedModel>>>>,
 }
 
 impl ModelCache {
     pub async fn get(&self, store: &Store) -> Result<Arc<CachedModel>, Problem> {
+        let catalog = store.catalog_id();
         let Some(revision) = store.model_revision().await.map_err(store_status)? else {
             return Err(store_status(Error::NoDefinitions));
         };
-        if let Some(cached) = self.inner.read().await.clone()
+        if let Some(cached) = self.inner.read().await.get(&catalog).cloned()
             && cached.revision == revision
         {
             return Ok(cached);
@@ -266,12 +267,12 @@ impl ModelCache {
             defs,
             model,
         });
-        *self.inner.write().await = Some(Arc::clone(&cached));
+        self.inner.write().await.insert(catalog, Arc::clone(&cached));
         Ok(cached)
     }
 
     pub async fn invalidate(&self) {
-        *self.inner.write().await = None;
+        self.inner.write().await.clear();
     }
 }
 

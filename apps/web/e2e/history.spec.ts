@@ -46,7 +46,7 @@ test('history is a compact timeline of the fields that changed', async ({ page }
   await expect(diff).not.toContainText('nummer')
   await expect(first.locator('time')).not.toHaveText('')
 
-  const created = history.locator('article', { hasText: 'Created by' }).first()
+  const created = history.locator('article', { hasText: 'Created' }).first()
   await expect(created).toBeVisible()
   await expect(created.getByTestId('field-diff')).toHaveCount(0)
   await page.screenshot({ path: `${shots}/timeline-dark.png` })

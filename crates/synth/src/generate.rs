@@ -27,10 +27,10 @@ pub(crate) struct Prepared {
 pub(crate) fn prepare(defs: &DefinitionSet, tier: Tier, seed: u64) -> Prepared {
     let model = CompiledModel::compile(defs).expect("synthetic definitions compile");
     let type_id = model.type_id("item").expect("type item");
-    let catalog = model.structure_id("catalog").expect("structure catalog");
-    let channel = model.structure_id("channel").expect("structure channel");
-    let leaf = model.group_id("catalog", "leaf").expect("group leaf");
-    let flat = model.group_id("channel", "flat").expect("group flat");
+    let catalog = model.structure_id("assortment").expect("structure assortment");
+    let channel = model.structure_id("webshop").expect("structure webshop");
+    let leaf = model.group_id("assortment", "leaf").expect("group leaf");
+    let flat = model.group_id("webshop", "flat").expect("group flat");
     let groups = BTreeMap::from([(catalog, leaf), (channel, flat)]);
     let applicable = model
         .applicable_ids(type_id, &groups)

@@ -1901,17 +1901,17 @@ mod tests {
         assert!(
             targets
                 .iter()
-                .any(|target| target.id == "group:catalog/root:color")
+                .any(|target| target.id == "group:assortment/root:color")
         );
         assert!(
             targets
                 .iter()
-                .any(|target| target.id == "group:catalog/child:finish")
+                .any(|target| target.id == "group:assortment/child:finish")
         );
         assert!(
             targets
                 .iter()
-                .any(|target| target.id == "membership:catalog")
+                .any(|target| target.id == "membership:assortment")
         );
         assert!(!targets.iter().any(|target| target.id == "action"));
         assert_eq!(

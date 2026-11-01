@@ -8,6 +8,7 @@ publish.workspace = true
 
 [dependencies]
 braian-indexer.workspace = true
+braian-merge.workspace = true
 braian-model = { workspace = true, features = ["openapi"] }
 braian-rules.workspace = true
 braian-search.workspace = true

@@ -943,7 +943,7 @@ mod tests {
         let child = GroupId::from_uuid(id(11));
         defs.structures.push(Structure {
             id: StructureId::from_uuid(id(12)),
-            key: "catalog".to_owned(),
+            key: "assortment".to_owned(),
             labels: BTreeMap::new(),
             groups: vec![
                 Group {
@@ -1111,7 +1111,7 @@ mod tests {
         let structure = StructureId::from_uuid(id(52));
         defs.structures.push(Structure {
             id: structure,
-            key: "catalog".to_owned(),
+            key: "assortment".to_owned(),
             labels: BTreeMap::new(),
             groups: vec![
                 Group {

@@ -22,6 +22,7 @@ En ren klon på Linux följde README: `cp .env.example .env`, `just up`, `pnpm i
 ## Det som fungerar
 
 - Definitioner, validering (samma regler i Rust och wasm), objekt, länkar, enheter och värdelistor.
+- Källkataloger och en masterkatalog. `/v1` är master. `/v1/catalogs/{key}/...` är en källa. Mergeprofiler skriver direkt till fält de äger, utan förslag. `braian all` kör mergern. Källor, profiler, ägarskap och körningar är vyer i arbetsytan Sources. Se `docs/catalogs.md`.
 - Varje skrivning är en batch med aktör och, för en agent, personen agenten agerar för.
 - `changes` är kön. Indexern leasar seq-intervall per spår (`interactive` och `bulk`). Ett interaktivt intervall tas medan ett bulk-intervall fortfarande är öppet. En krasch innan commit lämnar leaset. Nästa arbetare tar samma seq. `LISTEN braian_changes` väcker indexer och SSE-svansen, även när en annan anslutning committade. `braian reindex` bygger om aliaset från Postgres.
 - Indexer, sök med `wait_seq`, och `braian reindex` som byter alias. Indexern hämtar många objekt per fråga och importerar dem till Typesense i batchar. Ett fält per språk i en Typesense-samling.

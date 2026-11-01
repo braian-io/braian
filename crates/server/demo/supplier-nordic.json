@@ -1,0 +1,12 @@
+[
+  {
+    "id": "018f1000-0000-7000-8000-0000000000b1",
+    "key": "PROD-OAT",
+    "values": {
+      "number": "PROD-OAT",
+      "brand": "Nordic Mill",
+      "name": { "en": "Oat drink" },
+      "ingredients": { "en": "Water, oats." }
+    }
+  }
+]

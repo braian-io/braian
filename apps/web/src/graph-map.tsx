@@ -10,7 +10,7 @@ import {
   type SimulationLinkDatum,
   type SimulationNodeDatum,
 } from 'd3-force'
-import { ChevronDown, X } from 'lucide-react'
+import { ChevronDown, Link2, List, PinOff, X } from 'lucide-react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import { api, catalogName, searchQuery, textValue, type Json } from './api'
 import { MetaChip, typeLabel } from './chips'
@@ -661,10 +661,10 @@ export function GraphMap({
         fitAfterRef.current = false
         draw(false)
       } else if (dragNode && dragNode.x != null && dragNode.y != null) {
+        // Moving a node is not taking over the camera: the graph refits when it settles, until the user pans or zooms.
         dragNode.fx = (dragNode.fx ?? dragNode.x) + dx / transform.k
         dragNode.fy = (dragNode.fy ?? dragNode.y) + dy / transform.k
         movedRef.current = true
-        fitAfterRef.current = false
         draw(false)
       }
     }
@@ -1215,6 +1215,7 @@ function GraphInspector({
           data-testid="graph-add-link"
           onClick={() => window.dispatchEvent(new CustomEvent('braian-add-link', { detail: {} }))}
         >
+          <Link2 size={14} aria-hidden="true" />
           {copy.addLink}
         </button>
       ) : null}
@@ -1226,6 +1227,7 @@ function GraphInspector({
           aria-expanded={showProperties}
           onClick={() => onSwipe(0)}
         >
+          <List size={14} aria-hidden="true" />
           {copy.graphProperties}
         </button>
       ) : null}
@@ -1249,6 +1251,7 @@ function GraphInspector({
       ) : null}
       {pinned ? (
         <button type="button" className="graph-action" data-testid="graph-unpin" onClick={onUnpin}>
+          <PinOff size={14} aria-hidden="true" />
           {copy.unpin}
         </button>
       ) : null}

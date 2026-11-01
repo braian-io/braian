@@ -50,6 +50,18 @@ id_type!(
     "One logical write. A bulk batch can span several transactions."
 );
 
+id_type!(
+    CatalogId,
+    "A catalog. The master is the merged catalog; every source system has its own."
+);
+
+/// The catalog that holds rows written before catalogs existed.
+///
+/// V33 inserts this id. `braian_catalog()` falls back to it when the session
+/// setting is empty.
+pub const MASTER_CATALOG_ID: CatalogId =
+    CatalogId::from_uuid(Uuid::from_u128(0x018f_1000_0000_7000_8000_0000_0000_0001));
+
 /// Who a write is attributed to.
 ///
 /// An agent principal is rejected unless `on_behalf_of` names the person the

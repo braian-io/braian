@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ImportMappingsView } from './import/mappings-view'
+import { CatalogsView, MergeProfilesView, MergeRunsView, OwnershipView } from './catalogs/views'
 import { flushSync } from 'react-dom'
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight, File, Folder, FolderOpen } from 'lucide-react'
@@ -488,6 +489,30 @@ export function Shell() {
   workspaceRef.current = workspace.data
 
   useEffect(() => {
+    const onSet = (event: Event) => {
+      const detail = (event as CustomEvent<{ viewId?: string; catalog?: string }>).detail
+      const surfaceNow = workspaceRef.current
+      if (!detail?.viewId || !detail.catalog || !surfaceNow) return
+      const found = viewRows(surfaceNow.views).find((view) => view.id === detail.viewId)
+      if (!found) return
+      const state = freeObject({ ...found.state, catalog: detail.catalog })
+      void api.post('/v1/views', {
+        body: {
+          id: found.id,
+          workspace_id: surfaceNow.id,
+          type: found.type,
+          title: found.title,
+          pane: found.pane ?? 'center',
+          position: found.position ?? 0,
+          state,
+        },
+      }).then(() => queryClient.invalidateQueries({ queryKey: ['workspace', surfaceNow.id] }))
+    }
+    window.addEventListener('braian-set-catalog', onSet)
+    return () => window.removeEventListener('braian-set-catalog', onSet)
+  }, [queryClient])
+
+  useEffect(() => {
     if (workspace.data && workspace.data.id === workspaceId) {
       canonicalRef.current = migrateLayout(workspace.data.layout)
     }
@@ -789,6 +814,12 @@ export function Shell() {
   useEffect(() => {
     return onUi((event) => {
       if (event.name === 'ui.set_theme') setTheme(event.args.theme === 'light' ? 'light' : 'dark')
+      if (event.name === 'ui.set_catalog' && typeof event.args.catalog === 'string') {
+        const viewId = docRef.current?.focus
+        if (viewId) {
+          window.dispatchEvent(new CustomEvent('braian-set-catalog', { detail: { viewId, catalog: event.args.catalog } }))
+        }
+      }
       if (event.name === 'ui.open_workspace' && typeof event.args.id === 'string') setWorkspaceId(event.args.id)
       if (event.name === 'ui.open_changes') applyRef.current('ui.open_view', { title: 'Changes', zone: 'center' })
       if (event.name === 'ui.open_template' && typeof event.args.id === 'string') {
@@ -1361,6 +1392,10 @@ function ViewBody({ view, session, workspace }: { view: View; session: Session; 
   if (view.type === 'proposal') return <ProposalView session={session} />
   if (view.type === 'proposal_list') return <ProposalListView session={session} />
   if (view.type === 'import_mappings') return <ImportMappingsView />
+  if (view.type === 'catalogs') return <CatalogsView />
+  if (view.type === 'merge_profiles') return <MergeProfilesView />
+  if (view.type === 'ownership_rules') return <OwnershipView />
+  if (view.type === 'merge_runs') return <MergeRunsView />
   if (view.type === 'batch_log') return <BatchLog />
   if (view.type === 'job_history') return <JobHistory view={view} />
   if (view.type === 'embed') return <EmbedView session={session} view={view} />

@@ -164,7 +164,7 @@ impl Indexer {
             bulk: self.store.on_bulk(),
             search: self.search,
             config: self.config,
-            cache: tokio::sync::Mutex::new(None),
+            cache: tokio::sync::Mutex::new(HashMap::new()),
         });
         let interactive_feed = Inflight::new(PgSource::new(
             self.store.on_indexer(),
@@ -212,27 +212,41 @@ impl Indexer {
 
 impl Shared {
     async fn rebuild_if_requested(&self) -> anyhow::Result<()> {
-        if !self.bulk.take_reindex_request().await? {
-            return Ok(());
-        }
-        tracing::warn!("reindex requested; rebuilding the search alias from Postgres");
-        if let Err(error) = reindex_with(&self.bulk, &self.search, self.config).await {
-            let _ = self.bulk.request_reindex().await;
-            return Err(error);
+        let catalogs = self.bulk.catalogs().await?;
+        for catalog in catalogs {
+            let scoped = self.bulk.with_catalog(catalog.id);
+            if !scoped.take_reindex_request().await? {
+                continue;
+            }
+            tracing::warn!(catalog = %catalog.key, "reindex requested; rebuilding the search alias from Postgres");
+            let search = self.search.for_catalog(&catalog.key);
+            if let Err(error) = reindex_with(&scoped, &search, self.config).await {
+                let _ = scoped.request_reindex().await;
+                return Err(error);
+            }
         }
         Ok(())
     }
 
-    async fn compiled(&self, store: &Store) -> anyhow::Result<Option<Arc<RevisionCache>>> {
+    async fn compiled(
+        &self,
+        store: &Store,
+    ) -> anyhow::Result<Option<(Arc<RevisionCache>, Typesense)>> {
+        let catalog = store.catalog_id();
+        let key = match store.catalog_by_id(catalog).await? {
+            Some(record) => record.key,
+            None => "master".to_owned(),
+        };
+        let search = self.search.for_catalog(&key);
         let Some(revision) = store.model_revision().await? else {
             return Ok(None);
         };
         let mut guard = self.cache.lock().await;
-        if let Some(cached) = guard.as_ref()
+        if let Some(cached) = guard.get(&catalog)
             && reuse_revision(Some(cached.revision), revision)
             && cached.alias_ready
         {
-            return Ok(Some(Arc::clone(cached)));
+            return Ok(Some((Arc::clone(cached), search)));
         }
         let defs = match store.definition_set().await {
             Ok(defs) => defs,
@@ -241,15 +255,15 @@ impl Shared {
         };
         let model = CompiledModel::compile(&defs)
             .map_err(|errors| anyhow::anyhow!("definitions: {}", errors[0].message))?;
-        ensure_alias(store, &self.search, &defs).await?;
+        ensure_alias(store, &search, &defs).await?;
         let cached = Arc::new(RevisionCache {
             revision: defs.model_revision,
             defs: Arc::new(defs),
             model: Arc::new(model),
             alias_ready: true,
         });
-        *guard = Some(Arc::clone(&cached));
-        Ok(Some(cached))
+        guard.insert(catalog, Arc::clone(&cached));
+        Ok(Some((cached, search)))
     }
 
     async fn flush(
@@ -258,41 +272,88 @@ impl Shared {
         pace: &LanePace,
     ) -> anyhow::Result<()> {
         let max_seq = pending.values().map(|event| event.seq).max().unwrap_or(0);
-        let Some(cached) = self.compiled(&self.interactive).await? else {
+        let slices = self.slices(&self.interactive, pending).await?;
+        if slices.is_empty() {
             self.interactive.set_indexer_seq(max_seq).await?;
             return Ok(());
-        };
-        let ids = object_ids(pending.values().cloned());
-        let mut build = Stage::start(pace.kind, "build");
-        build.arm(ids.len());
-        let stored = self
-            .interactive
-            .get_objects(&ids)
-            .instrument(build.span())
-            .await?;
-        let prepared = build
-            .span()
-            .in_scope(|| documents(&cached.model, &cached.defs, &stored, pending));
-        build.arm(prepared.docs.len());
-        drop(build);
-        let writer = self.search.interactive_writer();
-        forget_documents(&writer, &prepared.drop_ids).await?;
-        if !prepared.docs.is_empty() {
-            let mut import = Stage::start(pace.kind, "import");
-            import.arm(prepared.docs.len());
-            import_batched(
-                &writer,
-                self.search.alias(),
-                &prepared.docs,
-                pace.import_batch,
-                pace.import_concurrency,
-            )
-            .instrument(import.span())
-            .await?;
-            drop(import);
         }
-        self.interactive.set_indexer_seq(max_seq).await?;
+        for slice in slices {
+            let writer = slice.search.interactive_writer();
+            forget_documents(&writer, &slice.drop_ids).await?;
+            if !slice.docs.is_empty() {
+                let mut import = Stage::start(pace.kind, "import");
+                import.arm(slice.docs.len());
+                import_batched(
+                    &writer,
+                    slice.search.alias(),
+                    &slice.docs,
+                    pace.import_batch,
+                    pace.import_concurrency,
+                )
+                .instrument(import.span())
+                .await?;
+                drop(import);
+            }
+            self.interactive
+                .with_catalog(slice.catalog)
+                .set_indexer_seq(max_seq)
+                .await?;
+        }
         Ok(())
+    }
+
+    /// Documents grouped by the catalog that owns each object.
+    async fn slices(
+        &self,
+        store: &Store,
+        pending: &HashMap<String, ChangeEvent>,
+    ) -> anyhow::Result<Vec<IndexSlice>> {
+        let ids = object_ids(pending.values().cloned());
+        let stored = if ids.is_empty() {
+            Vec::new()
+        } else {
+            store.get_objects(&ids).await?
+        };
+        let id_list: Vec<Uuid> = ids.iter().map(|id| id.as_uuid()).collect();
+        let keys = store.object_catalog_keys(&id_list).await?;
+        let mut groups: HashMap<braian_store::CatalogId, (String, Vec<StoredObject>)> =
+            HashMap::new();
+        for row in stored {
+            let Some((catalog, key)) = keys.get(&row.object.id.as_uuid()) else {
+                continue;
+            };
+            groups
+                .entry(*catalog)
+                .or_insert_with(|| (key.clone(), Vec::new()))
+                .1
+                .push(row);
+        }
+        if groups.is_empty() {
+            let batch_ids: Vec<Uuid> = pending.values().map(|event| event.batch_id).collect();
+            if let Some((catalog, key)) = store
+                .batch_catalog_keys(&batch_ids)
+                .await?
+                .into_values()
+                .next()
+            {
+                groups.insert(catalog, (key, Vec::new()));
+            }
+        }
+        let mut slices = Vec::new();
+        for (catalog, (_key, rows)) in groups {
+            let scoped = store.with_catalog(catalog);
+            let Some((cached, search)) = self.compiled(&scoped).await? else {
+                continue;
+            };
+            let prepared = documents(&cached.model, &cached.defs, &rows, pending);
+            slices.push(IndexSlice {
+                catalog,
+                search,
+                docs: prepared.docs,
+                drop_ids: prepared.drop_ids,
+            });
+        }
+        Ok(slices)
     }
 }
 
@@ -314,7 +375,7 @@ struct Shared {
     bulk: Store,
     search: Typesense,
     config: IndexerConfig,
-    cache: tokio::sync::Mutex<Option<Arc<RevisionCache>>>,
+    cache: tokio::sync::Mutex<HashMap<braian_store::CatalogId, Arc<RevisionCache>>>,
 }
 
 struct RevisionCache {
@@ -861,11 +922,20 @@ async fn run_lane(
     }
 }
 
+struct IndexSlice {
+    catalog: braian_store::CatalogId,
+    search: Typesense,
+    docs: Vec<Value>,
+    drop_ids: Vec<String>,
+}
+
 struct BuiltBatch {
     claims: Vec<i64>,
+    #[allow(dead_code)]
     docs: Vec<Value>,
     /// Link ids removed from the index instead of upserted.
     drop_ids: Vec<String>,
+    slices: Vec<IndexSlice>,
     max_seq: i64,
     /// Coalesced events in this read.
     events: usize,
@@ -962,16 +1032,30 @@ async fn import_built(
     tune: &mut WaveTune,
     pace: &LanePace,
 ) -> anyhow::Result<()> {
-    forget_documents(&shared.search, &batch.drop_ids).await?;
-    if !batch.docs.is_empty() {
+    if batch.slices.is_empty() {
+        forget_documents(&shared.search, &batch.drop_ids).await?;
+        shared.bulk.set_indexer_seq(batch.max_seq).await?;
+        return Ok(());
+    }
+    for slice in &batch.slices {
+        forget_documents(&slice.search, &slice.drop_ids).await?;
+        if slice.docs.is_empty() {
+            shared
+                .bulk
+                .with_catalog(slice.catalog)
+                .set_indexer_seq(batch.max_seq)
+                .await?;
+            continue;
+        }
         let mut import = Stage::start(pace.kind, "import");
-        import.arm(batch.docs.len());
+        import.arm(slice.docs.len());
+        let scoped = shared.bulk.with_catalog(slice.catalog);
         let result = import_waves(
-            &shared.search,
-            &shared.bulk,
+            &slice.search,
+            &scoped,
             Some(drain),
-            shared.search.alias(),
-            &batch.docs,
+            slice.search.alias(),
+            &slice.docs,
             WavePlan {
                 batch: pace.import_batch,
                 concurrency: pace.import_concurrency,
@@ -983,8 +1067,8 @@ async fn import_built(
         .await;
         drop(import);
         result?;
+        scoped.set_indexer_seq(batch.max_seq).await?;
     }
-    shared.bulk.set_indexer_seq(batch.max_seq).await?;
     Ok(())
 }
 
@@ -1064,33 +1148,20 @@ async fn build_batch(
     let claims = feed.take_claims();
     let events = pending.len();
     let max_seq = pending.values().map(|event| event.seq).max().unwrap_or(0);
-    let Some(cached) = shared.compiled(&shared.bulk).await? else {
-        return Ok(Some(BuiltBatch {
-            claims,
-            docs: Vec::new(),
-            drop_ids: Vec::new(),
-            max_seq,
-            events,
-            offered: batch_size,
-        }));
-    };
-    let ids = object_ids(pending.values().cloned());
     let mut build = Stage::start(pace.kind, "build");
-    build.arm(ids.len());
-    let stored = shared
-        .bulk
-        .get_objects(&ids)
-        .instrument(build.span())
-        .await?;
-    let prepared = build
-        .span()
-        .in_scope(|| documents(&cached.model, &cached.defs, &stored, &pending));
-    build.arm(prepared.docs.len());
+    let slices = shared.slices(&shared.bulk, &pending).await?;
+    let docs: Vec<Value> = slices.iter().flat_map(|slice| slice.docs.clone()).collect();
+    let drop_ids: Vec<String> = slices
+        .iter()
+        .flat_map(|slice| slice.drop_ids.clone())
+        .collect();
+    build.arm(docs.len());
     drop(build);
     Ok(Some(BuiltBatch {
         claims,
-        docs: prepared.docs,
-        drop_ids: prepared.drop_ids,
+        docs,
+        drop_ids,
+        slices,
         max_seq,
         events,
         offered: batch_size,
@@ -1368,7 +1439,21 @@ fn duration_env(name: &str, default: Duration) -> Duration {
 
 /// Rebuilds a new collection from Postgres and points the alias at it.
 pub async fn reindex(store: &Store, search: &Typesense) -> anyhow::Result<i64> {
-    reindex_with(store, search, IndexerConfig::from_env()).await
+    let config = IndexerConfig::from_env();
+    let catalogs = store.catalogs().await?;
+    if catalogs.is_empty() {
+        return reindex_with(store, search, config).await;
+    }
+    let mut max_seq = 0i64;
+    for catalog in catalogs {
+        let scoped = store.with_catalog(catalog.id);
+        if scoped.model_revision().await?.is_none() {
+            continue;
+        }
+        let search = search.for_catalog(&catalog.key);
+        max_seq = max_seq.max(reindex_with(&scoped, &search, config).await?);
+    }
+    Ok(max_seq)
 }
 
 async fn reindex_with(

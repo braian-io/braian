@@ -46,7 +46,7 @@ Authorization: Bearer {{token}}
 Content-Type: application/json
 {
   "type": "item",
-  "groups": { "catalog": "root", "channel": "flat" },
+  "groups": { "assortment": "root", "webshop": "flat" },
   "values": { "sku": "SKU-1", "name": { "sv": "Stol" }, "active": true }
 }
 HTTP 200
@@ -56,7 +56,7 @@ object: jsonpath "$.id"
 jsonpath "$.type" == "item"
 jsonpath "$.version" == 1
 jsonpath "$.values.sku" == "SKU-1"
-jsonpath "$.groups.catalog" == "root"
+jsonpath "$.groups.assortment" == "root"
 header "ETag" == "\"1\""
 
 GET {{host}}/v1/objects/{{object}}
@@ -79,7 +79,7 @@ Authorization: Bearer {{token}}
 Content-Type: application/json
 {
   "type": "item",
-  "groups": { "catalog": "root" },
+  "groups": { "assortment": "root" },
   "values": {
     "sku": "SKU-BAD",
     "name": { "sv": "12345678901" },
@@ -151,7 +151,7 @@ Authorization: Bearer {{token}}
 Content-Type: application/json
 {
   "type": "item",
-  "groups": { "catalog": "root" },
+  "groups": { "assortment": "root" },
   "values": { "sku": "SKU-WARN", "name": { "sv": "Stol" }, "active": true, "tags": ["abcd"] }
 }
 HTTP 200

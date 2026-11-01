@@ -147,7 +147,7 @@ async fn objects_round_trip_by_key_or_uuid_and_answer_with_keys() {
         Some(
             r#"{
                 "type": "item",
-                "groups": { "catalog": "root", "channel": "flat" },
+                "groups": { "assortment": "root", "webshop": "flat" },
                 "values": { "sku": "SKU-1", "name": { "sv": "Stol" }, "active": true }
             }"#,
         ),
@@ -155,7 +155,7 @@ async fn objects_round_trip_by_key_or_uuid_and_answer_with_keys() {
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["type"], "item");
-    assert_eq!(body["groups"]["catalog"], "root");
+    assert_eq!(body["groups"]["assortment"], "root");
     assert_eq!(body["values"]["sku"], "SKU-1");
     assert_eq!(body["version"], 1);
     assert_eq!(headers.get("etag").map(String::as_str), Some("\"1\""));
@@ -194,7 +194,7 @@ async fn objects_round_trip_by_key_or_uuid_and_answer_with_keys() {
     assert_eq!(status, StatusCode::OK, "{by_id}");
     assert_eq!(by_id["type"], "item");
     assert_eq!(by_id["values"]["sku"], "SKU-UUID");
-    assert!(by_id["groups"]["catalog"].is_string());
+    assert!(by_id["groups"]["assortment"].is_string());
 }
 
 #[tokio::test]
@@ -209,7 +209,7 @@ async fn invalid_writes_are_422_and_a_patch_needs_if_match() {
         Some(
             r#"{
                 "type": "item",
-                "groups": { "catalog": "root" },
+                "groups": { "assortment": "root" },
                 "values": {
                     "sku": "SKU-BAD",
                     "name": { "sv": "12345678901" },
@@ -325,7 +325,7 @@ async fn old_errors_warn_and_inapplicable_values_stay_hidden() {
         Some(HUMAN),
         &[("content-type", "application/json")],
         Some(
-            r#"{"type":"item","groups":{"catalog":"root"},"values":{"sku":"SKU-WARN","name":{"sv":"Stol"},"active":true,"tags":["abcd"]}}"#,
+            r#"{"type":"item","groups":{"assortment":"root"},"values":{"sku":"SKU-WARN","name":{"sv":"Stol"},"active":true,"tags":["abcd"]}}"#,
         ),
     )
     .await;
@@ -1268,7 +1268,7 @@ async fn batch_get_defaults_to_heads_and_can_project_fields() {
             Some(HUMAN),
             &[("content-type", "application/json")],
             Some(&format!(
-                r#"{{"type":"item","groups":{{"catalog":"root"}},"values":{{"sku":"{sku}","name":{{"sv":"Stol {sku}","en-GB":"Chair {sku}"}}}}}}"#
+                r#"{{"type":"item","groups":{{"assortment":"root"}},"values":{{"sku":"{sku}","name":{{"sv":"Stol {sku}","en-GB":"Chair {sku}"}}}}}}"#
             )),
         )
         .await;
@@ -1293,7 +1293,7 @@ async fn batch_get_defaults_to_heads_and_can_project_fields() {
         objects[0]["values"].as_object().unwrap().is_empty(),
         "{lean}"
     );
-    assert_eq!(objects[0]["groups"]["catalog"], "root");
+    assert_eq!(objects[0]["groups"]["assortment"], "root");
     assert!(objects[0]["version"].as_u64().unwrap() >= 1);
 
     let (status, _, projected) = call(
@@ -1373,7 +1373,7 @@ async fn list_filters_before_limit_and_pages_with_a_cursor() {
         ("produkt", "zzz-3"),
     ] {
         let body = format!(
-            r#"{{"type":"{type_key}","groups":{{"catalog":"root","channel":"flat"}},"values":{{"number":"{sku}","name":{{"sv":"Namn"}}}}}}"#
+            r#"{{"type":"{type_key}","groups":{{"assortment":"root","webshop":"flat"}},"values":{{"number":"{sku}","name":{{"sv":"Namn"}}}}}}"#
         );
         let (status, _, response) = call(
             &app,
@@ -1502,7 +1502,7 @@ async fn graph_marks_an_attribute_inherited_from_an_ancestor_group() {
         Some(
             r#"{
                 "type": "item",
-                "groups": { "catalog": "child", "channel": "flat" },
+                "groups": { "assortment": "child", "webshop": "flat" },
                 "values": { "sku": "SKU-CHILD", "color": "red", "finish": "matte" }
             }"#,
         ),
@@ -1523,7 +1523,7 @@ async fn graph_marks_an_attribute_inherited_from_an_ancestor_group() {
     let color = attr(&graph, "color");
     assert_eq!(color["sources"].as_array().unwrap().len(), 1, "{color}");
     assert_eq!(color["sources"][0]["from"], "group");
-    assert_eq!(color["sources"][0]["structure"], "catalog");
+    assert_eq!(color["sources"][0]["structure"], "assortment");
     assert_eq!(color["sources"][0]["group"], "root");
     assert_eq!(color["sources"][0]["class"], "root");
     assert_eq!(color["sources"][0]["inherited"], true);
@@ -1547,7 +1547,7 @@ async fn graph_marks_an_attribute_inherited_from_an_ancestor_group() {
         Some(
             r#"{
                 "type": "item",
-                "groups": { "catalog": "root", "channel": "flat" },
+                "groups": { "assortment": "root", "webshop": "flat" },
                 "values": { "sku": "SKU-ROOT", "color": "blue" }
             }"#,
         ),
@@ -1741,7 +1741,7 @@ async fn structures_rename_move_and_delete_keep_parents_and_objects() {
         Some(
             r#"{
                 "type": "item",
-                "groups": { "catalog": "root", "channel": "flat", "yard": "leaf" },
+                "groups": { "assortment": "root", "webshop": "flat", "yard": "leaf" },
                 "values": { "sku": "YARD-1", "name": { "sv": "Kruka" }, "active": true }
             }"#,
         ),
@@ -2725,7 +2725,7 @@ async fn a_selection_cannot_be_used_with_another_type() {
         "/v1/assortments",
         None,
         &[("cookie", &cookie), ("content-type", "application/json")],
-        Some(r#"{"name":"Cheese","type":"item","query":{"group":"catalog:root"}}"#),
+        Some(r#"{"name":"Cheese","type":"item","query":{"group":"assortment:root"}}"#),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{saved}");
@@ -3427,7 +3427,7 @@ async fn attribute_definitions_list_usage_and_a_draft_step() {
         Some(HUMAN),
         &[("content-type", "application/json")],
         Some(
-            r#"{"type":"item","groups":{"catalog":"root"},"values":{"sku":"SKU-USED","name":{"sv":"Rod"},"color":"red"}}"#,
+            r#"{"type":"item","groups":{"assortment":"root"},"values":{"sku":"SKU-USED","name":{"sv":"Rod"},"color":"red"}}"#,
         ),
     )
     .await;
@@ -3461,7 +3461,7 @@ async fn attribute_definitions_list_usage_and_a_draft_step() {
         .as_array()
         .unwrap()
         .iter()
-        .find(|row| row["key"] == "root" && row["structure_key"] == "catalog")
+        .find(|row| row["key"] == "root" && row["structure_key"] == "assortment")
         .expect("group");
     assert_eq!(root["objects"], 1, "{usage}");
 
@@ -4229,7 +4229,7 @@ async fn a_structure_dry_run_refuses_a_group_that_still_holds_objects() {
         Some(
             r#"{
                 "type": "item",
-                "groups": { "catalog": "root", "channel": "flat", "yard": "bin" },
+                "groups": { "assortment": "root", "webshop": "flat", "yard": "bin" },
                 "values": { "sku": "YARD-1", "name": { "sv": "Kruka" }, "active": true }
             }"#,
         ),

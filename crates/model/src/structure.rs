@@ -562,19 +562,19 @@ mod tests {
     }
 
     fn tree(defs: &mut DefinitionSet) {
-        create_structure(defs, sid(1), "catalog", "Catalog", true).unwrap();
-        create_group(defs, gid(2), "catalog", "root", "Root", None, true).unwrap();
+        create_structure(defs, sid(1), "assortment", "Catalog", true).unwrap();
+        create_group(defs, gid(2), "assortment", "root", "Root", None, true).unwrap();
         create_group(
             defs,
             gid(3),
-            "catalog",
+            "assortment",
             "child",
             "Child",
             Some("root"),
             true,
         )
         .unwrap();
-        create_group(defs, gid(4), "catalog", "leaf", "Leaf", Some("child"), true).unwrap();
+        create_group(defs, gid(4), "assortment", "leaf", "Leaf", Some("child"), true).unwrap();
         let structure = defs.structures.iter_mut().next().unwrap();
         structure.classes.push(Class {
             id: cid(10),
@@ -627,10 +627,10 @@ mod tests {
     #[test]
     fn a_repeated_create_is_idempotent_until_the_caller_asks_for_strict() {
         let mut defs = empty();
-        create_structure(&mut defs, sid(1), "catalog", "", false).unwrap();
-        create_structure(&mut defs, sid(2), "catalog", "", false).unwrap();
+        create_structure(&mut defs, sid(1), "assortment", "", false).unwrap();
+        create_structure(&mut defs, sid(2), "assortment", "", false).unwrap();
         assert_eq!(defs.structures.len(), 1);
-        let error = create_structure(&mut defs, sid(3), "catalog", "", true).unwrap_err();
+        let error = create_structure(&mut defs, sid(3), "assortment", "", true).unwrap_err();
         assert_eq!(error.code, StructureErrorCode::DuplicateKey);
     }
 
@@ -638,9 +638,9 @@ mod tests {
     fn moving_a_group_under_its_descendant_is_a_cycle() {
         let mut defs = empty();
         tree(&mut defs);
-        let error = move_group(&mut defs, "catalog", "root", Some("leaf")).unwrap_err();
+        let error = move_group(&mut defs, "assortment", "root", Some("leaf")).unwrap_err();
         assert_eq!(error.code, StructureErrorCode::Cycle);
-        move_group(&mut defs, "catalog", "leaf", Some("root")).unwrap();
+        move_group(&mut defs, "assortment", "leaf", Some("root")).unwrap();
         let leaf = defs.structures[0]
             .groups
             .iter()
@@ -653,7 +653,7 @@ mod tests {
     fn deleting_a_group_removes_descendants_and_repairs_class_parents() {
         let mut defs = empty();
         tree(&mut defs);
-        let removed = delete_group(&mut defs, "catalog", "child", None).unwrap();
+        let removed = delete_group(&mut defs, "assortment", "child", None).unwrap();
         assert_eq!(removed.removed, vec![gid(3), gid(4)]);
         let structure = &defs.structures[0];
         let keys: BTreeSet<_> = structure
@@ -691,9 +691,9 @@ mod tests {
     fn moving_objects_into_the_deleted_subtree_is_refused() {
         let mut defs = empty();
         tree(&mut defs);
-        let error = plan_delete_group(&defs, "catalog", "root", Some("leaf")).unwrap_err();
+        let error = plan_delete_group(&defs, "assortment", "root", Some("leaf")).unwrap_err();
         assert_eq!(error.code, StructureErrorCode::TargetInSubtree);
-        let plan = plan_delete_group(&defs, "catalog", "child", Some("root")).unwrap();
+        let plan = plan_delete_group(&defs, "assortment", "child", Some("root")).unwrap();
         assert_eq!(plan.move_to, Some(gid(2)));
         assert!(
             defs.structures[0]

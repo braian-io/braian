@@ -1,7 +1,9 @@
 import { useMemo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
+import { History as HistoryIcon } from 'lucide-react'
 import { ApiError, api, catalogName, failureLines, freeObject, jsonRecord, recordNumber, recordTitle, searchQuery, textValue, type Json } from './api'
+import { catalogKeyOf, inCatalog } from './catalog-scope'
 import { newObjectBody } from './new-object'
 import { attributeByKey, indexSort, readIndexed, sortKeyForColumnId } from './index-fields'
 import { cellEditShouldPatch, cellEditValuesBody, isEditingCell, isEditableColumn, resolveCellEditInitial, valueListKeyForColumn, columnBaseKey } from './cell-edit'
@@ -14,7 +16,7 @@ import { assortmentDisplayName, jobTypeDisplayTitle } from './demo-labels'
 import { onFlash } from './flash'
 import { GraphMap } from './graph-map'
 import { exportPayload, runExport, saveWorkbook } from './export'
-import { diffLines, historyTitle, isCreate, proposedValues, relativeTime, sourceLabel, suggestionLines, valuesFromKept } from './field-diff'
+import { diffLines, historyWho, isCreate, proposedValues, relativeTime, sourceLabel, suggestionLines, valuesFromKept } from './field-diff'
 import { formatCount, formatMeasure, formatTimestamp } from './format'
 import { PathMenu, type ListedPath } from './path-picker'
 import { publishFieldsHost } from './fields-host'
@@ -250,7 +252,21 @@ export function ObjectTable({
     staleTime: 30_000,
   })
 
-  const defs = useQuery({ queryKey: ['definitions'], queryFn: () => api.get('/v1/definitions') })
+  const catalogKey = catalogKeyOf(view.state as { catalog?: string })
+  const selectedOwners = useQuery({
+    queryKey: ['object-origin', session.objectId],
+    queryFn: async () => {
+      const response = await fetch(`/v1/objects/${session.objectId}?include=owners,origin`, { credentials: 'include' })
+      if (!response.ok) return { owners: {} as Record<string, string> }
+      return response.json() as Promise<{ owners?: Record<string, string> }>
+    },
+    enabled: Boolean(session.objectId),
+  })
+  const ownersForRow = selectedOwners.data?.owners ?? {}
+  const defs = useQuery({
+    queryKey: ['definitions', catalogKey],
+    queryFn: () => inCatalog(catalogKey, () => api.get('/v1/definitions')),
+  })
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey) return
@@ -441,8 +457,8 @@ export function ObjectTable({
   const sortBy = indexSort(sort, defs.data)
   const groupField = groupBy ? indexSort(groupBy, defs.data) : groupBy
   const probe = useQuery({
-    queryKey: ['objects', queryText, filterBy, sortBy, groupField, 1],
-    queryFn: () => loadPage(queryText, filterBy, sortBy, groupField, 1),
+    queryKey: ['objects', catalogKey, queryText, filterBy, sortBy, groupField, 1],
+    queryFn: () => inCatalog(catalogKey, () => loadPage(queryText, filterBy, sortBy, groupField, 1)),
     placeholderData: (previous) => previous,
   })
   const found = Number(probe.data?.found ?? 0)
@@ -458,8 +474,8 @@ export function ObjectTable({
   const pages = groupBy ? [] : [...new Set([Math.floor(start / pageSize) + 1, Math.floor(end / pageSize) + 1])]
   const windows = useQueries({
     queries: pages.map((page) => ({
-      queryKey: ['objects', queryText, filterBy, sortBy, groupField, page],
-      queryFn: () => loadPage(queryText, filterBy, sortBy, groupField, page),
+      queryKey: ['objects', catalogKey, queryText, filterBy, sortBy, groupField, page],
+      queryFn: () => inCatalog(catalogKey, () => loadPage(queryText, filterBy, sortBy, groupField, page)),
       placeholderData: (previous: Awaited<ReturnType<typeof loadPage>> | undefined) => previous,
     })),
   })
@@ -1041,7 +1057,8 @@ export function ObjectTable({
 
   /** Open the inline editor from row / path-values data — never from a loading placeholder. */
   const beginCellEdit = (row: ObjRow, column: string) => {
-    if (!isEditableColumn(column)) return
+    const owned = row.id === session.objectId ? new Set(Object.keys(ownersForRow)) : undefined
+    if (!isEditableColumn(column, owned)) return
     const listKey = valueListKeyForColumn(column, defs.data)
     if (listKey) {
       const current = columnBaseKey(column) === 'status'
@@ -2002,8 +2019,8 @@ export function ClassAttributes({ session }: { session: PanesSession }) {
             <h3>{section.title}</h3>
             <div className="standard-grid" role="grid">
               <div className="standard-grid-head" role="row">
-                <div className="standard-grid-cell head" role="columnheader">{copy.attributeName}</div>
-                <div className="standard-grid-cell head" role="columnheader">{copy.attributeType}</div>
+                <div className="standard-grid-cell column-head" role="columnheader">{copy.attributeName}</div>
+                <div className="standard-grid-cell column-head" role="columnheader">{copy.attributeType}</div>
               </div>
               {section.attributes.length === 0 ? <p className="hint">{copy.noClassAttributes}</p> : null}
               {section.attributes.map((attribute) => (
@@ -2025,6 +2042,15 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   const object = useQuery({
     queryKey: ['object', session.objectId],
     queryFn: () => api.get('/v1/objects/{id}', { params: { path: { id: session.objectId ?? '' } } }),
+    enabled: Boolean(session.objectId),
+  })
+  const provenance = useQuery({
+    queryKey: ['object-origin', session.objectId],
+    queryFn: async () => {
+      const response = await fetch(`/v1/objects/${session.objectId}?include=owners,origin`, { credentials: 'include' })
+      if (!response.ok) return { owners: {} as Record<string, string>, origin: null as Json | null }
+      return response.json() as Promise<{ owners?: Record<string, string>; origin?: Json | null }>
+    },
     enabled: Boolean(session.objectId),
   })
   const defs = useQuery({ queryKey: ['definitions'], queryFn: () => api.get('/v1/definitions') })
@@ -2095,13 +2121,16 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
     .filter((item) => typeIds.has(String(item.id)) && String((item.kind as Json)?.type) === 'file_ref')
     .map((item) => String(item.key))
   const valueKeys = [...new Set([...Object.keys(values), ...fileKeys])]
+  const owners = provenance.data?.owners ?? {}
+  const origin = provenance.data?.origin
   const renderField = (key: string) => {
     const attribute = attributes.find((item) => item.key === key)
     const kind = (attribute?.kind as Json) ?? {}
     const fieldLabel = textValue((attribute?.labels as Json) ?? key, uiLanguage) || key
+    const owner = owners[key]
     return (
-      <div key={key} className="field">
-        <label>{fieldLabel}</label>
+      <div key={key} className={owner ? 'field locked' : 'field'} data-testid={owner ? 'locked-field' : undefined}>
+        <label>{fieldLabel}{owner ? ` · ${copy.ownedBy} ${owner}` : ''}</label>
         <div className={key in draft ? 'control draft-user' : 'control'}>
           <Editor
             kind={String(kind.type ?? 'text')}
@@ -2112,9 +2141,15 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
             value={values[key]}
             options={optionsFor(lists, String(kind.list ?? ''))}
             units={unitsFor(families, String(kind.unit_family ?? ''))}
+            readOnly={Boolean(owner)}
             onChange={(next) => setDraft((state) => ({ ...state, [key]: next }))}
           />
         </div>
+        {owner && origin && typeof origin === 'object' ? (
+          <p className="hint" data-testid="field-origin">
+            {copy.sourceObject} {String((origin as Json).source_key ?? '')}
+          </p>
+        ) : null}
       </div>
     )
   }
@@ -2246,6 +2281,7 @@ function Editor({
   options,
   units,
   onChange,
+  readOnly = false,
 }: {
   kind: string
   form: string
@@ -2256,7 +2292,11 @@ function Editor({
   options: Array<{ code: string; label: string }>
   units: string[]
   onChange: (value: unknown) => void
+  readOnly?: boolean
 }) {
+  if (readOnly && !languageDependent) {
+    return <input data-field="true" readOnly value={textValue(value)} />
+  }
   if (languageDependent) {
     const record = value && typeof value === 'object' && !Array.isArray(value) ? (value as Json) : { en: textValue(value) }
     const cards = languages.length > 0 ? languages : ['en']
@@ -2266,9 +2306,9 @@ function Editor({
           <div key={language} className="lang-card">
             <MetaChip>{language}</MetaChip>
             {form === 'long' ? (
-              <textarea data-field="true" value={textValue(record[language])} onChange={(event) => onChange({ ...record, [language]: event.target.value })} />
+              <textarea data-field="true" readOnly={readOnly} value={textValue(record[language])} onChange={(event) => onChange({ ...record, [language]: event.target.value })} />
             ) : (
-              <input data-field="true" value={textValue(record[language])} onChange={(event) => onChange({ ...record, [language]: event.target.value })} />
+              <input data-field="true" readOnly={readOnly} value={textValue(record[language])} onChange={(event) => onChange({ ...record, [language]: event.target.value })} />
             )}
           </div>
         ))}
@@ -2541,7 +2581,11 @@ export function HistoryView({ session }: { session: PanesSession }) {
   return (
     <div data-testid="history">
       <div className="history-head">
-        <button type="button" className="btn-ghost" data-testid="time-travel" aria-pressed={travel} onClick={() => setTravel((value) => !value)}>
+        <span className="hint">
+          {formatCount(rows.length)} {rows.length === 1 ? copy.oneChange : copy.manyChanges}
+        </span>
+        <button type="button" data-testid="time-travel" aria-pressed={travel} onClick={() => setTravel((value) => !value)}>
+          <HistoryIcon size={14} aria-hidden="true" />
           {copy.timeTravel}
         </button>
       </div>
@@ -2584,10 +2628,16 @@ export function HistoryView({ session }: { session: PanesSession }) {
               onClick={() => setOpen(expanded ? null : at)}
             >
               <header className="history-line">
-                <strong>{historyTitle(row)}</strong>
+                <strong>{historyWho(row)}</strong>
                 <time dateTime={String(row.at ?? '')}>{relativeTime(row.at)}</time>
               </header>
-              {created ? null : <FieldDiff lines={diffLines(row.diff, defs.data)} />}
+              {created ? (
+                <ul className="field-diff">
+                  <li className="history-created">{copy.created}</li>
+                </ul>
+              ) : (
+                <FieldDiff lines={diffLines(row.diff, defs.data)} />
+              )}
               {expanded ? (
                 <div className="history-actions" onClick={(event) => event.stopPropagation()}>
                   <button

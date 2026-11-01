@@ -174,6 +174,13 @@ export function CommandPalette({
     () => [
       ...buildCatalog(workspaces, views, session.objectId, types, selectedSingular, selectedKey, suggestionTotal, feedbackEnabled, theme),
       {
+        id: 'catalog:switch',
+        group: 'views' as const,
+        title: `${copy.catalog} ›`,
+        subtitle: copy.masterCatalog,
+        keywords: ['catalog', 'source', 'master'],
+      },
+      {
         id: 'selections',
         group: 'views' as const,
         title: `${copy.assortments} ›`,
@@ -191,43 +198,43 @@ export function CommandPalette({
       ...(session.group
         ? [{
             id: 'model:delete-group',
-            group: 'object' as const,
+            group: 'model' as const,
             title: copy.deleteMenu,
-            subtitle: 'Delete the selected group',
-            keywords: ['delete', 'remove'],
+            subtitle: 'Delete the selected structure group',
+            keywords: ['delete', 'remove', 'group'],
           }]
         : []),
-      { id: 'model:new-type', group: 'object' as const, title: copy.newType, subtitle: copy.dataModel, keywords: ['create', 'type'] },
-      { id: 'model:new-link-type', group: 'object' as const, title: copy.newLinkType, subtitle: copy.dataModel, keywords: ['create', 'link', 'type'] },
+      { id: 'model:new-type', group: 'model' as const, title: copy.newType, subtitle: copy.dataModel, keywords: ['create', 'type'] },
+      { id: 'model:new-link-type', group: 'model' as const, title: copy.newLinkType, subtitle: copy.dataModel, keywords: ['create', 'link', 'type'] },
       { id: 'link:to', group: 'object' as const, title: `${copy.linkTo} ›`, subtitle: copy.addLink, keywords: ['link', 'relation'] },
       { id: 'link:add', group: 'object' as const, title: copy.addLink, subtitle: copy.linkTypes, keywords: ['link', 'add'] },
       { id: 'link:remove', group: 'object' as const, title: copy.removeLink, subtitle: copy.linkTypes, keywords: ['link', 'remove'] },
-      { id: 'model:delete-link-type', group: 'object' as const, title: copy.deleteLinkType, subtitle: copy.dataModel, keywords: ['delete', 'link', 'type'] },
-      { id: 'model:new-list', group: 'object' as const, title: copy.newValueList, subtitle: copy.dataModel, keywords: ['create', 'list', 'option'] },
-      { id: 'model:new-family', group: 'object' as const, title: copy.newUnitFamily, subtitle: copy.dataModel, keywords: ['create', 'unit'] },
-      { id: 'model:new-tree', group: 'object' as const, title: copy.newTree, subtitle: copy.dataModel, keywords: ['create', 'structure', 'tree'] },
-      { id: 'model:review', group: 'object' as const, title: copy.reviewAndSave, subtitle: copy.dataModel, keywords: ['draft', 'save'], kbd: 'Ctrl+S' },
-      { id: 'model:discard', group: 'object' as const, title: copy.discardDraft, subtitle: copy.dataModel, keywords: ['draft'] },
-      { id: 'model:undo', group: 'object' as const, title: copy.undoModel, subtitle: copy.dataModel, keywords: ['undo'] },
-      { id: 'model:delete-type', group: 'object' as const, title: copy.deleteType, subtitle: copy.dataModel, keywords: ['delete', 'type'] },
+      { id: 'model:delete-link-type', group: 'model' as const, title: copy.deleteLinkType, subtitle: copy.dataModel, keywords: ['delete', 'link', 'type'] },
+      { id: 'model:new-list', group: 'model' as const, title: copy.newValueList, subtitle: copy.dataModel, keywords: ['create', 'list', 'option'] },
+      { id: 'model:new-family', group: 'model' as const, title: copy.newUnitFamily, subtitle: copy.dataModel, keywords: ['create', 'unit'] },
+      { id: 'model:new-tree', group: 'model' as const, title: copy.newTree, subtitle: copy.dataModel, keywords: ['create', 'structure', 'tree'] },
+      { id: 'model:review', group: 'model' as const, title: copy.reviewAndSave, subtitle: copy.dataModel, keywords: ['draft', 'save'], kbd: 'Ctrl+S' },
+      { id: 'model:discard', group: 'model' as const, title: copy.discardDraft, subtitle: copy.dataModel, keywords: ['draft'] },
+      { id: 'model:undo', group: 'model' as const, title: copy.undoModel, subtitle: copy.dataModel, keywords: ['undo'] },
+      { id: 'model:delete-type', group: 'model' as const, title: copy.deleteType, subtitle: copy.dataModel, keywords: ['delete', 'type'] },
       ...(focusedStandard(defs.data)
         ? []
-        : [{ id: 'model:delete-attribute', group: 'object' as const, title: copy.deleteAttribute, subtitle: copy.dataModel, keywords: ['delete', 'attribute'] }]),
-      { id: 'model:delete-structure', group: 'object' as const, title: copy.deleteStructure, subtitle: copy.dataModel, keywords: ['delete', 'structure', 'tree'] },
-      { id: 'model:delete-list', group: 'object' as const, title: copy.deleteValueList, subtitle: copy.dataModel, keywords: ['delete', 'list'] },
-      { id: 'model:delete-option', group: 'object' as const, title: copy.deleteOption, subtitle: copy.dataModel, keywords: ['delete', 'option'] },
-      { id: 'model:delete-family', group: 'object' as const, title: copy.deleteUnitFamily, subtitle: copy.dataModel, keywords: ['delete', 'unit'] },
-      { id: 'model:delete-unit', group: 'object' as const, title: copy.deleteUnit, subtitle: copy.dataModel, keywords: ['delete', 'unit'] },
-      { id: 'attr:add-type', group: 'object' as const, title: copy.addToType, subtitle: copy.attributeDefinitions, keywords: ['attribute', 'type', 'attach'] },
-      { id: 'attr:add-group', group: 'object' as const, title: copy.addToGroup, subtitle: copy.attributeDefinitions, keywords: ['attribute', 'group', 'attach'] },
-      { id: 'attr:rename', group: 'object' as const, title: copy.renameAttribute, subtitle: copy.attributeDefinitions, keywords: ['attribute', 'label', 'rename'] },
+        : [{ id: 'model:delete-attribute', group: 'model' as const, title: copy.deleteAttribute, subtitle: copy.dataModel, keywords: ['delete', 'attribute'] }]),
+      { id: 'model:delete-structure', group: 'model' as const, title: copy.deleteStructure, subtitle: copy.dataModel, keywords: ['delete', 'structure', 'tree'] },
+      { id: 'model:delete-list', group: 'model' as const, title: copy.deleteValueList, subtitle: copy.dataModel, keywords: ['delete', 'list'] },
+      { id: 'model:delete-option', group: 'model' as const, title: copy.deleteOption, subtitle: copy.dataModel, keywords: ['delete', 'option'] },
+      { id: 'model:delete-family', group: 'model' as const, title: copy.deleteUnitFamily, subtitle: copy.dataModel, keywords: ['delete', 'unit'] },
+      { id: 'model:delete-unit', group: 'model' as const, title: copy.deleteUnit, subtitle: copy.dataModel, keywords: ['delete', 'unit'] },
+      { id: 'attr:add-type', group: 'model' as const, title: copy.addToType, subtitle: copy.attributeDefinitions, keywords: ['attribute', 'type', 'attach'] },
+      { id: 'attr:add-group', group: 'model' as const, title: copy.addToGroup, subtitle: copy.attributeDefinitions, keywords: ['attribute', 'group', 'attach'] },
+      { id: 'attr:rename', group: 'model' as const, title: copy.renameAttribute, subtitle: copy.attributeDefinitions, keywords: ['attribute', 'label', 'rename'] },
       ...(focusedStandard(defs.data)
         ? []
         : [
-            { id: 'attr:rename-key', group: 'object' as const, title: copy.renameKey, subtitle: copy.attributeDefinitions, keywords: ['attribute', 'key', 'rename'] },
-            { id: 'attr:delete', group: 'object' as const, title: copy.deleteMenu, subtitle: copy.attributeDefinitions, keywords: ['attribute', 'delete'] },
+            { id: 'attr:rename-key', group: 'model' as const, title: copy.renameKey, subtitle: copy.attributeDefinitions, keywords: ['attribute', 'key', 'rename'] },
+            { id: 'attr:delete', group: 'model' as const, title: copy.deleteMenu, subtitle: copy.attributeDefinitions, keywords: ['attribute', 'delete'] },
           ]),
-      { id: 'attr:new', group: 'object' as const, title: copy.newAttribute, subtitle: copy.attributeDefinitions, keywords: ['attribute', 'create'] },
+      { id: 'attr:new', group: 'model' as const, title: copy.newAttribute, subtitle: copy.attributeDefinitions, keywords: ['attribute', 'create'] },
     ],
     [workspaces, views, session.objectId, session.group, types, selectedSingular, selectedKey, suggestionTotal, feedbackEnabled, theme, tableColumns, defs.data],
   )
@@ -293,6 +300,33 @@ export function CommandPalette({
     if (id !== 'ask') {
       touch(remembered)
       void api.post('/v1/frecency', { body: { id: remembered } }).catch(() => undefined)
+    }
+    if (id === 'catalog:switch') {
+      void fetch('/v1/catalogs', { credentials: 'include' })
+        .then((response) => (response.ok ? response.json() : []))
+        .then((listed: Array<{ key?: string; name?: string }>) => {
+          const rows = (Array.isArray(listed) ? listed : []).map((row) => ({
+            id: `catalog:${row.key ?? ''}`,
+            sourceId: `catalog:${row.key ?? ''}`,
+            group: 'views' as const,
+            title: row.name || row.key || '',
+            subtitle: row.key || '',
+            keywords: ['catalog'],
+          }))
+          setStack((current) => [...current, { label: copy.catalog, rows }])
+          setQuery('')
+          setActive(0)
+        })
+      return
+    }
+    if (id.startsWith('catalog:') && focusViewId) {
+      window.dispatchEvent(
+        new CustomEvent('braian-set-catalog', {
+          detail: { viewId: focusViewId, catalog: id.slice('catalog:'.length) },
+        }),
+      )
+      onClose()
+      return
     }
     if (isAddViewRoot(id)) {
       onPrepareAddView?.()
@@ -990,7 +1024,7 @@ export function CommandPalette({
             <CommandList id="palette-list">
               {groups.map((group) => (
                 <div key={group.name} className="palette-group">
-                  {group.name !== 'ask' ? <div>{group.name === 'search' ? searchGroupTitle(hits.map((hit) => hit.typeKey ?? ''), types) : group.name === 'object' && selectedSingular ? `On this ${selectedSingular}` : groupTitle[group.name]}</div> : null}
+                  {group.name !== 'ask' ? <div className="palette-heading">{group.name === 'search' ? searchGroupTitle(hits.map((hit) => hit.typeKey ?? ''), types) : group.name === 'object' && selectedSingular ? `On this ${selectedSingular}` : groupTitle[group.name]}</div> : null}
                   {group.rows.map((row) => {
                     const index = rows.indexOf(row)
                     return (
@@ -1108,9 +1142,9 @@ function buildCatalog(
           keywords: ['attribute', 'definition', 'model'],
         }]
       : []),
-    { id: 'model:rename-key', group: 'views', title: copy.renameKey, subtitle: 'Change a key. External integrations that use the old key will stop working', keywords: ['rename', 'key', 'attribute'] },
-    { id: 'object:move-group', group: 'views', title: copy.moveToGroup, subtitle: 'Place the open object in a group', keywords: ['move', 'group', 'place'] },
-    { id: 'model:allowed-trees', group: 'views', title: copy.allowedTrees, subtitle: 'Choose the trees a type may use', keywords: ['tree', 'structure', 'type'] },
+    { id: 'model:rename-key', group: 'model', title: copy.renameKey, subtitle: 'Change a key. External integrations that use the old key will stop working', keywords: ['rename', 'key', 'attribute'] },
+    { id: 'object:move-group', group: 'object', title: copy.moveToGroup, subtitle: 'Place the open object in a group', keywords: ['move', 'group', 'place'] },
+    { id: 'model:allowed-trees', group: 'model', title: copy.allowedTrees, subtitle: 'Choose the trees a type may use', keywords: ['tree', 'structure', 'type'] },
     {
       id: 'theme:toggle',
       group: 'views',
@@ -1221,7 +1255,7 @@ function columnRows(columns: UiColumn[], hide: boolean): PaletteItem[] {
 }
 
 function groupBlocks(rows: PaletteItem[]) {
-  const order: PaletteGroup[] = ['recent', 'best', 'object', 'views', 'search', 'ask']
+  const order: PaletteGroup[] = ['recent', 'best', 'object', 'model', 'views', 'search', 'ask']
   return order
     .map((name) => ({ name, rows: rows.filter((row) => row.group === name) }))
     .filter((group) => group.rows.length > 0)

@@ -87,7 +87,7 @@ pnpm install
 just dev
 ```
 
-`just up` starts Postgres and Typesense. `pnpm install` is once, before Vite can start. `just dev` runs migrations, synthetic demo data, the API, the indexer, and the web app. The first run compiles Rust. Stop it with Ctrl+C.
+`just up` starts Postgres and Typesense. `pnpm install` is once, before Vite can start. `just dev` (or `pnpm dev` / `npm run dev` from the repo root) runs migrations, synthetic demo data, the API, the indexer, and the web app. The first run compiles Rust; later backend edits rebuild when [cargo-watch](https://github.com/watchexec/cargo-watch) is installed (`cargo install cargo-watch` on native Windows). Set `BRAIAN_DEV_NO_WATCH=1` to run the backend once without watch. Stop with Ctrl+C.
 
 - Web: http://127.0.0.1:3000
 - API: http://127.0.0.1:8090

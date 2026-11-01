@@ -54,11 +54,12 @@ const READ_ONLY_COLUMN_BASES = new Set([
  * Hops and system fields are blocked; value_list columns (e.g. Status) stay editable
  * so the Select editor can open.
  */
-export function isEditableColumn(columnId: string): boolean {
+export function isEditableColumn(columnId: string, owned?: ReadonlySet<string>): boolean {
   const path = parseColumnId(columnId).path
   if (path.includes('>')) return false
   const base = columnBaseKey(columnId)
   if (READ_ONLY_COLUMN_BASES.has(base)) return false
+  if (owned?.has(base)) return false
   return true
 }
 

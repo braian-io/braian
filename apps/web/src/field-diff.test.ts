@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { diffLines, historyTitle, relativeTime, sourceLabel, suggestionLines, valuesFromKept } from './field-diff'
+import { diffLines, historyWho, isCreate, relativeTime, sourceLabel, suggestionLines, valuesFromKept } from './field-diff'
 
 const defs = {
   attributes: [
@@ -48,10 +48,12 @@ describe('diff lines', () => {
     expect(lines[0]?.after).toBe('Hooded')
   })
 
-  it('names a create after the person and collapses the values', () => {
-    expect(historyTitle({ op: 'create', actor: 'Ada' })).toBe('Created by Ada')
-    expect(historyTitle({ op: 'create', actor: 'bot', on_behalf_of: 'Ada', via: 'agent' })).toBe('Created by Ada via agent')
-    expect(historyTitle({ op: 'update', actor: 'import-job', via: 'import' })).toBe('import-job via import')
+  it('names the person behind a change and collapses the values of a create', () => {
+    expect(historyWho({ op: 'create', actor: 'Ada' })).toBe('Ada')
+    expect(isCreate({ op: 'create', actor: 'Ada' })).toBe(true)
+    expect(historyWho({ op: 'create', actor: 'bot', on_behalf_of: 'Ada', via: 'agent' })).toBe('Ada via agent')
+    expect(historyWho({ op: 'update', actor: 'import-job', via: 'import' })).toBe('import-job via import')
+    expect(isCreate({ op: 'update', actor: 'import-job', via: 'import' })).toBe(false)
     expect(diffLines({ $created: { version: 1 }, name: { after: { sv: 'Tent' } } }, defs)).toEqual([])
   })
 

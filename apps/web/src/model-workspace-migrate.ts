@@ -36,6 +36,10 @@ export const KNOWN_VIEW_TYPES = new Set([
   'batch_log',
   'job_history',
   'embed',
+  'catalogs',
+  'merge_profiles',
+  'ownership_rules',
+  'merge_runs',
 ])
 
 export function isKnownViewType(type: string) {

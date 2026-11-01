@@ -28,7 +28,7 @@ pub async fn measure(
         let objects: i64 = client
             .query_one(
                 "SELECT count(*)::bigint FROM objects
-                 WHERE deleted_at IS NULL AND type_id = ANY($1)",
+                 WHERE catalog_id = braian_catalog() AND deleted_at IS NULL AND type_id = ANY($1)",
                 &[types],
             )
             .await?
@@ -38,7 +38,7 @@ pub async fn measure(
                 "SELECT coalesce(sum((SELECT count(*) FROM jsonb_object_keys(v.\"values\"))), 0)::bigint
                  FROM object_values v
                  JOIN objects o ON o.id = v.object_id
-                 WHERE v.is_latest AND o.deleted_at IS NULL AND o.type_id = ANY($1)",
+                 WHERE v.is_latest AND o.catalog_id = braian_catalog() AND o.deleted_at IS NULL AND o.type_id = ANY($1)",
                 &[types],
             )
             .await?
@@ -48,7 +48,7 @@ pub async fn measure(
                 "SELECT count(*)::bigint FROM links l
                  WHERE EXISTS (
                    SELECT 1 FROM objects o
-                   WHERE o.deleted_at IS NULL AND o.type_id = ANY($1)
+                   WHERE o.catalog_id = braian_catalog() AND o.deleted_at IS NULL AND o.type_id = ANY($1)
                      AND (o.id = l.object_id OR o.id = l.from_id OR o.id = l.to_id)
                  )",
                 &[types],
@@ -59,11 +59,11 @@ pub async fn measure(
             .query_one(
                 "SELECT count(DISTINCT l.object_id)::bigint
                  FROM links l
-                 JOIN objects link_obj ON link_obj.id = l.object_id AND link_obj.deleted_at IS NULL
+                 JOIN objects link_obj ON link_obj.id = l.object_id AND link_obj.catalog_id = braian_catalog() AND link_obj.deleted_at IS NULL
                  WHERE NOT (link_obj.type_id = ANY($1))
                    AND EXISTS (
                      SELECT 1 FROM objects o
-                     WHERE o.deleted_at IS NULL AND o.type_id = ANY($1)
+                     WHERE o.catalog_id = braian_catalog() AND o.deleted_at IS NULL AND o.type_id = ANY($1)
                        AND (o.id = l.from_id OR o.id = l.to_id)
                    )",
                 &[types],
@@ -138,7 +138,7 @@ async fn link_values_on_types(
              FROM object_values v
              JOIN objects o ON o.id = v.object_id
              CROSS JOIN LATERAL jsonb_each(v.\"values\") e
-             WHERE v.is_latest AND o.deleted_at IS NULL AND o.type_id = ANY($1)
+             WHERE v.is_latest AND o.catalog_id = braian_catalog() AND o.deleted_at IS NULL AND o.type_id = ANY($1)
                AND e.key = ANY($2)",
             &[&types, &keys],
         )
@@ -184,7 +184,7 @@ async fn dropped_values(
                   WHERE e.key = ANY($2)) AS links
                FROM object_values v
                JOIN objects o ON o.id = v.object_id
-               WHERE v.is_latest AND o.deleted_at IS NULL
+               WHERE v.is_latest AND o.catalog_id = braian_catalog() AND o.deleted_at IS NULL
                  AND v.\"values\" ?| $1
                  AND (cardinality($3::uuid[]) = 0 OR NOT (o.type_id = ANY($3)))
                  AND (cardinality($4::uuid[]) = 0 OR o.type_id = ANY($4))
@@ -217,7 +217,7 @@ async fn dropped_matching(
             "SELECT o.id, v.\"values\"
              FROM object_values v
              JOIN objects o ON o.id = v.object_id
-             WHERE v.is_latest AND o.deleted_at IS NULL
+             WHERE v.is_latest AND o.catalog_id = braian_catalog() AND o.deleted_at IS NULL
                AND v.\"values\" ?| $1
                AND (cardinality($2::uuid[]) = 0 OR NOT (o.type_id = ANY($2)))
                AND (cardinality($3::uuid[]) = 0 OR o.type_id = ANY($3))
@@ -262,7 +262,7 @@ async fn unplaced(
             "SELECT count(DISTINCT o.id)::bigint
              FROM objects o
              JOIN object_structures s ON s.object_id = o.id
-             WHERE o.deleted_at IS NULL
+             WHERE o.catalog_id = braian_catalog() AND o.deleted_at IS NULL
                AND s.group_id = ANY($1)
                AND (cardinality($2::uuid[]) = 0 OR NOT (o.type_id = ANY($2)))
                AND NOT EXISTS (
@@ -291,7 +291,7 @@ async fn strip_values(
             "SELECT o.id, v.part, v.\"values\"
              FROM object_values v
              JOIN objects o ON o.id = v.object_id
-             WHERE v.is_latest AND o.deleted_at IS NULL
+             WHERE v.is_latest AND o.catalog_id = braian_catalog() AND o.deleted_at IS NULL
                AND v.\"values\" ?| $1
                AND (cardinality($2::uuid[]) = 0 OR NOT (o.type_id = ANY($2)))
                AND (cardinality($3::uuid[]) = 0 OR o.type_id = ANY($3))
@@ -383,7 +383,7 @@ async fn unplace(
         .query(
             "DELETE FROM object_structures s
              USING objects o
-             WHERE s.object_id = o.id AND o.deleted_at IS NULL
+             WHERE s.object_id = o.id AND o.catalog_id = braian_catalog() AND o.deleted_at IS NULL
                AND s.group_id = ANY($1)
                AND (cardinality($2::uuid[]) = 0 OR NOT (o.type_id = ANY($2)))
              RETURNING s.object_id",
@@ -430,11 +430,11 @@ async fn delete_types(
         .query(
             "SELECT DISTINCT l.object_id
              FROM links l
-             JOIN objects link_obj ON link_obj.id = l.object_id AND link_obj.deleted_at IS NULL
+             JOIN objects link_obj ON link_obj.id = l.object_id AND link_obj.catalog_id = braian_catalog() AND link_obj.deleted_at IS NULL
              WHERE NOT (link_obj.type_id = ANY($1))
                AND EXISTS (
                  SELECT 1 FROM objects o
-                 WHERE o.deleted_at IS NULL AND o.type_id = ANY($1)
+                 WHERE o.catalog_id = braian_catalog() AND o.deleted_at IS NULL AND o.type_id = ANY($1)
                    AND (o.id = l.from_id OR o.id = l.to_id)
                )",
             &[types],
@@ -446,7 +446,7 @@ async fn delete_types(
          WHERE l.object_id = ANY($2)
             OR EXISTS (
               SELECT 1 FROM objects o
-              WHERE o.deleted_at IS NULL AND o.type_id = ANY($1)
+              WHERE o.catalog_id = braian_catalog() AND o.deleted_at IS NULL AND o.type_id = ANY($1)
                 AND (o.id = l.object_id OR o.id = l.from_id OR o.id = l.to_id)
             )",
         &[types, &extra_ids],
@@ -503,7 +503,7 @@ async fn delete_types(
         .query(
             "UPDATE objects
              SET version = version + 1, updated_at = now(), deleted_at = now()
-             WHERE deleted_at IS NULL AND type_id = ANY($1)
+             WHERE catalog_id = braian_catalog() AND deleted_at IS NULL AND type_id = ANY($1)
              RETURNING id, version",
             &[types],
         )

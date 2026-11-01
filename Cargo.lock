@@ -308,6 +308,7 @@ dependencies = [
  "base64 0.22.1",
  "bincode",
  "braian-indexer",
+ "braian-merge",
  "braian-model",
  "braian-rules",
  "braian-search",
@@ -382,6 +383,16 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "braian-merge"
+version = "0.0.0"
+dependencies = [
+ "braian-model",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

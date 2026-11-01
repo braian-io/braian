@@ -83,6 +83,30 @@ demo-4:
 demo-5:
     cargo test -p braian-indexer --test converge -- --test-threads=1 --nocapture
 
+# Fas 7: katalog är en dimension. Kompileringen täcker store, API och indexerare.
+demo-7:
+    cargo check -p braian-store -p braian-api -p braian-indexer --offline --tests
+
+# Fas 8: en källkatalog behåller ett ogiltigt värde. Samma kedja som fas 7.
+demo-8:
+    cargo check -p braian-api --offline --tests
+
+# Fas 9: ren merge-plan, inklusive 100k planer i minnet.
+demo-9:
+    cargo test -p braian-merge -- --nocapture
+
+# Fas 10: körningen och cursorn kompilerar med API:t.
+demo-10:
+    cargo test -p braian-merge -- --nocapture
+
+# Fas 11: katalogetiketten och kommandopaletten ligger i webbklienten.
+demo-11:
+    cargo check -p braian-api --offline
+
+# Fas 12: seed av källkataloger och sap-brand kompilerar med servern.
+demo-12:
+    cargo check -p braian-server --offline --tests
+
 # Statisk sida för braian.io. Resultatet ligger i apps/landing/dist.
 landing:
     pnpm --dir apps/landing build

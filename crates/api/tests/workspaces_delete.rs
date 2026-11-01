@@ -164,7 +164,7 @@ async fn delete_workspace_ok_leaves_objects() {
         .header("content-type", "application/json");
     let request = builder
         .body(Body::from(
-            r#"{"type":"item","groups":{"catalog":"root"},"values":{"sku":"DEL-1","name":{"en-GB":"Keep me"}}}"#
+            r#"{"type":"item","groups":{"assortment":"root"},"values":{"sku":"DEL-1","name":{"en-GB":"Keep me"}}}"#
                 .to_owned(),
         ))
         .unwrap();

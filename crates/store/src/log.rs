@@ -160,7 +160,7 @@ impl Store {
     /// gap that an open transaction might still fill.
     pub async fn changes_after(&self, after: i64, limit: i64) -> Result<Vec<LogEvent>, Error> {
         let limit = limit.clamp(1, MAX_CLAIM);
-        let mut client = self.pool().get().await?;
+        let mut client = self.checkout().await?;
         let tx = client.transaction().await?;
         // The first activity read only opens the window. `visible_page`
         // decides after the rows are loaded, with a fresh snapshot.
@@ -179,7 +179,7 @@ impl Store {
     /// below it is an aborted insert. Otherwise it is the last seq of the
     /// contiguous prefix, and the tail waits in front of the first hole.
     pub async fn safe_change_seq(&self) -> Result<i64, Error> {
-        let mut client = self.pool().get().await?;
+        let mut client = self.checkout().await?;
         let tx = client.transaction().await?;
         // Same window as a claim: the bool from before the tip read is stale.
         let _stale = others_open(&tx).await?;
@@ -229,7 +229,7 @@ impl Store {
     pub async fn lane_pending(&self, lane: &str, limit: i64) -> Result<i64, Error> {
         check_lane(lane)?;
         let limit = limit.clamp(1, MAX_CLAIM);
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let row = client
             .query_one(
                 "SELECT COUNT(*)::bigint FROM (
@@ -248,7 +248,7 @@ impl Store {
     /// Last seq this lane has finished. Open claims sit above it.
     pub async fn lane_committed(&self, lane: &str) -> Result<i64, Error> {
         check_lane(lane)?;
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let row = client
             .query_one(
                 "SELECT committed_seq FROM index_lane WHERE lane = $1",
@@ -273,7 +273,7 @@ impl Store {
     ) -> Result<Option<LogClaim>, Error> {
         check_lane(lane)?;
         let limit = limit.clamp(1, MAX_CLAIM);
-        let mut client = self.pool().get().await?;
+        let mut client = self.checkout().await?;
         let mut skips = 0;
         let mut conflicts = 0;
         while skips < 8 && conflicts < 8 {
@@ -296,7 +296,7 @@ impl Store {
         from_seq: i64,
     ) -> Result<i64, Error> {
         check_lane(lane)?;
-        let mut client = self.pool().get().await?;
+        let mut client = self.checkout().await?;
         let tx = client.transaction().await?;
         lock_lane(&tx, lane).await?;
         let updated = tx
@@ -328,7 +328,7 @@ impl Store {
     ) -> Result<(), Error> {
         check_lane(lane)?;
         let millis = i64::try_from(lease.as_millis()).unwrap_or(i64::MAX).max(1);
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         let updated = client
             .execute(
                 "UPDATE index_claim
@@ -349,7 +349,7 @@ impl Store {
     /// Makes every open lease on `lane` look expired. The next claim replays it.
     pub(crate) async fn expire_claims(&self, lane: &str) -> Result<(), Error> {
         check_lane(lane)?;
-        let client = self.pool().get().await?;
+        let client = self.checkout().await?;
         client
             .execute(
                 "UPDATE index_claim
@@ -370,7 +370,7 @@ impl Store {
         if object_ids.is_empty() {
             return Ok(Vec::new());
         }
-        let mut client = self.pool().get().await?;
+        let mut client = self.checkout().await?;
         let tx = client.transaction().await?;
         let batch = Uuid::now_v7();
         let behalf = actor.on_behalf_of.map(|id| id.as_uuid());

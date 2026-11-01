@@ -7,6 +7,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './comp
 import { viewDisplayTitle } from './demo-labels'
 import { looksLikeRawViewId } from './model-workspace-migrate'
 import { copy } from './i18n'
+import { CatalogChip } from './catalog-chip'
+import { catalogKeyOf } from './catalog-scope'
 import { openSharedContextMenu } from './shared-context-menu'
 import {
   activate,
@@ -27,7 +29,7 @@ import {
   type Zone,
 } from './layout'
 
-export type DockView = { id: string; title: string; type: string }
+export type DockView = { id: string; title: string; type: string; state?: { catalog?: string } }
 
 type Hover =
   | { kind: 'edge'; zone: Exclude<Zone, 'center'> }
@@ -284,6 +286,12 @@ function Pane({ frame, leaf }: { frame: Frame; leaf: Leaf }) {
   const preview = hover?.kind === 'pane' && leaf.views.includes(hover.anchor) ? hover.zone : null
   const dragged = useRef(false)
   const pendingActive = useRef<{ view: string; timer: number } | null>(null)
+  const tabList = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const tab = activeId ? tabList.current?.querySelector<HTMLElement>(`[data-tab="${CSS.escape(activeId)}"]`) : null
+    tab?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }, [activeId])
 
   const beginDrag = (event: ReactPointerEvent<HTMLButtonElement>, id: string) => {
     if (event.button !== 0) return
@@ -329,77 +337,85 @@ function Pane({ frame, leaf }: { frame: Frame; leaf: Leaf }) {
       }}
     >
       <div className="pane-tabs">
-        {leaf.views.map((id) => (
-          <Tooltip key={id}>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                data-tab={id}
-                data-view-type={frame.viewList.find((view) => view.id === id)?.type ?? ''}
-                className={id === activeId ? 'pane-tab active' : 'pane-tab'}
-                onClick={() => {
-                  if (dragged.current) {
+        <div className="pane-tab-list" ref={tabList}>
+          {leaf.views.map((id) => (
+            <Tooltip key={id}>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  data-tab={id}
+                  data-view-type={frame.viewList.find((view) => view.id === id)?.type ?? ''}
+                  className={id === activeId ? 'pane-tab active' : 'pane-tab'}
+                  onClick={() => {
+                    if (dragged.current) {
+                      dragged.current = false
+                      if (pendingActive.current) window.clearTimeout(pendingActive.current.timer)
+                      pendingActive.current = null
+                      return
+                    }
+                    if (frame.docRef.current.zoom) return
+                    frame.commit(activateDoc(frame.docRef.current, id))
+                    if (pendingActive.current) window.clearTimeout(pendingActive.current.timer)
+                    const timer = window.setTimeout(() => {
+                      pendingActive.current = null
+                    }, 500)
+                    if (pendingActive.current) pendingActive.current.timer = timer
+                  }}
+                  onDoubleClick={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
                     dragged.current = false
+                    const previous = pendingActive.current?.view
                     if (pendingActive.current) window.clearTimeout(pendingActive.current.timer)
                     pendingActive.current = null
-                    return
-                  }
-                  if (frame.docRef.current.zoom) return
-                  frame.commit(activateDoc(frame.docRef.current, id))
-                  if (pendingActive.current) window.clearTimeout(pendingActive.current.timer)
-                  const timer = window.setTimeout(() => {
-                    pendingActive.current = null
-                  }, 500)
-                  if (pendingActive.current) pendingActive.current.timer = timer
-                }}
-                onDoubleClick={(event) => {
-                  event.preventDefault()
-                  event.stopPropagation()
-                  dragged.current = false
-                  const previous = pendingActive.current?.view
-                  if (pendingActive.current) window.clearTimeout(pendingActive.current.timer)
-                  pendingActive.current = null
-                  const current = frame.docRef.current
-                  if (current.zoom === id) {
-                    frame.commit(zoomView(current, id))
-                    return
-                  }
-                  const base = previous ? activateDoc(current, previous) : current
-                  frame.commit(zoomView(base, id))
-                }}
-                onPointerDown={(event) => {
-                  if (!frame.docRef.current.zoom && !pendingActive.current) {
-                    pendingActive.current = { view: leaf.views[leaf.active] ?? id, timer: 0 }
-                  }
-                  beginDrag(event, id)
-                }}
-                onMouseDown={(event) => {
-                  if (event.button === 1) {
+                    const current = frame.docRef.current
+                    if (current.zoom === id) {
+                      frame.commit(zoomView(current, id))
+                      return
+                    }
+                    const base = previous ? activateDoc(current, previous) : current
+                    frame.commit(zoomView(base, id))
+                  }}
+                  onPointerDown={(event) => {
+                    if (!frame.docRef.current.zoom && !pendingActive.current) {
+                      pendingActive.current = { view: leaf.views[leaf.active] ?? id, timer: 0 }
+                    }
+                    beginDrag(event, id)
+                  }}
+                  onMouseDown={(event) => {
+                    if (event.button === 1) {
+                      event.preventDefault()
+                      frame.run('close_view', { view: id })
+                    }
+                  }}
+                  onContextMenu={(event) => {
                     event.preventDefault()
-                    frame.run('close_view', { view: id })
-                  }
-                }}
-                onContextMenu={(event) => {
-                  event.preventDefault()
-                  frame.onMenu({ x: event.clientX, y: event.clientY, view: id })
-                }}
-              >
-                <span>{titleOf(frame.viewList, id)}</span>
-                <span
-                  className="tab-x"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    frame.run('close_view', { view: id })
+                    frame.onMenu({ x: event.clientX, y: event.clientY, view: id })
                   }}
                 >
-                  <X size={12} aria-hidden="true" />
-                </span>
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>{frame.doc.zoom === id ? copy.doubleClickRestore : copy.doubleClickMaximize}</TooltipContent>
-          </Tooltip>
-        ))}
+                  <span>{titleOf(frame.viewList, id)}</span>
+                  <span
+                    className="tab-x"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      frame.run('close_view', { view: id })
+                    }}
+                  >
+                    <X size={12} aria-hidden="true" />
+                  </span>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{frame.doc.zoom === id ? copy.doubleClickRestore : copy.doubleClickMaximize}</TooltipContent>
+            </Tooltip>
+          ))}
+        </div>
         <div className="pane-chrome">
+          {activeId ? (
+            <CatalogChip
+              viewId={activeId}
+              catalog={catalogKeyOf(frame.viewList.find((view) => view.id === activeId)?.state)}
+            />
+          ) : null}
           <button
             type="button"
             className="icon-btn"

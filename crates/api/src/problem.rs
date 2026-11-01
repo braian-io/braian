@@ -150,6 +150,12 @@ pub fn store_status(error: StoreError) -> Problem {
             "no_definitions",
             "no definitions stored",
         ),
+        StoreError::CatalogNotFound(key) => {
+            Problem::new(StatusCode::NOT_FOUND, "catalog_not_found", key)
+        }
+        StoreError::CatalogExists(key) => {
+            Problem::new(StatusCode::CONFLICT, "catalog_exists", key)
+        },
         StoreError::BadKey(id) => Problem::new(
             StatusCode::UNPROCESSABLE_ENTITY,
             "bad_key",

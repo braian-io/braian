@@ -93,6 +93,12 @@ pub struct ObjectResponse {
     pub updated_by: Option<UpdatedBy>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub links: Vec<crate::links::LinkSide>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<crate::http_schema::FreeObject>)]
+    pub owners: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<crate::http_schema::FreeObject>)]
+    pub origin: Option<Value>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -173,8 +179,11 @@ pub async fn create_object(
         values,
     };
     let errors = cached.model.validate(&object);
-    if !errors.is_empty() {
+    if !errors.is_empty() && !source_accepts_invalid(&state).await {
         return Err(Problem::validation(errors, Vec::new()));
+    }
+    if let Err(problem) = catalog_is_editable(&state, &identity).await {
+        return Err(problem);
     }
     if !identity.may_commit() {
         return file_suggestion(
@@ -210,7 +219,7 @@ pub async fn create_object(
         receipt.last_seq,
         &body.object_type,
     );
-    Ok(object_response(&state, &cached, &stored, receipt.last_seq, false, true).await)
+    Ok(object_response(&state, &cached, &stored, receipt.last_seq, false, true, None).await)
 }
 
 #[utoipa::path(
@@ -245,6 +254,7 @@ pub async fn get_object(
         seq,
         includes_inapplicable(&query),
         true,
+        query.include.as_deref(),
     )
     .await)
 }
@@ -304,6 +314,8 @@ pub async fn batch_get(
             full_values,
             audits.get(&stored.object.id),
             Vec::new(),
+            None,
+            None,
         ));
     }
     Ok(Json(BatchGetResponse { objects }))
@@ -341,8 +353,14 @@ pub async fn patch_object(
         let stored = load_object(&state, id).await?;
         let patch = patch_from_wire(&cached.model, &cached.defs, &body.values, &body.groups)?;
         let report = cached.model.validate_patch(&stored.object, &patch);
-        if !report.errors.is_empty() {
+        if !report.errors.is_empty() && !source_accepts_invalid(&state).await {
             return Err(Problem::validation(report.errors, report.warnings));
+        }
+        if let Err(problem) = catalog_is_editable(&state, &identity).await {
+            return Err(problem);
+        }
+        if let Err(problem) = reject_owned_fields(&state, &identity, id, &body.values).await {
+            return Err(problem);
         }
         if !identity.may_commit() {
             return file_suggestion(
@@ -396,6 +414,7 @@ pub async fn patch_object(
                     receipt.last_seq,
                     false,
                     true,
+                    None,
                 )
                 .await);
             }
@@ -683,6 +702,7 @@ pub(crate) async fn object_response(
     seq: i64,
     include_inapplicable: bool,
     validate: bool,
+    include: Option<&str>,
 ) -> Response {
     let audit = state
         .store
@@ -693,6 +713,21 @@ pub(crate) async fn object_response(
     let links = crate::links::load_sides(state, &cached.defs, stored.object.id)
         .await
         .unwrap_or_else(|_| Vec::new());
+    let owners = if include_has(include, "owners") {
+        owner_map(state, stored.object.id).await.ok()
+    } else {
+        None
+    };
+    let origin = if include_has(include, "origin") {
+        state
+            .store
+            .latest_origin(stored.object.id.as_uuid())
+            .await
+            .ok()
+            .flatten()
+    } else {
+        None
+    };
     let body = object_body(
         cached,
         stored,
@@ -701,6 +736,8 @@ pub(crate) async fn object_response(
         validate,
         audit.as_ref(),
         links,
+        owners,
+        origin,
     );
     (
         StatusCode::OK,
@@ -708,6 +745,74 @@ pub(crate) async fn object_response(
         Json(body),
     )
         .into_response()
+}
+
+/// Source catalogs keep the row the upstream sent. Rule failures become warnings.
+async fn source_accepts_invalid(state: &AppState) -> bool {
+    let Ok(Some(catalog)) = state.store.catalog_by_id(state.store.catalog_id()).await else {
+        return false;
+    };
+    catalog.kind == braian_store::CatalogKind::Source
+}
+
+/// A person cannot change an attribute a linked profile owns. Merge can.
+async fn reject_owned_fields(
+    state: &AppState,
+    identity: &Identity,
+    id: ObjectId,
+    values: &BTreeMap<String, Value>,
+) -> Result<(), Problem> {
+    if values.is_empty() || identity.actor.source == "merge" {
+        return Ok(());
+    }
+    let rules = state.store.ownership_rules().await.map_err(store_status)?;
+    let Some(list) = rules.as_array() else {
+        return Ok(());
+    };
+    let linked = state
+        .store
+        .linked_profile_keys(id.as_uuid())
+        .await
+        .map_err(store_status)?;
+    let linked_ref: Vec<&str> = linked.iter().map(String::as_str).collect();
+    for attribute in values.keys() {
+        for rule in list {
+            let Ok(parsed) = serde_json::from_value::<braian_merge::OwnershipRule>(rule.clone()) else {
+                continue;
+            };
+            if &parsed.attribute != attribute {
+                continue;
+            }
+            if let Some(owner) = braian_merge::owner(&parsed, &linked_ref) {
+                return Err(Problem::new(
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "owned_by_source",
+                    format!("{attribute} is owned by {owner}"),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// A catalog that is not editable rejects a person's manual edit.
+/// Import and merge set their own actor source and are allowed through.
+async fn catalog_is_editable(state: &AppState, identity: &crate::auth::Identity) -> Result<(), Problem> {
+    let Ok(Some(catalog)) = state.store.catalog_by_id(state.store.catalog_id()).await else {
+        return Ok(());
+    };
+    if catalog.editable {
+        return Ok(());
+    }
+    let source = identity.actor.source.as_str();
+    if source == "import" || source == "merge" {
+        return Ok(());
+    }
+    Err(Problem::new(
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "catalog_locked",
+        format!("catalog {} is not editable", catalog.key),
+    ))
 }
 
 pub(crate) async fn load_object(state: &AppState, id: ObjectId) -> Result<StoredObject, Problem> {
@@ -726,6 +831,8 @@ fn object_body(
     validate: bool,
     audit: Option<&braian_store::ObjectAudit>,
     links: Vec<crate::links::LinkSide>,
+    owners: Option<Value>,
+    origin: Option<Value>,
 ) -> ObjectResponse {
     let applicable = cached
         .model
@@ -762,7 +869,36 @@ fn object_body(
             })
         }),
         links,
+        owners,
+        origin,
     }
+}
+
+fn include_has(include: Option<&str>, name: &str) -> bool {
+    include.is_some_and(|value| value.split(',').any(|item| item.trim() == name))
+}
+
+async fn owner_map(state: &AppState, id: ObjectId) -> Result<Value, Problem> {
+    let rules = state.store.ownership_rules().await.map_err(store_status)?;
+    let linked = state
+        .store
+        .linked_profile_keys(id.as_uuid())
+        .await
+        .map_err(store_status)?;
+    let linked_ref: Vec<&str> = linked.iter().map(String::as_str).collect();
+    let mut owners = serde_json::Map::new();
+    if let Some(list) = rules.as_array() {
+        for rule in list {
+            let Ok(parsed) = serde_json::from_value::<braian_merge::OwnershipRule>(rule.clone()) else {
+                continue;
+            };
+            let attribute = parsed.attribute.clone();
+            if let Some(owner) = braian_merge::owner(&parsed, &linked_ref) {
+                owners.insert(attribute, Value::String(owner.to_owned()));
+            }
+        }
+    }
+    Ok(Value::Object(owners))
 }
 
 async fn projection_for(

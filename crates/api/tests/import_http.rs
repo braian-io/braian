@@ -184,7 +184,7 @@ async fn create_object(app: &axum::Router, sku: &str) -> String {
         Some(
             json!({
                 "type": "item",
-                "groups": { "catalog": "root", "channel": "flat" },
+                "groups": { "assortment": "root", "webshop": "flat" },
                 "values": { "sku": sku, "name": { "sv": "Old" }, "active": true }
             })
             .to_string()

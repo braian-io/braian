@@ -476,8 +476,65 @@ async fn diff_session(state: &AppState, id: Uuid, generation: i64) -> Result<(),
         )
         .await?;
     }
+    if state
+        .store
+        .import_is_snapshot(id)
+        .await
+        .map_err(|error| error.to_string())?
+    {
+        append_snapshot_deletes(state, id, generation, type_id, &seen, &mut counters).await?;
+    }
     let counters = counters.json(cursor.len() as u64);
     finish_preview(state, id, generation, &session, counters).await
+}
+
+/// Objects of the imported type that the snapshot file did not mention become delete rows.
+async fn append_snapshot_deletes(
+    state: &AppState,
+    id: Uuid,
+    generation: i64,
+    type_id: braian_model::TypeId,
+    seen: &std::collections::HashMap<String, u32>,
+    counters: &mut Counter,
+) -> Result<(), DiffError> {
+    let live = state
+        .store
+        .live_keys(type_id.as_uuid())
+        .await
+        .map_err(|error| error.to_string())?;
+    let mut rows = Vec::new();
+    let mut row_no = 1_000_000i32;
+    for (object_id, key, version) in live {
+        if seen.contains_key(&key) {
+            continue;
+        }
+        row_no += 1;
+        counters.deleted += 1;
+        rows.push(braian_store::ImportRowIn {
+            session_id: id,
+            row_no,
+            status: "delete".into(),
+            object_id: Some(object_id),
+            object_key: Some(key),
+            base_version: Some(version),
+            cells: json!({ "snapshot": "missing" }),
+            patch: None,
+            errors: json!([]),
+        });
+    }
+    if rows.is_empty() {
+        return Ok(());
+    }
+    let kept = state
+        .store
+        .copy_import_rows(id, generation, &rows)
+        .await
+        .map_err(|error| error.to_string())?;
+    if !kept {
+        return Err(DiffError::Superseded);
+    }
+    counters.processed += rows.len() as u64;
+    Ok(())
 }
 
 async fn finish_preview(
@@ -871,6 +928,7 @@ struct Counter {
     changed: u64,
     failed: u64,
     unchanged: u64,
+    deleted: u64,
     processed: u64,
 }
 
@@ -883,6 +941,7 @@ impl Counter {
             "excluded": 0,
             "failed": self.failed,
             "unchanged": self.unchanged,
+            "delete": self.deleted,
             "processed": self.processed,
             "total": total,
         })
