@@ -50,6 +50,49 @@ export function peerSourceOf(state: Json | undefined): PeerSourceRef | null {
   }
 }
 
+export type PeerEmptyKind = 'missing-source' | 'no-selection' | 'no-linked'
+
+export type PeerEmptyState = {
+  kind: PeerEmptyKind
+  text: string
+  showAll: string
+}
+
+/**
+ * The empty state a peer-sourced table shows instead of blank rows (Notion 103
+ * decision 6). A peer source never falls back to every object of the type.
+ * `linkedCount` is null while the link lookup is still unsettled.
+ */
+export function peerEmptyState(input: {
+  source: PeerSourceRef | null
+  sourceView?: { title?: string } | null
+  targetType?: Pick<TypeName, 'plural'> | null
+  hasSelection: boolean
+  selectionLabel?: string | null
+  linkedCount?: number | null
+}): PeerEmptyState | null {
+  if (!input.source) return null
+  const type = input.targetType?.plural || copy.objects
+  const showAll = copy.showAllOfType.replace('{type}', type)
+  if (!input.sourceView) return { kind: 'missing-source', text: copy.sourceMissing, showAll }
+  if (!input.hasSelection) {
+    return {
+      kind: 'no-selection',
+      text: copy.selectRowIn.replace('{view}', input.sourceView.title ?? ''),
+      showAll,
+    }
+  }
+  if (input.linkedCount === 0) {
+    const object = (input.selectionLabel ?? '').trim()
+    return {
+      kind: 'no-linked',
+      text: copy.noLinkedOfType.replace('{type}', type).replace('{object}', object),
+      showAll,
+    }
+  }
+  return null
+}
+
 /** Typesense filter for a tree node in another view. */
 export function peerNodeFilter(node: { structureKey: string; groupKey: string }): string {
   return `groups:=${node.structureKey}:${node.groupKey}`

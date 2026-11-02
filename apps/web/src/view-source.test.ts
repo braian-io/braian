@@ -5,6 +5,7 @@ import {
   isExplicitAllSource,
   isObjectTableView,
   linkedTypeIds,
+  peerEmptyState,
   peerIdsFilter,
   peerNodeFilter,
   peerSourceLabel,
@@ -113,5 +114,70 @@ describe('peer source (Notion 103 PR 2)', () => {
       {},
       'Food › Cheese',
     )).toBe(`${copy.allOfType.replace('{type}', 'Products')} · Food › Cheese`)
+  })
+})
+
+describe('peer source empty states (Notion 103 decision 6)', () => {
+  const source = { kind: 'peer' as const, viewId: 'view-products', selection: 'row' as const }
+  const sourceView = { title: 'Products' }
+  const articles = types[0]
+
+  it('does nothing without a peer source', () => {
+    expect(peerEmptyState({
+      source: null,
+      sourceView,
+      targetType: articles,
+      hasSelection: false,
+    })).toBeNull()
+  })
+
+  it('asks for a row when the source view has no selection', () => {
+    const state = peerEmptyState({
+      source,
+      sourceView,
+      targetType: articles,
+      hasSelection: false,
+    })
+    expect(state?.kind).toBe('no-selection')
+    expect(state?.text).toBe('Select a row in Products')
+    expect(state?.showAll).toBe('Show all Articles')
+  })
+
+  it('names a source that no longer exists', () => {
+    const state = peerEmptyState({
+      source,
+      sourceView: null,
+      targetType: articles,
+      hasSelection: false,
+    })
+    expect(state?.kind).toBe('missing-source')
+    expect(state?.text).toBe(copy.sourceMissing)
+    expect(state?.showAll).toBe('Show all Articles')
+  })
+
+  it('reports no linked objects only after the lookup settles', () => {
+    const state = peerEmptyState({
+      source,
+      sourceView,
+      targetType: articles,
+      hasSelection: true,
+      selectionLabel: 'Cheese',
+      linkedCount: 0,
+    })
+    expect(state?.kind).toBe('no-linked')
+    expect(state?.text).toBe('No linked Articles for Cheese')
+    expect(state?.showAll).toBe('Show all Articles')
+  })
+
+  it('stays out of the way while links are unknown or present', () => {
+    const base = {
+      source,
+      sourceView,
+      targetType: articles,
+      hasSelection: true,
+      selectionLabel: 'Cheese',
+    }
+    expect(peerEmptyState({ ...base, linkedCount: null })).toBeNull()
+    expect(peerEmptyState({ ...base, linkedCount: 2 })).toBeNull()
   })
 })
