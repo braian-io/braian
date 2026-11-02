@@ -9,7 +9,7 @@ import { streamAgent, type AgentEvent } from './agent-stream'
 import { renderAgentAnswer } from './agent-answer'
 import { Command, CommandInput, CommandItem, CommandList } from './components/ui/command'
 import { Kbd } from './components/ui/kbd'
-import { emitSavedSelection, requestNewSelection, selectionMatchesType } from './assortment-filter'
+import { dynamicSelectionFilter, emitSavedSelection, requestDeleteSelection, requestEditSelection, requestNewSelection, selectionMatchesType } from './assortment-filter'
 import { workspaceDisplayName } from './demo-labels'
 import { sourceLabel, suggestedTitle } from './field-diff'
 import { copy, uiLanguage } from './i18n'
@@ -299,6 +299,27 @@ export function CommandPalette({
         title: copy.newSelection,
         subtitle: copy.assortments,
         keywords: ['assortment', 'selection'],
+      },
+      {
+        id: 'selection:save-filter',
+        group: 'views' as const,
+        title: copy.saveFilterAsSelection,
+        subtitle: copy.saveFilterAsSelectionHint,
+        keywords: ['assortment', 'selection', 'filter', 'save', 'dynamic'],
+      },
+      {
+        id: 'selection:edit',
+        group: 'views' as const,
+        title: copy.editSelection,
+        subtitle: copy.assortments,
+        keywords: ['assortment', 'selection', 'edit', 'rename', 'filter'],
+      },
+      {
+        id: 'selection:delete',
+        group: 'views' as const,
+        title: copy.deleteSelection,
+        subtitle: copy.assortments,
+        keywords: ['assortment', 'selection', 'delete', 'remove'],
       },
       ...columnEntries(tableColumns, readUiContext().activeColumn),
       ...(session.group
@@ -666,6 +687,8 @@ export function CommandPalette({
             subtitle: copy.assortments,
           })),
           { id: 'selection:new', sourceId: 'selection:new', group: 'views' as const, title: copy.newSelection, subtitle: copy.assortments },
+          { id: 'selection:edit', sourceId: 'selection:edit', group: 'views' as const, title: copy.editSelection, subtitle: copy.assortments },
+          { id: 'selection:delete', sourceId: 'selection:delete', group: 'views' as const, title: copy.deleteSelection, subtitle: copy.assortments },
         ],
       }])
       setQuery('')
@@ -674,6 +697,50 @@ export function CommandPalette({
     }
     if (id === 'selection:new') {
       requestNewSelection()
+      onClose()
+      return
+    }
+    if (id === 'selection:save-filter') {
+      const filter = readUiContext().filterExpression
+      if (!filter) {
+        session.push(copy.saveFilterNeeds)
+        onClose()
+        return
+      }
+      const type = session.workspaceType || session.listType || ''
+      requestNewSelection({
+        kind: 'dynamic',
+        query: dynamicSelectionFilter(filter, type),
+        type,
+      })
+      onClose()
+      return
+    }
+    if (id === 'selection:edit' || id === 'selection:delete') {
+      const action = id
+      setStack((current) => [...current, {
+        label: action === 'selection:edit' ? copy.editSelection : copy.deleteSelection,
+        rows: selectionItems.map((item) => ({
+          id: `${action}:${String(item.id)}`,
+          sourceId: `${action}:${String(item.id)}`,
+          group: 'views' as const,
+          title: String(item.name ?? ''),
+          subtitle: copy.assortments,
+        })),
+      }])
+      setQuery('')
+      setActive(0)
+      return
+    }
+    if (id.startsWith('selection:edit:')) {
+      const item = selectionItems.find((row) => String(row.id) === id.slice('selection:edit:'.length))
+      if (item) requestEditSelection(item)
+      onClose()
+      return
+    }
+    if (id.startsWith('selection:delete:')) {
+      const item = selectionItems.find((row) => String(row.id) === id.slice('selection:delete:'.length))
+      if (item) requestDeleteSelection(item)
       onClose()
       return
     }

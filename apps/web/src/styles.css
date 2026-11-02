@@ -789,6 +789,10 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
 .assortment-save { display: flex; gap: 6px; }
 .assortment-save input { flex: 1; min-width: 0; }
 .assortment-picks { display: flex; flex-direction: column; gap: 2px; }
+.assortment-row { display: flex; align-items: center; gap: 2px; }
+.assortment-row > button:first-child { flex: 1; min-width: 0; }
+.assortment-picks .assortment-row > .icon-btn { width: 24px; height: 24px; padding: 0; flex: none; justify-content: center; }
+.selection-usage ul { margin: 4px 0 0; padding-left: 18px; color: var(--text-2); }
 .assortment-picks button {
   display: flex;
   height: 28px;

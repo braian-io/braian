@@ -11,6 +11,8 @@ export type UiContextSnapshot = {
   focused: string | null
   selection: SelectedObject[]
   filter: string
+  /** Typesense filter expression the focused table sends with its search. */
+  filterExpression: string
   sort: string
   columns: UiColumn[]
   /** Header the user last clicked in the focused table (for Move column left/right). */
@@ -29,7 +31,7 @@ const blankFrame = (): Frame => ({ workspace: null, panes: [], focused: null, la
 
 let frame: Frame = blankFrame()
 let markedId: string | null = null
-const tables = new Map<string, { filter: string; sort: string }>()
+const tables = new Map<string, { filter: string; sort: string; filterExpression: string }>()
 const tableColumns = new Map<string, UiColumn[]>()
 const activeColumns = new Map<string, string>()
 const selections = new Map<string, SelectedObject[]>()
@@ -100,8 +102,8 @@ export function publishMarked(id: string | null) {
   markedId = id
 }
 
-export function publishTable(viewId: string, filter: string, sort: string) {
-  tables.set(viewId, { filter, sort })
+export function publishTable(viewId: string, filter: string, sort: string, filterExpression = '') {
+  tables.set(viewId, { filter, sort, filterExpression })
 }
 
 export function publishColumns(viewId: string, columns: UiColumn[]) {
@@ -191,6 +193,7 @@ export function readUiContext(): UiContextSnapshot {
     focused,
     selection,
     filter: table?.filter ?? '',
+    filterExpression: table?.filterExpression ?? '',
     sort: table?.sort ?? '',
     columns: columns.map((column) => ({ ...column })),
     activeColumn,
