@@ -54,7 +54,7 @@ test('Products pane in the Articles workspace lists rows after link repair', asy
   await page.reload()
   await expect(page.getByTestId('dock')).toBeVisible()
   await page.locator('nav.tabs').getByRole('button', { name: 'Articles' }).click()
-  await expect(page.getByTestId('object-table')).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByTestId('object-table').first()).toBeVisible({ timeout: 30_000 })
 
   // The repaired pane lists the link's source entity, not zero rows.
   await expect(page.getByTestId('object-row').first()).toBeVisible({ timeout: 60_000 })

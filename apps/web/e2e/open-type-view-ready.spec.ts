@@ -7,7 +7,7 @@ async function login(page: Page) {
   await page.getByTestId('email').fill(demo.email)
   await page.getByTestId('password').fill(demo.password)
   await page.getByRole('button', { name: 'Sign in' }).click()
-  await expect(page.getByTestId('object-table')).toBeVisible({ timeout: 60_000 })
+  await expect(page.getByTestId('object-table').first()).toBeVisible({ timeout: 60_000 })
 }
 
 test.describe('openTypeView waits for workspace (Notion 112)', () => {

@@ -10,14 +10,18 @@ async function login(page: Page) {
   await expect(page.getByTestId('dock')).toBeVisible()
 }
 
+function mainTable(page: Page) {
+  return page.getByTestId('object-table').first()
+}
+
 async function openProducts(page: Page) {
   await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
-  await expect(page.getByTestId('object-table')).toBeVisible({ timeout: 60_000 })
+  await expect(page.getByTestId('object-table').first()).toBeVisible({ timeout: 60_000 })
   await expect(page.getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
 }
 
 async function visibleHeaderIds(page: Page) {
-  return page.locator('.head [data-testid^="col-"]').evaluateAll((nodes) =>
+  return mainTable(page).locator('.head [data-testid^="col-"]').evaluateAll((nodes) =>
     nodes.map((node) => node.getAttribute('data-testid')).filter((id): id is string => Boolean(id)),
   )
 }
@@ -67,7 +71,7 @@ test.describe('shortcut registry', () => {
     const before = await visibleHeaderIds(page)
     expect(before.length).toBeGreaterThan(2)
     const target = before[1]!
-    const header = page.getByTestId(target)
+    const header = mainTable(page).getByTestId(target)
     await header.click()
     await expect(header).toHaveAttribute('data-active-column', 'true')
 
@@ -84,7 +88,7 @@ test.describe('shortcut registry', () => {
     expect(afterLeft.indexOf(target)).toBe(before.indexOf(target) - 1)
 
     // #132 guard: while a cell editor is open, Ctrl+Shift must not move columns.
-    const nameHeader = page.locator('.head [data-testid^="col-"]').filter({ hasText: /^Name/ }).first()
+    const nameHeader = mainTable(page).locator('.head [data-testid^="col-"]').filter({ hasText: /^Name/ }).first()
     const nameId = await nameHeader.getAttribute('data-testid')
     expect(nameId).toBeTruthy()
     const colId = nameId!.replace(/^col-/, '')

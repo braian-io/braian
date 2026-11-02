@@ -290,7 +290,7 @@ test('dock overlay matches the pane fraction and the window edge', async ({ page
     near(after[index].height, before[index].height, `focus h ${index}`, 1)
   }
 
-  const grid = page.locator('[data-testid="object-table"] .grid')
+  const grid = tablePane.locator('[data-testid="object-table"] .grid')
   const head = grid.locator('.head')
   const headBefore = await head.boundingBox()
   const gridBefore = await grid.boundingBox()
@@ -308,8 +308,8 @@ test('dock overlay matches the pane fraction and the window edge', async ({ page
   await grid.evaluate((node) => {
     node.scrollTop = 0
   })
-  await page.getByTestId('quick-filter').fill('qqqqqqqqqqqq')
-  const status = page.locator('.table-status')
+  await tablePane.getByTestId('quick-filter').fill('qqqqqqqqqqqq')
+  const status = tablePane.locator('.table-status')
   await expect(status).toContainText('no rows')
   const statusBox = await status.boundingBox()
   const gridEmpty = await grid.boundingBox()
@@ -320,7 +320,7 @@ test('dock overlay matches the pane fraction and the window edge', async ({ page
   near(statusBox.y + statusBox.height / 2, bodyMid, 'empty state center', 6)
   expect(statusBox.y).toBeGreaterThanOrEqual(gridEmpty.y - 1)
   expect(statusBox.y + statusBox.height).toBeLessThanOrEqual(gridEmpty.y + gridEmpty.height + 1)
-  await page.getByTestId('quick-filter').fill('')
+  await tablePane.getByTestId('quick-filter').fill('')
   await expect(page.getByTestId('object-row').first()).toBeVisible()
 
   const zones = ['left', 'right', 'top', 'bottom', 'center'] as const

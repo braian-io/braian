@@ -64,7 +64,7 @@ test('details pane keeps a single scroll container that fills the pane', async (
   expect(detailReport.gap, JSON.stringify(detailReport)).toBeGreaterThanOrEqual(-2)
   expect(detailReport.gap, JSON.stringify(detailReport)).toBeLessThan(48)
 
-  const gridReport = await page.getByTestId('object-table').evaluate((table) => {
+  const gridReport = await page.getByTestId('object-table').first().evaluate((table) => {
     const row = table.querySelector('[data-testid="object-row"]') as HTMLElement | null
     const grid = table.querySelector('.grid') as HTMLElement | null
     const body = table.closest('.pane-body') as HTMLElement | null

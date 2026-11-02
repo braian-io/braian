@@ -351,6 +351,48 @@ impl Store {
         Ok(())
     }
 
+    /// Insert a seeded workspace, or update its metadata without touching a
+    /// layout the user may already have saved. The seed uses this so a later
+    /// boot never puts the template back over the user's layout.
+    pub async fn ensure_workspace(
+        &self,
+        id: Uuid,
+        owner_id: Uuid,
+        name: &str,
+        locked: bool,
+        share_token: Option<&str>,
+        layout: &Value,
+    ) -> Result<(), Error> {
+        let mut client = self.checkout().await?;
+        let transaction = client.transaction().await?;
+        if let Some(token) = share_token {
+            transaction
+                .execute(
+                    "UPDATE workspaces SET share_token = NULL WHERE share_token = $1 AND id <> $2",
+                    &[&token, &id],
+                )
+                .await?;
+        }
+        transaction
+            .execute(
+                "INSERT INTO workspaces (id, owner_id, name, locked, share_token, layout)
+                 VALUES ($1, $2, $3, $4, $5, $6)
+                 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, locked = EXCLUDED.locked,
+                   share_token = EXCLUDED.share_token",
+                &[&id, &owner_id, &name, &locked, &share_token, layout],
+            )
+            .await?;
+        transaction
+            .execute(
+                "INSERT INTO workspace_members (workspace_id, user_id) VALUES ($1, $2)
+                 ON CONFLICT DO NOTHING",
+                &[&id, &owner_id],
+            )
+            .await?;
+        transaction.commit().await?;
+        Ok(())
+    }
+
     /// Sets the workspace-global catalog. Views without catalogOverride follow it.
     pub async fn set_workspace_catalog(
         &self,

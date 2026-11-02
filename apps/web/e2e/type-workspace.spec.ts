@@ -50,7 +50,7 @@ test('each object type has its own workspace and class attributes', async ({ pag
 
   await resetWorkspace(page, 'Articles')
   await tabs.getByRole('button', { name: 'Articles' }).click()
-  const table = page.getByTestId('object-table')
+  const table = page.getByTestId('object-table').first()
   await expect(table).toBeVisible()
   await expect(page.locator('.pane-tab', { hasText: 'Articles' })).toBeVisible()
   await expect(page.locator('.pane-tab', { hasText: 'Selections' })).toBeVisible()

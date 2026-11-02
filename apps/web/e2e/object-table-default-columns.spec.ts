@@ -41,10 +41,10 @@ test.describe('object table default columns', () => {
     await clearProductsPrefs(page)
 
     await openProducts(page)
-    await expect(page.getByTestId('object-table')).toBeVisible()
-    await expect(page.locator('.head [data-testid="col-number"]')).toBeVisible()
-    await expect(page.locator('.head [data-testid="col-name"]')).toBeVisible()
-    await expect(page.locator('.head [data-testid="col-brand"]')).toBeVisible()
+    await expect(page.getByTestId('object-table').first()).toBeVisible()
+    await expect(page.locator('.head [data-testid="col-number"]').first()).toBeVisible()
+    await expect(page.locator('.head [data-testid="col-name"]').first()).toBeVisible()
+    await expect(page.locator('.head [data-testid="col-brand"]').first()).toBeVisible()
   })
 
   test('waits for definitions before seeding default columns', async ({ page }) => {
@@ -70,13 +70,13 @@ test.describe('object table default columns', () => {
     await prefsResponse
 
     // Definitions is still held, so no fallback columns may be latched.
-    await expect(page.getByTestId('column-prefs-skeleton')).toBeVisible()
-    await expect(page.getByTestId('object-table')).toHaveCount(0)
-    await expect(page.locator('.head [data-testid="col-brand"]')).toHaveCount(0)
+    await expect(page.getByTestId('column-prefs-skeleton').first()).toBeVisible()
+    await expect(page.getByTestId('object-table').first()).toHaveCount(0)
+    await expect(page.locator('.head [data-testid="col-brand"]').first()).toHaveCount(0)
 
     releaseDefinitions()
 
-    await expect(page.getByTestId('object-table')).toBeVisible()
-    await expect(page.locator('.head [data-testid="col-brand"]')).toBeVisible()
+    await expect(page.getByTestId('object-table').first()).toBeVisible()
+    await expect(page.locator('.head [data-testid="col-brand"]').first()).toBeVisible()
   })
 })

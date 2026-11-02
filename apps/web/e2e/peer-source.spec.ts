@@ -19,7 +19,7 @@ function pane(page: Page, viewId: string): Locator {
 
 async function chooseSource(page: Page, target: Locator, title: string) {
   // Focus the target pane first: the runner falls back to the focused table.
-  await target.getByTestId('object-table').click({ position: { x: 24, y: 24 } })
+  await target.getByTestId('object-table').first().click({ position: { x: 24, y: 24 } })
   await target.hover()
   await target.getByTestId('view-menu').click()
   await page.getByTestId('context-menu').getByRole('menuitem', { name: 'Select source' }).click()
@@ -99,13 +99,13 @@ test.describe('peer source follows another view (Notion 103 PR 2)', () => {
       const articles = pane(page, articlesId)
       const products = pane(page, productsId)
       await expect(tree.getByTestId('structure-tree')).toBeVisible({ timeout: 60_000 })
-      await expect(articles.getByTestId('object-table')).toBeVisible({ timeout: 60_000 })
-      await expect(products.getByTestId('object-table')).toBeVisible({ timeout: 60_000 })
+      await expect(articles.getByTestId('object-table').first()).toBeVisible({ timeout: 60_000 })
+      await expect(products.getByTestId('object-table').first()).toBeVisible({ timeout: 60_000 })
 
       // The source is a tree node in another view. Pick Cheese first, then use it
       // as the Articles table's source.
       await tree.getByRole('treeitem').filter({ hasText: 'Cheese' }).first().click()
-      await articles.getByTestId('object-table').click({ position: { x: 24, y: 24 } })
+      await articles.getByTestId('object-table').first().click({ position: { x: 24, y: 24 } })
       await chooseSource(page, articles, 'Articles from Food')
       const label = articles.getByTestId('view-source-label')
       await expect(label).toContainText('Food › Cheese', { timeout: 30_000 })

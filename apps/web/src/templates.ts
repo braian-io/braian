@@ -1,14 +1,19 @@
 import { api, type Json } from './api'
 import { splitPair, tabGroup, type Node } from './layout'
-import type { TypeName } from './type-labels'
+import { typeNames, type TypeName } from './type-labels'
 import { MODEL_WORKSPACE_VIEW_SPECS, modelWorkspaceLayout } from './model-workspace-migrate'
 import { typeShareToken, typeUsesTree } from './type-workspaces'
+import { linkedTypeIds } from './view-source'
 
 export type WorkspaceTemplate = {
   id: string
   name: string
   summary: string
-  views: Array<{ type: string; title: string; state?: Json }>
+  views: Array<{
+    type: string
+    title: string
+    state?: Json | ((ids: string[]) => Json)
+  }>
   layout: (ids: string[]) => Node
 }
 
@@ -17,9 +22,23 @@ const TABLE_STATE = {
   sort: 'number',
 }
 
-export function typeWorkspaceTemplate(type: TypeName): WorkspaceTemplate {
+/** First linked object type in definition order, never a link type itself. */
+function firstLinkedType(type: TypeName, defs: Json | undefined): TypeName | undefined {
+  if (!defs || !type.id) return undefined
+  const linkedId = linkedTypeIds(type.id, defs)[0]
+  if (!linkedId) return undefined
+  return typeNames(defs, 'en').find(
+    (item) => item.id === linkedId && item.kind !== 'link' && item.key,
+  )
+}
+
+export function typeWorkspaceTemplate(type: TypeName, defs?: Json): WorkspaceTemplate {
   const tree = typeUsesTree(type)
   const treeTitle = type.structureLabel || 'Structure'
+  const linked = firstLinkedType(type, defs)
+  const mainIndex = tree ? 2 : 1
+  const peerIndex = linked ? mainIndex + 1 : -1
+  const rightIndex = linked ? peerIndex + 1 : mainIndex + 1
   const views: WorkspaceTemplate['views'] = [
     ...(tree ? [{ type: 'structure_tree', title: treeTitle, state: {} }] : []),
     { type: 'assortment_list', title: 'Selections', state: {} },
@@ -28,6 +47,18 @@ export function typeWorkspaceTemplate(type: TypeName): WorkspaceTemplate {
       title: type.plural,
       state: { ...TABLE_STATE, object_type: type.id, type_key: type.key },
     },
+    ...(linked
+      ? [{
+          type: 'object_table',
+          title: linked.plural,
+          state: (ids: string[]) => ({
+            ...TABLE_STATE,
+            object_type: linked.id,
+            type_key: linked.key,
+            source: { kind: 'peer', viewId: ids[mainIndex], selection: 'row' },
+          }),
+        }]
+      : []),
     { type: 'object_detail', title: 'Detail', state: { language: 'en' } },
     { type: 'graph', title: 'Graph', state: {} },
     { type: 'history', title: 'History', state: {} },
@@ -36,28 +67,37 @@ export function typeWorkspaceTemplate(type: TypeName): WorkspaceTemplate {
   return {
     id: `type:${type.key}`,
     name: type.plural,
-    summary: tree
-      ? 'Selections, structure, list, detail, graph, history and group attributes'
-      : 'Selections, list, detail, graph and history',
+    summary: linked
+      ? tree
+        ? 'Selections, structure, list, linked list, detail, graph, history and group attributes'
+        : 'Selections, list, linked list, detail, graph and history'
+      : tree
+        ? 'Selections, structure, list, detail, graph, history and group attributes'
+        : 'Selections, list, detail, graph and history',
     views,
-    layout: (ids) =>
-      splitPair(
+    layout: (ids) => {
+      const left = tabGroup(ids.slice(0, tree ? 2 : 1).filter(Boolean))
+      const main = tabGroup([ids[mainIndex] ?? ''].filter(Boolean))
+      const right = tabGroup(ids.slice(rightIndex))
+      if (!linked) {
+        return splitPair('horizontal', 0.22, left, splitPair('horizontal', 0.62, main, right))
+      }
+      const peer = tabGroup([ids[peerIndex] ?? ''].filter(Boolean))
+      return splitPair(
         'horizontal',
         0.22,
-        tabGroup([ids[0] ?? '', ids[1] ?? ''].filter(Boolean).slice(0, tree ? 2 : 1)),
-        splitPair(
-          'horizontal',
-          0.62,
-          tabGroup([ids[tree ? 2 : 1] ?? ''].filter(Boolean)),
-          tabGroup(ids.slice(tree ? 3 : 2)),
-        ),
-      ),
+        left,
+        splitPair('horizontal', 0.5, main, splitPair('horizontal', 0.5, peer, right)),
+      )
+    },
   }
 }
 
-export function workspaceTemplates(types: TypeName[] = []): WorkspaceTemplate[] {
+export function workspaceTemplates(types: TypeName[] = [], defs?: Json): WorkspaceTemplate[] {
   return [
-  ...types.filter((type) => type.kind !== 'link' && type.id && type.key).map(typeWorkspaceTemplate),
+  ...types
+    .filter((type) => type.kind !== 'link' && type.id && type.key)
+    .map((type) => typeWorkspaceTemplate(type, defs)),
   {
     id: 'model',
     name: 'Data model',
@@ -95,13 +135,30 @@ export function canonicalShareToken(template: WorkspaceTemplate): string | undef
   return undefined
 }
 
-export async function createWorkspaceFromTemplate(template: WorkspaceTemplate, options?: { shareToken?: string }) {
-  const shareToken = options?.shareToken ?? canonicalShareToken(template)
+/**
+ * Rebuild a type template from the stored definitions so callers that only
+ * pass a `TypeName` still get link-aware views such as the peer table.
+ */
+async function withTypeDefinitions(template: WorkspaceTemplate): Promise<WorkspaceTemplate> {
+  if (!template.id.startsWith('type:')) return template
+  const key = template.id.slice('type:'.length)
+  try {
+    const defs = await api.get('/v1/definitions')
+    const type = typeNames(defs, 'en').find((item) => item.key === key)
+    return type ? typeWorkspaceTemplate(type, defs) : template
+  } catch {
+    return template
+  }
+}
+
+export async function createWorkspaceFromTemplate(input: WorkspaceTemplate, options?: { shareToken?: string }) {
+  const shareToken = options?.shareToken ?? canonicalShareToken(input)
   if (shareToken) {
     const listed = await api.get('/v1/workspaces')
     const existing = listed.workspaces?.find((row) => row.share_token === shareToken)
     if (existing?.id) return existing.id
   }
+  const template = await withTypeDefinitions(input)
   const workspaceId = crypto.randomUUID()
   const viewIds = template.views.map(() => crypto.randomUUID())
   const token = shareToken ?? `user-${workspaceId.slice(0, 8)}`
@@ -128,7 +185,7 @@ export async function createWorkspaceFromTemplate(template: WorkspaceTemplate, o
         title: view.title,
         pane: index === 0 ? 'left' : 'main',
         position: index,
-        state: view.state ?? {},
+        state: typeof view.state === 'function' ? view.state(viewIds) : (view.state ?? {}),
       } })
   }
   return workspaceId

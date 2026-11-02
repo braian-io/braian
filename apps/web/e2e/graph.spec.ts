@@ -14,22 +14,12 @@ async function login(page: Page) {
   await page.getByTestId('email').fill(demo.email)
   await page.getByTestId('password').fill(demo.password)
   await page.getByRole('button', { name: 'Sign in' }).click()
-  await expect(page.getByTestId('object-table')).toBeVisible()
+  await expect(page.getByTestId('object-table').first()).toBeVisible()
 }
 
 async function openArticles(page: Page) {
-  // Notion 112 queues openTypeView until the workspace doc is ready; keep a
-  // short retry for unrelated timing flake on the Articles tab paint.
-  await expect(async () => {
-    await page.keyboard.press('Control+k')
-    await expect(page.getByTestId('command-palette')).toBeVisible()
-    await page.getByTestId('palette-input').fill('Articles view')
-    const entry = page.getByTestId('command-palette').locator('.hit').filter({ hasText: 'Articles view' }).filter({ hasText: 'Open view' })
-    await expect(entry.first()).toBeVisible()
-    await entry.first().click()
-    await expect(page.getByTestId('command-palette')).toHaveCount(0)
-    await expect(page.locator('.pane-tab', { hasText: 'Articles' })).toBeVisible({ timeout: 5_000 })
-  }).toPass({ timeout: 30_000 })
+  await page.locator('nav.tabs').getByRole('button', { name: 'Articles', exact: true }).click()
+  await expect(page.locator('.pane-tab', { hasText: 'Articles' })).toBeVisible({ timeout: 30_000 })
 }
 
 function articlesPane(page: Page) {

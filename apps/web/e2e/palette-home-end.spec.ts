@@ -12,7 +12,7 @@ async function login(page: Page) {
 
 async function openProducts(page: Page) {
   await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
-  await expect(page.getByTestId('object-table')).toBeVisible()
+  await expect(page.getByTestId('object-table').first()).toBeVisible()
 }
 
 test.describe('palette Home/End and first key', () => {
@@ -58,7 +58,7 @@ test.describe('palette Home/End and first key', () => {
     for (let round = 0; round < 5; round += 1) {
       await page.keyboard.press('Escape')
       await expect(page.getByTestId('command-palette')).toHaveCount(0)
-      await page.getByTestId('object-table').focus()
+      await page.getByTestId('object-table').first().focus()
       await page.keyboard.press('Control+k')
       // Intentionally no expect/wait — first glyph must not drop under automation.
       await page.keyboard.type('Select fields', { delay: 0 })

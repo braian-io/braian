@@ -47,7 +47,7 @@ test('column width is restored after reload', async ({ page }) => {
   const before = await workspaceByName(page.request, 'Products')
   const view = before.views.find((item) => item.type === 'object_table')
   if (!view) throw new Error('missing object table')
-  const handle = page.getByTestId('resize-name')
+  const handle = page.getByTestId('resize-name').first()
   const box = await handle.boundingBox()
   if (!box) throw new Error('missing resize handle')
   await page.mouse.move(box.x + 2, box.y + box.height / 2)
@@ -60,8 +60,8 @@ test('column width is restored after reload', async ({ page }) => {
     return table?.sizes?.name ?? 0
   }).toBeGreaterThan(200)
   await page.reload()
-  await expect(page.getByTestId('col-name')).toBeVisible()
-  const restored = await page.getByTestId('col-name').evaluate((node) => (node as HTMLElement).style.width)
+  await expect(page.getByTestId('col-name').first()).toBeVisible()
+  const restored = await page.getByTestId('col-name').first().evaluate((node) => (node as HTMLElement).style.width)
   expect(Number.parseFloat(restored)).toBeGreaterThan(200)
   await page.request.post('/v1/views', {
     data: {

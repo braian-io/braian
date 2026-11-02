@@ -385,7 +385,7 @@ async fn seed_demo_surface(
     ];
     for (id, name, locked, share) in workspaces {
         store
-            .save_workspace(
+            .ensure_workspace(
                 Uuid::parse_str(id)?,
                 user.id,
                 name,
@@ -478,12 +478,17 @@ fn organic_assortment_query() -> Value {
     json!({ "labels": "organic_eu" })
 }
 
-fn catalog_layout(tree: &str, assortments: &str, table: &str, right: &[&str]) -> Value {
+fn peer_layout(tree: &str, assortments: &str, table: &str, peer: &str, right: &[&str]) -> Value {
     split(
         "horizontal",
         0.22,
         tabs(&[tree, assortments]),
-        split("horizontal", 0.62, tabs(&[table]), tabs(right)),
+        split(
+            "horizontal",
+            0.5,
+            tabs(&[table]),
+            split("horizontal", 0.5, tabs(&[peer]), tabs(right)),
+        ),
     )
 }
 
@@ -502,10 +507,11 @@ fn split(dir: &str, first_ratio: f64, first: Value, second: Value) -> Value {
 
 fn layout(workspace: &str) -> Value {
     match workspace {
-        "018f2000-0000-7000-8000-000000000003" => catalog_layout(
+        "018f2000-0000-7000-8000-000000000003" => peer_layout(
             "018f2000-0000-7000-8000-000000000301",
             "018f2000-0000-7000-8000-000000000308",
             "018f2000-0000-7000-8000-000000000302",
+            "018f2000-0000-7000-8000-000000000310",
             &[
                 "018f2000-0000-7000-8000-000000000303",
                 "018f2000-0000-7000-8000-000000000304",
@@ -513,10 +519,11 @@ fn layout(workspace: &str) -> Value {
                 "018f2000-0000-7000-8000-000000000309",
             ],
         ),
-        "018f2000-0000-7000-8000-000000000005" => catalog_layout(
+        "018f2000-0000-7000-8000-000000000005" => peer_layout(
             "018f2000-0000-7000-8000-000000000501",
             "018f2000-0000-7000-8000-000000000508",
             "018f2000-0000-7000-8000-000000000306",
+            "018f2000-0000-7000-8000-000000000510",
             &[
                 "018f2000-0000-7000-8000-000000000503",
                 "018f2000-0000-7000-8000-000000000504",
@@ -681,6 +688,15 @@ async fn save_views(store: &Store, defs: &DefinitionSet) -> anyhow::Result<()> {
             json!({"columns": ["number", "name", "brand", "nutriscore", "status"], "sort": "number", "object_type": "018f0000-0000-7000-8000-000000000200", "type_key": "product"}),
         ),
         (
+            "018f2000-0000-7000-8000-000000000310",
+            "018f2000-0000-7000-8000-000000000003",
+            "object_table",
+            "Articles",
+            "center",
+            1,
+            json!({"columns": ["number", "name", "gtin", "storage", "status"], "sort": "number", "object_type": "018f0000-0000-7000-8000-000000000201", "type_key": "article", "source": {"kind": "peer", "viewId": "018f2000-0000-7000-8000-000000000302", "selection": "row"}}),
+        ),
+        (
             "018f2000-0000-7000-8000-000000000303",
             "018f2000-0000-7000-8000-000000000003",
             "object_detail",
@@ -751,6 +767,15 @@ async fn save_views(store: &Store, defs: &DefinitionSet) -> anyhow::Result<()> {
             "center",
             1,
             json!({"columns": ["number", "name", "gtin", "storage", "status"], "sort": "number", "object_type": "018f0000-0000-7000-8000-000000000201", "type_key": "article"}),
+        ),
+        (
+            "018f2000-0000-7000-8000-000000000510",
+            "018f2000-0000-7000-8000-000000000005",
+            "object_table",
+            "Products",
+            "center",
+            2,
+            json!({"columns": ["number", "name", "brand", "nutriscore", "status"], "sort": "number", "object_type": "018f0000-0000-7000-8000-000000000200", "type_key": "product", "source": {"kind": "peer", "viewId": "018f2000-0000-7000-8000-000000000306", "selection": "row"}}),
         ),
         (
             "018f2000-0000-7000-8000-000000000702",

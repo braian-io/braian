@@ -29,7 +29,7 @@ async function resetEnrich(page: Page) {
   const deleted = await page.request.delete(`/v1/workspaces/${enrich.id}/state?environment=default`)
   expect(deleted.ok() || deleted.status() === 204).toBeTruthy()
   await page.reload()
-  await expect(page.getByTestId('object-table')).toBeVisible()
+  await expect(page.getByTestId('object-table').first()).toBeVisible()
   await page.evaluate(() => sessionStorage.removeItem('braian.layout.suppressFlush'))
 }
 
@@ -43,7 +43,7 @@ test('selecting a structure group lists the same products as its selection', asy
   await login(page)
   await resetEnrich(page)
   await expect(page.getByTestId('structure-tree')).toBeVisible()
-  const table = page.getByTestId('object-table')
+  const table = page.getByTestId('object-table').first()
   const count = table.getByTestId('row-count')
   await expect(count).not.toHaveText(/^0 /)
   const filter = table.getByTestId('quick-filter')

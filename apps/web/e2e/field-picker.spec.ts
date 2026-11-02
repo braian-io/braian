@@ -12,11 +12,11 @@ async function login(page: Page) {
 
 async function openProducts(page: Page) {
   await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
-  await expect(page.getByTestId('object-table')).toBeVisible()
+  await expect(page.getByTestId('object-table').first()).toBeVisible()
 }
 
 async function openFieldsPalette(page: Page) {
-  await page.getByTestId('object-table').focus()
+  await page.getByTestId('object-table').first().focus()
   await page.keyboard.press('Control+k')
   const palette = page.getByTestId('command-palette')
   await expect(palette).toBeVisible()
@@ -133,7 +133,7 @@ test.describe('field picker on Products', () => {
     await descCell.dblclick()
     await expect(page.locator('[data-testid^="cell-editor-description"]').first()).toBeVisible()
     patches.length = 0
-    await page.locator('[data-testid="object-table"]').click({ position: { x: 8, y: 8 } })
+    await page.locator('[data-testid="object-table"]').first().click({ position: { x: 8, y: 8 } })
     await page.waitForTimeout(200)
     expect(patches.filter((body) => body.includes('description'))).toEqual([])
 
@@ -249,7 +249,7 @@ test.describe('field picker on Products', () => {
     expect(afterHeaders[allIndex] ?? '').toMatch(/first/i)
 
     await page.reload()
-    await expect(page.getByTestId('object-table')).toBeVisible({ timeout: 60_000 })
+    await expect(page.getByTestId('object-table').first()).toBeVisible({ timeout: 60_000 })
     const reloaded = await headers().allTextContents()
     expect(reloaded.length).toBe(beforeCount)
     expect(reloaded.some((text) => /\ball\b/i.test(text))).toBe(false)
@@ -347,7 +347,7 @@ test.describe('field picker on Products', () => {
     expect(texts[2]).toMatch(/first/i)
 
     await page.reload()
-    await expect(page.getByTestId('object-table')).toBeVisible({ timeout: 60_000 })
+    await expect(page.getByTestId('object-table').first()).toBeVisible({ timeout: 60_000 })
     const reloaded = await hopHeaders().allTextContents()
     expect(reloaded).toHaveLength(3)
     expect(reloaded[0]).toMatch(/\ball\b/i)
@@ -368,13 +368,13 @@ test.describe('field picker on Products', () => {
     await enterOn(page, 'fields-row-kg')
     await page.keyboard.press('Escape')
 
-    const headers = page.locator('.head [data-testid^="col-"]')
+    const headers = page.locator('.head [data-testid^="col-"]').first()
     const count = await headers.count()
     expect(count).toBeGreaterThan(5)
     // Must include system columns that previously drifted (Type/Status/Version).
-    await expect(page.locator('.head [data-testid="col-type"]')).toBeVisible()
-    await expect(page.locator('.head [data-testid="col-status"]')).toBeVisible()
-    await expect(page.locator('.head [data-testid="col-version"]')).toBeVisible()
+    await expect(page.locator('.head [data-testid="col-type"]').first()).toBeVisible()
+    await expect(page.locator('.head [data-testid="col-status"]').first()).toBeVisible()
+    await expect(page.locator('.head [data-testid="col-version"]').first()).toBeVisible()
 
     const row = page.locator('[data-testid="object-row"]').filter({ hasText: 'Mature cheddar' }).first()
     await expect(row).toBeVisible()
@@ -433,16 +433,16 @@ test.describe('field picker on Products', () => {
     await openProducts(page)
     await expect(page.getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
 
-    const headCols = () => page.locator('.head [data-testid^="col-"]')
-    await expect(page.locator('.head [data-testid="col-brand"]')).toBeVisible()
+    const headCols = () => page.locator('.head [data-testid^="col-"]').first()
+    await expect(page.locator('.head [data-testid="col-brand"]').first()).toBeVisible()
 
     // Column change: hide Brand, then switch tabs immediately (no wait for PUT).
-    await page.locator('.head [data-testid="col-brand"]').click({ button: 'right' })
+    await page.locator('.head [data-testid="col-brand"]').first().click({ button: 'right' })
     const menu = page.getByTestId('context-menu')
     await expect(menu).toBeVisible()
     await menu.getByRole('menuitem', { name: 'Hide column' }).click()
     await expect(menu).toHaveCount(0)
-    await expect(page.locator('.head [data-testid="col-brand"]')).toHaveCount(0)
+    await expect(page.locator('.head [data-testid="col-brand"]').first()).toHaveCount(0)
 
     const expected = await headCols().evaluateAll((nodes) =>
       nodes.map((n) => n.getAttribute('data-testid')),
@@ -462,7 +462,7 @@ test.describe('field picker on Products', () => {
     ).toEqual(expected)
 
     await page.reload()
-    await expect(page.getByTestId('object-table')).toBeVisible({ timeout: 60_000 })
+    await expect(page.getByTestId('object-table').first()).toBeVisible({ timeout: 60_000 })
     await expect(page.getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
     await expect.poll(async () =>
       headCols().evaluateAll((nodes) => nodes.map((n) => n.getAttribute('data-testid'))),
@@ -473,14 +473,14 @@ test.describe('field picker on Products', () => {
     await login(page)
     await openProducts(page)
     await expect(page.getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
-    await expect(page.locator('.head [data-testid="col-brand"]')).toBeVisible()
+    await expect(page.locator('.head [data-testid="col-brand"]').first()).toBeVisible()
 
     await openFieldsPalette(page)
     await expect(page.getByTestId('fields-mode')).toBeVisible()
 
     // Palette may overlay the header; force the contextmenu onto the Brand cell so
     // shared-context-menu still receives it (same path as a real header right-click).
-    const brand = page.locator('.head [data-testid="col-brand"]')
+    const brand = page.locator('.head [data-testid="col-brand"]').first()
     await brand.dispatchEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })
     const menu = page.getByTestId('context-menu')
     await expect(menu).toBeVisible()

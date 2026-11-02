@@ -7,12 +7,12 @@ async function login(page: Page) {
   await page.getByTestId('email').fill(demo.email)
   await page.getByTestId('password').fill(demo.password)
   await page.getByRole('button', { name: 'Sign in' }).click()
-  await expect(page.getByTestId('object-table')).toBeVisible({ timeout: 60_000 })
+  await expect(page.getByTestId('object-table').first()).toBeVisible({ timeout: 60_000 })
 }
 
 async function openProducts(page: Page) {
   await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
-  await expect(page.getByTestId('object-table')).toBeVisible()
+  await expect(page.getByTestId('object-table').first()).toBeVisible()
 }
 
 test.describe('view source all-of-type (Notion 103 PR 1)', () => {
@@ -25,7 +25,7 @@ test.describe('view source all-of-type (Notion 103 PR 1)', () => {
     await openProducts(page)
     await expect(page.getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
     // The workspace tab can show the table while focus stays on another pane.
-    await page.getByTestId('object-table').click({ position: { x: 24, y: 24 } })
+    await page.getByTestId('object-table').first().click({ position: { x: 24, y: 24 } })
 
     await page.keyboard.press('Control+k')
     await expect(page.getByTestId('command-palette')).toBeVisible()
@@ -71,7 +71,7 @@ test.describe('view source all-of-type (Notion 103 PR 1)', () => {
     }
 
     await page.reload()
-    await expect(page.getByTestId('object-table')).toBeVisible({ timeout: 60_000 })
+    await expect(page.getByTestId('object-table').first()).toBeVisible({ timeout: 60_000 })
     await expect(page.locator('.pane.focused').getByTestId('view-source-label')).toBeVisible({ timeout: 30_000 })
     const after = (await page.locator('.pane.focused').getByTestId('view-source-label').innerText()).trim()
     expect(after.startsWith('All ')).toBe(true)

@@ -156,7 +156,7 @@ test('Ctrl+K Switch catalog opens straight into the catalog list', async ({ page
   await page.reload()
   await expect(page.getByTestId('workspace')).toBeVisible()
   await page.locator('nav.tabs').getByRole('button', { name: /Products/ }).click()
-  await page.getByTestId('object-table').click({ position: { x: 24, y: 24 } })
+  await page.getByTestId('object-table').first().click({ position: { x: 24, y: 24 } })
   const label = page.locator('.pane.focused').getByTestId('view-source-label')
   await expect(label).toHaveText('All Products')
   await waitForCatalogs(page)

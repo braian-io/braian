@@ -12,7 +12,7 @@ async function login(page: Page) {
 
 async function openProducts(page: Page) {
   await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
-  await expect(page.getByTestId('object-table')).toBeVisible()
+  await expect(page.getByTestId('object-table').first()).toBeVisible()
 }
 
 test.describe('palette root and first-key focus', () => {
@@ -54,7 +54,7 @@ test.describe('palette root and first-key focus', () => {
     for (let round = 0; round < 8; round += 1) {
       await page.keyboard.press('Escape')
       await expect(page.getByTestId('command-palette')).toHaveCount(0)
-      await page.getByTestId('object-table').focus()
+      await page.getByTestId('object-table').first().focus()
 
       const sync = await page.evaluate(() => {
         const event = new KeyboardEvent('keydown', {

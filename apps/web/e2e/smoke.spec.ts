@@ -13,7 +13,7 @@ async function login(page: Page) {
   await page.getByTestId('password').fill(demo.password)
   await page.getByRole('button', { name: 'Sign in' }).click()
   await expect(page.getByTestId('structure-tree')).toBeVisible()
-  await expect(page.getByTestId('object-table')).toBeVisible()
+  await expect(page.getByTestId('object-table').first()).toBeVisible()
 }
 
 test('login, edit, search, proposal, rollback and live update', async ({ page }) => {
@@ -25,7 +25,7 @@ test('login, edit, search, proposal, rollback and live update', async ({ page })
   const filter = page.getByTestId('quick-filter').first()
   if ((await filter.inputValue()) !== '') await filter.fill('')
   await expect(page.getByTestId('object-row').first()).toBeVisible()
-  await expect(page.getByTestId('object-table')).toContainText('Name')
+  await expect(page.getByTestId('object-table').first()).toContainText('Name')
   const named = page.getByTestId('object-row').filter({ hasText: 'Cheddar' }).first()
   if ((await named.count()) > 0) await named.click()
   else await page.getByTestId('object-row').first().click()
