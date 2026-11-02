@@ -16,6 +16,16 @@ export type PeerSourceOption = {
   typeIds: string[]
 }
 
+export type CurrentSource = {
+  typeId: string
+  peerViewId?: string
+  selection?: PeerSelection
+}
+
+function marked(row: PaletteItem, current: boolean): PaletteItem {
+  return current ? { ...row, chips: [{ text: copy.current, tone: 'ok' }] } : row
+}
+
 /** Palette / menu root that opens the type-source submenu (Notion 103 PR 1). */
 export function selectSourceRootItem(): PaletteItem {
   return {
@@ -31,26 +41,37 @@ export function selectSourceRootItem(): PaletteItem {
  * Types listed under Data source › / Select source ›.
  * Each "All …" row is followed by the live peer sources valid for that type.
  */
-export function selectSourceSubmenuRows(types: TypeName[], peerOptions: PeerSourceOption[] = []): PaletteItem[] {
+export function selectSourceSubmenuRows(
+  types: TypeName[],
+  peerOptions: PeerSourceOption[] = [],
+  current?: CurrentSource | null,
+): PaletteItem[] {
   const rows: PaletteItem[] = []
   for (const type of types) {
     if (type.kind === 'link' || !type.id || !type.key) continue
-    rows.push({
+    const allCurrent = Boolean(current && current.typeId === type.id && !current.peerViewId)
+    rows.push(marked({
       id: `select-source:type:${type.id}`,
       group: 'views',
       title: copy.allOfType.replace('{type}', type.plural),
       subtitle: copy.selectSource,
       keywords: [type.key, type.singular, type.plural, 'all'],
-    })
+    }, allCurrent))
     for (const option of peerOptions) {
       if (!option.typeIds.includes(type.id) && !option.typeIds.includes(type.key)) continue
-      rows.push({
+      const peerCurrent = Boolean(
+        current
+        && current.typeId === type.id
+        && current.peerViewId === option.viewId
+        && current.selection === option.selection,
+      )
+      rows.push(marked({
         id: `select-source:peer:${type.id}:${option.viewId}:${option.selection}`,
         group: 'views',
         title: copy.fromSourceLabel.replace('{type}', type.plural).replace('{source}', option.viewTitle),
         subtitle: option.label,
         keywords: [type.key, type.singular, type.plural, option.viewTitle, option.label, 'linked', 'peer', 'source'],
-      })
+      }, peerCurrent))
     }
   }
   return rows

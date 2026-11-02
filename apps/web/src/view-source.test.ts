@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   applyPeerSource,
   applyTypeSource,
+  isExplicitAllSource,
   isObjectTableView,
   linkedTypeIds,
   peerIdsFilter,
@@ -24,6 +25,7 @@ describe('view source (Notion 103 PR 1)', () => {
     expect(next.object_type).toBe('t-product')
     expect(next.type_key).toBe('product')
     expect(next.table).toEqual({ filter: 'x' })
+    expect(next.source).toEqual({ kind: 'all' })
   })
 
   it('labels the header for a bound object_table', () => {
@@ -64,8 +66,17 @@ describe('peer source (Notion 103 PR 2)', () => {
       { object_type: 'old', type_key: 'article', source: { kind: 'peer', viewId: 'v' } },
       types[1],
     )
-    expect(next.source).toBeUndefined()
+    expect(next.source).toEqual({ kind: 'all' })
+    expect(peerSourceOf(next)).toBeNull()
+    expect(isExplicitAllSource(next)).toBe(true)
     expect(next.object_type).toBe('t-product')
+  })
+
+  it('only treats a stored all marker as an explicit all source', () => {
+    expect(isExplicitAllSource({ source: { kind: 'all' } })).toBe(true)
+    expect(isExplicitAllSource({ source: { kind: 'peer', viewId: 'v' } })).toBe(false)
+    expect(isExplicitAllSource({})).toBe(false)
+    expect(isExplicitAllSource(undefined)).toBe(false)
   })
 
   it('builds node and linked-id filters', () => {

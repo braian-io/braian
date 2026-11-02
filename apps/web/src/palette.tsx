@@ -50,7 +50,7 @@ import {
   typeOfView,
   typeViewPaletteItems,
 } from './type-labels'
-import { linkedTypeIds } from './view-source'
+import { linkedTypeIds, peerSourceOf } from './view-source'
 import { applyUiResult, dispatchUi, uiOperations } from './ui-bus'
 import {
   readSelection,
@@ -260,6 +260,18 @@ export function CommandPalette({
     // selectionVersion re-reads the live registry; the other inputs shape the list.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [views, types, defs.data, focusViewId, selectedKey, selectionVersion])
+  const sourceTarget = useMemo(() => {
+    const focused = views.find((view) => view.id === focusViewId && view.type === 'object_table')
+    return focused ?? views.find((view) => view.type === 'object_table')
+  }, [views, focusViewId])
+  const currentSource = useMemo(() => {
+    if (!sourceTarget) return null
+    const bound = typeOfView(sourceTarget, types)
+    const peer = peerSourceOf(sourceTarget.state)
+    return peer
+      ? { typeId: bound?.id ?? '', peerViewId: peer.viewId, selection: peer.selection }
+      : { typeId: bound?.id ?? '' }
+  }, [sourceTarget, types])
   // Columns of the open table, read once when the palette opens.
   const tableColumns = useMemo(() => readUiContext().columns, [])
   const catalogsList = useCatalogsQuery()
@@ -399,7 +411,7 @@ export function CommandPalette({
     if (!startSelectSource) return
     setStack([{
       label: `${copy.dataSource} ›`,
-      rows: selectSourceSubmenuRows(types, peerSourceOptions),
+      rows: selectSourceSubmenuRows(types, peerSourceOptions, currentSource),
     }])
     setActive(0)
     // Mount-only: dock menu Select source opens the submenu immediately.
@@ -499,7 +511,7 @@ export function CommandPalette({
     if (isSelectSourceRoot(id)) {
       setStack((current) => [...current, {
         label: item.title,
-        rows: selectSourceSubmenuRows(types, peerSourceOptions),
+        rows: selectSourceSubmenuRows(types, peerSourceOptions, currentSource),
       }])
       setQuery('')
       setActive(0)

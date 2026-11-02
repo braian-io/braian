@@ -42,7 +42,7 @@ import { cellPathValues, fetchPathValues } from './path-values'
 import { shouldHoldTablePaint, shouldRefreshTableSnapshot } from './table-live-paint'
 import { searchPeerArticles, type PeerPickOption } from './peer-search'
 import { linkedPeerIds } from './peer-source'
-import { peerIdsFilter, peerNodeFilter, peerSourceOf } from './view-source'
+import { isExplicitAllSource, peerIdsFilter, peerNodeFilter, peerSourceOf } from './view-source'
 import { FieldDiff } from './field-diff-view'
 import { copy, uiLanguage } from './i18n'
 import { handleAppContextMenu } from './app-context-menu'
@@ -345,6 +345,7 @@ export function ObjectTable({
   // A peer source replaces the global group filter: the view follows the other
   // view's row/node, not whatever group happens to be selected in the tree.
   const peerSource = peerSourceOf(view.state)
+  const explicitAll = isExplicitAllSource(view.state)
   const peerSourceView = peerSource
     ? ((workspace.views as PanesView[] | null | undefined) ?? []).find((item) => item.id === peerSource.viewId)
     : undefined
@@ -380,7 +381,7 @@ export function ObjectTable({
       ? (peerNode ? peerNodeFilter(peerNode) : peerIdsFilter([]))
       : (peerIds.isSuccess ? peerIdsFilter(peerIds.data) : peerIdsFilter([]))
     : ''
-  const filterBy = [objectTableFilter(typeKey, peerSource ? null : session.group, defs.data), peerFilter, selectionFilter, labelFilter, ...pathFilters]
+  const filterBy = [objectTableFilter(typeKey, peerSource || explicitAll ? null : session.group, defs.data), peerFilter, selectionFilter, labelFilter, ...pathFilters]
     .filter(Boolean)
     .join(' && ')
   const attributePaths = useQuery({

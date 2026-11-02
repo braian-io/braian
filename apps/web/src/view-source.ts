@@ -8,14 +8,19 @@ export type PeerSourceRef = { kind: 'peer'; viewId: string; selection: PeerSelec
 
 /** Persist "all objects of a type" on an object_table view (Notion 103 PR 1). */
 export function applyTypeSource(state: Json | undefined, type: TypeName): Json {
-  const next: Json = {
+  return {
     ...(state ?? {}),
     object_type: type.id,
     type_key: type.key,
+    source: { kind: 'all' },
   }
-  // An explicit peer source must not survive a switch back to all-of-type.
-  delete next.source
-  return next
+}
+
+export function isExplicitAllSource(state: Json | undefined): boolean {
+  if (!state || typeof state !== 'object' || Array.isArray(state)) return false
+  const raw = state.source
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false
+  return (raw as Json).kind === 'all'
 }
 
 /**
