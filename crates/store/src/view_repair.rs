@@ -1,12 +1,13 @@
-//! Idempotent repair of saved `object_table` views.
+//! Idempotent repair of saved views.
 //!
 //! A view bound to a link type lists no rows, because a link type is not a
 //! record type. The repair moves such a view to the link's source entity
 //! (`from_types[0]`). It also rewrites a legacy string `state.catalog` key into
-//! the structured `catalogOverride` the resolver reads. Both edits are no-ops
-//! the second time they run.
+//! the structured `catalogOverride` the resolver reads. Finally it deletes views
+//! that no workspace or personal layout places in a tab, so the dock never keeps
+//! a view the user cannot reach. All edits are no-ops the second time they run.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use braian_model::DefinitionSet;
 use serde_json::Value;
@@ -66,7 +67,122 @@ fn remap_link_source(state: &mut Value, defs: &DefinitionSet) -> bool {
     changed
 }
 
-/// Startup repair over every saved table view.
+/// Collect the view ids a layout document places in a tab.
+fn collect_layout_view_ids(layout: &Value, placed: &mut HashSet<Uuid>) {
+    match layout {
+        Value::Array(items) => {
+            for item in items {
+                collect_layout_view_ids(item, placed);
+            }
+        }
+        Value::Object(fields) => {
+            if let Some(views) = fields.get("views").and_then(Value::as_array) {
+                for view in views {
+                    if let Some(id) = view.as_str().and_then(|token| Uuid::parse_str(token).ok()) {
+                        placed.insert(id);
+                    }
+                }
+            }
+            for child in fields.values() {
+                collect_layout_view_ids(child, placed);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Views to delete, scoped to workspaces whose layout is meaningful.
+///
+/// A workspace layout counts only when it is a JSON object that places at least
+/// one view. This keeps every view of a workspace without a usable layout;
+/// deleting those would be data loss. Views without a workspace are never
+/// touched.
+fn orphan_views_to_delete(
+    views: &[(Uuid, Option<Uuid>)],
+    workspace_layouts: &HashMap<Uuid, Value>,
+    personal_layouts: &HashMap<Uuid, Vec<Value>>,
+) -> Vec<Uuid> {
+    let mut placed_by_workspace: HashMap<Uuid, HashSet<Uuid>> = HashMap::new();
+    let mut meaningful_workspaces = HashSet::new();
+    for (workspace_id, layout) in workspace_layouts {
+        let placed = placed_by_workspace.entry(*workspace_id).or_default();
+        collect_layout_view_ids(layout, placed);
+        if layout.is_object() && !placed.is_empty() {
+            meaningful_workspaces.insert(*workspace_id);
+        }
+    }
+    for (workspace_id, layouts) in personal_layouts {
+        let placed = placed_by_workspace.entry(*workspace_id).or_default();
+        for layout in layouts {
+            collect_layout_view_ids(layout, placed);
+        }
+    }
+    views
+        .iter()
+        .filter_map(|(id, workspace_id)| {
+            let workspace_id = (*workspace_id)?;
+            if !meaningful_workspaces.contains(&workspace_id) {
+                return None;
+            }
+            let placed = placed_by_workspace
+                .get(&workspace_id)
+                .is_some_and(|placed| placed.contains(id));
+            (!placed).then_some(*id)
+        })
+        .collect()
+}
+
+/// Delete views that their own workspace's layout no longer references.
+async fn remove_orphan_views(client: &mut Client) -> Result<(), Error> {
+    let workspace_rows = client
+        .query("SELECT id, layout FROM workspaces", &[])
+        .await?;
+    let mut workspace_layouts = HashMap::with_capacity(workspace_rows.len());
+    for row in &workspace_rows {
+        let id: Uuid = row.get("id");
+        if let Some(layout) = row.get::<_, Option<Value>>("layout") {
+            workspace_layouts.insert(id, layout);
+        }
+    }
+
+    let personal_rows = client
+        .query(
+            "SELECT workspace_id, document -> 'layout' AS document
+             FROM workspace_states
+             WHERE jsonb_typeof(document) = 'object' AND document ? 'layout'",
+            &[],
+        )
+        .await?;
+    let mut personal_layouts: HashMap<Uuid, Vec<Value>> = HashMap::new();
+    for row in &personal_rows {
+        let workspace_id: Uuid = row.get("workspace_id");
+        if let Some(document) = row.get::<_, Option<Value>>("document") {
+            personal_layouts
+                .entry(workspace_id)
+                .or_default()
+                .push(document);
+        }
+    }
+
+    let views = client
+        .query(
+            "SELECT id, workspace_id FROM views WHERE workspace_id IS NOT NULL",
+            &[],
+        )
+        .await?;
+    let view_rows: Vec<(Uuid, Option<Uuid>)> = views
+        .iter()
+        .map(|view| (view.get("id"), view.get("workspace_id")))
+        .collect();
+    for id in orphan_views_to_delete(&view_rows, &workspace_layouts, &personal_layouts) {
+        client
+            .execute("DELETE FROM views WHERE id = $1", &[&id])
+            .await?;
+    }
+    Ok(())
+}
+
+/// Startup repair over saved views.
 pub(crate) async fn repair_link_and_catalog_views(client: &mut Client) -> Result<(), Error> {
     let row = client
         .query_one(
@@ -77,35 +193,35 @@ pub(crate) async fn repair_link_and_catalog_views(client: &mut Client) -> Result
             &[],
         )
         .await?;
-    let Some(document) = row.get::<_, Option<Value>>("definitions") else {
-        return Ok(());
-    };
-    let defs: DefinitionSet =
-        serde_json::from_value(document).map_err(|error| Error::Definitions(error.to_string()))?;
+    if let Some(document) = row.get::<_, Option<Value>>("definitions") {
+        let defs: DefinitionSet = serde_json::from_value(document)
+            .map_err(|error| Error::Definitions(error.to_string()))?;
 
-    let catalog_rows = client.query("SELECT id, key FROM catalogs", &[]).await?;
-    let mut catalog_id_by_key = HashMap::with_capacity(catalog_rows.len());
-    for catalog in catalog_rows {
-        let id: Uuid = catalog.get("id");
-        let key: String = catalog.get("key");
-        catalog_id_by_key.insert(key, CatalogId::from_uuid(id));
-    }
+        let catalog_rows = client.query("SELECT id, key FROM catalogs", &[]).await?;
+        let mut catalog_id_by_key = HashMap::with_capacity(catalog_rows.len());
+        for catalog in catalog_rows {
+            let id: Uuid = catalog.get("id");
+            let key: String = catalog.get("key");
+            catalog_id_by_key.insert(key, CatalogId::from_uuid(id));
+        }
 
-    let views = client
-        .query(
-            "SELECT id, state FROM views WHERE type_key = 'object_table'",
-            &[],
-        )
-        .await?;
-    for view in views {
-        let id: Uuid = view.get("id");
-        let mut state: Value = view.get("state");
-        if repair_view_state(&mut state, &defs, &catalog_id_by_key) {
-            client
-                .execute("UPDATE views SET state = $2 WHERE id = $1", &[&id, &state])
-                .await?;
+        let views = client
+            .query(
+                "SELECT id, state FROM views WHERE type_key = 'object_table'",
+                &[],
+            )
+            .await?;
+        for view in views {
+            let id: Uuid = view.get("id");
+            let mut state: Value = view.get("state");
+            if repair_view_state(&mut state, &defs, &catalog_id_by_key) {
+                client
+                    .execute("UPDATE views SET state = $2 WHERE id = $1", &[&id, &state])
+                    .await?;
+            }
         }
     }
+    remove_orphan_views(client).await?;
     Ok(())
 }
 
@@ -197,6 +313,111 @@ mod tests {
         assert_eq!(
             state["catalogOverride"],
             json!({ "catalogId": "018f1000-0000-7000-8000-000000000002" })
+        );
+    }
+
+    fn view(id: u128) -> Uuid {
+        Uuid::from_u128(id)
+    }
+
+    fn workspace(id: u128) -> Uuid {
+        Uuid::from_u128(id)
+    }
+
+    fn layout_with(views: &[Uuid]) -> Value {
+        json!({
+            "type": "tabs",
+            "views": views.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            "active": 0
+        })
+    }
+
+    #[test]
+    fn keeps_views_when_workspace_layout_is_null() {
+        let workspace_id = workspace(1);
+        let kept = view(1);
+        let personal_layouts = HashMap::from([(workspace_id, vec![layout_with(&[])])]);
+        assert!(
+            orphan_views_to_delete(
+                &[(kept, Some(workspace_id))],
+                &HashMap::new(),
+                &personal_layouts,
+            )
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn keeps_views_when_workspace_layout_is_empty() {
+        let workspace_id = workspace(1);
+        let kept = view(1);
+        let workspace_layouts = HashMap::from([(workspace_id, json!({}))]);
+        assert!(
+            orphan_views_to_delete(
+                &[(kept, Some(workspace_id))],
+                &workspace_layouts,
+                &HashMap::new(),
+            )
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn deletes_views_outside_a_meaningful_workspace_layout() {
+        let workspace_id = workspace(1);
+        let placed = view(1);
+        let orphan = view(2);
+        let workspace_layouts = HashMap::from([(workspace_id, layout_with(&[placed]))]);
+        assert_eq!(
+            orphan_views_to_delete(
+                &[(placed, Some(workspace_id)), (orphan, Some(workspace_id))],
+                &workspace_layouts,
+                &HashMap::new(),
+            ),
+            vec![orphan]
+        );
+        // Idempotent: once the orphan is gone there is nothing left to repair.
+        assert!(
+            orphan_views_to_delete(
+                &[(placed, Some(workspace_id))],
+                &workspace_layouts,
+                &HashMap::new(),
+            )
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn keeps_a_view_that_only_a_personal_layout_places() {
+        let workspace_id = workspace(1);
+        let placed = view(1);
+        let personal_only = view(2);
+        let workspace_layouts = HashMap::from([(workspace_id, layout_with(&[placed]))]);
+        let personal_layouts = HashMap::from([(workspace_id, vec![layout_with(&[personal_only])])]);
+        assert!(
+            orphan_views_to_delete(
+                &[
+                    (placed, Some(workspace_id)),
+                    (personal_only, Some(workspace_id))
+                ],
+                &workspace_layouts,
+                &personal_layouts,
+            )
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn never_deletes_views_without_a_workspace() {
+        let placed = view(1);
+        let workspace_layouts = HashMap::from([(workspace(1), layout_with(&[placed]))]);
+        assert!(
+            orphan_views_to_delete(
+                &[(view(2), None), (view(3), None)],
+                &workspace_layouts,
+                &HashMap::new(),
+            )
+            .is_empty()
         );
     }
 }
