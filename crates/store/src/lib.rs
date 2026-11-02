@@ -40,7 +40,7 @@ pub use log::{ChangeListener, LogClaim, LogEvent};
 pub use merge::MergeProfile;
 pub use ops::{ProposalLock, ProposalWrite};
 pub use pressure::InteractiveGuard;
-pub use product::{AttributeUsageCount, HistoryEntry, ProposalRow, UserRecord};
+pub use product::{AssortmentUsage, AttributeUsageCount, HistoryEntry, ProposalRow, UserRecord};
 pub use scan::{EXPORT_CHUNK, ExportObject, ExportOrder, ExportScan};
 pub use session::{DbLane, HeldConnection, PoolConfig, Store, scope_origin};
 pub use split::StorageForm;
