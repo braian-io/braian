@@ -12,7 +12,7 @@ async function login(page: Page) {
   await page.getByTestId('email').fill(demo.email)
   await page.getByTestId('password').fill(demo.password)
   await page.getByRole('button', { name: 'Sign in' }).click()
-  await expect(page.getByTestId('object-table')).toBeVisible()
+  await expect(page.getByTestId('object-table').first()).toBeVisible()
 }
 
 test('final data-model and polish shots', async ({ page }) => {

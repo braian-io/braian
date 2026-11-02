@@ -131,8 +131,8 @@ test.describe('peer source empty states (Notion 103 decision 6)', () => {
       await page.locator('nav.tabs').getByRole('button', { name: /Peer empty/ }).click()
       const articles = pane(page, articlesId)
       const products = pane(page, productsId)
-      await expect(articles.getByTestId('object-table')).toBeVisible({ timeout: 60_000 })
-      await expect(products.getByTestId('object-table')).toBeVisible({ timeout: 60_000 })
+      await expect(articles.getByTestId('object-table').first()).toBeVisible({ timeout: 60_000 })
+      await expect(products.getByTestId('object-table').first()).toBeVisible({ timeout: 60_000 })
 
       // 1. The source view has no selected row.
       await expect(articles.getByTestId('peer-linked-to')).toHaveText('Linked to: Products', { timeout: 30_000 })
@@ -156,7 +156,7 @@ test.describe('peer source empty states (Notion 103 decision 6)', () => {
       await page.reload()
       await page.locator('nav.tabs').getByRole('button', { name: /Missing source/ }).click()
       const missingArticles = pane(page, missingArticlesId)
-      await expect(missingArticles.getByTestId('object-table')).toBeVisible({ timeout: 60_000 })
+      await expect(missingArticles.getByTestId('object-table').first()).toBeVisible({ timeout: 60_000 })
       await expect(missingArticles.getByTestId('peer-empty-text')).toHaveText('Source no longer exists', {
         timeout: 30_000,
       })

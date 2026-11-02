@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
+import { mainTable } from './ui'
 
 async function login(page: Page) {
   await page.addInitScript(() => {
@@ -10,11 +11,11 @@ async function login(page: Page) {
   await page.getByTestId('email').fill(demo.email)
   await page.getByTestId('password').fill(demo.password)
   await page.getByRole('button', { name: 'Sign in' }).click()
-  await expect(page.getByTestId('object-table').first()).toBeVisible()
+  await expect(mainTable(page)).toBeVisible()
 }
 
 async function openCheddar(page: Page) {
-  const table = page.locator('[data-testid=object-table]:visible').first()
+  const table = mainTable(page)
   const filter = table.getByTestId('quick-filter').first()
   if ((await filter.inputValue()) !== '') await filter.fill('')
   const row = table.getByTestId('object-row').filter({ hasText: 'PROD-CHEDDAR' }).first()

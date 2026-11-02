@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
+import { focusMainTable, mainTable } from './ui'
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -12,11 +13,11 @@ async function login(page: Page) {
 
 async function openProducts(page: Page) {
   await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
-  await expect(page.getByTestId('object-table')).toBeVisible()
+  await expect(mainTable(page)).toBeVisible()
 }
 
 async function openFieldsPalette(page: Page) {
-  await page.getByTestId('object-table').focus()
+  await focusMainTable(page)
   await page.keyboard.press('Control+k')
   const palette = page.getByTestId('command-palette')
   await expect(palette).toBeVisible()
@@ -46,7 +47,7 @@ async function enterOn(page: Page, rowTestId: string) {
 }
 
 function headerIds(page: Page) {
-  return page.locator('.head [data-testid^="col-"]')
+  return mainTable(page).locator('.head [data-testid^="col-"]')
 }
 
 async function visibleHeaderIds(page: Page) {
@@ -69,8 +70,8 @@ test.describe('column drag and system fields', () => {
     expect(fromId).not.toBe(toId)
 
     // dnd-kit listeners sit on the header button (not the resize handle).
-    const fromBtn = page.getByTestId(fromId).locator('button.column-header-btn')
-    const toBtn = page.getByTestId(toId).locator('button.column-header-btn')
+    const fromBtn = mainTable(page).getByTestId(fromId).locator('button.column-header-btn')
+    const toBtn = mainTable(page).getByTestId(toId).locator('button.column-header-btn')
     const fromBox = await fromBtn.boundingBox()
     const toBox = await toBtn.boundingBox()
     if (!fromBox || !toBox) throw new Error('missing header boxes')
@@ -107,17 +108,17 @@ test.describe('column drag and system fields', () => {
     expect(afterDrag.indexOf(fromId)).toBeGreaterThan(0)
 
     await page.reload()
-    await expect(page.getByTestId('object-table')).toBeVisible({ timeout: 60_000 })
+    await expect(mainTable(page)).toBeVisible({ timeout: 60_000 })
     await expect(page.getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
     const afterReload = await visibleHeaderIds(page)
     expect(afterReload).toEqual(afterDrag)
 
     // Click header still sorts (Name is usually present and sortable).
-    const name = page.locator('.head [data-testid="col-name"] button.column-header-btn')
+    const name = mainTable(page).locator('.head [data-testid="col-name"] button.column-header-btn').first()
     if (await name.count()) {
       await name.click()
       await expect.poll(async () => {
-        const first = page.locator('[data-testid="object-row"]').first()
+        const first = mainTable(page).getByTestId('object-row').first()
         return (await first.textContent()) ?? ''
       }).not.toEqual('')
     }
@@ -127,7 +128,7 @@ test.describe('column drag and system fields', () => {
     await login(page)
     await openProducts(page)
     await expect(page.getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
-    await expect(page.locator('.head [data-testid="col-type"]')).toBeVisible()
+    await expect(mainTable(page).locator('.head [data-testid="col-type"]').first()).toBeVisible()
 
     await openFieldsPalette(page)
     await expect(page.getByTestId('fields-row-type')).toBeVisible()
@@ -141,7 +142,7 @@ test.describe('column drag and system fields', () => {
     await enterOn(page, 'fields-row-type')
     await page.keyboard.press('Escape')
     await putHide
-    await expect(page.locator('.head [data-testid="col-type"]')).toHaveCount(0)
+    await expect(mainTable(page).locator('.head [data-testid="col-type"]').first()).toHaveCount(0)
 
     await openFieldsPalette(page)
     await expect(page.getByTestId('fields-row-type')).toBeVisible()
@@ -155,7 +156,7 @@ test.describe('column drag and system fields', () => {
     await enterOn(page, 'fields-row-type')
     await page.keyboard.press('Escape')
     await putShow
-    await expect(page.locator('.head [data-testid="col-type"]')).toBeVisible()
+    await expect(mainTable(page).locator('.head [data-testid="col-type"]').first()).toBeVisible()
   })
 
   test('Move column left and right via Ctrl+K', async ({ page }) => {
@@ -166,7 +167,7 @@ test.describe('column drag and system fields', () => {
     const before = await visibleHeaderIds(page)
     expect(before.length).toBeGreaterThan(2)
     const target = before[1]!
-    await page.getByTestId(target).click()
+    await mainTable(page).getByTestId(target).click()
 
     const putLeft = page.waitForResponse(
       (res) =>
@@ -190,7 +191,7 @@ test.describe('column drag and system fields', () => {
         res.ok(),
       { timeout: 30_000 },
     )
-    await page.getByTestId(target).click()
+    await mainTable(page).getByTestId(target).click()
     await page.keyboard.press('Control+k')
     await expect(page.getByTestId('command-palette')).toBeVisible()
     await page.getByTestId('palette-input').fill('Move column right')

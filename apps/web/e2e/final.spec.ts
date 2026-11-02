@@ -12,7 +12,7 @@ async function signIn(page: Page) {
   await page.getByTestId('email').fill(demo.email)
   await page.getByTestId('password').fill(demo.password)
   await page.getByRole('button', { name: 'Sign in' }).click()
-  await expect(page.getByTestId('object-table')).toBeVisible()
+  await expect(page.getByTestId('object-table').first()).toBeVisible()
 }
 
 test('final surfaces', async ({ page }) => {
@@ -80,6 +80,6 @@ test('final surfaces', async ({ page }) => {
 
   await setTheme(page, 'light')
   await page.locator('nav.tabs').getByRole('button', { name: 'Products' }).click()
-  await expect(page.getByTestId('object-table')).toBeVisible()
+  await expect(page.getByTestId('object-table').first()).toBeVisible()
   await page.screenshot({ path: `${shots}/enrich-objects-light.png` })
 })

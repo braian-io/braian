@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
+import { mainTable } from './ui'
 
 const MASTER_CATALOG_ID = '018f1000-0000-7000-8000-000000000001'
 const SAP_CATALOG_ID = '018f1000-0000-7000-8000-000000000002'
@@ -93,7 +94,7 @@ test('Ctrl+K Switch catalog sets the focused view catalog', async ({ page }) => 
   await page.reload()
   await expect(page.getByTestId('workspace')).toBeVisible()
   await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
-  await page.getByTestId('object-table').click({ position: { x: 24, y: 24 } })
+  await mainTable(page).click({ position: { x: 24, y: 24 } })
 
   const label = page.locator('.pane.focused').getByTestId('view-source-label')
   const selector = page.getByTestId('catalog-selector')

@@ -1,4 +1,4 @@
-import { setTheme } from './ui'
+import { mainTable, setTheme } from './ui'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { mkdirSync } from 'node:fs'
 import { demoCredentials } from './demo'
@@ -12,7 +12,7 @@ async function login(page: Page) {
   await page.getByTestId('email').fill(demo.email)
   await page.getByTestId('password').fill(demo.password)
   await page.getByRole('button', { name: 'Sign in' }).click()
-  await expect(page.getByTestId('object-row').first()).toBeVisible()
+  await expect(mainTable(page).getByTestId('object-row').first()).toBeVisible()
 }
 
 async function resetEnrich(page: Page) {
@@ -29,7 +29,7 @@ async function resetEnrich(page: Page) {
   const deleted = await page.request.delete(`/v1/workspaces/${enrich.id}/state?environment=default`)
   expect(deleted.ok() || deleted.status() === 204).toBeTruthy()
   await page.reload()
-  await expect(page.getByTestId('object-table')).toBeVisible()
+  await expect(mainTable(page)).toBeVisible()
   await page.evaluate(() => sessionStorage.removeItem('braian.layout.suppressFlush'))
 }
 
@@ -43,7 +43,7 @@ test('selecting a structure group lists the same products as its selection', asy
   await login(page)
   await resetEnrich(page)
   await expect(page.getByTestId('structure-tree')).toBeVisible()
-  const table = page.getByTestId('object-table')
+  const table = mainTable(page)
   const count = table.getByTestId('row-count')
   await expect(count).not.toHaveText(/^0 /)
   const filter = table.getByTestId('quick-filter')
@@ -53,8 +53,6 @@ test('selecting a structure group lists the same products as its selection', asy
   await expect(table.getByTestId('object-row').first()).toContainText('PROD-CHEDDAR')
   await expect(table).not.toContainText('no rows')
   await expect.poll(async () => (await count.textContent()) ?? '').not.toMatch(/^0 /)
-  // Let the 120ms filter debounce settle, then capture a stable count.
-  await page.waitForTimeout(250)
   const grouped = (await count.textContent()) ?? ''
   expect(grouped.startsWith('0 ')).toBeFalsy()
   await page.screenshot({ path: `${shots}/group-dark.png` })
@@ -65,7 +63,6 @@ test('selecting a structure group lists the same products as its selection', asy
   await choose(table, 'Cheese')
   await filter.fill('PROD-CHEDDAR')
   await expect(table.getByTestId('object-row').first()).toContainText('PROD-CHEDDAR')
-  await page.waitForTimeout(250)
   await expect(count).toHaveText(grouped)
 
   await setTheme(page, 'light')

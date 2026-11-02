@@ -1,4 +1,4 @@
-import { setTheme } from './ui'
+import { mainTable, setTheme } from './ui'
 import { expect, test, type Page } from '@playwright/test'
 import { mkdirSync } from 'node:fs'
 import { demoCredentials } from './demo'
@@ -14,26 +14,22 @@ async function login(page: Page) {
   await page.getByTestId('email').fill(demo.email)
   await page.getByTestId('password').fill(demo.password)
   await page.getByRole('button', { name: 'Sign in' }).click()
-  await expect(page.getByTestId('object-table')).toBeVisible()
+  await expect(mainTable(page)).toBeVisible()
 }
 
 async function openArticles(page: Page) {
-  // Notion 112 queues openTypeView until the workspace doc is ready; keep a
-  // short retry for unrelated timing flake on the Articles tab paint.
-  await expect(async () => {
-    await page.keyboard.press('Control+k')
-    await expect(page.getByTestId('command-palette')).toBeVisible()
-    await page.getByTestId('palette-input').fill('Articles view')
-    const entry = page.getByTestId('command-palette').locator('.hit').filter({ hasText: 'Articles view' }).filter({ hasText: 'Open view' })
-    await expect(entry.first()).toBeVisible()
-    await entry.first().click()
-    await expect(page.getByTestId('command-palette')).toHaveCount(0)
-    await expect(page.locator('.pane-tab', { hasText: 'Articles' })).toBeVisible({ timeout: 5_000 })
-  }).toPass({ timeout: 30_000 })
+  const tab = page.locator('nav.tabs').getByRole('button', { name: /^Articles/ })
+  await tab.click()
+  await expect(tab).toHaveClass(/active/)
+  await expect(page.locator('.pane-tab[data-view-type="object_table"]', { hasText: 'Articles' })).toBeVisible({
+    timeout: 30_000,
+  })
 }
 
 function articlesPane(page: Page) {
-  return page.locator('section.pane', { has: page.locator('.pane-tab', { hasText: 'Articles' }) })
+  return page.locator('section.pane').filter({
+    has: page.locator('.pane-tab[data-view-type="object_table"]', { hasText: 'Articles' }),
+  })
 }
 
 async function openCheddar(page: Page) {

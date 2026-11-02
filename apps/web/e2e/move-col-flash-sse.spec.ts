@@ -1,5 +1,6 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
 import { demoCredentials } from './demo'
+import { focusMainTable, mainTable } from './ui'
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -12,11 +13,11 @@ async function login(page: Page) {
 
 async function openProducts(page: Page) {
   await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
-  await expect(page.getByTestId('object-table')).toBeVisible()
+  await expect(mainTable(page)).toBeVisible()
 }
 
 async function openFieldsPalette(page: Page) {
-  await page.getByTestId('object-table').focus()
+  await focusMainTable(page)
   await page.keyboard.press('Control+k')
   const palette = page.getByTestId('command-palette')
   await expect(palette).toBeVisible()
@@ -46,7 +47,7 @@ async function enterOn(page: Page, rowTestId: string) {
 }
 
 async function visibleHeaderIds(page: Page) {
-  return page.locator('.head [data-testid^="col-"]').evaluateAll((nodes) =>
+  return mainTable(page).locator('.head [data-testid^="col-"]').evaluateAll((nodes) =>
     nodes.map((node) => node.getAttribute('data-testid') || ''),
   )
 }
@@ -61,7 +62,7 @@ test.describe('move column, pathValues flash, live row sweep', () => {
     expect(before.length).toBeGreaterThan(2)
     // Activate via header only — not a body cell.
     const target = before[1]!
-    const header = page.getByTestId(target)
+    const header = mainTable(page).getByTestId(target)
     await header.click()
     await expect(header).toHaveAttribute('data-active-column', 'true')
     const headerLabel = ((await header.locator('button.column-header-btn').textContent()) || '').replace(/\s*[↑↓]\s*$/, '').trim()
@@ -94,9 +95,9 @@ test.describe('move column, pathValues flash, live row sweep', () => {
     const before = await visibleHeaderIds(page)
     const target = before[1]!
     const colId = target.replace(/^col-/, '')
-    const row = page.getByTestId('object-row').filter({ hasText: 'Mature cheddar' }).first()
+    const row = mainTable(page).getByTestId('object-row').filter({ hasText: 'Mature cheddar' }).first()
     await row.locator(`[data-column="${colId}"]`).click()
-    await expect(page.getByTestId(target)).toHaveAttribute('data-active-column', 'true')
+    await expect(mainTable(page).getByTestId(target)).toHaveAttribute('data-active-column', 'true')
 
     const putRight = page.waitForResponse(
       (res) =>
@@ -129,7 +130,7 @@ test.describe('move column, pathValues flash, live row sweep', () => {
     await page.getByTestId('fields-mode-input').fill('gtin')
     await enterOn(page, 'fields-row-gtin')
     await page.keyboard.press('Escape')
-    await expect(page.locator('.head [data-testid*="gtin"]').first()).toBeVisible()
+    await expect(mainTable(page).locator('.head [data-testid*="gtin"]').first()).toBeVisible()
 
     let release: (() => void) | undefined
     const gate = new Promise<void>((resolve) => {
@@ -145,7 +146,7 @@ test.describe('move column, pathValues flash, live row sweep', () => {
       { timeout: 60_000 },
     )
     await page.reload()
-    await expect(page.getByTestId('object-table')).toBeVisible({ timeout: 60_000 })
+    await expect(mainTable(page)).toBeVisible({ timeout: 60_000 })
     await pathValuesRequest
 
     const gtinCell = page.getByTestId(/hop-cell-.*gtin/)
@@ -184,8 +185,8 @@ test.describe('move column, pathValues flash, live row sweep', () => {
       await page.keyboard.press('Escape')
     }
 
-    const rowA = pageA.getByTestId('object-row').filter({ hasText: 'Mature cheddar' }).first()
-    const rowB = pageB.getByTestId('object-row').filter({ hasText: 'Mature cheddar' }).first()
+    const rowA = mainTable(pageA).getByTestId('object-row').filter({ hasText: 'Mature cheddar' }).first()
+    const rowB = mainTable(pageB).getByTestId('object-row').filter({ hasText: 'Mature cheddar' }).first()
     const descA = rowA.locator('[data-testid^="path-cell-description"]').first()
     // Description is a pathValues column. The editor copies the loaded text once;
     // opening it before that batch paints seeds an empty draft and Enter does not

@@ -1,5 +1,6 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
 import { demoCredentials } from './demo'
+import { mainTable } from './ui'
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -10,7 +11,7 @@ async function login(page: Page) {
   await expect(page.getByTestId('workspace')).toBeVisible()
 }
 
-async function clearProductsPrefs(page: Page) {
+async function clearProductsPrefs(page: Page): Promise<string> {
   const listed = await page.request.get('/v1/workspaces')
   if (!listed.ok()) throw new Error(`workspaces: HTTP ${listed.status()}`)
   const { workspaces } = (await listed.json()) as {
@@ -21,18 +22,20 @@ async function clearProductsPrefs(page: Page) {
   const workspace = await page.request.get(`/v1/workspaces/${products.id}`)
   if (!workspace.ok()) throw new Error(`workspace: HTTP ${workspace.status()}`)
   const { views } = (await workspace.json()) as {
-    views: Array<{ id: string; type: string }>
+    views: Array<{ id: string; type: string; title: string }>
   }
-  const table = views.find((view) => view.type === 'object_table')
+  const table = views.find((view) => view.type === 'object_table' && view.title === 'Products')
   if (!table) throw new Error('missing Products object table')
   const cleared = await page.request.delete(
     `/v1/views/${table.id}/column-prefs?environment=default`,
   )
   if (!cleared.ok()) throw new Error(`column prefs delete: HTTP ${cleared.status()}`)
+  return table.id
 }
 
 async function openProducts(page: Page) {
   await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
+  await expect(mainTable(page)).toBeVisible()
 }
 
 test.describe('object table default columns', () => {
@@ -41,15 +44,16 @@ test.describe('object table default columns', () => {
     await clearProductsPrefs(page)
 
     await openProducts(page)
-    await expect(page.getByTestId('object-table')).toBeVisible()
-    await expect(page.locator('.head [data-testid="col-number"]')).toBeVisible()
-    await expect(page.locator('.head [data-testid="col-name"]')).toBeVisible()
-    await expect(page.locator('.head [data-testid="col-brand"]')).toBeVisible()
+    await expect(mainTable(page)).toBeVisible()
+    await expect(mainTable(page).locator('.head [data-testid="col-number"]').first()).toBeVisible()
+    await expect(mainTable(page).locator('.head [data-testid="col-name"]').first()).toBeVisible()
+    await expect(mainTable(page).locator('.head [data-testid="col-brand"]').first()).toBeVisible()
   })
 
   test('waits for definitions before seeding default columns', async ({ page }) => {
     await login(page)
-    await clearProductsPrefs(page)
+    const productsViewId = await clearProductsPrefs(page)
+    await openProducts(page)
 
     let releaseDefinitions!: () => void
     const definitionsGate = new Promise<void>((resolve) => {
@@ -62,21 +66,21 @@ test.describe('object table default columns', () => {
 
     const prefsResponse = page.waitForResponse(
       (res) =>
-        res.url().includes('/column-prefs') &&
+        res.url().includes(`/v1/views/${productsViewId}/column-prefs`) &&
         res.request().method() === 'GET' &&
         res.ok(),
     )
-    await openProducts(page)
+    await page.reload()
     await prefsResponse
 
     // Definitions is still held, so no fallback columns may be latched.
-    await expect(page.getByTestId('column-prefs-skeleton')).toBeVisible()
-    await expect(page.getByTestId('object-table')).toHaveCount(0)
-    await expect(page.locator('.head [data-testid="col-brand"]')).toHaveCount(0)
+    await expect(page.getByTestId('column-prefs-skeleton').first()).toBeVisible()
+    await expect(mainTable(page)).toHaveCount(0)
+    await expect(mainTable(page).locator('.head [data-testid="col-brand"]').first()).toHaveCount(0)
 
     releaseDefinitions()
 
-    await expect(page.getByTestId('object-table')).toBeVisible()
-    await expect(page.locator('.head [data-testid="col-brand"]')).toBeVisible()
+    await expect(mainTable(page)).toBeVisible()
+    await expect(mainTable(page).locator('.head [data-testid="col-brand"]').first()).toBeVisible()
   })
 })

@@ -1,4 +1,4 @@
-import { setTheme } from './ui'
+import { mainTable, setTheme } from './ui'
 import { expect, test, type Page } from '@playwright/test'
 import { mkdirSync } from 'node:fs'
 import { demoCredentials } from './demo'
@@ -50,11 +50,11 @@ test('each object type has its own workspace and class attributes', async ({ pag
 
   await resetWorkspace(page, 'Articles')
   await tabs.getByRole('button', { name: 'Articles' }).click()
-  const table = page.getByTestId('object-table')
+  const table = mainTable(page, 'Articles')
   await expect(table).toBeVisible()
   await expect(page.locator('.pane-tab', { hasText: 'Articles' })).toBeVisible()
   await expect(page.locator('.pane-tab', { hasText: 'Selections' })).toBeVisible()
-  await page.getByTestId('object-row').first().click()
+  await table.getByTestId('object-row').first().click()
   await page.locator('[data-view-type="class_attributes"]').click()
   const classes = page.getByTestId('class-attributes')
   await expect(classes).toBeVisible()

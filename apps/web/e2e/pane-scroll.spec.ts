@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
+import { mainTable } from './ui'
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -8,15 +9,15 @@ async function login(page: Page) {
   await page.getByTestId('email').fill(demo.email)
   await page.getByTestId('password').fill(demo.password)
   await page.getByRole('button', { name: 'Sign in' }).click()
-  const filter = page.getByTestId('quick-filter').first()
+  const filter = mainTable(page).getByTestId('quick-filter').first()
   if ((await filter.inputValue()) !== '') await filter.fill('')
-  await expect(page.getByTestId('object-row').nth(20)).toBeVisible()
+  await expect(mainTable(page).getByTestId('object-row').nth(20)).toBeVisible()
 }
 
 test('details pane keeps a single scroll container that fills the pane', async ({ page }) => {
   test.setTimeout(60_000)
   await login(page)
-  await page.getByTestId('object-row').first().click()
+  await mainTable(page).getByTestId('object-row').first().click()
   await page.locator('[data-view-type="object_detail"]').first().click()
   const detail = page.getByTestId('object-detail')
   await expect(detail.locator('.field').first()).toBeVisible()
@@ -64,7 +65,7 @@ test('details pane keeps a single scroll container that fills the pane', async (
   expect(detailReport.gap, JSON.stringify(detailReport)).toBeGreaterThanOrEqual(-2)
   expect(detailReport.gap, JSON.stringify(detailReport)).toBeLessThan(48)
 
-  const gridReport = await page.getByTestId('object-table').evaluate((table) => {
+  const gridReport = await mainTable(page).evaluate((table) => {
     const row = table.querySelector('[data-testid="object-row"]') as HTMLElement | null
     const grid = table.querySelector('.grid') as HTMLElement | null
     const body = table.closest('.pane-body') as HTMLElement | null

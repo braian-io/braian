@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
+import { mainTable } from './ui'
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -12,11 +13,11 @@ async function login(page: Page) {
 
 async function openProducts(page: Page) {
   await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
-  await expect(page.getByTestId('object-table')).toBeVisible()
+  await expect(mainTable(page)).toBeVisible()
 }
 
 function rowByName(page: Page, name: RegExp | string) {
-  return page.locator('[data-testid="object-row"]').filter({ hasText: name }).first()
+  return mainTable(page).getByTestId('object-row').filter({ hasText: name }).first()
 }
 
 test('Status cell uses Select and persists; Type/Version stay read-only', async ({ page }) => {

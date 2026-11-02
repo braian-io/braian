@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
+import { mainTable } from './ui'
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -12,7 +13,7 @@ async function login(page: Page) {
 
 async function openProducts(page: Page) {
   await page.locator('.pane-tab-list').getByRole('button', { name: 'Products', exact: true }).click()
-  await expect(page.getByTestId('object-table')).toBeVisible()
+  await expect(mainTable(page)).toBeVisible()
 }
 
 async function openSelections(page: Page) {

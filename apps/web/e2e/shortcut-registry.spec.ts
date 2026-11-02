@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
+import { mainTable } from './ui'
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -12,12 +13,12 @@ async function login(page: Page) {
 
 async function openProducts(page: Page) {
   await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
-  await expect(page.getByTestId('object-table')).toBeVisible({ timeout: 60_000 })
+  await expect(mainTable(page)).toBeVisible({ timeout: 60_000 })
   await expect(page.getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
 }
 
 async function visibleHeaderIds(page: Page) {
-  return page.locator('.head [data-testid^="col-"]').evaluateAll((nodes) =>
+  return mainTable(page).locator('.head [data-testid^="col-"]').evaluateAll((nodes) =>
     nodes.map((node) => node.getAttribute('data-testid')).filter((id): id is string => Boolean(id)),
   )
 }
@@ -51,7 +52,6 @@ test.describe('shortcut registry', () => {
     await expect(page.locator('.pane-tab', { hasText: 'Articles' })).toBeVisible({ timeout: 30_000 })
 
     await page.keyboard.press('Alt+Shift+ArrowLeft')
-    await page.waitForTimeout(200)
     await expect(page.getByTestId('dock')).toBeVisible()
     await expect(page.getByTestId('palette-input')).toHaveCount(0)
 
@@ -67,7 +67,7 @@ test.describe('shortcut registry', () => {
     const before = await visibleHeaderIds(page)
     expect(before.length).toBeGreaterThan(2)
     const target = before[1]!
-    const header = page.getByTestId(target)
+    const header = mainTable(page).getByTestId(target)
     await header.click()
     await expect(header).toHaveAttribute('data-active-column', 'true')
 
@@ -84,17 +84,16 @@ test.describe('shortcut registry', () => {
     expect(afterLeft.indexOf(target)).toBe(before.indexOf(target) - 1)
 
     // #132 guard: while a cell editor is open, Ctrl+Shift must not move columns.
-    const nameHeader = page.locator('.head [data-testid^="col-"]').filter({ hasText: /^Name/ }).first()
+    const nameHeader = mainTable(page).locator('.head [data-testid^="col-"]').filter({ hasText: /^Name/ }).first()
     const nameId = await nameHeader.getAttribute('data-testid')
     expect(nameId).toBeTruthy()
     const colId = nameId!.replace(/^col-/, '')
-    const row = page.getByTestId('object-row').filter({ hasText: 'Mature cheddar' }).first()
+    const row = mainTable(page).getByTestId('object-row').filter({ hasText: 'Mature cheddar' }).first()
     await row.locator(`[data-column="${colId}"]`).dblclick()
     await expect(page.locator('.cell-editor, [data-testid^="cell-editor"]').first()).toBeVisible({ timeout: 10_000 })
 
     const mid = await visibleHeaderIds(page)
     await page.keyboard.press('Control+Shift+ArrowRight')
-    await page.waitForTimeout(400)
     const still = await visibleHeaderIds(page)
     expect(still).toEqual(mid)
     await page.keyboard.press('Escape')

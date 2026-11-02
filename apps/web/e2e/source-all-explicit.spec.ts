@@ -17,7 +17,7 @@ function pane(page: Page, viewId: string): Locator {
 }
 
 async function chooseSource(page: Page, target: Locator, title: string) {
-  await target.getByTestId('object-table').click({ position: { x: 24, y: 24 } })
+  await target.getByTestId('object-table').first().click({ position: { x: 24, y: 24 } })
   await target.hover()
   await target.getByTestId('view-menu').click()
   await page.getByTestId('context-menu').getByRole('menuitem', { name: 'Select source' }).click()
@@ -78,7 +78,7 @@ test.describe('explicit All source (row 103)', () => {
       const tree = pane(page, treeId)
       const articles = pane(page, articlesId)
       await expect(tree.getByTestId('structure-tree')).toBeVisible()
-      await expect(articles.getByTestId('object-table')).toBeVisible()
+      await expect(articles.getByTestId('object-table').first()).toBeVisible()
       await expect(articles.getByTestId('object-row').first()).toBeVisible()
 
       const allRows = await articles.getByTestId('object-row').count()
@@ -101,7 +101,7 @@ test.describe('explicit All source (row 103)', () => {
       await expect(articles.getByTestId('object-row').filter({ hasText: 'ART-OAT-1L' })).toBeVisible()
 
       // The current source is marked when the submenu opens again.
-      await articles.getByTestId('object-table').click({ position: { x: 24, y: 24 } })
+      await articles.getByTestId('object-table').first().click({ position: { x: 24, y: 24 } })
       await articles.hover()
       await articles.getByTestId('view-menu').click()
       await page.getByTestId('context-menu').getByRole('menuitem', { name: 'Select source' }).click()
