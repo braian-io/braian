@@ -87,6 +87,7 @@ test('dynamic selections can be created, edited and deleted with usage', async (
   expect(bound).toBeTruthy()
 
   const row = await selectionRow(page, 'Fresh cheese')
+  await expect(row).toBeVisible()
   await row.getByTestId('selection-menu').click()
   const menu = page.getByTestId('context-menu')
   await expect(menu).toBeVisible()
@@ -104,6 +105,7 @@ test('dynamic selections can be created, edited and deleted with usage', async (
   await expect(await selectionRow(page, 'Fresh cheese')).toHaveCount(0)
 
   const edited = await selectionRow(page, 'Aged cheese')
+  await expect(edited).toBeVisible()
   await edited.getByTestId('selection-menu').click()
   await expect(menu).toBeVisible()
   await menu.getByRole('button', { name: 'Delete selection' }).click()

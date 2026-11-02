@@ -370,6 +370,7 @@ export function AssortmentList({ session }: { session: SelectionSession }) {
             <div
               key={id}
               className="assortment-row"
+              data-testid="assortment-row"
               onContextMenu={(event) => {
                 event.preventDefault()
                 event.stopPropagation()
@@ -378,7 +379,6 @@ export function AssortmentList({ session }: { session: SelectionSession }) {
             >
               <button
                 type="button"
-                data-testid="assortment-row"
                 className={selected ? 'on' : ''}
                 onClick={() => {
                   setOpenId(id)
