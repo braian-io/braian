@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
+import { mainTable } from './ui'
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -7,7 +8,7 @@ async function login(page: Page) {
   await page.getByTestId('email').fill(demo.email)
   await page.getByTestId('password').fill(demo.password)
   await page.getByRole('button', { name: 'Sign in' }).click()
-  await expect(page.getByTestId('object-table').first()).toBeVisible({ timeout: 60_000 })
+  await expect(mainTable(page)).toBeVisible({ timeout: 60_000 })
 }
 
 test.describe('openTypeView waits for workspace (Notion 112)', () => {

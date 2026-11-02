@@ -1,4 +1,4 @@
-import { setTheme } from './ui'
+import { mainTable, setTheme } from './ui'
 import { expect, test, type Page } from '@playwright/test'
 import { mkdirSync } from 'node:fs'
 import { demoCredentials } from './demo'
@@ -21,14 +21,16 @@ async function login(page: Page) {
   await page.getByTestId('email').fill(demo.email)
   await page.getByTestId('password').fill(demo.password)
   await page.getByRole('button', { name: 'Sign in' }).click()
-  await expect(page.getByTestId('object-table').first()).toBeVisible()
+  await expect(mainTable(page)).toBeVisible()
 }
 
 test('a person saves directly and reviews an agent draft field by field', async ({ page }) => {
   test.setTimeout(120_000)
   await login(page)
-  await page.locator('nav.tabs').getByRole('button', { name: /^Articles/ }).click()
-  const table = page.locator('[data-testid=object-table]:visible').first()
+  const articlesTab = page.locator('nav.tabs').getByRole('button', { name: /^Articles/ })
+  await articlesTab.click()
+  await expect(articlesTab).toHaveClass(/active/)
+  const table = mainTable(page, 'Articles')
   const filter = table.getByTestId('quick-filter').first()
   // Hero articles sort first by number (ART-). Leave them alone so later
   // specs can open a known product. Synthetic articles are the fixture here.
@@ -105,8 +107,10 @@ test('a person saves directly and reviews an agent draft field by field', async 
   const paletteTitle = total === 1 ? '1 suggested change' : `${total} suggested changes`
 
   await page.reload()
-  await page.locator('nav.tabs').getByRole('button', { name: /^Articles/ }).click()
-  const articles = page.locator('[data-testid=object-table]:visible').first()
+  const articlesTabAgain = page.locator('nav.tabs').getByRole('button', { name: /^Articles/ })
+  await articlesTabAgain.click()
+  await expect(articlesTabAgain).toHaveClass(/active/)
+  const articles = mainTable(page, 'Articles')
   await expect(articles).toBeVisible()
   const marked = page.locator(`#object-row-${objectId}`)
   // The suffix is a new search token and the row can fall outside the virtual

@@ -1,4 +1,51 @@
-import { expect, type Page } from '@playwright/test'
+import { expect, type Locator, type Page } from '@playwright/test'
+
+/** The pane that holds the named object table, not a peer table with the same test ids. */
+export function paneWithTab(page: Page, title: string): Locator {
+  return page.locator('section.pane').filter({
+    has: page.locator('.pane-tab[data-view-type="object_table"]', { hasText: title }),
+  })
+}
+
+/** Main object table in a type workspace. Products is the default type workspace. */
+export function mainTable(page: Page, title = 'Products'): Locator {
+  return paneWithTab(page, title).getByTestId('object-table').first()
+}
+
+/**
+ * Focus the main table before opening the Fields palette. The palette's fields
+ * host is the last mounted object table, so a peer table would win; close the
+ * peer and click the main row again before opening Fields.
+ */
+export async function focusMainTable(page: Page, title = 'Products'): Promise<Locator> {
+  const table = mainTable(page, title)
+  await expect(table).toBeVisible()
+  const rows = table.getByTestId('object-row')
+  await expect(rows.first()).toBeVisible()
+  await rows.first().click()
+  await expect(rows.first()).toHaveAttribute('aria-selected', 'true')
+
+  // The Fields host is global and the last mounted object table wins. Close any
+  // peer table before opening the palette, then click the selected main row
+  // again so the main table publishes the host after the peer is gone.
+  const objects = page.locator('section.pane').filter({
+    has: page.locator('.pane-tab[data-view-type="object_table"]'),
+  })
+  const peer = objects
+    .filter({ hasNot: page.locator('.pane-tab', { hasText: title }) })
+    .first()
+  if ((await peer.count()) > 0) {
+    const peerTable = peer.getByTestId('object-table').first()
+    await peer
+      .locator('.pane-tab[data-view-type="object_table"] .tab-x')
+      .first()
+      .click({ force: true })
+    await expect(peerTable).toHaveCount(0)
+  }
+  await rows.first().click()
+  await expect(rows.first()).toHaveAttribute('aria-selected', 'true')
+  return table
+}
 
 /** Switch the theme through the user menu and wait until `<html data-theme>` follows. */
 export async function setTheme(page: Page, theme: 'light' | 'dark') {

@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
+import { focusMainTable, mainTable } from './ui'
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -11,12 +12,14 @@ async function login(page: Page) {
 }
 
 async function openProducts(page: Page) {
-  await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
-  await expect(page.getByTestId('object-table').first()).toBeVisible()
+  const tab = page.locator('nav.tabs').getByRole('button', { name: /^Products/ })
+  await tab.click()
+  await expect(tab).toHaveClass(/active/)
+  await expect(mainTable(page)).toBeVisible()
 }
 
 async function openFieldsPalette(page: Page) {
-  await page.getByTestId('object-table').first().focus()
+  await focusMainTable(page)
   await page.keyboard.press('Control+k')
   const palette = page.getByTestId('command-palette')
   await expect(palette).toBeVisible()
@@ -74,7 +77,7 @@ async function drillRight(page: Page, rowTestId: string) {
 }
 
 function cheddarRow(page: Page) {
-  return page.locator('[data-testid="object-row"]').filter({ hasText: 'Mature cheddar' }).first()
+  return mainTable(page).getByTestId('object-row').filter({ hasText: 'Mature cheddar' }).first()
 }
 
 test.describe('field picker on Products', () => {
@@ -133,8 +136,8 @@ test.describe('field picker on Products', () => {
     await descCell.dblclick()
     await expect(page.locator('[data-testid^="cell-editor-description"]').first()).toBeVisible()
     patches.length = 0
-    await page.locator('[data-testid="object-table"]').first().click({ position: { x: 8, y: 8 } })
-    await page.waitForTimeout(200)
+    await mainTable(page).click({ position: { x: 8, y: 8 } })
+    await expect(page.locator('[data-testid^="cell-editor-description"]')).toHaveCount(0)
     expect(patches.filter((body) => body.includes('description'))).toEqual([])
 
     // Specific net weight → Edit field → First
@@ -154,7 +157,7 @@ test.describe('field picker on Products', () => {
     await expect(row.locator('[data-testid^="hop-cell-articles>net_weight"]').first()).toContainText(/200\s*g/)
 
     // Edit field… on the specific column → First
-    const specificHeader = page.locator('[data-testid^="col-articles>net_weight"]').filter({ hasText: /specific|200|g/i }).first()
+    const specificHeader = mainTable(page).locator('[data-testid^="col-articles>net_weight"]').filter({ hasText: /specific|200|g/i }).first()
     await specificHeader.click({ button: 'right' })
     const menu = page.getByTestId('context-menu')
     await expect(menu).toBeVisible()
@@ -165,8 +168,8 @@ test.describe('field picker on Products', () => {
     await enterOn(page, 'fields-row-g')
     await page.keyboard.press('Escape')
 
-    await expect(page.locator('[data-testid^="col-articles>net_weight"]').first()).toContainText(/first/i)
-    await expect(page.locator('[data-testid^="col-articles>net_weight"]').first()).not.toContainText(/specific/i)
+    await expect(mainTable(page).locator('[data-testid^="col-articles>net_weight"]').first()).toContainText(/first/i)
+    await expect(mainTable(page).locator('[data-testid^="col-articles>net_weight"]').first()).not.toContainText(/specific/i)
     // First of ART-CHED-200 / ART-CHED-400 by peer key → 200 g or 0.2 kg depending on unit
     await expect(row.locator('[data-testid^="hop-cell-articles>net_weight"]').first()).toContainText(/200\s*g|0\.2\s*kg/)
   })
@@ -207,7 +210,7 @@ test.describe('field picker on Products', () => {
     await page.keyboard.press('Escape')
     const row = cheddarRow(page)
     await expect(row.locator('[data-testid^="hop-cell-articles>net_weight"]').first()).toContainText(/200\s*g/)
-    await expect(page.locator('[data-testid^="col-articles>net_weight"]').filter({ hasText: /ART-CHED-200/i })).toBeVisible()
+    await expect(mainTable(page).locator('[data-testid^="col-articles>net_weight"]').filter({ hasText: /ART-CHED-200/i })).toBeVisible()
   })
 
   test('Edit field replaces all→first in place after back navigation', async ({ page }) => {
@@ -222,8 +225,8 @@ test.describe('field picker on Products', () => {
     await enterOn(page, 'fields-row-kg')
     await page.keyboard.press('Escape')
 
-    const headers = () => page.locator('[data-testid^="col-articles>net_weight"]')
-    const allHeader = page.locator('[data-testid^="col-articles>net_weight"]').filter({ hasText: /\ball\b/i }).first()
+    const headers = () => mainTable(page).locator('[data-testid^="col-articles>net_weight"]')
+    const allHeader = mainTable(page).locator('[data-testid^="col-articles>net_weight"]').filter({ hasText: /\ball\b/i }).first()
     await expect(allHeader).toBeVisible()
     const beforeHeaders = await headers().allTextContents()
     const beforeCount = beforeHeaders.length
@@ -249,7 +252,7 @@ test.describe('field picker on Products', () => {
     expect(afterHeaders[allIndex] ?? '').toMatch(/first/i)
 
     await page.reload()
-    await expect(page.getByTestId('object-table').first()).toBeVisible({ timeout: 60_000 })
+    await expect(mainTable(page)).toBeVisible({ timeout: 60_000 })
     const reloaded = await headers().allTextContents()
     expect(reloaded.length).toBe(beforeCount)
     expect(reloaded.some((text) => /\ball\b/i.test(text))).toBe(false)
@@ -276,9 +279,9 @@ test.describe('field picker on Products', () => {
     await enterOn(page, 'fields-row-kg')
     await page.keyboard.press('Escape')
 
-    const headers = page.locator('[data-testid^="col-articles>net_weight"]')
+    const headers = mainTable(page).locator('[data-testid^="col-articles>net_weight"]')
     await expect(headers).toHaveCount(2)
-    const allHeader = page.locator('[data-testid^="col-articles>net_weight"]').filter({ hasText: /\ball\b/i }).first()
+    const allHeader = mainTable(page).locator('[data-testid^="col-articles>net_weight"]').filter({ hasText: /\ball\b/i }).first()
     await allHeader.click({ button: 'right' })
     await page.getByTestId('context-menu').getByRole('menuitem', { name: /Edit field/i }).click()
     await expect(page.getByTestId('fields-mode')).toBeVisible()
@@ -323,7 +326,7 @@ test.describe('field picker on Products', () => {
     for (const card of ['first', 'all', 'specific'] as const) {
       await addHop(card)
     }
-    const hopHeaders = () => page.locator('[data-testid^="col-articles>net_weight"]')
+    const hopHeaders = () => mainTable(page).locator('[data-testid^="col-articles>net_weight"]')
     await expect(hopHeaders()).toHaveCount(3)
 
     // Braian: hide every hop column (visible:false, old order kept in prefs).
@@ -347,7 +350,7 @@ test.describe('field picker on Products', () => {
     expect(texts[2]).toMatch(/first/i)
 
     await page.reload()
-    await expect(page.getByTestId('object-table').first()).toBeVisible({ timeout: 60_000 })
+    await expect(mainTable(page)).toBeVisible({ timeout: 60_000 })
     const reloaded = await hopHeaders().allTextContents()
     expect(reloaded).toHaveLength(3)
     expect(reloaded[0]).toMatch(/\ball\b/i)
@@ -368,15 +371,15 @@ test.describe('field picker on Products', () => {
     await enterOn(page, 'fields-row-kg')
     await page.keyboard.press('Escape')
 
-    const headers = page.locator('.head [data-testid^="col-"]').first()
+    const headers = mainTable(page).locator('.head [data-testid^="col-"]')
     const count = await headers.count()
     expect(count).toBeGreaterThan(5)
     // Must include system columns that previously drifted (Type/Status/Version).
-    await expect(page.locator('.head [data-testid="col-type"]').first()).toBeVisible()
-    await expect(page.locator('.head [data-testid="col-status"]').first()).toBeVisible()
-    await expect(page.locator('.head [data-testid="col-version"]').first()).toBeVisible()
+    await expect(mainTable(page).locator('.head [data-testid="col-type"]').first()).toBeVisible()
+    await expect(mainTable(page).locator('.head [data-testid="col-status"]').first()).toBeVisible()
+    await expect(mainTable(page).locator('.head [data-testid="col-version"]').first()).toBeVisible()
 
-    const row = page.locator('[data-testid="object-row"]').filter({ hasText: 'Mature cheddar' }).first()
+    const row = mainTable(page).getByTestId('object-row').filter({ hasText: 'Mature cheddar' }).first()
     await expect(row).toBeVisible()
     for (let i = 0; i < count; i += 1) {
       const header = headers.nth(i)
@@ -413,7 +416,7 @@ test.describe('field picker on Products', () => {
       await tabClose.click({ force: true }).catch(() => undefined)
     }
 
-    const row = page.locator('[data-testid="object-row"]').filter({ hasText: 'Mature cheddar' }).first()
+    const row = mainTable(page).getByTestId('object-row').filter({ hasText: 'Mature cheddar' }).first()
     const descCell = row.locator('[data-column^="description"]').first()
     await expect(descCell).toBeVisible({ timeout: 30_000 })
     // Description is loaded through pathValues. The editor copies the painted
@@ -433,16 +436,16 @@ test.describe('field picker on Products', () => {
     await openProducts(page)
     await expect(page.getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
 
-    const headCols = () => page.locator('.head [data-testid^="col-"]').first()
-    await expect(page.locator('.head [data-testid="col-brand"]').first()).toBeVisible()
+    const headCols = () => mainTable(page).locator('.head [data-testid^="col-"]')
+    await expect(mainTable(page).locator('.head [data-testid="col-brand"]').first()).toBeVisible()
 
     // Column change: hide Brand, then switch tabs immediately (no wait for PUT).
-    await page.locator('.head [data-testid="col-brand"]').first().click({ button: 'right' })
+    await mainTable(page).locator('.head [data-testid="col-brand"]').first().click({ button: 'right' })
     const menu = page.getByTestId('context-menu')
     await expect(menu).toBeVisible()
     await menu.getByRole('menuitem', { name: 'Hide column' }).click()
     await expect(menu).toHaveCount(0)
-    await expect(page.locator('.head [data-testid="col-brand"]').first()).toHaveCount(0)
+    await expect(mainTable(page).locator('.head [data-testid="col-brand"]').first()).toHaveCount(0)
 
     const expected = await headCols().evaluateAll((nodes) =>
       nodes.map((n) => n.getAttribute('data-testid')),
@@ -462,7 +465,7 @@ test.describe('field picker on Products', () => {
     ).toEqual(expected)
 
     await page.reload()
-    await expect(page.getByTestId('object-table').first()).toBeVisible({ timeout: 60_000 })
+    await expect(mainTable(page)).toBeVisible({ timeout: 60_000 })
     await expect(page.getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
     await expect.poll(async () =>
       headCols().evaluateAll((nodes) => nodes.map((n) => n.getAttribute('data-testid'))),
@@ -473,14 +476,14 @@ test.describe('field picker on Products', () => {
     await login(page)
     await openProducts(page)
     await expect(page.getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
-    await expect(page.locator('.head [data-testid="col-brand"]').first()).toBeVisible()
+    await expect(mainTable(page).locator('.head [data-testid="col-brand"]').first()).toBeVisible()
 
     await openFieldsPalette(page)
     await expect(page.getByTestId('fields-mode')).toBeVisible()
 
     // Palette may overlay the header; force the contextmenu onto the Brand cell so
     // shared-context-menu still receives it (same path as a real header right-click).
-    const brand = page.locator('.head [data-testid="col-brand"]').first()
+    const brand = mainTable(page).locator('.head [data-testid="col-brand"]').first()
     await brand.dispatchEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })
     const menu = page.getByTestId('context-menu')
     await expect(menu).toBeVisible()

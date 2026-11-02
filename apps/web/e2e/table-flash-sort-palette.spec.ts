@@ -1,9 +1,6 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
 import { demoCredentials } from './demo'
-
-function mainTable(page: Page) {
-  return page.getByTestId('object-table').first()
-}
+import { focusMainTable, mainTable } from './ui'
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -16,11 +13,11 @@ async function login(page: Page) {
 
 async function openProducts(page: Page) {
   await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
-  await expect(page.getByTestId('object-table').first()).toBeVisible()
+  await expect(mainTable(page)).toBeVisible()
 }
 
 async function openFieldsPalette(page: Page) {
-  await page.getByTestId('object-table').first().focus()
+  await focusMainTable(page)
   await page.keyboard.press('Control+k')
   await expect(page.getByTestId('command-palette')).toBeVisible()
   await page.getByTestId('palette-input').fill('Select fields')
@@ -72,21 +69,21 @@ test.describe('table flash, sort cycle, fields palette filter', () => {
 
     // object-table mounts only after prefs; while held we show the skeleton shell.
     await expect(page.getByTestId('column-prefs-skeleton').first()).toBeVisible()
-    await expect(page.getByTestId('object-table').first()).toHaveCount(0)
-    await expect(page.locator('.head [data-testid="col-type"]').first()).toHaveCount(0)
-    await expect(page.locator('.head [data-testid="col-status"]').first()).toHaveCount(0)
-    await expect(page.locator('.head [data-testid="col-version"]').first()).toHaveCount(0)
-    await expect(page.locator('.head [data-testid="col-key"]').first()).toHaveCount(0)
+    await expect(mainTable(page)).toHaveCount(0)
+    await expect(mainTable(page).locator('.head [data-testid="col-type"]').first()).toHaveCount(0)
+    await expect(mainTable(page).locator('.head [data-testid="col-status"]').first()).toHaveCount(0)
+    await expect(mainTable(page).locator('.head [data-testid="col-version"]').first()).toHaveCount(0)
+    await expect(mainTable(page).locator('.head [data-testid="col-key"]').first()).toHaveCount(0)
 
     release()
 
     await expect(page.getByTestId('column-prefs-skeleton').first()).toHaveCount(0)
-    await expect(page.getByTestId('object-table').first()).toBeVisible()
-    await expect(page.locator('.head [data-testid="col-number"]').first()).toBeVisible()
-    await expect(page.locator('.head [data-testid="col-name"]').first()).toBeVisible()
-    await expect(page.locator('.head [data-testid="col-brand"]').first()).toBeVisible()
-    await expect(page.locator('.head [data-testid="col-type"]').first()).toHaveCount(0)
-    await expect(page.locator('.head [data-testid="col-status"]').first()).toHaveCount(0)
+    await expect(mainTable(page)).toBeVisible()
+    await expect(mainTable(page).locator('.head [data-testid="col-number"]').first()).toBeVisible()
+    await expect(mainTable(page).locator('.head [data-testid="col-name"]').first()).toBeVisible()
+    await expect(mainTable(page).locator('.head [data-testid="col-brand"]').first()).toBeVisible()
+    await expect(mainTable(page).locator('.head [data-testid="col-type"]').first()).toHaveCount(0)
+    await expect(mainTable(page).locator('.head [data-testid="col-status"]').first()).toHaveCount(0)
   })
 
   test('Name cycles asc → desc → none; Brand and Number sort or show not-sortable', async ({ page }) => {
@@ -94,7 +91,7 @@ test.describe('table flash, sort cycle, fields palette filter', () => {
     await openProducts(page)
     await expect(headerIds(page).first()).toBeVisible()
 
-    const name = page.locator('.head [data-testid="col-name"]').first()
+    const name = mainTable(page).locator('.head [data-testid="col-name"]').first()
     await expect(name).toBeVisible()
     const nameBtn = name.locator('button.column-header-btn')
 
@@ -188,7 +185,7 @@ test.describe('table flash, sort cycle, fields palette filter', () => {
 
     const before = await headerIds(page).count()
     expect(before).toBeGreaterThan(1)
-    await expect(page.locator('.head [data-testid="col-name"]').first()).toBeVisible()
+    await expect(mainTable(page).locator('.head [data-testid="col-name"]').first()).toBeVisible()
 
     await openFieldsPalette(page)
     const input = page.getByTestId('fields-mode-input')
@@ -201,7 +198,7 @@ test.describe('table flash, sort cycle, fields palette filter', () => {
     await page.keyboard.press('Escape')
 
     // Without the fix, order was [] and the toggle collapsed the table to Brand alone.
-    await expect(page.locator('.head [data-testid="col-name"]').first()).toBeVisible()
+    await expect(mainTable(page).locator('.head [data-testid="col-name"]').first()).toBeVisible()
     const after = await headerIds(page).count()
     expect(after).toBeGreaterThan(1)
     await expect(page.getByTestId('column-prefs-load-error').first()).toBeVisible()
@@ -240,7 +237,7 @@ test.describe('table flash, sort cycle, fields palette filter', () => {
     await expect(check).toHaveAttribute('aria-checked', 'true')
     await expect(check).toHaveAttribute('data-state', 'checked')
     // Column visible behind the palette
-    await expect(page.locator('.head [data-testid^="col-nutriscore.label"]').first()).toBeVisible()
+    await expect(mainTable(page).locator('.head [data-testid^="col-nutriscore.label"]').first()).toBeVisible()
 
     // Enter again: hide + uncheck; filter stays
     await page.keyboard.press('Enter')
@@ -248,7 +245,7 @@ test.describe('table flash, sort cycle, fields palette filter', () => {
     await expect(label).toHaveAttribute('data-active', 'true')
     await expect(check).toHaveAttribute('aria-checked', 'false')
     await expect(check).toHaveAttribute('data-state', 'unchecked')
-    await expect(page.locator('.head [data-testid^="col-nutriscore.label"]').first()).toHaveCount(0)
+    await expect(mainTable(page).locator('.head [data-testid^="col-nutriscore.label"]').first()).toHaveCount(0)
   })
 
 })

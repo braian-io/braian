@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
+import { mainTable } from './ui'
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -10,13 +11,9 @@ async function login(page: Page) {
   await expect(page.getByTestId('dock')).toBeVisible()
 }
 
-function mainTable(page: Page) {
-  return page.getByTestId('object-table').first()
-}
-
 async function openProducts(page: Page) {
   await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
-  await expect(page.getByTestId('object-table').first()).toBeVisible({ timeout: 60_000 })
+  await expect(mainTable(page)).toBeVisible({ timeout: 60_000 })
   await expect(page.getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
 }
 
@@ -55,7 +52,6 @@ test.describe('shortcut registry', () => {
     await expect(page.locator('.pane-tab', { hasText: 'Articles' })).toBeVisible({ timeout: 30_000 })
 
     await page.keyboard.press('Alt+Shift+ArrowLeft')
-    await page.waitForTimeout(200)
     await expect(page.getByTestId('dock')).toBeVisible()
     await expect(page.getByTestId('palette-input')).toHaveCount(0)
 
@@ -92,13 +88,12 @@ test.describe('shortcut registry', () => {
     const nameId = await nameHeader.getAttribute('data-testid')
     expect(nameId).toBeTruthy()
     const colId = nameId!.replace(/^col-/, '')
-    const row = page.getByTestId('object-row').filter({ hasText: 'Mature cheddar' }).first()
+    const row = mainTable(page).getByTestId('object-row').filter({ hasText: 'Mature cheddar' }).first()
     await row.locator(`[data-column="${colId}"]`).dblclick()
     await expect(page.locator('.cell-editor, [data-testid^="cell-editor"]').first()).toBeVisible({ timeout: 10_000 })
 
     const mid = await visibleHeaderIds(page)
     await page.keyboard.press('Control+Shift+ArrowRight')
-    await page.waitForTimeout(400)
     const still = await visibleHeaderIds(page)
     expect(still).toEqual(mid)
     await page.keyboard.press('Escape')

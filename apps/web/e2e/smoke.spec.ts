@@ -1,4 +1,4 @@
-import { setTheme } from './ui'
+import { mainTable, setTheme } from './ui'
 import { expect, test, type Page } from '@playwright/test'
 import { mkdirSync } from 'node:fs'
 import { demoCredentials } from './demo'
@@ -13,7 +13,7 @@ async function login(page: Page) {
   await page.getByTestId('password').fill(demo.password)
   await page.getByRole('button', { name: 'Sign in' }).click()
   await expect(page.getByTestId('structure-tree')).toBeVisible()
-  await expect(page.getByTestId('object-table').first()).toBeVisible()
+  await expect(mainTable(page)).toBeVisible()
 }
 
 test('login, edit, search, proposal, rollback and live update', async ({ page }) => {
@@ -22,13 +22,13 @@ test('login, edit, search, proposal, rollback and live update', async ({ page })
 
   await login(page)
   await expect(page.getByTestId('structure-tree')).toContainText('Cheese')
-  const filter = page.getByTestId('quick-filter').first()
+  const filter = mainTable(page).getByTestId('quick-filter').first()
   if ((await filter.inputValue()) !== '') await filter.fill('')
-  await expect(page.getByTestId('object-row').first()).toBeVisible()
-  await expect(page.getByTestId('object-table').first()).toContainText('Name')
-  const named = page.getByTestId('object-row').filter({ hasText: 'Cheddar' }).first()
+  await expect(mainTable(page).getByTestId('object-row').first()).toBeVisible()
+  await expect(mainTable(page)).toContainText('Name')
+  const named = mainTable(page).getByTestId('object-row').filter({ hasText: 'Cheddar' }).first()
   if ((await named.count()) > 0) await named.click()
-  else await page.getByTestId('object-row').first().click()
+  else await mainTable(page).getByTestId('object-row').first().click()
   await page.locator('[data-view-type="object_detail"]').first().click()
   await expect(page.getByTestId('object-detail').locator('input').first()).toBeVisible()
   await page.screenshot({ path: `${shots}/workspace-dark.png` })
@@ -46,7 +46,7 @@ test('login, edit, search, proposal, rollback and live update', async ({ page })
   await expect(page.getByTestId('detail-error')).toHaveCount(0)
   await expect(page.getByTestId('activity-log')).toContainText('Saved')
 
-  await page.getByTestId('table-add-row').click()
+  await mainTable(page).getByTestId('table-add-row').click()
   await page.getByTestId('new-number').fill('')
   await page.getByTestId('create-object').click()
   await expect(page.getByTestId('validation-error')).toBeVisible()

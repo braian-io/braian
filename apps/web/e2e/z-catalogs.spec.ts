@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
+import { mainTable } from './ui'
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -156,7 +157,7 @@ test('Ctrl+K Switch catalog opens straight into the catalog list', async ({ page
   await page.reload()
   await expect(page.getByTestId('workspace')).toBeVisible()
   await page.locator('nav.tabs').getByRole('button', { name: /Products/ }).click()
-  await page.getByTestId('object-table').first().click({ position: { x: 24, y: 24 } })
+  await mainTable(page).click({ position: { x: 24, y: 24 } })
   const label = page.locator('.pane.focused').getByTestId('view-source-label')
   await expect(label).toHaveText('All Products')
   await waitForCatalogs(page)
@@ -238,7 +239,7 @@ test('sources workspace, merge profile and a locked brand', async ({ page }) => 
   await restoreProductsMaster(page)
   await page.locator('nav.tabs').getByRole('button', { name: /Products/ }).click()
   await expect(page.getByTestId('catalog-selector')).toContainText(/Master catalog/i)
-  const table = page.getByTestId('object-table').first()
+  const table = mainTable(page)
   await expect(table).toBeVisible({ timeout: 30_000 })
   const filter = table.getByTestId('quick-filter')
   if (await filter.count()) {

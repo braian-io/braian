@@ -1,5 +1,6 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
 import { demoCredentials } from './demo'
+import { mainTable } from './ui'
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -41,10 +42,10 @@ test.describe('object table default columns', () => {
     await clearProductsPrefs(page)
 
     await openProducts(page)
-    await expect(page.getByTestId('object-table').first()).toBeVisible()
-    await expect(page.locator('.head [data-testid="col-number"]').first()).toBeVisible()
-    await expect(page.locator('.head [data-testid="col-name"]').first()).toBeVisible()
-    await expect(page.locator('.head [data-testid="col-brand"]').first()).toBeVisible()
+    await expect(mainTable(page)).toBeVisible()
+    await expect(mainTable(page).locator('.head [data-testid="col-number"]').first()).toBeVisible()
+    await expect(mainTable(page).locator('.head [data-testid="col-name"]').first()).toBeVisible()
+    await expect(mainTable(page).locator('.head [data-testid="col-brand"]').first()).toBeVisible()
   })
 
   test('waits for definitions before seeding default columns', async ({ page }) => {
@@ -71,12 +72,12 @@ test.describe('object table default columns', () => {
 
     // Definitions is still held, so no fallback columns may be latched.
     await expect(page.getByTestId('column-prefs-skeleton').first()).toBeVisible()
-    await expect(page.getByTestId('object-table').first()).toHaveCount(0)
-    await expect(page.locator('.head [data-testid="col-brand"]').first()).toHaveCount(0)
+    await expect(mainTable(page)).toHaveCount(0)
+    await expect(mainTable(page).locator('.head [data-testid="col-brand"]').first()).toHaveCount(0)
 
     releaseDefinitions()
 
-    await expect(page.getByTestId('object-table').first()).toBeVisible()
-    await expect(page.locator('.head [data-testid="col-brand"]').first()).toBeVisible()
+    await expect(mainTable(page)).toBeVisible()
+    await expect(mainTable(page).locator('.head [data-testid="col-brand"]').first()).toBeVisible()
   })
 })

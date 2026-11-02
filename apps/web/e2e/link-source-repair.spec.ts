@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
+import { mainTable } from './ui'
 
 const LINK_TYPE_ID = '018f0000-0000-7000-8000-000000000210'
 const PRODUCT_TYPE_ID = '018f0000-0000-7000-8000-000000000200'
@@ -26,9 +27,9 @@ test('Products pane in the Articles workspace lists rows after link repair', asy
   const workspace = await page.request.get(`/v1/workspaces/${articles!.id}`)
   expect(workspace.ok()).toBeTruthy()
   const { views } = (await workspace.json()) as {
-    views: Array<{ id: string; type: string; pane: string; position: number }>
+    views: Array<{ id: string; type: string; title?: string; pane: string; position: number }>
   }
-  const table = views.find((view) => view.type === 'object_table')
+  const table = views.find((view) => view.type === 'object_table' && view.title === 'Products')
   expect(table?.id).toBeTruthy()
 
   // Simulate the legacy bug: the pane is bound to the link type, not the entity.
@@ -53,11 +54,14 @@ test('Products pane in the Articles workspace lists rows after link repair', asy
   // Reload so the workspace migration heals the link-bound pane on load.
   await page.reload()
   await expect(page.getByTestId('dock')).toBeVisible()
-  await page.locator('nav.tabs').getByRole('button', { name: 'Articles' }).click()
-  await expect(page.getByTestId('object-table').first()).toBeVisible({ timeout: 30_000 })
+  const articlesTab = page.locator('nav.tabs').getByRole('button', { name: /^Articles/ })
+  await articlesTab.click()
+  await expect(articlesTab).toHaveClass(/active/)
+  const products = mainTable(page, 'Products')
+  await expect(products).toBeVisible({ timeout: 30_000 })
 
   // The repaired pane lists the link's source entity, not zero rows.
-  await expect(page.getByTestId('object-row').first()).toBeVisible({ timeout: 60_000 })
+  await expect(products.getByTestId('object-row').first()).toBeVisible({ timeout: 60_000 })
 
   const healed = await page.request.get(`/v1/workspaces/${articles!.id}`)
   const { views: healedViews } = (await healed.json()) as {

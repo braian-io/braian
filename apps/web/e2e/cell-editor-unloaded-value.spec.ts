@@ -1,5 +1,6 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
 import { demoCredentials } from './demo'
+import { focusMainTable, mainTable } from './ui'
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -12,11 +13,11 @@ async function login(page: Page) {
 
 async function openProducts(page: Page) {
   await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
-  await expect(page.getByTestId('object-table').first()).toBeVisible()
+  await expect(mainTable(page)).toBeVisible()
 }
 
 async function openFieldsPalette(page: Page) {
-  await page.getByTestId('object-table').first().focus()
+  await focusMainTable(page)
   await page.keyboard.press('Control+k')
   const palette = page.getByTestId('command-palette')
   await expect(palette).toBeVisible()
@@ -61,14 +62,14 @@ test.describe('cell editor unloaded path-values (Notion 111)', () => {
 
     await login(page)
     await openProducts(page)
-    await expect(page.getByTestId('object-table').first().getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
+    await expect(mainTable(page).getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
 
     // Ensure Description (en) is a visible pathValues column.
     await openFieldsPalette(page)
     await enterOn(page, 'fields-row-description')
     await enterOn(page, 'fields-row-en')
     await page.keyboard.press('Escape')
-    await expect(page.locator('.head [data-testid*="description"]').first()).toBeVisible()
+    await expect(mainTable(page).locator('.head [data-testid*="description"]').first()).toBeVisible()
 
     let release: (() => void) | undefined
     const gate = new Promise<void>((resolve) => {
@@ -84,13 +85,13 @@ test.describe('cell editor unloaded path-values (Notion 111)', () => {
       { timeout: 60_000 },
     )
     await page.reload()
-    await expect(page.getByTestId('object-table').first()).toBeVisible({ timeout: 60_000 })
+    await expect(mainTable(page)).toBeVisible({ timeout: 60_000 })
     await pathValuesRequest
 
     const loading = page.locator('[data-testid^="path-cell-description"][data-loading="true"]').first()
     await expect(loading).toBeVisible({ timeout: 60_000 })
 
-    const loadingRow = page.locator('[data-testid="object-row"]').filter({
+    const loadingRow = mainTable(page).getByTestId('object-row').filter({
       has: page.locator('[data-testid^="path-cell-description"][data-loading="true"]'),
     }).first()
     const descCell = loadingRow.locator('[data-column^="description"]').first()
@@ -99,8 +100,8 @@ test.describe('cell editor unloaded path-values (Notion 111)', () => {
 
     release?.()
     // Prefer the seed cheddar row once Names are painted after the batch lands.
-    await expect(page.getByTestId('object-table').first().getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
-    const row = page.locator('[data-testid="object-row"]').filter({ hasText: 'Mature cheddar' }).first()
+    await expect(mainTable(page).getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
+    const row = mainTable(page).getByTestId('object-row').filter({ hasText: 'Mature cheddar' }).first()
     await expect(row.locator('[data-testid^="path-cell-description"]').first()).toContainText(
       /firm cow'?s-milk cheddar/i,
       { timeout: 30_000 },

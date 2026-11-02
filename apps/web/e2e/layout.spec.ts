@@ -73,7 +73,7 @@ test('divider drag, dock zones, tab order, maximize, reload and keyboard', async
   await login(page)
   const workspace = await enrich(page)
   await clearPersonal(page, workspace.id)
-  const table = workspace.views.find((view) => view.type === 'object_table')
+  const table = workspace.views.find((view) => view.type === 'object_table' && view.title === 'Products')
   const detail = workspace.views.find((view) => view.title === 'Detail')
   const graph = workspace.views.find((view) => view.title === 'Graph')
   if (!table || !detail || !graph) throw new Error('missing enrich views')
@@ -161,7 +161,7 @@ test('double-click a tab maximizes that view and restores the layout', async ({ 
   await login(page)
   const workspace = await enrich(page)
   await clearPersonal(page, workspace.id)
-  const table = workspace.views.find((view) => view.type === 'object_table')
+  const table = workspace.views.find((view) => view.type === 'object_table' && view.title === 'Products')
   const graph = workspace.views.find((view) => view.title === 'Graph')
   if (!table || !graph) throw new Error('missing enrich views')
   const tablePane = page.locator(`section.pane[data-anchor="${table.id}"]`)
@@ -261,10 +261,10 @@ test('dock overlay matches the pane fraction and the window edge', async ({ page
   await login(page)
   const workspace = await enrich(page)
   await clearPersonal(page, workspace.id)
-  const table = workspace.views.find((view) => view.type === 'object_table')
+  const table = workspace.views.find((view) => view.type === 'object_table' && view.title === 'Products')
   if (!table) throw new Error('missing object table')
   const tablePane = page.locator(`section.pane[data-anchor="${table.id}"]`)
-  await expect(page.getByTestId('object-row').first()).toBeVisible()
+  await expect(tablePane.getByTestId('object-row').first()).toBeVisible()
 
   const strips = await page.locator('section.pane .pane-tabs').evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().top))
   expect(Math.max(...strips) - Math.min(...strips)).toBeLessThanOrEqual(1)
@@ -321,7 +321,7 @@ test('dock overlay matches the pane fraction and the window edge', async ({ page
   expect(statusBox.y).toBeGreaterThanOrEqual(gridEmpty.y - 1)
   expect(statusBox.y + statusBox.height).toBeLessThanOrEqual(gridEmpty.y + gridEmpty.height + 1)
   await tablePane.getByTestId('quick-filter').fill('')
-  await expect(page.getByTestId('object-row').first()).toBeVisible()
+  await expect(tablePane.getByTestId('object-row').first()).toBeVisible()
 
   const zones = ['left', 'right', 'top', 'bottom', 'center'] as const
   for (const zone of zones) {

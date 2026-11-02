@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
+import { focusMainTable, mainTable } from './ui'
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -10,17 +11,13 @@ async function login(page: Page) {
   await expect(page.getByTestId('workspace')).toBeVisible()
 }
 
-function mainTable(page: Page) {
-  return page.getByTestId('object-table').first()
-}
-
 async function openProducts(page: Page) {
   await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
-  await expect(page.getByTestId('object-table').first()).toBeVisible()
+  await expect(mainTable(page)).toBeVisible()
 }
 
 async function openFieldsPalette(page: Page) {
-  await page.getByTestId('object-table').first().focus()
+  await focusMainTable(page)
   await page.keyboard.press('Control+k')
   const palette = page.getByTestId('command-palette')
   await expect(palette).toBeVisible()
@@ -111,7 +108,7 @@ test.describe('column drag and system fields', () => {
     expect(afterDrag.indexOf(fromId)).toBeGreaterThan(0)
 
     await page.reload()
-    await expect(page.getByTestId('object-table').first()).toBeVisible({ timeout: 60_000 })
+    await expect(mainTable(page)).toBeVisible({ timeout: 60_000 })
     await expect(page.getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
     const afterReload = await visibleHeaderIds(page)
     expect(afterReload).toEqual(afterDrag)
@@ -121,7 +118,7 @@ test.describe('column drag and system fields', () => {
     if (await name.count()) {
       await name.click()
       await expect.poll(async () => {
-        const first = page.locator('[data-testid="object-row"]').first()
+        const first = mainTable(page).getByTestId('object-row').first()
         return (await first.textContent()) ?? ''
       }).not.toEqual('')
     }

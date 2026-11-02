@@ -1,5 +1,6 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
+import { mainTable } from './ui'
 
 type Workspace = {
   id: string
@@ -16,7 +17,7 @@ async function login(page: Page) {
   await page.getByTestId('email').fill(demo.email)
   await page.getByTestId('password').fill(demo.password)
   await page.getByRole('button', { name: 'Sign in' }).click()
-  await expect(page.getByTestId('object-row').first()).toBeVisible()
+  await expect(mainTable(page).getByTestId('object-row').first()).toBeVisible()
 }
 
 async function workspaceByName(request: APIRequestContext, name: string) {
@@ -47,7 +48,7 @@ test('column width is restored after reload', async ({ page }) => {
   const before = await workspaceByName(page.request, 'Products')
   const view = before.views.find((item) => item.type === 'object_table')
   if (!view) throw new Error('missing object table')
-  const handle = page.getByTestId('resize-name').first()
+  const handle = mainTable(page).getByTestId('resize-name').first()
   const box = await handle.boundingBox()
   if (!box) throw new Error('missing resize handle')
   await page.mouse.move(box.x + 2, box.y + box.height / 2)
@@ -60,8 +61,8 @@ test('column width is restored after reload', async ({ page }) => {
     return table?.sizes?.name ?? 0
   }).toBeGreaterThan(200)
   await page.reload()
-  await expect(page.getByTestId('col-name').first()).toBeVisible()
-  const restored = await page.getByTestId('col-name').first().evaluate((node) => (node as HTMLElement).style.width)
+  await expect(mainTable(page).getByTestId('col-name').first()).toBeVisible()
+  const restored = await mainTable(page).getByTestId('col-name').first().evaluate((node) => (node as HTMLElement).style.width)
   expect(Number.parseFloat(restored)).toBeGreaterThan(200)
   await page.request.post('/v1/views', {
     data: {

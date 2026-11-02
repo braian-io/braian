@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
+import { focusMainTable, mainTable } from './ui'
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -12,7 +13,7 @@ async function login(page: Page) {
 
 async function openProducts(page: Page) {
   await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
-  await expect(page.getByTestId('object-table').first()).toBeVisible()
+  await expect(mainTable(page)).toBeVisible()
 }
 
 async function seedProductsColumnPrefs(page: Page) {
@@ -71,7 +72,7 @@ async function seedProductsColumnPrefs(page: Page) {
 }
 
 async function openFieldsPalette(page: Page) {
-  await page.getByTestId('object-table').first().focus()
+  await focusMainTable(page)
   await page.keyboard.press('Control+k')
   const palette = page.getByTestId('command-palette')
   await expect(palette).toBeVisible()
@@ -122,7 +123,7 @@ test.describe('column prefs multitab', () => {
     await expect(page1.getByTestId('workspace')).toBeVisible()
     await openProducts(page1)
     await expect(page1.getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
-    await expect(page1.locator('.head [data-testid="col-brand"]').first()).toBeVisible()
+    await expect(mainTable(page1).locator('.head [data-testid="col-brand"]').first()).toBeVisible()
 
     // Prime tab 1 like a real session that has saved prefs once: hide then show Brand
     // so latestPrefsDocument retains a settled Brand-visible snapshot.
@@ -134,7 +135,7 @@ test.describe('column prefs multitab', () => {
       { timeout: 30_000 },
     )
     await toggleBrand(page1)
-    await expect(page1.locator('.head [data-testid="col-brand"]').first()).toHaveCount(0)
+    await expect(mainTable(page1).locator('.head [data-testid="col-brand"]').first()).toHaveCount(0)
     await primePut
     const primePut2 = page1.waitForResponse(
       (res) =>
@@ -144,14 +145,14 @@ test.describe('column prefs multitab', () => {
       { timeout: 30_000 },
     )
     await toggleBrand(page1)
-    await expect(page1.locator('.head [data-testid="col-brand"]').first()).toBeVisible()
+    await expect(mainTable(page1).locator('.head [data-testid="col-brand"]').first()).toBeVisible()
     await primePut2
 
     await page2.goto('/')
     await expect(page2.getByTestId('workspace')).toBeVisible({ timeout: 60_000 })
     await openProducts(page2)
     await expect(page2.getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
-    await expect(page2.locator('.head [data-testid="col-brand"]').first()).toBeVisible()
+    await expect(mainTable(page2).locator('.head [data-testid="col-brand"]').first()).toBeVisible()
 
     // Tab 2: Ctrl+K → Fields › → uncheck Brand.
     const put2 = page2.waitForResponse(
@@ -162,11 +163,17 @@ test.describe('column prefs multitab', () => {
       { timeout: 30_000 },
     )
     await toggleBrand(page2)
-    await expect(page2.locator('.head [data-testid="col-brand"]').first()).toHaveCount(0)
+    await expect(mainTable(page2).locator('.head [data-testid="col-brand"]').first()).toHaveCount(0)
     await put2
 
     // Real tab switch: tab 1 goes hidden. Without a dirty gate it would keepalive-PUT
     // its settled Brand-visible snapshot and overwrite tab 2.
+    const strayPut = page1
+      .waitForResponse(
+        (res) => res.url().includes('/column-prefs') && res.request().method() === 'PUT',
+        { timeout: 1_000 },
+      )
+      .catch(() => null)
     await page1.evaluate(() => {
       Object.defineProperty(document, 'visibilityState', {
         configurable: true,
@@ -174,7 +181,7 @@ test.describe('column prefs multitab', () => {
       })
       document.dispatchEvent(new Event('visibilitychange'))
     })
-    await page1.waitForTimeout(500)
+    await strayPut
 
     // Focus tab 1 again — sync from server when clean.
     await page1.bringToFront()
@@ -186,16 +193,16 @@ test.describe('column prefs multitab', () => {
       document.dispatchEvent(new Event('visibilitychange'))
       window.dispatchEvent(new Event('focus'))
     })
-    await page1.locator('.head [data-testid="col-number"]').first().click()
+    await mainTable(page1).locator('.head [data-testid="col-number"]').first().click()
 
-    await expect(page1.locator('.head [data-testid="col-brand"]').first()).toHaveCount(0, {
+    await expect(mainTable(page1).locator('.head [data-testid="col-brand"]').first()).toHaveCount(0, {
       timeout: 30_000,
     })
 
     await page1.reload()
-    await expect(page1.getByTestId('object-table').first()).toBeVisible({ timeout: 60_000 })
+    await expect(mainTable(page1)).toBeVisible({ timeout: 60_000 })
     await expect(page1.getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
-    await expect(page1.locator('.head [data-testid="col-brand"]').first()).toHaveCount(0)
+    await expect(mainTable(page1).locator('.head [data-testid="col-brand"]').first()).toHaveCount(0)
 
     await context.close()
   })
