@@ -72,9 +72,10 @@ test.describe('view source all-of-type (Notion 103 PR 1)', () => {
     }
 
     await page.reload()
-    await expect(mainTable(page)).toBeVisible({ timeout: 60_000 })
-    await expect(page.locator('.pane.focused').getByTestId('view-source-label')).toBeVisible({ timeout: 30_000 })
-    const after = (await page.locator('.pane.focused').getByTestId('view-source-label').innerText()).trim()
+    const focusedAfter = page.locator('.pane.focused')
+    await expect(focusedAfter.getByTestId('object-table').first()).toBeVisible({ timeout: 60_000 })
+    await expect(focusedAfter.getByTestId('view-source-label')).toBeVisible({ timeout: 30_000 })
+    const after = (await focusedAfter.getByTestId('view-source-label').innerText()).trim()
     expect(after.startsWith('All ')).toBe(true)
   })
 })
