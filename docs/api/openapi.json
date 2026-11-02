@@ -762,6 +762,72 @@
         ]
       }
     },
+    "/v1/config/apply": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "operationId": "apply_config",
+        "requestBody": {
+          "description": "One or more config documents as YAML (multi-doc) or JSON (object or array), optionally wrapped as { documents, allowDestructive }",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JsonValue"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "One proposal with the changes grouped by document kind",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonValue"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed config documents",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or unknown token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The plan has destructive steps and allowDestructive is not set, or the documents do not compile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonValue"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/v1/config/export": {
       "get": {
         "tags": [
@@ -824,19 +890,8 @@
           "config"
         ],
         "operationId": "plan_config",
-        "parameters": [
-          {
-            "name": "allowDestructive",
-            "in": "query",
-            "description": "Return 200 even when the plan has destructive steps",
-            "required": false,
-            "schema": {
-              "type": "boolean"
-            }
-          }
-        ],
         "requestBody": {
-          "description": "One or more config documents as YAML (multi-doc) or JSON (object or array)",
+          "description": "One or more config documents as YAML (multi-doc) or JSON (object or array), optionally wrapped as { documents, allowDestructive }",
           "content": {
             "application/json": {
               "schema": {
@@ -848,7 +903,7 @@
         },
         "responses": {
           "200": {
-            "description": "Plan without destructive steps, or one allowed with allowDestructive",
+            "description": "Every step. A destructive step is flagged blocked with affected counts.",
             "content": {
               "application/json": {
                 "schema": {
@@ -873,16 +928,6 @@
               "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Plan has destructive steps and allowDestructive is not set",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonValue"
                 }
               }
             }
@@ -949,71 +994,6 @@
           },
           "404": {
             "description": "No definitions stored",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ]
-      },
-      "put": {
-        "tags": [
-          "definitions"
-        ],
-        "operationId": "put_definitions",
-        "parameters": [
-          {
-            "name": "dry_run",
-            "in": "query",
-            "description": "Return the consequence analysis and change nothing",
-            "required": false,
-            "schema": {
-              "type": "boolean"
-            }
-          }
-        ],
-        "requestBody": {
-          "description": "JSON or YAML definition set",
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DefinitionSet"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Imported, or a dry run",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DefinitionWrite"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Revision conflict",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The set does not compile",
             "content": {
               "application/json": {
                 "schema": {

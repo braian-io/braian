@@ -15,7 +15,8 @@ use serde::{Deserialize, Serialize};
 
 pub use convert::{ConfigError, export_documents};
 pub use plan::{
-    ConfigMode, ConfigPlan, PlanAction, PlanAffected, PlanKind, PlanStep, plan_documents,
+    ConfigApplication, ConfigMode, ConfigPlan, PlanAction, PlanAffected, PlanKind, PlanStep,
+    apply_documents, plan_documents,
 };
 
 /// The only wire version this crate reads and writes.

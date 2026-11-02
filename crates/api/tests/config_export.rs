@@ -81,11 +81,17 @@ async fn app() -> (TestDb, axum::Router) {
     load_env();
     let db = TestDb::create().await;
     let identities = braian_api::identities(db.store(), TOKENS).await.unwrap();
+    let actor = identities
+        .iter()
+        .find(|item| item.handle == "ada")
+        .expect("ada")
+        .actor
+        .clone();
     let app = router(db.store().clone(), identities);
 
-    let mut defs: Value =
+    let mut defs: braian_model::DefinitionSet =
         serde_json::from_str(include_str!("../../../testdata/rules/definitions.json")).unwrap();
-    defs["value_lists"] = json!([{
+    defs.value_lists = serde_json::from_value(json!([{
         "id": "018f0000-0000-7000-8000-000000000600",
         "key": "colors",
         "labels": { "en": "Colors" },
@@ -93,17 +99,9 @@ async fn app() -> (TestDb, axum::Router) {
             { "code": "red", "labels": { "en": "Red" } },
             { "code": "blue", "labels": { "en": "Blue" } }
         ]
-    }]);
-    let (status, _, body) = call(
-        &app,
-        "PUT",
-        "/v1/definitions",
-        Some(HUMAN),
-        &[("content-type", "application/json")],
-        Some(&defs.to_string()),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    }]))
+    .unwrap();
+    db.store().put_definitions(&actor, &defs).await.unwrap();
     (db, app)
 }
 

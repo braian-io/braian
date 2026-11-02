@@ -1,0 +1,317 @@
+[
+  {
+    "apiVersion": "braian.io/v1",
+    "kind": "Model",
+    "languages": [
+      "sv",
+      "en-GB"
+    ],
+    "attributes": [
+      {
+        "key": "sku",
+        "labels": {
+          "sv": "Artikelnummer"
+        },
+        "languageDependent": false,
+        "multiple": false,
+        "kind": {
+          "type": "text",
+          "maxLength": 32
+        },
+        "index": {
+          "searchable": true,
+          "filterable": false,
+          "sortable": true
+        }
+      },
+      {
+        "key": "name",
+        "labels": {
+          "en-GB": "Name",
+          "sv": "Namn"
+        },
+        "languageDependent": true,
+        "multiple": false,
+        "kind": {
+          "type": "text",
+          "maxLength": 10
+        },
+        "index": {
+          "searchable": true,
+          "filterable": false,
+          "sortable": false
+        }
+      },
+      {
+        "key": "weight",
+        "labels": {
+          "sv": "Vikt"
+        },
+        "languageDependent": false,
+        "multiple": false,
+        "kind": {
+          "type": "number",
+          "unitFamily": "mass",
+          "min": "0",
+          "max": "10"
+        },
+        "index": {
+          "searchable": false,
+          "filterable": true,
+          "sortable": true
+        }
+      },
+      {
+        "key": "count",
+        "labels": {
+          "sv": "Antal"
+        },
+        "languageDependent": false,
+        "multiple": false,
+        "kind": {
+          "type": "number",
+          "min": "0",
+          "max": "100"
+        },
+        "index": {
+          "searchable": false,
+          "filterable": true,
+          "sortable": true
+        }
+      },
+      {
+        "key": "color",
+        "labels": {
+          "sv": "Färg"
+        },
+        "languageDependent": false,
+        "multiple": false,
+        "kind": {
+          "type": "value_list",
+          "options": [
+            {
+              "code": "red",
+              "labels": {
+                "en-GB": "Red",
+                "sv": "Röd"
+              }
+            },
+            {
+              "code": "blue",
+              "labels": {
+                "en-GB": "Blue",
+                "sv": "Blå"
+              }
+            }
+          ]
+        },
+        "index": {
+          "searchable": false,
+          "filterable": true,
+          "sortable": false
+        }
+      },
+      {
+        "key": "active",
+        "labels": {
+          "sv": "Aktiv"
+        },
+        "languageDependent": false,
+        "multiple": false,
+        "kind": {
+          "type": "boolean"
+        },
+        "index": {
+          "searchable": false,
+          "filterable": true,
+          "sortable": false
+        }
+      },
+      {
+        "key": "made",
+        "labels": {
+          "sv": "Tillverkad"
+        },
+        "languageDependent": false,
+        "multiple": false,
+        "kind": {
+          "type": "date"
+        },
+        "index": {
+          "searchable": false,
+          "filterable": true,
+          "sortable": true
+        }
+      },
+      {
+        "key": "manual",
+        "labels": {
+          "sv": "Manual"
+        },
+        "languageDependent": false,
+        "multiple": false,
+        "kind": {
+          "type": "file_ref"
+        },
+        "index": {
+          "searchable": false,
+          "filterable": false,
+          "sortable": false
+        }
+      },
+      {
+        "key": "tags",
+        "labels": {
+          "sv": "Taggar"
+        },
+        "languageDependent": false,
+        "multiple": true,
+        "kind": {
+          "type": "text",
+          "maxLength": 5
+        },
+        "index": {
+          "searchable": true,
+          "filterable": false,
+          "sortable": false
+        }
+      },
+      {
+        "key": "notes",
+        "labels": {
+          "sv": "Anteckningar"
+        },
+        "languageDependent": true,
+        "multiple": true,
+        "kind": {
+          "type": "text",
+          "maxLength": 8
+        },
+        "index": {
+          "searchable": false,
+          "filterable": false,
+          "sortable": false
+        }
+      },
+      {
+        "key": "secret",
+        "labels": {
+          "sv": "Hemlig"
+        },
+        "languageDependent": false,
+        "multiple": false,
+        "kind": {
+          "type": "text",
+          "maxLength": 20
+        },
+        "index": {
+          "searchable": false,
+          "filterable": false,
+          "sortable": false
+        }
+      },
+      {
+        "key": "finish",
+        "labels": {
+          "sv": "Yta"
+        },
+        "languageDependent": false,
+        "multiple": false,
+        "kind": {
+          "type": "text",
+          "maxLength": 20
+        },
+        "index": {
+          "searchable": false,
+          "filterable": false,
+          "sortable": false
+        }
+      }
+    ],
+    "types": [
+      {
+        "key": "item",
+        "labels": {
+          "sv": "Objekt"
+        },
+        "keyAttribute": "sku",
+        "attributes": [
+          "sku",
+          "name",
+          "weight",
+          "count",
+          "active",
+          "made",
+          "manual",
+          "tags",
+          "notes"
+        ],
+        "kind": "entity"
+      }
+    ],
+    "structures": [
+      {
+        "key": "assortment",
+        "groups": [
+          {
+            "key": "root",
+            "attributes": []
+          },
+          {
+            "key": "child",
+            "parent": "root",
+            "attributes": []
+          }
+        ],
+        "classes": [
+          {
+            "key": "root",
+            "group": "root",
+            "attributes": [
+              "color"
+            ]
+          },
+          {
+            "key": "child",
+            "group": "child",
+            "attributes": [
+              "finish"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "webshop",
+        "groups": [
+          {
+            "key": "flat",
+            "attributes": []
+          }
+        ],
+        "classes": [
+          {
+            "key": "flat",
+            "group": "flat",
+            "attributes": []
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "apiVersion": "braian.io/v1",
+    "kind": "UnitFamily",
+    "key": "mass",
+    "baseUnit": "kg",
+    "units": [
+      {
+        "code": "kg",
+        "factor": "1"
+      },
+      {
+        "code": "g",
+        "factor": "0.001"
+      }
+    ]
+  }
+]

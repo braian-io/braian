@@ -11,14 +11,39 @@ HTTP 200
 jsonpath "$.handle" == "ada"
 jsonpath "$.kind" == "human"
 
-PUT {{host}}/v1/definitions
+POST {{host}}/v1/config/apply
 Authorization: Bearer {{token}}
 Content-Type: application/json
-file,testdata/rules/definitions.json;
+file,testdata/config/definitions.json;
+HTTP 202
+[Captures]
+bootstrap: jsonpath "$.proposal_id"
+
+POST {{host}}/v1/proposals/{{bootstrap}}/accept
+Authorization: Bearer {{token}}
+Content-Type: application/json
+{}
+HTTP 202
+
+GET {{host}}/v1/proposals/{{bootstrap}}
+[Options]
+retry: 30
+Authorization: Bearer {{token}}
 HTTP 200
 [Asserts]
-jsonpath "$.model_revision" == 1
-header "ETag" == "\"1\""
+jsonpath "$.status" == "accepted"
+
+GET {{host}}/v1/definitions
+Authorization: Bearer {{token}}
+HTTP 200
+[Asserts]
+jsonpath "$.attributes[*].key" contains "sku"
+
+PUT {{host}}/v1/languages
+Authorization: Bearer {{token}}
+Content-Type: application/json
+["sv", "en-GB"]
+HTTP 200
 
 POST {{host}}/v1/attributes
 Authorization: Bearer {{token}}
@@ -39,7 +64,7 @@ GET {{host}}/v1/definitions
 Authorization: Bearer {{token}}
 HTTP 200
 [Asserts]
-jsonpath "$.model_revision" == 2
+jsonpath "$.attributes[*].key" contains "extra"
 
 POST {{host}}/v1/objects
 Authorization: Bearer {{token}}

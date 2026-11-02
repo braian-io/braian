@@ -85,18 +85,16 @@ async fn app() -> (TestDb, axum::Router) {
     load_env();
     let db = TestDb::create().await;
     let identities = braian_api::identities(db.store(), TOKENS).await.unwrap();
+    let actor = identities
+        .iter()
+        .find(|item| item.handle == "ada")
+        .expect("ada")
+        .actor
+        .clone();
     let app = router(db.store().clone(), identities);
-    let defs = include_str!("../../../testdata/rules/definitions.json");
-    let (status, _, body) = call(
-        &app,
-        "PUT",
-        "/v1/definitions",
-        Some(HUMAN),
-        &[("content-type", "application/json")],
-        Some(defs),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{body}");
+    let defs: braian_model::DefinitionSet =
+        serde_json::from_str(include_str!("../../../testdata/rules/definitions.json")).unwrap();
+    db.store().put_definitions(&actor, &defs).await.unwrap();
     (db, app)
 }
 
@@ -441,23 +439,8 @@ async fn old_errors_warn_and_inapplicable_values_stay_hidden() {
 }
 
 #[tokio::test]
-async fn yaml_import_and_compile_errors() {
+async fn definitions_get_serves_yaml_and_put_is_gone() {
     let (_db, app) = app().await;
-    let defs: Value =
-        serde_json::from_str(include_str!("../../../testdata/rules/definitions.json")).unwrap();
-    let yaml = serde_norway::to_string(&defs).unwrap();
-    let (status, _, body) = call(
-        &app,
-        "PUT",
-        "/v1/definitions",
-        Some(HUMAN),
-        &[("content-type", "application/yaml")],
-        Some(&yaml),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["model_revision"], 2);
-
     let (status, headers, listed) = call(
         &app,
         "GET",
@@ -474,19 +457,20 @@ async fn yaml_import_and_compile_errors() {
     );
     assert!(listed.as_str().unwrap_or("").contains("sku") || listed["attributes"].is_array());
 
-    let mut broken = defs;
-    broken["attributes"][0]["key"] = json!("018f0000-0000-7000-8000-000000000999");
-    let (status, _, body) = call(
+    let defs = include_str!("../../../testdata/rules/definitions.json");
+    let (status, _, _) = call(
         &app,
         "PUT",
         "/v1/definitions",
         Some(HUMAN),
         &[("content-type", "application/json")],
-        Some(&broken.to_string()),
+        Some(defs),
     )
     .await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
-    assert_eq!(body["code"], "invalid_definitions");
+    assert!(
+        status == StatusCode::NOT_FOUND || status == StatusCode::METHOD_NOT_ALLOWED,
+        "{status}"
+    );
 }
 
 #[tokio::test]
@@ -3558,54 +3542,6 @@ async fn a_person_saves_a_model_draft_and_an_agent_gets_a_proposal() {
 }
 
 #[tokio::test]
-async fn an_agent_dry_run_of_definitions_writes_nothing_and_a_save_is_forbidden() {
-    let (_db, app) = app().await;
-    let (status, _, before) = call(&app, "GET", "/v1/definitions", Some(HUMAN), &[], None).await;
-    assert_eq!(status, StatusCode::OK, "{before}");
-    let revision = before["model_revision"].clone();
-    let mut posted = before.clone();
-    let label = posted["attributes"][0]["labels"]["sv"]
-        .as_str()
-        .unwrap_or("Artikelnummer");
-    posted["attributes"][0]["labels"]["sv"] = json!(format!("{label} changed"));
-    let payload = posted.to_string();
-
-    let (status, _, dry) = call(
-        &app,
-        "PUT",
-        "/v1/definitions?dry_run=true",
-        Some(AGENT),
-        &[("content-type", "application/json")],
-        Some(&payload),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{dry}");
-    assert_eq!(dry["applied"], false, "{dry}");
-
-    let (status, _, after_dry) = call(&app, "GET", "/v1/definitions", Some(HUMAN), &[], None).await;
-    assert_eq!(status, StatusCode::OK, "{after_dry}");
-    assert_eq!(after_dry["model_revision"], revision, "{after_dry}");
-    assert_eq!(after_dry, before, "{after_dry}");
-
-    let (status, _, denied) = call(
-        &app,
-        "PUT",
-        "/v1/definitions",
-        Some(AGENT),
-        &[("content-type", "application/json")],
-        Some(&payload),
-    )
-    .await;
-    assert_eq!(status, StatusCode::FORBIDDEN, "{denied}");
-
-    let (status, _, after_deny) =
-        call(&app, "GET", "/v1/definitions", Some(HUMAN), &[], None).await;
-    assert_eq!(status, StatusCode::OK, "{after_deny}");
-    assert_eq!(after_deny["model_revision"], revision, "{after_deny}");
-    assert_eq!(after_deny, before, "{after_deny}");
-}
-
-#[tokio::test]
 async fn attribute_definitions_list_usage_and_a_draft_step() {
     let (db, app) = app().await;
     let principal = db
@@ -3744,17 +3680,23 @@ async fn attribute_definitions_list_usage_and_a_draft_step() {
     assert_eq!(status, StatusCode::OK, "{agent_usage}");
     assert_eq!(agent_usage["used_in"]["objects"].as_i64(), Some(stored));
 
-    let demo = include_str!("../../../crates/server/demo/definitions.json");
-    let (status, _, replaced) = call(
-        &app,
-        "PUT",
-        "/v1/definitions",
-        Some(HUMAN),
-        &[("content-type", "application/json")],
-        Some(demo),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{replaced}");
+    let principal = db
+        .store()
+        .principal_by_handle("ada")
+        .await
+        .unwrap()
+        .expect("ada");
+    let actor = braian_store::Actor {
+        actor: principal,
+        on_behalf_of: None,
+        kind: braian_store::BatchKind::Interactive,
+        source: "user".into(),
+    };
+    let mut demo: braian_model::DefinitionSet =
+        serde_json::from_str(include_str!("../../../crates/server/demo/definitions.json")).unwrap();
+    let current = db.store().model_revision().await.unwrap().unwrap_or(0);
+    demo.model_revision = current + 1;
+    db.store().put_definitions(&actor, &demo).await.unwrap();
     let (status, _, demo_list) = call(
         &app,
         "POST",

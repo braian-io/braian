@@ -74,13 +74,11 @@ fn build_router(state: AppState) -> axum::Router {
         .route("/healthz", get(health))
         .route("/v1/me", get(me))
         .route("/v1/openapi.json", get(openapi_json))
-        .route(
-            "/v1/definitions",
-            get(definitions::get_definitions).put(definitions::put_definitions),
-        )
+        .route("/v1/definitions", get(definitions::get_definitions))
         .route("/v1/config/export", get(config::export_config))
         .route("/v1/config/schema", get(config::get_config_schema))
         .route("/v1/config/plan", post(config::plan_config))
+        .route("/v1/config/apply", post(config::apply_config))
         .route("/v1/attributes", post(definitions::post_attribute))
         .route(
             "/v1/attributes/{id}",

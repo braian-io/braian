@@ -174,6 +174,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/config/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["apply_config"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/config/export": {
         parameters: {
             query?: never;
@@ -230,7 +246,7 @@ export interface paths {
             cookie?: never;
         };
         get: operations["get_definitions"];
-        put: operations["put_definitions"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -3588,6 +3604,58 @@ export interface operations {
             };
         };
     };
+    apply_config: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description One or more config documents as YAML (multi-doc) or JSON (object or array), optionally wrapped as { documents, allowDestructive } */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JsonValue"];
+            };
+        };
+        responses: {
+            /** @description One proposal with the changes grouped by document kind */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JsonValue"];
+                };
+            };
+            /** @description Malformed config documents */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Missing or unknown token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The plan has destructive steps and allowDestructive is not set, or the documents do not compile */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JsonValue"];
+                };
+            };
+        };
+    };
     export_config: {
         parameters: {
             query?: {
@@ -3631,22 +3699,19 @@ export interface operations {
     };
     plan_config: {
         parameters: {
-            query?: {
-                /** @description Return 200 even when the plan has destructive steps */
-                allowDestructive?: boolean;
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** @description One or more config documents as YAML (multi-doc) or JSON (object or array) */
+        /** @description One or more config documents as YAML (multi-doc) or JSON (object or array), optionally wrapped as { documents, allowDestructive } */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["JsonValue"];
             };
         };
         responses: {
-            /** @description Plan without destructive steps, or one allowed with allowDestructive */
+            /** @description Every step. A destructive step is flagged blocked with affected counts. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3671,15 +3736,6 @@ export interface operations {
                 };
                 content: {
                     "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Plan has destructive steps and allowDestructive is not set */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["JsonValue"];
                 };
             };
         };
@@ -3733,52 +3789,6 @@ export interface operations {
             };
             /** @description No definitions stored */
             404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
-    put_definitions: {
-        parameters: {
-            query?: {
-                /** @description Return the consequence analysis and change nothing */
-                dry_run?: boolean;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description JSON or YAML definition set */
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DefinitionSet"];
-            };
-        };
-        responses: {
-            /** @description Imported, or a dry run */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DefinitionWrite"];
-                };
-            };
-            /** @description Revision conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description The set does not compile */
-            422: {
                 headers: {
                     [name: string]: unknown;
                 };

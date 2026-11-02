@@ -23,7 +23,7 @@ What the model already has:
 
 API that exists today:
 
-- `GET`/`PUT /v1/definitions` (JSON or YAML, `If-Match` on the revision).
+- `GET /v1/definitions` (JSON or YAML). Writes go through `POST /v1/config/apply` and approving the proposal.
 - `POST`/`GET`/`PUT`/`DELETE /v1/unit-families` (`crates/api/src/definitions.rs`).
 - Structure and group routes in `crates/api/src/structures.rs`.
 - Attribute edits from the grid go through operations (`model.update_attribute`, `model.draft`) in `crates/model/src/model_change.rs`. `link_attribute` will attach an attribute to a second structure today.

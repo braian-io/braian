@@ -82,20 +82,18 @@ async fn harness() -> (TestDb, AppState, axum::Router, broadcast::Receiver<Value
     load_env();
     let db = TestDb::create().await;
     let identities = braian_api::identities(db.store(), TOKENS).await.unwrap();
+    let actor = identities
+        .iter()
+        .find(|item| item.handle == "ada")
+        .expect("ada")
+        .actor
+        .clone();
     let state = AppState::new(db.store().clone(), identities, None);
     let live = state.live.subscribe();
     let app = braian_api::into_router(state.clone());
-    let defs = include_str!("../../../testdata/rules/definitions.json");
-    let (status, body) = call(
-        &app,
-        "PUT",
-        "/v1/definitions",
-        HUMAN,
-        &[("content-type", "application/json")],
-        Some(defs.as_bytes().to_vec()),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{body}");
+    let defs: braian_model::DefinitionSet =
+        serde_json::from_str(include_str!("../../../testdata/rules/definitions.json")).unwrap();
+    db.store().put_definitions(&actor, &defs).await.unwrap();
     (db, state, app, live)
 }
 
@@ -424,19 +422,22 @@ async fn a_changed_model_blocks_the_save() {
     assert_eq!(status, StatusCode::CREATED, "{uploaded}");
     let id = uploaded["id"].as_str().unwrap();
     until(&app, id, &["ready"]).await;
-    let mut defs: Value =
+    let mut defs: braian_model::DefinitionSet =
         serde_json::from_str(include_str!("../../../testdata/rules/definitions.json")).unwrap();
-    defs["model_revision"] = json!(2);
-    let (status, body) = call(
-        &app,
-        "PUT",
-        "/v1/definitions",
-        HUMAN,
-        &[("content-type", "application/json")],
-        Some(defs.to_string().into_bytes()),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{body}");
+    defs.model_revision = 2;
+    let principal = _db
+        .store()
+        .principal_by_handle("ada")
+        .await
+        .unwrap()
+        .expect("ada");
+    let actor = braian_store::Actor {
+        actor: principal,
+        on_behalf_of: None,
+        kind: braian_store::BatchKind::Interactive,
+        source: "user".into(),
+    };
+    _db.store().put_definitions(&actor, &defs).await.unwrap();
     let (status, blocked) = call(
         &app,
         "PUT",
