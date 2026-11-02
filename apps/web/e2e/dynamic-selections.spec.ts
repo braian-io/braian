@@ -91,7 +91,7 @@ test('dynamic selections can be created, edited and deleted with usage', async (
   await row.getByTestId('selection-menu').click()
   const menu = page.getByTestId('context-menu')
   await expect(menu).toBeVisible()
-  await menu.getByRole('button', { name: 'Edit selection' }).click()
+  await menu.getByRole('menuitem', { name: 'Edit selection' }).click()
 
   const edit = page.getByTestId('new-selection')
   await expect(edit.getByRole('heading', { name: 'Edit selection' })).toBeVisible()
@@ -108,7 +108,7 @@ test('dynamic selections can be created, edited and deleted with usage', async (
   await expect(edited).toBeVisible()
   await edited.getByTestId('selection-menu').click()
   await expect(menu).toBeVisible()
-  await menu.getByRole('button', { name: 'Delete selection' }).click()
+  await menu.getByRole('menuitem', { name: 'Delete selection' }).click()
 
   const confirm = page.getByTestId('delete-selection')
   await expect(confirm).toBeVisible()
