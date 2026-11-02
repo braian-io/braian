@@ -11,7 +11,7 @@ async function login(page: Page) {
 }
 
 async function openProducts(page: Page) {
-  await page.getByRole('button', { name: 'Products' }).click()
+  await page.locator('.pane-tab-list').getByRole('button', { name: 'Products', exact: true }).click()
   await expect(page.getByTestId('object-table')).toBeVisible()
 }
 
