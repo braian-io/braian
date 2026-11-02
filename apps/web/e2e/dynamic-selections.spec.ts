@@ -37,7 +37,7 @@ async function bindSelectionToProductsView(page: Page, selectionId: string) {
   )
   expect(view).toBeTruthy()
   if (!view) return null
-  const response = await page.request.put('/v1/views', {
+  const response = await page.request.post('/v1/views', {
     data: {
       id: view.id,
       workspace_id: workspace.id,
@@ -48,7 +48,9 @@ async function bindSelectionToProductsView(page: Page, selectionId: string) {
       state: { ...(view.state ?? {}), selection_id: selectionId },
     },
   })
-  expect(response.ok()).toBeTruthy()
+  const status = response.status()
+  const body = await response.text()
+  expect(response.ok(), `save view failed: ${status} ${body}`).toBeTruthy()
   return { workspaceId: workspace.id, viewId: view.id }
 }
 
