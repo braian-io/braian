@@ -4,6 +4,7 @@ import {
   isSwitchCatalogRoot,
   parseSwitchCatalogChoice,
   SWITCH_CATALOG_ROOT_ID,
+  switchCatalogEventDetail,
   switchCatalogSubmenuRows,
 } from './palette-switch-catalog'
 
@@ -20,5 +21,21 @@ describe('palette switch catalog', () => {
     expect(parseSwitchCatalogChoice(`catalog:${SAP_CATALOG_ID}`)).toBe(SAP_CATALOG_ID)
     expect(parseSwitchCatalogChoice(SWITCH_CATALOG_ROOT_ID)).toBeNull()
     expect(isSwitchCatalogRoot(SWITCH_CATALOG_ROOT_ID)).toBe(true)
+  })
+
+  it('targets the focused view and falls back to the workspace', () => {
+    expect(switchCatalogEventDetail(SAP_CATALOG_ID, 'view-1')).toEqual({
+      scope: 'view',
+      viewId: 'view-1',
+      catalogId: SAP_CATALOG_ID,
+    })
+    expect(switchCatalogEventDetail(SAP_CATALOG_ID, null)).toEqual({
+      scope: 'workspace',
+      catalogId: SAP_CATALOG_ID,
+    })
+    expect(switchCatalogEventDetail(SAP_CATALOG_ID, undefined)).toEqual({
+      scope: 'workspace',
+      catalogId: SAP_CATALOG_ID,
+    })
   })
 })

@@ -63,6 +63,7 @@ const specs = [
   'e2e/peer-source.spec.ts',
   'e2e/source-all-explicit.spec.ts',
   'e2e/link-source-repair.spec.ts',
+  'e2e/switch-catalog-view.spec.ts',
   'e2e/z-catalogs.spec.ts',
 ]
 
@@ -126,6 +127,7 @@ const measuredSeconds = {
   'e2e/new-version-status.spec.ts': 20,
   'e2e/view-source-type.spec.ts': 35,
   'e2e/peer-source.spec.ts': 45,
+  'e2e/switch-catalog-view.spec.ts': 25,
   'e2e/source-all-explicit.spec.ts': 40,
   'e2e/z-catalogs.spec.ts': 45,
   'e2e/delete-workspace.spec.ts': 28,

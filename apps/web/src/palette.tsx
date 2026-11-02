@@ -30,6 +30,7 @@ import { isNewFromTemplateRoot, newFromTemplateRootItem, newFromTemplateSubmenuR
 import {
   isSwitchCatalogRoot,
   parseSwitchCatalogChoice,
+  switchCatalogEventDetail,
   switchCatalogRootItem,
   switchCatalogSubmenuRows,
 } from './palette-switch-catalog'
@@ -462,10 +463,11 @@ export function CommandPalette({
     {
       const catalogId = parseSwitchCatalogChoice(id)
       if (catalogId) {
-        // Palette Switch catalog sets the workspace-global catalog (not a view override).
+        // A focused view gets an override; without focus the picker sets the
+        // workspace default (the header picker stays workspace-global).
         window.dispatchEvent(
           new CustomEvent('braian-set-catalog', {
-            detail: { scope: 'workspace', catalogId },
+            detail: switchCatalogEventDetail(catalogId, focusViewId),
           }),
         )
         onClose()
