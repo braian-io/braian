@@ -55,7 +55,6 @@ async function bindSelectionToProductsView(page: Page, selectionId: string) {
 }
 
 test('dynamic selections can be created, edited and deleted with usage', async ({ page }) => {
-  test.setTimeout(120_000)
   await login(page)
   await openProducts(page)
 
@@ -127,7 +126,6 @@ test('dynamic selections can be created, edited and deleted with usage', async (
 })
 
 test('Ctrl+K saves the current view filter as a dynamic selection', async ({ page }) => {
-  test.setTimeout(120_000)
   await login(page)
   await openProducts(page)
 
