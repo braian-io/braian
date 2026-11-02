@@ -3033,10 +3033,16 @@ mod tests {
             )
             .await
             .unwrap();
+        let layout = serde_json::json!({
+            "type": "tabs",
+            "views": [view.to_string()],
+            "active": 0
+        });
         conn.client
             .execute(
-                "INSERT INTO workspaces (id, owner_id, name, share_token) VALUES ($1, $2, 'Legacy', $3)",
-                &[&workspace, &user, &format!("legacy-{name}")],
+                "INSERT INTO workspaces (id, owner_id, name, share_token, layout)
+                 VALUES ($1, $2, 'Legacy', $3, $4)",
+                &[&workspace, &user, &format!("legacy-{name}"), &layout],
             )
             .await
             .unwrap();
