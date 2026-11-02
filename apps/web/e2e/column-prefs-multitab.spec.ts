@@ -15,6 +15,61 @@ async function openProducts(page: Page) {
   await expect(page.getByTestId('object-table')).toBeVisible()
 }
 
+async function seedProductsColumnPrefs(page: Page) {
+  const listed = await page.request.get('/v1/workspaces')
+  if (!listed.ok()) throw new Error(`workspaces: HTTP ${listed.status()}`)
+  const { workspaces } = (await listed.json()) as {
+    workspaces: Array<{ id: string; name: string }>
+  }
+  const products = workspaces.find((item) => item.name === 'Products')
+  if (!products) throw new Error('missing workspace Products')
+  const workspace = await page.request.get(`/v1/workspaces/${products.id}`)
+  if (!workspace.ok()) throw new Error(`workspace: HTTP ${workspace.status()}`)
+  const { views } = (await workspace.json()) as {
+    views: Array<{
+      id: string
+      type: string
+      title?: string
+      state?: { type_key?: string; object_type?: string }
+    }>
+  }
+  // View type keys are translated to ids on read, so a literal "product" check
+  // misses in CI. Fall back to the workspace's only table view.
+  const productTypeId = '018f0000-0000-7000-8000-000000000200'
+  const isTable = (view: { type: string }) =>
+    view.type === 'object_table' || view.type === 'table'
+  const isProduct = (view: {
+    title?: string
+    state?: { type_key?: string; object_type?: string }
+  }) =>
+    view.state?.object_type === productTypeId ||
+    view.state?.type_key === productTypeId ||
+    view.title === 'Products'
+  const table = views.find((view) => isTable(view) && isProduct(view)) ?? views.find(isTable)
+  if (!table) throw new Error('missing Products object table')
+  // Seed Brand visible instead of relying on default columns. Defaults are
+  // derived from /v1/definitions, and the table can apply prefs before that
+  // GET lands, which seeds the builtin chrome (no Brand) and keeps it.
+  const seeded = await page.request.put(
+    `/v1/views/${table.id}/column-prefs?environment=default`,
+    {
+      data: {
+        environment: 'default',
+        document: {
+          version: 2,
+          columns: [
+            { path: 'number', visible: true },
+            { path: 'name', visible: true },
+            { path: 'brand', visible: true },
+            { path: 'status', visible: true },
+          ],
+        },
+      },
+    },
+  )
+  if (!seeded.ok()) throw new Error(`column prefs seed: HTTP ${seeded.status()}`)
+}
+
 async function openFieldsPalette(page: Page) {
   await page.getByTestId('object-table').focus()
   await page.keyboard.press('Control+k')
@@ -59,6 +114,12 @@ test.describe('column prefs multitab', () => {
     const page2 = await context.newPage()
 
     await login(page1)
+    // The demo user and database are shared between specs. Start from a known
+    // Brand-visible document, then reload so the first Products paint cannot
+    // keep a stale GET.
+    await seedProductsColumnPrefs(page1)
+    await page1.reload()
+    await expect(page1.getByTestId('workspace')).toBeVisible()
     await openProducts(page1)
     await expect(page1.getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
     await expect(page1.locator('.head [data-testid="col-brand"]')).toBeVisible()
