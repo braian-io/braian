@@ -174,6 +174,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/config/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["export_config"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/config/schema": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_config_schema"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/definitions": {
         parameters: {
             query?: never;
@@ -1977,6 +2009,10 @@ export interface components {
             /** Format: int32 */
             total: number;
         };
+        ExportQuery: {
+            /** @description `zip`, `json` or `yaml`. Accept: application/json also selects JSON. */
+            format?: string | null;
+        };
         FeedbackBody: {
             context?: components["schemas"]["FreeObject"];
             log?: null | components["schemas"]["JsonValue"];
@@ -3523,6 +3559,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunningJob"];
+                };
+            };
+            /** @description Missing or unknown token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    export_config: {
+        parameters: {
+            query?: {
+                /** @description zip, json or yaml */
+                format?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Config documents. YAML by default; JSON with Accept: application/json; ZIP with format=zip */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/yaml": components["schemas"]["JsonValue"];
+                };
+            };
+            /** @description Unknown format */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Missing or unknown token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_config_schema: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description JSON Schema for config documents */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/schema+json": components["schemas"]["JsonValue"];
                 };
             };
             /** @description Missing or unknown token */
