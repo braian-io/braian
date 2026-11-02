@@ -26,9 +26,9 @@ Content-Type: application/json
 HTTP 202
 
 GET {{host}}/v1/proposals/{{bootstrap}}
+Authorization: Bearer {{token}}
 [Options]
 retry: 30
-Authorization: Bearer {{token}}
 HTTP 200
 [Asserts]
 jsonpath "$.status" == "accepted"
