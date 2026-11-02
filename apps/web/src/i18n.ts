@@ -202,6 +202,7 @@ export const copy = {
   addView: 'Add view',
   dataSource: 'Data source',
   selectSource: 'Select source',
+  current: 'Current',
   allOfType: 'All {type}',
   fromSourceLabel: '{type} from {source}',
   viewMenu: 'View menu',

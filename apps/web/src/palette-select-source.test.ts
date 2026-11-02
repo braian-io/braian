@@ -64,6 +64,37 @@ describe('palette peer sources (Notion 103 PR 2)', () => {
     expect(rows[1].subtitle).toBe('Cheese')
   })
 
+  it('marks the current all-of-type row, including when no source is stored', () => {
+    const rows = selectSourceSubmenuRows(types, [], { typeId: 't-article' })
+    expect(rows[0].chips).toEqual([{ text: copy.current, tone: 'ok' }])
+    expect(rows.filter((row) => row.chips?.some((chip) => chip.text === copy.current))).toHaveLength(1)
+  })
+
+  it('marks the current peer source instead of all-of-type', () => {
+    const peerOptions = [
+      { viewId: 'view-food', viewTitle: 'Food', selection: 'node' as const, label: 'Cheese', typeIds: ['t-article'] },
+    ]
+    const rows = selectSourceSubmenuRows(types, peerOptions, {
+      typeId: 't-article',
+      peerViewId: 'view-food',
+      selection: 'node',
+    })
+    expect(rows[0].chips).toBeUndefined()
+    expect(rows[1].chips).toEqual([{ text: copy.current, tone: 'ok' }])
+  })
+
+  it('does not mark a peer source with a different selection', () => {
+    const peerOptions = [
+      { viewId: 'view-food', viewTitle: 'Food', selection: 'node' as const, label: 'Cheese', typeIds: ['t-article'] },
+    ]
+    const rows = selectSourceSubmenuRows(types, peerOptions, {
+      typeId: 't-article',
+      peerViewId: 'view-food',
+      selection: 'row',
+    })
+    expect(rows.some((row) => row.chips?.some((chip) => chip.text === copy.current))).toBe(false)
+  })
+
   it('parses peer choices and still ignores the link type', () => {
     expect(parseSelectSourceChoice('select-source:peer:t-article:view-food:node')).toEqual({
       peerViewId: 'view-food',
