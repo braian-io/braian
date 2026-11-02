@@ -2841,6 +2841,222 @@ async fn a_selection_cannot_be_used_with_another_type() {
     assert_eq!(unknown["code"], "unknown_reference", "{unknown}");
 }
 
+async fn selection_cookie(db: &TestDb, app: &axum::Router, email: &str) -> String {
+    let hash = braian_api::hash_password("secret-dynamic").unwrap();
+    db.store()
+        .create_user(email, &hash, "admin", "Dynamic")
+        .await
+        .unwrap();
+    let (status, headers, logged) = call(
+        app,
+        "POST",
+        "/v1/login",
+        None,
+        &[("content-type", "application/json")],
+        Some(&format!(
+            r#"{{"email":"{email}","password":"secret-dynamic"}}"#
+        )),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{logged}");
+    headers
+        .get("set-cookie")
+        .and_then(|value| value.split(';').next())
+        .unwrap()
+        .to_owned()
+}
+
+#[tokio::test]
+async fn a_dynamic_selection_validates_and_stores_its_filter() {
+    let (db, app) = app().await;
+    let cookie = selection_cookie(&db, &app, "dynamic@braian.local").await;
+
+    let (status, _, saved) = call(
+        &app,
+        "POST",
+        "/v1/assortments",
+        None,
+        &[("cookie", &cookie), ("content-type", "application/json")],
+        Some(
+            r#"{"name":"Root items","type":"item","kind":"dynamic","query":"type_key:=item && groups:=assortment:root"}"#,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{saved}");
+    assert_eq!(saved["kind"], "dynamic", "{saved}");
+    assert_eq!(
+        saved["query"]["filter"], "type_key:=item && groups:=assortment:root",
+        "{saved}"
+    );
+
+    let (status, _, invalid) = call(
+        &app,
+        "POST",
+        "/v1/assortments",
+        None,
+        &[("cookie", &cookie), ("content-type", "application/json")],
+        Some(r#"{"name":"Broken","type":"item","kind":"dynamic","query":"missing>brand:=x"}"#),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{invalid}");
+    assert_eq!(invalid["code"], "invalid_path", "{invalid}");
+
+    let (status, _, manual_filter) = call(
+        &app,
+        "POST",
+        "/v1/assortments",
+        None,
+        &[("cookie", &cookie), ("content-type", "application/json")],
+        Some(r#"{"name":"Manual","type":"item","kind":"manual","query":"type_key:=item"}"#),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{manual_filter}");
+    assert_eq!(manual_filter["code"], "assortment", "{manual_filter}");
+}
+
+#[tokio::test]
+async fn updating_a_selection_locks_kind_and_type() {
+    let (db, app) = app().await;
+    let cookie = selection_cookie(&db, &app, "update@braian.local").await;
+
+    let (status, _, saved) = call(
+        &app,
+        "POST",
+        "/v1/assortments",
+        None,
+        &[("cookie", &cookie), ("content-type", "application/json")],
+        Some(
+            r#"{"name":"Cheese","type":"item","kind":"dynamic","query":"groups:=assortment:root"}"#,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{saved}");
+    let id = saved["id"].as_str().unwrap();
+
+    let (status, _, kind_changed) = call(
+        &app,
+        "PUT",
+        &format!("/v1/assortments/{id}"),
+        None,
+        &[("cookie", &cookie), ("content-type", "application/json")],
+        Some(r#"{"name":"Cheese","kind":"manual","query":"groups:=assortment:root"}"#),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{kind_changed}");
+    assert_eq!(kind_changed["code"], "assortment", "{kind_changed}");
+
+    let (status, _, type_changed) = call(
+        &app,
+        "PUT",
+        &format!("/v1/assortments/{id}"),
+        None,
+        &[("cookie", &cookie), ("content-type", "application/json")],
+        Some(r#"{"name":"Cheese","type":"widget","query":"groups:=assortment:root"}"#),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{type_changed}");
+    assert_eq!(type_changed["code"], "wrong_type", "{type_changed}");
+
+    let (status, _, updated) = call(
+        &app,
+        "PUT",
+        &format!("/v1/assortments/{id}"),
+        None,
+        &[("cookie", &cookie), ("content-type", "application/json")],
+        Some(r#"{"name":"Aged cheese","query":"groups:=assortment:child"}"#),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{updated}");
+    assert_eq!(updated["name"], "Aged cheese", "{updated}");
+    assert_eq!(updated["kind"], "dynamic", "{updated}");
+    assert_eq!(
+        updated["query"]["filter"], "groups:=assortment:child",
+        "{updated}"
+    );
+}
+
+#[tokio::test]
+async fn deleting_a_selection_returns_usage_and_clears_the_view_source() {
+    let (db, app) = app().await;
+    let cookie = selection_cookie(&db, &app, "delete@braian.local").await;
+
+    let (status, _, saved) = call(
+        &app,
+        "POST",
+        "/v1/assortments",
+        None,
+        &[("cookie", &cookie), ("content-type", "application/json")],
+        Some(r#"{"name":"Root items","type":"item","kind":"dynamic","query":"groups:=assortment:root"}"#),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{saved}");
+    let id = saved["id"].as_str().unwrap();
+
+    let user = db
+        .store()
+        .create_user("view@braian.local", "x", "editor", "View")
+        .await
+        .unwrap();
+    let workspace_id = uuid::Uuid::now_v7();
+    db.store()
+        .save_workspace(workspace_id, user.id, "Demo", false, None, &json!({}))
+        .await
+        .unwrap();
+    let view_id = uuid::Uuid::now_v7();
+    db.store()
+        .save_view(
+            view_id,
+            workspace_id,
+            "object_table",
+            "Root items",
+            "main",
+            0,
+            &json!({ "object_type": "018f0000-0000-7000-8000-000000000200", "type_key": "item", "selection_id": id }),
+        )
+        .await
+        .unwrap();
+
+    let (status, _, usage) = call(
+        &app,
+        "GET",
+        &format!("/v1/assortments/{id}/usage"),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{usage}");
+    assert_eq!(usage["views"].as_array().unwrap().len(), 1, "{usage}");
+    assert_eq!(usage["views"][0]["id"], view_id.to_string(), "{usage}");
+
+    let (status, _, deleted) = call(
+        &app,
+        "DELETE",
+        &format!("/v1/assortments/{id}"),
+        None,
+        &[("cookie", &cookie)],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{deleted}");
+    assert_eq!(deleted["views"].as_array().unwrap().len(), 1, "{deleted}");
+
+    let (status, _, gone) = call(
+        &app,
+        "GET",
+        &format!("/v1/assortments/{id}"),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{gone}");
+
+    let view = db.store().view_state(view_id).await.unwrap().unwrap();
+    assert!(view.get("selection_id").is_none(), "{view}");
+    assert_eq!(view["type_key"], "item");
+}
+
 #[tokio::test]
 async fn id_and_key_resolve_to_the_same_attribute_and_a_rename_applies() {
     let (_db, app) = app().await;
@@ -3023,7 +3239,8 @@ async fn deleting_a_type_counts_then_removes_objects_links_and_selections() {
             user.id,
             uuid::Uuid::parse_str("018f0000-0000-7000-8000-000000000200").unwrap(),
             "Spring",
-            &json!({ "q": "sku" }),
+            "manual",
+            &json!({ "group": "assortment:root" }),
         )
         .await
         .unwrap();

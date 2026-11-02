@@ -34,7 +34,16 @@ pub enum ProposalWrite {
         owner: Uuid,
         type_id: Uuid,
         name: String,
+        kind: String,
         query: Value,
+    },
+    AssortmentUpdate {
+        id: Uuid,
+        name: String,
+        query: Value,
+    },
+    AssortmentDelete {
+        id: Uuid,
     },
     Definitions {
         defs: DefinitionSet,
@@ -915,16 +924,58 @@ impl Store {
                 owner,
                 type_id,
                 name,
+                kind,
                 query,
             } => {
                 tx.execute(
-                    "INSERT INTO assortments (id, owner_id, type_id, name, query)
-                     VALUES ($1, $2, $3, $4, $5)
-                     ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, query = EXCLUDED.query,
-                       type_id = EXCLUDED.type_id",
-                    &[&id, &owner, &type_id, &name, &query],
+                    "INSERT INTO assortments (id, owner_id, type_id, name, kind, query)
+                     VALUES ($1, $2, $3, $4, $5, $6)
+                     ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, kind = EXCLUDED.kind,
+                       query = EXCLUDED.query, type_id = EXCLUDED.type_id",
+                    &[&id, &owner, &type_id, &name, &kind, &query],
                 )
                 .await?;
+                WriteReceipt {
+                    batch_id: BatchId::from_uuid(Uuid::nil()),
+                    last_seq: 0,
+                    versions: Vec::new(),
+                }
+            }
+            ProposalWrite::AssortmentUpdate { id, name, query } => {
+                tx.execute(
+                    "UPDATE assortments SET name = $2, query = $3 WHERE id = $1",
+                    &[&id, &name, &query],
+                )
+                .await?;
+                WriteReceipt {
+                    batch_id: BatchId::from_uuid(Uuid::nil()),
+                    last_seq: 0,
+                    versions: Vec::new(),
+                }
+            }
+            ProposalWrite::AssortmentDelete { id } => {
+                tx.execute(
+                    "UPDATE views SET state = state - 'selection_id' WHERE state->>'selection_id' = $1",
+                    &[&id.to_string()],
+                )
+                .await?;
+                tx.execute(
+                    "UPDATE job_types SET assortment_id = NULL WHERE assortment_id = $1",
+                    &[&id],
+                )
+                .await?;
+                tx.execute(
+                    "UPDATE webhooks SET assortment_id = NULL WHERE assortment_id = $1",
+                    &[&id],
+                )
+                .await?;
+                tx.execute(
+                    "UPDATE job_runs SET assortment_id = NULL WHERE assortment_id = $1",
+                    &[&id],
+                )
+                .await?;
+                tx.execute("DELETE FROM assortments WHERE id = $1", &[&id])
+                    .await?;
                 WriteReceipt {
                     batch_id: BatchId::from_uuid(Uuid::nil()),
                     last_seq: 0,

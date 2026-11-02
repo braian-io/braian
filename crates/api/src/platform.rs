@@ -78,7 +78,14 @@ pub fn routes() -> axum::Router<AppState> {
             "/v1/assortments",
             get(list_assortments).post(save_assortment),
         )
-        .route("/v1/assortments/{id}", get(get_assortment))
+        .route(
+            "/v1/assortments/{id}",
+            get(get_assortment)
+                .put(update_assortment)
+                .delete(delete_assortment),
+        )
+        .route("/v1/assortments/{id}/usage", get(assortment_usage))
+        .route("/v1/assortments/{id}/members", get(assortment_members))
         .route("/v1/job-types", get(list_job_types).post(register_job_type))
         .route("/v1/job-types/{key}/runs", get(job_runs))
         .route("/v1/jobs/{id}", get(job_run))
@@ -695,6 +702,18 @@ fn registry() -> &'static [Operation] {
             needs_approval: true,
         },
         Operation {
+            name: "assortment.update",
+            title: "Update selection",
+            permission: Role::Editor,
+            needs_approval: true,
+        },
+        Operation {
+            name: "assortment.delete",
+            title: "Delete selection",
+            permission: Role::Editor,
+            needs_approval: true,
+        },
+        Operation {
             name: "model.set_parent",
             title: "Set group parent",
             permission: Role::Editor,
@@ -950,6 +969,7 @@ const AGENT_UI_EXCLUDED: &[&str] = &[];
 const AGENT_COMMIT_EXCLUDED: &[&str] = &[
     "accept_proposal",
     "discard_proposal",
+    "assortment.delete",
     "delete_object",
     "import.discard",
     "import.mappings.delete",
@@ -1986,6 +2006,37 @@ async fn search(
         query.group.unwrap_or_default(),
     )
     .await?;
+    let page = run_search(
+        &state,
+        query.q.unwrap_or_default(),
+        query.lang.unwrap_or_else(|| "en".into()),
+        filter_by,
+        sort_by,
+        group_by,
+        query.page.unwrap_or(1),
+        query.per_page.unwrap_or(50),
+    )
+    .await?;
+    Ok(Json(json!({
+        "found": page.found,
+        "hits": page.hits,
+        "groups": page.groups,
+        "indexed_seq": state.store.indexer_seq().await.map_err(store_status)?,
+    })))
+}
+
+/// Runs one catalog-scoped object search and drops link-type hits from the page.
+#[expect(clippy::too_many_arguments, reason = "mirrors the search query shape")]
+async fn run_search(
+    state: &AppState,
+    text: String,
+    language: String,
+    filter_by: String,
+    sort_by: String,
+    group_by: String,
+    page: u32,
+    per_page: u32,
+) -> Result<braian_search::SearchPage, Problem> {
     let Some(search) = &state.search else {
         return Err(Problem::new(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -2003,25 +2054,20 @@ async fn search(
     let search = search.for_catalog(&catalog_key);
     let mut page = search
         .search(&SearchQuery {
-            text: query.q.unwrap_or_default(),
-            language: query.lang.unwrap_or_else(|| "en".into()),
+            text,
+            language,
             filter_by,
             sort_by,
             group_by,
-            page: query.page.unwrap_or(1),
-            per_page: query.per_page.unwrap_or(50),
+            page,
+            per_page,
         })
         .await
         .map_err(|error| Problem::new(StatusCode::BAD_GATEWAY, "search", error.to_string()))?;
     if let Ok(cached) = state.models.get(&state.store).await {
         page = hide_link_hits(page, &cached.defs);
     }
-    Ok(Json(json!({
-        "found": page.found,
-        "hits": page.hits,
-        "groups": page.groups,
-        "indexed_seq": state.store.indexer_seq().await.map_err(store_status)?,
-    })))
+    Ok(page)
 }
 
 async fn search_fields(
@@ -2756,6 +2802,7 @@ async fn list_assortments(
     for row in rows {
         let mut row = with_type_key(&state, row).await;
         if let Some(cached) = &cached
+            && row.get("kind").and_then(Value::as_str) != Some("dynamic")
             && let Some(query) = row.get_mut("query")
         {
             braian_model::translate_assortment_query(query, &cached.defs);
@@ -2797,6 +2844,7 @@ async fn get_assortment(
     }
     let mut row = with_type_key(&state, row).await;
     if let Ok(cached) = state.models.get(&state.store).await
+        && row.get("kind").and_then(Value::as_str) != Some("dynamic")
         && let Some(query) = row.get_mut("query")
     {
         braian_model::translate_assortment_query(query, &cached.defs);
@@ -2805,12 +2853,83 @@ async fn get_assortment(
     Ok(Json(row))
 }
 
+fn selection_kind(given: Option<&str>) -> Result<&'static str, Problem> {
+    match given.map(str::trim).filter(|kind| !kind.is_empty()) {
+        None | Some("manual") => Ok("manual"),
+        Some("dynamic") => Ok("dynamic"),
+        Some(_) => Err(Problem::new(
+            StatusCode::BAD_REQUEST,
+            "assortment",
+            "kind must be dynamic or manual",
+        )),
+    }
+}
+
+fn dynamic_query_required() -> Problem {
+    Problem::new(
+        StatusCode::BAD_REQUEST,
+        "assortment",
+        "a dynamic selection needs a filter query",
+    )
+}
+
+fn manual_has_no_query() -> Problem {
+    Problem::new(
+        StatusCode::BAD_REQUEST,
+        "assortment",
+        "a manual selection has no filter query",
+    )
+}
+
+/// Turns the wire `query` into the stored JSONB shape for one kind.
+///
+/// Dynamic selections store a filter in the same syntax as a view's filter and
+/// validate it through the same translate path the search uses. Manual
+/// selections keep the legacy group/labels document (no filter).
+fn normalize_selection_query(
+    defs: &DefinitionSet,
+    kind: &str,
+    query: Value,
+) -> Result<Value, Problem> {
+    match kind {
+        "dynamic" => {
+            let filter = query
+                .as_str()
+                .map(str::trim)
+                .filter(|filter| !filter.is_empty())
+                .ok_or_else(dynamic_query_required)?;
+            braian_model::translate_filter_expression(filter, defs).map_err(|message| {
+                Problem::new(StatusCode::UNPROCESSABLE_ENTITY, "invalid_path", message)
+            })?;
+            Ok(json!({ "filter": filter }))
+        }
+        "manual" => {
+            if query.is_string() {
+                return Err(manual_has_no_query());
+            }
+            let mut query = query;
+            braian_model::translate_assortment_query(&mut query, defs);
+            strip_query_type(&mut query);
+            if query.is_null() {
+                query = json!({});
+            }
+            Ok(query)
+        }
+        _ => Err(Problem::new(
+            StatusCode::BAD_REQUEST,
+            "assortment",
+            "kind must be dynamic or manual",
+        )),
+    }
+}
+
 async fn prepared_selection(
     state: &AppState,
     id: Option<Uuid>,
     type_token: Option<&str>,
-    mut query: Value,
-) -> Result<(Uuid, Value), Problem> {
+    kind: Option<&str>,
+    query: Value,
+) -> Result<(Uuid, &'static str, Value), Problem> {
     let Some(type_token) = type_token.map(str::trim).filter(|token| !token.is_empty()) else {
         return Err(missing_selection_type());
     };
@@ -2822,9 +2941,6 @@ async fn prepared_selection(
             return Err(wrong_type());
         }
     }
-    strip_query_type(&mut query);
-    braian_model::translate_assortment_query(&mut query, &cached.defs);
-    strip_query_type(&mut query);
     if let Some(id) = id
         && let Some(existing) = state.store.assortment(id).await.map_err(store_status)?
     {
@@ -2836,7 +2952,9 @@ async fn prepared_selection(
             return Err(wrong_type());
         }
     }
-    Ok((type_id, query))
+    let kind = selection_kind(kind)?;
+    let query = normalize_selection_query(&cached.defs, kind, query)?;
+    Ok((type_id, kind, query))
 }
 
 async fn save_assortment(
@@ -2854,11 +2972,17 @@ async fn save_assortment(
         ));
     };
     let id = body.id.unwrap_or_else(Uuid::now_v7);
-    let (type_id, query) =
-        prepared_selection(&state, Some(id), body.r#type.as_deref(), body.query).await?;
+    let (type_id, kind, query) = prepared_selection(
+        &state,
+        Some(id),
+        body.r#type.as_deref(),
+        body.kind.as_deref(),
+        body.query,
+    )
+    .await?;
     state
         .store
-        .save_assortment(id, owner, type_id, &body.name, &query)
+        .save_assortment(id, owner, type_id, &body.name, kind, &query)
         .await
         .map_err(store_status)?;
     let row = state
@@ -2867,9 +2991,182 @@ async fn save_assortment(
         .await
         .map_err(store_status)?
         .unwrap_or_else(
-            || json!({ "id": id, "name": body.name, "type_id": type_id, "query": query }),
+            || json!({ "id": id, "name": body.name, "type_id": type_id, "kind": kind, "query": query }),
         );
     Ok(Json(with_type_key(&state, row).await))
+}
+
+async fn update_assortment(
+    State(state): State<AppState>,
+    Auth(identity): Auth,
+    Path(id): Path<Uuid>,
+    Json(body): Json<AssortmentBody>,
+) -> Result<Json<Value>, Problem> {
+    require(&identity, Role::Editor)?;
+    crate::auth::require_commit(&identity)?;
+    let Some(existing) = state.store.assortment(id).await.map_err(store_status)? else {
+        return Err(Problem::new(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            "selection not found",
+        ));
+    };
+    let cached = state.models.get(&state.store).await?;
+    if let Some(kind) = body
+        .kind
+        .as_deref()
+        .map(str::trim)
+        .filter(|k| !k.is_empty())
+        && kind
+            != existing
+                .get("kind")
+                .and_then(Value::as_str)
+                .unwrap_or("manual")
+    {
+        return Err(Problem::new(
+            StatusCode::BAD_REQUEST,
+            "assortment",
+            "a selection's kind cannot change",
+        ));
+    }
+    if let Some(type_token) = body
+        .r#type
+        .as_deref()
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+    {
+        let have = existing
+            .get("type_id")
+            .and_then(Value::as_str)
+            .and_then(|value| Uuid::parse_str(value).ok());
+        let matches = have.is_some_and(|have| {
+            Uuid::parse_str(type_token).ok() == Some(have)
+                || wire::type_key(&cached.defs, TypeId::from_uuid(have)) == type_token
+        });
+        if !matches {
+            return Err(wrong_type());
+        }
+    }
+    let kind = existing
+        .get("kind")
+        .and_then(Value::as_str)
+        .unwrap_or("manual");
+    let query = normalize_selection_query(&cached.defs, kind, body.query)?;
+    state
+        .store
+        .update_assortment(id, &body.name, &query)
+        .await
+        .map_err(store_status)?;
+    let row = state
+        .store
+        .assortment(id)
+        .await
+        .map_err(store_status)?
+        .unwrap_or(json!({}));
+    Ok(Json(with_type_key(&state, row).await))
+}
+
+async fn delete_assortment(
+    State(state): State<AppState>,
+    Auth(identity): Auth,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Value>, Problem> {
+    require(&identity, Role::Editor)?;
+    crate::auth::require_commit(&identity)?;
+    if state
+        .store
+        .assortment(id)
+        .await
+        .map_err(store_status)?
+        .is_none()
+    {
+        return Err(Problem::new(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            "selection not found",
+        ));
+    }
+    let usage = state
+        .store
+        .delete_assortment(id)
+        .await
+        .map_err(store_status)?;
+    Ok(Json(assortment_usage_json(usage)))
+}
+
+async fn assortment_usage(
+    State(state): State<AppState>,
+    Auth(identity): Auth,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Value>, Problem> {
+    require(&identity, Role::Viewer)?;
+    if state
+        .store
+        .assortment(id)
+        .await
+        .map_err(store_status)?
+        .is_none()
+    {
+        return Err(Problem::new(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            "selection not found",
+        ));
+    }
+    let usage = state
+        .store
+        .assortment_usage(id)
+        .await
+        .map_err(store_status)?;
+    Ok(Json(assortment_usage_json(usage)))
+}
+
+fn assortment_usage_json(usage: braian_store::AssortmentUsage) -> Value {
+    json!({
+        "views": usage.views,
+        "job_types": usage.job_types,
+        "webhooks": usage.webhooks,
+    })
+}
+
+/// Members of a dynamic selection are re-evaluated on every read through the
+/// same filter parse and search path a view uses. A manual selection has no
+/// members yet: hand-picked members come with the selection UI.
+async fn assortment_members(
+    State(state): State<AppState>,
+    Auth(identity): Auth,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Value>, Problem> {
+    require(&identity, Role::Viewer)?;
+    let Some(row) = state.store.assortment(id).await.map_err(store_status)? else {
+        return Err(Problem::new(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            "selection not found",
+        ));
+    };
+    let filter = if row.get("kind").and_then(Value::as_str) == Some("dynamic") {
+        row.get("query")
+            .and_then(|query| query.get("filter"))
+            .and_then(Value::as_str)
+            .unwrap_or("")
+    } else {
+        return Ok(Json(json!({ "members": [], "found": 0 })));
+    };
+    let (filter_by, _, _) =
+        search_fields(&state, filter.to_owned(), String::new(), String::new()).await?;
+    let page = run_search(
+        &state,
+        String::new(),
+        String::new(),
+        filter_by,
+        String::new(),
+        String::new(),
+        1,
+        50,
+    )
+    .await?;
+    Ok(Json(json!({ "members": page.hits, "found": page.found })))
 }
 
 async fn propose_assortment(
@@ -2895,8 +3192,9 @@ async fn propose_assortment(
         .get("id")
         .and_then(Value::as_str)
         .and_then(|value| Uuid::parse_str(value).ok());
+    let kind = args.get("kind").and_then(Value::as_str);
     let query = args.get("query").cloned().unwrap_or(json!({}));
-    let (type_id, query) = prepared_selection(state, id, type_token, query).await?;
+    let (type_id, kind, query) = prepared_selection(state, id, type_token, kind, query).await?;
     let proposal_id = Uuid::now_v7();
     let title = format!("Save selection {name}");
     let row = ProposalRow {
@@ -2906,11 +3204,130 @@ async fn propose_assortment(
         type_key: Some("assortment".into()),
         base_version: None,
         patch: json!({
+            "op": "save",
             "name": name,
+            "kind": kind,
             "query": query,
             "id": id,
             "type": type_id,
         }),
+        status: "pending".into(),
+        conflict: false,
+        position: 0,
+    };
+    state
+        .store
+        .create_proposal(
+            proposal_id,
+            &title,
+            "user",
+            identity.actor.actor,
+            identity.actor.on_behalf_of,
+            false,
+            &[row],
+        )
+        .await
+        .map_err(store_status)?;
+    Ok(
+        json!({ "proposal_id": proposal_id, "id": proposal_id, "needs_approval": true, "title": title }),
+    )
+}
+
+async fn propose_assortment_update(
+    state: &AppState,
+    identity: &Identity,
+    args: &Value,
+) -> Result<Value, Problem> {
+    let id = args
+        .get("id")
+        .and_then(Value::as_str)
+        .and_then(|value| Uuid::parse_str(value).ok())
+        .ok_or_else(|| Problem::new(StatusCode::BAD_REQUEST, "assortment", "missing id"))?;
+    let name = args
+        .get("name")
+        .and_then(Value::as_str)
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| Problem::new(StatusCode::BAD_REQUEST, "assortment", "missing name"))?;
+    let Some(existing) = state.store.assortment(id).await.map_err(store_status)? else {
+        return Err(Problem::new(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            "selection not found",
+        ));
+    };
+    let kind = existing
+        .get("kind")
+        .and_then(Value::as_str)
+        .unwrap_or("manual");
+    let cached = state.models.get(&state.store).await?;
+    let query = normalize_selection_query(
+        &cached.defs,
+        kind,
+        args.get("query").cloned().unwrap_or(json!({})),
+    )?;
+    let proposal_id = Uuid::now_v7();
+    let title = format!("Update selection {name}");
+    let row = ProposalRow {
+        id: Uuid::now_v7(),
+        object_id: None,
+        object_key: Some(name.to_owned()),
+        type_key: Some("assortment".into()),
+        base_version: None,
+        patch: json!({ "op": "update", "id": id, "name": name, "query": query }),
+        status: "pending".into(),
+        conflict: false,
+        position: 0,
+    };
+    state
+        .store
+        .create_proposal(
+            proposal_id,
+            &title,
+            "user",
+            identity.actor.actor,
+            identity.actor.on_behalf_of,
+            false,
+            &[row],
+        )
+        .await
+        .map_err(store_status)?;
+    Ok(
+        json!({ "proposal_id": proposal_id, "id": proposal_id, "needs_approval": true, "title": title }),
+    )
+}
+
+async fn propose_assortment_delete(
+    state: &AppState,
+    identity: &Identity,
+    args: &Value,
+) -> Result<Value, Problem> {
+    let id = args
+        .get("id")
+        .and_then(Value::as_str)
+        .and_then(|value| Uuid::parse_str(value).ok())
+        .ok_or_else(|| Problem::new(StatusCode::BAD_REQUEST, "assortment", "missing id"))?;
+    if state
+        .store
+        .assortment(id)
+        .await
+        .map_err(store_status)?
+        .is_none()
+    {
+        return Err(Problem::new(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            "selection not found",
+        ));
+    }
+    let proposal_id = Uuid::now_v7();
+    let title = "Delete selection".to_owned();
+    let row = ProposalRow {
+        id: Uuid::now_v7(),
+        object_id: None,
+        object_key: None,
+        type_key: Some("assortment".into()),
+        base_version: None,
+        patch: json!({ "op": "delete", "id": id }),
         status: "pending".into(),
         conflict: false,
         position: 0,
@@ -2942,11 +3359,52 @@ async fn apply_assortment_row(
     claim: Uuid,
 ) -> Result<Option<i64>, Problem> {
     let patch = row.get("patch").cloned().unwrap_or(json!({}));
+    let op = patch.get("op").and_then(Value::as_str).unwrap_or("save");
+    if op == "delete" {
+        let id = patch
+            .get("id")
+            .and_then(Value::as_str)
+            .and_then(|value| Uuid::parse_str(value).ok())
+            .ok_or_else(|| Problem::new(StatusCode::BAD_REQUEST, "assortment", "missing id"))?;
+        let receipt = finish_row(
+            state,
+            identity,
+            proposal_id,
+            row_id,
+            "accepted",
+            ProposalWrite::AssortmentDelete { id },
+            claim,
+        )
+        .await?;
+        return Ok(receipt.map(|receipt| receipt.last_seq));
+    }
     let name = patch
         .get("name")
         .and_then(Value::as_str)
         .unwrap_or("Selection");
     let query = patch.get("query").cloned().unwrap_or(json!({}));
+    let id = patch
+        .get("id")
+        .and_then(Value::as_str)
+        .and_then(|value| Uuid::parse_str(value).ok())
+        .unwrap_or_else(Uuid::now_v7);
+    if op == "update" {
+        let receipt = finish_row(
+            state,
+            identity,
+            proposal_id,
+            row_id,
+            "accepted",
+            ProposalWrite::AssortmentUpdate {
+                id,
+                name: name.to_owned(),
+                query,
+            },
+            claim,
+        )
+        .await?;
+        return Ok(receipt.map(|receipt| receipt.last_seq));
+    }
     let Some(owner) = identity.user_id else {
         return Err(Problem::new(
             StatusCode::BAD_REQUEST,
@@ -2954,19 +3412,17 @@ async fn apply_assortment_row(
             "sign in to save a selection",
         ));
     };
-    let id = patch
-        .get("id")
-        .and_then(Value::as_str)
-        .and_then(|value| Uuid::parse_str(value).ok())
-        .unwrap_or_else(Uuid::now_v7);
-    let type_token = patch
+    // The proposal already carries the resolved type id and the normalized
+    // query, so accepting it writes them back without re-translating.
+    let type_id = patch
         .get("type")
         .and_then(Value::as_str)
-        .filter(|token| !token.trim().is_empty())
-        .map(str::to_owned)
-        .or_else(|| query_type_token(&query).map(str::to_owned));
-    let (type_id, query) =
-        prepared_selection(state, Some(id), type_token.as_deref(), query).await?;
+        .and_then(|value| Uuid::parse_str(value).ok())
+        .ok_or_else(|| Problem::new(StatusCode::BAD_REQUEST, "assortment", "missing type"))?;
+    let kind = patch
+        .get("kind")
+        .and_then(Value::as_str)
+        .unwrap_or("manual");
     let receipt = finish_row(
         state,
         identity,
@@ -2978,6 +3434,7 @@ async fn apply_assortment_row(
             owner,
             type_id,
             name: name.to_owned(),
+            kind: kind.to_owned(),
             query,
         },
         claim,
@@ -5992,6 +6449,8 @@ async fn propose_operation(
             crate::model_proposal::propose(state, identity, name, args).await
         }
         "assortment.save" => propose_assortment(state, identity, args).await,
+        "assortment.update" => propose_assortment_update(state, identity, args).await,
+        "assortment.delete" => propose_assortment_delete(state, identity, args).await,
         "move_to_group" => {
             let structure = args.get("structure").and_then(Value::as_str).unwrap_or("");
             let group = args.get("group").cloned().unwrap_or(Value::Null);
@@ -6302,6 +6761,10 @@ pub(crate) struct AssortmentBody {
     /// Type id or key. Absent until validation so an agent still gets 403 first.
     #[serde(default)]
     r#type: Option<String>,
+    /// `dynamic` or `manual`. Defaults to `manual`; locked after create.
+    #[serde(default)]
+    kind: Option<String>,
+    #[serde(default)]
     #[schema(value_type = crate::http_schema::FreeObject)]
     query: Value,
 }

@@ -758,20 +758,38 @@ impl Store {
         owner_id: Uuid,
         type_id: Uuid,
         name: &str,
+        kind: &str,
         query: &Value,
     ) -> Result<(), Error> {
         let client = self.checkout().await?;
         client
             .execute(
-                "INSERT INTO assortments (id, owner_id, type_id, name, query) VALUES ($1, $2, $3, $4, $5)
-                 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, query = EXCLUDED.query, type_id = EXCLUDED.type_id",
-                &[&id, &owner_id, &type_id, &name, query],
+                "INSERT INTO assortments (id, owner_id, type_id, name, kind, query) VALUES ($1, $2, $3, $4, $5, $6)
+                 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, kind = EXCLUDED.kind, query = EXCLUDED.query, type_id = EXCLUDED.type_id",
+                &[&id, &owner_id, &type_id, &name, &kind, query],
             )
             .await?;
         Ok(())
     }
 
-    /// Rewrites `assortments.query` and leaves the name and type alone.
+    /// Rewrites `assortments.name` and `assortments.query` and leaves kind and type alone.
+    pub async fn update_assortment(
+        &self,
+        id: Uuid,
+        name: &str,
+        query: &Value,
+    ) -> Result<(), Error> {
+        let client = self.checkout().await?;
+        client
+            .execute(
+                "UPDATE assortments SET name = $2, query = $3 WHERE id = $1",
+                &[&id, &name, query],
+            )
+            .await?;
+        Ok(())
+    }
+
+    /// Rewrites `assortments.query` and leaves the name, kind and type alone.
     pub async fn update_assortment_query(&self, id: Uuid, query: &Value) -> Result<(), Error> {
         let client = self.checkout().await?;
         client
@@ -787,7 +805,7 @@ impl Store {
         let client = self.checkout().await?;
         let rows = client
             .query(
-                "SELECT id, name, type_id, query FROM assortments
+                "SELECT id, name, type_id, kind, query FROM assortments
                  WHERE $1::uuid IS NULL OR type_id = $1
                  ORDER BY name",
                 &[&type_id],
@@ -800,7 +818,7 @@ impl Store {
         let client = self.checkout().await?;
         let Some(row) = client
             .query_opt(
-                "SELECT id, name, type_id, query FROM assortments WHERE id = $1",
+                "SELECT id, name, type_id, kind, query FROM assortments WHERE id = $1",
                 &[&id],
             )
             .await?
@@ -808,6 +826,97 @@ impl Store {
             return Ok(None);
         };
         Ok(Some(assortment_json(&row)))
+    }
+
+    /// Views, job types and webhooks that reference this selection.
+    pub async fn assortment_usage(&self, id: Uuid) -> Result<AssortmentUsage, Error> {
+        let client = self.checkout().await?;
+        let views = client
+            .query(
+                "SELECT id, title, workspace_id FROM views
+                 WHERE state->>'selection_id' = $1
+                 ORDER BY title, id",
+                &[&id.to_string()],
+            )
+            .await?
+            .iter()
+            .map(|row| {
+                serde_json::json!({
+                    "id": row.get::<_, Uuid>("id"),
+                    "title": row.get::<_, String>("title"),
+                    "workspace_id": row.get::<_, Uuid>("workspace_id"),
+                })
+            })
+            .collect();
+        let job_types = client
+            .query(
+                "SELECT key, title FROM job_types WHERE assortment_id = $1 ORDER BY key",
+                &[&id],
+            )
+            .await?
+            .iter()
+            .map(|row| {
+                serde_json::json!({
+                    "key": row.get::<_, String>("key"),
+                    "title": row.get::<_, String>("title"),
+                })
+            })
+            .collect();
+        let webhooks = client
+            .query(
+                "SELECT id, url FROM webhooks WHERE assortment_id = $1 ORDER BY url, id",
+                &[&id],
+            )
+            .await?
+            .iter()
+            .map(|row| {
+                serde_json::json!({
+                    "id": row.get::<_, Uuid>("id"),
+                    "url": row.get::<_, String>("url"),
+                })
+            })
+            .collect();
+        Ok(AssortmentUsage {
+            views,
+            job_types,
+            webhooks,
+        })
+    }
+
+    /// Deletes a selection. Views that used it as their source fall back to
+    /// "All ..." (their selection source is cleared); dangling job type and
+    /// webhook references are cleared too. Returns the usage that was removed.
+    pub async fn delete_assortment(&self, id: Uuid) -> Result<AssortmentUsage, Error> {
+        let usage = self.assortment_usage(id).await?;
+        let client = self.checkout().await?;
+        client
+            .execute(
+                "UPDATE views SET state = state - 'selection_id' WHERE state->>'selection_id' = $1",
+                &[&id.to_string()],
+            )
+            .await?;
+        client
+            .execute(
+                "UPDATE job_types SET assortment_id = NULL WHERE assortment_id = $1",
+                &[&id],
+            )
+            .await?;
+        client
+            .execute(
+                "UPDATE webhooks SET assortment_id = NULL WHERE assortment_id = $1",
+                &[&id],
+            )
+            .await?;
+        client
+            .execute(
+                "UPDATE job_runs SET assortment_id = NULL WHERE assortment_id = $1",
+                &[&id],
+            )
+            .await?;
+        client
+            .execute("DELETE FROM assortments WHERE id = $1", &[&id])
+            .await?;
+        Ok(usage)
     }
 
     pub async fn register_job_type(
@@ -1836,8 +1945,17 @@ fn assortment_json(row: &tokio_postgres::Row) -> Value {
         "id": row.get::<_, Uuid>("id"),
         "name": row.get::<_, String>("name"),
         "type_id": row.get::<_, Uuid>("type_id"),
+        "kind": row.get::<_, String>("kind"),
         "query": row.get::<_, Value>("query"),
     })
+}
+
+/// Views, job types and webhooks that reference one selection.
+#[derive(Debug, Clone, Default)]
+pub struct AssortmentUsage {
+    pub views: Vec<Value>,
+    pub job_types: Vec<Value>,
+    pub webhooks: Vec<Value>,
 }
 
 fn push_pred(sql: &mut String, params_len: usize, clause: &str) {

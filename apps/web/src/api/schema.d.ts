@@ -81,6 +81,42 @@ export interface paths {
         };
         /** Read one selection. type must be that selection's type. */
         get: operations["get_assortment"];
+        /** Update a selection's name and query. Kind and type are locked. */
+        put: operations["update_assortment"];
+        post?: never;
+        /** Delete a selection and clear its source on the views that used it. */
+        delete: operations["delete_assortment"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/assortments/{id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Members of a dynamic selection, re-evaluated through the search path. */
+        get: operations["assortment_members"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/assortments/{id}/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the views and places using one selection. */
+        get: operations["assortment_usage"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1566,22 +1602,51 @@ export interface components {
         AssortmentBody: {
             /** Format: uuid */
             id?: string | null;
+            /** @description `dynamic` or `manual`. Defaults to `manual`; locked after create. */
+            kind?: string | null;
             name: string;
-            query: components["schemas"]["FreeObject"];
+            query?: components["schemas"]["FreeObject"];
             /** @description Type id or key. Absent until validation so an agent still gets 403 first. */
             type?: string | null;
         };
         AssortmentList: {
             assortments: components["schemas"]["AssortmentRow"][];
         };
+        AssortmentMembers: {
+            /** Format: int32 */
+            found: number;
+            members: components["schemas"]["SearchHit"][];
+        };
         AssortmentRow: {
             /** Format: uuid */
             id: string;
+            kind: string;
             name: string;
             query: components["schemas"]["FreeObject"];
             type?: string | null;
             /** Format: uuid */
             type_id: string;
+        };
+        AssortmentUsage: {
+            job_types: components["schemas"]["AssortmentUsageJobType"][];
+            views: components["schemas"]["AssortmentUsageView"][];
+            webhooks: components["schemas"]["AssortmentUsageWebhook"][];
+        };
+        AssortmentUsageJobType: {
+            key: string;
+            title: string;
+        };
+        AssortmentUsageView: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            /** Format: uuid */
+            workspace_id: string;
+        };
+        AssortmentUsageWebhook: {
+            /** Format: uuid */
+            id: string;
+            url: string;
         };
         /**
          * @description One attribute in the global pool, identified by `key`.
@@ -3116,6 +3181,138 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssortmentRow"];
+                };
+            };
+            /** @description Missing or unknown token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    update_assortment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Selection id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssortmentBody"];
+            };
+        };
+        responses: {
+            /** @description Updated selection */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssortmentRow"];
+                };
+            };
+            /** @description Missing or unknown token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    delete_assortment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Selection id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Usage that was cleared */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssortmentUsage"];
+                };
+            };
+            /** @description Missing or unknown token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    assortment_members: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Selection id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Selection members */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssortmentMembers"];
+                };
+            };
+            /** @description Missing or unknown token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    assortment_usage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Selection id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Selection usage */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssortmentUsage"];
                 };
             };
             /** @description Missing or unknown token */
