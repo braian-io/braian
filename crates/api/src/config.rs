@@ -106,7 +106,7 @@ pub async fn plan_config(
             "no config documents",
         ));
     }
-    let defs = state.store.definition_set().await.map_err(store_status)?;
+    let defs = current_definitions(&state).await?;
     let mut plan = plan_documents(&defs, &documents).map_err(invalid_config)?;
     fill_affected(&state, &mut plan).await?;
     for step in &mut plan.steps {
@@ -142,7 +142,7 @@ pub async fn apply_config(
             "no config documents",
         ));
     }
-    let defs = state.store.definition_set().await.map_err(store_status)?;
+    let defs = current_definitions(&state).await?;
     let mut application = apply_documents(&defs, &documents).map_err(invalid_config)?;
     fill_affected(&state, &mut application.plan).await?;
     if application.plan.is_destructive() && !allow_destructive {
@@ -158,7 +158,7 @@ pub async fn apply_config(
             "the documents match the stored model",
         ));
     }
-    let mut response = crate::model_proposal::propose(
+    let mut response = crate::model_proposal::propose_with_defs(
         &state,
         &identity,
         "model.draft",
@@ -166,10 +166,30 @@ pub async fn apply_config(
             "title": "Config apply",
             "steps": application.changes,
         }),
+        &defs,
     )
     .await?;
     response["groups"] = groups_for(&application.plan);
     Ok((StatusCode::ACCEPTED, Json(response)).into_response())
+}
+
+/// A store with no definitions yet is an empty model for config documents.
+///
+/// This is what makes the first apply able to create the model from scratch.
+async fn current_definitions(state: &AppState) -> Result<braian_model::DefinitionSet, Problem> {
+    match state.store.definition_set().await {
+        Ok(defs) => Ok(defs),
+        Err(braian_store::Error::NoDefinitions) => Ok(braian_model::DefinitionSet {
+            model_revision: 0,
+            languages: Vec::new(),
+            unit_families: Vec::new(),
+            value_lists: Vec::new(),
+            attributes: Vec::new(),
+            types: Vec::new(),
+            structures: Vec::new(),
+        }),
+        Err(error) => Err(store_status(error)),
+    }
 }
 
 async fn fill_affected(state: &AppState, plan: &mut ConfigPlan) -> Result<(), Problem> {

@@ -19,7 +19,7 @@ pub async fn run(database_url: &str) -> anyhow::Result<()> {
     // Hurl joins `file,` paths with --file-root. The Hurl files use paths from
     // the repository root, and `just demo-3` is run from there.
     let file_root = std::env::current_dir().context("current directory")?;
-    if !file_root.join("testdata/rules/definitions.json").is_file() {
+    if !file_root.join("testdata/config/definitions.json").is_file() {
         anyhow::bail!("run demo-3 from the repository root so Hurl can read testdata/");
     }
 

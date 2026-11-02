@@ -110,3 +110,25 @@ fn full_mode_deletes_are_model_steps() {
         )
     );
 }
+
+#[test]
+fn empty_store_plans_from_config_documents() {
+    let empty = DefinitionSet {
+        model_revision: 0,
+        languages: Vec::new(),
+        unit_families: Vec::new(),
+        value_lists: Vec::new(),
+        attributes: Vec::new(),
+        types: Vec::new(),
+        structures: Vec::new(),
+    };
+    let documents: Vec<ConfigDocument> =
+        serde_json::from_str(include_str!("../../../testdata/config/definitions.json"))
+            .expect("config fixture is a document list");
+
+    let application = apply_documents(&empty, &documents).expect("apply plan");
+    assert!(!application.changes.is_empty());
+    let (after, _) = preview(&empty, &application.changes).expect("steps apply");
+    assert!(after.attributes.iter().any(|item| item.key == "sku"));
+    assert!(after.types.iter().any(|item| item.key == "item"));
+}
