@@ -15,7 +15,7 @@ async function openProducts(page: Page) {
   await expect(page.getByTestId('object-table')).toBeVisible()
 }
 
-async function resetProductsColumnPrefs(page: Page) {
+async function seedProductsColumnPrefs(page: Page) {
   const listed = await page.request.get('/v1/workspaces')
   if (!listed.ok()) throw new Error(`workspaces: HTTP ${listed.status()}`)
   const { workspaces } = (await listed.json()) as {
@@ -47,10 +47,27 @@ async function resetProductsColumnPrefs(page: Page) {
     view.title === 'Products'
   const table = views.find((view) => isTable(view) && isProduct(view)) ?? views.find(isTable)
   if (!table) throw new Error('missing Products object table')
-  const cleared = await page.request.delete(
+  // Seed Brand visible instead of relying on default columns. Defaults are
+  // derived from /v1/definitions, and the table can apply prefs before that
+  // GET lands, which seeds the builtin chrome (no Brand) and keeps it.
+  const seeded = await page.request.put(
     `/v1/views/${table.id}/column-prefs?environment=default`,
+    {
+      data: {
+        environment: 'default',
+        document: {
+          version: 2,
+          columns: [
+            { path: 'number', visible: true },
+            { path: 'name', visible: true },
+            { path: 'brand', visible: true },
+            { path: 'status', visible: true },
+          ],
+        },
+      },
+    },
   )
-  if (!cleared.ok()) throw new Error(`column prefs: HTTP ${cleared.status()}`)
+  if (!seeded.ok()) throw new Error(`column prefs seed: HTTP ${seeded.status()}`)
 }
 
 async function openFieldsPalette(page: Page) {
@@ -97,9 +114,10 @@ test.describe('column prefs multitab', () => {
     const page2 = await context.newPage()
 
     await login(page1)
-    // The demo user and database are shared between specs. Start from no saved
-    // prefs, then reload so the first Products paint cannot keep a stale GET.
-    await resetProductsColumnPrefs(page1)
+    // The demo user and database are shared between specs. Start from a known
+    // Brand-visible document, then reload so the first Products paint cannot
+    // keep a stale GET.
+    await seedProductsColumnPrefs(page1)
     await page1.reload()
     await expect(page1.getByTestId('workspace')).toBeVisible()
     await openProducts(page1)
