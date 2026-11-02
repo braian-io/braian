@@ -6,7 +6,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use braian_model::{DataPurge, DefinitionSet, ModelChange, TypeKind, purge_for};
+use braian_model::{
+    Attribute, AttributeId, AttributeKind, Cardinality, Class, ClassId, DataPurge, DefinitionSet,
+    Group, GroupId, IndexFlags, LanguageTag, LinkLabel, LinkSpec, ModelChange, ObjectType,
+    SharedValueList, Structure, StructureId, TextForm, TypeId, TypeKind, Unit, UnitFamily,
+    UnitFamilyId, Uuid, ValueOption, purge_for,
+};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -74,6 +79,9 @@ pub struct PlanStep {
     pub fields: Vec<String>,
     /// The step removes or invalidates stored data.
     pub destructive: bool,
+    /// A destructive step the caller has not yet allowed.
+    #[serde(default)]
+    pub blocked: bool,
     #[serde(default)]
     pub affected: PlanAffected,
     /// Counting plan for a destructive step. Never serialized.
@@ -596,6 +604,7 @@ fn step(
         renamed_from,
         fields,
         destructive,
+        blocked: false,
         affected: PlanAffected::default(),
         purge,
     }
@@ -765,4 +774,712 @@ fn non_counting_purge() -> DataPurge {
         destructive: true,
         ..DataPurge::default()
     }
+}
+
+/// A plan and the model steps that carry it out.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConfigApplication {
+    pub plan: ConfigPlan,
+    pub changes: Vec<ModelChange>,
+}
+
+/// Plan the documents and build the model steps an approval would apply.
+///
+/// The steps use the existing [`ModelChange`] vocabulary so the proposal
+/// pipeline does not need a second writer for config documents.
+pub fn apply_documents(
+    current: &DefinitionSet,
+    documents: &[ConfigDocument],
+) -> Result<ConfigApplication, ConfigError> {
+    let plan = plan_documents(current, documents)?;
+    let desired = desired_from(documents)?;
+    let changes = changes_for(current, &desired, &plan)?;
+    Ok(ConfigApplication { plan, changes })
+}
+
+fn changes_for(
+    current: &DefinitionSet,
+    desired: &Desired,
+    plan: &ConfigPlan,
+) -> Result<Vec<ModelChange>, ConfigError> {
+    let mut changes = Vec::new();
+
+    let unit_ids = unit_family_ids(current, desired);
+    let attribute_ids = attribute_ids(current, desired);
+    let structure_ids = structure_ids(current, desired);
+    let type_ids = type_ids(current, desired);
+
+    for (key, family) in &desired.unit_families {
+        let id = unit_ids[key];
+        let target = unit_family_from_config(family, id)?;
+        if !current
+            .unit_families
+            .iter()
+            .any(|item| item.id == id && item == &target)
+        {
+            changes.push(ModelChange::UpsertUnitFamily {
+                family: Box::new(target),
+            });
+        }
+    }
+
+    for (key, attribute) in &desired.model.attributes {
+        let id = attribute_ids[key];
+        let target = attribute_from_config(attribute, id, &unit_ids, current)?;
+        if !current
+            .attributes
+            .iter()
+            .any(|item| item.id == id && item == &target)
+        {
+            changes.push(ModelChange::UpsertAttribute {
+                attribute: Box::new(target),
+            });
+        }
+    }
+
+    for (key, structure) in &desired.model.structures {
+        let id = structure_ids[key];
+        let target = structure_from_config(structure, id, &attribute_ids, current)?;
+        if !current
+            .structures
+            .iter()
+            .any(|item| item.id == id && item == &target)
+        {
+            changes.push(ModelChange::UpsertStructure {
+                structure: Box::new(target),
+            });
+        }
+    }
+
+    for (key, object_type) in &desired.model.types {
+        let id = type_ids[key];
+        let target = type_from_config(
+            object_type,
+            id,
+            &attribute_ids,
+            &structure_ids,
+            &type_ids,
+            current,
+        )?;
+        if !current
+            .types
+            .iter()
+            .any(|item| item.id == id && item == &target)
+        {
+            changes.push(ModelChange::UpsertType {
+                object_type: Box::new(target),
+            });
+        }
+    }
+
+    for (key, list) in &desired.value_lists {
+        push_value_list_change(current, key, list, &mut changes);
+    }
+
+    for step in plan
+        .steps
+        .iter()
+        .filter(|step| step.action == PlanAction::Delete)
+    {
+        match step.kind {
+            PlanKind::Attribute => changes.push(ModelChange::DeleteAttribute {
+                key: step.key.clone(),
+            }),
+            PlanKind::Type => {
+                let link = current
+                    .types
+                    .iter()
+                    .find(|item| item.key == step.key)
+                    .is_some_and(|item| item.kind == TypeKind::Link);
+                if link {
+                    changes.push(ModelChange::DeleteLinkType {
+                        key: step.key.clone(),
+                    });
+                } else {
+                    changes.push(ModelChange::DeleteType {
+                        key: step.key.clone(),
+                    });
+                }
+            }
+            PlanKind::Structure => changes.push(ModelChange::DeleteStructure {
+                structure: step.key.clone(),
+            }),
+            PlanKind::ValueList => changes.push(ModelChange::DeleteValueList {
+                key: step.key.clone(),
+            }),
+            PlanKind::UnitFamily => changes.push(ModelChange::DeleteUnitFamily {
+                key: step.key.clone(),
+            }),
+            // Group and class deletes arrive with their structure upsert.
+            // A language list has no model step; see the apply endpoint notes.
+            PlanKind::Group | PlanKind::Class | PlanKind::Language => {}
+        }
+    }
+
+    Ok(changes)
+}
+
+fn unit_family_ids(current: &DefinitionSet, desired: &Desired) -> BTreeMap<String, UnitFamilyId> {
+    let mut ids = BTreeMap::new();
+    for (key, family) in &desired.unit_families {
+        let id = current
+            .unit_families
+            .iter()
+            .find(|item| item.key == *key)
+            .or_else(|| {
+                family
+                    .renamed_from
+                    .as_ref()
+                    .and_then(|old| current.unit_families.iter().find(|item| item.key == *old))
+            })
+            .map(|item| item.id)
+            .unwrap_or_else(|| UnitFamilyId::from_uuid(Uuid::now_v7()));
+        ids.insert(key.clone(), id);
+    }
+    ids
+}
+
+fn attribute_ids(current: &DefinitionSet, desired: &Desired) -> BTreeMap<String, AttributeId> {
+    let mut ids = BTreeMap::new();
+    for (key, attribute) in &desired.model.attributes {
+        let id = current
+            .attributes
+            .iter()
+            .find(|item| item.key == *key)
+            .or_else(|| {
+                attribute
+                    .renamed_from
+                    .as_ref()
+                    .and_then(|old| current.attributes.iter().find(|item| item.key == *old))
+            })
+            .map(|item| item.id)
+            .unwrap_or_else(|| AttributeId::from_uuid(Uuid::now_v7()));
+        ids.insert(key.clone(), id);
+    }
+    ids
+}
+
+fn structure_ids(current: &DefinitionSet, desired: &Desired) -> BTreeMap<String, StructureId> {
+    let mut ids = BTreeMap::new();
+    for (key, structure) in &desired.model.structures {
+        let id = current
+            .structures
+            .iter()
+            .find(|item| item.key == *key)
+            .or_else(|| {
+                structure
+                    .renamed_from
+                    .as_ref()
+                    .and_then(|old| current.structures.iter().find(|item| item.key == *old))
+            })
+            .map(|item| item.id)
+            .unwrap_or_else(|| StructureId::from_uuid(Uuid::now_v7()));
+        ids.insert(key.clone(), id);
+    }
+    ids
+}
+
+fn type_ids(current: &DefinitionSet, desired: &Desired) -> BTreeMap<String, TypeId> {
+    let mut ids = BTreeMap::new();
+    for (key, object_type) in &desired.model.types {
+        let id = current
+            .types
+            .iter()
+            .find(|item| item.key == *key)
+            .or_else(|| {
+                object_type
+                    .renamed_from
+                    .as_ref()
+                    .and_then(|old| current.types.iter().find(|item| item.key == *old))
+            })
+            .map(|item| item.id)
+            .unwrap_or_else(|| TypeId::from_uuid(Uuid::now_v7()));
+        ids.insert(key.clone(), id);
+    }
+    ids
+}
+
+fn unit_family_from_config(
+    document: &UnitFamilyDocument,
+    id: UnitFamilyId,
+) -> Result<UnitFamily, ConfigError> {
+    Ok(UnitFamily {
+        id,
+        key: document.key.clone(),
+        dimension: document.dimension.clone(),
+        base_unit: document.base_unit.clone(),
+        units: document
+            .units
+            .iter()
+            .map(|unit| {
+                Ok(Unit {
+                    code: unit.code.clone(),
+                    factor: parse_decimal(&unit.factor)?,
+                })
+            })
+            .collect::<Result<_, ConfigError>>()?,
+    })
+}
+
+fn attribute_from_config(
+    config: &AttributeConfig,
+    id: AttributeId,
+    unit_ids: &BTreeMap<String, UnitFamilyId>,
+    current: &DefinitionSet,
+) -> Result<Attribute, ConfigError> {
+    Ok(Attribute {
+        id,
+        key: config.key.clone(),
+        labels: language_labels(&config.labels)?,
+        language_dependent: config.language_dependent,
+        multiple: config.multiple,
+        required: config.required,
+        kind: attribute_kind(&config.kind, unit_ids, current)?,
+        index: IndexFlags {
+            searchable: config.index.searchable,
+            filterable: config.index.filterable,
+            sortable: config.index.sortable,
+        },
+    })
+}
+
+fn attribute_kind(
+    kind: &crate::AttributeKindConfig,
+    unit_ids: &BTreeMap<String, UnitFamilyId>,
+    current: &DefinitionSet,
+) -> Result<AttributeKind, ConfigError> {
+    use crate::AttributeKindConfig;
+    Ok(match kind {
+        AttributeKindConfig::Text { max_length, form } => AttributeKind::Text {
+            max_length: *max_length,
+            form: match form {
+                crate::TextFormConfig::Short => TextForm::Short,
+                crate::TextFormConfig::Long => TextForm::Long,
+            },
+        },
+        AttributeKindConfig::Number {
+            unit_family,
+            min,
+            max,
+            integer,
+        } => AttributeKind::Number {
+            unit_family: unit_family
+                .as_ref()
+                .map(|key| unit_id(key, unit_ids, current))
+                .transpose()?,
+            min: min.as_ref().map(|value| parse_decimal(value)).transpose()?,
+            max: max.as_ref().map(|value| parse_decimal(value)).transpose()?,
+            integer: *integer,
+        },
+        AttributeKindConfig::Range { unit_family } => AttributeKind::Range {
+            unit_family: unit_family
+                .as_ref()
+                .map(|key| unit_id(key, unit_ids, current))
+                .transpose()?,
+        },
+        AttributeKindConfig::ValueList { options, list } => AttributeKind::ValueList {
+            options: options
+                .iter()
+                .map(|option| {
+                    Ok(ValueOption {
+                        code: option.code.clone(),
+                        labels: language_labels(&option.labels)?,
+                    })
+                })
+                .collect::<Result<_, ConfigError>>()?,
+            list: list.clone(),
+        },
+        AttributeKindConfig::Boolean => AttributeKind::Boolean,
+        AttributeKindConfig::Date => AttributeKind::Date,
+        AttributeKindConfig::ObjectRef { type_key } => AttributeKind::ObjectRef {
+            type_key: type_key.clone(),
+        },
+        AttributeKindConfig::FileRef { media } => AttributeKind::FileRef { media: *media },
+    })
+}
+
+fn type_from_config(
+    config: &TypeConfig,
+    id: TypeId,
+    attribute_ids: &BTreeMap<String, AttributeId>,
+    structure_ids: &BTreeMap<String, StructureId>,
+    type_ids: &BTreeMap<String, TypeId>,
+    current: &DefinitionSet,
+) -> Result<ObjectType, ConfigError> {
+    Ok(ObjectType {
+        id,
+        key: config.key.clone(),
+        labels: language_labels(&config.labels)?,
+        singular: language_labels(&config.singular)?,
+        plural: language_labels(&config.plural)?,
+        key_attribute: attribute_id(&config.key_attribute, attribute_ids, current)?,
+        attributes: config
+            .attributes
+            .iter()
+            .map(|key| attribute_id(key, attribute_ids, current))
+            .collect::<Result<_, _>>()?,
+        structures: config
+            .structures
+            .as_ref()
+            .map(|keys| {
+                keys.iter()
+                    .map(|key| structure_id(key, structure_ids, current))
+                    .collect::<Result<Vec<_>, ConfigError>>()
+            })
+            .transpose()?,
+        defaults: config.defaults.clone(),
+        kind: match config.kind {
+            crate::TypeKindConfig::Entity => TypeKind::Entity,
+            crate::TypeKindConfig::Link => TypeKind::Link,
+        },
+        link: config
+            .link
+            .as_ref()
+            .map(|link| {
+                Ok(LinkSpec {
+                    from_types: link
+                        .from_types
+                        .iter()
+                        .map(|key| type_id(key, type_ids, current))
+                        .collect::<Result<_, ConfigError>>()?,
+                    to_types: link
+                        .to_types
+                        .iter()
+                        .map(|key| type_id(key, type_ids, current))
+                        .collect::<Result<_, ConfigError>>()?,
+                    from_label: LinkLabel {
+                        key: link.from_label.key.clone(),
+                        labels: language_labels(&link.from_label.labels)?,
+                    },
+                    to_label: LinkLabel {
+                        key: link.to_label.key.clone(),
+                        labels: language_labels(&link.to_label.labels)?,
+                    },
+                    from_cardinality: cardinality(link.from_cardinality),
+                    to_cardinality: cardinality(link.to_cardinality),
+                })
+            })
+            .transpose()?,
+    })
+}
+
+fn structure_from_config(
+    config: &StructureConfig,
+    id: StructureId,
+    attribute_ids: &BTreeMap<String, AttributeId>,
+    current: &DefinitionSet,
+) -> Result<Structure, ConfigError> {
+    let existing = current.structures.iter().find(|item| item.id == id);
+    let mut group_ids = BTreeMap::new();
+    for group in &config.groups {
+        let group_id = existing
+            .and_then(|structure| {
+                structure
+                    .groups
+                    .iter()
+                    .find(|item| item.key == group.key)
+                    .or_else(|| {
+                        group
+                            .renamed_from
+                            .as_ref()
+                            .and_then(|old| structure.groups.iter().find(|item| item.key == *old))
+                    })
+            })
+            .map(|item| item.id)
+            .unwrap_or_else(|| GroupId::from_uuid(Uuid::now_v7()));
+        group_ids.insert(group.key.clone(), group_id);
+    }
+    let mut class_ids = BTreeMap::new();
+    for class in &config.classes {
+        let class_id = existing
+            .and_then(|structure| {
+                structure
+                    .classes
+                    .iter()
+                    .find(|item| item.key == class.key)
+                    .or_else(|| {
+                        class
+                            .renamed_from
+                            .as_ref()
+                            .and_then(|old| structure.classes.iter().find(|item| item.key == *old))
+                    })
+            })
+            .map(|item| item.id)
+            .unwrap_or_else(|| ClassId::from_uuid(Uuid::now_v7()));
+        class_ids.insert(class.key.clone(), class_id);
+    }
+
+    let groups = config
+        .groups
+        .iter()
+        .map(|group| {
+            Ok(Group {
+                id: group_ids[&group.key],
+                key: group.key.clone(),
+                labels: language_labels(&group.labels)?,
+                parent: group
+                    .parent
+                    .as_ref()
+                    .map(|key| group_ref(key, &group_ids, existing))
+                    .transpose()?,
+                attributes: group
+                    .attributes
+                    .iter()
+                    .map(|key| attribute_id(key, attribute_ids, current))
+                    .collect::<Result<_, _>>()?,
+            })
+        })
+        .collect::<Result<Vec<_>, ConfigError>>()?;
+
+    let classes = config
+        .classes
+        .iter()
+        .map(|class| {
+            Ok(Class {
+                id: class_ids[&class.key],
+                key: class.key.clone(),
+                group: group_ref(&class.group, &group_ids, existing)?,
+                parent: class
+                    .parent
+                    .as_ref()
+                    .map(|key| class_ref(key, &class_ids, existing))
+                    .transpose()?,
+                attributes: class
+                    .attributes
+                    .iter()
+                    .map(|key| attribute_id(key, attribute_ids, current))
+                    .collect::<Result<_, _>>()?,
+            })
+        })
+        .collect::<Result<Vec<_>, ConfigError>>()?;
+
+    Ok(Structure {
+        id,
+        key: config.key.clone(),
+        labels: language_labels(&config.labels)?,
+        groups,
+        classes,
+    })
+}
+
+fn push_value_list_change(
+    current: &DefinitionSet,
+    key: &str,
+    document: &ValueListDocument,
+    changes: &mut Vec<ModelChange>,
+) {
+    let existing = current
+        .value_lists
+        .iter()
+        .find(|item| item.key == key)
+        .or_else(|| {
+            document
+                .renamed_from
+                .as_ref()
+                .and_then(|old| current.value_lists.iter().find(|item| item.key == *old))
+        });
+    let options = document
+        .options
+        .iter()
+        .map(|option| braian_model::NamedOption {
+            code: option.code.clone(),
+            label: option
+                .labels
+                .get("en")
+                .or_else(|| option.labels.values().next())
+                .cloned()
+                .unwrap_or_default(),
+        })
+        .collect::<Vec<_>>();
+    let label = document
+        .labels
+        .get("en")
+        .or_else(|| document.labels.values().next())
+        .cloned()
+        .unwrap_or_default();
+
+    let Some(existing) = existing else {
+        changes.push(ModelChange::CreateValueList {
+            key: key.to_owned(),
+            label,
+            options,
+        });
+        return;
+    };
+
+    let renamed = existing.key != key;
+    if renamed {
+        changes.push(ModelChange::RenameValueListKey {
+            key: existing.key.clone(),
+            new_key: key.to_owned(),
+        });
+    }
+    let target = SharedValueList {
+        id: existing.id,
+        key: key.to_owned(),
+        labels: document
+            .labels
+            .iter()
+            .filter_map(|(tag, text)| LanguageTag::parse(tag).ok().map(|tag| (tag, text.clone())))
+            .collect(),
+        options: document
+            .options
+            .iter()
+            .map(|option| ValueOption {
+                code: option.code.clone(),
+                labels: option
+                    .labels
+                    .iter()
+                    .filter_map(|(tag, text)| {
+                        LanguageTag::parse(tag).ok().map(|tag| (tag, text.clone()))
+                    })
+                    .collect(),
+            })
+            .collect(),
+    };
+    if existing != &target {
+        changes.push(ModelChange::UpdateValueList {
+            key: key.to_owned(),
+            label: (!label.is_empty()).then_some(label),
+            options: Some(options),
+        });
+    }
+}
+
+fn unit_id(
+    key: &str,
+    desired: &BTreeMap<String, UnitFamilyId>,
+    current: &DefinitionSet,
+) -> Result<UnitFamilyId, ConfigError> {
+    desired
+        .get(key)
+        .copied()
+        .or_else(|| {
+            current
+                .unit_families
+                .iter()
+                .find(|item| item.key == key)
+                .map(|item| item.id)
+        })
+        .ok_or_else(|| ConfigError::new(format!("unknown unit family key {key}")))
+}
+
+fn attribute_id(
+    key: &str,
+    desired: &BTreeMap<String, AttributeId>,
+    current: &DefinitionSet,
+) -> Result<AttributeId, ConfigError> {
+    desired
+        .get(key)
+        .copied()
+        .or_else(|| {
+            current
+                .attributes
+                .iter()
+                .find(|item| item.key == key)
+                .map(|item| item.id)
+        })
+        .ok_or_else(|| ConfigError::new(format!("unknown attribute key {key}")))
+}
+
+fn structure_id(
+    key: &str,
+    desired: &BTreeMap<String, StructureId>,
+    current: &DefinitionSet,
+) -> Result<StructureId, ConfigError> {
+    desired
+        .get(key)
+        .copied()
+        .or_else(|| {
+            current
+                .structures
+                .iter()
+                .find(|item| item.key == key)
+                .map(|item| item.id)
+        })
+        .ok_or_else(|| ConfigError::new(format!("unknown structure key {key}")))
+}
+
+fn type_id(
+    key: &str,
+    desired: &BTreeMap<String, TypeId>,
+    current: &DefinitionSet,
+) -> Result<TypeId, ConfigError> {
+    desired
+        .get(key)
+        .copied()
+        .or_else(|| {
+            current
+                .types
+                .iter()
+                .find(|item| item.key == key)
+                .map(|item| item.id)
+        })
+        .ok_or_else(|| ConfigError::new(format!("unknown type key {key}")))
+}
+
+fn group_ref(
+    key: &str,
+    desired: &BTreeMap<String, GroupId>,
+    existing: Option<&Structure>,
+) -> Result<GroupId, ConfigError> {
+    desired
+        .get(key)
+        .copied()
+        .or_else(|| {
+            existing.and_then(|structure| {
+                structure
+                    .groups
+                    .iter()
+                    .find(|item| item.key == key)
+                    .map(|item| item.id)
+            })
+        })
+        .ok_or_else(|| ConfigError::new(format!("unknown group key {key}")))
+}
+
+fn class_ref(
+    key: &str,
+    desired: &BTreeMap<String, ClassId>,
+    existing: Option<&Structure>,
+) -> Result<ClassId, ConfigError> {
+    desired
+        .get(key)
+        .copied()
+        .or_else(|| {
+            existing.and_then(|structure| {
+                structure
+                    .classes
+                    .iter()
+                    .find(|item| item.key == key)
+                    .map(|item| item.id)
+            })
+        })
+        .ok_or_else(|| ConfigError::new(format!("unknown class key {key}")))
+}
+
+fn cardinality(value: crate::CardinalityConfig) -> Cardinality {
+    match value {
+        crate::CardinalityConfig::One => Cardinality::One,
+        crate::CardinalityConfig::Many => Cardinality::Many,
+    }
+}
+
+fn language_labels(
+    labels: &BTreeMap<String, String>,
+) -> Result<BTreeMap<LanguageTag, String>, ConfigError> {
+    labels
+        .iter()
+        .map(|(tag, text)| {
+            let tag =
+                LanguageTag::parse(tag).map_err(|error| ConfigError::new(error.to_string()))?;
+            Ok((tag, text.clone()))
+        })
+        .collect()
+}
+
+fn parse_decimal(value: &str) -> Result<rust_decimal::Decimal, ConfigError> {
+    value
+        .parse()
+        .map_err(|_| ConfigError::new(format!("invalid decimal {value}")))
 }

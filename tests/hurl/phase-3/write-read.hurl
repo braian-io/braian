@@ -11,14 +11,39 @@ HTTP 200
 jsonpath "$.handle" == "ada"
 jsonpath "$.kind" == "human"
 
-PUT {{host}}/v1/definitions
+PUT {{host}}/v1/languages
 Authorization: Bearer {{token}}
 Content-Type: application/json
-file,testdata/rules/definitions.json;
+["sv", "en-GB"]
+HTTP 200
+
+POST {{host}}/v1/config/apply
+Authorization: Bearer {{token}}
+Content-Type: application/json
+file,testdata/config/definitions.json;
+HTTP 202
+[Captures]
+bootstrap: jsonpath "$.proposal_id"
+
+POST {{host}}/v1/proposals/{{bootstrap}}/accept
+Authorization: Bearer {{token}}
+Content-Type: application/json
+{}
+HTTP 202
+
+GET {{host}}/v1/proposals/{{bootstrap}}
+Authorization: Bearer {{token}}
+[Options]
+retry: 30
 HTTP 200
 [Asserts]
-jsonpath "$.model_revision" == 1
-header "ETag" == "\"1\""
+jsonpath "$.status" == "accepted"
+
+GET {{host}}/v1/definitions
+Authorization: Bearer {{token}}
+HTTP 200
+[Asserts]
+jsonpath "$.attributes[*].key" contains "sku"
 
 POST {{host}}/v1/attributes
 Authorization: Bearer {{token}}
@@ -39,7 +64,7 @@ GET {{host}}/v1/definitions
 Authorization: Bearer {{token}}
 HTTP 200
 [Asserts]
-jsonpath "$.model_revision" == 2
+jsonpath "$.attributes[*].key" contains "extra"
 
 POST {{host}}/v1/objects
 Authorization: Bearer {{token}}
@@ -47,7 +72,7 @@ Content-Type: application/json
 {
   "type": "item",
   "groups": { "assortment": "root", "webshop": "flat" },
-  "values": { "sku": "SKU-1", "name": { "sv": "Stol" }, "active": true }
+  "values": { "number": "SKU-1", "sku": "SKU-1", "name": { "sv": "Stol" }, "active": true }
 }
 HTTP 200
 [Captures]
@@ -81,8 +106,10 @@ Content-Type: application/json
   "type": "item",
   "groups": { "assortment": "root" },
   "values": {
+    "number": "SKU-BAD",
     "sku": "SKU-BAD",
-    "name": { "sv": "12345678901" },
+    "name": { "sv": "Ett" },
+    "notes": { "sv": ["123456789"] },
     "color": "green"
   }
 }
@@ -96,7 +123,7 @@ jsonpath "$.errors[*].language" contains "sv"
 POST {{host}}/v1/objects
 Authorization: Bearer {{token}}
 Content-Type: application/json
-{ "type": "item", "values": { "sku": "SKU-MERGE", "name": { "sv": "Ett" } } }
+{ "type": "item", "values": { "number": "SKU-MERGE", "sku": "SKU-MERGE", "name": { "sv": "Ett" } } }
 HTTP 200
 [Captures]
 merge: jsonpath "$.id"
@@ -122,7 +149,7 @@ jsonpath "$.values.name['en-GB']" == "Two"
 POST {{host}}/v1/objects
 Authorization: Bearer {{token}}
 Content-Type: application/json
-{ "type": "item", "values": { "sku": "SKU-CONFLICT", "name": { "sv": "Ett" } } }
+{ "type": "item", "values": { "number": "SKU-CONFLICT", "sku": "SKU-CONFLICT", "name": { "sv": "Ett" } } }
 HTTP 200
 [Captures]
 clash: jsonpath "$.id"
@@ -152,7 +179,7 @@ Content-Type: application/json
 {
   "type": "item",
   "groups": { "assortment": "root" },
-  "values": { "sku": "SKU-WARN", "name": { "sv": "Stol" }, "active": true, "tags": ["abcd"] }
+  "values": { "number": "SKU-WARN", "sku": "SKU-WARN", "name": { "sv": "Stol" }, "active": true, "tags": ["abcd"] }
 }
 HTTP 200
 [Captures]
@@ -197,26 +224,33 @@ HTTP 422
 [Asserts]
 jsonpath "$.errors[*].code" contains "text_too_long"
 
-PUT {{host}}/v1/types/item
+POST {{host}}/v1/config/apply
 Authorization: Bearer {{token}}
 Content-Type: application/json
 {
-  "id": "018f0000-0000-7000-8000-000000000200",
-  "key": "item",
-  "labels": { "sv": "Objekt" },
-  "key_attribute": "018f0000-0000-7000-8000-000000000100",
-  "attributes": [
-    "018f0000-0000-7000-8000-000000000100",
-    "018f0000-0000-7000-8000-000000000101",
-    "018f0000-0000-7000-8000-000000000102",
-    "018f0000-0000-7000-8000-000000000103",
-    "018f0000-0000-7000-8000-000000000106",
-    "018f0000-0000-7000-8000-000000000107",
-    "018f0000-0000-7000-8000-000000000108",
-    "018f0000-0000-7000-8000-000000000109"
+  "apiVersion": "braian.io/v1",
+  "kind": "Model",
+  "types": [
+    {
+      "key": "item",
+      "labels": { "sv": "Objekt" },
+      "keyAttribute": "sku",
+      "attributes": ["number", "sku", "name", "weight", "count", "made", "manual", "tags", "notes"],
+      "kind": "entity"
+    }
   ]
 }
+HTTP 202
+[Captures]
+detach: jsonpath "$.proposal_id"
+
+POST {{host}}/v1/proposals/{{detach}}/accept
+Authorization: Bearer {{token}}
+Content-Type: application/json
+{}
 HTTP 200
+[Asserts]
+jsonpath "$.failed" count == 0
 
 GET {{host}}/v1/objects/{{warn}}
 Authorization: Bearer {{token}}
@@ -233,7 +267,7 @@ jsonpath "$.values.active" == true
 POST {{host}}/v1/objects
 Authorization: Bearer {{agent}}
 Content-Type: application/json
-{ "type": "item", "values": { "sku": "SKU-AGENT" } }
+{ "type": "item", "values": { "number": "SKU-AGENT", "sku": "SKU-AGENT", "name": { "sv": "Agent" } } }
 HTTP 202
 [Captures]
 proposal: jsonpath "$.proposal_id"

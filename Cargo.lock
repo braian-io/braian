@@ -408,6 +408,7 @@ version = "0.0.0"
 dependencies = [
  "braian-model",
  "jsonschema",
+ "rust_decimal",
  "schemars",
  "serde",
  "serde_json",

@@ -1,5 +1,4 @@
 use axum::Json;
-use axum::body::Bytes;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
@@ -14,7 +13,7 @@ use serde_json::Value;
 use utoipa::ToSchema;
 
 use crate::auth::{Auth, Identity, Role};
-use crate::headers::{etag, if_match};
+use crate::headers::etag;
 use crate::keys::DryQuery;
 use crate::platform::require;
 use crate::problem::{Problem, store_status};
@@ -74,78 +73,6 @@ pub async fn get_definitions(
         body,
     )
         .into_response())
-}
-
-#[utoipa::path(
-    put,
-    path = "/v1/definitions",
-    tag = "definitions",
-    request_body(content = braian_model::DefinitionSet, description = "JSON or YAML definition set"),
-    params(("dry_run" = Option<bool>, Query, description = "Return the consequence analysis and change nothing")),
-    responses(
-        (status = 200, description = "Imported, or a dry run", body = DefinitionWrite),
-        (status = 409, description = "Revision conflict", body = crate::problem::Problem),
-        (status = 422, description = "The set does not compile", body = crate::problem::Problem)
-    ),
-    security(("bearer" = []))
-)]
-pub async fn put_definitions(
-    State(state): State<AppState>,
-    Auth(identity): Auth,
-    Query(query): Query<crate::deletes::DryRun>,
-    headers: HeaderMap,
-    body: Bytes,
-) -> Result<Response, Problem> {
-    if !query.dry_run {
-        crate::auth::require_commit(&identity)?;
-    }
-    let mut defs: DefinitionSet = if content_is_yaml(&headers) {
-        serde_norway::from_slice(&body).map_err(|error| bad_body(error.to_string()))?
-    } else {
-        serde_json::from_slice(&body).map_err(|error| bad_body(error.to_string()))?
-    };
-    let current = state
-        .store
-        .model_revision()
-        .await
-        .map_err(store_status)?
-        .unwrap_or(0);
-    if let Some(matched) = if_match(&headers)?
-        && matched != current
-    {
-        return Err(Problem::new(
-            StatusCode::PRECONDITION_FAILED,
-            "precondition_failed",
-            format!("definitions are at revision {current}"),
-        ));
-    }
-    if query.dry_run {
-        let stored = state.store.definition_set().await.map_err(store_status)?;
-        let impact = braian_model::model_diff(&stored, &defs);
-        return Ok(Json(serde_json::json!({
-            "applied": false,
-            "lines": impact.lines,
-            "warnings": impact.warnings,
-        }))
-        .into_response());
-    }
-    // A whole definition file is one snapshot, not one model step. Attribute,
-    // type, structure and unit-family upserts go through `commit_model_change`.
-    defs.model_revision = current + 1;
-    CompiledModel::compile(&defs).map_err(Problem::definitions)?;
-    let receipt = match state.store.put_definitions(&identity.actor, &defs).await {
-        Ok(receipt) => receipt,
-        Err(Error::BadRevision { current, got }) => {
-            return Err(Problem::new(
-                StatusCode::CONFLICT,
-                "revision_conflict",
-                format!("definition revision {got} does not follow {current}"),
-            ));
-        }
-        Err(error) => return Err(store_status(error)),
-    };
-    state.models.invalidate().await;
-    Ok(write_response(defs.model_revision, receipt))
 }
 
 #[utoipa::path(
@@ -843,18 +770,6 @@ async fn ensure_person(state: &AppState, actor: &Actor) -> Result<(), Problem> {
     }
 }
 
-fn write_response(revision: u64, receipt: WriteReceipt) -> Response {
-    (
-        StatusCode::OK,
-        [(header::ETAG, etag(revision))],
-        Json(DefinitionWrite {
-            model_revision: revision,
-            seq: receipt.last_seq,
-        }),
-    )
-        .into_response()
-}
-
 fn ensure_id(body: &mut Value) {
     if body.get("id").is_none() || body.get("id").is_some_and(Value::is_null) {
         body["id"] = serde_json::json!(Uuid::now_v7());
@@ -880,13 +795,6 @@ fn bad_body(detail: String) -> Problem {
 fn wants_yaml(headers: &HeaderMap) -> bool {
     headers
         .get(header::ACCEPT)
-        .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| value.contains("yaml"))
-}
-
-fn content_is_yaml(headers: &HeaderMap) -> bool {
-    headers
-        .get(header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
         .is_some_and(|value| value.contains("yaml"))
 }

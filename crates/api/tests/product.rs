@@ -157,18 +157,16 @@ async fn login_proposal_bulk_and_rollback() {
         braian_api::identities(db.store(), "ada:human:token-ada;bot:agent@ada:token-bot")
             .await
             .unwrap();
+    let actor = identities
+        .iter()
+        .find(|item| item.handle == "ada")
+        .expect("ada")
+        .actor
+        .clone();
     let app = router(store.clone(), identities);
-    let defs = include_str!("../../../testdata/rules/definitions.json");
-    let (status, _, body) = call(
-        &app,
-        "PUT",
-        "/v1/definitions",
-        Some("token-ada"),
-        None,
-        Some(defs),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{body}");
+    let defs: braian_model::DefinitionSet =
+        serde_json::from_str(include_str!("../../../testdata/rules/definitions.json")).unwrap();
+    db.store().put_definitions(&actor, &defs).await.unwrap();
 
     let (status, cookie, me) = call(
         &app,

@@ -68,47 +68,22 @@ async fn call(
     (status, json)
 }
 
-async fn call_bearer(
-    app: &axum::Router,
-    method: &str,
-    path: &str,
-    token: &str,
-    body: Option<&str>,
-) -> (StatusCode, Value) {
-    let mut builder = Request::builder()
-        .method(method)
-        .uri(path)
-        .header("authorization", format!("Bearer {token}"));
-    if body.is_some() {
-        builder = builder.header("content-type", "application/json");
-    }
-    let request = builder
-        .body(match body {
-            Some(body) => Body::from(body.to_owned()),
-            None => Body::empty(),
-        })
-        .unwrap();
-    let response = app.clone().oneshot(request).await.unwrap();
-    let status = response.status();
-    let bytes = response.into_body().collect().await.unwrap().to_bytes();
-    let json = if bytes.is_empty() {
-        Value::Null
-    } else {
-        serde_json::from_slice(&bytes).unwrap_or_else(|_| json!(String::from_utf8_lossy(&bytes)))
-    };
-    (status, json)
-}
-
 async fn app() -> (TestDb, axum::Router) {
     load_env();
     let db = TestDb::create().await;
     let identities = braian_api::identities(db.store(), "ada:human:token-ada")
         .await
         .unwrap();
+    let actor = identities
+        .iter()
+        .find(|item| item.handle == "ada")
+        .expect("ada")
+        .actor
+        .clone();
     let app = router(db.store().clone(), identities);
-    let defs = include_str!("../../../testdata/rules/definitions.json");
-    let (status, body) = call_bearer(&app, "PUT", "/v1/definitions", "token-ada", Some(defs)).await;
-    assert_eq!(status, StatusCode::OK, "{body}");
+    let defs: braian_model::DefinitionSet =
+        serde_json::from_str(include_str!("../../../testdata/rules/definitions.json")).unwrap();
+    db.store().put_definitions(&actor, &defs).await.unwrap();
     (db, app)
 }
 

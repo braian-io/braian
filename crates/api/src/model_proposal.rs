@@ -2,8 +2,8 @@
 
 use axum::http::StatusCode;
 use braian_model::{
-    ApplyError, ChangeImpact, ModelChange, StructureErrorCode, apply_all, change_needs_reindex,
-    deletes_data, interpret, preview,
+    ApplyError, ChangeImpact, DefinitionSet, ModelChange, StructureErrorCode, apply_all,
+    change_needs_reindex, deletes_data, interpret, preview,
 };
 use braian_rules::CompiledModel;
 use braian_store::{Error, ProposalRow, ProposalWrite};
@@ -21,7 +21,21 @@ pub async fn propose(
     args: &Value,
 ) -> Result<Value, Problem> {
     let cached = state.models.get(&state.store).await?;
-    let changes = changes_from(name, args, &cached.defs)?;
+    propose_with_defs(state, identity, name, args, &cached.defs).await
+}
+
+/// The same proposal, planned against definitions the caller already loaded.
+///
+/// Config apply bootstraps a store that has no definitions yet, so it passes an
+/// empty set instead of asking the cache for a stored one.
+pub async fn propose_with_defs(
+    state: &AppState,
+    identity: &Identity,
+    name: &str,
+    args: &Value,
+    defs: &DefinitionSet,
+) -> Result<Value, Problem> {
+    let changes = changes_from(name, args, defs)?;
     for change in &changes {
         crate::structures::guard_model_change(state, &identity.actor, change, false).await?;
     }
@@ -35,7 +49,7 @@ pub async fn propose(
     if !identity.may_commit() && changes.iter().any(deletes_data) {
         return Err(crate::auth::delete_forbidden());
     }
-    let (after, impact) = preview(&cached.defs, &changes).map_err(model_status)?;
+    let (after, impact) = preview(defs, &changes).map_err(model_status)?;
     CompiledModel::compile(&after).map_err(Problem::definitions)?;
     let title = title_for(args, &impact.lines);
     let source = match identity.kind {
@@ -52,7 +66,7 @@ pub async fn propose(
             object_id: None,
             object_key: None,
             type_key: Some("model".into()),
-            base_version: i64::try_from(cached.defs.model_revision).ok(),
+            base_version: i64::try_from(defs.model_revision).ok(),
             patch: serde_json::to_value(change).unwrap_or(json!({})),
             status: "pending".into(),
             conflict: false,
@@ -72,7 +86,7 @@ pub async fn propose(
         )
         .await
         .map_err(store_status)?;
-    let consequence = consequence(state, &cached.defs, &changes, &impact).await?;
+    let consequence = consequence(state, defs, &changes, &impact).await?;
     Ok(json!({
         "proposal_id": id,
         "id": id,

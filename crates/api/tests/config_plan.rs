@@ -80,11 +80,17 @@ async fn app() -> (TestDb, axum::Router) {
     load_env();
     let db = TestDb::create().await;
     let identities = braian_api::identities(db.store(), TOKENS).await.unwrap();
+    let actor = identities
+        .iter()
+        .find(|item| item.handle == "ada")
+        .expect("ada")
+        .actor
+        .clone();
     let app = router(db.store().clone(), identities);
 
-    let mut defs: Value =
+    let mut defs: braian_model::DefinitionSet =
         serde_json::from_str(include_str!("../../../testdata/rules/definitions.json")).unwrap();
-    defs["value_lists"] = json!([{
+    defs.value_lists = serde_json::from_value(json!([{
         "id": "018f0000-0000-7000-8000-000000000600",
         "key": "colors",
         "labels": { "en": "Colors" },
@@ -92,17 +98,9 @@ async fn app() -> (TestDb, axum::Router) {
             { "code": "red", "labels": { "en": "Red" } },
             { "code": "blue", "labels": { "en": "Blue" } }
         ]
-    }]);
-    let (status, _, body) = call(
-        &app,
-        "PUT",
-        "/v1/definitions",
-        Some(HUMAN),
-        &[("content-type", "application/json")],
-        Some(&defs.to_string()),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    }]))
+    .unwrap();
+    db.store().put_definitions(&actor, &defs).await.unwrap();
     (db, app)
 }
 
@@ -201,7 +199,7 @@ async fn yaml_multi_document_plan_is_accepted() {
 }
 
 #[tokio::test]
-async fn full_mode_delete_is_blocked_with_affected_counts() {
+async fn destructive_steps_are_flagged_blocked_with_affected_counts_and_200() {
     let (db, app) = app().await;
     let (status, _, body) = call(
         &app,
@@ -228,12 +226,7 @@ async fn full_mode_delete_is_blocked_with_affected_counts() {
         Some(&payload),
     )
     .await;
-    assert_eq!(
-        status,
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "{}",
-        String::from_utf8_lossy(&body)
-    );
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
     let plan: Value = serde_json::from_slice(&body).unwrap();
     let step = plan["steps"]
         .as_array()
@@ -244,6 +237,7 @@ async fn full_mode_delete_is_blocked_with_affected_counts() {
         })
         .expect("weight delete step");
     assert_eq!(step["destructive"], true, "{plan}");
+    assert_eq!(step["blocked"], true, "{plan}");
     assert!(step["affected"]["objects"].as_i64().unwrap() >= 1, "{plan}");
     assert!(step["affected"]["values"].as_i64().unwrap() >= 1, "{plan}");
 
@@ -252,7 +246,7 @@ async fn full_mode_delete_is_blocked_with_affected_counts() {
 }
 
 #[tokio::test]
-async fn allow_destructive_returns_the_same_plan_with_200() {
+async fn allow_destructive_in_the_body_does_not_change_the_plan() {
     let (_db, app) = app().await;
     let mut documents = exported(&app).await;
     without_weight(&mut documents);
@@ -260,10 +254,16 @@ async fn allow_destructive_returns_the_same_plan_with_200() {
     let (status, _, body) = call(
         &app,
         "POST",
-        "/v1/config/plan?allowDestructive=true",
+        "/v1/config/plan",
         Some(HUMAN),
         &[("content-type", "application/json")],
-        Some(&serde_json::to_string(&documents).unwrap()),
+        Some(
+            &json!({
+                "documents": documents,
+                "allowDestructive": true
+            })
+            .to_string(),
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
@@ -274,6 +274,7 @@ async fn allow_destructive_returns_the_same_plan_with_200() {
                 && step["kind"] == "attribute"
                 && step["key"] == "weight"
                 && step["destructive"] == true
+                && step["blocked"] == true
         }),
         "{plan}"
     );

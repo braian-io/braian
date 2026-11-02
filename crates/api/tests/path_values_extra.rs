@@ -84,18 +84,16 @@ async fn app() -> (TestDb, axum::Router) {
     load_env();
     let db = TestDb::create().await;
     let identities = braian_api::identities(db.store(), TOKENS).await.unwrap();
+    let actor = identities
+        .iter()
+        .find(|item| item.handle == "ada")
+        .expect("ada")
+        .actor
+        .clone();
     let app = router(db.store().clone(), identities);
-    let defs = include_str!("../../../testdata/rules/definitions.json");
-    let (status, _, body) = call(
-        &app,
-        "PUT",
-        "/v1/definitions",
-        Some(HUMAN),
-        &[("content-type", "application/json")],
-        Some(defs),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{body}");
+    let defs: braian_model::DefinitionSet =
+        serde_json::from_str(include_str!("../../../testdata/rules/definitions.json")).unwrap();
+    db.store().put_definitions(&actor, &defs).await.unwrap();
     (db, app)
 }
 
