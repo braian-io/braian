@@ -235,7 +235,7 @@ Content-Type: application/json
       "key": "item",
       "labels": { "sv": "Objekt" },
       "keyAttribute": "sku",
-      "attributes": ["sku", "name", "weight", "count", "made", "manual", "tags", "notes"],
+      "attributes": ["number", "sku", "name", "weight", "count", "made", "manual", "tags", "notes"],
       "kind": "entity"
     }
   ]
@@ -267,7 +267,7 @@ jsonpath "$.values.active" == true
 POST {{host}}/v1/objects
 Authorization: Bearer {{agent}}
 Content-Type: application/json
-{ "type": "item", "values": { "number": "SKU-AGENT", "sku": "SKU-AGENT" } }
+{ "type": "item", "values": { "number": "SKU-AGENT", "sku": "SKU-AGENT", "name": { "sv": "Agent" } } }
 HTTP 202
 [Captures]
 proposal: jsonpath "$.proposal_id"
