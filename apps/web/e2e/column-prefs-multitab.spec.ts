@@ -15,6 +15,29 @@ async function openProducts(page: Page) {
   await expect(page.getByTestId('object-table')).toBeVisible()
 }
 
+async function resetProductsColumnPrefs(page: Page) {
+  const listed = await page.request.get('/v1/workspaces')
+  if (!listed.ok()) throw new Error(`workspaces: HTTP ${listed.status()}`)
+  const { workspaces } = (await listed.json()) as {
+    workspaces: Array<{ id: string; name: string }>
+  }
+  const products = workspaces.find((item) => item.name === 'Products')
+  if (!products) throw new Error('missing workspace Products')
+  const workspace = await page.request.get(`/v1/workspaces/${products.id}`)
+  if (!workspace.ok()) throw new Error(`workspace: HTTP ${workspace.status()}`)
+  const { views } = (await workspace.json()) as {
+    views: Array<{ id: string; type: string; state?: { type_key?: string } }>
+  }
+  const table = views.find(
+    (view) => view.type === 'object_table' && view.state?.type_key === 'product',
+  )
+  if (!table) throw new Error('missing Products object table')
+  const cleared = await page.request.delete(
+    `/v1/views/${table.id}/column-prefs?environment=default`,
+  )
+  if (!cleared.ok()) throw new Error(`column prefs: HTTP ${cleared.status()}`)
+}
+
 async function openFieldsPalette(page: Page) {
   await page.getByTestId('object-table').focus()
   await page.keyboard.press('Control+k')
@@ -59,6 +82,11 @@ test.describe('column prefs multitab', () => {
     const page2 = await context.newPage()
 
     await login(page1)
+    // The demo user and database are shared between specs. Start from no saved
+    // prefs, then reload so the first Products paint cannot keep a stale GET.
+    await resetProductsColumnPrefs(page1)
+    await page1.reload()
+    await expect(page1.getByTestId('workspace')).toBeVisible()
     await openProducts(page1)
     await expect(page1.getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
     await expect(page1.locator('.head [data-testid="col-brand"]')).toBeVisible()

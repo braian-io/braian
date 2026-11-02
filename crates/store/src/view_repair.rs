@@ -1,12 +1,13 @@
-//! Idempotent repair of saved `object_table` views.
+//! Idempotent repair of saved views.
 //!
 //! A view bound to a link type lists no rows, because a link type is not a
 //! record type. The repair moves such a view to the link's source entity
 //! (`from_types[0]`). It also rewrites a legacy string `state.catalog` key into
-//! the structured `catalogOverride` the resolver reads. Both edits are no-ops
-//! the second time they run.
+//! the structured `catalogOverride` the resolver reads. Finally it deletes views
+//! that no workspace or personal layout places in a tab, so the dock never keeps
+//! a view the user cannot reach. All edits are no-ops the second time they run.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use braian_model::DefinitionSet;
 use serde_json::Value;
@@ -66,7 +67,72 @@ fn remap_link_source(state: &mut Value, defs: &DefinitionSet) -> bool {
     changed
 }
 
-/// Startup repair over every saved table view.
+/// Collect the view ids a layout document places in a tab.
+fn collect_layout_view_ids(layout: &Value, placed: &mut HashSet<Uuid>) {
+    match layout {
+        Value::Array(items) => {
+            for item in items {
+                collect_layout_view_ids(item, placed);
+            }
+        }
+        Value::Object(fields) => {
+            if let Some(views) = fields.get("views").and_then(Value::as_array) {
+                for view in views {
+                    if let Some(id) = view.as_str().and_then(|token| Uuid::parse_str(token).ok()) {
+                        placed.insert(id);
+                    }
+                }
+            }
+            for child in fields.values() {
+                collect_layout_view_ids(child, placed);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Views that none of `layouts` places in a tab.
+fn views_outside_layouts(views: &[Uuid], layouts: &[Value]) -> Vec<Uuid> {
+    let mut placed = HashSet::new();
+    for layout in layouts {
+        collect_layout_view_ids(layout, &mut placed);
+    }
+    views
+        .iter()
+        .copied()
+        .filter(|id| !placed.contains(id))
+        .collect()
+}
+
+/// Delete views that no layout references.
+async fn remove_orphan_views(client: &mut Client) -> Result<(), Error> {
+    let layouts = client
+        .query(
+            "SELECT layout AS document FROM workspaces
+             UNION ALL
+             SELECT document -> 'layout' AS document
+             FROM workspace_states
+             WHERE jsonb_typeof(document) = 'object' AND document ? 'layout'",
+            &[],
+        )
+        .await?;
+    let mut documents = Vec::with_capacity(layouts.len());
+    for row in &layouts {
+        if let Some(document) = row.get::<_, Option<Value>>("document") {
+            documents.push(document);
+        }
+    }
+    let views = client.query("SELECT id FROM views", &[]).await?;
+    let ids: Vec<Uuid> = views.iter().map(|view| view.get("id")).collect();
+    for id in views_outside_layouts(&ids, &documents) {
+        client
+            .execute("DELETE FROM views WHERE id = $1", &[&id])
+            .await?;
+    }
+    Ok(())
+}
+
+/// Startup repair over saved views.
 pub(crate) async fn repair_link_and_catalog_views(client: &mut Client) -> Result<(), Error> {
     let row = client
         .query_one(
@@ -77,35 +143,35 @@ pub(crate) async fn repair_link_and_catalog_views(client: &mut Client) -> Result
             &[],
         )
         .await?;
-    let Some(document) = row.get::<_, Option<Value>>("definitions") else {
-        return Ok(());
-    };
-    let defs: DefinitionSet =
-        serde_json::from_value(document).map_err(|error| Error::Definitions(error.to_string()))?;
+    if let Some(document) = row.get::<_, Option<Value>>("definitions") {
+        let defs: DefinitionSet = serde_json::from_value(document)
+            .map_err(|error| Error::Definitions(error.to_string()))?;
 
-    let catalog_rows = client.query("SELECT id, key FROM catalogs", &[]).await?;
-    let mut catalog_id_by_key = HashMap::with_capacity(catalog_rows.len());
-    for catalog in catalog_rows {
-        let id: Uuid = catalog.get("id");
-        let key: String = catalog.get("key");
-        catalog_id_by_key.insert(key, CatalogId::from_uuid(id));
-    }
+        let catalog_rows = client.query("SELECT id, key FROM catalogs", &[]).await?;
+        let mut catalog_id_by_key = HashMap::with_capacity(catalog_rows.len());
+        for catalog in catalog_rows {
+            let id: Uuid = catalog.get("id");
+            let key: String = catalog.get("key");
+            catalog_id_by_key.insert(key, CatalogId::from_uuid(id));
+        }
 
-    let views = client
-        .query(
-            "SELECT id, state FROM views WHERE type_key = 'object_table'",
-            &[],
-        )
-        .await?;
-    for view in views {
-        let id: Uuid = view.get("id");
-        let mut state: Value = view.get("state");
-        if repair_view_state(&mut state, &defs, &catalog_id_by_key) {
-            client
-                .execute("UPDATE views SET state = $2 WHERE id = $1", &[&id, &state])
-                .await?;
+        let views = client
+            .query(
+                "SELECT id, state FROM views WHERE type_key = 'object_table'",
+                &[],
+            )
+            .await?;
+        for view in views {
+            let id: Uuid = view.get("id");
+            let mut state: Value = view.get("state");
+            if repair_view_state(&mut state, &defs, &catalog_id_by_key) {
+                client
+                    .execute("UPDATE views SET state = $2 WHERE id = $1", &[&id, &state])
+                    .await?;
+            }
         }
     }
+    remove_orphan_views(client).await?;
     Ok(())
 }
 
@@ -197,6 +263,49 @@ mod tests {
         assert_eq!(
             state["catalogOverride"],
             json!({ "catalogId": "018f1000-0000-7000-8000-000000000002" })
+        );
+    }
+
+    fn view(id: u128) -> Uuid {
+        Uuid::from_u128(id)
+    }
+
+    #[test]
+    fn finds_views_outside_every_layout() {
+        let placed = view(1);
+        let orphan = view(2);
+        let layout = json!({
+            "type": "split",
+            "dir": "horizontal",
+            "ratios": [0.3, 0.7],
+            "children": [
+                { "type": "tabs", "views": [placed.to_string()], "active": 0 },
+                { "type": "tabs", "views": [], "active": 0 }
+            ]
+        });
+        let views = [placed, orphan];
+        assert_eq!(
+            views_outside_layouts(&views, std::slice::from_ref(&layout)),
+            vec![orphan]
+        );
+        // Idempotent: once the orphan is gone there is nothing left to repair.
+        assert!(views_outside_layouts(&[placed], &[layout]).is_empty());
+    }
+
+    #[test]
+    fn keeps_a_view_that_only_a_personal_layout_places() {
+        let placed = view(1);
+        let personal_only = view(2);
+        let workspace_layout =
+            json!({ "type": "tabs", "views": [placed.to_string()], "active": 0 });
+        let personal_layout =
+            json!({ "type": "tabs", "views": [personal_only.to_string()], "active": 0 });
+        assert!(
+            views_outside_layouts(
+                &[placed, personal_only],
+                &[workspace_layout, personal_layout]
+            )
+            .is_empty()
         );
     }
 }
