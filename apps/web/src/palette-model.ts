@@ -15,6 +15,8 @@ export type PaletteItem = {
   chips?: PaletteChip[]
   keywords?: string[]
   typeKey?: string
+  /** A row that is explained but cannot be chosen (e.g. a source cycle). */
+  disabled?: boolean
 }
 
 export const groupTitle: Record<Exclude<PaletteGroup, 'ask'>, string> = {

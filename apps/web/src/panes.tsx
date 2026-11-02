@@ -621,7 +621,21 @@ export function ObjectTable({
   rowsRef.current = byIndex
   const knownStamp = [...byIndex.values()].map((row) => `${row.id}:${row.key}:${row.name}:${row.type}`).join('|')
   const activeStamp = activeRow ? `${activeRow.id}:${activeRow.key}:${activeRow.name}:${activeRow.type}` : ''
+  // Rows picked under an old peer filter are out of scope once the source
+  // changes. Do not publish them, and drop the local pick so the table cannot
+  // keep an invisible selection.
+  const peerScope = peerSource
+    ? `${peerSource.viewId}:${peerSource.selection}:${peerSource.linkType ?? ''}:${peerFilter}`
+    : ''
+  const peerScopeRef = useRef(peerScope)
   useEffect(() => {
+    const scopeChanged = peerScopeRef.current !== peerScope
+    peerScopeRef.current = peerScope
+    if (scopeChanged) {
+      selectMode.current = null
+      setSelected([])
+      setActive(-1)
+    }
     const known = [...rowsRef.current.values()]
     const described = (id: string) => {
       const row = known.find((item) => item.id === id)
@@ -630,16 +644,16 @@ export function ObjectTable({
         : { id, key: '', name: '', type: '', version: '' }
     }
     // One active row (arrow or click). Checkbox ranges stay local; the agent sees the active row.
-    const marked = activeRow
-      ? [{ id: activeRow.id, key: activeRow.key, name: activeRow.name, type: activeRow.type, version: activeRow.version }]
-      : selected.length > 0
-        ? selected.map(described)
-        : session.objectId
-          ? [described(session.objectId)]
-          : []
+    // A table only publishes a row the user picked in this view. The global
+    // detail object may belong to another pane and must not become our selection.
+    const marked = scopeChanged
+      ? []
+      : activeRow
+        ? [{ id: activeRow.id, key: activeRow.key, name: activeRow.name, type: activeRow.type, version: activeRow.version }]
+        : selected.map(described)
     publishTable(view.id, [queryText, filterBy].filter(Boolean).join(' '), sort, filterBy)
     publishSelection(view.id, marked)
-  }, [activeStamp, selected, session.objectId, queryText, filterBy, sort, view.id, knownStamp])
+  }, [activeStamp, peerScope, selected, queryText, filterBy, sort, view.id, knownStamp])
 
   const pathList = attributePaths.data?.paths ?? []
   const columnFor = (id: string) => {

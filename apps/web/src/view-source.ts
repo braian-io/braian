@@ -62,6 +62,28 @@ export function peerSourceOf(state: Json | undefined): PeerSourceRef | null {
   }
 }
 
+/**
+ * True when pointing `targetViewId` at `sourceViewId` would close a peer-source
+ * loop (including a view sourcing itself). `sourceOf` returns the view a view
+ * currently follows, if any.
+ */
+export function wouldCreateCycle(
+  sourceViewId: string,
+  targetViewId: string,
+  sourceOf: (viewId: string) => string | undefined | null = () => undefined,
+): boolean {
+  if (!sourceViewId || !targetViewId) return false
+  let current: string | undefined | null = sourceViewId
+  const seen = new Set<string>()
+  while (current) {
+    if (current === targetViewId) return true
+    if (seen.has(current)) return false
+    seen.add(current)
+    current = sourceOf(current)
+  }
+  return false
+}
+
 export type PeerEmptyKind = 'missing-source' | 'no-selection' | 'no-linked'
 
 export type PeerEmptyState = {

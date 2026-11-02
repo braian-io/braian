@@ -13,6 +13,7 @@ import {
   peerSourceLabel,
   peerSourceOf,
   viewSourceLabel,
+  wouldCreateCycle,
 } from './view-source'
 import { copy } from './i18n'
 import type { TypeName } from './type-labels'
@@ -165,6 +166,36 @@ describe('peer source (Notion 103 PR 2)', () => {
       {},
       'Food › Cheese',
     )).toBe(`${copy.allOfType.replace('{type}', 'Products')} · Food › Cheese`)
+  })
+})
+
+describe('peer source chains (Notion 103 PR A)', () => {
+  const sources = new Map<string, string>([
+    ['view-b', 'view-a'],
+    ['view-c', 'view-b'],
+  ])
+  const sourceOf = (viewId: string) => sources.get(viewId)
+
+  it('rejects a self-source', () => {
+    expect(wouldCreateCycle('view-a', 'view-a', sourceOf)).toBe(true)
+  })
+
+  it('rejects an indirect cycle through the chain', () => {
+    expect(wouldCreateCycle('view-c', 'view-a', sourceOf)).toBe(true)
+    expect(wouldCreateCycle('view-b', 'view-a', sourceOf)).toBe(true)
+  })
+
+  it('allows a chain that does not lead back to the target', () => {
+    expect(wouldCreateCycle('view-b', 'view-c', sourceOf)).toBe(false)
+    expect(wouldCreateCycle('view-a', 'view-c', sourceOf)).toBe(false)
+  })
+
+  it('terminates on an existing cycle that does not contain the target', () => {
+    const loop = new Map<string, string>([
+      ['view-b', 'view-c'],
+      ['view-c', 'view-b'],
+    ])
+    expect(wouldCreateCycle('view-b', 'view-a', (viewId) => loop.get(viewId))).toBe(false)
   })
 })
 
