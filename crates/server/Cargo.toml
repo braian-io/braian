@@ -13,6 +13,7 @@ path = "src/main.rs"
 [dependencies]
 mimalloc.workspace = true
 braian-api.workspace = true
+braian-config.workspace = true
 braian-events.workspace = true
 braian-indexer.workspace = true
 braian-model.workspace = true
@@ -23,7 +24,10 @@ braian-store.workspace = true
 anyhow.workspace = true
 axum.workspace = true
 clap.workspace = true
+reqwest.workspace = true
+serde.workspace = true
 serde_json.workspace = true
+serde_norway.workspace = true
 tokio = { workspace = true, features = ["net", "time", "macros", "rt-multi-thread", "signal"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true
