@@ -3035,12 +3035,15 @@ async fn update_assortment(
         .map(str::trim)
         .filter(|t| !t.is_empty())
     {
-        let want = wire::resolve_type(&cached.model, type_token)?.as_uuid();
         let have = existing
             .get("type_id")
             .and_then(Value::as_str)
             .and_then(|value| Uuid::parse_str(value).ok());
-        if have != Some(want) {
+        let matches = have.is_some_and(|have| {
+            Uuid::parse_str(type_token).ok() == Some(have)
+                || wire::type_key(&cached.defs, TypeId::from_uuid(have)) == type_token
+        });
+        if !matches {
             return Err(wrong_type());
         }
     }
