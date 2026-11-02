@@ -67,6 +67,10 @@ demo-3:
 openapi:
     cargo run -p braian-server -- openapi --out docs/api/openapi.json
 
+# Skriv JSON Schema för config-dokumenten från koden.
+config-schema:
+    cargo run -p braian-config --example schema > schemas/config/braian.io-v1.schema.json
+
 # Skriv apps/web/src/api/schema.d.ts från den committade specen.
 openapi-ts:
     pnpm --dir apps/web exec openapi-typescript ../../docs/api/openapi.json -o src/api/schema.d.ts

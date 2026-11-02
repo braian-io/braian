@@ -11,6 +11,7 @@ use utoipa::OpenApi;
     tags(
         (name = "meta", description = "Process and caller"),
         (name = "definitions", description = "Versioned model. One request is one revision."),
+        (name = "config", description = "The model as config-as-code documents with stable keys."),
         (name = "objects", description = "Object values. Addresses accept a key or an id; responses use keys."),
         (name = "platform", description = "Auth, search, workspaces, proposals, jobs and the live stream")
     ),
@@ -20,6 +21,8 @@ use utoipa::OpenApi;
         crate::openapi_json,
         crate::definitions::get_definitions,
         crate::definitions::put_definitions,
+        crate::config::export_config,
+        crate::config::get_config_schema,
         crate::definitions::post_attribute,
         crate::definitions::get_attribute,
         crate::definitions::put_attribute,
@@ -94,6 +97,7 @@ use utoipa::OpenApi;
         crate::objects::Suggestion,
         crate::objects::ChangeResponse,
         crate::definitions::DefinitionWrite,
+        crate::config::ExportQuery,
         crate::structures::StructureCreate,
         crate::structures::StructureRename,
         crate::structures::GroupCreate,

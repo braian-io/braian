@@ -762,6 +762,97 @@
         ]
       }
     },
+    "/v1/config/export": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "operationId": "export_config",
+        "parameters": [
+          {
+            "name": "format",
+            "in": "query",
+            "description": "zip, json or yaml",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Config documents. YAML by default; JSON with Accept: application/json; ZIP with format=zip",
+            "content": {
+              "application/yaml": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonValue"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown format",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or unknown token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/config/schema": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "operationId": "get_config_schema",
+        "responses": {
+          "200": {
+            "description": "JSON Schema for config documents",
+            "content": {
+              "application/schema+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonValue"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or unknown token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/v1/definitions": {
       "get": {
         "tags": [
@@ -8167,6 +8258,18 @@
           }
         }
       },
+      "ExportQuery": {
+        "type": "object",
+        "properties": {
+          "format": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`zip`, `json` or `yaml`. Accept: application/json also selects JSON."
+          }
+        }
+      },
       "FeedbackBody": {
         "type": "object",
         "required": [
@@ -11890,6 +11993,10 @@
     {
       "name": "definitions",
       "description": "Versioned model. One request is one revision."
+    },
+    {
+      "name": "config",
+      "description": "The model as config-as-code documents with stable keys."
     },
     {
       "name": "objects",

@@ -1,0 +1,669 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ConfigDocument",
+  "description": "One exported config document.\n\nUntagged so every document serializes as its own object instead of a\nwrapper around one. The required `apiVersion` and `kind` fields still make\nan unknown or missing header fail to deserialize.",
+  "anyOf": [
+    {
+      "$ref": "#/$defs/ModelDocument"
+    },
+    {
+      "$ref": "#/$defs/ValueListDocument"
+    },
+    {
+      "$ref": "#/$defs/UnitFamilyDocument"
+    }
+  ],
+  "$defs": {
+    "ApiVersion": {
+      "description": "Wire version header. The enum keeps the JSON Schema to one allowed value.",
+      "type": "string",
+      "enum": [
+        "braian.io/v1"
+      ]
+    },
+    "AttributeConfig": {
+      "type": "object",
+      "properties": {
+        "index": {
+          "$ref": "#/$defs/IndexFlagsConfig"
+        },
+        "key": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/AttributeKindConfig"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "languageDependent": {
+          "type": "boolean"
+        },
+        "multiple": {
+          "type": "boolean"
+        },
+        "required": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "languageDependent",
+        "multiple",
+        "kind",
+        "index"
+      ]
+    },
+    "AttributeKindConfig": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "form": {
+              "$ref": "#/$defs/TextFormConfig"
+            },
+            "maxLength": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint32",
+              "minimum": 0
+            },
+            "type": {
+              "type": "string",
+              "const": "text"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "integer": {
+              "type": "boolean"
+            },
+            "max": {
+              "description": "Upper bound in the base unit, as a decimal string.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "min": {
+              "description": "Lower bound in the base unit, as a decimal string.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "const": "number"
+            },
+            "unitFamily": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "range"
+            },
+            "unitFamily": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "list": {
+              "description": "Key of a shared value list document.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "options": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/OptionConfig"
+              }
+            },
+            "type": {
+              "type": "string",
+              "const": "value_list"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "boolean"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "date"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "object_ref"
+            },
+            "typeKey": {
+              "description": "Key of the type this reference points at.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "media": {
+              "type": "boolean"
+            },
+            "type": {
+              "type": "string",
+              "const": "file_ref"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ]
+        }
+      ]
+    },
+    "CardinalityConfig": {
+      "type": "string",
+      "enum": [
+        "one",
+        "many"
+      ]
+    },
+    "ClassConfig": {
+      "type": "object",
+      "properties": {
+        "attributes": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "group": {
+          "description": "Key of the group this class belongs to.",
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "parent": {
+          "description": "Key of the parent class.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "group"
+      ]
+    },
+    "GroupConfig": {
+      "type": "object",
+      "properties": {
+        "attributes": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "key": {
+          "type": "string"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "parent": {
+          "description": "Key of the parent group in the same structure.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "key"
+      ]
+    },
+    "IndexFlagsConfig": {
+      "type": "object",
+      "properties": {
+        "filterable": {
+          "type": "boolean"
+        },
+        "searchable": {
+          "type": "boolean"
+        },
+        "sortable": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "searchable",
+        "filterable",
+        "sortable"
+      ]
+    },
+    "LinkLabelConfig": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "key"
+      ]
+    },
+    "LinkSpecConfig": {
+      "description": "Ends of a link type. Every type is named by key.",
+      "type": "object",
+      "properties": {
+        "fromCardinality": {
+          "$ref": "#/$defs/CardinalityConfig"
+        },
+        "fromLabel": {
+          "$ref": "#/$defs/LinkLabelConfig"
+        },
+        "fromTypes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "toCardinality": {
+          "$ref": "#/$defs/CardinalityConfig"
+        },
+        "toLabel": {
+          "$ref": "#/$defs/LinkLabelConfig"
+        },
+        "toTypes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "fromTypes",
+        "toTypes",
+        "fromLabel",
+        "toLabel",
+        "fromCardinality",
+        "toCardinality"
+      ]
+    },
+    "ModelDocument": {
+      "description": "The model: languages, attributes, object types (including link types) and\nstructures.",
+      "type": "object",
+      "properties": {
+        "apiVersion": {
+          "$ref": "#/$defs/ApiVersion"
+        },
+        "attributes": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/AttributeConfig"
+          }
+        },
+        "kind": {
+          "$ref": "#/$defs/ModelKind"
+        },
+        "languages": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "structures": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/StructureConfig"
+          }
+        },
+        "types": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/TypeConfig"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "apiVersion",
+        "kind"
+      ]
+    },
+    "ModelKind": {
+      "type": "string",
+      "enum": [
+        "Model"
+      ]
+    },
+    "OptionConfig": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "code"
+      ]
+    },
+    "StructureConfig": {
+      "type": "object",
+      "properties": {
+        "classes": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ClassConfig"
+          }
+        },
+        "groups": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/GroupConfig"
+          }
+        },
+        "key": {
+          "type": "string"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "key"
+      ]
+    },
+    "TextFormConfig": {
+      "type": "string",
+      "enum": [
+        "short",
+        "long"
+      ]
+    },
+    "TypeConfig": {
+      "type": "object",
+      "properties": {
+        "attributes": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "defaults": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "key": {
+          "type": "string"
+        },
+        "keyAttribute": {
+          "description": "Key of the attribute copied into the object key.",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/TypeKindConfig",
+          "default": "entity"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "link": {
+          "description": "Present only when `kind` is `link`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LinkSpecConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "plural": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "singular": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "structures": {
+          "description": "Keys of the structures this type may be placed in. Missing means any.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "keyAttribute"
+      ]
+    },
+    "TypeKindConfig": {
+      "type": "string",
+      "enum": [
+        "entity",
+        "link"
+      ]
+    },
+    "UnitConfig": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "factor": {
+          "description": "Multiplier into the base unit, as a decimal string.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "factor"
+      ]
+    },
+    "UnitFamilyDocument": {
+      "description": "A family of units that convert to one base unit, exported as its own\ndocument.",
+      "type": "object",
+      "properties": {
+        "apiVersion": {
+          "$ref": "#/$defs/ApiVersion"
+        },
+        "baseUnit": {
+          "type": "string"
+        },
+        "dimension": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "key": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/UnitFamilyKind"
+        },
+        "units": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/UnitConfig"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "apiVersion",
+        "kind",
+        "key",
+        "baseUnit"
+      ]
+    },
+    "UnitFamilyKind": {
+      "type": "string",
+      "enum": [
+        "UnitFamily"
+      ]
+    },
+    "ValueListDocument": {
+      "description": "A shared value list, exported as its own document.",
+      "type": "object",
+      "properties": {
+        "apiVersion": {
+          "$ref": "#/$defs/ApiVersion"
+        },
+        "key": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ValueListKind"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "options": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/OptionConfig"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "apiVersion",
+        "kind",
+        "key"
+      ]
+    },
+    "ValueListKind": {
+      "type": "string",
+      "enum": [
+        "ValueList"
+      ]
+    }
+  }
+}
