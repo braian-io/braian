@@ -264,6 +264,204 @@
             "bearer": []
           }
         ]
+      },
+      "put": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Update a selection's name and query. Kind and type are locked.",
+        "operationId": "update_assortment",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Selection id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssortmentBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated selection",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssortmentRow"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or unknown token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Delete a selection and clear its source on the views that used it.",
+        "operationId": "delete_assortment",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Selection id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Usage that was cleared",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssortmentUsage"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or unknown token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/assortments/{id}/members": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Members of a dynamic selection, re-evaluated through the search path.",
+        "operationId": "assortment_members",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Selection id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Selection members",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssortmentMembers"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or unknown token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/assortments/{id}/usage": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "List the views and places using one selection.",
+        "operationId": "assortment_usage",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Selection id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Selection usage",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssortmentUsage"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or unknown token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
       }
     },
     "/v1/attributes": {
@@ -6526,8 +6724,7 @@
       "AssortmentBody": {
         "type": "object",
         "required": [
-          "name",
-          "query"
+          "name"
         ],
         "properties": {
           "id": {
@@ -6536,6 +6733,13 @@
               "null"
             ],
             "format": "uuid"
+          },
+          "kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`dynamic` or `manual`. Defaults to `manual`; locked after create."
           },
           "name": {
             "type": "string"
@@ -6566,18 +6770,42 @@
           }
         }
       },
+      "AssortmentMembers": {
+        "type": "object",
+        "required": [
+          "members",
+          "found"
+        ],
+        "properties": {
+          "found": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchHit"
+            }
+          }
+        }
+      },
       "AssortmentRow": {
         "type": "object",
         "required": [
           "id",
           "name",
           "type_id",
+          "kind",
           "query"
         ],
         "properties": {
           "id": {
             "type": "string",
             "format": "uuid"
+          },
+          "kind": {
+            "type": "string"
           },
           "name": {
             "type": "string"
@@ -6594,6 +6822,86 @@
           "type_id": {
             "type": "string",
             "format": "uuid"
+          }
+        }
+      },
+      "AssortmentUsage": {
+        "type": "object",
+        "required": [
+          "views",
+          "job_types",
+          "webhooks"
+        ],
+        "properties": {
+          "job_types": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AssortmentUsageJobType"
+            }
+          },
+          "views": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AssortmentUsageView"
+            }
+          },
+          "webhooks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AssortmentUsageWebhook"
+            }
+          }
+        }
+      },
+      "AssortmentUsageJobType": {
+        "type": "object",
+        "required": [
+          "key",
+          "title"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "AssortmentUsageView": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "workspace_id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "AssortmentUsageWebhook": {
+        "type": "object",
+        "required": [
+          "id",
+          "url"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "url": {
+            "type": "string"
           }
         }
       },

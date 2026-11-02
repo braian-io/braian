@@ -267,10 +267,43 @@ pub struct AssortmentRow {
     pub id: Uuid,
     pub name: String,
     pub type_id: Uuid,
+    pub kind: String,
     pub query: FreeObject,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "type")]
     pub object_type: Option<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct AssortmentUsage {
+    pub views: Vec<AssortmentUsageView>,
+    pub job_types: Vec<AssortmentUsageJobType>,
+    pub webhooks: Vec<AssortmentUsageWebhook>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct AssortmentUsageView {
+    pub id: Uuid,
+    pub title: String,
+    pub workspace_id: Uuid,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct AssortmentUsageJobType {
+    pub key: String,
+    pub title: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct AssortmentUsageWebhook {
+    pub id: Uuid,
+    pub url: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct AssortmentMembers {
+    pub members: Vec<SearchHit>,
+    pub found: u32,
 }
 
 #[derive(Serialize, ToSchema)]
