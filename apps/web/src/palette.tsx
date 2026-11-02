@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent , useLayoutEffect, useRef} from 'react'
+import { useEffect, useMemo, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent , useLayoutEffect, useRef} from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Check } from 'lucide-react'
 import { MetaChip, optionLabel, statusTone, typeLabel, type ChipTone } from './chips'
@@ -13,6 +13,7 @@ import { emitSavedSelection, requestNewSelection, selectionMatchesType } from '.
 import { workspaceDisplayName } from './demo-labels'
 import { sourceLabel, suggestedTitle } from './field-diff'
 import { copy, uiLanguage } from './i18n'
+import { structureCaption } from './graph-scene'
 import { chordForCommand } from './shortcuts'
 import { mergeFrecency, readFrecency, touch, writeFrecency } from './frecency'
 import { withModelCommand } from './model-command'
@@ -23,6 +24,7 @@ import {
   parseSelectSourceChoice,
   selectSourceRootItem,
   selectSourceSubmenuRows,
+  type PeerSourceOption,
 } from './palette-select-source'
 import { isNewFromTemplateRoot, newFromTemplateRootItem, newFromTemplateSubmenuRows } from './palette-new-from-template'
 import {
@@ -45,10 +47,19 @@ import {
   searchGroupTitle,
   singularOf,
   typeNames,
+  typeOfView,
   typeViewPaletteItems,
 } from './type-labels'
+import { linkedTypeIds } from './view-source'
 import { applyUiResult, dispatchUi, uiOperations } from './ui-bus'
-import { readUiContext, type UiColumn } from './ui-context'
+import {
+  readSelection,
+  readTreeNode,
+  readUiContext,
+  subscribeUiSelections,
+  uiSelectionVersion,
+  type UiColumn,
+} from './ui-context'
 import { runCommand } from './command-registry'
 import { newVersionGateOpen } from './new-version-gate'
 import { FieldsMode, type FieldsPaletteOpen } from './fields/fields-mode'
@@ -103,6 +114,7 @@ export function CommandPalette({
   startSwitchCatalog,
   workspaceCatalogId,
   onSelectSourceType,
+  onSelectSourcePeer,
   onClose,
   fieldsMode,
   fieldsEditColumnId,
@@ -124,6 +136,7 @@ export function CommandPalette({
   startSwitchCatalog?: boolean
   workspaceCatalogId?: string
   onSelectSourceType?: (typeId: string) => void
+  onSelectSourcePeer?: (viewId: string) => void
   onClose: () => void
   fieldsMode?: boolean
   fieldsEditColumnId?: string | null
@@ -197,6 +210,56 @@ export function CommandPalette({
   const suggestionTotal = Number(((suggestions.data?.pending as Json | undefined)?.total) ?? 0)
   const selectedKey = String(selectedObject.data?.type ?? '')
   const selectedSingular = singularOf(defs.data, selectedKey, uiLanguage) || (types.length === 1 ? types[0]?.singular ?? '' : '')
+  // Live selections in other views become peer sources (Notion 103 PR 2).
+  const selectionVersion = useSyncExternalStore(subscribeUiSelections, uiSelectionVersion, uiSelectionVersion)
+  const peerSourceOptions = useMemo<PeerSourceOption[]>(() => {
+    const options: PeerSourceOption[] = []
+    for (const sourceView of views) {
+      if (sourceView.id === focusViewId) continue
+      const viewTitle = displayViewTitle(sourceView, types, selectedKey)
+      if (sourceView.type === 'structure_tree') {
+        const node = readTreeNode(sourceView.id)
+        if (!node) continue
+        const typeIds = types
+          .filter((type) => {
+            if (type.kind === 'link') return false
+            if (type.structures === undefined) return true
+            return type.structures.includes(node.structureId) || type.structures.includes(node.structureKey)
+          })
+          .map((type) => type.id)
+        if (typeIds.length === 0) continue
+        options.push({
+          viewId: sourceView.id,
+          viewTitle,
+          selection: 'node',
+          label: structureCaption(node.groupKey, defs.data, node.structureKey),
+          typeIds,
+        })
+      }
+      if (sourceView.type === 'object_table') {
+        const bound = typeOfView(sourceView, types)
+        if (!bound || !bound.id || bound.kind === 'link') continue
+        // Ignore the table's global marked-object fallback: a source row must
+        // belong to the view's own type.
+        const rows = readSelection(sourceView.id).filter((row) =>
+          !row.type || row.type === bound.id || row.type === bound.key,
+        )
+        if (rows.length === 0) continue
+        const typeIds = linkedTypeIds(bound.id, defs.data)
+        if (typeIds.length === 0) continue
+        options.push({
+          viewId: sourceView.id,
+          viewTitle,
+          selection: 'row',
+          label: rows.map((row) => row.key || row.name || row.id).filter(Boolean).slice(0, 3).join(', '),
+          typeIds,
+        })
+      }
+    }
+    return options
+    // selectionVersion re-reads the live registry; the other inputs shape the list.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [views, types, defs.data, focusViewId, selectedKey, selectionVersion])
   // Columns of the open table, read once when the palette opens.
   const tableColumns = useMemo(() => readUiContext().columns, [])
   const catalogsList = useCatalogsQuery()
@@ -315,7 +378,7 @@ export function CommandPalette({
     if (!startSelectSource) return
     setStack([{
       label: `${copy.dataSource} ›`,
-      rows: selectSourceSubmenuRows(types),
+      rows: selectSourceSubmenuRows(types, peerSourceOptions),
     }])
     setActive(0)
     // Mount-only: dock menu Select source opens the submenu immediately.
@@ -415,7 +478,7 @@ export function CommandPalette({
     if (isSelectSourceRoot(id)) {
       setStack((current) => [...current, {
         label: item.title,
-        rows: selectSourceSubmenuRows(types),
+        rows: selectSourceSubmenuRows(types, peerSourceOptions),
       }])
       setQuery('')
       setActive(0)
@@ -423,7 +486,8 @@ export function CommandPalette({
     }
     const sourceChoice = parseSelectSourceChoice(id)
     if (sourceChoice) {
-      onSelectSourceType?.(sourceChoice.typeId)
+      if ('typeId' in sourceChoice) onSelectSourceType?.(sourceChoice.typeId)
+      else onSelectSourcePeer?.(sourceChoice.peerViewId)
       onClose()
       return
     }

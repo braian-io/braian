@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { ImportMappingsView } from './import/mappings-view'
 import { CatalogsView, MergeProfilesView, MergeRunsView, OwnershipView } from './catalogs/views'
 import { flushSync } from 'react-dom'
@@ -50,7 +50,6 @@ import { SharedContextMenuHost } from './shared-context-menu'
 import { StateNote } from './states'
 import { requestNewSelection } from './assortment-filter'
 import { dispatchUi } from './ui-bus'
-import { readUiContext } from './ui-context'
 import { registerCommandRunner, runCommand } from './command-registry'
 import { useShortcutBindings } from './shortcut-bindings'
 import { shortcuts } from './shortcuts'
@@ -64,13 +63,29 @@ import {
 } from './active-workspace'
 import { healDataModelWorkspace, isKnownViewType, layoutHasMissingViews, migrateLegacyModelViews } from './model-workspace-migrate'
 import { persistWorkspaceMigration } from './workspace-migration-persist'
-import { commandPlaceholder, displayViewTitle, migrateSavedWorkspace, singularOf, typeNames } from './type-labels'
-import { applyTypeSource, viewSourceLabel } from './view-source'
+import { commandPlaceholder, displayViewTitle, migrateSavedWorkspace, singularOf, typeNames, typeOfView } from './type-labels'
+import {
+  applyPeerSource,
+  applyTypeSource,
+  peerSourceLabel,
+  peerSourceOf,
+  viewSourceLabel,
+} from './view-source'
 import { MASTER_CATALOG_ID } from './catalog-ref'
 import { workspaceCatalogRef } from './catalog-scope'
 import { useCatalogNamesById } from './catalog-list'
 import { onUi } from './ui-bus'
-import { panesFromCatalog, publishFrame, publishMarked } from './ui-context'
+import {
+  panesFromCatalog,
+  publishFrame,
+  publishMarked,
+  publishTreeNode,
+  readSelection,
+  readTreeNode,
+  readUiContext,
+  subscribeUiSelections,
+  uiSelectionVersion,
+} from './ui-context'
 import {
   LAYOUT_ENVIRONMENT,
   canonicalDoc,
@@ -199,6 +214,8 @@ export function Shell() {
   const [paletteStartNewFromTemplate, setPaletteStartNewFromTemplate] = useState(false)
   const [paletteStartSwitchCatalog, setPaletteStartSwitchCatalog] = useState(false)
   const catalogNamesById = useCatalogNamesById(me.isSuccess)
+  // Peer-source labels follow live row/tree selections in other views.
+  useSyncExternalStore(subscribeUiSelections, uiSelectionVersion, uiSelectionVersion)
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [feedbackCapture, setFeedbackCapture] = useState<FeedbackCapture | null>(null)
   const [help, setHelp] = useState(false)
@@ -218,6 +235,7 @@ export function Shell() {
   const applyRef = useRef<(name: string, args: Record<string, unknown>) => void>(() => {})
   const openTypeViewRef = useRef<(typeId: string) => void>(() => {})
   const applyViewTypeSourceRef = useRef<(typeId: string, viewId?: string) => Promise<void>>(async () => undefined)
+  const applyViewPeerSourceRef = useRef<(peerViewId: string, viewId?: string) => Promise<void>>(async () => undefined)
   const migratedRef = useRef(new Set<string>())
   const ensuredTypes = useRef(new Set<string>())
   const workspaceIdRef = useRef<string | null>(null)
@@ -422,6 +440,14 @@ export function Shell() {
         const typeId = typeof target.typeId === 'string' ? target.typeId : typeof target.typeKey === 'string' ? target.typeKey : ''
         if (typeId) {
           void applyViewTypeSourceRef.current(typeId, typeof target.viewId === 'string' ? target.viewId : undefined)
+          return
+        }
+        // The agent and keyboard share this runner: a peer source is explicit state.
+        const peerViewId = typeof target.peerViewId === 'string'
+          ? target.peerViewId
+          : typeof target.sourceViewId === 'string' ? target.sourceViewId : ''
+        if (peerViewId) {
+          void applyViewPeerSourceRef.current(peerViewId, typeof target.viewId === 'string' ? target.viewId : undefined)
           return
         }
         setPaletteStartAddView(false)
@@ -1158,6 +1184,24 @@ export function Shell() {
   const typeCatalog = typeNames(defs.data)
   const openTypeKey = String(opened.data?.type ?? '')
 
+  const peerLabelFor = (view: View) => {
+    const peer = peerSourceOf(view.state)
+    if (!peer || !surface) return ''
+    const source = viewRows(surface.views).find((item) => item.id === peer.viewId)
+    if (!source) return ''
+    const title = displayViewTitle(source, typeCatalog, openTypeKey)
+    if (source.type === 'structure_tree') {
+      const node = readTreeNode(peer.viewId)
+      return peerSourceLabel(title, node ? structureCaption(node.groupKey, defs.data, node.structureKey) : '')
+    }
+    if (source.type !== 'object_table') return ''
+    const bound = typeOfView(source, typeCatalog)
+    if (!bound || bound.kind === 'link') return ''
+    const rows = readSelection(peer.viewId)
+    const label = rows.map((row) => row.key || row.name || row.id).filter(Boolean).slice(0, 3).join(', ')
+    return peerSourceLabel(title, label)
+  }
+
   applyViewTypeSourceRef.current = async (typeToken: string, viewId?: string) => {
     const surfaceNow = workspaceRef.current
     if (!surfaceNow || surfaceNow.locked) return
@@ -1171,6 +1215,50 @@ export function Shell() {
     if (!target) return
     const nextState = applyTypeSource(target.state, type)
     const updated: View = { ...target, title: type.plural, state: freeObject(nextState) }
+    await api.post('/v1/views', {
+      body: {
+        id: updated.id,
+        workspace_id: surfaceNow.id,
+        type: updated.type,
+        title: updated.title,
+        pane: updated.pane ?? 'center',
+        position: updated.position ?? 0,
+        state: freeObject(updated.state),
+      },
+    })
+    views = views.map((view) => (view.id === updated.id ? updated : view))
+    const nextSurface = {
+      ...surfaceNow,
+      views: views.map((view) => ({
+        ...view,
+        pane: view.pane ?? 'center',
+        position: view.position ?? 0,
+        state: freeObject(view.state),
+      })),
+    }
+    workspaceRef.current = nextSurface
+    queryClient.setQueryData(['workspace', surfaceNow.id], nextSurface)
+  }
+
+  applyViewPeerSourceRef.current = async (peerViewId: string, viewId?: string) => {
+    const surfaceNow = workspaceRef.current
+    if (!surfaceNow || surfaceNow.locked) return
+    const types = typeNames(queryClient.getQueryData<Json>(['definitions']))
+    const focus = viewId || docRef.current?.focus
+    let views: View[] = viewRows(surfaceNow.views)
+    const target = views.find((view) => view.id === focus && view.type === 'object_table')
+      ?? views.find((view) => view.type === 'object_table')
+    const source = views.find((view) => view.id === peerViewId)
+    if (!target || !source || source.id === target.id) return
+    if (source.type !== 'object_table' && source.type !== 'structure_tree') return
+    if (source.type === 'object_table') {
+      const bound = typeOfView(source, types)
+      // Link types are not records (#153): never accept one as a source.
+      if (!bound || bound.kind === 'link') return
+    }
+    const kind = source.type === 'structure_tree' ? 'node' : 'row'
+    const nextState = applyPeerSource(target.state, source.id, kind)
+    const updated: View = { ...target, state: freeObject(nextState) }
     await api.post('/v1/views', {
       body: {
         id: updated.id,
@@ -1318,7 +1406,7 @@ export function Shell() {
         {doc && surface && !layoutHealPending ? (
           <WorkspaceDock
             doc={doc}
-            views={viewRows(surface.views).map((view) => ({ ...view, title: displayViewTitle(view, typeCatalog, openTypeKey), sourceLabel: viewSourceLabel(view, typeCatalog, workspaceCatalogRef(surface), catalogNamesById) }))}
+            views={viewRows(surface.views).map((view) => ({ ...view, title: displayViewTitle(view, typeCatalog, openTypeKey), sourceLabel: viewSourceLabel(view, typeCatalog, workspaceCatalogRef(surface), catalogNamesById, peerLabelFor(view)) }))}
             onChange={commitDoc}
             renderView={(item) => {
               const full = viewRows(surface.views).find((view) => view.id === item.id)
@@ -1382,6 +1470,7 @@ export function Shell() {
           startSwitchCatalog={paletteStartSwitchCatalog}
           workspaceCatalogId={workspaceCatalogRef(workspace.data)?.catalogId || MASTER_CATALOG_ID}
           onSelectSourceType={(typeId) => { void applyViewTypeSourceRef.current(typeId) }}
+          onSelectSourcePeer={(peerViewId) => { void applyViewPeerSourceRef.current(peerViewId) }}
           onPrepareAddView={() => {
             const focus = docRef.current?.focus
             placeOverride.current = focus ? { target: focus, zone: 'center' } : { zone: 'center' }
@@ -1642,6 +1731,14 @@ export function StructureTree({ session, view }: { session: Session; view: View 
     if (!activeRow) return
     document.getElementById(treeRowDomId(activeRow.structureKey, activeRow.key))?.scrollIntoView({ block: 'nearest' })
   }, [session.group, entries.length])
+  useEffect(() => {
+    if (!session.group) return
+    const [structureKey, groupKey] = session.group.split(':')
+    if (!structureKey || !groupKey) return
+    const structure = ((defs.data?.structures as Json[] | undefined) ?? [])
+      .find((item) => String(item.key) === structureKey || String(item.id) === structureKey)
+    publishTreeNode(view.id, { structureId: String(structure?.id ?? ''), structureKey, groupKey })
+  }, [session.group, view.id, defs.data])
   useEffect(() => {
     if (!menu) return
     const close = (event: PointerEvent) => {

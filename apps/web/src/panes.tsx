@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
+import { useMemo, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { History as HistoryIcon } from 'lucide-react'
@@ -41,6 +41,8 @@ import { readPathFromDoc, summarizePathValues } from './path-cell'
 import { cellPathValues, fetchPathValues } from './path-values'
 import { shouldHoldTablePaint, shouldRefreshTableSnapshot } from './table-live-paint'
 import { searchPeerArticles, type PeerPickOption } from './peer-search'
+import { linkedPeerIds } from './peer-source'
+import { peerIdsFilter, peerNodeFilter, peerSourceOf } from './view-source'
 import { FieldDiff } from './field-diff-view'
 import { copy, uiLanguage } from './i18n'
 import { handleAppContextMenu } from './app-context-menu'
@@ -67,7 +69,17 @@ import { RecordSection } from './record-section'
 import { groupKeyOf, labelCodes, labelSearchFilter, publishSelectionLabels, SELECTION_APPLIED_EVENT, selectionMatchesType } from './assortment-filter'
 import { appendPathFilter, objectTableFilter } from './table-filter'
 import { dispatchUi, onUi } from './ui-bus'
-import { enrichSelection, publishActiveColumn, publishColumns, publishSelection, publishTable } from './ui-context'
+import {
+  EMPTY_SELECTION,
+  enrichSelection,
+  publishActiveColumn,
+  publishColumns,
+  publishSelection,
+  publishTable,
+  readSelection,
+  readTreeNode,
+  subscribeUiSelections,
+} from './ui-context'
 
 export type PanesSession = {
   group: string | null
@@ -91,7 +103,13 @@ export type PanesView = {
   state: Json
 }
 
-export type PanesWorkspace = { id: string; locked?: boolean; catalog?: { catalogId?: string } | null }
+export type PanesWorkspace = {
+  id: string
+  locked?: boolean
+  catalog?: { catalogId?: string } | null
+  /** Workspace views, used to type-filter a peer source's live selection. */
+  views?: PanesView[] | null
+}
 
 type ObjRow = { id: string; key: string; type: string; version: string; name: string; status: string; doc: Json }
 
@@ -321,7 +339,45 @@ export function ObjectTable({
     window.addEventListener(SELECTION_APPLIED_EVENT, onApply)
     return () => window.removeEventListener(SELECTION_APPLIED_EVENT, onApply)
   }, [session, typeKey, bound?.id, defs.data])
-  const filterBy = [objectTableFilter(typeKey, session.group, defs.data), labelFilter, ...pathFilters]
+  // A peer source replaces the global group filter: the view follows the other
+  // view's row/node, not whatever group happens to be selected in the tree.
+  const peerSource = peerSourceOf(view.state)
+  const peerSourceView = peerSource
+    ? ((workspace.views as PanesView[] | null | undefined) ?? []).find((item) => item.id === peerSource.viewId)
+    : undefined
+  const peerSourceType = peerSourceView ? typeOfView(peerSourceView, names) : undefined
+  const peerSourceTypeId = peerSourceType?.id ?? ''
+  const peerSourceTypeKey = peerSourceType?.key ?? ''
+  const livePeerRows = useSyncExternalStore(
+    subscribeUiSelections,
+    () => (peerSource ? readSelection(peerSource.viewId) : EMPTY_SELECTION),
+    () => (peerSource ? readSelection(peerSource.viewId) : EMPTY_SELECTION),
+  )
+  // A table publishes the globally marked object as a fallback when it has no
+  // active row. Keep only rows that really belong to the source view's type.
+  const peerRows = useMemo(
+    () => (!peerSourceTypeId && !peerSourceTypeKey
+      ? livePeerRows
+      : livePeerRows.filter((row) => !row.type || row.type === peerSourceTypeId || row.type === peerSourceTypeKey)),
+    [livePeerRows, peerSourceTypeId, peerSourceTypeKey],
+  )
+  const peerNode = useSyncExternalStore(
+    subscribeUiSelections,
+    () => (peerSource?.selection === 'node' ? readTreeNode(peerSource.viewId) : null),
+    () => (peerSource?.selection === 'node' ? readTreeNode(peerSource.viewId) : null),
+  )
+  const peerIds = useQuery({
+    queryKey: ['peer-links', catalogKey, peerSource?.viewId ?? '', typeKey, peerRows.map((row) => row.id).join(',')],
+    queryFn: () => inCatalog(catalogKey, () => linkedPeerIds(peerRows.map((row) => row.id), typeKey)),
+    enabled: Boolean(catalogReady && typeKey && peerSource?.selection === 'row' && peerRows.length > 0),
+    staleTime: 5_000,
+  })
+  const peerFilter = peerSource
+    ? peerSource.selection === 'node'
+      ? (peerNode ? peerNodeFilter(peerNode) : peerIdsFilter([]))
+      : (peerIds.isSuccess ? peerIdsFilter(peerIds.data) : peerIdsFilter([]))
+    : ''
+  const filterBy = [objectTableFilter(typeKey, peerSource ? null : session.group, defs.data), peerFilter, labelFilter, ...pathFilters]
     .filter(Boolean)
     .join(' && ')
   const attributePaths = useQuery({

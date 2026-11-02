@@ -35,6 +35,39 @@ const activeColumns = new Map<string, string>()
 const selections = new Map<string, SelectedObject[]>()
 const enriched = new Map<string, SelectedObject>()
 
+/** Selected tree node in one view, used as a live peer source (Notion 103 PR 2). */
+export type TreeNodeSelection = { structureId: string; structureKey: string; groupKey: string }
+const treeNodes = new Map<string, TreeNodeSelection>()
+export const EMPTY_SELECTION: SelectedObject[] = []
+const selectionListeners = new Set<() => void>()
+let selectionVersion = 0
+
+function bumpSelection() {
+  selectionVersion += 1
+  for (const listener of selectionListeners) listener()
+}
+
+/** Subscribe to row/tree selection changes across views. */
+export function subscribeUiSelections(listener: () => void) {
+  selectionListeners.add(listener)
+  return () => {
+    selectionListeners.delete(listener)
+  }
+}
+
+/** Snapshot for useSyncExternalStore; bumps on every published selection. */
+export function uiSelectionVersion() {
+  return selectionVersion
+}
+
+export function readSelection(viewId: string): SelectedObject[] {
+  return selections.get(viewId) ?? EMPTY_SELECTION
+}
+
+export function readTreeNode(viewId: string): TreeNodeSelection | null {
+  return treeNodes.get(viewId) ?? null
+}
+
 export function resetUiContext() {
   frame = blankFrame()
   markedId = null
@@ -43,6 +76,8 @@ export function resetUiContext() {
   activeColumns.clear()
   selections.clear()
   enriched.clear()
+  treeNodes.clear()
+  bumpSelection()
 }
 
 export function panesFromCatalog(
@@ -79,7 +114,35 @@ export function publishActiveColumn(viewId: string, columnId: string | null) {
 }
 
 export function publishSelection(viewId: string, rows: SelectedObject[]) {
+  const previous = selections.get(viewId)
+  if (previous && sameSelection(previous, rows)) return
   selections.set(viewId, rows)
+  bumpSelection()
+}
+
+export function publishTreeNode(viewId: string, node: TreeNodeSelection) {
+  const previous = treeNodes.get(viewId)
+  if (
+    previous
+    && previous.structureId === node.structureId
+    && previous.structureKey === node.structureKey
+    && previous.groupKey === node.groupKey
+  ) return
+  treeNodes.set(viewId, node)
+  bumpSelection()
+}
+
+function sameSelection(left: SelectedObject[], right: SelectedObject[]) {
+  if (left.length !== right.length) return false
+  return left.every((row, index) => {
+    const other = right[index]
+    if (!other) return false
+    return row.id === other.id
+      && row.key === other.key
+      && row.name === other.name
+      && row.type === other.type
+      && (row.version ?? '') === (other.version ?? '')
+  })
 }
 
 export function enrichSelection(object: SelectedObject) {
