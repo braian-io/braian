@@ -9,7 +9,7 @@ import { isConnected, type LiveState } from './status-message'
 import { UserMenu } from './user-menu'
 import { CatalogSelector } from './catalog-selector'
 import { api, freeObject, jsonRecord, keepaliveJsonPut, operationId, recordTitle, textValue, type Json } from './api'
-import { AssortmentList, NewSelectionDialog } from './assortments'
+import { AssortmentList, SelectionHost } from './assortments'
 import { humanizeLive, objectIdFromLive } from './activity'
 import { ImportScreen } from './import/view'
 import { dropImportFiles, onImportLive, openImport, resumeImport, setImportDrag } from './import/controller'
@@ -1360,7 +1360,7 @@ export function Shell() {
           } : null}
         />
       ) : null}
-      <NewSelectionDialog session={session} />
+      <SelectionHost session={session} />
       {paletteMode ? (
         <CommandPalette
               fieldsMode={paletteMode === 'fields'}
