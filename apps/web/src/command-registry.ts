@@ -479,7 +479,7 @@ export const registryCommands: RegistryCommand[] = [
     title: copy.selectSource,
     contexts: ['dock-view'],
     group: 'views',
-    keywords: ['data', 'source', 'type', 'select'],
+    keywords: ['data', 'source', 'type', 'select', 'linked', 'peer'],
     when: (target) => !target.viewType || target.viewType === 'object_table',
   },
   {

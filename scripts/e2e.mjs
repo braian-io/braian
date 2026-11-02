@@ -59,6 +59,7 @@ const specs = [
   'e2e/user-menu.spec.ts',
   'e2e/new-version-status.spec.ts',
   'e2e/view-source-type.spec.ts',
+  'e2e/peer-source.spec.ts',
   'e2e/link-source-repair.spec.ts',
   'e2e/z-catalogs.spec.ts',
 ]
@@ -121,6 +122,7 @@ const measuredSeconds = {
   'e2e/user-menu.spec.ts': 25,
   'e2e/new-version-status.spec.ts': 20,
   'e2e/view-source-type.spec.ts': 35,
+  'e2e/peer-source.spec.ts': 45,
   'e2e/z-catalogs.spec.ts': 45,
   'e2e/delete-workspace.spec.ts': 28,
   'e2e/open-type-view-ready.spec.ts': 25,
