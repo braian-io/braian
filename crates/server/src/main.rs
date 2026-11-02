@@ -6,6 +6,7 @@ use std::net::SocketAddr;
 use braian_api::AppState;
 use braian_events::ChangeEvent;
 use braian_search::Typesense;
+use braian_server::config_cli;
 use braian_store::Store;
 use clap::{Parser, Subcommand};
 use tokio::sync::watch;
@@ -39,6 +40,11 @@ enum Command {
     Openapi {
         #[arg(long)]
         out: Option<std::path::PathBuf>,
+    },
+    /// Export, plan or apply config-as-code documents.
+    Config {
+        #[command(subcommand)]
+        command: config_cli::ConfigCommand,
     },
 }
 
@@ -86,6 +92,13 @@ async fn main() -> anyhow::Result<()> {
             seed::run(&store, typesense().as_ref()).await
         }
         Command::Merger => merger().await,
+        Command::Config { command } => {
+            let code = config_cli::run(command).await?;
+            if code != 0 {
+                std::process::exit(code);
+            }
+            Ok(())
+        }
         Command::All => {
             let (state, addr) = prepare(true).await?;
             let store = state.store.clone();
