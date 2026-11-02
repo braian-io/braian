@@ -6,6 +6,7 @@
 //! [`braian_model::DefinitionSet`] into an ordered list of documents.
 
 mod convert;
+mod plan;
 
 use std::collections::BTreeMap;
 
@@ -13,6 +14,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 pub use convert::{ConfigError, export_documents};
+pub use plan::{
+    ConfigMode, ConfigPlan, PlanAction, PlanAffected, PlanKind, PlanStep, plan_documents,
+};
 
 /// The only wire version this crate reads and writes.
 pub const API_VERSION: &str = "braian.io/v1";
@@ -63,6 +67,9 @@ pub struct ModelDocument {
     #[serde(rename = "apiVersion")]
     pub api_version: ApiVersion,
     pub kind: ModelKind,
+    /// `full` makes this document the whole truth for the model sections.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<ConfigMode>,
     #[serde(default)]
     pub languages: Vec<String>,
     #[serde(default)]
@@ -81,6 +88,10 @@ pub struct ValueListDocument {
     pub api_version: ApiVersion,
     pub kind: ValueListKind,
     pub key: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub renamed_from: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<ConfigMode>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub labels: BTreeMap<String, String>,
     #[serde(default)]
@@ -96,6 +107,10 @@ pub struct UnitFamilyDocument {
     pub api_version: ApiVersion,
     pub kind: UnitFamilyKind,
     pub key: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub renamed_from: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<ConfigMode>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dimension: Option<String>,
     pub base_unit: String,
@@ -123,6 +138,8 @@ pub struct OptionConfig {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AttributeConfig {
     pub key: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub renamed_from: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub labels: BTreeMap<String, String>,
     pub language_dependent: bool,
@@ -244,6 +261,8 @@ pub struct LinkSpecConfig {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TypeConfig {
     pub key: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub renamed_from: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub labels: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -270,6 +289,8 @@ pub struct TypeConfig {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct StructureConfig {
     pub key: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub renamed_from: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub labels: BTreeMap<String, String>,
     #[serde(default)]
@@ -282,6 +303,8 @@ pub struct StructureConfig {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GroupConfig {
     pub key: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub renamed_from: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub labels: BTreeMap<String, String>,
     /// Key of the parent group in the same structure.
@@ -295,6 +318,8 @@ pub struct GroupConfig {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ClassConfig {
     pub key: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub renamed_from: Option<String>,
     /// Key of the group this class belongs to.
     pub group: String,
     /// Key of the parent class.

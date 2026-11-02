@@ -23,6 +23,7 @@ use utoipa::OpenApi;
         crate::definitions::put_definitions,
         crate::config::export_config,
         crate::config::get_config_schema,
+        crate::config::plan_config,
         crate::definitions::post_attribute,
         crate::definitions::get_attribute,
         crate::definitions::put_attribute,
