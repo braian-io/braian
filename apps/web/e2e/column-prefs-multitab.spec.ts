@@ -26,11 +26,26 @@ async function resetProductsColumnPrefs(page: Page) {
   const workspace = await page.request.get(`/v1/workspaces/${products.id}`)
   if (!workspace.ok()) throw new Error(`workspace: HTTP ${workspace.status()}`)
   const { views } = (await workspace.json()) as {
-    views: Array<{ id: string; type: string; state?: { type_key?: string } }>
+    views: Array<{
+      id: string
+      type: string
+      title?: string
+      state?: { type_key?: string; object_type?: string }
+    }>
   }
-  const table = views.find(
-    (view) => view.type === 'object_table' && view.state?.type_key === 'product',
-  )
+  // View type keys are translated to ids on read, so a literal "product" check
+  // misses in CI. Fall back to the workspace's only table view.
+  const productTypeId = '018f0000-0000-7000-8000-000000000200'
+  const isTable = (view: { type: string }) =>
+    view.type === 'object_table' || view.type === 'table'
+  const isProduct = (view: {
+    title?: string
+    state?: { type_key?: string; object_type?: string }
+  }) =>
+    view.state?.object_type === productTypeId ||
+    view.state?.type_key === productTypeId ||
+    view.title === 'Products'
+  const table = views.find((view) => isTable(view) && isProduct(view)) ?? views.find(isTable)
   if (!table) throw new Error('missing Products object table')
   const cleared = await page.request.delete(
     `/v1/views/${table.id}/column-prefs?environment=default`,
