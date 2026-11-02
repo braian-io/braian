@@ -125,6 +125,30 @@ describe('palette peer sources (Notion 103 PR 2)', () => {
     expect(peerRows[1].chips).toEqual([{ text: copy.current, tone: 'ok' }])
   })
 
+  it('disables self and indirect cycle sources with an explanation', () => {
+    const peerOptions = [
+      { viewId: 'view-a', viewTitle: 'A', selection: 'row' as const, label: '', typeIds: ['t-article'] },
+      { viewId: 'view-b', viewTitle: 'B', selection: 'row' as const, label: '', typeIds: ['t-article'] },
+      { viewId: 'view-c', viewTitle: 'C', selection: 'row' as const, label: '', typeIds: ['t-article'] },
+      { viewId: 'view-free', viewTitle: 'Free', selection: 'row' as const, label: 'ART-1', typeIds: ['t-article'] },
+    ]
+    const sources = new Map<string, string>([
+      ['view-b', 'view-a'],
+      ['view-c', 'view-b'],
+    ])
+    const rows = selectSourceSubmenuRows(types, peerOptions, null, {
+      targetViewId: 'view-a',
+      sourceOf: (viewId) => sources.get(viewId),
+    })
+    const byView = (viewId: string) => rows.find((row) => row.id === `select-source:peer:t-article:${viewId}:row`)
+    expect(byView('view-a')?.disabled).toBe(true)
+    expect(byView('view-b')?.disabled).toBe(true)
+    expect(byView('view-c')?.disabled).toBe(true)
+    expect(byView('view-c')?.subtitle).toBe('Would create a cycle')
+    expect(byView('view-free')?.disabled).toBeUndefined()
+    expect(byView('view-free')?.subtitle).toBe('ART-1')
+  })
+
   it('parses peer choices with an optional link type and still ignores the link type as a source', () => {
     expect(parseSelectSourceChoice('select-source:peer:t-article:view-food:node')).toEqual({
       peerViewId: 'view-food',

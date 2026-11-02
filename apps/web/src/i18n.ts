@@ -210,6 +210,7 @@ export const copy = {
   showAll: 'Show all',
   fromSourceLabel: '{type} from {source}',
   fromSourceViaLabel: '{type} from {source} via {linkType}',
+  wouldCreateCycle: 'Would create a cycle',
   linkedTo: 'Linked to: {source}',
   viewMenu: 'View menu',
   closeView: 'Close view',

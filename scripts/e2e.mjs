@@ -64,6 +64,7 @@ const specs = [
   'e2e/view-source-type.spec.ts',
   'e2e/peer-source.spec.ts',
   'e2e/peer-source-empty.spec.ts',
+  'e2e/peer-source-chain.spec.ts',
   'e2e/source-all-explicit.spec.ts',
   'e2e/link-source-repair.spec.ts',
   'e2e/switch-catalog-view.spec.ts',

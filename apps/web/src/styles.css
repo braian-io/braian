@@ -1415,6 +1415,8 @@ canvas.graph.panning { cursor: grabbing; }
   color: var(--text);
 }
 .hit:hover, .hit.on, .hit[data-selected='true'] { background: var(--accent-dim); }
+.hit.disabled, .hit[data-disabled='true'] { opacity: 0.5; }
+.hit.disabled:hover, .hit[data-disabled='true']:hover { background: transparent; }
 .hit.ask { z-index: 1; background: var(--raised); border-top: 1px solid var(--border); flex: none; }
 .hit small { display: block; color: var(--muted); font-size: 11px; font-weight: 400; }
 .hit .hit-title { font-size: 13px; }
