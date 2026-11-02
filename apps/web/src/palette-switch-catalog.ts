@@ -39,3 +39,16 @@ export function parseSwitchCatalogChoice(id: string): string | null {
   const catalogId = id.slice('catalog:'.length)
   return catalogId.length > 0 ? catalogId : null
 }
+
+export type SwitchCatalogEventDetail =
+  | { scope: 'view'; viewId: string; catalogId: string }
+  | { scope: 'workspace'; catalogId: string }
+
+/** A focused view gets an override; otherwise the picker sets the workspace default. */
+export function switchCatalogEventDetail(
+  catalogId: string,
+  focusedViewId?: string | null,
+): SwitchCatalogEventDetail {
+  if (focusedViewId) return { scope: 'view', viewId: focusedViewId, catalogId }
+  return { scope: 'workspace', catalogId }
+}
