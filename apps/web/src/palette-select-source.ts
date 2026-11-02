@@ -14,12 +14,24 @@ export type PeerSourceOption = {
   label: string
   /** Object type ids this source can drive. */
   typeIds: string[]
+  /** Link type keys that connect the source type to each target type. */
+  links?: Array<{ typeId: string; linkType: string }>
 }
 
 export type CurrentSource = {
   typeId: string
   peerViewId?: string
   selection?: PeerSelection
+  linkType?: string
+}
+
+function linkTypesFor(option: PeerSourceOption, type: TypeName): string[] {
+  const typeIds = new Set([type.id, type.key].filter(Boolean))
+  const keys = (option.links ?? [])
+    .filter((link) => typeIds.has(link.typeId))
+    .map((link) => link.linkType)
+    .filter(Boolean)
+  return [...new Set(keys)]
 }
 
 function marked(row: PaletteItem, current: boolean): PaletteItem {
@@ -59,19 +71,43 @@ export function selectSourceSubmenuRows(
     }, allCurrent))
     for (const option of peerOptions) {
       if (!option.typeIds.includes(type.id) && !option.typeIds.includes(type.key)) continue
-      const peerCurrent = Boolean(
-        current
-        && current.typeId === type.id
-        && current.peerViewId === option.viewId
-        && current.selection === option.selection,
-      )
-      rows.push(marked({
-        id: `select-source:peer:${type.id}:${option.viewId}:${option.selection}`,
-        group: 'views',
-        title: copy.fromSourceLabel.replace('{type}', type.plural).replace('{source}', option.viewTitle),
-        subtitle: option.label,
-        keywords: [type.key, type.singular, type.plural, option.viewTitle, option.label, 'linked', 'peer', 'source'],
-      }, peerCurrent))
+      const linkTypes = linkTypesFor(option, type)
+      const many = linkTypes.length > 1
+      const variants = many ? linkTypes : [linkTypes[0]]
+      for (const linkType of variants) {
+        const peerCurrent = Boolean(
+          current
+          && current.typeId === type.id
+          && current.peerViewId === option.viewId
+          && current.selection === option.selection
+          && (many
+            ? current.linkType === linkType || (!current.linkType && linkType === linkTypes[0])
+            : !current.linkType || current.linkType === linkType),
+        )
+        const title = many
+          ? copy.fromSourceViaLabel
+            .replace('{type}', type.plural)
+            .replace('{source}', option.viewTitle)
+            .replace('{linkType}', linkType ?? '')
+          : copy.fromSourceLabel.replace('{type}', type.plural).replace('{source}', option.viewTitle)
+        rows.push(marked({
+          id: `select-source:peer:${type.id}:${option.viewId}:${option.selection}${many && linkType ? `:${linkType}` : ''}`,
+          group: 'views',
+          title,
+          subtitle: option.label,
+          keywords: [
+            type.key,
+            type.singular,
+            type.plural,
+            option.viewTitle,
+            option.label,
+            linkType ?? '',
+            'linked',
+            'peer',
+            'source',
+          ],
+        }, peerCurrent))
+      }
     }
   }
   return rows
@@ -83,7 +119,7 @@ export function isSelectSourceRoot(id: string) {
 
 export type SelectSourceChoice =
   | { typeId: string }
-  | { peerViewId: string; selection: PeerSelection }
+  | { peerViewId: string; selection: PeerSelection; linkType?: string }
 
 export function parseSelectSourceChoice(id: string): SelectSourceChoice | null {
   if (id.startsWith('select-source:type:')) {
@@ -92,9 +128,11 @@ export function parseSelectSourceChoice(id: string): SelectSourceChoice | null {
   }
   if (id.startsWith('select-source:peer:')) {
     const rest = id.slice('select-source:peer:'.length)
-    const viewId = rest.split(':')[1] ?? ''
-    const selection = rest.split(':')[2] === 'node' ? 'node' : 'row'
-    return viewId ? { peerViewId: viewId, selection } : null
+    const parts = rest.split(':')
+    const viewId = parts[1] ?? ''
+    const selection = parts[2] === 'node' ? 'node' : 'row'
+    const linkType = parts[3] || undefined
+    return viewId ? { peerViewId: viewId, selection, ...(linkType ? { linkType } : {}) } : null
   }
   return null
 }

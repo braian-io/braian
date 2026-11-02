@@ -52,6 +52,7 @@ import { StandardEditableTable, type StandardColumn } from './standard-editable-
 import { registerCommandRunner, runCommand } from './command-registry'
 import { structureCaption } from './graph-scene'
 import {
+  displayViewTitle,
   emptyDetail,
   emptyGraph,
   isGenericObjectTitle,
@@ -374,8 +375,18 @@ export function ObjectTable({
     () => (peerSource?.selection === 'node' ? readTreeNode(peerSource.viewId) : null),
   )
   const peerIds = useQuery({
-    queryKey: ['peer-links', catalogKey, peerSource?.viewId ?? '', typeKey, peerRows.map((row) => row.id).join(',')],
-    queryFn: () => inCatalog(catalogKey, () => linkedPeerIds(peerRows.map((row) => row.id), typeKey)),
+    queryKey: [
+      'peer-links',
+      catalogKey,
+      peerSource?.viewId ?? '',
+      typeKey,
+      peerSource?.linkType ?? '',
+      peerRows.map((row) => row.id).join(','),
+    ],
+    queryFn: () => inCatalog(
+      catalogKey,
+      () => linkedPeerIds(peerRows.map((row) => row.id), typeKey, peerSource?.linkType),
+    ),
     enabled: Boolean(catalogReady && typeKey && peerSource?.selection === 'row' && peerRows.length > 0),
     staleTime: 5_000,
   })
@@ -1540,6 +1551,11 @@ export function ObjectTable({
       filterValue={filter}
       onFilterChange={setFilter}
     >
+      {peerSource && peerSourceView ? (
+        <p className="table-source" data-testid="peer-linked-to">
+          {copy.linkedTo.replace('{source}', displayViewTitle(peerSourceView, names))}
+        </p>
+      ) : null}
       {prefsLoadFailed ? (
         <p className="warn" data-testid="column-prefs-load-error" role="status">
           {copy.columnPrefsLoadError}

@@ -51,7 +51,7 @@ import {
   typeOfView,
   typeViewPaletteItems,
 } from './type-labels'
-import { linkedTypeIds, peerSourceOf } from './view-source'
+import { linkedTypeLinks, peerSourceOf } from './view-source'
 import { applyUiResult, dispatchUi, uiOperations } from './ui-bus'
 import {
   readSelection,
@@ -137,7 +137,7 @@ export function CommandPalette({
   startSwitchCatalog?: boolean
   workspaceCatalogId?: string
   onSelectSourceType?: (typeId: string) => void
-  onSelectSourcePeer?: (viewId: string) => void
+  onSelectSourcePeer?: (viewId: string, linkType?: string) => void
   onClose: () => void
   fieldsMode?: boolean
   fieldsEditColumnId?: string | null
@@ -246,14 +246,16 @@ export function CommandPalette({
           !row.type || row.type === bound.id || row.type === bound.key,
         )
         if (rows.length === 0) continue
-        const typeIds = linkedTypeIds(bound.id, defs.data)
-        if (typeIds.length === 0) continue
+        const links = linkedTypeLinks(bound.id, defs.data)
+        if (links.length === 0) continue
+        const typeIds = [...new Set(links.map((link) => link.typeId))]
         options.push({
           viewId: sourceView.id,
           viewTitle,
           selection: 'row',
           label: rows.map((row) => row.key || row.name || row.id).filter(Boolean).slice(0, 3).join(', '),
           typeIds,
+          links,
         })
       }
     }
@@ -270,7 +272,7 @@ export function CommandPalette({
     const bound = typeOfView(sourceTarget, types)
     const peer = peerSourceOf(sourceTarget.state)
     return peer
-      ? { typeId: bound?.id ?? '', peerViewId: peer.viewId, selection: peer.selection }
+      ? { typeId: bound?.id ?? '', peerViewId: peer.viewId, selection: peer.selection, linkType: peer.linkType }
       : { typeId: bound?.id ?? '' }
   }, [sourceTarget, types])
   // Columns of the open table, read once when the palette opens.
@@ -522,7 +524,7 @@ export function CommandPalette({
     const sourceChoice = parseSelectSourceChoice(id)
     if (sourceChoice) {
       if ('typeId' in sourceChoice) onSelectSourceType?.(sourceChoice.typeId)
-      else onSelectSourcePeer?.(sourceChoice.peerViewId)
+      else onSelectSourcePeer?.(sourceChoice.peerViewId, sourceChoice.linkType)
       onClose()
       return
     }

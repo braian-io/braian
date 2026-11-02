@@ -67,6 +67,7 @@ import { commandPlaceholder, displayViewTitle, migrateSavedWorkspace, singularOf
 import {
   applyPeerSource,
   applyTypeSource,
+  defaultPeerLinkType,
   peerSourceLabel,
   peerSourceOf,
   viewSourceLabel,
@@ -235,7 +236,7 @@ export function Shell() {
   const applyRef = useRef<(name: string, args: Record<string, unknown>) => void>(() => {})
   const openTypeViewRef = useRef<(typeId: string) => void>(() => {})
   const applyViewTypeSourceRef = useRef<(typeId: string, viewId?: string) => Promise<void>>(async () => undefined)
-  const applyViewPeerSourceRef = useRef<(peerViewId: string, viewId?: string) => Promise<void>>(async () => undefined)
+  const applyViewPeerSourceRef = useRef<(peerViewId: string, viewId?: string, linkType?: string) => Promise<void>>(async () => undefined)
   const migratedRef = useRef(new Set<string>())
   const ensuredTypes = useRef(new Set<string>())
   const workspaceIdRef = useRef<string | null>(null)
@@ -447,7 +448,12 @@ export function Shell() {
           ? target.peerViewId
           : typeof target.sourceViewId === 'string' ? target.sourceViewId : ''
         if (peerViewId) {
-          void applyViewPeerSourceRef.current(peerViewId, typeof target.viewId === 'string' ? target.viewId : undefined)
+          const linkType = typeof target.linkType === 'string' ? target.linkType : undefined
+          void applyViewPeerSourceRef.current(
+            peerViewId,
+            typeof target.viewId === 'string' ? target.viewId : undefined,
+            linkType,
+          )
           return
         }
         setPaletteStartAddView(false)
@@ -1240,10 +1246,11 @@ export function Shell() {
     queryClient.setQueryData(['workspace', surfaceNow.id], nextSurface)
   }
 
-  applyViewPeerSourceRef.current = async (peerViewId: string, viewId?: string) => {
+  applyViewPeerSourceRef.current = async (peerViewId: string, viewId?: string, linkType?: string) => {
     const surfaceNow = workspaceRef.current
     if (!surfaceNow || surfaceNow.locked) return
-    const types = typeNames(queryClient.getQueryData<Json>(['definitions']))
+    const defs = queryClient.getQueryData<Json>(['definitions'])
+    const types = typeNames(defs)
     const focus = viewId || docRef.current?.focus
     let views: View[] = viewRows(surfaceNow.views)
     const target = views.find((view) => view.id === focus && view.type === 'object_table')
@@ -1251,13 +1258,16 @@ export function Shell() {
     const source = views.find((view) => view.id === peerViewId)
     if (!target || !source || source.id === target.id) return
     if (source.type !== 'object_table' && source.type !== 'structure_tree') return
-    if (source.type === 'object_table') {
-      const bound = typeOfView(source, types)
-      // Link types are not records (#153): never accept one as a source.
-      if (!bound || bound.kind === 'link') return
-    }
+    const sourceBound = source.type === 'object_table' ? typeOfView(source, types) : undefined
+    // Link types are not records (#153): never accept one as a source.
+    if (source.type === 'object_table' && (!sourceBound || sourceBound.kind === 'link')) return
     const kind = source.type === 'structure_tree' ? 'node' : 'row'
-    const nextState = applyPeerSource(target.state, source.id, kind)
+    const targetBound = typeOfView(target, types)
+    // With several link types between the two types the first one is the default.
+    const fallback = sourceBound && targetBound
+      ? defaultPeerLinkType(sourceBound.id, targetBound.id, defs)
+      : undefined
+    const nextState = applyPeerSource(target.state, source.id, kind, linkType || fallback)
     const updated: View = { ...target, state: freeObject(nextState) }
     await api.post('/v1/views', {
       body: {
@@ -1470,7 +1480,7 @@ export function Shell() {
           startSwitchCatalog={paletteStartSwitchCatalog}
           workspaceCatalogId={workspaceCatalogRef(workspace.data)?.catalogId || MASTER_CATALOG_ID}
           onSelectSourceType={(typeId) => { void applyViewTypeSourceRef.current(typeId) }}
-          onSelectSourcePeer={(peerViewId) => { void applyViewPeerSourceRef.current(peerViewId) }}
+          onSelectSourcePeer={(peerViewId, linkType) => { void applyViewPeerSourceRef.current(peerViewId, undefined, linkType) }}
           onPrepareAddView={() => {
             const focus = docRef.current?.focus
             placeOverride.current = focus ? { target: focus, zone: 'center' } : { zone: 'center' }
