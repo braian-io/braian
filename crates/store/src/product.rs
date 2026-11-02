@@ -834,9 +834,9 @@ impl Store {
         let views = client
             .query(
                 "SELECT id, title, workspace_id FROM views
-                 WHERE state->>'selection_id' = $1::text
+                 WHERE state->>'selection_id' = $1
                  ORDER BY title, id",
-                &[&id],
+                &[&id.to_string()],
             )
             .await?
             .iter()
@@ -891,8 +891,8 @@ impl Store {
         let client = self.checkout().await?;
         client
             .execute(
-                "UPDATE views SET state = state - 'selection_id' WHERE state->>'selection_id' = $1::text",
-                &[&id],
+                "UPDATE views SET state = state - 'selection_id' WHERE state->>'selection_id' = $1",
+                &[&id.to_string()],
             )
             .await?;
         client

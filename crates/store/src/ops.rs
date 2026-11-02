@@ -955,8 +955,8 @@ impl Store {
             }
             ProposalWrite::AssortmentDelete { id } => {
                 tx.execute(
-                    "UPDATE views SET state = state - 'selection_id' WHERE state->>'selection_id' = $1::text",
-                    &[&id],
+                    "UPDATE views SET state = state - 'selection_id' WHERE state->>'selection_id' = $1",
+                    &[&id.to_string()],
                 )
                 .await?;
                 tx.execute(
