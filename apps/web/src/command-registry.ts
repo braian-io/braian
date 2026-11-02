@@ -214,6 +214,23 @@ export const registryCommands: RegistryCommand[] = [
     when: (target) => !target.viewType || target.viewType === 'assortment_list',
   },
   {
+    id: 'selection:edit',
+    title: copy.editSelection,
+    contexts: ['assortment'],
+    group: 'views',
+    keywords: ['assortment', 'selection', 'edit', 'rename', 'filter'],
+    when: (target) => Boolean(target.selectionId),
+  },
+  {
+    id: 'selection:delete',
+    title: copy.deleteSelection,
+    contexts: ['assortment'],
+    group: 'views',
+    keywords: ['assortment', 'selection', 'delete', 'remove'],
+    danger: true,
+    when: (target) => Boolean(target.selectionId),
+  },
+  {
     id: 'model:new-type',
     title: copy.newType,
     contexts: ['model', 'model-type'],

@@ -26,7 +26,7 @@ describe('ui context', () => {
       focused: 'v-table',
       language: 'sv',
     })
-    publishTable('v-table', '', 'key:asc')
+    publishTable('v-table', '', 'key:asc', 'type_key:=article')
     publishMarked(id)
     publishSelection('v-table', [{ id, key: 'SYN-000001', name: '', type: 'article' }])
     enrichSelection({ id, key: 'SYN-000001', name: 'Insulation 2', type: 'article' })
@@ -35,6 +35,7 @@ describe('ui context', () => {
     expect(snap.panes.map((pane) => pane.type)).toEqual(['object_table', 'object_detail', 'graph'])
     expect(snap.panes.find((pane) => pane.focused)?.id).toBe('v-table')
     expect(snap.filter).toBe('')
+    expect(snap.filterExpression).toBe('type_key:=article')
     expect(snap.sort).toBe('key:asc')
     expect(snap.language).toBe('sv')
     expect(snap.workspace?.name).toBe('Enrich objects')
