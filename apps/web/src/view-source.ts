@@ -4,7 +4,7 @@ import { copy } from './i18n'
 import { typeOfView, type TypeName } from './type-labels'
 
 export type PeerSelection = 'row' | 'node'
-export type PeerSourceRef = { kind: 'peer'; viewId: string; selection: PeerSelection }
+export type PeerSourceRef = { kind: 'peer'; viewId: string; selection: PeerSelection; linkType?: string }
 
 /** Persist "all objects of a type" on an object_table view (Notion 103 PR 1). */
 export function applyTypeSource(state: Json | undefined, type: TypeName): Json {
@@ -27,10 +27,20 @@ export function isExplicitAllSource(state: Json | undefined): boolean {
  * Persist a live source: another view's selected row or tree node.
  * The selection itself is read from the UI registry, never copied into state.
  */
-export function applyPeerSource(state: Json | undefined, viewId: string, selection: PeerSelection): Json {
+export function applyPeerSource(
+  state: Json | undefined,
+  viewId: string,
+  selection: PeerSelection,
+  linkType?: string,
+): Json {
   return {
     ...(state ?? {}),
-    source: { kind: 'peer', viewId, selection },
+    source: {
+      kind: 'peer',
+      viewId,
+      selection,
+      ...(linkType ? { linkType } : {}),
+    },
   }
 }
 
@@ -43,11 +53,56 @@ export function peerSourceOf(state: Json | undefined): PeerSourceRef | null {
   if (record.kind !== 'peer') return null
   const viewId = typeof record.viewId === 'string' ? record.viewId : ''
   if (!viewId) return null
+  const linkType = typeof record.linkType === 'string' && record.linkType ? record.linkType : undefined
   return {
     kind: 'peer',
     viewId,
     selection: record.selection === 'node' ? 'node' : 'row',
+    ...(linkType ? { linkType } : {}),
   }
+}
+
+export type PeerEmptyKind = 'missing-source' | 'no-selection' | 'no-linked'
+
+export type PeerEmptyState = {
+  kind: PeerEmptyKind
+  text: string
+  showAll: string
+}
+
+/**
+ * The empty state a peer-sourced table shows instead of blank rows (Notion 103
+ * decision 6). A peer source never falls back to every object of the type.
+ * `linkedCount` is null while the link lookup is still unsettled.
+ */
+export function peerEmptyState(input: {
+  source: PeerSourceRef | null
+  sourceView?: { title?: string } | null
+  targetType?: Pick<TypeName, 'plural'> | null
+  hasSelection: boolean
+  selectionLabel?: string | null
+  linkedCount?: number | null
+}): PeerEmptyState | null {
+  if (!input.source) return null
+  const type = input.targetType?.plural || copy.objects
+  const showAll = copy.showAll
+  if (!input.sourceView) return { kind: 'missing-source', text: copy.sourceMissing, showAll }
+  if (!input.hasSelection) {
+    return {
+      kind: 'no-selection',
+      text: copy.selectRowIn.replace('{view}', input.sourceView.title ?? ''),
+      showAll,
+    }
+  }
+  if (input.linkedCount === 0) {
+    const object = (input.selectionLabel ?? '').trim()
+    return {
+      kind: 'no-linked',
+      text: copy.noLinkedOfType.replace('{type}', type).replace('{object}', object),
+      showAll,
+    }
+  }
+  return null
 }
 
 /** Typesense filter for a tree node in another view. */
@@ -62,22 +117,45 @@ export function peerIdsFilter(ids: string[]): string {
   return `id:=[${list}]`
 }
 
-/**
- * Object type ids a source row's type can reach through any link type.
- * Link types are not records and are never offered as a source (#153).
- */
-export function linkedTypeIds(sourceTypeId: string, defs: Json | undefined): string[] {
+type LinkEdge = { linkType: string; typeId: string }
+
+/** Every link type edge from a source type, in definition order. */
+function linkEdges(sourceTypeId: string, defs: Json | undefined): LinkEdge[] {
   if (!sourceTypeId) return []
-  const out = new Set<string>()
+  const out: LinkEdge[] = []
   for (const item of ((defs?.types as Json[] | undefined) ?? [])) {
     if (item.kind !== 'link') continue
     const link = (item.link as Json | undefined) ?? {}
     const from = Array.isArray(link.from_types) ? link.from_types.map(String) : []
     const to = Array.isArray(link.to_types) ? link.to_types.map(String) : []
-    if (from.includes(sourceTypeId)) for (const id of to) out.add(id)
-    if (to.includes(sourceTypeId)) for (const id of from) out.add(id)
+    const linkType = String(item.key ?? '')
+    if (from.includes(sourceTypeId)) for (const id of to) out.push({ linkType, typeId: id })
+    if (to.includes(sourceTypeId)) for (const id of from) out.push({ linkType, typeId: id })
   }
-  return [...out]
+  return out
+}
+
+/**
+ * Object type ids a source row's type can reach through any link type.
+ * Link types are not records and are never offered as a source (#153).
+ */
+export function linkedTypeIds(sourceTypeId: string, defs: Json | undefined): string[] {
+  return [...new Set(linkEdges(sourceTypeId, defs).map((edge) => edge.typeId))]
+}
+
+/** Link type keys and the target type each one reaches from the source type. */
+export function linkedTypeLinks(sourceTypeId: string, defs: Json | undefined): LinkEdge[] {
+  return linkEdges(sourceTypeId, defs).filter((edge) => edge.linkType)
+}
+
+/** The first link type in definition order that connects both types. */
+export function defaultPeerLinkType(
+  sourceTypeId: string,
+  targetTypeId: string,
+  defs: Json | undefined,
+): string | undefined {
+  if (!sourceTypeId || !targetTypeId) return undefined
+  return linkedTypeLinks(sourceTypeId, defs).find((edge) => edge.typeId === targetTypeId)?.linkType
 }
 
 /** Header fragment for a peer source: view title plus the live selection. */

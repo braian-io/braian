@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest'
 import {
   applyPeerSource,
   applyTypeSource,
+  defaultPeerLinkType,
   isExplicitAllSource,
   isObjectTableView,
   linkedTypeIds,
+  linkedTypeLinks,
+  peerEmptyState,
   peerIdsFilter,
   peerNodeFilter,
   peerSourceLabel,
@@ -53,6 +56,55 @@ describe('peer source (Notion 103 PR 2)', () => {
     const next = applyPeerSource({ type_key: 'product', object_type: 't-product' }, 'view-articles', 'row')
     expect(next.source).toEqual({ kind: 'peer', viewId: 'view-articles', selection: 'row' })
     expect(peerSourceOf(next)).toEqual({ kind: 'peer', viewId: 'view-articles', selection: 'row' })
+  })
+
+  it('stores an optional link type and reads old sources without one', () => {
+    const next = applyPeerSource({}, 'view-articles', 'row', 'product_articles')
+    expect(next.source).toEqual({
+      kind: 'peer',
+      viewId: 'view-articles',
+      selection: 'row',
+      linkType: 'product_articles',
+    })
+    expect(peerSourceOf(next)).toEqual({
+      kind: 'peer',
+      viewId: 'view-articles',
+      selection: 'row',
+      linkType: 'product_articles',
+    })
+    expect(peerSourceOf({ source: { kind: 'peer', viewId: 'old', selection: 'row' } })).toEqual({
+      kind: 'peer',
+      viewId: 'old',
+      selection: 'row',
+    })
+  })
+
+  it('picks the first link type when several connect the source and target types', () => {
+    const defs = {
+      types: [
+        { id: 't-product', kind: 'entity' },
+        { id: 't-article', kind: 'entity' },
+        {
+          id: 't-link-contains',
+          key: 'contains',
+          kind: 'link',
+          link: { from_types: ['t-product'], to_types: ['t-article'] },
+        },
+        {
+          id: 't-link-related',
+          key: 'related',
+          kind: 'link',
+          link: { from_types: ['t-product'], to_types: ['t-article'] },
+        },
+      ],
+    }
+    expect(defaultPeerLinkType('t-product', 't-article', defs)).toBe('contains')
+    expect(defaultPeerLinkType('t-article', 't-product', defs)).toBe('contains')
+    expect(defaultPeerLinkType('t-product', 't-other', defs)).toBeUndefined()
+    expect(linkedTypeLinks('t-product', defs)).toEqual([
+      { linkType: 'contains', typeId: 't-article' },
+      { linkType: 'related', typeId: 't-article' },
+    ])
   })
 
   it('ignores malformed or non-peer sources', () => {
@@ -113,5 +165,70 @@ describe('peer source (Notion 103 PR 2)', () => {
       {},
       'Food › Cheese',
     )).toBe(`${copy.allOfType.replace('{type}', 'Products')} · Food › Cheese`)
+  })
+})
+
+describe('peer source empty states (Notion 103 decision 6)', () => {
+  const source = { kind: 'peer' as const, viewId: 'view-products', selection: 'row' as const }
+  const sourceView = { title: 'Products' }
+  const articles = types[0]
+
+  it('does nothing without a peer source', () => {
+    expect(peerEmptyState({
+      source: null,
+      sourceView,
+      targetType: articles,
+      hasSelection: false,
+    })).toBeNull()
+  })
+
+  it('asks for a row when the source view has no selection', () => {
+    const state = peerEmptyState({
+      source,
+      sourceView,
+      targetType: articles,
+      hasSelection: false,
+    })
+    expect(state?.kind).toBe('no-selection')
+    expect(state?.text).toBe('Select a row in Products')
+    expect(state?.showAll).toBe('Show all')
+  })
+
+  it('names a source that no longer exists', () => {
+    const state = peerEmptyState({
+      source,
+      sourceView: null,
+      targetType: articles,
+      hasSelection: false,
+    })
+    expect(state?.kind).toBe('missing-source')
+    expect(state?.text).toBe(copy.sourceMissing)
+    expect(state?.showAll).toBe('Show all')
+  })
+
+  it('reports no linked objects only after the lookup settles', () => {
+    const state = peerEmptyState({
+      source,
+      sourceView,
+      targetType: articles,
+      hasSelection: true,
+      selectionLabel: 'Cheese',
+      linkedCount: 0,
+    })
+    expect(state?.kind).toBe('no-linked')
+    expect(state?.text).toBe('No linked Articles for Cheese')
+    expect(state?.showAll).toBe('Show all')
+  })
+
+  it('stays out of the way while links are unknown or present', () => {
+    const base = {
+      source,
+      sourceView,
+      targetType: articles,
+      hasSelection: true,
+      selectionLabel: 'Cheese',
+    }
+    expect(peerEmptyState({ ...base, linkedCount: null })).toBeNull()
+    expect(peerEmptyState({ ...base, linkedCount: 2 })).toBeNull()
   })
 })

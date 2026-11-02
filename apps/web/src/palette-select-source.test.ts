@@ -95,10 +95,45 @@ describe('palette peer sources (Notion 103 PR 2)', () => {
     expect(rows.some((row) => row.chips?.some((chip) => chip.text === copy.current))).toBe(false)
   })
 
-  it('parses peer choices and still ignores the link type', () => {
+  it('shows one row per link type when several connect the source and target', () => {
+    const rows = selectSourceSubmenuRows(types, [
+      {
+        viewId: 'view-products',
+        viewTitle: 'Products',
+        selection: 'row',
+        label: 'PROD-1',
+        typeIds: ['t-article'],
+        links: [
+          { typeId: 't-article', linkType: 'contains' },
+          { typeId: 't-article', linkType: 'related' },
+        ],
+      },
+    ], {
+      typeId: 't-article',
+      peerViewId: 'view-products',
+      selection: 'row',
+      linkType: 'related',
+    })
+    const peerRows = rows.filter((row) => row.id.includes(':peer:'))
+    expect(peerRows.map((row) => row.id)).toEqual([
+      'select-source:peer:t-article:view-products:row:contains',
+      'select-source:peer:t-article:view-products:row:related',
+    ])
+    expect(peerRows[0].title).toBe('Articles from Products via contains')
+    expect(peerRows[1].title).toBe('Articles from Products via related')
+    expect(peerRows[0].chips).toBeUndefined()
+    expect(peerRows[1].chips).toEqual([{ text: copy.current, tone: 'ok' }])
+  })
+
+  it('parses peer choices with an optional link type and still ignores the link type as a source', () => {
     expect(parseSelectSourceChoice('select-source:peer:t-article:view-food:node')).toEqual({
       peerViewId: 'view-food',
       selection: 'node',
+    })
+    expect(parseSelectSourceChoice('select-source:peer:t-article:view-food:row:contains')).toEqual({
+      peerViewId: 'view-food',
+      selection: 'row',
+      linkType: 'contains',
     })
     const rows = selectSourceSubmenuRows(types, [
       { viewId: 'v', viewTitle: 'Food', selection: 'node', label: 'Cheese', typeIds: ['t-link'] },

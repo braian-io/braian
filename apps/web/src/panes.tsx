@@ -42,15 +42,17 @@ import { cellPathValues, fetchPathValues } from './path-values'
 import { shouldHoldTablePaint, shouldRefreshTableSnapshot } from './table-live-paint'
 import { searchPeerArticles, type PeerPickOption } from './peer-search'
 import { linkedPeerIds } from './peer-source'
-import { isExplicitAllSource, peerIdsFilter, peerNodeFilter, peerSourceOf } from './view-source'
+import { isExplicitAllSource, peerEmptyState, peerIdsFilter, peerNodeFilter, peerSourceOf } from './view-source'
 import { FieldDiff } from './field-diff-view'
 import { copy, uiLanguage } from './i18n'
 import { handleAppContextMenu } from './app-context-menu'
 import { openSharedContextMenu } from './shared-context-menu'
 import { StandardTableChrome } from './standard-table'
 import { StandardEditableTable, type StandardColumn } from './standard-editable-table'
-import { registerCommandRunner } from './command-registry'
+import { registerCommandRunner, runCommand } from './command-registry'
+import { structureCaption } from './graph-scene'
 import {
+  displayViewTitle,
   emptyDetail,
   emptyGraph,
   isGenericObjectTitle,
@@ -373,8 +375,18 @@ export function ObjectTable({
     () => (peerSource?.selection === 'node' ? readTreeNode(peerSource.viewId) : null),
   )
   const peerIds = useQuery({
-    queryKey: ['peer-links', catalogKey, peerSource?.viewId ?? '', typeKey, peerRows.map((row) => row.id).join(',')],
-    queryFn: () => inCatalog(catalogKey, () => linkedPeerIds(peerRows.map((row) => row.id), typeKey)),
+    queryKey: [
+      'peer-links',
+      catalogKey,
+      peerSource?.viewId ?? '',
+      typeKey,
+      peerSource?.linkType ?? '',
+      peerRows.map((row) => row.id).join(','),
+    ],
+    queryFn: () => inCatalog(
+      catalogKey,
+      () => linkedPeerIds(peerRows.map((row) => row.id), typeKey, peerSource?.linkType),
+    ),
     enabled: Boolean(catalogReady && typeKey && peerSource?.selection === 'row' && peerRows.length > 0),
     staleTime: 5_000,
   })
@@ -579,6 +591,22 @@ export function ObjectTable({
     hits: ((group.hits as Json[]) ?? []).map((hit) => toRow((hit.document as Json) ?? hit, defs.data)),
   }))
   const groupedRows = groups.flatMap((group) => group.hits)
+  // A peer source with nothing to follow shows an empty state, never every row.
+  const peerSelectionLabel = peerSource?.selection === 'node'
+    ? (peerNode ? structureCaption(peerNode.groupKey, defs.data, peerNode.structureKey) || peerNode.groupKey : '')
+    : peerRows.map((row) => row.key || row.name || row.id).filter(Boolean).slice(0, 3).join(', ')
+  const peerHasSelection = peerSource?.selection === 'node' ? Boolean(peerNode) : peerRows.length > 0
+  const peerLinkedCount = peerSource?.selection === 'node'
+    ? (probe.isSuccess && !probe.isFetching ? found : null)
+    : (peerIds.isSuccess ? peerIds.data.length : null)
+  const peerEmpty = peerEmptyState({
+    source: peerSource,
+    sourceView: peerSourceView,
+    targetType: bound,
+    hasSelection: peerHasSelection,
+    selectionLabel: peerSelectionLabel,
+    linkedCount: peerLinkedCount,
+  })
   const listCount = groupBy ? groupedRows.length : found
   const rowAt = (index: number) => (groupBy ? groupedRows[index] : byIndex.get(index))
   const activeRow = active >= 0 ? rowAt(active) : undefined
@@ -1523,6 +1551,11 @@ export function ObjectTable({
       filterValue={filter}
       onFilterChange={setFilter}
     >
+      {peerSource && peerSourceView ? (
+        <p className="table-source" data-testid="peer-linked-to">
+          {copy.linkedTo.replace('{source}', displayViewTitle(peerSourceView, names))}
+        </p>
+      ) : null}
       {prefsLoadFailed ? (
         <p className="warn" data-testid="column-prefs-load-error" role="status">
           {copy.columnPrefsLoadError}
@@ -1637,7 +1670,20 @@ export function ObjectTable({
             </div>
           </SortableContext>
         </DndContext>
-        {groupBy ? (
+        {peerEmpty ? (
+          <div className="table-status" data-testid="peer-empty" role="status">
+            <p data-testid="peer-empty-text">{peerEmpty.text}</p>
+            {bound ? (
+              <button
+                type="button"
+                data-testid="peer-show-all"
+                onClick={() => { void runCommand('view:select-source', { typeId: bound.id, viewId: view.id }) }}
+              >
+                {peerEmpty.showAll}
+              </button>
+            ) : null}
+          </div>
+        ) : groupBy ? (
           <div style={{ flex: 'none' }}>
             {(() => {
               let index = 0
@@ -1706,7 +1752,7 @@ export function ObjectTable({
             })}
           </div>
         )}
-        {probe.isError || (!probe.isLoading && found === 0) ? (
+        {!peerEmpty && (probe.isError || (!peerSource && !probe.isLoading && found === 0)) ? (
           <div className="table-status">
             {probe.isError ? <p className="error">{(probe.error as Error).message}</p> : null}
             {!probe.isLoading && found === 0 ? <p>{copy.noRows}</p> : null}
