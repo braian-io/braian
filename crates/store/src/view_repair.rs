@@ -91,40 +91,90 @@ fn collect_layout_view_ids(layout: &Value, placed: &mut HashSet<Uuid>) {
     }
 }
 
-/// Views that none of `layouts` places in a tab.
-fn views_outside_layouts(views: &[Uuid], layouts: &[Value]) -> Vec<Uuid> {
-    let mut placed = HashSet::new();
-    for layout in layouts {
-        collect_layout_view_ids(layout, &mut placed);
+/// Views to delete, scoped to workspaces whose layout is meaningful.
+///
+/// A workspace layout counts only when it is a JSON object that places at least
+/// one view. This keeps every view of a workspace without a usable layout;
+/// deleting those would be data loss. Views without a workspace are never
+/// touched.
+fn orphan_views_to_delete(
+    views: &[(Uuid, Option<Uuid>)],
+    workspace_layouts: &HashMap<Uuid, Value>,
+    personal_layouts: &HashMap<Uuid, Vec<Value>>,
+) -> Vec<Uuid> {
+    let mut placed_by_workspace: HashMap<Uuid, HashSet<Uuid>> = HashMap::new();
+    let mut meaningful_workspaces = HashSet::new();
+    for (workspace_id, layout) in workspace_layouts {
+        let placed = placed_by_workspace.entry(*workspace_id).or_default();
+        collect_layout_view_ids(layout, placed);
+        if layout.is_object() && !placed.is_empty() {
+            meaningful_workspaces.insert(*workspace_id);
+        }
+    }
+    for (workspace_id, layouts) in personal_layouts {
+        let placed = placed_by_workspace.entry(*workspace_id).or_default();
+        for layout in layouts {
+            collect_layout_view_ids(layout, placed);
+        }
     }
     views
         .iter()
-        .copied()
-        .filter(|id| !placed.contains(id))
+        .filter_map(|(id, workspace_id)| {
+            let workspace_id = (*workspace_id)?;
+            if !meaningful_workspaces.contains(&workspace_id) {
+                return None;
+            }
+            let placed = placed_by_workspace
+                .get(&workspace_id)
+                .is_some_and(|placed| placed.contains(id));
+            (!placed).then_some(*id)
+        })
         .collect()
 }
 
-/// Delete views that no layout references.
+/// Delete views that their own workspace's layout no longer references.
 async fn remove_orphan_views(client: &mut Client) -> Result<(), Error> {
-    let layouts = client
+    let workspace_rows = client
+        .query("SELECT id, layout FROM workspaces", &[])
+        .await?;
+    let mut workspace_layouts = HashMap::with_capacity(workspace_rows.len());
+    for row in &workspace_rows {
+        let id: Uuid = row.get("id");
+        if let Some(layout) = row.get::<_, Option<Value>>("layout") {
+            workspace_layouts.insert(id, layout);
+        }
+    }
+
+    let personal_rows = client
         .query(
-            "SELECT layout AS document FROM workspaces
-             UNION ALL
-             SELECT document -> 'layout' AS document
+            "SELECT workspace_id, document -> 'layout' AS document
              FROM workspace_states
              WHERE jsonb_typeof(document) = 'object' AND document ? 'layout'",
             &[],
         )
         .await?;
-    let mut documents = Vec::with_capacity(layouts.len());
-    for row in &layouts {
+    let mut personal_layouts: HashMap<Uuid, Vec<Value>> = HashMap::new();
+    for row in &personal_rows {
+        let workspace_id: Uuid = row.get("workspace_id");
         if let Some(document) = row.get::<_, Option<Value>>("document") {
-            documents.push(document);
+            personal_layouts
+                .entry(workspace_id)
+                .or_default()
+                .push(document);
         }
     }
-    let views = client.query("SELECT id FROM views", &[]).await?;
-    let ids: Vec<Uuid> = views.iter().map(|view| view.get("id")).collect();
-    for id in views_outside_layouts(&ids, &documents) {
+
+    let views = client
+        .query(
+            "SELECT id, workspace_id FROM views WHERE workspace_id IS NOT NULL",
+            &[],
+        )
+        .await?;
+    let view_rows: Vec<(Uuid, Option<Uuid>)> = views
+        .iter()
+        .map(|view| (view.get("id"), view.get("workspace_id")))
+        .collect();
+    for id in orphan_views_to_delete(&view_rows, &workspace_layouts, &personal_layouts) {
         client
             .execute("DELETE FROM views WHERE id = $1", &[&id])
             .await?;
@@ -270,40 +320,102 @@ mod tests {
         Uuid::from_u128(id)
     }
 
+    fn workspace(id: u128) -> Uuid {
+        Uuid::from_u128(id)
+    }
+
+    fn layout_with(views: &[Uuid]) -> Value {
+        json!({
+            "type": "tabs",
+            "views": views.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            "active": 0
+        })
+    }
+
     #[test]
-    fn finds_views_outside_every_layout() {
+    fn keeps_views_when_workspace_layout_is_null() {
+        let workspace_id = workspace(1);
+        let kept = view(1);
+        let personal_layouts = HashMap::from([(workspace_id, vec![layout_with(&[])])]);
+        assert!(
+            orphan_views_to_delete(
+                &[(kept, Some(workspace_id))],
+                &HashMap::new(),
+                &personal_layouts,
+            )
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn keeps_views_when_workspace_layout_is_empty() {
+        let workspace_id = workspace(1);
+        let kept = view(1);
+        let workspace_layouts = HashMap::from([(workspace_id, json!({}))]);
+        assert!(
+            orphan_views_to_delete(
+                &[(kept, Some(workspace_id))],
+                &workspace_layouts,
+                &HashMap::new(),
+            )
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn deletes_views_outside_a_meaningful_workspace_layout() {
+        let workspace_id = workspace(1);
         let placed = view(1);
         let orphan = view(2);
-        let layout = json!({
-            "type": "split",
-            "dir": "horizontal",
-            "ratios": [0.3, 0.7],
-            "children": [
-                { "type": "tabs", "views": [placed.to_string()], "active": 0 },
-                { "type": "tabs", "views": [], "active": 0 }
-            ]
-        });
-        let views = [placed, orphan];
+        let workspace_layouts = HashMap::from([(workspace_id, layout_with(&[placed]))]);
         assert_eq!(
-            views_outside_layouts(&views, std::slice::from_ref(&layout)),
+            orphan_views_to_delete(
+                &[(placed, Some(workspace_id)), (orphan, Some(workspace_id))],
+                &workspace_layouts,
+                &HashMap::new(),
+            ),
             vec![orphan]
         );
         // Idempotent: once the orphan is gone there is nothing left to repair.
-        assert!(views_outside_layouts(&[placed], &[layout]).is_empty());
+        assert!(
+            orphan_views_to_delete(
+                &[(placed, Some(workspace_id))],
+                &workspace_layouts,
+                &HashMap::new(),
+            )
+            .is_empty()
+        );
     }
 
     #[test]
     fn keeps_a_view_that_only_a_personal_layout_places() {
+        let workspace_id = workspace(1);
         let placed = view(1);
         let personal_only = view(2);
-        let workspace_layout =
-            json!({ "type": "tabs", "views": [placed.to_string()], "active": 0 });
-        let personal_layout =
-            json!({ "type": "tabs", "views": [personal_only.to_string()], "active": 0 });
+        let workspace_layouts = HashMap::from([(workspace_id, layout_with(&[placed]))]);
+        let personal_layouts = HashMap::from([(workspace_id, vec![layout_with(&[personal_only])])]);
         assert!(
-            views_outside_layouts(
-                &[placed, personal_only],
-                &[workspace_layout, personal_layout]
+            orphan_views_to_delete(
+                &[
+                    (placed, Some(workspace_id)),
+                    (personal_only, Some(workspace_id))
+                ],
+                &workspace_layouts,
+                &personal_layouts,
+            )
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn never_deletes_views_without_a_workspace() {
+        let placed = view(1);
+        let workspace_layouts = HashMap::from([(workspace(1), layout_with(&[placed]))]);
+        assert!(
+            orphan_views_to_delete(
+                &[(view(2), None), (view(3), None)],
+                &workspace_layouts,
+                &HashMap::new(),
             )
             .is_empty()
         );
