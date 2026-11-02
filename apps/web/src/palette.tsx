@@ -213,10 +213,17 @@ export function CommandPalette({
   const selectedSingular = singularOf(defs.data, selectedKey, uiLanguage) || (types.length === 1 ? types[0]?.singular ?? '' : '')
   // Live selections in other views become peer sources (Notion 103 PR 2).
   const selectionVersion = useSyncExternalStore(subscribeUiSelections, uiSelectionVersion, uiSelectionVersion)
+  const peerSourceByView = useMemo(() => {
+    const next = new Map<string, string>()
+    for (const view of views) {
+      const peer = peerSourceOf(view.state)
+      if (peer) next.set(view.id, peer.viewId)
+    }
+    return next
+  }, [views])
   const peerSourceOptions = useMemo<PeerSourceOption[]>(() => {
     const options: PeerSourceOption[] = []
     for (const sourceView of views) {
-      if (sourceView.id === focusViewId) continue
       const viewTitle = displayViewTitle(sourceView, types, selectedKey)
       if (sourceView.type === 'structure_tree') {
         const node = readTreeNode(sourceView.id)
@@ -245,7 +252,10 @@ export function CommandPalette({
         const rows = readSelection(sourceView.id).filter((row) =>
           !row.type || row.type === bound.id || row.type === bound.key,
         )
-        if (rows.length === 0) continue
+        // A view that already follows a peer source stays choosable even before
+        // it has a selected row, so chains A -> B -> C can be built in order.
+        // The target itself stays visible so a self-source can be shown disabled.
+        if (rows.length === 0 && !peerSourceByView.has(sourceView.id) && sourceView.id !== focusViewId) continue
         const links = linkedTypeLinks(bound.id, defs.data)
         if (links.length === 0) continue
         const typeIds = [...new Set(links.map((link) => link.typeId))]
@@ -262,7 +272,7 @@ export function CommandPalette({
     return options
     // selectionVersion re-reads the live registry; the other inputs shape the list.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [views, types, defs.data, focusViewId, selectedKey, selectionVersion])
+  }, [views, types, defs.data, focusViewId, selectedKey, selectionVersion, peerSourceByView])
   const sourceTarget = useMemo(() => {
     const focused = views.find((view) => view.id === focusViewId && view.type === 'object_table')
     return focused ?? views.find((view) => view.type === 'object_table')
@@ -275,6 +285,13 @@ export function CommandPalette({
       ? { typeId: bound?.id ?? '', peerViewId: peer.viewId, selection: peer.selection, linkType: peer.linkType }
       : { typeId: bound?.id ?? '' }
   }, [sourceTarget, types])
+  const sourceCycle = useMemo(() => {
+    if (!sourceTarget) return undefined
+    return {
+      targetViewId: sourceTarget.id,
+      sourceOf: (viewId: string) => peerSourceByView.get(viewId),
+    }
+  }, [sourceTarget, peerSourceByView])
   // Columns of the open table, read once when the palette opens.
   const tableColumns = useMemo(() => readUiContext().columns, [])
   const catalogsList = useCatalogsQuery()
@@ -414,7 +431,7 @@ export function CommandPalette({
     if (!startSelectSource) return
     setStack([{
       label: `${copy.dataSource} ›`,
-      rows: selectSourceSubmenuRows(types, peerSourceOptions, currentSource),
+      rows: selectSourceSubmenuRows(types, peerSourceOptions, currentSource, sourceCycle),
     }])
     setActive(0)
     // Mount-only: dock menu Select source opens the submenu immediately.
@@ -447,6 +464,7 @@ export function CommandPalette({
   }, [active, rows.length])
 
   const run = (item: PaletteItem) => {
+    if (item.disabled) return
     const id = item.sourceId ?? item.id
     const remembered = item.group === 'best' || item.id.startsWith('best:') ? id : item.id
     if (id !== 'ask') {
@@ -515,7 +533,7 @@ export function CommandPalette({
     if (isSelectSourceRoot(id)) {
       setStack((current) => [...current, {
         label: item.title,
-        rows: selectSourceSubmenuRows(types, peerSourceOptions, currentSource),
+        rows: selectSourceSubmenuRows(types, peerSourceOptions, currentSource, sourceCycle),
       }])
       setQuery('')
       setActive(0)
@@ -1253,7 +1271,9 @@ export function CommandPalette({
                       <CommandItem
                         key={row.id}
                         value={row.id}
-                        className={index === selected ? `hit on${row.group === 'ask' ? ' ask' : ''}` : `hit${row.group === 'ask' ? ' ask' : ''}`}
+                        className={`${index === selected ? 'hit on' : 'hit'}${row.group === 'ask' ? ' ask' : ''}${row.disabled ? ' disabled' : ''}`}
+                        disabled={row.disabled}
+                        aria-disabled={row.disabled ? true : undefined}
                         onPointerDown={() => setActive(index)}
                         onSelect={() => run(row)}
                       >

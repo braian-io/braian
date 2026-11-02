@@ -1,7 +1,7 @@
 import { copy } from './i18n'
 import type { TypeName } from './type-labels'
 import type { PaletteItem } from './palette-model'
-import type { PeerSelection } from './view-source'
+import { wouldCreateCycle, type PeerSelection } from './view-source'
 
 export const SELECT_SOURCE_ROOT_ID = 'view:select-source'
 
@@ -23,6 +23,12 @@ export type CurrentSource = {
   peerViewId?: string
   selection?: PeerSelection
   linkType?: string
+}
+
+/** The target view and its source chain, used to reject cycles up front. */
+export type SourceCycleCheck = {
+  targetViewId: string
+  sourceOf: (viewId: string) => string | undefined | null
 }
 
 function linkTypesFor(option: PeerSourceOption, type: TypeName): string[] {
@@ -57,6 +63,7 @@ export function selectSourceSubmenuRows(
   types: TypeName[],
   peerOptions: PeerSourceOption[] = [],
   current?: CurrentSource | null,
+  cycleCheck?: SourceCycleCheck,
 ): PaletteItem[] {
   const rows: PaletteItem[] = []
   for (const type of types) {
@@ -84,17 +91,25 @@ export function selectSourceSubmenuRows(
             ? current.linkType === linkType || (!current.linkType && linkType === linkTypes[0])
             : !current.linkType || current.linkType === linkType),
         )
+        const createsCycle = Boolean(
+          cycleCheck
+          && wouldCreateCycle(option.viewId, cycleCheck.targetViewId, cycleCheck.sourceOf),
+        )
         const title = many
           ? copy.fromSourceViaLabel
             .replace('{type}', type.plural)
             .replace('{source}', option.viewTitle)
             .replace('{linkType}', linkType ?? '')
           : copy.fromSourceLabel.replace('{type}', type.plural).replace('{source}', option.viewTitle)
+        const subtitle = createsCycle
+          ? [option.label, copy.wouldCreateCycle].filter(Boolean).join(' · ')
+          : option.label
         rows.push(marked({
           id: `select-source:peer:${type.id}:${option.viewId}:${option.selection}${many && linkType ? `:${linkType}` : ''}`,
           group: 'views',
           title,
-          subtitle: option.label,
+          subtitle,
+          ...(createsCycle ? { disabled: true } : {}),
           keywords: [
             type.key,
             type.singular,
