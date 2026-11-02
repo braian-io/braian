@@ -197,6 +197,8 @@ export function ObjectTable({
   const prefsApplied = useRef(false)
   /** dataUpdatedAt we last applied; re-apply when invalidate lands a newer fetch. */
   const prefsAppliedAt = useRef(0)
+  /** Definitions we last applied with; defaults change once the type is known. */
+  const prefsAppliedDefs = useRef<unknown>(undefined)
   const prefsSnapshot = useRef<string | null>(null)
   const latestPrefsDocument = useRef<ColumnPrefsDocument | null>(null)
   const prefsSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -400,11 +402,27 @@ export function ObjectTable({
     // Local edits and in-flight saves win over a refetch that landed mid-edit.
     if (prefsDirtyRef.current) return
     if (queryClient.isMutating({ mutationKey: columnPrefsMutationKey(view.id) }) > 0) return
+    // Defaults for a type come from /v1/definitions (Brand is only there). Until
+    // that GET lands, defaultColumnIdsForType falls back to builtin columns; wait
+    // instead of latching those. Saved v2 prefs are usable without definitions.
+    const saved = prefs.isSuccess ? prefs.data?.document : null
+    const savedColumns = Array.isArray(saved?.columns) ? saved.columns : []
+    const hasSavedPrefs = Number(saved?.version ?? 0) === 2 && savedColumns.length > 0
+    const expectsType = Boolean(typeKey || view.state?.object_type || view.state?.type_key)
+    const definitionsSettled = defs.data !== undefined || defs.isError || !catalogReady
+    if (!hasSavedPrefs && expectsType && !definitionsSettled) return
     const updatedAt = prefs.dataUpdatedAt ?? 0
     // Same snapshot we already applied (unless onVisible/onSuccess cleared the latch).
-    if (prefsApplied.current && prefsAppliedAt.current === updatedAt) return
+    // Definitions are part of the key: defaults must be recomputed when the type
+    // becomes known, without touching a saved prefs document.
+    if (
+      prefsApplied.current
+      && prefsAppliedAt.current === updatedAt
+      && prefsAppliedDefs.current === defs.data
+    ) return
     prefsApplied.current = true
     prefsAppliedAt.current = updatedAt
+    prefsAppliedDefs.current = defs.data
     const seedDefaults = () => {
       // Same defaults as an empty prefs document (never flash before prefsReady).
       const viewOrder = (view.state as { table?: { order?: unknown } } | undefined)?.table?.order
@@ -448,7 +466,7 @@ export function ObjectTable({
       seedDefaults()
     }
     setPrefsReady(true)
-  }, [prefs.isPending, prefs.isFetching, prefs.isSuccess, prefs.isError, prefs.data, prefs.dataUpdatedAt, typeKey, attributePaths.isPending, systemColumns, defs.data, view.state, view.id, queryClient])
+  }, [prefs.isPending, prefs.isFetching, prefs.isSuccess, prefs.isError, prefs.data, prefs.dataUpdatedAt, typeKey, attributePaths.isPending, systemColumns, defs.data, defs.isError, catalogReady, view.state, view.id, queryClient])
 
   // Other tabs' saves: when this tab becomes visible again and is clean, drop the
   // one-shot latch and invalidate so React Query refetches and apply can run.
