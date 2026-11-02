@@ -22,7 +22,7 @@ pub struct ConfigError {
 }
 
 impl ConfigError {
-    fn new(message: impl Into<String>) -> Self {
+    pub(crate) fn new(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
         }
@@ -77,6 +77,7 @@ pub fn export_documents(defs: &DefinitionSet) -> Result<Vec<ConfigDocument>, Con
     let model = ModelDocument {
         api_version: ApiVersion::BraianIoV1,
         kind: ModelKind::Model,
+        mode: None,
         languages: defs
             .languages
             .iter()
@@ -105,6 +106,8 @@ pub fn export_documents(defs: &DefinitionSet) -> Result<Vec<ConfigDocument>, Con
             api_version: ApiVersion::BraianIoV1,
             kind: ValueListKind::ValueList,
             key: list.key.clone(),
+            renamed_from: None,
+            mode: None,
             labels: labels(&list.labels),
             options: list.options.iter().map(option).collect(),
         }));
@@ -121,6 +124,7 @@ fn attribute(
 ) -> Result<AttributeConfig, ConfigError> {
     Ok(AttributeConfig {
         key: attribute.key.clone(),
+        renamed_from: None,
         labels: labels(&attribute.labels),
         language_dependent: attribute.language_dependent,
         multiple: attribute.multiple,
@@ -174,6 +178,7 @@ fn object_type(
 ) -> Result<TypeConfig, ConfigError> {
     Ok(TypeConfig {
         key: object_type.key.clone(),
+        renamed_from: None,
         labels: labels(&object_type.labels),
         singular: labels(&object_type.singular),
         plural: labels(&object_type.plural),
@@ -236,6 +241,7 @@ fn structure(
 ) -> Result<StructureConfig, ConfigError> {
     Ok(StructureConfig {
         key: structure.key.clone(),
+        renamed_from: None,
         labels: labels(&structure.labels),
         groups: structure
             .groups
@@ -257,6 +263,7 @@ fn group(
 ) -> Result<GroupConfig, ConfigError> {
     Ok(GroupConfig {
         key: group.key.clone(),
+        renamed_from: None,
         labels: labels(&group.labels),
         parent: optional_key(groups, group.parent, "group")?,
         attributes: group
@@ -275,6 +282,7 @@ fn class(
 ) -> Result<ClassConfig, ConfigError> {
     Ok(ClassConfig {
         key: class.key.clone(),
+        renamed_from: None,
         group: key(groups, class.group, "group")?,
         parent: optional_key(classes, class.parent, "class")?,
         attributes: class
@@ -290,6 +298,8 @@ fn unit_family(family: &UnitFamily) -> UnitFamilyDocument {
         api_version: ApiVersion::BraianIoV1,
         kind: UnitFamilyKind::UnitFamily,
         key: family.key.clone(),
+        renamed_from: None,
+        mode: None,
         dimension: family.dimension.clone(),
         base_unit: family.base_unit.clone(),
         units: family

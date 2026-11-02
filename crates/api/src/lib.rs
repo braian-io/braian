@@ -80,6 +80,7 @@ fn build_router(state: AppState) -> axum::Router {
         )
         .route("/v1/config/export", get(config::export_config))
         .route("/v1/config/schema", get(config::get_config_schema))
+        .route("/v1/config/plan", post(config::plan_config))
         .route("/v1/attributes", post(definitions::post_attribute))
         .route(
             "/v1/attributes/{id}",

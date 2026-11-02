@@ -45,6 +45,12 @@
         "multiple": {
           "type": "boolean"
         },
+        "renamedFrom": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "required": {
           "type": "boolean"
         }
@@ -259,12 +265,33 @@
             "string",
             "null"
           ]
+        },
+        "renamedFrom": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "additionalProperties": false,
       "required": [
         "key",
         "group"
+      ]
+    },
+    "ConfigMode": {
+      "description": "How a document treats entities missing from it.",
+      "oneOf": [
+        {
+          "description": "Only the entities in the document change. Everything else stays.",
+          "type": "string",
+          "const": "partial"
+        },
+        {
+          "description": "The document is the whole truth for its section. Missing entities are deleted.",
+          "type": "string",
+          "const": "full"
+        }
       ]
     },
     "GroupConfig": {
@@ -288,6 +315,12 @@
         },
         "parent": {
           "description": "Key of the parent group in the same structure.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "renamedFrom": {
           "type": [
             "string",
             "null"
@@ -400,6 +433,17 @@
             "type": "string"
           }
         },
+        "mode": {
+          "description": "`full` makes this document the whole truth for the model sections.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConfigMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "structures": {
           "type": "array",
           "default": [],
@@ -470,6 +514,12 @@
           "additionalProperties": {
             "type": "string"
           }
+        },
+        "renamedFrom": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "additionalProperties": false,
@@ -533,6 +583,12 @@
           "additionalProperties": {
             "type": "string"
           }
+        },
+        "renamedFrom": {
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "singular": {
           "type": "object",
@@ -603,6 +659,22 @@
         "kind": {
           "$ref": "#/$defs/UnitFamilyKind"
         },
+        "mode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConfigMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "renamedFrom": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "units": {
           "type": "array",
           "default": [],
@@ -644,12 +716,28 @@
             "type": "string"
           }
         },
+        "mode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConfigMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "options": {
           "type": "array",
           "default": [],
           "items": {
             "$ref": "#/$defs/OptionConfig"
           }
+        },
+        "renamedFrom": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "additionalProperties": false,

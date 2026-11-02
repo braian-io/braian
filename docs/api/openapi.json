@@ -818,6 +818,83 @@
         ]
       }
     },
+    "/v1/config/plan": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "operationId": "plan_config",
+        "parameters": [
+          {
+            "name": "allowDestructive",
+            "in": "query",
+            "description": "Return 200 even when the plan has destructive steps",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "One or more config documents as YAML (multi-doc) or JSON (object or array)",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JsonValue"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Plan without destructive steps, or one allowed with allowDestructive",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonValue"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed config documents",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or unknown token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Plan has destructive steps and allowDestructive is not set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonValue"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/v1/config/schema": {
       "get": {
         "tags": [
