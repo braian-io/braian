@@ -71,5 +71,5 @@ test('an unchanged config export shows no changes', async ({ page }) => {
   const dialog = page.getByTestId('config-apply-dialog')
   await expect(dialog).toContainText('No changes')
   await expect(dialog.getByRole('button', { name: 'Create proposal' })).toHaveCount(0)
-  await expect(dialog.getByRole('button', { name: 'Close' })).toBeVisible()
+  await expect(dialog.getByText('Close', { exact: true })).toBeVisible()
 })
