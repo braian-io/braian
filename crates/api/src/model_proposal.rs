@@ -477,6 +477,57 @@ async fn reference_write(
             }
             Ok(Some(ProposalWrite::MergeProfileDelete { id: profile.id }))
         }
+        ModelChange::UpsertWorkspaceTemplate { template } => {
+            if !template.definition.is_object() {
+                return Err(Problem::new(
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "invalid_workspace_template",
+                    "workspace template definition must be a JSON object",
+                ));
+            }
+            let existing = match state
+                .store
+                .workspace_template_by_key(&template.key)
+                .await
+                .map_err(store_status)?
+            {
+                Some(found) => Some(found),
+                None => match template.renamed_from.as_deref() {
+                    Some(old) => state
+                        .store
+                        .workspace_template_by_key(old)
+                        .await
+                        .map_err(store_status)?,
+                    None => None,
+                },
+            };
+            let previous_key = existing
+                .map(|found| found.key)
+                .filter(|previous| previous != &template.key);
+            Ok(Some(ProposalWrite::WorkspaceTemplate {
+                key: template.key.clone(),
+                previous_key,
+                name: template.name.clone(),
+                definition: template.definition.clone(),
+            }))
+        }
+        ModelChange::DeleteWorkspaceTemplate { key } => {
+            state
+                .store
+                .workspace_template_by_key(key)
+                .await
+                .map_err(store_status)?
+                .ok_or_else(|| {
+                    Problem::new(
+                        StatusCode::NOT_FOUND,
+                        "not_found",
+                        format!("unknown workspace template {key}"),
+                    )
+                })?;
+            Ok(Some(ProposalWrite::WorkspaceTemplateDelete {
+                key: key.clone(),
+            }))
+        }
         ModelChange::SetOwnershipRules { rules } => {
             let rules = serde_json::to_value(rules).map_err(|error| {
                 Problem::new(

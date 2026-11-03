@@ -675,6 +675,163 @@ async fn apply_creates_one_proposal_for_catalogs_merge_profiles_and_ownership() 
 }
 
 #[tokio::test]
+async fn apply_upsert_workspace_template_writes_config_and_list_returns_it() {
+    let (_db, app) = app().await;
+    let documents = json!([{
+        "apiVersion": "braian.io/v1",
+        "kind": "WorkspaceTemplate",
+        "key": "supplier-review",
+        "name": "Supplier review",
+        "definition": {
+            "views": [{ "type": "object_table", "title": "Suppliers", "typeKey": "supplier" }]
+        }
+    }]);
+
+    let (status, proposed) = apply(&app, &documents.to_string()).await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{proposed}");
+    assert_eq!(
+        proposed["groups"]["WorkspaceTemplate"]["steps"], 1,
+        "{proposed}"
+    );
+
+    let proposal_id = proposed["proposal_id"].as_str().unwrap();
+    let (status, _, body) = call(
+        &app,
+        "GET",
+        &format!("/v1/proposals/{proposal_id}"),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let proposal: Value = serde_json::from_slice(&body).unwrap();
+    let ops: Vec<&str> = proposal["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|row| row["patch"]["op"].as_str())
+        .collect();
+    assert!(ops.contains(&"upsert_workspace_template"), "{proposal}");
+
+    let (status, accepted) = accept(&app, proposal_id).await;
+    assert_eq!(status, StatusCode::OK, "{accepted}");
+    assert!(
+        accepted["failed"].as_array().unwrap().is_empty(),
+        "{accepted}"
+    );
+
+    let (status, _, body) = call(
+        &app,
+        "GET",
+        "/v1/workspace-templates",
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let templates: Value = serde_json::from_slice(&body).unwrap();
+    let template = templates
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["key"] == "supplier-review")
+        .expect("workspace template is listed");
+    assert_eq!(template["name"], "Supplier review", "{template}");
+    assert_eq!(
+        template["definition"]["views"][0]["type"], "object_table",
+        "{template}"
+    );
+    assert!(
+        template["updated_at"]
+            .as_str()
+            .is_some_and(|text| !text.is_empty()),
+        "{template}"
+    );
+
+    let (status, _, _) = call(&app, "GET", "/v1/workspace-templates", None, &[], None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn apply_delete_workspace_template_removes_only_the_template() {
+    let (_db, app) = app().await;
+    let created = json!([{
+        "apiVersion": "braian.io/v1",
+        "kind": "WorkspaceTemplate",
+        "key": "supplier-review",
+        "name": "Supplier review",
+        "definition": { "views": [{ "type": "object_table", "title": "Suppliers" }] }
+    }]);
+    let (status, proposed) = apply(&app, &created.to_string()).await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{proposed}");
+    let proposal_id = proposed["proposal_id"].as_str().unwrap();
+    let (status, accepted) = accept(&app, proposal_id).await;
+    assert_eq!(status, StatusCode::OK, "{accepted}");
+
+    let documents = json!({
+        "documents": [{
+            "apiVersion": "braian.io/v1",
+            "kind": "WorkspaceTemplate",
+            "key": "product-review",
+            "name": "Product review",
+            "definition": { "views": [] },
+            "mode": "full"
+        }],
+        "allowDestructive": true
+    });
+    let (status, proposed) = apply(&app, &documents.to_string()).await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{proposed}");
+    let proposal_id = proposed["proposal_id"].as_str().unwrap();
+    let (status, _, body) = call(
+        &app,
+        "GET",
+        &format!("/v1/proposals/{proposal_id}"),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let proposal: Value = serde_json::from_slice(&body).unwrap();
+    let ops: Vec<&str> = proposal["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|row| row["patch"]["op"].as_str())
+        .collect();
+    assert!(ops.contains(&"delete_workspace_template"), "{proposal}");
+
+    let (status, accepted) = accept(&app, proposal_id).await;
+    assert_eq!(status, StatusCode::OK, "{accepted}");
+    assert!(
+        accepted["failed"].as_array().unwrap().is_empty(),
+        "{accepted}"
+    );
+
+    let (status, _, body) = call(
+        &app,
+        "GET",
+        "/v1/workspace-templates",
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let templates: Value = serde_json::from_slice(&body).unwrap();
+    let keys: Vec<&str> = templates
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|item| item["key"].as_str())
+        .collect();
+    assert!(!keys.contains(&"supplier-review"), "{keys:?}");
+    assert!(keys.contains(&"product-review"), "{keys:?}");
+}
+
+#[tokio::test]
 async fn apply_delete_catalog_is_blocked_until_allowed() {
     let (db, app) = app().await;
     db.store()

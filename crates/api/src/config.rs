@@ -11,7 +11,8 @@ use braian_config::{
     ApiVersion, CatalogDocument, CatalogKind as CatalogDocumentKind, CatalogSourceKind,
     ConfigDocument, ConfigExtras, ConfigPlan, MergeModeConfig, MergeProfileDocument,
     MergeProfileKind, OwnershipDocument, OwnershipKind, OwnershipRuleConfig, PlanAction,
-    PlanAffected, PlanKind, apply_documents_with, export_documents_with, plan_documents_with,
+    PlanAffected, PlanKind, WorkspaceTemplateDocument, WorkspaceTemplateKind, apply_documents_with,
+    export_documents_with, plan_documents_with,
 };
 use braian_store::CatalogKind as StoreCatalogKind;
 use serde::Deserialize;
@@ -266,9 +267,27 @@ async fn config_extras(state: &AppState) -> Result<ConfigExtras, Problem> {
         rules,
     });
 
+    let workspace_templates = state
+        .store
+        .workspace_templates()
+        .await
+        .map_err(store_status)?
+        .into_iter()
+        .map(|template| WorkspaceTemplateDocument {
+            api_version: ApiVersion::BraianIoV1,
+            kind: WorkspaceTemplateKind::WorkspaceTemplate,
+            key: template.key,
+            renamed_from: None,
+            mode: None,
+            name: template.name,
+            definition: template.definition,
+        })
+        .collect();
+
     Ok(ConfigExtras {
         catalogs: catalog_documents,
         merge_profiles,
+        workspace_templates,
         ownership,
     })
 }
@@ -329,6 +348,7 @@ fn groups_for(plan: &ConfigPlan) -> serde_json::Value {
         "UnitFamily": { "keys": Vec::<String>::new(), "steps": 0 },
         "Catalog": { "keys": Vec::<String>::new(), "steps": 0 },
         "MergeProfile": { "keys": Vec::<String>::new(), "steps": 0 },
+        "WorkspaceTemplate": { "keys": Vec::<String>::new(), "steps": 0 },
         "Ownership": { "keys": Vec::<String>::new(), "steps": 0 },
     });
     for step in &plan.steps {
@@ -337,6 +357,7 @@ fn groups_for(plan: &ConfigPlan) -> serde_json::Value {
             PlanKind::UnitFamily => "UnitFamily",
             PlanKind::Catalog => "Catalog",
             PlanKind::MergeProfile => "MergeProfile",
+            PlanKind::WorkspaceTemplate => "WorkspaceTemplate",
             PlanKind::Ownership => "Ownership",
             _ => "Model",
         };
@@ -430,6 +451,9 @@ fn zip_documents(documents: &[ConfigDocument]) -> Result<Response, Problem> {
             }
             ConfigDocument::MergeProfile(profile) => {
                 format!("merge-profiles/{}.yaml", file_stem(&profile.key))
+            }
+            ConfigDocument::WorkspaceTemplate(template) => {
+                format!("workspace-templates/{}.yaml", file_stem(&template.key))
             }
             ConfigDocument::Ownership(_) => "ownership/ownership.yaml".to_owned(),
         };

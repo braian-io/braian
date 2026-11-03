@@ -42,6 +42,7 @@ pub enum ConfigDocument {
     UnitFamily(UnitFamilyDocument),
     Catalog(CatalogDocument),
     MergeProfile(MergeProfileDocument),
+    WorkspaceTemplate(WorkspaceTemplateDocument),
     Ownership(OwnershipDocument),
 }
 
@@ -54,6 +55,7 @@ impl ConfigDocument {
             Self::UnitFamily(_) => "UnitFamily",
             Self::Catalog(_) => "Catalog",
             Self::MergeProfile(_) => "MergeProfile",
+            Self::WorkspaceTemplate(_) => "WorkspaceTemplate",
             Self::Ownership(_) => "Ownership",
         }
     }
@@ -209,6 +211,28 @@ pub struct MergeProfileDocument {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "PascalCase")]
+pub enum WorkspaceTemplateKind {
+    WorkspaceTemplate,
+}
+
+/// One workspace template. `definition` is the stored layout object.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkspaceTemplateDocument {
+    #[serde(rename = "apiVersion")]
+    pub api_version: ApiVersion,
+    pub kind: WorkspaceTemplateKind,
+    pub key: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub renamed_from: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<ConfigMode>,
+    pub name: String,
+    pub definition: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "PascalCase")]
 pub enum OwnershipKind {
     Ownership,
 }
@@ -237,12 +261,14 @@ pub struct OwnershipRuleConfig {
     pub profiles: Vec<String>,
 }
 
-/// Stored catalogs, merge profiles and ownership rules, which live outside the
-/// definition set. Exported after the model, value lists and unit families.
+/// Stored catalogs, merge profiles, workspace templates and ownership rules,
+/// which live outside the definition set. Exported after the model, value lists
+/// and unit families.
 #[derive(Debug, Clone, Default)]
 pub struct ConfigExtras {
     pub catalogs: Vec<CatalogDocument>,
     pub merge_profiles: Vec<MergeProfileDocument>,
+    pub workspace_templates: Vec<WorkspaceTemplateDocument>,
     pub ownership: Option<OwnershipDocument>,
 }
 

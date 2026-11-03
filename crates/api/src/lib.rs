@@ -32,6 +32,7 @@ mod problem;
 mod state;
 mod structures;
 mod wire;
+mod workspace_templates;
 
 use axum::Json;
 use axum::extract::{DefaultBodyLimit, Request, State};
@@ -139,6 +140,10 @@ fn build_router(state: AppState) -> axum::Router {
                 .delete(definitions::delete_unit_family_route),
         )
         .route("/v1/languages", put(definitions::put_languages))
+        .route(
+            "/v1/workspace-templates",
+            get(workspace_templates::list_workspace_templates),
+        )
         .route(
             "/v1/catalogs",
             get(catalogs::list_catalogs).post(catalogs::post_catalog),

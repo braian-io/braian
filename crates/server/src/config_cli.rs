@@ -14,7 +14,7 @@ pub const EXIT_NO_CHANGES: i32 = 0;
 pub const EXIT_CHANGES: i32 = 2;
 pub const EXIT_BLOCKED: i32 = 3;
 
-const KIND_ORDER: [PlanKind; 11] = [
+const KIND_ORDER: [PlanKind; 12] = [
     PlanKind::Language,
     PlanKind::Attribute,
     PlanKind::Type,
@@ -25,6 +25,7 @@ const KIND_ORDER: [PlanKind; 11] = [
     PlanKind::UnitFamily,
     PlanKind::Catalog,
     PlanKind::MergeProfile,
+    PlanKind::WorkspaceTemplate,
     PlanKind::Ownership,
 ];
 
@@ -457,6 +458,7 @@ fn kind_label(kind: PlanKind) -> &'static str {
         PlanKind::UnitFamily => "UnitFamily",
         PlanKind::Catalog => "Catalog",
         PlanKind::MergeProfile => "MergeProfile",
+        PlanKind::WorkspaceTemplate => "WorkspaceTemplate",
         PlanKind::Ownership => "Ownership",
     }
 }
@@ -656,6 +658,14 @@ mod tests {
                     PlanAffected::default(),
                 ),
                 step(
+                    PlanAction::Create,
+                    PlanKind::WorkspaceTemplate,
+                    "supplier-review",
+                    false,
+                    false,
+                    PlanAffected::default(),
+                ),
+                step(
                     PlanAction::Delete,
                     PlanKind::Ownership,
                     "ownership",
@@ -669,6 +679,10 @@ mod tests {
         let summary = format_plan(&plan);
         assert!(summary.contains("Catalog\n  + sap"), "{summary}");
         assert!(summary.contains("MergeProfile\n  ~ sap-brand"), "{summary}");
+        assert!(
+            summary.contains("WorkspaceTemplate\n  + supplier-review"),
+            "{summary}"
+        );
         assert!(
             summary.contains("Ownership\n  - ownership [BLOCKED]"),
             "{summary}"

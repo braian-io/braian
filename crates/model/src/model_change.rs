@@ -401,6 +401,15 @@ pub enum ModelChange {
         #[serde(alias = "id")]
         key: String,
     },
+    /// Creates or updates one workspace template. The key is its identity.
+    UpsertWorkspaceTemplate {
+        template: Box<WorkspaceTemplate>,
+    },
+    /// Removes one workspace template. Stored workspaces are never changed.
+    DeleteWorkspaceTemplate {
+        #[serde(alias = "id")]
+        key: String,
+    },
     /// Replaces the whole ownership rule list. Profiles use their keys.
     SetOwnershipRules {
         rules: Vec<OwnershipRule>,
@@ -442,6 +451,16 @@ pub struct MergeProfile {
     pub source_catalog: String,
     pub spec: serde_json::Value,
     pub mode: MergeProfileMode,
+}
+
+/// One workspace template document in a model change. The key is its identity.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceTemplate {
+    pub key: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub renamed_from: Option<String>,
+    pub name: String,
+    pub definition: serde_json::Value,
 }
 
 /// Which profiles own one master attribute and language. Profiles use their keys.
@@ -578,6 +597,7 @@ pub fn deletes_data(change: &ModelChange) -> bool {
             | ModelChange::DeleteUnit { .. }
             | ModelChange::DeleteCatalog { .. }
             | ModelChange::DeleteMergeProfile { .. }
+            | ModelChange::DeleteWorkspaceTemplate { .. }
             | ModelChange::RemoveAttribute { .. }
             | ModelChange::DetachAttribute { .. }
     )
@@ -629,6 +649,16 @@ fn reference_impact(mut impact: ChangeImpact, changes: &[ModelChange]) -> Change
             }
             ModelChange::DeleteMergeProfile { key } => {
                 impact.lines.push(format!("Delete merge profile {key}"));
+            }
+            ModelChange::UpsertWorkspaceTemplate { template } => {
+                impact
+                    .lines
+                    .push(format!("Save workspace template {}", template.key));
+            }
+            ModelChange::DeleteWorkspaceTemplate { key } => {
+                impact
+                    .lines
+                    .push(format!("Delete workspace template {key}"));
             }
             ModelChange::SetOwnershipRules { .. } => {
                 impact.lines.push("Update ownership rules".to_owned());
@@ -1391,8 +1421,10 @@ fn apply_one(defs: &mut DefinitionSet, change: &ModelChange) -> Result<(), Apply
         | ModelChange::DeleteUnit { .. }
         | ModelChange::DeleteCatalog { .. }
         | ModelChange::DeleteMergeProfile { .. }
+        | ModelChange::DeleteWorkspaceTemplate { .. }
         | ModelChange::UpsertCatalog { .. }
         | ModelChange::UpsertMergeProfile { .. }
+        | ModelChange::UpsertWorkspaceTemplate { .. }
         | ModelChange::SetOwnershipRules { .. } => Ok(()),
         ModelChange::SetStructures {
             type_key,

@@ -15,7 +15,7 @@ stored model changes only when the proposal is accepted.
 ## Documents
 
 The only supported version is `apiVersion: braian.io/v1`. The known kinds are
-`Model`, `ValueList`, `UnitFamily`, `Catalog`, `MergeProfile`, and `Ownership`.
+`Model`, `ValueList`, `UnitFamily`, `Catalog`, `MergeProfile`, `WorkspaceTemplate`, and `Ownership`.
 A missing or unknown header is rejected. The committed JSON Schema is
 `schemas/config/braian.io-v1.schema.json`; the API serves the same schema from
 `GET /v1/config/schema`.
@@ -182,6 +182,24 @@ spec:
 runMode: manual
 ```
 
+### WorkspaceTemplate
+
+A workspace template is named by `key`. `definition` is one JSON object with
+the stored layout. Applying a template never changes an existing workspace; a
+client creates a workspace from the template.
+
+```yaml
+apiVersion: braian.io/v1
+kind: WorkspaceTemplate
+key: supplier-review
+name: Supplier review
+definition:
+  views:
+    - type: object_table
+      title: Suppliers
+      typeKey: supplier
+```
+
 ### Ownership
 
 There is one ownership rule set. The document has no key. Each rule names an
@@ -208,6 +226,7 @@ value-lists/<key>.yaml
 units/<key>.yaml
 catalogs/<key>.yaml
 merge-profiles/<key>.yaml
+workspace-templates/<key>.yaml
 ownership/ownership.yaml
 ```
 
@@ -236,8 +255,8 @@ YAML has no wrapper, so `allowDestructive` can only be sent as JSON.
 
 `POST /v1/config/apply` returns `202` with `proposal_id`, `needs_approval: true`,
 and `groups`. The groups count steps by `Model`, `ValueList`, `UnitFamily`,
-`Catalog`, `MergeProfile`, and `Ownership`. A destructive plan without
-`allowDestructive` returns `422` with the blocked plan. Documents that match the
+`Catalog`, `MergeProfile`, `WorkspaceTemplate`, and `Ownership`. A destructive
+plan without `allowDestructive` returns `422` with the blocked plan. Documents that match the
 stored model return `409` with code `no_changes`. Malformed documents return
 `400`; documents that do not compile return `422` with `invalid_config`.
 
@@ -286,11 +305,13 @@ are stored but missing from the document become delete steps. Full applies per
 section: a full `Model` controls languages, attributes, types, structures,
 groups, and classes; a full `ValueList` controls value lists; a full `UnitFamily`
 controls unit families; a full `Catalog` controls catalogs; a full
-`MergeProfile` controls merge profiles; a full `Ownership` controls the rule set.
+`MergeProfile` controls merge profiles; a full `WorkspaceTemplate` controls
+workspace templates; a full `Ownership` controls the rule set.
 
 Rename instead of delete and create by setting `renamedFrom` to the old key. The
 document then uses the new `key`, and the plan gets a `rename` step. `renamedFrom`
-exists on value lists, unit families, catalogs, merge profiles, and nested
+exists on value lists, unit families, catalogs, merge profiles, workspace
+templates, and nested
 attributes, types, structures, groups, and classes. A `Model` document itself has
 no `renamedFrom`.
 
@@ -298,7 +319,8 @@ no `renamedFrom`.
 
 A step is destructive when it deletes or invalidates stored data. Examples are a
 `full` document that drops an entity, an attribute kind change, removing value
-list options or units, and deleting a catalog, merge profile, or ownership rule.
+list options or units, and deleting a catalog, merge profile, workspace
+template, or ownership rule.
 The plan step carries `destructive: true` and an `affected` count.
 
 `plan` always flags destructive steps as `blocked`. `apply` refuses the whole
