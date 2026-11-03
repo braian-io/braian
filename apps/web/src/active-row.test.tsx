@@ -443,7 +443,7 @@ function headerIds() {
 }
 
 describe('show column', () => {
-  it('replaces Show column with Select fields in the cell menu', async () => {
+  it('keeps Select fields out of the cell menu', async () => {
     render(<TableHarness />)
     await waitFor(() => expect(screen.getAllByTestId('object-row')).toHaveLength(tableRows.length))
 
@@ -454,15 +454,8 @@ describe('show column', () => {
     fireEvent.contextMenu(screen.getByText('ART-1'))
     const menu = await screen.findByTestId('context-menu')
     expect(within(menu).queryByRole('menuitem', { name: 'Show Name' })).toBeNull()
-    const opened = new Promise<void>((resolve) => {
-      const onOpen = () => {
-        window.removeEventListener('braian-fields-palette', onOpen)
-        resolve()
-      }
-      window.addEventListener('braian-fields-palette', onOpen)
-    })
-    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Select fields…' }))
-    await opened
+    expect(within(menu).queryByRole('menuitem', { name: 'Select fields…' })).toBeNull()
+    expect(within(menu).queryByRole('menuitem', { name: 'Hide column' })).toBeTruthy()
   })
 
   it('hides and shows through ui.hide_column and ui.show_column, and publishes the columns', async () => {

@@ -56,7 +56,7 @@ import { chooseModelSelection } from './model-selection'
 import { openObjectLabel } from './type-labels'
 import { copy, uiLanguage } from './i18n'
 import { linkChoices } from './link-section'
-import { openSharedContextMenu } from './shared-context-menu'
+import { openSharedContextMenu, prefersNativeContextMenu } from './shared-context-menu'
 import type { RegistryCommand } from './command-registry'
 
 type SimNode = SimulationNodeDatum & SceneNode & { degree: number }
@@ -1060,7 +1060,7 @@ export function GraphMap({
               void expand(node)
             }}
             onContextMenu={(event) => {
-              if (node.kind !== 'object' || !node.typeKey) return
+              if (node.kind !== 'object' || !node.typeKey || prefersNativeContextMenu(event.target)) return
               event.preventDefault()
               const extras: RegistryCommand[] = linkChoices(defs, node.typeKey).map((choice) => ({
                 id: `graph:add-link:${choice.key}`,

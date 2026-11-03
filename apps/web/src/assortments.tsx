@@ -22,7 +22,7 @@ import {
   type SelectionKind,
 } from './assortment-filter'
 import { Button } from './components/ui/button'
-import { openSharedContextMenu } from './shared-context-menu'
+import { openSharedContextMenu, prefersNativeContextMenu } from './shared-context-menu'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
 import { Input } from './components/ui/input'
 import { assortmentDisplayName } from './demo-labels'
@@ -355,14 +355,7 @@ export function AssortmentList({ session }: { session: SelectionSession }) {
         </Button>
       </div>
       {items.length === 0 ? <p className="hint">{copy.noAssortments}</p> : null}
-      <div
-        className="assortment-picks"
-        tabIndex={0}
-        onContextMenu={(event) => {
-          event.preventDefault()
-          menu({}, event.clientX, event.clientY)
-        }}
-      >
+      <div className="assortment-picks" tabIndex={0}>
         {items.map((item) => {
           const id = String(item.id)
           const selected = id === openId
@@ -372,6 +365,7 @@ export function AssortmentList({ session }: { session: SelectionSession }) {
               className="assortment-row"
               data-testid="assortment-row"
               onContextMenu={(event) => {
+                if (prefersNativeContextMenu(event.target)) return
                 event.preventDefault()
                 event.stopPropagation()
                 menu(item, event.clientX, event.clientY)

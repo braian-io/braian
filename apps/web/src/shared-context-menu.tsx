@@ -8,7 +8,25 @@ import {
   type MenuContext,
   type RegistryCommand,
 } from './command-registry'
-import { isTextEntryTarget } from './app-context-menu'
+const textEntrySelector =
+  'input, textarea, select, [contenteditable="true"], [contenteditable=""], [contenteditable="plaintext-only"]'
+
+export function isTextEntryTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && Boolean(target.closest(textEntrySelector))
+}
+
+export function hasSelectedText(target: EventTarget | null): boolean {
+  if (typeof window === 'undefined' || !(target instanceof Node)) return false
+  const selection = window.getSelection()
+  if (!selection || selection.isCollapsed || !selection.toString()) return false
+  const node = selection.anchorNode
+  return Boolean(node && (target === node || target.contains(node)))
+}
+
+/** Text fields and selected text keep the browser's own context menu. */
+export function prefersNativeContextMenu(target: EventTarget | null): boolean {
+  return isTextEntryTarget(target) || hasSelectedText(target)
+}
 
 export type OpenMenuRequest = {
   context: MenuContext
@@ -36,7 +54,7 @@ export function handleSurfaceContextMenu(
   target: CommandTarget = {},
   extra?: RegistryCommand[],
 ) {
-  if (event.defaultPrevented || isTextEntryTarget(event.target)) return
+  if (event.defaultPrevented || prefersNativeContextMenu(event.target)) return
   event.preventDefault()
   event.stopPropagation()
   openSharedContextMenu({ context, target, x: event.clientX, y: event.clientY, extra })
@@ -83,34 +101,9 @@ export function SharedContextMenuHost({
       if (!detail) return
       open(detail)
     }
-    const onDocumentMenu = (event: MouseEvent) => {
-      if (event.defaultPrevented || isTextEntryTarget(event.target)) return
-      event.preventDefault()
-      open({ context: 'empty', x: event.clientX, y: event.clientY, target: {} })
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) return
-      if (!((event.key === 'F10' && event.shiftKey) || event.key === 'ContextMenu')) return
-      if (isTextEntryTarget(event.target)) return
-      const target = event.target
-      if (target instanceof Element && target.closest('[role="grid"], [role="tree"], [role="menu"], [role="listbox"], [role="dialog"]')) return
-      event.preventDefault()
-      const active = document.activeElement
-      const rect = active instanceof HTMLElement ? active.getBoundingClientRect() : null
-      open({
-        context: 'empty',
-        x: rect && rect.width > 0 ? rect.left : 8,
-        y: rect && rect.height > 0 ? rect.bottom : 8,
-        target: {},
-      })
-    }
     window.addEventListener(OPEN_CONTEXT_MENU, onOpen)
-    document.addEventListener('contextmenu', onDocumentMenu)
-    window.addEventListener('keydown', onKeyDown)
     return () => {
       window.removeEventListener(OPEN_CONTEXT_MENU, onOpen)
-      document.removeEventListener('contextmenu', onDocumentMenu)
-      window.removeEventListener('keydown', onKeyDown)
     }
   }, [])
 
@@ -207,7 +200,7 @@ export function SharedContextMenuHost({
           data-command={command.id}
           onClick={() => activate(command)}
         >
-          {commandTitle(command, request.target ?? {})}
+          <span className="menu-label">{commandTitle(command, request.target ?? {})}</span>
           {command.kbd ? <>{' '}<kbd>{command.kbd}</kbd></> : null}
         </button>
       ))}

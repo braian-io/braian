@@ -48,7 +48,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from './compone
 import { installClientLog } from './feedback-log'
 import { prepareFeedbackCapture, type FeedbackCapture } from './feedback'
 import { CommandPalette } from './palette'
-import { SharedContextMenuHost } from './shared-context-menu'
+import { SharedContextMenuHost, prefersNativeContextMenu } from './shared-context-menu'
 import { StateNote } from './states'
 import { requestNewSelection } from './assortment-filter'
 import { dispatchUi } from './ui-bus'
@@ -1399,6 +1399,7 @@ export function Shell() {
               className={item.id === workspaceId ? 'tab active' : 'tab'}
               onClick={() => setWorkspaceId(item.id)}
               onContextMenu={(event) => {
+                if (prefersNativeContextMenu(event.target)) return
                 event.preventDefault()
                 setTabMenu({ x: event.clientX, y: event.clientY, id: item.id })
               }}
@@ -1553,28 +1554,6 @@ export function Shell() {
             </div>
             )
           })}
-          <button
-            type="button"
-            data-testid="workspace-new-from-template"
-            onClick={() => {
-              setTabMenu(null)
-              setPaletteStartAddView(false)
-              setPaletteStartNewFromTemplate(true)
-              setPaletteMode('list')
-              setPaletteEpoch((n) => n + 1)
-            }}
-          >
-            {copy.newWorkspace}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              applyRef.current('reset_layout', {})
-              setTabMenu(null)
-            }}
-          >
-            {copy.resetLayout}
-          </button>
         </div>
       ) : null}
       {deleteConfirm ? (
@@ -1939,6 +1918,7 @@ export function StructureTree({ session, view }: { session: Session; view: View 
                     style={{ paddingLeft: 8 + row.depth * 16 }}
                     onClick={() => session.setGroup(`${structureKey}:${row.key}`)}
                     onContextMenu={(event) => {
+                      if (prefersNativeContextMenu(event.target)) return
                       event.preventDefault()
                       openMenu(row, event.clientX, event.clientY)
                     }}
