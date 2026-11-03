@@ -26,7 +26,14 @@ import {
   selectSourceSubmenuRows,
   type PeerSourceOption,
 } from './palette-select-source'
-import { isNewFromTemplateRoot, newFromTemplateRootItem, newFromTemplateSubmenuRows } from './palette-new-from-template'
+import {
+  createWorkspaceFromSavedTemplate,
+  isNewFromTemplateRoot,
+  newFromTemplateRootItem,
+  newFromTemplateSubmenuRows,
+  parseSavedTemplateChoice,
+  useSavedWorkspaceTemplatesQuery,
+} from './palette-new-from-template'
 import {
   isSwitchCatalogRoot,
   parseSwitchCatalogChoice,
@@ -208,6 +215,8 @@ export function CommandPalette({
     queryKey: ['proposals'],
     queryFn: () => api.get('/v1/proposals'),
   })
+  const savedTemplates = useSavedWorkspaceTemplatesQuery()
+  const savedTemplateList = useMemo(() => savedTemplates.data ?? [], [savedTemplates.data])
   const suggestionTotal = Number(((suggestions.data?.pending as Json | undefined)?.total) ?? 0)
   const selectedKey = String(selectedObject.data?.type ?? '')
   const selectedSingular = singularOf(defs.data, selectedKey, uiLanguage) || (types.length === 1 ? types[0]?.singular ?? '' : '')
@@ -420,12 +429,22 @@ export function CommandPalette({
     if (!startNewFromTemplate) return
     setStack([{
       label: `${copy.newWorkspace} ›`,
-      rows: newFromTemplateSubmenuRows(types, workspaces),
+      rows: newFromTemplateSubmenuRows(types, workspaces, savedTemplateList),
     }])
     setActive(0)
-    // Mount-only: tab menu "New from template" opens the submenu immediately.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startNewFromTemplate])
+  }, [startNewFromTemplate, savedTemplateList])
+  useEffect(() => {
+    setStack((current) => {
+      const top = current.at(-1)
+      if (!top || top.label !== `${copy.newWorkspace} ›`) return current
+      return [...current.slice(0, -1), {
+        ...top,
+        rows: newFromTemplateSubmenuRows(types, workspaces, savedTemplateList),
+      }]
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedTemplateList])
 
   useEffect(() => {
     if (!startSelectSource) return
@@ -507,7 +526,7 @@ export function CommandPalette({
     if (isNewFromTemplateRoot(id)) {
       setStack((current) => [...current, {
         label: item.title,
-        rows: newFromTemplateSubmenuRows(types, workspaces),
+        rows: newFromTemplateSubmenuRows(types, workspaces, savedTemplateList),
       }])
       setQuery('')
       setActive(0)
@@ -920,6 +939,20 @@ export function CommandPalette({
         dispatchUi('ui.open_template', { template: template.id, id: workspaceId })
         session.openWorkspace(workspaceId)
         session.push(`Workspace ${template.name}`)
+      })
+      onClose()
+      return
+    }
+    const savedTemplateKey = parseSavedTemplateChoice(id)
+    if (savedTemplateKey) {
+      const template = savedTemplateList.find((item) => item.key === savedTemplateKey)
+      if (!template) return
+      void createWorkspaceFromSavedTemplate(template).then((workspaceId) => {
+        dispatchUi('ui.open_template', { template: `saved:${template.key}`, id: workspaceId })
+        session.openWorkspace(workspaceId)
+        session.push(`Workspace ${template.name}`)
+      }).catch((error: unknown) => {
+        session.push(error instanceof Error ? error.message : 'Could not create a workspace from this template.')
       })
       onClose()
       return
