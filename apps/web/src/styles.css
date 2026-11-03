@@ -1174,6 +1174,7 @@ canvas.graph.panning { cursor: grabbing; }
 .legend-chip .count { color: var(--muted); font-variant-numeric: tabular-nums; }
 .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
 .dot.object { background: var(--accent); }
+.dot.type { background: var(--accent); }
 .dot.class { background: var(--info); }
 .dot.group { background: var(--ok); }
 .dot.value { background: var(--warn); }
