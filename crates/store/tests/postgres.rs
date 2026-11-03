@@ -1049,13 +1049,47 @@ async fn a_full_bulk_pool_does_not_block_an_interactive_connection() {
         0,
         "filling the bulk pool took interactive connections"
     );
-    let started = std::time::Instant::now();
-    let live = db.store().hold_connection().await.unwrap();
-    assert!(started.elapsed() < std::time::Duration::from_millis(200));
+    // Prove isolation by ordering, not wall-clock time: opening a fresh
+    // Postgres connection can take well over 200 ms on a loaded CI runner.
+    // A bulk checkout is parked first (deadpool waits with no timeout), and
+    // the interactive checkout must finish while it is still parked. Five
+    // seconds only stops a hang if the lanes are no longer isolated.
+    let (queued_tx, queued_rx) = tokio::sync::oneshot::channel();
+    let bulk_lane = bulk.clone();
+    let mut bulk_checkout = tokio::spawn(async move {
+        let _ = queued_tx.send(());
+        bulk_lane.hold_connection().await
+    });
+    queued_rx.await.unwrap();
+    let live = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        tokio::select! {
+            biased;
+            result = &mut bulk_checkout => {
+                let _ = result;
+                panic!(
+                    "a checkout on the bulk lane finished while every bulk connection was held"
+                );
+            }
+            result = db.store().hold_connection() => result,
+        }
+    })
+    .await
+    .expect("the interactive lane waited on a full bulk pool")
+    .unwrap();
+    assert!(
+        !bulk_checkout.is_finished(),
+        "a checkout on the bulk lane finished while every bulk connection was held"
+    );
     assert_eq!(db.store().pool_size(), 1);
     assert_eq!(bulk.pool_size(), bulk.pool_max());
+    assert_eq!(bulk.pool_available(), 0);
     drop(live);
     drop(held);
+    tokio::time::timeout(std::time::Duration::from_secs(5), bulk_checkout)
+        .await
+        .expect("the bulk lane did not proceed after its connections were released")
+        .unwrap()
+        .unwrap();
 }
 
 #[tokio::test]
