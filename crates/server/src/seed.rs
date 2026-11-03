@@ -1,8 +1,8 @@
 //! Synthetic food catalog shaped like Open Food Facts. Safe to run more than once.
 //!
-//! Hero objects live in `demo/objects.json`. `BRAIAN_SEED_COUNT` (default 240)
-//! scales the same deterministic generator. Together with the heroes that is
-//! about 250 objects: suppliers, products and articles.
+//! Hero objects live in `demo/objects.json`. `BRAIAN_SEED_COUNT` (default 1640)
+//! scales the same deterministic generator. The default shape is about
+//! 40 suppliers, 400 products and 1200 articles, on top of the hero objects.
 
 use std::collections::{BTreeMap, HashSet};
 
@@ -977,7 +977,7 @@ fn synthetic_id(index: u32) -> ObjectId {
     ObjectId::from_uuid(Uuid::from_bytes(bytes))
 }
 
-const DEFAULT_SEED_COUNT: u32 = 240;
+const DEFAULT_SEED_COUNT: u32 = 1640;
 
 const LEAVES: [&str; 17] = [
     "milk",
@@ -1001,15 +1001,15 @@ const LEAVES: [&str; 17] = [
 
 /// Suppliers, products and articles for a generator target.
 ///
-/// The ratio matches the demo shape (about 15 / 60 / 175 at 250 objects,
-/// heroes included separately). Every product receives 1 to 5 articles
-/// whenever the target is large enough to hold that.
+/// The ratio is 40 / 400 / 1200 at 1640, so every product has three articles
+/// and every supplier has at least one. Scaled-down targets keep at least one
+/// supplier and product, and no product gets more than four articles.
 fn catalog_plan(target: u32) -> (u32, u32, u32) {
     if target == 0 {
         return (0, 0, 0);
     }
-    let mut suppliers = target * 13 / DEFAULT_SEED_COUNT;
-    let mut products = target * 57 / DEFAULT_SEED_COUNT;
+    let mut suppliers = target * 40 / DEFAULT_SEED_COUNT;
+    let mut products = target * 400 / DEFAULT_SEED_COUNT;
     if target >= 3 {
         suppliers = suppliers.max(1);
         products = products.max(1);
@@ -1029,6 +1029,10 @@ fn catalog_plan(target: u32) -> (u32, u32, u32) {
     let mut articles = target - suppliers - products;
     if products > 0 && articles > 0 && articles < products {
         products = articles;
+        articles = target - suppliers - products;
+    }
+    if products > 0 && articles > products * 4 {
+        products = products.max(articles.div_ceil(4)).min(target - suppliers);
         articles = target - suppliers - products;
     }
     (suppliers, products, articles)
@@ -1156,6 +1160,116 @@ fn allergen_for(group: &str) -> &'static str {
     }
 }
 
+struct Pack {
+    label: &'static str,
+    size: u32,
+    packaging: &'static str,
+    material: &'static [&'static str],
+}
+
+/// Pack size and packaging for an article variant. A product's articles get
+/// 250 g / 500 g / 1 kg / 2 kg (or the volume equivalent), so the two levels
+/// are visible in the list without looking at the link graph.
+fn pack_for(group: &str, variant: u32) -> Pack {
+    let variant = (variant as usize) % 4;
+    if uses_volume(group) {
+        let labels = ["250 ml", "1 l", "1.5 l", "2 l"];
+        let sizes = [250, 1000, 1500, 2000];
+        let (packaging, material): (&'static str, &'static [&'static str]) = match variant {
+            0 => ("carton", &["cardboard", "plastic"]),
+            1 => ("bottle", &["glass"]),
+            2 => ("bottle", &["pet"]),
+            _ => ("bottle", &["glass"]),
+        };
+        return Pack {
+            label: labels[variant],
+            size: sizes[variant],
+            packaging,
+            material,
+        };
+    }
+    let labels = ["250 g", "500 g", "1 kg", "2 kg"];
+    let sizes = [250, 500, 1000, 2000];
+    let (packaging, material): (&'static str, &'static [&'static str]) = match group {
+        "canned" => ("can", &["steel"]),
+        "spices" => ("jar", &["glass"]),
+        "chocolate" => ("box", &["paper", "aluminium"]),
+        "chips" => match variant {
+            1 | 3 => ("pouch", &["paper", "aluminium"]),
+            _ => ("bag", &["plastic"]),
+        },
+        "bread" => match variant {
+            1 | 3 => ("pouch", &["paper"]),
+            _ => ("bag", &["paper", "plastic"]),
+        },
+        "cheese" => match variant {
+            2 | 3 => ("box", &["cardboard"]),
+            _ => ("tray", &["plastic"]),
+        },
+        _ => match variant {
+            0 => ("bag", &["paper"]),
+            1 => ("box", &["cardboard"]),
+            2 => ("tray", &["plastic"]),
+            _ => ("jar", &["glass"]),
+        },
+    };
+    Pack {
+        label: labels[variant],
+        size: sizes[variant],
+        packaging,
+        material,
+    }
+}
+
+fn description_for(group: &str, name: &str) -> String {
+    let detail = match group {
+        "milk" => "Fresh milk, gently pasteurised for everyday drinking, coffee and cooking.",
+        "cheese" => {
+            "A firm, savoury cheese made from pasteurised milk and aged for a balanced, nutty flavour."
+        }
+        "yoghurt" => "A smooth cultured yoghurt with a clean, mildly tangy finish.",
+        "juice" => "Pressed fruit juice with no added sugar, ready to drink chilled.",
+        "soft_drinks" => "A refreshing sparkling soft drink with a bright, balanced sweetness.",
+        "coffee_tea" => "A carefully roasted blend for a full-bodied cup, brewed fresh at home.",
+        "plant_drinks" => "A creamy plant-based drink for coffee, cereal and everyday cooking.",
+        "pasta_rice" => "A versatile pantry staple that cooks evenly and holds its shape.",
+        "cereals" => "A wholesome breakfast cereal with a light, crisp texture.",
+        "canned" => "A convenient canned ingredient, prepared and packed at harvest.",
+        "spices" => "A fragrant ground spice that adds warmth and depth to everyday cooking.",
+        "bread" => "A baked loaf with a crisp crust and a soft, well-developed crumb.",
+        "chips" => "Thinly sliced and crisped potato snacks with a satisfying crunch.",
+        "chocolate" => "A smooth chocolate with a deep cocoa flavour and a clean snap.",
+        "fruit_vegetables" => "Fresh produce selected for everyday cooking and snacking.",
+        "meat_fish" => "A quality protein, trimmed and prepared for quick weeknight meals.",
+        "frozen" => "Frozen at peak freshness to keep flavour and texture intact.",
+        _ => "A simple everyday grocery item.",
+    };
+    format!("{name}. {detail}")
+}
+
+fn ingredients_for(group: &str) -> &'static str {
+    match group {
+        "milk" => "Milk.",
+        "cheese" => "Pasteurised milk, salt, starter culture, coagulant.",
+        "yoghurt" => "Milk, live yoghurt cultures.",
+        "juice" => "Fruit juice, water.",
+        "soft_drinks" => "Carbonated water, sugar, natural flavouring.",
+        "coffee_tea" => "Roasted coffee beans.",
+        "plant_drinks" => "Water, oats, rapeseed oil, sea salt.",
+        "pasta_rice" => "Durum wheat semolina.",
+        "cereals" => "Wholegrain oats, wheat flakes, dried fruit.",
+        "canned" => "Vegetables, water, salt.",
+        "spices" => "Ground spice.",
+        "bread" => "Wheat flour, water, salt, yeast.",
+        "chips" => "Potatoes, sunflower oil, salt.",
+        "chocolate" => "Cocoa mass, cane sugar, cocoa butter, vanilla.",
+        "fruit_vegetables" => "Fresh fruit and vegetables.",
+        "meat_fish" => "Meat or fish, water, salt.",
+        "frozen" => "Frozen vegetables or berries.",
+        _ => "Selected ingredients.",
+    }
+}
+
 fn put_attr(
     model: &CompiledModel,
     values: &mut BTreeMap<AttributeId, Value>,
@@ -1183,6 +1297,7 @@ struct Slot {
     group_key: Option<&'static str>,
     product: Option<u32>,
     supplier: Option<u32>,
+    variant: u32,
 }
 
 fn slot_for(index: u32, suppliers: u32, products: u32) -> Slot {
@@ -1193,6 +1308,7 @@ fn slot_for(index: u32, suppliers: u32, products: u32) -> Slot {
             group_key: None,
             product: None,
             supplier: None,
+            variant: 0,
         };
     }
     if index < suppliers + products {
@@ -1202,16 +1318,20 @@ fn slot_for(index: u32, suppliers: u32, products: u32) -> Slot {
             group_key: Some(leaf_for(index)),
             product: None,
             supplier: None,
+            variant: 0,
         };
     }
     let article = index - suppliers - products;
     let product = suppliers + (article % products.max(1));
+    let variant = article / products.max(1);
+    let supplier = (product - suppliers + variant) % suppliers.max(1);
     Slot {
         index,
         type_key: "article",
         group_key: Some(leaf_for(product)),
         product: Some(product),
-        supplier: Some(article % suppliers.max(1)),
+        supplier: Some(supplier),
+        variant,
     }
 }
 
@@ -1290,14 +1410,14 @@ fn fill_values(model: &CompiledModel, slot: &Slot) -> anyhow::Result<BTreeMap<At
                 model,
                 &mut values,
                 "description",
-                json!({ "en": format!("{name}. Synthetic grocery recipe for the demo.") }),
+                json!({ "en": description_for(group, &name) }),
             )?;
             put_attr(model, &mut values, "brand", json!(brand_for(index)))?;
             put_attr(
                 model,
                 &mut values,
                 "ingredients",
-                json!({ "en": format!("Water, {group} ingredients, salt.") }),
+                json!({ "en": ingredients_for(group) }),
             )?;
             put_attr(
                 model,
@@ -1360,7 +1480,9 @@ fn fill_values(model: &CompiledModel, slot: &Slot) -> anyhow::Result<BTreeMap<At
         }
         "article" => {
             let group = slot.group_key.unwrap_or("bread");
-            let name = food_name(group, index);
+            let product = slot.product.unwrap_or(index);
+            let pack = pack_for(group, slot.variant);
+            let name = format!("{} {}", food_name(group, product), pack.label);
             put_attr(
                 model,
                 &mut values,
@@ -1384,37 +1506,31 @@ fn fill_values(model: &CompiledModel, slot: &Slot) -> anyhow::Result<BTreeMap<At
             )?;
             put_attr(model, &mut values, "units_per_pack", whole(1 + (index % 6)))?;
             if uses_volume(group) {
-                let ml = 250 + (index % 4) * 250;
                 put_attr(
                     model,
                     &mut values,
                     "net_volume",
-                    json!({ "value": ml.to_string(), "unit": "ml" }),
-                )?;
-                put_attr(model, &mut values, "packaging", json!("bottle"))?;
-                put_attr(
-                    model,
-                    &mut values,
-                    "packaging_material",
-                    json!(["glass", "plastic"]),
+                    json!({ "value": pack.size.to_string(), "unit": "ml" }),
                 )?;
                 put_attr(
                     model,
                     &mut values,
                     "deposit",
-                    json!(index.is_multiple_of(2)),
+                    json!(pack.packaging == "bottle"),
                 )?;
-                put_attr(model, &mut values, "gross_weight", grams(ml + 40))?;
+                put_attr(model, &mut values, "gross_weight", grams(pack.size + 40))?;
             } else {
-                let grams_net = 100 + (index % 8) * 50;
-                put_attr(model, &mut values, "net_weight", grams(grams_net))?;
-                let pack = if group == "canned" { "can" } else { "bag" };
-                put_attr(model, &mut values, "packaging", json!(pack))?;
-                let material = if group == "canned" { "steel" } else { "paper" };
-                put_attr(model, &mut values, "packaging_material", json!([material]))?;
+                put_attr(model, &mut values, "net_weight", grams(pack.size))?;
                 put_attr(model, &mut values, "deposit", json!(false))?;
-                put_attr(model, &mut values, "gross_weight", grams(grams_net + 15))?;
+                put_attr(model, &mut values, "gross_weight", grams(pack.size + 15))?;
             }
+            put_attr(model, &mut values, "packaging", json!(pack.packaging))?;
+            put_attr(
+                model,
+                &mut values,
+                "packaging_material",
+                json!(pack.material),
+            )?;
             put_attr(model, &mut values, "storage", json!(storage_for(group)))?;
             put_attr(
                 model,
@@ -1919,7 +2035,7 @@ async fn seed_proposal(store: &Store, actor: PrincipalId) -> anyhow::Result<()> 
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
 
     use super::*;
 
@@ -2018,10 +2134,116 @@ mod tests {
     }
 
     #[test]
-    fn generator_is_deterministic_and_keeps_one_to_five_articles() {
+    fn catalog_plan_sums_to_target_and_matches_the_default_ratio() {
+        assert_eq!(catalog_plan(DEFAULT_SEED_COUNT), (40, 400, 1200));
+        for target in [0, 1, 2, 3, 4, 5, 12, 40, 250, DEFAULT_SEED_COUNT, 3000] {
+            let (suppliers, products, articles) = catalog_plan(target);
+            assert_eq!(
+                suppliers + products + articles,
+                target,
+                "plan does not add up for {target}"
+            );
+        }
+    }
+
+    #[test]
+    fn every_generated_article_has_one_product_and_one_supplier() {
+        for target in [40, 250, DEFAULT_SEED_COUNT] {
+            let (suppliers, products, articles) = catalog_plan(target);
+            let mut per_product: HashMap<u32, u32> = HashMap::new();
+            let mut used_suppliers: HashSet<u32> = HashSet::new();
+            for index in suppliers + products..suppliers + products + articles {
+                let slot = slot_for(index, suppliers, products);
+                assert_eq!(slot.type_key, "article");
+                let product = slot.product.expect("article product");
+                let supplier = slot.supplier.expect("article supplier");
+                assert!(
+                    (suppliers..suppliers + products).contains(&product),
+                    "target {target}: product {product} is not a product"
+                );
+                assert!(supplier < suppliers, "target {target}: supplier {supplier}");
+                *per_product.entry(product).or_default() += 1;
+                used_suppliers.insert(supplier);
+            }
+            assert_eq!(per_product.len(), products as usize);
+            assert!(
+                per_product.values().all(|count| (1..=4).contains(count)),
+                "target {target}: articles per product {per_product:?}"
+            );
+            assert_eq!(
+                used_suppliers.len(),
+                suppliers as usize,
+                "target {target}: orphan suppliers"
+            );
+        }
+    }
+
+    #[test]
+    fn hero_articles_have_one_product_and_one_supplier_link() {
+        let rows: Vec<Value> = serde_json::from_str(OBJECTS).expect("heroes");
+        let mut articles = 0;
+        for row in rows {
+            if row["type"] != "article" {
+                continue;
+            }
+            articles += 1;
+            let links = row["links"].as_array().expect("hero links");
+            let number = row["values"]["number"].as_str().unwrap_or("");
+            assert_eq!(
+                links
+                    .iter()
+                    .filter(|link| link["type"] == "product_articles")
+                    .count(),
+                1,
+                "{number} must have one product link"
+            );
+            assert_eq!(
+                links
+                    .iter()
+                    .filter(|link| link["type"] == "supplier_articles")
+                    .count(),
+                1,
+                "{number} must have one supplier link"
+            );
+        }
+        assert_eq!(articles, 5);
+    }
+
+    #[test]
+    fn generated_and_hero_descriptions_read_like_food_copy() {
+        let (defs, compiled) = model();
+        let description = compiled
+            .attribute_by_key("description")
+            .expect("description attribute");
+        let (suppliers, products, _) = catalog_plan(DEFAULT_SEED_COUNT);
+        for index in suppliers..suppliers + products {
+            let object =
+                synthetic_object(&compiled, defs.model_revision, index, suppliers, products)
+                    .expect("product");
+            let text = object
+                .values
+                .get(&description.id)
+                .and_then(|value| value.get("en"))
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            assert!(!text.contains("Synthetic"), "SYN-{index:06}: {text}");
+        }
+        for row in serde_json::from_str::<Vec<Value>>(OBJECTS).expect("heroes") {
+            if let Some(text) = row["values"]["description"]["en"].as_str() {
+                assert!(
+                    !text.contains("Synthetic"),
+                    "{}: {text}",
+                    row["values"]["number"]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn generator_is_deterministic_and_keeps_one_to_four_articles() {
         let (defs, compiled) = model();
         let (suppliers, products, articles) = catalog_plan(DEFAULT_SEED_COUNT);
-        assert_eq!((suppliers, products, articles), (13, 57, 170));
+        assert_eq!((suppliers, products, articles), (40, 400, 1200));
         let mut per_product: HashMap<u32, u32> = HashMap::new();
         let mut first = Vec::new();
         for index in 0..DEFAULT_SEED_COUNT {
@@ -2054,7 +2276,7 @@ mod tests {
                 first.push(object.id);
             }
         }
-        assert!(per_product.values().all(|count| (1..=5).contains(count)));
+        assert!(per_product.values().all(|count| (1..=4).contains(count)));
         assert_eq!(per_product.len(), products as usize);
         let rows: Vec<Value> = serde_json::from_str(OBJECTS).expect("heroes");
         assert!(rows.len() >= 10 && rows.len() <= 12);

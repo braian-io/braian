@@ -93,7 +93,7 @@ just dev
 - API: http://127.0.0.1:8090
 - Host ports, from `compose.yaml`: Postgres `5433`, Typesense `8108`
 
-The demo account is created from `BRAIAN_DEMO_EMAIL` and `BRAIAN_DEMO_PASSWORD` in `.env`. See `.env.example`. Those values are not in the source tree. Without `OPENAI_API_KEY`, the Ctrl+K panel says that no model is connected. Proposals, bulk edits, and undo still work. The catalog is synthetic. Its size is `BRAIAN_SEED_COUNT`. Tests do not write that database.
+The demo account is created from `BRAIAN_DEMO_EMAIL` and `BRAIAN_DEMO_PASSWORD` in `.env`. See `.env.example`. Those values are not in the source tree. Without `OPENAI_API_KEY`, the Ctrl+K panel says that no model is connected. Proposals, bulk edits, and undo still work. The catalog is synthetic and two-level: suppliers, products and articles. Its size is `BRAIAN_SEED_COUNT` (default 1640, about 40 suppliers, 400 products and 1200 articles). Tests do not write that database.
 
 `scripts/reset-demo-db.sh` drops and recreates that demo database. Run it only by hand, after an explicit decision. It is not part of deploy, CI, or any systemd unit. Pass `--yes`. Stop `braian`, `braian-web`, and `braian-autodeploy.timer` first (`braian` uses `Restart=always`). Where `systemctl` exists, the script checks those units and exits if any is active. It also exits if `pg_stat_activity` shows another session on the database. It does not terminate sessions.
 

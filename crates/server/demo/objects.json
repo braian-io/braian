@@ -57,7 +57,7 @@
         "en": "Organic oat drink"
       },
       "description": {
-        "en": "A plain oat drink for coffee, cereal and cooking. Synthetic demo recipe."
+        "en": "A plain oat drink for coffee, cereal and cooking."
       },
       "brand": "Meadow Route",
       "ingredients": {
@@ -119,7 +119,7 @@
         "en": "Mature cheddar"
       },
       "description": {
-        "en": "A firm cow's-milk cheddar aged for several months. Synthetic demo recipe."
+        "en": "A firm cow's-milk cheddar aged for several months."
       },
       "brand": "Harbor & Rye",
       "ingredients": {
@@ -181,7 +181,7 @@
         "en": "Breakfast filter coffee"
       },
       "description": {
-        "en": "A medium-roast filter coffee blended from synthetic lots. Not a real brand."
+        "en": "A medium-roast filter coffee blended from highland lots."
       },
       "brand": "Copper Kettle",
       "ingredients": {
@@ -243,7 +243,7 @@
         "en": "Dark chocolate 70%"
       },
       "description": {
-        "en": "A dark bar with 70% cocoa. Synthetic demo recipe, not a shop brand."
+        "en": "A dark bar with 70% cocoa and a deep, bittersweet finish."
       },
       "brand": "Little Kiln",
       "ingredients": {
