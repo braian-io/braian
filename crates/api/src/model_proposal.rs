@@ -947,11 +947,7 @@ pub(crate) fn changes_from(
             label: required_str(args, "label")?,
         }]),
         "model.reorder_type_attributes" => Ok(vec![ModelChange::ReorderTypeAttributes {
-            type_key: args
-                .get("type")
-                .and_then(Value::as_str)
-                .map(str::to_owned)
-                .unwrap_or(required_str(args, "type_key")?),
+            type_key: type_key_arg(args)?,
             attributes: string_list(args, "attributes").unwrap_or_default(),
         }]),
         "model.set_structures" => {
@@ -967,11 +963,7 @@ pub(crate) fn changes_from(
                 })
                 .unwrap_or_default();
             Ok(vec![ModelChange::SetStructures {
-                type_key: args
-                    .get("type")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned)
-                    .unwrap_or(required_str(args, "type_key")?),
+                type_key: type_key_arg(args)?,
                 structures,
             }])
         }
@@ -1115,6 +1107,14 @@ fn required_str(args: &Value, key: &str) -> Result<String, Problem> {
         .ok_or_else(|| Problem::new(StatusCode::BAD_REQUEST, "model", format!("missing {key}")))
 }
 
+/// `type` is the newer name for the type key; `type_key` remains for older callers.
+fn type_key_arg(args: &Value) -> Result<String, Problem> {
+    match args.get("type").and_then(Value::as_str) {
+        Some(value) => Ok(value.to_owned()),
+        None => required_str(args, "type_key"),
+    }
+}
+
 /// Class identifier on steps that do not already have a destination group.
 /// `group` is the name for one release; `class` and `class_key` still work.
 fn class_ref(args: &Value) -> Result<String, Problem> {
@@ -1166,4 +1166,77 @@ fn title_for(args: &Value, lines: &[String]) -> String {
         .first()
         .cloned()
         .unwrap_or_else(|| "Data model".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn defs() -> DefinitionSet {
+        DefinitionSet {
+            model_revision: 1,
+            languages: vec![],
+            unit_families: vec![],
+            value_lists: vec![],
+            attributes: vec![],
+            types: vec![],
+            structures: vec![],
+        }
+    }
+
+    fn reorder(args: Value) -> Result<ModelChange, Problem> {
+        let changes = changes_from("model.reorder_type_attributes", &args, &defs())?;
+        changes
+            .into_iter()
+            .next()
+            .ok_or_else(|| Problem::new(StatusCode::BAD_REQUEST, "model", "no changes"))
+    }
+
+    #[test]
+    fn reorder_type_attributes_accepts_type_alias() {
+        let change = reorder(json!({"type": "recipe", "attributes": ["name"]})).unwrap();
+        assert_eq!(
+            change,
+            ModelChange::ReorderTypeAttributes {
+                type_key: "recipe".into(),
+                attributes: vec!["name".into()],
+            }
+        );
+    }
+
+    #[test]
+    fn reorder_type_attributes_accepts_type_key() {
+        let change = reorder(json!({"type_key": "recipe", "attributes": ["name"]})).unwrap();
+        assert_eq!(
+            change,
+            ModelChange::ReorderTypeAttributes {
+                type_key: "recipe".into(),
+                attributes: vec!["name".into()],
+            }
+        );
+    }
+
+    #[test]
+    fn reorder_type_attributes_requires_a_type_key() {
+        let error = reorder(json!({"attributes": ["name"]})).unwrap_err();
+        assert_eq!(error.status, StatusCode::BAD_REQUEST.as_u16());
+        assert_eq!(error.detail, "missing type_key");
+    }
+
+    #[test]
+    fn set_structures_accepts_type_alias_and_type_key() {
+        for args in [
+            json!({"type": "recipe", "structures": ["food"]}),
+            json!({"type_key": "recipe", "structures": ["food"]}),
+        ] {
+            let changes = changes_from("model.set_structures", &args, &defs()).unwrap();
+            assert_eq!(
+                changes,
+                vec![ModelChange::SetStructures {
+                    type_key: "recipe".into(),
+                    structures: vec!["food".into()],
+                }]
+            );
+        }
+    }
 }
