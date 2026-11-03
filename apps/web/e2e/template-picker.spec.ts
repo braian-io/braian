@@ -136,3 +136,100 @@ test('opens an existing Review tab without creating another', async ({ page }) =
   expect(after.workspaces.length).toBe(beforeCount)
   expect(after.workspaces.filter((item) => item.share_token === 'braian-review')).toHaveLength(1)
 })
+
+const SAVED_TEMPLATE_PRODUCT_TYPE_ID = '018f0000-0000-7000-8000-000000000200'
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+test('saved workspace template creates a new workspace', async ({ page }) => {
+  test.setTimeout(120_000)
+  await login(page)
+
+  const stamp = Date.now().toString(36)
+  const key = `saved_template_${stamp}`
+  const name = `Saved template ${stamp}`
+  const mainView = crypto.randomUUID()
+  const detailView = crypto.randomUUID()
+  const definition = {
+    views: [
+      {
+        id: mainView,
+        type: 'object_table',
+        title: 'Products',
+        state: {
+          columns: ['number', 'name', 'type', 'status'],
+          sort: 'number',
+          object_type: SAVED_TEMPLATE_PRODUCT_TYPE_ID,
+          type_key: 'product',
+        },
+      },
+      { id: detailView, type: 'object_detail', title: 'Detail', state: { language: 'en' } },
+    ],
+    layout: {
+      type: 'split',
+      dir: 'horizontal',
+      ratios: [0.65, 0.35],
+      children: [
+        { type: 'tabs', views: [mainView], active: 0 },
+        { type: 'tabs', views: [detailView], active: 0 },
+      ],
+    },
+  }
+
+  const applied = await page.request.post('/v1/config/apply', {
+    data: [{ apiVersion: 'braian.io/v1', kind: 'WorkspaceTemplate', key, name, definition }],
+  })
+  expect(applied.status()).toBe(202)
+  const proposal = (await applied.json()) as { proposal_id?: string }
+  expect(proposal.proposal_id).toBeTruthy()
+  const accepted = await page.request.post(`/v1/proposals/${proposal.proposal_id}/accept`, { data: {} })
+  expect(accepted.ok()).toBeTruthy()
+  const acceptedBody = (await accepted.json()) as { failed?: unknown[] }
+  expect(acceptedBody.failed ?? []).toHaveLength(0)
+
+  const before = await listWorkspaces(page)
+  const existing = before.workspaces.find((item) => item.share_token === 'braian-model') ?? before.workspaces[0]
+  expect(existing).toBeTruthy()
+  const existingBefore = (await (await page.request.get(`/v1/workspaces/${existing.id}`)).json()) as {
+    name: string
+    layout: unknown
+  }
+
+  let createdId: string | undefined
+  try {
+    await page.keyboard.press('Control+K')
+    const palette = page.getByTestId('command-palette')
+    await expect(palette).toBeVisible()
+    await palette.getByTestId('palette-input').fill('New from template')
+    await expect(palette.getByRole('option', { name: /^New from template/ })).toBeVisible()
+    await page.keyboard.press('Enter')
+    await expect(palette.locator('.crumb')).toContainText('New from template')
+
+    await palette.getByTestId('palette-input').fill(name)
+    const saved = palette.getByRole('option', { name: new RegExp(`^${escapeRegExp(name)}`) })
+    await expect(saved).toBeVisible({ timeout: 30_000 })
+    await page.keyboard.press('Enter')
+    await expect(palette).toHaveCount(0)
+    await expect(page.locator('nav.tabs button.tab', { hasText: name })).toBeVisible({ timeout: 30_000 })
+
+    const after = await listWorkspaces(page)
+    expect(after.workspaces.length).toBe(before.workspaces.length + 1)
+    const created = after.workspaces.find((item) => item.name === name && !before.workspaces.some((old) => old.id === item.id))
+    expect(created).toBeTruthy()
+    createdId = created?.id
+
+    const existingAfter = (await (await page.request.get(`/v1/workspaces/${existing.id}`)).json()) as {
+      name: string
+      layout: unknown
+    }
+    expect(existingAfter.name).toBe(existingBefore.name)
+    expect(existingAfter.layout).toEqual(existingBefore.layout)
+  } finally {
+    if (createdId) {
+      const deleted = await page.request.delete(`/v1/workspaces/${createdId}`)
+      expect(deleted.ok() || deleted.status() === 204).toBeTruthy()
+    }
+  }
+})
