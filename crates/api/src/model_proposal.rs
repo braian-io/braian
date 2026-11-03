@@ -160,6 +160,24 @@ pub async fn apply_row(
         serde_json::from_value(row.get("patch").cloned().unwrap_or(json!({})))
             .map_err(|error| Problem::new(StatusCode::BAD_REQUEST, "model", error.to_string()))?;
     crate::structures::guard_model_change(state, &identity.actor, &change, true).await?;
+    if let Some(write) = reference_write(state, &change).await? {
+        return match state
+            .store
+            .commit_proposal_row(
+                &identity.actor,
+                proposal_id,
+                row_id,
+                "accepted",
+                write,
+                claim,
+            )
+            .await
+        {
+            Ok(Some(receipt)) => Ok(Some(receipt.last_seq)),
+            Ok(None) => Ok(None),
+            Err(error) => Err(store_status(error)),
+        };
+    }
     for attempt in 0..2 {
         let mut defs = match state.store.definition_set().await {
             Ok(defs) => defs,
@@ -215,6 +233,152 @@ pub async fn apply_row(
         "revision_conflict",
         "definition revision changed",
     ))
+}
+
+/// Catalogs, merge profiles and ownership live outside the definition set.
+/// Their keys resolve to ids just before the row commits.
+async fn reference_write(
+    state: &AppState,
+    change: &ModelChange,
+) -> Result<Option<ProposalWrite>, Problem> {
+    match change {
+        ModelChange::UpsertCatalog { catalog } => {
+            let existing = match state
+                .store
+                .catalog_by_key(&catalog.key)
+                .await
+                .map_err(store_status)?
+            {
+                Some(found) => Some(found),
+                None => match catalog.renamed_from.as_deref() {
+                    Some(old) => state
+                        .store
+                        .catalog_by_key(old)
+                        .await
+                        .map_err(store_status)?,
+                    None => None,
+                },
+            };
+            let kind = match catalog.kind {
+                braian_model::CatalogKind::Master => "master",
+                braian_model::CatalogKind::Source => "source",
+            };
+            if kind == "master"
+                && state
+                    .store
+                    .catalogs()
+                    .await
+                    .map_err(store_status)?
+                    .iter()
+                    .any(|stored| {
+                        stored.kind == braian_store::CatalogKind::Master
+                            && Some(stored.id.as_uuid())
+                                != existing.as_ref().map(|found| found.id.as_uuid())
+                    })
+            {
+                return Err(Problem::new(
+                    StatusCode::CONFLICT,
+                    "master_exists",
+                    "the installation already has its master catalog",
+                ));
+            }
+            let id = existing
+                .map(|found| found.id.as_uuid())
+                .unwrap_or_else(Uuid::now_v7);
+            Ok(Some(ProposalWrite::Catalog {
+                id,
+                key: catalog.key.clone(),
+                name: catalog.name.clone(),
+                kind: kind.to_owned(),
+                editable: catalog.editable,
+            }))
+        }
+        ModelChange::DeleteCatalog { key } => {
+            let catalog = state
+                .store
+                .require_catalog(key)
+                .await
+                .map_err(store_status)?;
+            if catalog.kind == braian_store::CatalogKind::Master {
+                return Err(Problem::new(
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "master_catalog",
+                    "the master catalog cannot be deleted",
+                ));
+            }
+            Ok(Some(ProposalWrite::CatalogDelete {
+                id: catalog.id.as_uuid(),
+            }))
+        }
+        ModelChange::UpsertMergeProfile { profile } => {
+            let existing = match state
+                .store
+                .merge_profile_by_key(&profile.key)
+                .await
+                .map_err(store_status)?
+            {
+                Some(found) => Some(found),
+                None => match profile.renamed_from.as_deref() {
+                    Some(old) => state
+                        .store
+                        .merge_profile_by_key(old)
+                        .await
+                        .map_err(store_status)?,
+                    None => None,
+                },
+            };
+            let source = state
+                .store
+                .require_catalog(&profile.source_catalog)
+                .await
+                .map_err(store_status)?;
+            if source.kind != braian_store::CatalogKind::Source {
+                return Err(Problem::new(
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "not_a_source",
+                    "a profile reads a source catalog",
+                ));
+            }
+            let mode = match profile.mode {
+                braian_model::MergeProfileMode::Manual => "manual",
+                braian_model::MergeProfileMode::Continuous => "continuous",
+            };
+            Ok(Some(ProposalWrite::MergeProfile {
+                id: existing.map(|found| found.id).unwrap_or_else(Uuid::now_v7),
+                key: profile.key.clone(),
+                name: profile.name.clone(),
+                source_catalog_id: source.id.as_uuid(),
+                spec: profile.spec.clone(),
+                mode: mode.to_owned(),
+            }))
+        }
+        ModelChange::DeleteMergeProfile { key } => {
+            let profile = state
+                .store
+                .merge_profile_by_key(key)
+                .await
+                .map_err(store_status)?
+                .ok_or_else(|| {
+                    Problem::new(
+                        StatusCode::NOT_FOUND,
+                        "not_found",
+                        format!("unknown merge profile {key}"),
+                    )
+                })?;
+            Ok(Some(ProposalWrite::MergeProfileDelete { id: profile.id }))
+        }
+        ModelChange::SetOwnershipRules { rules } => {
+            let rules = serde_json::to_value(rules).map_err(|error| {
+                Problem::new(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "internal",
+                    error.to_string(),
+                )
+            })?;
+            Ok(Some(ProposalWrite::OwnershipRules { rules }))
+        }
+        _ => Ok(None),
+    }
 }
 
 pub fn is_model_row(row: &Value) -> bool {

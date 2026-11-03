@@ -49,6 +49,30 @@ pub enum ProposalWrite {
         defs: DefinitionSet,
         purge: Box<braian_model::DataPurge>,
     },
+    Catalog {
+        id: Uuid,
+        key: String,
+        name: String,
+        kind: String,
+        editable: bool,
+    },
+    CatalogDelete {
+        id: Uuid,
+    },
+    MergeProfile {
+        id: Uuid,
+        key: String,
+        name: String,
+        source_catalog_id: Uuid,
+        spec: Value,
+        mode: String,
+    },
+    MergeProfileDelete {
+        id: Uuid,
+    },
+    OwnershipRules {
+        rules: Value,
+    },
 }
 
 struct CommittedProposalRow {
@@ -992,6 +1016,156 @@ impl Store {
                     receipt,
                     definitions: Some((defs, groups)),
                 }));
+            }
+            ProposalWrite::Catalog {
+                id,
+                key,
+                name,
+                kind,
+                editable,
+            } => {
+                let updated = tx
+                    .execute(
+                        "UPDATE catalogs SET key = $2, name = $3, kind = $4, editable = $5 WHERE id = $1",
+                        &[&id, &key, &name, &kind, &editable],
+                    )
+                    .await?;
+                if updated == 0 {
+                    tx.execute(
+                        "INSERT INTO catalogs (id, key, name, kind, editable) VALUES ($1, $2, $3, $4, $5)",
+                        &[&id, &key, &name, &kind, &editable],
+                    )
+                    .await?;
+                    let progress_id: i32 = tx
+                        .query_one("SELECT COALESCE(MAX(id), 0) + 1 FROM indexer_progress", &[])
+                        .await?
+                        .get(0);
+                    tx.execute(
+                        "INSERT INTO indexer_progress (id, seq, catalog_id) VALUES ($1, 0, $2)",
+                        &[&progress_id, &id],
+                    )
+                    .await?;
+                }
+                WriteReceipt {
+                    batch_id: BatchId::from_uuid(Uuid::nil()),
+                    last_seq: 0,
+                    versions: Vec::new(),
+                }
+            }
+            ProposalWrite::CatalogDelete { id } => {
+                tx.execute(
+                    "DELETE FROM merge_links WHERE profile_id IN (SELECT id FROM merge_profiles WHERE source_catalog_id = $1)",
+                    &[&id],
+                )
+                .await?;
+                tx.execute(
+                    "DELETE FROM merge_run_rows WHERE profile_id IN (SELECT id FROM merge_profiles WHERE source_catalog_id = $1)",
+                    &[&id],
+                )
+                .await?;
+                tx.execute(
+                    "DELETE FROM merge_profile_revisions WHERE profile_id IN (SELECT id FROM merge_profiles WHERE source_catalog_id = $1)",
+                    &[&id],
+                )
+                .await?;
+                tx.execute(
+                    "DELETE FROM merge_profiles WHERE source_catalog_id = $1",
+                    &[&id],
+                )
+                .await?;
+                tx.execute("DELETE FROM indexer_progress WHERE catalog_id = $1", &[&id])
+                    .await?;
+                tx.execute(
+                    "DELETE FROM definition_revisions WHERE catalog_id = $1",
+                    &[&id],
+                )
+                .await?;
+                tx.execute("DELETE FROM attribute_parts WHERE catalog_id = $1", &[&id])
+                    .await?;
+                tx.execute("DELETE FROM catalogs WHERE id = $1", &[&id])
+                    .await?;
+                WriteReceipt {
+                    batch_id: BatchId::from_uuid(Uuid::nil()),
+                    last_seq: 0,
+                    versions: Vec::new(),
+                }
+            }
+            ProposalWrite::MergeProfile {
+                id,
+                key,
+                name,
+                source_catalog_id,
+                spec,
+                mode,
+            } => {
+                let updated = tx
+                    .execute(
+                        "UPDATE merge_profiles SET key = $2, name = $3, source_catalog_id = $4, spec = $5, mode = $6 WHERE id = $1",
+                        &[&id, &key, &name, &source_catalog_id, &spec, &mode],
+                    )
+                    .await?;
+                if updated == 0 {
+                    tx.execute(
+                        "INSERT INTO merge_profiles (id, key, name, source_catalog_id, spec, mode)
+                         VALUES ($1, $2, $3, $4, $5, $6)",
+                        &[&id, &key, &name, &source_catalog_id, &spec, &mode],
+                    )
+                    .await?;
+                }
+                let revision: i64 = tx
+                    .query_one(
+                        "SELECT COALESCE(MAX(revision), 0) + 1 FROM merge_profile_revisions WHERE profile_id = $1",
+                        &[&id],
+                    )
+                    .await?
+                    .get(0);
+                tx.execute(
+                    "INSERT INTO merge_profile_revisions (profile_id, revision, spec) VALUES ($1, $2, $3)",
+                    &[&id, &revision, &spec],
+                )
+                .await?;
+                WriteReceipt {
+                    batch_id: BatchId::from_uuid(Uuid::nil()),
+                    last_seq: 0,
+                    versions: Vec::new(),
+                }
+            }
+            ProposalWrite::MergeProfileDelete { id } => {
+                tx.execute("DELETE FROM merge_links WHERE profile_id = $1", &[&id])
+                    .await?;
+                tx.execute("DELETE FROM merge_run_rows WHERE profile_id = $1", &[&id])
+                    .await?;
+                tx.execute(
+                    "DELETE FROM merge_profile_revisions WHERE profile_id = $1",
+                    &[&id],
+                )
+                .await?;
+                tx.execute("DELETE FROM merge_profiles WHERE id = $1", &[&id])
+                    .await?;
+                WriteReceipt {
+                    batch_id: BatchId::from_uuid(Uuid::nil()),
+                    last_seq: 0,
+                    versions: Vec::new(),
+                }
+            }
+            ProposalWrite::OwnershipRules { rules } => {
+                let revision: i64 = tx
+                    .query_one(
+                        "SELECT COALESCE(MAX(revision), 0) + 1 FROM ownership_revisions",
+                        &[],
+                    )
+                    .await?
+                    .get(0);
+                tx.execute(
+                    "INSERT INTO ownership_revisions (revision, rules) VALUES ($1, $2)",
+                    &[&revision, &rules],
+                )
+                .await?;
+                WriteReceipt {
+                    batch_id: BatchId::from_uuid(Uuid::nil()),
+                    last_seq: 0,
+                    versions: Vec::new(),
+                }
             }
         };
         Ok(Some(CommittedProposalRow {

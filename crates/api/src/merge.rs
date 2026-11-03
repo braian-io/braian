@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use braian_merge::{MatchOutcome, MergePlan, ProfileSpec, plan};
+use braian_merge::{MatchOutcome, MergePlan, OwnershipRule, ProfileSpec, plan};
 use braian_model::{DefinitionSet, Object, ObjectId, TypeId};
 use braian_rules::CompiledModel;
 use braian_store::{Actor, MASTER_CATALOG_ID, MergeProfile, ObjectOp, Store, scope_origin};
@@ -181,16 +181,23 @@ pub async fn get_ownership(
 pub async fn post_ownership(
     State(state): State<AppState>,
     Auth(identity): Auth,
-    Json(rules): Json<Value>,
+    Json(body): Json<Value>,
 ) -> Result<Json<Value>, Problem> {
     require(&identity, Role::Editor)?;
-    if !rules.is_array() {
-        return Err(Problem::new(
-            StatusCode::BAD_REQUEST,
+    let rules: Vec<OwnershipRule> = serde_json::from_value(body).map_err(|error| {
+        Problem::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
             "invalid_ownership",
-            "ownership rules are a list",
-        ));
-    }
+            format!("ownership rules are a list of attribute, language and profiles: {error}"),
+        )
+    })?;
+    let rules = serde_json::to_value(&rules).map_err(|error| {
+        Problem::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "internal",
+            error.to_string(),
+        )
+    })?;
     let revision = state
         .store
         .put_ownership_rules(&rules)

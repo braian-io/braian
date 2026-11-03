@@ -104,18 +104,7 @@ async fn exported(app: &axum::Router) -> Vec<Value> {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    let documents: Vec<Value> = serde_json::from_slice(&body).unwrap();
-    // The new kinds export but cannot be applied yet, so apply tests use the
-    // model documents they exercise.
-    documents
-        .into_iter()
-        .filter(|document| {
-            !matches!(
-                document["kind"].as_str(),
-                Some("Catalog" | "MergeProfile" | "Ownership")
-            )
-        })
-        .collect()
+    serde_json::from_slice(&body).unwrap()
 }
 
 async fn seed_extras(db: &TestDb) {
@@ -402,38 +391,260 @@ async fn apply_without_changes_makes_no_proposal_and_put_definitions_is_gone() {
 }
 
 #[tokio::test]
-async fn apply_rejects_catalogs_merge_profiles_and_ownership_with_422() {
-    let (db, app) = app().await;
-    seed_extras(&db).await;
+async fn apply_creates_one_proposal_for_catalogs_merge_profiles_and_ownership() {
+    let (_db, app) = app().await;
+    let before = definitions(&app).await;
+    let documents = json!([
+        {
+            "apiVersion": "braian.io/v1",
+            "kind": "Catalog",
+            "key": "erp",
+            "name": "ERP",
+            "catalogKind": "source",
+            "editable": true
+        },
+        {
+            "apiVersion": "braian.io/v1",
+            "kind": "MergeProfile",
+            "key": "erp-brand",
+            "name": "ERP brand",
+            "sourceCatalog": "erp",
+            "spec": {
+                "match_attributes": ["number"],
+                "master_key": "number",
+                "attributes": [{ "source": "brand", "target": "brand" }],
+                "on_no_match": "create",
+                "on_delete": "ignore"
+            },
+            "runMode": "manual"
+        },
+        {
+            "apiVersion": "braian.io/v1",
+            "kind": "Ownership",
+            "rules": [{ "attribute": "brand", "profiles": ["erp-brand"] }]
+        }
+    ]);
 
+    let (status, proposed) = apply(&app, &documents.to_string()).await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{proposed}");
+    assert!(
+        proposed["groups"]["Catalog"]["steps"].as_u64().unwrap() >= 1,
+        "{proposed}"
+    );
+    assert_eq!(proposed["groups"]["MergeProfile"]["steps"], 1, "{proposed}");
+    assert_eq!(proposed["groups"]["Ownership"]["steps"], 1, "{proposed}");
+    assert_eq!(definitions(&app).await, before);
+
+    let proposal_id = proposed["proposal_id"].as_str().unwrap();
     let (status, _, body) = call(
         &app,
         "GET",
-        "/v1/config/export?format=json",
+        &format!("/v1/proposals/{proposal_id}"),
         Some(HUMAN),
         &[],
         None,
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    let documents: Vec<Value> = serde_json::from_slice(&body).unwrap();
-    let before = definitions(&app).await;
+    let proposal: Value = serde_json::from_slice(&body).unwrap();
+    let ops: Vec<&str> = proposal["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|row| row["patch"]["op"].as_str())
+        .collect();
+    assert!(ops.contains(&"upsert_catalog"), "{proposal}");
+    assert!(ops.contains(&"upsert_merge_profile"), "{proposal}");
+    assert!(ops.contains(&"set_ownership_rules"), "{proposal}");
 
-    for kind in ["Catalog", "MergeProfile", "Ownership"] {
-        let document = documents
+    let (status, accepted) = accept(&app, proposal_id).await;
+    assert_eq!(status, StatusCode::OK, "{accepted}");
+    assert!(
+        accepted["failed"].as_array().unwrap().is_empty(),
+        "{accepted}"
+    );
+
+    let (status, _, body) = call(&app, "GET", "/v1/catalogs", Some(HUMAN), &[], None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        String::from_utf8_lossy(&body).contains("erp"),
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+    let (status, _, body) = call(&app, "GET", "/v1/merge/profiles", Some(HUMAN), &[], None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        String::from_utf8_lossy(&body).contains("erp-brand"),
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+    let (status, _, body) = call(&app, "GET", "/v1/merge/ownership", Some(HUMAN), &[], None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        String::from_utf8_lossy(&body).contains("erp-brand"),
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+}
+
+#[tokio::test]
+async fn apply_delete_catalog_is_blocked_until_allowed() {
+    let (db, app) = app().await;
+    db.store()
+        .create_catalog(
+            braian_store::CatalogId::new(),
+            "temp",
+            "Temporary",
+            braian_store::CatalogKind::Source,
+            true,
+        )
+        .await
+        .unwrap();
+
+    let mut documents = exported(&app).await;
+    documents.retain(|document| {
+        !(document["kind"] == "Catalog"
+            && (document["key"] == "temp" || document["key"] == "master"))
+    });
+    documents.push(json!({
+        "apiVersion": "braian.io/v1",
+        "kind": "Catalog",
+        "key": "master",
+        "mode": "full",
+        "name": "Master catalog",
+        "catalogKind": "master",
+        "editable": true
+    }));
+    documents.retain(|document| {
+        !matches!(
+            document["kind"].as_str(),
+            Some("MergeProfile" | "Ownership")
+        )
+    });
+
+    let (status, blocked) = apply(&app, &serde_json::to_string(&documents).unwrap()).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{blocked}");
+    let step = blocked["steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|step| {
+            step["action"] == "delete" && step["kind"] == "catalog" && step["key"] == "temp"
+        })
+        .expect("temp delete step");
+    assert_eq!(step["blocked"], true, "{blocked}");
+
+    let wrapped = json!({ "documents": documents, "allowDestructive": true });
+    let (status, proposed) = apply(&app, &wrapped.to_string()).await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{proposed}");
+    let proposal_id = proposed["proposal_id"].as_str().unwrap();
+    let (_, _, body) = call(
+        &app,
+        "GET",
+        &format!("/v1/proposals/{proposal_id}"),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    let proposal: Value = serde_json::from_slice(&body).unwrap();
+    assert!(
+        proposal["rows"]
+            .as_array()
+            .unwrap()
             .iter()
-            .find(|document| document["kind"] == kind)
-            .expect("exported new kind");
-        let (status, body) = apply(&app, &serde_json::to_string(document).unwrap()).await;
-        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{kind}: {body}");
-        assert_eq!(body["code"], "invalid_config", "{kind}: {body}");
-        assert!(
-            body["detail"].as_str().is_some_and(
-                |detail| detail.contains(&format!("Kind {kind} cannot be applied yet"))
-            ),
-            "{kind}: {body}"
-        );
-    }
+            .any(|row| row["patch"]["op"] == "delete_catalog"),
+        "{proposal}"
+    );
+    let (status, accepted) = accept(&app, proposal_id).await;
+    assert_eq!(status, StatusCode::OK, "{accepted}");
+    assert!(
+        accepted["failed"].as_array().unwrap().is_empty(),
+        "{accepted}"
+    );
+    let (status, _, body) = call(&app, "GET", "/v1/catalogs", Some(HUMAN), &[], None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        !String::from_utf8_lossy(&body).contains("temp"),
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+}
 
-    assert_eq!(definitions(&app).await, before);
+#[tokio::test]
+async fn apply_delete_merge_profile_is_blocked_until_allowed() {
+    let (db, app) = app().await;
+    seed_extras(&db).await;
+
+    let mut documents = exported(&app).await;
+    documents
+        .retain(|document| !matches!(document["kind"].as_str(), Some("Catalog" | "Ownership")));
+    documents
+        .retain(|document| !(document["kind"] == "MergeProfile" && document["key"] == "sap-brand"));
+    documents.push(json!({
+        "apiVersion": "braian.io/v1",
+        "kind": "MergeProfile",
+        "key": "keep-brand",
+        "mode": "full",
+        "name": "Keep brand",
+        "sourceCatalog": "sap",
+        "spec": {
+            "match_attributes": ["number"],
+            "master_key": "number",
+            "attributes": [{ "source": "brand", "target": "brand" }],
+            "on_no_match": "create",
+            "on_delete": "ignore"
+        },
+        "runMode": "manual"
+    }));
+
+    let (status, blocked) = apply(&app, &serde_json::to_string(&documents).unwrap()).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{blocked}");
+    let step = blocked["steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|step| {
+            step["action"] == "delete"
+                && step["kind"] == "merge_profile"
+                && step["key"] == "sap-brand"
+        })
+        .expect("sap-brand delete step");
+    assert_eq!(step["blocked"], true, "{blocked}");
+
+    let wrapped = json!({ "documents": documents, "allowDestructive": true });
+    let (status, proposed) = apply(&app, &wrapped.to_string()).await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{proposed}");
+    let proposal_id = proposed["proposal_id"].as_str().unwrap();
+    let (_, _, body) = call(
+        &app,
+        "GET",
+        &format!("/v1/proposals/{proposal_id}"),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    let proposal: Value = serde_json::from_slice(&body).unwrap();
+    assert!(
+        proposal["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| row["patch"]["op"] == "delete_merge_profile"),
+        "{proposal}"
+    );
+    let (status, accepted) = accept(&app, proposal_id).await;
+    assert_eq!(status, StatusCode::OK, "{accepted}");
+    assert!(
+        accepted["failed"].as_array().unwrap().is_empty(),
+        "{accepted}"
+    );
+    let (status, _, body) = call(&app, "GET", "/v1/merge/profiles", Some(HUMAN), &[], None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        !String::from_utf8_lossy(&body).contains("sap-brand"),
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
 }

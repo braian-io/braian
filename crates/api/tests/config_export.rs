@@ -321,3 +321,43 @@ async fn export_includes_catalogs_merge_profiles_and_ownership() {
         "{names:?}"
     );
 }
+
+#[tokio::test]
+async fn export_reports_a_merge_profile_with_a_missing_source_catalog() {
+    let (db, app) = app().await;
+    seed_extras(&db).await;
+
+    let (client, connection) = tokio_postgres::connect(&db.database_url(), tokio_postgres::NoTls)
+        .await
+        .expect("test database connection");
+    tokio::spawn(connection);
+    client
+        .batch_execute(
+            "ALTER TABLE merge_profiles DROP CONSTRAINT merge_profiles_source_catalog_id_fkey",
+        )
+        .await
+        .expect("drop the source catalog reference for the test");
+    client
+        .execute("DELETE FROM catalogs WHERE key = 'sap'", &[])
+        .await
+        .expect("remove the source catalog");
+
+    let (status, _, body) = call(
+        &app,
+        "GET",
+        "/v1/config/export?format=json",
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    let problem: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(problem["code"], "missing_catalog", "{problem}");
+    assert!(
+        problem["detail"].as_str().is_some_and(
+            |detail| detail.contains("merge profile sap-brand references missing catalog")
+        ),
+        "{problem}"
+    );
+}

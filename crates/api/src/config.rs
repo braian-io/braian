@@ -11,7 +11,7 @@ use braian_config::{
     ApiVersion, CatalogDocument, CatalogKind as CatalogDocumentKind, CatalogSourceKind,
     ConfigDocument, ConfigExtras, ConfigPlan, MergeModeConfig, MergeProfileDocument,
     MergeProfileKind, OwnershipDocument, OwnershipKind, OwnershipRuleConfig, PlanAffected,
-    PlanKind, apply_documents, export_documents_with, plan_documents_with,
+    PlanKind, apply_documents_with, export_documents_with, plan_documents_with,
 };
 use braian_store::CatalogKind as StoreCatalogKind;
 use serde::Deserialize;
@@ -148,7 +148,9 @@ pub async fn apply_config(
         ));
     }
     let defs = current_definitions(&state).await?;
-    let mut application = apply_documents(&defs, &documents).map_err(invalid_config)?;
+    let extras = config_extras(&state).await?;
+    let mut application =
+        apply_documents_with(&defs, &extras, &documents).map_err(invalid_config)?;
     fill_affected(&state, &mut application.plan).await?;
     if application.plan.is_destructive() && !allow_destructive {
         for step in &mut application.plan.steps {
@@ -221,26 +223,33 @@ async fn config_extras(state: &AppState) -> Result<ConfigExtras, Problem> {
     }
 
     let profiles = state.store.merge_profiles().await.map_err(store_status)?;
-    let merge_profiles = profiles
-        .into_iter()
-        .filter_map(|profile| {
-            let source_catalog = catalog_keys.get(&profile.source_catalog_id)?.clone();
-            Some(MergeProfileDocument {
-                api_version: ApiVersion::BraianIoV1,
-                kind: MergeProfileKind::MergeProfile,
-                key: profile.key,
-                renamed_from: None,
-                mode: None,
-                name: profile.name,
-                source_catalog,
-                spec: profile.spec,
-                run_mode: match profile.mode.as_str() {
-                    "continuous" => MergeModeConfig::Continuous,
-                    _ => MergeModeConfig::Manual,
-                },
-            })
-        })
-        .collect();
+    let mut merge_profiles = Vec::with_capacity(profiles.len());
+    for profile in profiles {
+        let Some(source_catalog) = catalog_keys.get(&profile.source_catalog_id).cloned() else {
+            return Err(Problem::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "missing_catalog",
+                format!(
+                    "merge profile {} references missing catalog {}",
+                    profile.key, profile.source_catalog_id
+                ),
+            ));
+        };
+        merge_profiles.push(MergeProfileDocument {
+            api_version: ApiVersion::BraianIoV1,
+            kind: MergeProfileKind::MergeProfile,
+            key: profile.key,
+            renamed_from: None,
+            mode: None,
+            name: profile.name,
+            source_catalog,
+            spec: profile.spec,
+            run_mode: match profile.mode.as_str() {
+                "continuous" => MergeModeConfig::Continuous,
+                _ => MergeModeConfig::Manual,
+            },
+        });
+    }
 
     let rules = state.store.ownership_rules().await.map_err(store_status)?;
     let rules: Vec<OwnershipRuleConfig> = serde_json::from_value(rules).map_err(|error| {
@@ -289,11 +298,17 @@ fn groups_for(plan: &ConfigPlan) -> serde_json::Value {
         "Model": { "keys": Vec::<String>::new(), "steps": 0 },
         "ValueList": { "keys": Vec::<String>::new(), "steps": 0 },
         "UnitFamily": { "keys": Vec::<String>::new(), "steps": 0 },
+        "Catalog": { "keys": Vec::<String>::new(), "steps": 0 },
+        "MergeProfile": { "keys": Vec::<String>::new(), "steps": 0 },
+        "Ownership": { "keys": Vec::<String>::new(), "steps": 0 },
     });
     for step in &plan.steps {
         let group = match step.kind {
             PlanKind::ValueList => "ValueList",
             PlanKind::UnitFamily => "UnitFamily",
+            PlanKind::Catalog => "Catalog",
+            PlanKind::MergeProfile => "MergeProfile",
+            PlanKind::Ownership => "Ownership",
             _ => "Model",
         };
         let entry = &mut groups[group];
