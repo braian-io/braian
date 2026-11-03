@@ -1,6 +1,6 @@
 use braian_config::{
     AttributeKindConfig, ConfigDocument, ConfigMode, PlanAction, PlanKind, TextFormConfig,
-    export_documents, plan_documents,
+    apply_documents, export_documents, plan_documents,
 };
 use braian_model::DefinitionSet;
 
@@ -278,5 +278,40 @@ fn a_deleted_structure_does_not_repeat_its_groups() {
             .all(|step| !matches!(step.kind, PlanKind::Group | PlanKind::Class)),
         "{:?}",
         plan.steps
+    );
+}
+
+#[test]
+fn language_steps_build_one_set_languages_change_in_document_order() {
+    use braian_model::{LanguageTag, ModelChange};
+
+    let defs = definitions();
+    let mut desired = documents();
+    let model = model(&mut desired);
+    model.languages.push("de".to_owned());
+
+    let application = apply_documents(&defs, &desired).expect("apply plan");
+    assert!(
+        application.plan.steps.iter().any(|step| {
+            step.action == PlanAction::Create && step.kind == PlanKind::Language && step.key == "de"
+        }),
+        "{:?}",
+        application.plan.steps
+    );
+    let changes: Vec<&ModelChange> = application
+        .changes
+        .iter()
+        .filter(|change| matches!(change, ModelChange::SetLanguages { .. }))
+        .collect();
+    assert_eq!(changes.len(), 1, "{:?}", application.changes);
+    let ModelChange::SetLanguages { languages } = changes[0] else {
+        unreachable!("filtered above");
+    };
+    assert_eq!(
+        languages
+            .iter()
+            .map(LanguageTag::as_str)
+            .collect::<Vec<_>>(),
+        ["sv", "en-GB", "de"]
     );
 }

@@ -28,6 +28,11 @@ labels and cardinalities. A structure contains groups and classes. Attributes
 may be `text`, `number`, `range`, `value_list`, `boolean`, `date`, `object_ref`,
 or `file_ref`.
 
+`languages` is the ordered language list. Applying a `Model` document sets the
+whole list through the proposal. In partial mode stored languages keep their
+order and new ones are appended in document order; removals need `mode: full`
+and `allowDestructive`.
+
 ```yaml
 apiVersion: braian.io/v1
 kind: Model
@@ -369,11 +374,3 @@ In the web app, **Open in Review** selects that proposal and opens the Review
 workspace. Review lists the proposal rows and the consequence, and offers
 **Save all** and **Discard all**. Accepting an apply proposal writes the model
 steps.
-
-## Known limitation: languages
-
-The `Model` document carries `languages`, and the plan reports `language` create
-and delete steps. Applying does not build a model change for them: `changes_for`
-in `crates/config/src/plan.rs` has no language step. A language-only document
-therefore ends as `no_changes` (`409`), and language steps in a larger apply are
-not written. Use `PUT /v1/languages` to replace the language list instead.

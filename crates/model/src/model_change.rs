@@ -414,6 +414,10 @@ pub enum ModelChange {
     SetOwnershipRules {
         rules: Vec<OwnershipRule>,
     },
+    /// Replaces the language list, in the order callers read it back.
+    SetLanguages {
+        languages: Vec<LanguageTag>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1426,6 +1430,10 @@ fn apply_one(defs: &mut DefinitionSet, change: &ModelChange) -> Result<(), Apply
         | ModelChange::UpsertMergeProfile { .. }
         | ModelChange::UpsertWorkspaceTemplate { .. }
         | ModelChange::SetOwnershipRules { .. } => Ok(()),
+        ModelChange::SetLanguages { languages } => {
+            crate::edit::set_languages(defs, languages.clone());
+            Ok(())
+        }
         ModelChange::SetStructures {
             type_key,
             structures,
