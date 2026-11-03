@@ -12,6 +12,7 @@ export const MODEL_WORKSPACE_VIEW_SPECS = [
   { type: 'units', title: 'Units', state: {} },
   { type: 'data_model', title: 'Type attributes', state: { mode: 'classes' } },
   { type: 'attribute_definitions', title: 'Attribute definitions', state: {} },
+  { type: 'graph', title: 'Data model graph', state: { source: 'data_model' } },
 ] as const
 
 /** Built-in view types the shell can render. Anything else is an unknown placeholder. */
@@ -57,7 +58,7 @@ export function modelWorkspaceLayout(ids: string[]): Node {
       // Type attributes first so it stays the active center tab after a legacy reset
       // (same order as the seed: Attributes @0, Attribute definitions @1).
       tabGroup([ids[6] ?? '', ids[7] ?? ''].filter(Boolean)),
-      tabGroup([ids[4] ?? ''].filter(Boolean)),
+      tabGroup([ids[4] ?? '', ids[8] ?? ''].filter(Boolean)),
     ),
   )
 }
@@ -82,6 +83,10 @@ function isTypeAttributesView(view: SavedView) {
   const mode = modeOf(view)
   if (mode === 'classes' || mode === 'attributes') return true
   return titleOf(view) === 'attributes' || titleOf(view) === 'type attributes'
+}
+
+function isModelGraphView(view: SavedView) {
+  return view.type === 'graph' && String(view.state?.source ?? '') === 'data_model'
 }
 
 export function needsLegacyModelMigration(
@@ -130,9 +135,25 @@ export function hasFullModelTemplate(views: SavedView[]): boolean {
       if (!views.some(isTypeAttributesView)) return false
       continue
     }
+    if (spec.type === 'graph') {
+      if (!views.some(isModelGraphView)) return false
+      continue
+    }
     if (!views.some((view) => view.type === spec.type)) return false
   }
   return true
+}
+
+/** True when every standard model view exists except the Data model graph. */
+function onlyModelGraphMissing(views: SavedView[]) {
+  if (views.some(isModelGraphView)) return false
+  const probe: SavedView = {
+    id: '__data_model_graph_probe__',
+    type: 'graph',
+    title: 'Data model graph',
+    state: { source: 'data_model' },
+  }
+  return hasFullModelTemplate([...views, probe])
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -159,6 +180,17 @@ export function layoutHasMissingViews(layout: Node | undefined, views: SavedView
 
 function viewsFromLayout(layout: Node): string[] {
   return layoutViews(layout)
+}
+
+/** Add a tab to the last pane without touching the rest of the user's layout. */
+function appendTab(layout: Node, view: string): Node {
+  if (layout.type === 'tabs') return { ...layout, views: [...layout.views, view] }
+  if (layout.children.length === 0) return tabGroup([view])
+  const last = layout.children.length - 1
+  return {
+    ...layout,
+    children: layout.children.map((child, index) => (index === last ? appendTab(child, view) : child)),
+  }
 }
 
 type ModelMigration = Pick<WorkspaceMigration, 'changed' | 'views' | 'create' | 'layout'>
@@ -288,10 +320,30 @@ export function healDataModelWorkspace(
   const baseLayout = layout ?? tabGroup([])
   const pruned = pruneMissingViewIds(baseLayout, existingIds)
   const incomplete = isDataModelWorkspace(workspace, views) && !hasFullModelTemplate(views)
+  const onlyGraphMissing = incomplete && onlyModelGraphMissing(views)
 
-  if (incomplete || needsLegacyModelMigration(workspace, views)) {
+  if (needsLegacyModelMigration(workspace, views) || (incomplete && !onlyGraphMissing)) {
     const rebuilt = buildModelTemplateMigration(views, options)
     return { ...rebuilt, removed: pruned.removed }
+  }
+
+  if (onlyGraphMissing) {
+    const newId = options?.newId ?? (() => crypto.randomUUID())
+    const id = newId()
+    return {
+      changed: true,
+      views: [],
+      create: [{
+        id,
+        type: 'graph',
+        title: 'Data model graph',
+        state: { source: 'data_model' },
+        pane: 'main',
+        position: views.length,
+      }],
+      layout: appendTab(pruned.layout, id),
+      removed: pruned.removed,
+    }
   }
 
   if (pruned.removed.length === 0) {

@@ -52,7 +52,7 @@ import {
   type SheetMode,
 } from './graph-chrome'
 import { buildModelScene, expandModelType, mergeModelScene } from './graph-model-scene'
-import { setModelFocus } from './model-stage'
+import { chooseModelSelection } from './model-selection'
 import { openObjectLabel } from './type-labels'
 import { copy, uiLanguage } from './i18n'
 import { linkChoices } from './link-section'
@@ -207,7 +207,7 @@ export function GraphMap({
     setSheet((mode) => (mode === 'dismissed' || mode === 'chip' ? 'compact' : mode))
     if (!modelMode) return
     const node = scene.nodes.find((item) => item.id === id)
-    if (node?.kind === 'type' && node.typeKey) setModelFocus({ kind: 'type', key: node.typeKey })
+    if (node?.kind === 'type' && node.typeKey) chooseModelSelection({ kind: 'type', typeKey: node.typeKey })
   }
   pinRef.current = setPinTick
 
@@ -1051,6 +1051,7 @@ export function GraphMap({
             key={node.id}
             type="button"
             data-node-id={node.id}
+            data-subtitle={node.subtitle}
             data-x={markers[node.id] ? String(markers[node.id].x) : undefined}
             data-y={markers[node.id] ? String(markers[node.id].y) : undefined}
             onClick={() => selectRef.current(node.id)}
@@ -1101,6 +1102,11 @@ export function GraphMap({
           >
             {node.caption}
           </button>
+        ))}
+      </div>
+      <div className="graph-a11y" data-testid="graph-edges">
+        {placed.edges.map((edge) => (
+          <span key={edge.id} data-edge-id={edge.id}>{edge.label}</span>
         ))}
       </div>
       <div className="graph-a11y" data-testid="attribute-provenance">
