@@ -20,7 +20,7 @@ function overlap(
 test('New selection dialog opens with aligned fields and keyboard focus', async ({ page }) => {
   test.setTimeout(120_000)
   await login(page)
-  await page.getByRole('button', { name: 'Products' }).click()
+  await page.locator('nav.tabs').getByRole('button', { name: 'Products' }).click()
   await page.keyboard.press('Control+K')
   const palette = page.getByTestId('command-palette')
   await expect(palette).toBeVisible()
