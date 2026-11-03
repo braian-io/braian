@@ -62,7 +62,7 @@ import {
   type UiColumn,
 } from './ui-context'
 import { runCommand } from './command-registry'
-import { newVersionGateOpen } from './new-version-gate'
+import { registryPaletteCommandIds, registryPaletteRows } from './palette-registry-rows'
 import { FieldsMode, type FieldsPaletteOpen } from './fields/fields-mode'
 import { readFieldsHost, subscribeFieldsHost } from './fields-host'
 import { makeViewColumn, parseColumnId } from './fields/columns'
@@ -955,23 +955,10 @@ export function CommandPalette({
       onClose()
       return
     }
-    if (id === 'theme:toggle') {
-      void runCommand('theme:toggle')
-      onClose()
+    if (registryPaletteCommandIds.has(id)) {
+      void runCommand(id)
+      if (id !== 'agent:open') onClose()
       return
-    }
-    if (id === 'agent:open') {
-      void runCommand('agent:open')
-      return
-    }
-    if (id === 'session:sign-out') {
-      void runCommand('session:sign-out')
-      onClose()
-      return
-    }
-    if (id === 'session:reload-new-version') {
-      void runCommand('session:reload-new-version')
-      onClose()
     }
   }
 
@@ -1390,38 +1377,7 @@ function buildCatalog(
     { id: 'model:rename-key', group: 'model', title: copy.renameKey, subtitle: 'Change a key. External integrations that use the old key will stop working', keywords: ['rename', 'key', 'attribute'] },
     { id: 'object:move-group', group: 'object', title: copy.moveToGroup, subtitle: 'Place the open object in a group', keywords: ['move', 'group', 'place'] },
     { id: 'model:allowed-trees', group: 'model', title: copy.allowedTrees, subtitle: 'Choose the trees a type may use', keywords: ['tree', 'structure', 'type'] },
-    {
-      id: 'theme:toggle',
-      group: 'views',
-      title: theme === 'dark' ? copy.lightMode : copy.darkMode,
-      subtitle: 'Toggle theme',
-      keywords: ['theme', 'toggle', 'light', 'dark', 'mode'],
-    },
-    {
-      id: 'agent:open',
-      group: 'views',
-      title: copy.openAgent,
-      subtitle: 'Ask the agent',
-      kbd: chordForCommand('agent:open'),
-      shortcut: chordForCommand('agent:open'),
-      keywords: ['agent', 'ai', 'ask'],
-    },
-    {
-      id: 'session:sign-out',
-      group: 'views',
-      title: copy.signOut,
-      subtitle: 'End this session',
-      keywords: ['logout', 'log out', 'sign out', 'session'],
-    },
-    ...(newVersionGateOpen()
-      ? [{
-          id: 'session:reload-new-version',
-          group: 'views' as const,
-          title: copy.reloadToNewVersion,
-          subtitle: copy.newVersionAvailable,
-          keywords: ['reload', 'refresh', 'new version', 'update', 'deploy'],
-        }]
-      : []),
+    ...registryPaletteRows({ theme, target: { feedbackEnabled } }),
     { id: 'layout:move_view_left', group: 'views', title: 'Move view left', subtitle: 'Move the focused view left', kbd: chordForCommand('layout:move_view_left'), shortcut: chordForCommand('layout:move_view_left') },
     { id: 'layout:move_view_right', group: 'views', title: 'Move view right', subtitle: 'Move the focused view right', kbd: chordForCommand('layout:move_view_right'), shortcut: chordForCommand('layout:move_view_right') },
     { id: 'layout:move_view_up', group: 'views', title: 'Move view up', subtitle: 'Move the focused view up', kbd: chordForCommand('layout:move_view_up'), shortcut: chordForCommand('layout:move_view_up') },
