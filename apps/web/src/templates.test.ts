@@ -81,7 +81,7 @@ describe('typeWorkspaceTemplate peer table', () => {
 })
 
 describe('model template', () => {
-  it('lists the Data model graph after the model tables', () => {
+  it('lists the Model graph after the model tables', () => {
     const model = workspaceTemplates([]).find((item) => item.id === 'model')!
     expect(model.views.map((view) => ({ type: view.type, title: view.title }))).toEqual([
       { type: 'data_model', title: 'Structures' },
@@ -92,7 +92,7 @@ describe('model template', () => {
       { type: 'units', title: 'Units' },
       { type: 'data_model', title: 'Type attributes' },
       { type: 'attribute_definitions', title: 'Attribute definitions' },
-      { type: 'graph', title: 'Data model graph' },
+      { type: 'graph', title: 'Model graph' },
     ])
   })
 })

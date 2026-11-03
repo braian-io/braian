@@ -163,7 +163,7 @@ function cardinalityMark(value: string | undefined) {
   return value === 'one' ? '1' : 'n'
 }
 
-test('data model graph tab shows types, counts and link labels', async ({ page }) => {
+test('model graph tab shows types, counts and link labels', async ({ page }) => {
   test.setTimeout(120_000)
   await login(page)
 
@@ -196,7 +196,7 @@ test('data model graph tab shows types, counts and link labels', async ({ page }
   const expectedEdge = `${modelLabel(link)} ${cardinalityMark(link?.link?.from_cardinality)}–${cardinalityMark(link?.link?.to_cardinality)}`
 
   await page.locator('nav.tabs').getByRole('button', { name: /^Data model/ }).click()
-  const graphTab = page.locator('.pane-tab', { hasText: 'Data model graph' }).first()
+  const graphTab = page.locator('.pane-tab', { hasText: 'Model graph' }).first()
   await expect(graphTab).toBeVisible({ timeout: 60_000 })
   await graphTab.click()
   const canvas = page.locator('canvas[data-testid=graph]')

@@ -12,7 +12,7 @@ export const MODEL_WORKSPACE_VIEW_SPECS = [
   { type: 'units', title: 'Units', state: {} },
   { type: 'data_model', title: 'Type attributes', state: { mode: 'classes' } },
   { type: 'attribute_definitions', title: 'Attribute definitions', state: {} },
-  { type: 'graph', title: 'Data model graph', state: { source: 'data_model' } },
+  { type: 'graph', title: 'Model graph', state: { source: 'data_model' } },
 ] as const
 
 /** Built-in view types the shell can render. Anything else is an unknown placeholder. */
@@ -144,13 +144,13 @@ export function hasFullModelTemplate(views: SavedView[]): boolean {
   return true
 }
 
-/** True when every standard model view exists except the Data model graph. */
+/** True when every standard model view exists except the Model graph. */
 function onlyModelGraphMissing(views: SavedView[]) {
   if (views.some(isModelGraphView)) return false
   const probe: SavedView = {
     id: '__data_model_graph_probe__',
     type: 'graph',
-    title: 'Data model graph',
+    title: 'Model graph',
     state: { source: 'data_model' },
   }
   return hasFullModelTemplate([...views, probe])
@@ -336,7 +336,7 @@ export function healDataModelWorkspace(
       create: [{
         id,
         type: 'graph',
-        title: 'Data model graph',
+        title: 'Model graph',
         state: { source: 'data_model' },
         pane: 'main',
         position: views.length,

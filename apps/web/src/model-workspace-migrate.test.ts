@@ -122,7 +122,7 @@ describe('dangling Data model layout heal', () => {
     expect(JSON.stringify(patch.layout)).not.toContain(ghostA)
   })
 
-  it('appends only the Data model graph tab and keeps the existing layout', () => {
+  it('appends only the Model graph tab and keeps the existing layout', () => {
     const views = MODEL_WORKSPACE_VIEW_SPECS
       .filter((spec) => spec.type !== 'graph')
       .map((spec, index) => ({
@@ -147,7 +147,7 @@ describe('dangling Data model layout heal', () => {
     expect(patch.create).toEqual([{
       id: 'new-1',
       type: 'graph',
-      title: 'Data model graph',
+      title: 'Model graph',
       state: { source: 'data_model' },
       pane: 'main',
       position: views.length,
@@ -162,7 +162,7 @@ describe('dangling Data model layout heal', () => {
     expect(next[1]?.active).toBe(0)
   })
 
-  it('does not duplicate the Data model graph tab when heal runs again', () => {
+  it('does not duplicate the Model graph tab when heal runs again', () => {
     const base = MODEL_WORKSPACE_VIEW_SPECS
       .filter((spec) => spec.type !== 'graph')
       .map((spec, index) => ({
