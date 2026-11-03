@@ -51,6 +51,8 @@ import {
   type GraphDensity,
   type SheetMode,
 } from './graph-chrome'
+import { buildModelScene, expandModelType, mergeModelScene } from './graph-model-scene'
+import { setModelFocus } from './model-stage'
 import { openObjectLabel } from './type-labels'
 import { copy, uiLanguage } from './i18n'
 import { linkChoices } from './link-section'
@@ -60,6 +62,7 @@ import type { RegistryCommand } from './command-registry'
 type SimNode = SimulationNodeDatum & SceneNode & { degree: number }
 type SimLink = SimulationLinkDatum<SimNode> & { id: string; label: string }
 type Marker = { x: number; y: number }
+const NO_GRAPH: Json = {}
 type Palette = {
   fill: Record<NodeKind, string>
   text: string
@@ -75,14 +78,20 @@ export function GraphMap({
   values,
   defs,
   onOpen,
+  model: modelInput,
 }: {
-  data: Json
+  data?: Json
   values?: Json
   defs?: Json
-  onOpen: (id: string) => void
+  onOpen?: (id: string) => void
+  model?: { defs?: Json; stats?: Json }
 }) {
-  const focusId = String(data.id ?? '')
-  const focusKey = `object:${focusId}`
+  const modelMode = modelInput !== undefined
+  const graph = data ?? NO_GRAPH
+  const activeDefs = modelMode ? modelInput?.defs : defs
+  const openObject = onOpen ?? (() => {})
+  const focusId = modelMode ? 'data-model' : String(graph.id ?? '')
+  const focusKey = modelMode ? '' : `object:${focusId}`
   const [seen, setSeen] = useState(focusId)
   const [extras, setExtras] = useState<Scene[]>([])
   const [known, setKnown] = useState<Record<string, KnownObject>>({})
@@ -96,8 +105,8 @@ export function GraphMap({
   const [pane, setPane] = useState<{ width: number; height: number } | null>(null)
   const expandedRef = useRef(new Set<string>([focusKey]))
   const inflightRef = useRef(new Set<string>())
-  const defsRef = useRef(defs)
-  defsRef.current = defs
+  const defsRef = useRef(activeDefs)
+  defsRef.current = activeDefs
 
   if (seen !== focusId) {
     setSeen(focusId)
@@ -111,10 +120,14 @@ export function GraphMap({
   }
 
   const model = useMemo(() => {
-    let merged = buildScene({ graph: data, values, defs, known })
-    for (const extra of extras) merged = mergeScene(merged, extra)
+    let merged = modelMode
+      ? buildModelScene(activeDefs, modelInput?.stats)
+      : buildScene({ graph: graph, values, defs, known })
+    for (const extra of extras) {
+      merged = modelMode ? mergeModelScene(merged, extra) : mergeScene(merged, extra)
+    }
     return capScene(merged)
-  }, [data, values, defs, known, extras])
+  }, [modelMode, graph, values, activeDefs, known, extras, modelInput?.stats])
   const scene = model.scene
   const placed = useMemo(() => {
     const nodes = scene.nodes.filter((node) => !(node.kind === 'object' && node.rawCaption))
@@ -126,13 +139,15 @@ export function GraphMap({
   }, [scene])
   const pendingNames = useMemo(
     () =>
-      scene.nodes
-        .filter((node) => node.kind === 'object' && node.rawCaption && node.objectId)
-        .map((node) => node.objectId ?? '')
-        .filter(Boolean)
-        .sort()
-        .join(','),
-    [scene],
+      modelMode
+        ? ''
+        : scene.nodes
+            .filter((node) => node.kind === 'object' && node.rawCaption && node.objectId)
+            .map((node) => node.objectId ?? '')
+            .filter(Boolean)
+            .sort()
+            .join(','),
+    [modelMode, scene],
   )
   const knownRef = useRef(known)
   knownRef.current = known
@@ -190,12 +205,26 @@ export function GraphMap({
   selectRef.current = (id: string) => {
     setSelected(id)
     setSheet((mode) => (mode === 'dismissed' || mode === 'chip' ? 'compact' : mode))
+    if (!modelMode) return
+    const node = scene.nodes.find((item) => item.id === id)
+    if (node?.kind === 'type' && node.typeKey) setModelFocus({ kind: 'type', key: node.typeKey })
   }
   pinRef.current = setPinTick
 
   const expand = async (node: SceneNode) => {
     if (!node || expandedRef.current.has(node.id) || inflightRef.current.has(node.id)) return
     if (node.kind === 'value') {
+      expandedRef.current.add(node.id)
+      return
+    }
+    if (modelMode && node.kind === 'type' && node.typeKey) {
+      expandedRef.current.add(node.id)
+      const extra = expandModelType(defsRef.current, node.typeKey)
+      fitAfterRef.current = true
+      if (extra.nodes.length || extra.edges.length) setExtras((current) => [...current, extra])
+      return
+    }
+    if (modelMode && node.kind === 'group') {
       expandedRef.current.add(node.id)
       return
     }
@@ -310,6 +339,7 @@ export function GraphMap({
       paletteRef.current = {
         fill: {
           object: swatch('object'),
+          type: swatch('type'),
           class: swatch('class'),
           group: swatch('group'),
           value: swatch('value'),
@@ -416,7 +446,7 @@ export function GraphMap({
           }
         }
       }
-      const showEdgeLabels = degree > 0 && degree <= 5
+      const showEdgeLabels = modelMode || (degree > 0 && degree <= 5)
 
       context.setTransform(dpr, 0, 0, dpr, 0, 0)
       context.clearRect(0, 0, width, height)
@@ -452,8 +482,8 @@ export function GraphMap({
         context.stroke()
         const tangent = curveTangent(from, control, to, tip.t)
         arrow(context, tip.point.x, tip.point.y, Math.atan2(tangent.y, tangent.x))
-        const showLabel = showEdgeLabels && captionIds.has(source.id) && captionIds.has(target.id)
-        if (showLabel && transform.k >= 0.55) {
+        const showLabel = modelMode || (showEdgeLabels && captionIds.has(source.id) && captionIds.has(target.id))
+        if (showLabel && (modelMode || transform.k >= 0.55)) {
           const mid = curvePoint(from, control, to, 0.68)
           context.font = '11px "Inter Variable", Inter, sans-serif'
           const widthText = context.measureText(link.label).width
@@ -671,13 +701,13 @@ export function GraphMap({
     const onPointerUp = (event: PointerEvent) => {
       if (mode === 'node' && dragNode) {
         const travel = Math.hypot(event.offsetX - startX, event.offsetY - startY)
-        if (!dragged || travel <= 3) {
+        if (modelMode || !dragged || travel <= 3) {
           dragNode.fx = null
           dragNode.fy = null
         }
         selectRef.current(dragNode.id)
         sim.alphaTarget(0)
-        pinRef.current((tick) => tick + 1)
+        if (!modelMode) pinRef.current((tick) => tick + 1)
         draw(true)
       }
       mode = 'none'
@@ -909,7 +939,7 @@ export function GraphMap({
     }
     if (event.key === 'Enter' && selectedNode) {
       event.preventDefault()
-      if (selectedNode.objectId && expandedRef.current.has(selectedNode.id)) onOpen(selectedNode.objectId)
+      if (selectedNode.objectId && expandedRef.current.has(selectedNode.id)) openObject(selectedNode.objectId)
       else void expand(selectedNode)
       return
     }
@@ -1005,7 +1035,8 @@ export function GraphMap({
             busy={busy === selectedNode?.id}
             maxHeightPx={chrome.maxHeightPx}
             inspectorRef={inspectorRef}
-            onOpen={onOpen}
+            onOpen={openObject}
+            readOnly={modelMode}
             onDismiss={() => setSheet('dismissed')}
             onCollapse={() => setSheet('chip')}
             onReveal={() => setSheet('compact')}
@@ -1095,6 +1126,7 @@ function GraphInspector({
   maxHeightPx,
   inspectorRef,
   onOpen,
+  readOnly,
   onDismiss,
   onCollapse,
   onReveal,
@@ -1109,6 +1141,7 @@ function GraphInspector({
   maxHeightPx: number
   inspectorRef: RefObject<HTMLElement | null>
   onOpen: (id: string) => void
+  readOnly?: boolean
   onDismiss: () => void
   onCollapse: () => void
   onReveal: () => void
@@ -1249,7 +1282,7 @@ function GraphInspector({
           {openObjectLabel(node.typeName)}
         </button>
       ) : null}
-      {pinned ? (
+      {pinned && !readOnly ? (
         <button type="button" className="graph-action" data-testid="graph-unpin" onClick={onUnpin}>
           <PinOff size={14} aria-hidden="true" />
           {copy.unpin}
@@ -1280,7 +1313,7 @@ function measureChromeBoxes(canvas: HTMLCanvasElement, elements: Array<HTMLEleme
 }
 
 function seed(kind: NodeKind, index: number, total: number) {
-  const ring = kind === 'object' ? 1 : kind === 'value' ? 2.1 : kind === 'class' ? 3 : kind === 'group' ? 3.6 : 4.2
+  const ring = kind === 'object' || kind === 'type' ? 1 : kind === 'value' ? 2.1 : kind === 'class' ? 3 : kind === 'group' ? 3.6 : 4.2
   const angle = (index / Math.max(1, total)) * Math.PI * 2 + ring
   const radius = ring * 72
   return { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius }

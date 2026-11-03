@@ -2692,18 +2692,29 @@ function ObjectRefField({ value, onChange }: { value: unknown; onChange: (value:
   )
 }
 
-export function GraphView({ session }: { session: PanesSession }) {
+export function GraphView({ session, view }: { session: PanesSession; view?: PanesView }) {
+  const modelSource = String(view?.state?.source ?? '') === 'data_model'
   const defs = useQuery({ queryKey: ['definitions'], queryFn: () => api.get('/v1/definitions') })
+  const stats = useQuery({
+    queryKey: ['stats'],
+    queryFn: () => api.get('/v1/stats'),
+    enabled: modelSource,
+  })
   const graph = useQuery({
     queryKey: ['graph', session.objectId],
     queryFn: () => api.get('/v1/objects/{id}/graph', { params: { path: { id: session.objectId ?? '' } } }),
-    enabled: Boolean(session.objectId),
+    enabled: Boolean(session.objectId) && !modelSource,
   })
   const object = useQuery({
     queryKey: ['object', session.objectId],
     queryFn: () => api.get('/v1/objects/{id}', { params: { path: { id: session.objectId ?? '' } } }),
-    enabled: Boolean(session.objectId),
+    enabled: Boolean(session.objectId) && !modelSource,
   })
+  if (modelSource) {
+    if (defs.isError || stats.isError) return <StateNote tone="error" title={copy.graphError} testId="graph" />
+    if (!defs.data || !stats.data) return <StateNote tone="loading" title={copy.graphLoading} testId="graph" />
+    return <GraphMap key="data-model" model={{ defs: defs.data, stats: stats.data }} />
+  }
   if (!session.objectId) return <StateNote tone="empty" title={emptyGraph(typeNames(defs.data, uiLanguage), session.listType)} testId="graph" />
   if (graph.isError || object.isError) return <StateNote tone="error" title={copy.graphError} testId="graph" />
   if (!graph.data || !object.data) return <StateNote tone="loading" title={copy.graphLoading} testId="graph" />

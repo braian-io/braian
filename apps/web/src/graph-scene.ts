@@ -3,12 +3,13 @@ import { formatTimestamp } from './format'
 import { optionLabel, typeLabel } from './chips'
 import { copy, uiLanguage } from './i18n'
 
-/** Five node kinds. Colours come from DESIGN.md tokens in the canvas, not from here. */
-export const NODE_KINDS = ['object', 'class', 'group', 'value', 'structure'] as const
+/** Node kinds. Colours come from DESIGN.md tokens in the canvas, not from here. */
+export const NODE_KINDS = ['object', 'type', 'class', 'group', 'value', 'structure'] as const
 export type NodeKind = (typeof NODE_KINDS)[number]
 
 export const NODE_RADIUS: Record<NodeKind, number> = {
   object: 22,
+  type: 24,
   class: 16,
   group: 18,
   value: 15,
@@ -42,7 +43,7 @@ export function nodeMark(caption: string) {
 
 export function labelPriority(kind: NodeKind, active: boolean) {
   if (active) return 5
-  if (kind === 'object') return 3
+  if (kind === 'object' || kind === 'type') return 3
   if (kind === 'structure' || kind === 'group') return 2
   if (kind === 'class') return 1
   return 0
@@ -162,7 +163,7 @@ export function legendEntries(nodes: Array<{ kind: NodeKind; typeKey?: string; t
   if (untyped || (entries.length === 0 && nodes.some((node) => node.kind === 'object'))) {
     entries.push({ id: 'object', kind: 'object', label: copy.nodeObject })
   }
-  for (const kind of ['class', 'group', 'value', 'structure'] as const) {
+  for (const kind of ['type', 'class', 'group', 'value', 'structure'] as const) {
     if (nodes.some((node) => node.kind === kind)) entries.push({ id: kind, kind, label: kindLabel(kind) })
   }
   return entries
@@ -170,6 +171,7 @@ export function legendEntries(nodes: Array<{ kind: NodeKind; typeKey?: string; t
 
 export function kindLabel(kind: NodeKind) {
   if (kind === 'object') return copy.nodeObject
+  if (kind === 'type') return copy.nodeType
   if (kind === 'class') return copy.nodeClass
   if (kind === 'group') return copy.nodeGroup
   if (kind === 'value') return copy.nodeValue

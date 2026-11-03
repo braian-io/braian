@@ -322,6 +322,7 @@ export const copy = {
   unpin: 'Unpin',
   graphProperties: 'Properties',
   nodeObject: 'Object',
+  nodeType: 'Object type',
   nodeClass: 'Group',
   nodeGroup: 'Group',
   nodeValue: 'Value',
