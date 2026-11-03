@@ -152,6 +152,7 @@ Measured figures, with hardware, data size, and the command that produced them, 
 ## Documentation
 
 - [docs/dev.md](docs/dev.md) — local setup, ports, commands
+- [docs/config.md](docs/config.md) — config as code: documents, export, plan, apply
 - [docs/events.md](docs/events.md) — change log, lanes, claims, wakeups
 - [docs/status.md](docs/status.md) — what works in the current cut
 - [docs/plan.md](docs/plan.md) — phase plan for the core
