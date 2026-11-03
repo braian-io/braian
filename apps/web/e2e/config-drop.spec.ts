@@ -17,6 +17,14 @@ async function exportYaml(page: Page) {
   return exported.text()
 }
 
+/** Catalogs, merge profiles and ownership export but cannot be applied yet. */
+function applyableOnly(yaml: string) {
+  return yaml
+    .split(/\n---\n/)
+    .filter((document) => /^kind: (Model|ValueList|UnitFamily)$/m.test(document))
+    .join('\n---\n')
+}
+
 /** Change the first attribute label so the plan has one Model update. */
 function changeAttributeLabel(yaml: string) {
   const lines = yaml.split('\n')
@@ -41,7 +49,7 @@ async function dropFile(page: Page, name: string, content: string) {
 
 test('a config drop plans, creates a proposal and opens Review', async ({ page }) => {
   await login(page)
-  const yaml = await exportYaml(page)
+  const yaml = applyableOnly(await exportYaml(page))
   const changed = changeAttributeLabel(yaml)
   expect(changed).not.toBe(yaml)
 

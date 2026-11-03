@@ -11,6 +11,15 @@
     },
     {
       "$ref": "#/$defs/UnitFamilyDocument"
+    },
+    {
+      "$ref": "#/$defs/CatalogDocument"
+    },
+    {
+      "$ref": "#/$defs/MergeProfileDocument"
+    },
+    {
+      "$ref": "#/$defs/OwnershipDocument"
     }
   ],
   "$defs": {
@@ -242,6 +251,69 @@
         "many"
       ]
     },
+    "CatalogDocument": {
+      "description": "One catalog record, referenced elsewhere by key.",
+      "type": "object",
+      "properties": {
+        "apiVersion": {
+          "$ref": "#/$defs/ApiVersion"
+        },
+        "catalogKind": {
+          "description": "Whether this catalog is the master or a source. `kind` is the document\nheader, so the domain field uses another name.",
+          "$ref": "#/$defs/CatalogSourceKind"
+        },
+        "editable": {
+          "type": "boolean"
+        },
+        "key": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/CatalogKind"
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConfigMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "renamedFrom": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "apiVersion",
+        "kind",
+        "key",
+        "name",
+        "catalogKind",
+        "editable"
+      ]
+    },
+    "CatalogKind": {
+      "type": "string",
+      "enum": [
+        "Catalog"
+      ]
+    },
+    "CatalogSourceKind": {
+      "type": "string",
+      "enum": [
+        "master",
+        "source"
+      ]
+    },
     "ClassConfig": {
       "type": "object",
       "properties": {
@@ -409,6 +481,72 @@
         "toCardinality"
       ]
     },
+    "MergeModeConfig": {
+      "type": "string",
+      "enum": [
+        "manual",
+        "continuous"
+      ]
+    },
+    "MergeProfileDocument": {
+      "description": "One merge profile. `source_catalog` names a catalog document by key and\n`spec` is the stored profile specification unchanged.",
+      "type": "object",
+      "properties": {
+        "apiVersion": {
+          "$ref": "#/$defs/ApiVersion"
+        },
+        "key": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/MergeProfileKind"
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConfigMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "renamedFrom": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "runMode": {
+          "description": "`mode` is the document mode, so the profile mode uses another name.",
+          "$ref": "#/$defs/MergeModeConfig"
+        },
+        "sourceCatalog": {
+          "description": "Key of the source catalog this profile reads.",
+          "type": "string"
+        },
+        "spec": true
+      },
+      "additionalProperties": false,
+      "required": [
+        "apiVersion",
+        "kind",
+        "key",
+        "name",
+        "sourceCatalog",
+        "spec",
+        "runMode"
+      ]
+    },
+    "MergeProfileKind": {
+      "type": "string",
+      "enum": [
+        "MergeProfile"
+      ]
+    },
     "ModelDocument": {
       "description": "The model: languages, attributes, object types (including link types) and\nstructures.",
       "type": "object",
@@ -487,6 +625,72 @@
       "additionalProperties": false,
       "required": [
         "code"
+      ]
+    },
+    "OwnershipDocument": {
+      "description": "The ownership rule set. There is one set, so this document has no key.",
+      "type": "object",
+      "properties": {
+        "apiVersion": {
+          "$ref": "#/$defs/ApiVersion"
+        },
+        "kind": {
+          "$ref": "#/$defs/OwnershipKind"
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConfigMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rules": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/OwnershipRuleConfig"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "apiVersion",
+        "kind"
+      ]
+    },
+    "OwnershipKind": {
+      "type": "string",
+      "enum": [
+        "Ownership"
+      ]
+    },
+    "OwnershipRuleConfig": {
+      "description": "Which profiles own one master attribute and language. References use keys.",
+      "type": "object",
+      "properties": {
+        "attribute": {
+          "type": "string"
+        },
+        "language": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "profiles": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "attribute"
       ]
     },
     "StructureConfig": {

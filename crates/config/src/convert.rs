@@ -10,9 +10,10 @@ use braian_model::{
 
 use crate::{
     ApiVersion, AttributeConfig, AttributeKindConfig, CardinalityConfig, ClassConfig,
-    ConfigDocument, GroupConfig, IndexFlagsConfig, LinkLabelConfig, LinkSpecConfig, ModelDocument,
-    ModelKind, OptionConfig, StructureConfig, TextFormConfig, TypeConfig, TypeKindConfig,
-    UnitConfig, UnitFamilyDocument, UnitFamilyKind, ValueListDocument, ValueListKind,
+    ConfigDocument, ConfigExtras, GroupConfig, IndexFlagsConfig, LinkLabelConfig, LinkSpecConfig,
+    ModelDocument, ModelKind, OptionConfig, StructureConfig, TextFormConfig, TypeConfig,
+    TypeKindConfig, UnitConfig, UnitFamilyDocument, UnitFamilyKind, ValueListDocument,
+    ValueListKind,
 };
 
 /// An exported document could not be built because a reference had no key.
@@ -41,6 +42,15 @@ type Keys<K> = BTreeMap<K, String>;
 
 /// The model document first, then one document per value list and unit family.
 pub fn export_documents(defs: &DefinitionSet) -> Result<Vec<ConfigDocument>, ConfigError> {
+    export_documents_with(defs, &ConfigExtras::default())
+}
+
+/// Like [`export_documents`], with catalogs, merge profiles and ownership rules
+/// appended in a deterministic order.
+pub fn export_documents_with(
+    defs: &DefinitionSet,
+    extras: &ConfigExtras,
+) -> Result<Vec<ConfigDocument>, ConfigError> {
     let attributes: Keys<_> = defs
         .attributes
         .iter()
@@ -114,6 +124,15 @@ pub fn export_documents(defs: &DefinitionSet) -> Result<Vec<ConfigDocument>, Con
     }
     for family in &defs.unit_families {
         documents.push(ConfigDocument::UnitFamily(unit_family(family)));
+    }
+    let mut catalogs = extras.catalogs.clone();
+    catalogs.sort_by(|left, right| left.key.cmp(&right.key));
+    documents.extend(catalogs.into_iter().map(ConfigDocument::Catalog));
+    let mut merge_profiles = extras.merge_profiles.clone();
+    merge_profiles.sort_by(|left, right| left.key.cmp(&right.key));
+    documents.extend(merge_profiles.into_iter().map(ConfigDocument::MergeProfile));
+    if let Some(ownership) = &extras.ownership {
+        documents.push(ConfigDocument::Ownership(ownership.clone()));
     }
     Ok(documents)
 }

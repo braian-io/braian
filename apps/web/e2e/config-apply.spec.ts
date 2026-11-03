@@ -31,7 +31,10 @@ test('config apply waits for approve before the model changes', async ({ page })
     index: { searchable: false, filterable: false, sortable: false },
   })
 
-  const applied = await page.request.post('/v1/config/apply', { data: documents })
+  const applyable = documents.filter((document) =>
+    ['Model', 'ValueList', 'UnitFamily'].includes(document.kind ?? ''),
+  )
+  const applied = await page.request.post('/v1/config/apply', { data: applyable })
   expect(applied.status()).toBe(202)
   const proposal = (await applied.json()) as { proposal_id?: string; groups?: unknown }
   expect(proposal.proposal_id).toBeTruthy()

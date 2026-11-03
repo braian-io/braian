@@ -104,7 +104,57 @@ async fn exported(app: &axum::Router) -> Vec<Value> {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    serde_json::from_slice(&body).unwrap()
+    let documents: Vec<Value> = serde_json::from_slice(&body).unwrap();
+    // The new kinds export but cannot be applied yet, so apply tests use the
+    // model documents they exercise.
+    documents
+        .into_iter()
+        .filter(|document| {
+            !matches!(
+                document["kind"].as_str(),
+                Some("Catalog" | "MergeProfile" | "Ownership")
+            )
+        })
+        .collect()
+}
+
+async fn seed_extras(db: &TestDb) {
+    let sap = db
+        .store()
+        .create_catalog(
+            braian_store::CatalogId::new(),
+            "sap",
+            "SAP ERP",
+            braian_store::CatalogKind::Source,
+            true,
+        )
+        .await
+        .unwrap();
+    db.store()
+        .put_merge_profile(
+            uuid::Uuid::now_v7(),
+            "sap-brand",
+            "SAP brand",
+            sap.id,
+            &json!({
+                "match_attributes": ["number"],
+                "master_key": "number",
+                "attributes": [{ "source": "brand", "target": "brand" }],
+                "on_no_match": "create",
+                "on_delete": "ignore",
+                "owns_existence_for": ["product"]
+            }),
+            "manual",
+        )
+        .await
+        .unwrap();
+    db.store()
+        .put_ownership_rules(&json!([{
+            "attribute": "brand",
+            "profiles": ["sap-brand"]
+        }]))
+        .await
+        .unwrap();
 }
 
 fn model(documents: &mut [Value]) -> &mut Value {
@@ -349,4 +399,41 @@ async fn apply_without_changes_makes_no_proposal_and_put_definitions_is_gone() {
         status == StatusCode::NOT_FOUND || status == StatusCode::METHOD_NOT_ALLOWED,
         "{status}"
     );
+}
+
+#[tokio::test]
+async fn apply_rejects_catalogs_merge_profiles_and_ownership_with_422() {
+    let (db, app) = app().await;
+    seed_extras(&db).await;
+
+    let (status, _, body) = call(
+        &app,
+        "GET",
+        "/v1/config/export?format=json",
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let documents: Vec<Value> = serde_json::from_slice(&body).unwrap();
+    let before = definitions(&app).await;
+
+    for kind in ["Catalog", "MergeProfile", "Ownership"] {
+        let document = documents
+            .iter()
+            .find(|document| document["kind"] == kind)
+            .expect("exported new kind");
+        let (status, body) = apply(&app, &serde_json::to_string(document).unwrap()).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{kind}: {body}");
+        assert_eq!(body["code"], "invalid_config", "{kind}: {body}");
+        assert!(
+            body["detail"].as_str().is_some_and(
+                |detail| detail.contains(&format!("Kind {kind} cannot be applied yet"))
+            ),
+            "{kind}: {body}"
+        );
+    }
+
+    assert_eq!(definitions(&app).await, before);
 }

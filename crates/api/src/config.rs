@@ -8,9 +8,12 @@ use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use braian_config::{
-    ConfigDocument, ConfigPlan, PlanAffected, PlanKind, apply_documents, export_documents,
-    plan_documents,
+    ApiVersion, CatalogDocument, CatalogKind as CatalogDocumentKind, CatalogSourceKind,
+    ConfigDocument, ConfigExtras, ConfigPlan, MergeModeConfig, MergeProfileDocument,
+    MergeProfileKind, OwnershipDocument, OwnershipKind, OwnershipRuleConfig, PlanAffected,
+    PlanKind, apply_documents, export_documents_with, plan_documents_with,
 };
+use braian_store::CatalogKind as StoreCatalogKind;
 use serde::Deserialize;
 use utoipa::ToSchema;
 
@@ -44,7 +47,8 @@ pub async fn export_config(
     headers: HeaderMap,
 ) -> Result<Response, Problem> {
     let defs = state.store.definition_set().await.map_err(store_status)?;
-    let documents = export_documents(&defs).map_err(internal)?;
+    let extras = config_extras(&state).await?;
+    let documents = export_documents_with(&defs, &extras).map_err(internal)?;
 
     match query.format.as_deref() {
         Some("zip") => zip_documents(&documents),
@@ -107,7 +111,8 @@ pub async fn plan_config(
         ));
     }
     let defs = current_definitions(&state).await?;
-    let mut plan = plan_documents(&defs, &documents).map_err(invalid_config)?;
+    let extras = config_extras(&state).await?;
+    let mut plan = plan_documents_with(&defs, &extras, &documents).map_err(invalid_config)?;
     fill_affected(&state, &mut plan).await?;
     for step in &mut plan.steps {
         step.blocked = step.destructive;
@@ -190,6 +195,73 @@ async fn current_definitions(state: &AppState) -> Result<braian_model::Definitio
         }),
         Err(error) => Err(store_status(error)),
     }
+}
+
+/// Catalogs, merge profiles and ownership rules that live beside the
+/// definition set. References use catalog keys, never ids.
+async fn config_extras(state: &AppState) -> Result<ConfigExtras, Problem> {
+    let catalogs = state.store.catalogs().await.map_err(store_status)?;
+    let mut catalog_keys = std::collections::HashMap::new();
+    let mut catalog_documents = Vec::with_capacity(catalogs.len());
+    for catalog in &catalogs {
+        catalog_keys.insert(catalog.id, catalog.key.clone());
+        catalog_documents.push(CatalogDocument {
+            api_version: ApiVersion::BraianIoV1,
+            kind: CatalogDocumentKind::Catalog,
+            key: catalog.key.clone(),
+            renamed_from: None,
+            mode: None,
+            name: catalog.name.clone(),
+            catalog_kind: match catalog.kind {
+                StoreCatalogKind::Master => CatalogSourceKind::Master,
+                StoreCatalogKind::Source => CatalogSourceKind::Source,
+            },
+            editable: catalog.editable,
+        });
+    }
+
+    let profiles = state.store.merge_profiles().await.map_err(store_status)?;
+    let merge_profiles = profiles
+        .into_iter()
+        .filter_map(|profile| {
+            let source_catalog = catalog_keys.get(&profile.source_catalog_id)?.clone();
+            Some(MergeProfileDocument {
+                api_version: ApiVersion::BraianIoV1,
+                kind: MergeProfileKind::MergeProfile,
+                key: profile.key,
+                renamed_from: None,
+                mode: None,
+                name: profile.name,
+                source_catalog,
+                spec: profile.spec,
+                run_mode: match profile.mode.as_str() {
+                    "continuous" => MergeModeConfig::Continuous,
+                    _ => MergeModeConfig::Manual,
+                },
+            })
+        })
+        .collect();
+
+    let rules = state.store.ownership_rules().await.map_err(store_status)?;
+    let rules: Vec<OwnershipRuleConfig> = serde_json::from_value(rules).map_err(|error| {
+        Problem::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "internal",
+            format!("stored ownership rules are invalid: {error}"),
+        )
+    })?;
+    let ownership = Some(OwnershipDocument {
+        api_version: ApiVersion::BraianIoV1,
+        kind: OwnershipKind::Ownership,
+        mode: None,
+        rules,
+    });
+
+    Ok(ConfigExtras {
+        catalogs: catalog_documents,
+        merge_profiles,
+        ownership,
+    })
 }
 
 async fn fill_affected(state: &AppState, plan: &mut ConfigPlan) -> Result<(), Problem> {
@@ -309,6 +381,13 @@ fn zip_documents(documents: &[ConfigDocument]) -> Result<Response, Problem> {
             ConfigDocument::UnitFamily(family) => {
                 format!("units/{}.yaml", file_stem(&family.key))
             }
+            ConfigDocument::Catalog(catalog) => {
+                format!("catalogs/{}.yaml", file_stem(&catalog.key))
+            }
+            ConfigDocument::MergeProfile(profile) => {
+                format!("merge-profiles/{}.yaml", file_stem(&profile.key))
+            }
+            ConfigDocument::Ownership(_) => "ownership/ownership.yaml".to_owned(),
         };
         writer.start_file(path, options).map_err(internal)?;
         let yaml = serde_norway::to_string(document).map_err(internal)?;
