@@ -578,6 +578,89 @@ async fn apply_without_changes_makes_no_proposal_and_put_definitions_is_gone() {
 }
 
 #[tokio::test]
+async fn apply_adds_a_language() {
+    let (_db, app) = app().await;
+    let mut documents = exported(&app).await;
+    model(&mut documents)["languages"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!("de"));
+
+    let (status, proposed) = apply(&app, &serde_json::to_string(&documents).unwrap()).await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{proposed}");
+    assert_eq!(proposed["groups"]["Model"]["steps"], 1, "{proposed}");
+
+    let proposal_id = proposed["proposal_id"].as_str().unwrap();
+    let (status, _, body) = call(
+        &app,
+        "GET",
+        &format!("/v1/proposals/{proposal_id}"),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let proposal: Value = serde_json::from_slice(&body).unwrap();
+    assert!(
+        proposal["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| row["patch"]["op"] == "set_languages"),
+        "{proposal}"
+    );
+
+    let (status, accepted) = accept(&app, proposal_id).await;
+    assert_eq!(status, StatusCode::OK, "{accepted}");
+    assert!(
+        accepted["failed"].as_array().unwrap().is_empty(),
+        "{accepted}"
+    );
+
+    let after = definitions(&app).await;
+    assert_eq!(after["languages"], json!(["sv", "en-GB", "de"]), "{after}");
+}
+
+#[tokio::test]
+async fn apply_full_removes_a_language_with_allow_destructive() {
+    let (_db, app) = app().await;
+    let mut documents = exported(&app).await;
+    let model = model(&mut documents);
+    model["mode"] = json!("full");
+    model["languages"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|language| language.as_str() != Some("en-GB"));
+
+    let (status, blocked) = apply(&app, &serde_json::to_string(&documents).unwrap()).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{blocked}");
+    let step = blocked["steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|step| {
+            step["action"] == "delete" && step["kind"] == "language" && step["key"] == "en-GB"
+        })
+        .expect("en-GB delete step");
+    assert_eq!(step["blocked"], true, "{blocked}");
+
+    let wrapped = json!({ "documents": documents, "allowDestructive": true });
+    let (status, proposed) = apply(&app, &wrapped.to_string()).await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{proposed}");
+    let proposal_id = proposed["proposal_id"].as_str().unwrap();
+    let (status, accepted) = accept(&app, proposal_id).await;
+    assert_eq!(status, StatusCode::OK, "{accepted}");
+    assert!(
+        accepted["failed"].as_array().unwrap().is_empty(),
+        "{accepted}"
+    );
+
+    let after = definitions(&app).await;
+    assert_eq!(after["languages"], json!(["sv"]), "{after}");
+}
+
+#[tokio::test]
 async fn apply_creates_one_proposal_for_catalogs_merge_profiles_and_ownership() {
     let (_db, app) = app().await;
     let before = definitions(&app).await;

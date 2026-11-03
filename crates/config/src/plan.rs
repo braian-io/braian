@@ -128,6 +128,8 @@ impl ConfigPlan {
 #[derive(Debug, Clone, Default)]
 struct ModelView {
     languages: BTreeSet<String>,
+    /// The document order, kept so a language apply appends in that order.
+    language_order: Vec<String>,
     attributes: BTreeMap<String, AttributeConfig>,
     types: BTreeMap<String, TypeConfig>,
     structures: BTreeMap<String, StructureConfig>,
@@ -506,6 +508,7 @@ fn desired_from(documents: &[ConfigDocument]) -> Result<Desired, ConfigError> {
 fn view_from_model(model: &ModelDocument) -> Result<ModelView, ConfigError> {
     let mut view = ModelView::default();
     view.languages.extend(model.languages.iter().cloned());
+    view.language_order = model.languages.clone();
     for attribute in &model.attributes {
         insert_entity(
             &mut view.attributes,
@@ -617,7 +620,16 @@ impl HasStructure for ClassEntry {
 }
 
 fn merge_view(target: &mut ModelView, source: ModelView) -> Result<(), ConfigError> {
-    target.languages.extend(source.languages);
+    for language in source.language_order {
+        if target.languages.insert(language.clone()) {
+            target.language_order.push(language);
+        }
+    }
+    for language in source.languages {
+        if target.languages.insert(language.clone()) {
+            target.language_order.push(language);
+        }
+    }
     for (key, value) in source.attributes {
         insert_entity(&mut target.attributes, key, value, "attribute")?;
     }
@@ -1047,6 +1059,37 @@ fn changes_for(
         push_value_list_change(current, key, list, &mut changes);
     }
 
+    if plan
+        .steps
+        .iter()
+        .any(|step| step.kind == PlanKind::Language)
+    {
+        let selected = if desired.model_full {
+            desired.model.language_order.clone()
+        } else {
+            let mut selected = current
+                .languages
+                .iter()
+                .map(|language| language.as_str().to_owned())
+                .collect::<Vec<_>>();
+            for language in &desired.model.language_order {
+                if !selected.contains(language) {
+                    selected.push(language.clone());
+                }
+            }
+            selected
+        };
+        let languages = selected
+            .iter()
+            .map(|language| {
+                LanguageTag::parse(language).map_err(|error| {
+                    ConfigError::new(format!("language {language} is invalid: {error}"))
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        changes.push(ModelChange::SetLanguages { languages });
+    }
+
     for step in plan
         .steps
         .iter()
@@ -1082,7 +1125,7 @@ fn changes_for(
                 key: step.key.clone(),
             }),
             // Group and class deletes arrive with their structure upsert.
-            // A language list has no model step; see the apply endpoint notes.
+            // Language deletes are part of the SetLanguages change above.
             // Catalogs, merge profiles, workspace templates and ownership are
             // added after this loop.
             PlanKind::Group
