@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { tabGroup } from './layout'
+import { leaves, splitPair, tabGroup, type Node } from './layout'
 import {
   MODEL_WORKSPACE_VIEW_SPECS,
   healDataModelWorkspace,
@@ -56,6 +56,7 @@ describe('legacy data model workspace migration', () => {
       'value_lists',
       'value_list_values',
       'units',
+      'graph',
     ])
     expect(JSON.stringify(patch.layout)).toContain('v-model')
   })
@@ -119,6 +120,103 @@ describe('dangling Data model layout heal', () => {
       expect.arrayContaining(['link_types', 'value_lists', 'units', 'value_list_values']),
     )
     expect(JSON.stringify(patch.layout)).not.toContain(ghostA)
+  })
+
+  it('appends only the Model graph tab and keeps the existing layout', () => {
+    const views = MODEL_WORKSPACE_VIEW_SPECS
+      .filter((spec) => spec.type !== 'graph')
+      .map((spec, index) => ({
+        id: `v-${index}`,
+        type: spec.type,
+        title: spec.title,
+        state: { ...spec.state },
+      }))
+    const layout = splitPair('horizontal', 0.3, tabGroup(['v-0', 'v-1'], 1), tabGroup(['v-6', 'v-7']))
+    expect(hasFullModelTemplate(views)).toBe(false)
+
+    let n = 0
+    const patch = healDataModelWorkspace(
+      { name: 'Data model', share_token: 'braian-model' },
+      views,
+      layout,
+      { newId: () => `new-${++n}` },
+    )
+
+    expect(patch.changed).toBe(true)
+    expect(patch.views).toEqual([])
+    expect(patch.create).toEqual([{
+      id: 'new-1',
+      type: 'graph',
+      title: 'Model graph',
+      state: { source: 'data_model' },
+      pane: 'main',
+      position: views.length,
+    }])
+    expect(patch.removed).toEqual([])
+    const next = leaves(patch.layout as Node)
+    expect(next.map((leaf) => leaf.views)).toEqual([
+      ['v-0', 'v-1'],
+      ['v-6', 'v-7', 'new-1'],
+    ])
+    expect(next[0]?.active).toBe(1)
+    expect(next[1]?.active).toBe(0)
+  })
+
+  it('does not duplicate the Model graph tab when heal runs again', () => {
+    const base = MODEL_WORKSPACE_VIEW_SPECS
+      .filter((spec) => spec.type !== 'graph')
+      .map((spec, index) => ({
+        id: `v-${index}`,
+        type: spec.type,
+        title: spec.title,
+        state: { ...spec.state },
+      }))
+    const layout = tabGroup(base.map((view) => view.id))
+    const first = healDataModelWorkspace(
+      { name: 'Data model', share_token: 'braian-model' },
+      base,
+      layout,
+      { newId: () => 'new-graph' },
+    )
+    const created = first.create?.[0]
+    expect(created?.type).toBe('graph')
+
+    const healed = [...base, created!]
+    const second = healDataModelWorkspace(
+      { name: 'Data model', share_token: 'braian-model' },
+      healed,
+      first.layout as Node,
+      { newId: () => 'unused' },
+    )
+
+    expect(hasFullModelTemplate(healed)).toBe(true)
+    expect(second.changed).toBe(false)
+    expect(second.create ?? []).toEqual([])
+    expect(second.layout).toBeUndefined()
+    expect(leaves(first.layout as Node).flatMap((leaf) => leaf.views))
+      .toEqual([...base.map((view) => view.id), 'new-graph'])
+  })
+
+  it('still rebuilds the template when more than the graph is missing', () => {
+    const views = MODEL_WORKSPACE_VIEW_SPECS
+      .filter((spec) => spec.type !== 'graph' && spec.type !== 'units')
+      .map((spec, index) => ({
+        id: `v-${index}`,
+        type: spec.type,
+        title: spec.title,
+        state: { ...spec.state },
+      }))
+    let n = 0
+    const patch = healDataModelWorkspace(
+      { name: 'Data model', share_token: 'braian-model' },
+      views,
+      tabGroup(views.map((view) => view.id)),
+      { newId: () => `new-${++n}` },
+    )
+    expect(patch.changed).toBe(true)
+    expect((patch.create ?? []).map((view) => view.type)).toEqual(['units', 'graph'])
+    expect(JSON.stringify(patch.layout)).toContain('new-1')
+    expect(JSON.stringify(patch.layout)).toContain('new-2')
   })
 
   it('only prunes when the template is already complete', () => {

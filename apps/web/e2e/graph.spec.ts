@@ -137,3 +137,82 @@ test('force-directed graph', async ({ page }) => {
   for (let index = 0; index < (await filters.count()); index += 1) await filters.nth(index).fill('')
   await page.locator('[data-view-type="object_detail"]').first().click()
 })
+
+type ModelDef = {
+  id?: string
+  key?: string
+  kind?: string
+  labels?: Record<string, string>
+  singular?: Record<string, string>
+  attributes?: unknown[]
+  link?: {
+    from_types?: unknown[]
+    to_types?: unknown[]
+    from_cardinality?: string
+    to_cardinality?: string
+  }
+}
+
+type ModelDefs = { types?: ModelDef[]; attributes?: ModelDef[] }
+
+function modelLabel(item: ModelDef | undefined) {
+  return item?.labels?.en || item?.singular?.en || String(item?.key ?? '')
+}
+
+function cardinalityMark(value: string | undefined) {
+  return value === 'one' ? '1' : 'n'
+}
+
+test('model graph tab shows types, counts and link labels', async ({ page }) => {
+  test.setTimeout(120_000)
+  await login(page)
+
+  const definitions = (await (await page.request.get('/v1/definitions')).json()) as ModelDefs
+  const types = definitions.types ?? []
+  const attributes = definitions.attributes ?? []
+  const byToken = new Map<string, ModelDef>()
+  for (const type of types) {
+    if (type.id) byToken.set(String(type.id), type)
+    if (type.key) byToken.set(String(type.key), type)
+  }
+  const objectTypes = types.filter((type) => type.kind !== 'link' && type.key)
+  const chosen = objectTypes.find((type) => (type.attributes?.length ?? 0) > 0) ?? objectTypes[0]
+  expect(chosen, 'object type in definitions').toBeTruthy()
+
+  const attrKey = new Map(attributes.map((attribute) => [String(attribute.id ?? ''), String(attribute.key ?? '')]))
+  const expectedAttributes = (chosen?.attributes ?? [])
+    .map((token) => attrKey.get(String(token)) ?? String(token))
+    .filter(Boolean)
+  expect(expectedAttributes.length, 'chosen type attributes').toBeGreaterThan(0)
+
+  const link = types.find((type) => {
+    const spec = type.link
+    if (type.kind !== 'link' || !spec) return false
+    const from = (spec.from_types ?? []).map((token) => byToken.get(String(token))).find(Boolean)
+    const to = (spec.to_types ?? []).map((token) => byToken.get(String(token))).find(Boolean)
+    return Boolean(from && to && from.kind !== 'link' && to.kind !== 'link')
+  })
+  expect(link, 'link type in definitions').toBeTruthy()
+  const expectedEdge = `${modelLabel(link)} ${cardinalityMark(link?.link?.from_cardinality)}–${cardinalityMark(link?.link?.to_cardinality)}`
+
+  await page.locator('nav.tabs').getByRole('button', { name: /^Data model/ }).click()
+  const graphTab = page.locator('.pane-tab', { hasText: 'Model graph' }).first()
+  await expect(graphTab).toBeVisible({ timeout: 60_000 })
+  await graphTab.click()
+  const canvas = page.locator('canvas[data-testid=graph]')
+  await expect(canvas).toBeVisible()
+  await expect(canvas).toHaveAttribute('data-settled', 'true', { timeout: 30_000 })
+
+  const nodes = page.getByTestId('graph-nodes')
+  await expect(nodes.locator('[data-node-id^="type:"]')).not.toHaveCount(0)
+  const chosenNode = nodes.locator(`[data-node-id="type:${chosen?.key ?? ''}"]`)
+  await expect(chosenNode).toHaveAttribute('data-subtitle', /^\d+$/)
+  await expect(page.getByTestId('graph-edges')).toContainText(expectedEdge)
+
+  await chosenNode.dispatchEvent('click')
+  const attributeTab = page.locator('.pane-tab', { hasText: 'Type attributes' }).first()
+  await attributeTab.click()
+  const table = page.getByTestId('attribute-table')
+  await expect(table).toBeVisible()
+  await expect(table.locator(`[data-attr="${expectedAttributes[0]}"]`).first()).toBeVisible()
+})

@@ -93,9 +93,10 @@ describe('type workspaces', () => {
       'units',
       'data_model',
       'attribute_definitions',
+      'graph',
     ])
     expect(templates.find((item) => item.id === 'model')?.views[0]?.title).toBe('Structures')
-    expect(templates.find((item) => item.id === 'model')?.views.at(-1)?.title).toBe('Attribute definitions')
+    expect(templates.find((item) => item.id === 'model')?.views.at(-1)?.title).toBe('Model graph')
     expect(templates.some((item) => item.id === 'enrich' || /enrich/i.test(item.name))).toBe(false)
     const articles = templates[1]
     expect(articles?.views.map((view) => view.type)).toEqual([
