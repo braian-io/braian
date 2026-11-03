@@ -10,8 +10,8 @@ use axum::response::{IntoResponse, Response};
 use braian_config::{
     ApiVersion, CatalogDocument, CatalogKind as CatalogDocumentKind, CatalogSourceKind,
     ConfigDocument, ConfigExtras, ConfigPlan, MergeModeConfig, MergeProfileDocument,
-    MergeProfileKind, OwnershipDocument, OwnershipKind, OwnershipRuleConfig, PlanAffected,
-    PlanKind, apply_documents_with, export_documents_with, plan_documents_with,
+    MergeProfileKind, OwnershipDocument, OwnershipKind, OwnershipRuleConfig, PlanAction,
+    PlanAffected, PlanKind, apply_documents_with, export_documents_with, plan_documents_with,
 };
 use braian_store::CatalogKind as StoreCatalogKind;
 use serde::Deserialize;
@@ -275,6 +275,32 @@ async fn config_extras(state: &AppState) -> Result<ConfigExtras, Problem> {
 
 async fn fill_affected(state: &AppState, plan: &mut ConfigPlan) -> Result<(), Problem> {
     for step in &mut plan.steps {
+        if step.kind == PlanKind::Catalog && step.action == PlanAction::Delete {
+            let Some(catalog) = state
+                .store
+                .catalog_by_key(&step.key)
+                .await
+                .map_err(store_status)?
+            else {
+                continue;
+            };
+            let usage = state
+                .store
+                .catalog_usage(catalog.id)
+                .await
+                .map_err(store_status)?;
+            step.affected = PlanAffected {
+                objects: usage.objects,
+                values: usage.values,
+                links: usage.links,
+                selections: 0,
+                import_sessions: usage.import_sessions,
+                proposals: usage.proposals,
+                workspaces: usage.workspaces,
+                model_drafts: usage.model_drafts,
+            };
+            continue;
+        }
         let Some(purge) = &step.purge else {
             continue;
         };
@@ -288,6 +314,7 @@ async fn fill_affected(state: &AppState, plan: &mut ConfigPlan) -> Result<(), Pr
             values: counts.values,
             links: counts.links,
             selections: counts.selections,
+            ..PlanAffected::default()
         };
     }
     Ok(())

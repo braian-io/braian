@@ -29,7 +29,7 @@ pub use catalog_resolve::{
     CatalogRef, default_catalog_id, effective_catalog_id, view_catalog_override,
     workspace_catalog_ref,
 };
-pub use catalogs::{CatalogKind, CatalogRecord};
+pub use catalogs::{CatalogKind, CatalogRecord, CatalogUsage};
 pub use error::{Conflict, Error};
 pub use ids::{
     Actor, BatchId, BatchKind, CatalogId, ChangeOp, MASTER_CATALOG_ID, PrincipalId, PrincipalKind,

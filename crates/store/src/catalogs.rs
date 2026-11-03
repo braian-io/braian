@@ -2,10 +2,96 @@
 //! upstream system and has its own definitions and objects.
 
 use serde_json::Value;
+use uuid::Uuid;
 
 use crate::error::Error;
 use crate::ids::{CatalogId, MASTER_CATALOG_ID};
 use crate::session::Store;
+
+/// Rows that name a catalog id without a foreign key keeping them alive.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CatalogUsage {
+    pub objects: i64,
+    pub values: i64,
+    pub links: i64,
+    pub import_sessions: i64,
+    pub proposals: i64,
+    pub workspaces: i64,
+    pub model_drafts: i64,
+}
+
+impl CatalogUsage {
+    pub fn has_dependents(&self) -> bool {
+        self.objects > 0
+            || self.import_sessions > 0
+            || self.proposals > 0
+            || self.workspaces > 0
+            || self.model_drafts > 0
+    }
+
+    /// Counts phrase used in the 422 body, singular where it reads better.
+    pub fn detail(&self) -> String {
+        format!(
+            "{}, {}, {}, {}, {}",
+            count(self.objects, "object", "objects"),
+            count(self.import_sessions, "import session", "import sessions"),
+            count(self.proposals, "proposal", "proposals"),
+            count(self.workspaces, "workspace", "workspaces"),
+            count(self.model_drafts, "model draft", "model drafts"),
+        )
+    }
+}
+
+fn count(value: i64, singular: &str, plural: &str) -> String {
+    if value == 1 {
+        format!("1 {singular}")
+    } else {
+        format!("{value} {plural}")
+    }
+}
+
+const USAGE_SQL: &str = "SELECT
+       (SELECT count(*)::bigint FROM objects
+         WHERE catalog_id = $1 AND deleted_at IS NULL) AS objects,
+       (SELECT coalesce(sum((SELECT count(*) FROM jsonb_object_keys(v.\"values\"))), 0)::bigint
+         FROM object_values v
+         JOIN objects o ON o.id = v.object_id
+         WHERE v.is_latest AND o.catalog_id = $1 AND o.deleted_at IS NULL) AS \"values\",
+       (SELECT count(*)::bigint FROM links l
+         JOIN objects o ON o.id = l.object_id
+         WHERE o.catalog_id = $1 AND o.deleted_at IS NULL) AS links,
+       (SELECT count(*)::bigint FROM import_sessions WHERE catalog_id = $1) AS import_sessions,
+       (SELECT count(*)::bigint FROM proposals WHERE catalog_id = $1) AS proposals,
+       (SELECT count(*)::bigint FROM workspaces WHERE catalog_id = $1) AS workspaces,
+       (SELECT count(*)::bigint FROM model_drafts WHERE catalog_id = $1) AS model_drafts";
+
+fn usage_from_row(row: &tokio_postgres::Row) -> CatalogUsage {
+    CatalogUsage {
+        objects: row.get("objects"),
+        values: row.get("values"),
+        links: row.get("links"),
+        import_sessions: row.get("import_sessions"),
+        proposals: row.get("proposals"),
+        workspaces: row.get("workspaces"),
+        model_drafts: row.get("model_drafts"),
+    }
+}
+
+pub(crate) async fn usage_in(
+    tx: &tokio_postgres::Transaction<'_>,
+    id: Uuid,
+) -> Result<CatalogUsage, Error> {
+    let row = tx.query_one(USAGE_SQL, &[&id]).await?;
+    Ok(usage_from_row(&row))
+}
+
+async fn usage_with(
+    client: &impl deadpool_postgres::GenericClient,
+    id: Uuid,
+) -> Result<CatalogUsage, Error> {
+    let row = client.query_one(USAGE_SQL, &[&id]).await?;
+    Ok(usage_from_row(&row))
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CatalogKind {
@@ -126,6 +212,12 @@ impl Store {
             )
             .await?;
         row.as_ref().map(record_from_row).transpose()
+    }
+
+    /// Live objects and the rows that would be left dangling by a catalog delete.
+    pub async fn catalog_usage(&self, id: CatalogId) -> Result<CatalogUsage, Error> {
+        let client = self.checkout().await?;
+        usage_with(&client, id.as_uuid()).await
     }
 
     /// Catalog key for each object id. Missing ids are omitted.

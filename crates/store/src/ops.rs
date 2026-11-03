@@ -1053,6 +1053,17 @@ impl Store {
                 }
             }
             ProposalWrite::CatalogDelete { id } => {
+                let usage = crate::catalogs::usage_in(tx, id).await?;
+                if usage.has_dependents() {
+                    let key: Option<String> = tx
+                        .query_opt("SELECT key FROM catalogs WHERE id = $1", &[&id])
+                        .await?
+                        .map(|row| row.get(0));
+                    return Err(Error::CatalogInUse {
+                        key: key.unwrap_or_else(|| id.to_string()),
+                        detail: usage.detail(),
+                    });
+                }
                 tx.execute(
                     "DELETE FROM merge_links WHERE profile_id IN (SELECT id FROM merge_profiles WHERE source_catalog_id = $1)",
                     &[&id],

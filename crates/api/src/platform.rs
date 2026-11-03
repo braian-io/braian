@@ -4321,7 +4321,14 @@ async fn apply_selected_locked(
         match apply_row(state, identity, proposal_id, row_id, &row, claim).await {
             Ok(Some(seq)) => accepted.push(json!({ "id": row_id, "seq": seq })),
             Ok(None) => {}
-            Err(problem) if problem.code == "claim_lost" => return Err(problem),
+            Err(problem)
+                if matches!(
+                    problem.code.as_str(),
+                    "claim_lost" | "catalog_in_use" | "ownership_references_profile"
+                ) =>
+            {
+                return Err(problem);
+            }
             Err(problem) => {
                 let detail = problem
                     .errors
@@ -4371,7 +4378,13 @@ fn refusal_from_accept(value: &Value) -> Option<Problem> {
     let row = failed.iter().find(|item| {
         matches!(
             item.get("code").and_then(Value::as_str),
-            Some("conflict" | "base_ahead" | "base_version_required")
+            Some(
+                "conflict"
+                    | "base_ahead"
+                    | "base_version_required"
+                    | "catalog_in_use"
+                    | "ownership_references_profile"
+            )
         )
     })?;
     let code = row.get("code").and_then(Value::as_str)?;
@@ -4379,10 +4392,10 @@ fn refusal_from_accept(value: &Value) -> Option<Problem> {
         .get("detail")
         .and_then(Value::as_str)
         .unwrap_or("conflict");
-    let status = if code == "base_version_required" {
-        StatusCode::BAD_REQUEST
-    } else {
-        StatusCode::CONFLICT
+    let status = match code {
+        "base_version_required" => StatusCode::BAD_REQUEST,
+        "catalog_in_use" | "ownership_references_profile" => StatusCode::UNPROCESSABLE_ENTITY,
+        _ => StatusCode::CONFLICT,
     };
     let mut problem = Problem::new(status, code, detail);
     problem.current_version = row.get("current_version").and_then(Value::as_u64);

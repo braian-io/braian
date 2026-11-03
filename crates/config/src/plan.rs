@@ -67,6 +67,15 @@ pub struct PlanAffected {
     pub values: i64,
     pub links: i64,
     pub selections: i64,
+    /// Catalog delete only: rows of each kind that keep the catalog alive.
+    #[serde(default)]
+    pub import_sessions: i64,
+    #[serde(default)]
+    pub proposals: i64,
+    #[serde(default)]
+    pub workspaces: i64,
+    #[serde(default)]
+    pub model_drafts: i64,
 }
 
 /// One step in a config plan.

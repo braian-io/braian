@@ -154,6 +154,11 @@ pub fn store_status(error: StoreError) -> Problem {
             Problem::new(StatusCode::NOT_FOUND, "catalog_not_found", key)
         }
         StoreError::CatalogExists(key) => Problem::new(StatusCode::CONFLICT, "catalog_exists", key),
+        StoreError::CatalogInUse { key, detail } => Problem::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "catalog_in_use",
+            format!("catalog {key} is in use: {detail}"),
+        ),
         StoreError::BadKey(id) => Problem::new(
             StatusCode::UNPROCESSABLE_ENTITY,
             "bad_key",

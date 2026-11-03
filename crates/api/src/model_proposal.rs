@@ -160,7 +160,7 @@ pub async fn apply_row(
         serde_json::from_value(row.get("patch").cloned().unwrap_or(json!({})))
             .map_err(|error| Problem::new(StatusCode::BAD_REQUEST, "model", error.to_string()))?;
     crate::structures::guard_model_change(state, &identity.actor, &change, true).await?;
-    if let Some(write) = reference_write(state, &change).await? {
+    if let Some(write) = reference_write(state, proposal_id, &change).await? {
         return match state
             .store
             .commit_proposal_row(
@@ -235,10 +235,103 @@ pub async fn apply_row(
     ))
 }
 
+/// Attributes whose ownership rules name `key`, ignoring a SetOwnershipRules
+/// step in the same proposal that drops the key.
+async fn owned_attributes(
+    state: &AppState,
+    proposal_id: Uuid,
+    key: &str,
+) -> Result<Option<Vec<String>>, Problem> {
+    let current = state.store.ownership_rules().await.map_err(store_status)?;
+    if ownership_attributes(&current, key).is_empty() {
+        return Ok(None);
+    }
+    let effective = effective_ownership_rules(state, proposal_id, current).await?;
+    let attributes = ownership_attributes(&effective, key);
+    Ok((!attributes.is_empty()).then_some(attributes))
+}
+
+async fn effective_ownership_rules(
+    state: &AppState,
+    proposal_id: Uuid,
+    current: Value,
+) -> Result<Value, Problem> {
+    let Some(proposal) = state
+        .store
+        .proposal(proposal_id)
+        .await
+        .map_err(store_status)?
+    else {
+        return Ok(current);
+    };
+    let mut replacement = None;
+    for row in proposal
+        .get("rows")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        if !matches!(
+            row.get("status").and_then(Value::as_str),
+            Some("pending" | "accepted")
+        ) || row.get("type_key").and_then(Value::as_str) != Some("model")
+        {
+            continue;
+        }
+        let Some(patch) = row.get("patch") else {
+            continue;
+        };
+        if let Ok(ModelChange::SetOwnershipRules { rules }) =
+            serde_json::from_value::<ModelChange>(patch.clone())
+        {
+            replacement = Some(serde_json::to_value(rules).map_err(|error| {
+                Problem::new(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "internal",
+                    error.to_string(),
+                )
+            })?);
+        }
+    }
+    Ok(replacement.unwrap_or(current))
+}
+
+fn ownership_attributes(rules: &Value, key: &str) -> Vec<String> {
+    let mut attributes = Vec::new();
+    for rule in rules.as_array().into_iter().flatten() {
+        let referenced = rule
+            .get("profiles")
+            .and_then(Value::as_array)
+            .is_some_and(|profiles| profiles.iter().any(|profile| profile.as_str() == Some(key)));
+        if !referenced {
+            continue;
+        }
+        let Some(attribute) = rule.get("attribute").and_then(Value::as_str) else {
+            continue;
+        };
+        if !attributes.iter().any(|item| item == attribute) {
+            attributes.push(attribute.to_owned());
+        }
+    }
+    attributes
+}
+
+fn ownership_references_profile(key: &str, attributes: &[String]) -> Problem {
+    Problem::new(
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "ownership_references_profile",
+        format!(
+            "merge profile {key} is referenced by ownership rules for {}",
+            attributes.join(", ")
+        ),
+    )
+}
+
 /// Catalogs, merge profiles and ownership live outside the definition set.
 /// Their keys resolve to ids just before the row commits.
 async fn reference_write(
     state: &AppState,
+    proposal_id: Uuid,
     change: &ModelChange,
 ) -> Result<Option<ProposalWrite>, Problem> {
     match change {
@@ -306,6 +399,19 @@ async fn reference_write(
                     "the master catalog cannot be deleted",
                 ));
             }
+            for profile in state
+                .store
+                .merge_profiles()
+                .await
+                .map_err(store_status)?
+                .iter()
+                .filter(|profile| profile.source_catalog_id == catalog.id)
+            {
+                if let Some(attributes) = owned_attributes(state, proposal_id, &profile.key).await?
+                {
+                    return Err(ownership_references_profile(&profile.key, &attributes));
+                }
+            }
             Ok(Some(ProposalWrite::CatalogDelete {
                 id: catalog.id.as_uuid(),
             }))
@@ -365,6 +471,9 @@ async fn reference_write(
                         format!("unknown merge profile {key}"),
                     )
                 })?;
+            if let Some(attributes) = owned_attributes(state, proposal_id, key).await? {
+                return Err(ownership_references_profile(key, &attributes));
+            }
             Ok(Some(ProposalWrite::MergeProfileDelete { id: profile.id }))
         }
         ModelChange::SetOwnershipRules { rules } => {

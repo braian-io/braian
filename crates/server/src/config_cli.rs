@@ -600,6 +600,7 @@ mod tests {
                         values: 0,
                         links: 3,
                         selections: 0,
+                        ..PlanAffected::default()
                     },
                 ),
             ],
