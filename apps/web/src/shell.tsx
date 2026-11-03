@@ -42,6 +42,8 @@ import { AttributeDefinitions } from './attribute-definitions'
 import { ModelTableView } from './model-tables'
 import { clearQueuedViewType, peekQueuedViewType } from './attribute-actions'
 import { FeedbackDialog } from './feedback-dialog'
+import { ConfigApplyDialog } from './config-apply-dialog'
+import { detectConfigFiles } from './config-drop'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
 import { installClientLog } from './feedback-log'
 import { prepareFeedbackCapture, type FeedbackCapture } from './feedback'
@@ -164,6 +166,8 @@ const layoutCommands = new Set([
   'ui.open_view', 'ui.place', 'ui.link',
 ])
 
+const NO_FILES: File[] = []
+
 function layoutCommand(name: string) {
   return layoutCommands.has(name)
 }
@@ -219,6 +223,7 @@ export function Shell() {
   useSyncExternalStore(subscribeUiSelections, uiSelectionVersion, uiSelectionVersion)
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [feedbackCapture, setFeedbackCapture] = useState<FeedbackCapture | null>(null)
+  const [configFiles, setConfigFiles] = useState<File[] | null>(null)
   const [help, setHelp] = useState(false)
   const [tabMenu, setTabMenu] = useState<{ x: number; y: number; id: string } | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string } | null>(null)
@@ -279,7 +284,12 @@ export function Shell() {
       depth = 0
       setImportDrag(false)
       const list = [...(event.dataTransfer?.files ?? [])]
-      if (list.length > 0) dropImportFiles(list)
+      if (list.length > 0) {
+        void detectConfigFiles(list).then((config) => {
+          if (config) setConfigFiles(config)
+          else dropImportFiles(list)
+        })
+      }
     }
     const open = () => openImport()
     window.addEventListener('dragenter', enter)
@@ -1086,6 +1096,13 @@ export function Shell() {
     openTypeView: (typeId) => openTypeViewRef.current(typeId),
   }
 
+  const openConfigReview = (id: string) => {
+    const review = orderedWorkspaces.find((workspace) => workspace.share_token === 'braian-review')
+    setProposalId(id)
+    if (review) setWorkspaceId(review.id)
+    setConfigFiles(null)
+  }
+
   const requestDeleteActive = () => {
     const id = workspaceIdRef.current
     if (!id) return
@@ -1458,6 +1475,12 @@ export function Shell() {
           } : null}
         />
       ) : null}
+      <ConfigApplyDialog
+        open={Boolean(configFiles)}
+        files={configFiles ?? NO_FILES}
+        onClose={() => setConfigFiles(null)}
+        onOpenInReview={openConfigReview}
+      />
       <SelectionHost session={session} />
       {paletteMode ? (
         <CommandPalette
