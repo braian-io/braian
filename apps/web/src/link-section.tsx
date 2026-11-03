@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, textValue, type Json } from './api'
 import { formatCount } from './format'
 import { copy, uiLanguage } from './i18n'
-import { openSharedContextMenu } from './shared-context-menu'
+import { openSharedContextMenu, prefersNativeContextMenu } from './shared-context-menu'
 import { registerCommandRunner } from './command-registry'
 
 type LinkItem = {
@@ -131,6 +131,7 @@ export function LinkSections({
                 focused = { id: link.id, peer: link.peer_key, hasValues: link.has_values }
               }}
               onContextMenu={(event) => {
+                if (prefersNativeContextMenu(event.target)) return
                 event.preventDefault()
                 openLinkMenu(link, event.clientX, event.clientY)
               }}

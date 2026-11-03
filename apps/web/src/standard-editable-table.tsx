@@ -20,7 +20,7 @@ import {
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS as DndCSS } from '@dnd-kit/utilities'
 import type { CommandTarget, MenuContext } from './command-registry'
-import { openSharedContextMenu } from './shared-context-menu'
+import { openSharedContextMenu, prefersNativeContextMenu } from './shared-context-menu'
 import { StandardTableChrome } from './standard-table'
 import { copy } from './i18n'
 
@@ -455,17 +455,10 @@ export function StandardEditableTable<T extends { id: string }>({
   }
 
   const onRowContextMenu = (event: ReactMouseEvent<HTMLElement>, row: T) => {
-    if (!menuContext) return
+    if (!menuContext || prefersNativeContextMenu(event.target)) return
     event.preventDefault()
     event.stopPropagation()
     openMenu(row, event.clientX, event.clientY)
-  }
-
-  const onSurfaceContextMenu = (event: ReactMouseEvent<HTMLElement>) => {
-    if (!menuContext) return
-    if ((event.target as HTMLElement).closest('[role="row"]')) return
-    event.preventDefault()
-    openMenu(null, event.clientX, event.clientY)
   }
 
   const onRowKey = (event: ReactKeyboardEvent<HTMLElement>, row: T) => {
@@ -687,7 +680,6 @@ export function StandardEditableTable<T extends { id: string }>({
         className="standard-grid"
         role="grid"
         aria-rowcount={filtered.length}
-        onContextMenu={onSurfaceContextMenu}
       >
         <div className="standard-grid-head" role="row">
           {canReorder ? (

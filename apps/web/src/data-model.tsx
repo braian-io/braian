@@ -650,11 +650,6 @@ function TypeNameFields({
                 .catch((reason: unknown) => onError(errorText(reason)))
             }
           }}
-          onContextMenu={(event) => {
-            event.preventDefault()
-            event.currentTarget.focus()
-            event.currentTarget.select()
-          }}
         />
       </label>
     </div>

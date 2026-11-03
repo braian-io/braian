@@ -45,8 +45,7 @@ import { linkedPeerIds } from './peer-source'
 import { isExplicitAllSource, peerEmptyState, peerIdsFilter, peerNodeFilter, peerSourceOf } from './view-source'
 import { FieldDiff } from './field-diff-view'
 import { copy, uiLanguage } from './i18n'
-import { handleAppContextMenu } from './app-context-menu'
-import { openSharedContextMenu } from './shared-context-menu'
+import { openSharedContextMenu, prefersNativeContextMenu } from './shared-context-menu'
 import { StandardTableChrome } from './standard-table'
 import { StandardEditableTable, type StandardColumn } from './standard-editable-table'
 import { registerCommandRunner, runCommand } from './command-registry'
@@ -928,6 +927,7 @@ export function ObjectTable({
   }
 
   const onHeaderMenu = (column: string, event: ReactMouseEvent<HTMLElement>) => {
+    if (prefersNativeContextMenu(event.target)) return
     event.preventDefault()
     event.stopPropagation()
     setActiveColumn(column)
@@ -1627,7 +1627,7 @@ export function ObjectTable({
         onKeyDown={onTableKey}
         onContextMenu={(event) => {
           // The ContextMenu key fires this on the grid itself; a row handles a pointer right-click.
-          if (event.target !== event.currentTarget) return
+          if (event.target !== event.currentTarget || prefersNativeContextMenu(event.target)) return
           event.preventDefault()
           openMenuFromKeyboard(event.target)
         }}
@@ -1965,6 +1965,7 @@ function Row({
         onCellDoubleClick(row, column)
       }}
       onContextMenu={(event) => {
+        if (prefersNativeContextMenu(event.target)) return
         event.preventDefault()
         // The menu acts on the cell under the pointer, so it needs that cell's column key.
         onMenu(index, event.clientX, event.clientY, columnOf(event.target))
@@ -2256,7 +2257,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   }, [session.objectId, session.language, object.data])
   if (!session.objectId) {
     return (
-      <div className="detail-empty" data-testid="detail-empty" onContextMenu={handleAppContextMenu}>
+      <div className="detail-empty" data-testid="detail-empty">
         <p>{emptyDetail(typeNames(defs.data, uiLanguage), session.listType)}</p>
         <ul>
           <li><kbd>↑</kbd><kbd>↓</kbd> {copy.detailKeysMove}</li>
@@ -2333,7 +2334,6 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
     <form
       className={flashId === session.objectId ? 'detail-form form flash' : 'detail-form form'}
       data-testid="object-detail"
-      onContextMenu={handleAppContextMenu}
       onSubmit={(event) => {
         event.preventDefault()
         save()

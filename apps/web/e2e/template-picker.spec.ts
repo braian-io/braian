@@ -48,7 +48,7 @@ async function ensureReviewExists(page: Page) {
   await expect(page.getByTestId('dock')).toBeVisible({ timeout: 60_000 })
 }
 
-test('tab menu New from template opens the template submenu and creates a tab', async ({ page }) => {
+test('tab menu keeps New from template in Ctrl+K and the palette creates a tab', async ({ page }) => {
   test.setTimeout(120_000)
   await login(page)
 
@@ -62,10 +62,15 @@ test('tab menu New from template opens the template submenu and creates a tab', 
   await tab.click({ button: 'right' })
   const menu = page.getByTestId('workspace-menu')
   await expect(menu).toBeVisible()
-  await menu.getByTestId('workspace-new-from-template').click()
+  await expect(menu.getByTestId('workspace-new-from-template')).toHaveCount(0)
+  await expect(menu.getByRole('button', { name: 'Reset layout' })).toHaveCount(0)
 
+  await page.keyboard.press('Control+K')
   const palette = page.getByTestId('command-palette')
   await expect(palette).toBeVisible()
+  await palette.getByTestId('palette-input').fill('New from template')
+  await expect(palette.getByRole('option', { name: /^New from template/ })).toBeVisible()
+  await page.keyboard.press('Enter')
   await expect(palette.locator('.crumb')).toContainText('New from template')
   // Submenu lists templates only — not the generic Ctrl+K root.
   await expect(palette.getByRole('option', { name: /^Review/ })).toBeVisible()

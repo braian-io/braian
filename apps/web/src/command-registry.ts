@@ -4,7 +4,6 @@ import { chordForCommand } from './shortcuts'
 
 /** Surfaces that can open a context menu. */
 export type MenuContext =
-  | 'empty'
   | 'table-header'
   | 'row'
   | 'cell'
@@ -62,6 +61,8 @@ export type RegistryCommand = {
   kbd?: string
   danger?: boolean
   palette?: boolean
+  /** Global command: Ctrl+K only, never in a right-click menu. */
+  global?: boolean
   when?: (target: CommandTarget) => boolean
 }
 
@@ -94,16 +95,18 @@ export function commandTitle(command: RegistryCommand, target: CommandTarget = {
 export const registryCommands: RegistryCommand[] = [
   {
     id: 'palette:search',
+    global: true,
     title: `${copy.search}…`,
-    contexts: ['empty', 'object-detail', 'import', 'dock-view', 'tab'],
+    contexts: ['object-detail', 'import', 'dock-view', 'tab'],
     group: 'views',
     keywords: ['search', 'command', 'palette'],
     kbd: chordForCommand('palette:search'),
   },
   {
     id: 'feedback:send',
+    global: true,
     title: copy.sendFeedback,
-    contexts: ['empty', 'object-detail', 'import', 'dock-view', 'tab'],
+    contexts: ['object-detail', 'import', 'dock-view', 'tab'],
     group: 'views',
     keywords: ['feedback', 'bug'],
     kbd: chordForCommand('feedback:send'),
@@ -111,16 +114,18 @@ export const registryCommands: RegistryCommand[] = [
   },
   {
     id: 'theme:toggle',
+    global: true,
     title: copy.lightMode,
-    contexts: ['empty', 'object-detail', 'import', 'dock-view', 'tab'],
+    contexts: ['object-detail', 'import', 'dock-view', 'tab'],
     group: 'views',
     keywords: ['theme', 'toggle', 'light', 'dark', 'mode'],
     palette: true,
   },
   {
     id: 'agent:open',
+    global: true,
     title: copy.openAgent,
-    contexts: ['empty', 'object-detail', 'import', 'dock-view', 'tab'],
+    contexts: ['object-detail', 'import', 'dock-view', 'tab'],
     group: 'views',
     keywords: ['agent', 'ai', 'ask'],
     kbd: chordForCommand('agent:open'),
@@ -128,16 +133,18 @@ export const registryCommands: RegistryCommand[] = [
   },
   {
     id: 'session:sign-out',
+    global: true,
     title: copy.signOut,
-    contexts: ['empty', 'object-detail', 'import', 'dock-view', 'tab'],
+    contexts: ['object-detail', 'import', 'dock-view', 'tab'],
     group: 'views',
     keywords: ['logout', 'log out', 'sign out', 'session'],
     palette: true,
   },
   {
     id: 'session:reload-new-version',
+    global: true,
     title: copy.reloadToNewVersion,
-    contexts: ['empty', 'object-detail', 'import', 'dock-view', 'tab'],
+    contexts: ['object-detail', 'import', 'dock-view', 'tab'],
     group: 'views',
     keywords: ['reload', 'refresh', 'new version', 'update', 'deploy'],
     palette: true,
@@ -145,8 +152,9 @@ export const registryCommands: RegistryCommand[] = [
   },
   {
     id: 'object:new',
+    global: true,
     title: (target) => (target.singular ? `New ${target.singular}` : copy.newObject),
-    contexts: ['empty', 'row', 'cell', 'table-header', 'object-detail'],
+    contexts: ['row', 'cell', 'table-header', 'object-detail'],
     group: 'object',
     keywords: ['create', 'new', 'object'],
     when: (target) => Boolean(target.typeKey || target.singular),
@@ -154,7 +162,7 @@ export const registryCommands: RegistryCommand[] = [
   {
     id: 'object:open',
     title: (target) => (target.singular ? `Open ${target.singular}` : copy.open),
-    contexts: ['row', 'cell', 'link', 'group', 'graph-node'],
+    contexts: ['row', 'cell', 'link', 'graph-node'],
     group: 'object',
     keywords: ['open'],
     kbd: 'Enter',
@@ -192,8 +200,9 @@ export const registryCommands: RegistryCommand[] = [
   },
   {
     id: 'fields:select',
+    global: true,
     title: `${copy.selectFields}…`,
-    contexts: ['table-header', 'cell', 'row', 'empty'],
+    contexts: ['table-header', 'cell', 'row'],
     group: 'views',
     keywords: ['field', 'column', 'select', 'show', 'hide', 'reorder'],
   },
@@ -207,8 +216,9 @@ export const registryCommands: RegistryCommand[] = [
   },
   {
     id: 'selection:new',
+    global: true,
     title: copy.newSelection,
-    contexts: ['assortment', 'dock-view', 'empty'],
+    contexts: ['assortment', 'dock-view'],
     group: 'views',
     keywords: ['assortment', 'selection'],
     when: (target) => !target.viewType || target.viewType === 'assortment_list',
@@ -232,6 +242,7 @@ export const registryCommands: RegistryCommand[] = [
   },
   {
     id: 'model:new-type',
+    global: true,
     title: copy.newType,
     contexts: ['model', 'model-type'],
     group: 'object',
@@ -239,6 +250,7 @@ export const registryCommands: RegistryCommand[] = [
   },
   {
     id: 'model:new-link-type',
+    global: true,
     title: copy.newLinkType,
     contexts: ['model', 'model-link'],
     group: 'object',
@@ -262,6 +274,7 @@ export const registryCommands: RegistryCommand[] = [
   },
   {
     id: 'model:new-list',
+    global: true,
     title: copy.newValueList,
     contexts: ['model', 'model-list'],
     group: 'object',
@@ -284,6 +297,7 @@ export const registryCommands: RegistryCommand[] = [
   },
   {
     id: 'model:new-family',
+    global: true,
     title: copy.newUnitFamily,
     contexts: ['model', 'model-family'],
     group: 'object',
@@ -303,6 +317,15 @@ export const registryCommands: RegistryCommand[] = [
     group: 'object',
     danger: true,
     when: (target) => Boolean(target.familyKey && target.unitCode),
+  },
+  {
+    id: 'group:open',
+    title: copy.open,
+    contexts: ['group'],
+    group: 'object',
+    keywords: ['open'],
+    kbd: 'Enter',
+    when: (target) => Boolean(target.groupKey),
   },
   {
     id: 'group:rename',
@@ -388,6 +411,7 @@ export const registryCommands: RegistryCommand[] = [
   },
   {
     id: 'attr:new',
+    global: true,
     title: copy.newAttribute,
     contexts: ['attribute'],
     group: 'object',
@@ -501,8 +525,9 @@ export const registryCommands: RegistryCommand[] = [
   },
   {
     id: 'catalog:switch',
+    global: true,
     title: copy.switchCatalog,
-    contexts: ['tab', 'empty', 'dock-view'],
+    contexts: ['tab', 'dock-view'],
     group: 'views',
     keywords: ['catalog', 'source', 'master', 'switch', 'byt'],
   },
@@ -528,34 +553,39 @@ export const registryCommands: RegistryCommand[] = [
   },
   {
     id: 'layout:reset_layout',
+    global: true,
     title: copy.resetLayout,
-    contexts: ['tab', 'empty'],
+    contexts: ['tab'],
     group: 'views',
   },
   {
     id: 'table:mass-edit',
+    global: true,
     title: copy.massEdit,
-    contexts: ['row', 'cell', 'table-header', 'empty'],
+    contexts: ['row', 'cell', 'table-header'],
     group: 'views',
     keywords: ['status', 'ok', 'mass'],
   },
   {
     id: 'table:filter-by',
+    global: true,
     title: copy.filterBy,
-    contexts: ['row', 'cell', 'table-header', 'empty'],
+    contexts: ['row', 'cell', 'table-header'],
     group: 'views',
     keywords: ['filter'],
   },
   {
     id: 'table:export',
+    global: true,
     title: copy.export,
-    contexts: ['row', 'cell', 'table-header', 'empty'],
+    contexts: ['row', 'cell', 'table-header'],
     group: 'views',
   },
   {
     id: 'table:export-columns',
+    global: true,
     title: copy.exportColumns,
-    contexts: ['row', 'cell', 'table-header', 'empty'],
+    contexts: ['row', 'cell', 'table-header'],
     group: 'views',
   },
   {
@@ -570,6 +600,7 @@ export const registryCommands: RegistryCommand[] = [
 
 export function commandsForContext(context: MenuContext, target: CommandTarget = {}): RegistryCommand[] {
   return registryCommands.filter((command) => {
+    if (command.global) return false
     if (!command.contexts.includes(context)) return false
     if (command.when && !command.when(target)) return false
     return true

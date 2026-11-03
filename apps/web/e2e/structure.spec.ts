@@ -76,3 +76,34 @@ test('structure tree proposes group changes and assortments are saved queries', 
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
   await page.screenshot({ path: `${shots}/assortments-light.png` })
 })
+
+test('right-click shows only item actions', async ({ page }) => {
+  test.setTimeout(120_000)
+  await login(page)
+
+  const tree = page.getByTestId('structure-tree')
+  const item = tree.getByRole('treeitem').first()
+  await expect(item).toBeVisible()
+  await item.click({ button: 'right' })
+  const menu = page.getByTestId('context-menu')
+  await expect(menu).toBeVisible()
+  await expect(menu.getByRole('button', { name: /^Open/ })).toBeVisible()
+  await expect(menu.getByRole('button', { name: /^Rename/ })).toBeVisible()
+  for (const global of [
+    'Search…',
+    'Send feedback',
+    'Light mode',
+    'Open agent',
+    'Sign out',
+    'Switch catalog',
+    'Select fields…',
+    'Reset layout',
+  ]) {
+    await expect(menu.getByRole('button', { name: global })).toHaveCount(0)
+  }
+
+  const empty = page.getByTestId('detail-empty')
+  await expect(empty).toBeVisible()
+  await empty.click({ button: 'right' })
+  await expect(page.getByTestId('context-menu')).toHaveCount(0)
+})

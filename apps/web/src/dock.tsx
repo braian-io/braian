@@ -7,7 +7,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './comp
 import { viewDisplayTitle } from './demo-labels'
 import { looksLikeRawViewId } from './model-workspace-migrate'
 import { copy } from './i18n'
-import { openSharedContextMenu } from './shared-context-menu'
+import { openSharedContextMenu, prefersNativeContextMenu } from './shared-context-menu'
 import {
   activate,
   applyLayoutCommand,
@@ -387,6 +387,7 @@ function Pane({ frame, leaf }: { frame: Frame; leaf: Leaf }) {
                     }
                   }}
                   onContextMenu={(event) => {
+                    if (prefersNativeContextMenu(event.target)) return
                     event.preventDefault()
                     frame.onMenu({ x: event.clientX, y: event.clientY, view: id })
                   }}
