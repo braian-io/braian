@@ -138,6 +138,7 @@ describe('type attributes table', () => {
       if (path === '/v1/model/draft') return Promise.resolve({ count: 0, conflict: false, steps: [] })
       return Promise.resolve({})
     })
+    mock.methods.put.mockReset()
     stageModel.mockClear()
     stageModelSteps.mockClear()
     requestReview.mockClear()
@@ -189,6 +190,15 @@ describe('type attributes table', () => {
       kind: 'text',
     })))
     expect(stageModel).toHaveBeenCalledWith('model.attach_attribute', { attribute: 'extra', type: 'recipe' })
+  })
+
+  it('shows an error when saving allowed trees fails', async () => {
+    chooseModelSelection({ kind: 'type', typeKey: 'recipe' })
+    mock.methods.put.mockRejectedValueOnce(new Error('could not save allowed trees'))
+    render(<Host />)
+    const trees = await screen.findByTestId('allowed-trees')
+    fireEvent.click(within(trees).getByRole('checkbox', { name: 'Food' }))
+    expect(await screen.findByText('could not save allowed trees')).toBeTruthy()
   })
 
   it('dims inherited rows and shows the From column for a group', async () => {

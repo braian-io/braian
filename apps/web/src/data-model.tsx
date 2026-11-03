@@ -480,13 +480,14 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
           <TypeNameFields
             defs={defs}
             typeKey={selection.typeKey}
+            onError={setMessage}
             onSave={(patchValue) => {
               setMessage('')
               void stageModel('model.update_type', { key: selection.typeKey, language: uiLanguage, ...patchValue })
                 .catch((reason: unknown) => setMessage(errorText(reason)))
             }}
           />
-          <AllowedTrees defs={defs} typeKey={selection.typeKey} />
+          <AllowedTrees defs={defs} typeKey={selection.typeKey} onError={setMessage} />
         </>
       ) : null}
       <StandardEditableTable
@@ -542,7 +543,7 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
   )
 }
 
-function AllowedTrees({ defs, typeKey }: { defs: Json | undefined; typeKey: string }) {
+function AllowedTrees({ defs, typeKey, onError }: { defs: Json | undefined; typeKey: string; onError: (message: string) => void }) {
   const raw = ((defs?.types as Json[]) ?? []).find((item) => String(item.key) === typeKey)
   const selected = new Set(Array.isArray(raw?.structures) ? raw.structures.map((id) => String(id)) : [])
   const structures = ((defs?.structures as Json[]) ?? [])
@@ -554,7 +555,9 @@ function AllowedTrees({ defs, typeKey }: { defs: Json | undefined; typeKey: stri
   }, [])
   const save = (next: string[]) => {
     const id = String(raw?.id ?? typeKey)
-    void api.put('/v1/types/{id}/structures', { params: { path: { id: id } }, body: { structures: next } }).catch(() => undefined)
+    onError('')
+    void api.put('/v1/types/{id}/structures', { params: { path: { id: id } }, body: { structures: next } })
+      .catch((reason: unknown) => onError(errorText(reason)))
   }
   return (
     <fieldset className="type-names" data-testid="allowed-trees">
@@ -594,10 +597,12 @@ function indefiniteHere(name: string) {
 function TypeNameFields({
   defs,
   typeKey,
+  onError,
   onSave,
 }: {
   defs: Json | undefined
   typeKey: string
+  onError: (message: string) => void
   onSave: (patch: Json) => void
 }) {
   const row = objectTypes(defs, uiLanguage).find((item) => item.key === typeKey)
@@ -640,7 +645,9 @@ function TypeNameFields({
           onBlur={(event) => {
             const next = event.target.value.trim()
             if (next && next !== typeKey) {
-              void propose('model.rename_type_key', { key: typeKey, new_key: next }).catch(() => undefined)
+              onError('')
+              void propose('model.rename_type_key', { key: typeKey, new_key: next })
+                .catch((reason: unknown) => onError(errorText(reason)))
             }
           }}
           onContextMenu={(event) => {
