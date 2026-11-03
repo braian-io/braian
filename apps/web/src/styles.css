@@ -2200,6 +2200,29 @@ button[aria-disabled="true"]:hover,
 .standard-grid-row.on:focus,
 .standard-grid-row.on:focus-visible { outline: none; }
 .standard-grid-row.draft { background: color-mix(in oklab, var(--warn, #c90) 10%, transparent); }
+.standard-grid-row.read-only { color: var(--muted); opacity: 0.7; }
+.standard-grid-reorder,
+.standard-grid-reorder-head {
+  flex: none;
+  width: 58px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  overflow: visible;
+}
+.standard-grid-reorder-btn {
+  width: 16px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+.standard-grid-reorder-btn:disabled { opacity: 0.35; cursor: default; }
+.standard-grid-drag-handle { cursor: grab; }
 .standard-grid-cell {
   flex: 1;
   min-width: 0;
