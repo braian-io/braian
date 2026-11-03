@@ -333,7 +333,7 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
     const current = rows.filter((row) => !row.inherited).map((row) => row.key)
     const existing = attributes.filter((key) => current.includes(key))
     if (existing.join('\u0000') === current.join('\u0000')) return
-    await stageModel('model.reorder_type_attributes', { type: selection.typeKey, attributes })
+    await stageModel('model.reorder_type_attributes', { type_key: selection.typeKey, attributes })
   }
 
   const save = async () => {

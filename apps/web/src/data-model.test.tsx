@@ -165,7 +165,7 @@ describe('type attributes table', () => {
     fireEvent.click(within(row(container, ownBoolean.id)).getByRole('checkbox', { name: copy.searchable }))
     fireEvent.click(screen.getByTestId('review-and-save'))
     await waitFor(() => expect(stageModel).toHaveBeenCalledWith('model.reorder_type_attributes', {
-      type: 'recipe',
+      type_key: 'recipe',
       attributes: ['name', 'own_a', 'own_b'],
     }))
     expect(stageModel).toHaveBeenCalledWith('model.update_attribute', { key: 'own_a', searchable: true })
