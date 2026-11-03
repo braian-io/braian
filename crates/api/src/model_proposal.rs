@@ -414,6 +414,7 @@ async fn reference_write(
             }
             Ok(Some(ProposalWrite::CatalogDelete {
                 id: catalog.id.as_uuid(),
+                accepting: proposal_id,
             }))
         }
         ModelChange::UpsertMergeProfile { profile } => {

@@ -14,10 +14,16 @@ pub struct CatalogUsage {
     pub objects: i64,
     pub values: i64,
     pub links: i64,
+    /// Import sessions that have not finished yet. These block a delete.
     pub import_sessions: i64,
+    /// Open proposals, minus the proposal being accepted. These block a delete.
     pub proposals: i64,
     pub workspaces: i64,
     pub model_drafts: i64,
+    /// Accepted or discarded proposals. Deleted together with the catalog.
+    pub closed_proposals: i64,
+    /// Saved, cancelled or failed import sessions. Deleted with the catalog.
+    pub finished_import_sessions: i64,
 }
 
 impl CatalogUsage {
@@ -60,10 +66,18 @@ const USAGE_SQL: &str = "SELECT
        (SELECT count(*)::bigint FROM links l
          JOIN objects o ON o.id = l.object_id
          WHERE o.catalog_id = $1 AND o.deleted_at IS NULL) AS links,
-       (SELECT count(*)::bigint FROM import_sessions WHERE catalog_id = $1) AS import_sessions,
-       (SELECT count(*)::bigint FROM proposals WHERE catalog_id = $1) AS proposals,
+       (SELECT count(*)::bigint FROM import_sessions
+         WHERE catalog_id = $1 AND status NOT IN ('saved', 'cancelled', 'failed')) AS import_sessions,
+       (SELECT count(*)::bigint FROM proposals
+         WHERE catalog_id = $1 AND status = 'open'
+           AND ($2::uuid IS NULL OR id <> $2)) AS proposals,
        (SELECT count(*)::bigint FROM workspaces WHERE catalog_id = $1) AS workspaces,
-       (SELECT count(*)::bigint FROM model_drafts WHERE catalog_id = $1) AS model_drafts";
+       (SELECT count(*)::bigint FROM model_drafts WHERE catalog_id = $1) AS model_drafts,
+       (SELECT count(*)::bigint FROM proposals
+         WHERE catalog_id = $1 AND status <> 'open'
+           AND ($2::uuid IS NULL OR id <> $2)) AS closed_proposals,
+       (SELECT count(*)::bigint FROM import_sessions
+         WHERE catalog_id = $1 AND status IN ('saved', 'cancelled', 'failed')) AS finished_import_sessions";
 
 fn usage_from_row(row: &tokio_postgres::Row) -> CatalogUsage {
     CatalogUsage {
@@ -74,14 +88,17 @@ fn usage_from_row(row: &tokio_postgres::Row) -> CatalogUsage {
         proposals: row.get("proposals"),
         workspaces: row.get("workspaces"),
         model_drafts: row.get("model_drafts"),
+        closed_proposals: row.get("closed_proposals"),
+        finished_import_sessions: row.get("finished_import_sessions"),
     }
 }
 
 pub(crate) async fn usage_in(
     tx: &tokio_postgres::Transaction<'_>,
     id: Uuid,
+    accepting: Option<Uuid>,
 ) -> Result<CatalogUsage, Error> {
-    let row = tx.query_one(USAGE_SQL, &[&id]).await?;
+    let row = tx.query_one(USAGE_SQL, &[&id, &accepting]).await?;
     Ok(usage_from_row(&row))
 }
 
@@ -89,7 +106,8 @@ async fn usage_with(
     client: &impl deadpool_postgres::GenericClient,
     id: Uuid,
 ) -> Result<CatalogUsage, Error> {
-    let row = client.query_one(USAGE_SQL, &[&id]).await?;
+    let accepting: Option<Uuid> = None;
+    let row = client.query_one(USAGE_SQL, &[&id, &accepting]).await?;
     Ok(usage_from_row(&row))
 }
 

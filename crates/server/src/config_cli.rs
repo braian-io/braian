@@ -467,6 +467,24 @@ fn affected_summary(affected: PlanAffected) -> String {
         count(affected.values, "value", "values"),
         count(affected.links, "link", "links"),
         count(affected.selections, "selection", "selections"),
+        count(
+            affected.import_sessions,
+            "import session",
+            "import sessions",
+        ),
+        count(affected.proposals, "proposal", "proposals"),
+        count(affected.workspaces, "workspace", "workspaces"),
+        count(affected.model_drafts, "model draft", "model drafts"),
+        count(
+            affected.closed_proposals,
+            "closed proposal",
+            "closed proposals",
+        ),
+        count(
+            affected.finished_import_sessions,
+            "finished import session",
+            "finished import sessions",
+        ),
     ]
     .into_iter()
     .flatten()

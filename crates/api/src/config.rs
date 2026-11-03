@@ -298,6 +298,8 @@ async fn fill_affected(state: &AppState, plan: &mut ConfigPlan) -> Result<(), Pr
                 proposals: usage.proposals,
                 workspaces: usage.workspaces,
                 model_drafts: usage.model_drafts,
+                closed_proposals: usage.closed_proposals,
+                finished_import_sessions: usage.finished_import_sessions,
             };
             continue;
         }

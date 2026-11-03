@@ -188,6 +188,129 @@ async fn seed_object_in_catalog(db: &TestDb, catalog: braian_store::CatalogId) {
         .unwrap();
 }
 
+async fn seed_catalog_history(
+    db: &TestDb,
+    catalog: braian_store::CatalogId,
+) -> (uuid::Uuid, uuid::Uuid) {
+    let scoped = db.store().with_catalog(catalog);
+    let principal = scoped
+        .upsert_principal("history", braian_store::PrincipalKind::Human, "History")
+        .await
+        .unwrap();
+    let actor = braian_store::Actor {
+        actor: principal,
+        on_behalf_of: None,
+        kind: braian_store::BatchKind::Interactive,
+        source: "test".into(),
+    };
+    let defs: braian_model::DefinitionSet =
+        serde_json::from_str(include_str!("../../../testdata/rules/definitions.json")).unwrap();
+    scoped.put_definitions(&actor, &defs).await.unwrap();
+
+    let proposal = uuid::Uuid::now_v7();
+    scoped
+        .create_proposal(
+            proposal,
+            "Old config",
+            "user",
+            principal,
+            None,
+            false,
+            &[braian_store::ProposalRow {
+                id: uuid::Uuid::now_v7(),
+                object_id: None,
+                object_key: None,
+                type_key: Some("model".into()),
+                base_version: None,
+                patch: json!({}),
+                status: "pending".into(),
+                conflict: false,
+                position: 0,
+            }],
+        )
+        .await
+        .unwrap();
+    let lock = scoped.claim_proposal(proposal).await.unwrap();
+    scoped
+        .set_proposal_status(proposal, "accepted", lock.token(), false)
+        .await
+        .unwrap();
+    drop(lock);
+
+    let session = uuid::Uuid::now_v7();
+    scoped
+        .insert_import_session(
+            session,
+            principal.as_uuid(),
+            None,
+            "old.csv",
+            "csv",
+            i64::try_from(defs.model_revision).unwrap_or(0),
+        )
+        .await
+        .unwrap();
+    scoped
+        .copy_import_rows(
+            session,
+            0,
+            &[braian_store::ImportRowIn {
+                session_id: session,
+                row_no: 1,
+                status: "new".into(),
+                object_id: None,
+                object_key: None,
+                base_version: None,
+                cells: json!({}),
+                patch: None,
+                errors: json!([]),
+            }],
+        )
+        .await
+        .unwrap();
+    scoped
+        .update_import_upload(session, 10, "saved", None)
+        .await
+        .unwrap();
+    (proposal, session)
+}
+
+async fn catalog_count(client: &tokio_postgres::Client, table: &str, id: uuid::Uuid) -> i64 {
+    let sql = format!("SELECT count(*)::bigint FROM {table} WHERE catalog_id = $1");
+    client.query_one(&sql, &[&id]).await.unwrap().get(0)
+}
+
+async fn open_catalog_proposal(db: &TestDb, catalog: braian_store::CatalogId) -> uuid::Uuid {
+    let scoped = db.store().with_catalog(catalog);
+    let principal = scoped
+        .upsert_principal("open", braian_store::PrincipalKind::Human, "Open")
+        .await
+        .unwrap();
+    let proposal = uuid::Uuid::now_v7();
+    scoped
+        .create_proposal(
+            proposal,
+            "Open config",
+            "user",
+            principal,
+            None,
+            false,
+            &[braian_store::ProposalRow {
+                id: uuid::Uuid::now_v7(),
+                object_id: None,
+                object_key: None,
+                type_key: Some("model".into()),
+                base_version: None,
+                patch: json!({}),
+                status: "pending".into(),
+                conflict: false,
+                position: 0,
+            }],
+        )
+        .await
+        .unwrap();
+    proposal
+}
+
 fn model(documents: &mut [Value]) -> &mut Value {
     documents
         .iter_mut()
@@ -673,6 +796,179 @@ async fn apply_delete_catalog_with_objects_is_rejected() {
         "{}",
         String::from_utf8_lossy(&body)
     );
+}
+
+#[tokio::test]
+async fn apply_delete_catalog_removes_finished_history() {
+    let (db, app) = app().await;
+    let temp = db
+        .store()
+        .create_catalog(
+            braian_store::CatalogId::new(),
+            "temp",
+            "Temporary",
+            braian_store::CatalogKind::Source,
+            true,
+        )
+        .await
+        .unwrap();
+    let (proposal, session) = seed_catalog_history(&db, temp.id).await;
+
+    let (client, connection) = tokio_postgres::connect(&db.database_url(), tokio_postgres::NoTls)
+        .await
+        .unwrap();
+    tokio::spawn(async move {
+        let _ = connection.await;
+    });
+    let id = temp.id.as_uuid();
+    assert!(catalog_count(&client, "changes", id).await > 0);
+    assert!(catalog_count(&client, "batches", id).await > 0);
+    assert!(catalog_count(&client, "import_sessions", id).await > 0);
+    assert!(catalog_count(&client, "proposals", id).await > 0);
+    let rows: i64 = client
+        .query_one(
+            "SELECT count(*)::bigint FROM proposal_rows WHERE proposal_id = $1",
+            &[&proposal],
+        )
+        .await
+        .unwrap()
+        .get(0);
+    assert_eq!(rows, 1);
+    let import_rows: i64 = client
+        .query_one(
+            "SELECT count(*)::bigint FROM import_rows WHERE session_id = $1",
+            &[&session],
+        )
+        .await
+        .unwrap()
+        .get(0);
+    assert_eq!(import_rows, 1);
+
+    let documents = delete_catalog_documents(exported(&app).await, "temp");
+    let wrapped = json!({ "documents": documents, "allowDestructive": true });
+    let (status, proposed) = apply(&app, &wrapped.to_string()).await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{proposed}");
+    let proposal_id = proposed["proposal_id"].as_str().unwrap();
+    let (status, accepted) = accept(&app, proposal_id).await;
+    assert_eq!(status, StatusCode::OK, "{accepted}");
+    assert!(
+        accepted["failed"].as_array().unwrap().is_empty(),
+        "{accepted}"
+    );
+
+    assert_eq!(catalog_count(&client, "changes", id).await, 0);
+    assert_eq!(catalog_count(&client, "batches", id).await, 0);
+    assert_eq!(catalog_count(&client, "import_sessions", id).await, 0);
+    assert_eq!(catalog_count(&client, "proposals", id).await, 0);
+    let rows: i64 = client
+        .query_one(
+            "SELECT count(*)::bigint FROM proposal_rows WHERE proposal_id = $1",
+            &[&proposal],
+        )
+        .await
+        .unwrap()
+        .get(0);
+    assert_eq!(rows, 0);
+    let import_rows: i64 = client
+        .query_one(
+            "SELECT count(*)::bigint FROM import_rows WHERE session_id = $1",
+            &[&session],
+        )
+        .await
+        .unwrap()
+        .get(0);
+    assert_eq!(import_rows, 0);
+
+    let (status, _, body) = call(&app, "GET", "/v1/catalogs", Some(HUMAN), &[], None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        !String::from_utf8_lossy(&body).contains("temp"),
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+}
+
+#[tokio::test]
+async fn apply_delete_catalog_with_another_open_proposal_is_rejected() {
+    let (db, app) = app().await;
+    let temp = db
+        .store()
+        .create_catalog(
+            braian_store::CatalogId::new(),
+            "temp",
+            "Temporary",
+            braian_store::CatalogKind::Source,
+            true,
+        )
+        .await
+        .unwrap();
+    open_catalog_proposal(&db, temp.id).await;
+
+    let documents = delete_catalog_documents(exported(&app).await, "temp");
+    let wrapped = json!({ "documents": documents, "allowDestructive": true });
+    let (status, proposed) = apply(&app, &wrapped.to_string()).await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{proposed}");
+    let proposal_id = proposed["proposal_id"].as_str().unwrap();
+
+    let (status, rejected) = accept(&app, proposal_id).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{rejected}");
+    assert_eq!(rejected["code"], "catalog_in_use", "{rejected}");
+    assert_eq!(
+        rejected["detail"],
+        "catalog temp is in use: 0 objects, 0 import sessions, 1 proposal, 0 workspaces, 0 model drafts",
+        "{rejected}"
+    );
+
+    let (status, _, body) = call(&app, "GET", "/v1/catalogs", Some(HUMAN), &[], None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        String::from_utf8_lossy(&body).contains("temp"),
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+}
+
+#[tokio::test]
+async fn plan_shows_catalog_active_and_history_counts() {
+    let (db, app) = app().await;
+    let temp = db
+        .store()
+        .create_catalog(
+            braian_store::CatalogId::new(),
+            "temp",
+            "Temporary",
+            braian_store::CatalogKind::Source,
+            true,
+        )
+        .await
+        .unwrap();
+    seed_catalog_history(&db, temp.id).await;
+    open_catalog_proposal(&db, temp.id).await;
+
+    let documents = delete_catalog_documents(exported(&app).await, "temp");
+    let (status, _, body) = call(
+        &app,
+        "POST",
+        "/v1/config/plan",
+        Some(HUMAN),
+        &[("content-type", "application/json")],
+        Some(&serde_json::to_string(&documents).unwrap()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let plan: Value = serde_json::from_slice(&body).unwrap();
+    let step = plan["steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|step| {
+            step["action"] == "delete" && step["kind"] == "catalog" && step["key"] == "temp"
+        })
+        .expect("temp delete step");
+    assert_eq!(step["affected"]["proposals"], 1, "{plan}");
+    assert_eq!(step["affected"]["importSessions"], 0, "{plan}");
+    assert_eq!(step["affected"]["closedProposals"], 1, "{plan}");
+    assert_eq!(step["affected"]["finishedImportSessions"], 1, "{plan}");
 }
 
 #[tokio::test]

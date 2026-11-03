@@ -58,6 +58,8 @@ pub enum ProposalWrite {
     },
     CatalogDelete {
         id: Uuid,
+        /// The proposal accepting this delete. It is open, so it must survive.
+        accepting: Uuid,
     },
     MergeProfile {
         id: Uuid,
@@ -1052,8 +1054,8 @@ impl Store {
                     versions: Vec::new(),
                 }
             }
-            ProposalWrite::CatalogDelete { id } => {
-                let usage = crate::catalogs::usage_in(tx, id).await?;
+            ProposalWrite::CatalogDelete { id, accepting } => {
+                let usage = crate::catalogs::usage_in(tx, id, Some(accepting)).await?;
                 if usage.has_dependents() {
                     let key: Option<String> = tx
                         .query_opt("SELECT key FROM catalogs WHERE id = $1", &[&id])
@@ -1084,6 +1086,31 @@ impl Store {
                     &[&id],
                 )
                 .await?;
+                // History is part of the catalog. Proposals and sessions that
+                // are still live blocked the delete above, so only finished
+                // rows are left to remove. Delete children before parents.
+                tx.execute("DELETE FROM changes WHERE catalog_id = $1", &[&id])
+                    .await?;
+                tx.execute(
+                    "DELETE FROM import_rows WHERE session_id IN (
+                        SELECT id FROM import_sessions
+                        WHERE catalog_id = $1 AND status IN ('saved', 'cancelled', 'failed')
+                    )",
+                    &[&id],
+                )
+                .await?;
+                tx.execute(
+                    "DELETE FROM import_sessions
+                     WHERE catalog_id = $1 AND status IN ('saved', 'cancelled', 'failed')",
+                    &[&id],
+                )
+                .await?;
+                tx.execute(
+                    "DELETE FROM proposals
+                     WHERE catalog_id = $1 AND status <> 'open' AND id <> $2",
+                    &[&id, &accepting],
+                )
+                .await?;
                 tx.execute("DELETE FROM indexer_progress WHERE catalog_id = $1", &[&id])
                     .await?;
                 tx.execute(
@@ -1091,6 +1118,8 @@ impl Store {
                     &[&id],
                 )
                 .await?;
+                tx.execute("DELETE FROM batches WHERE catalog_id = $1", &[&id])
+                    .await?;
                 tx.execute("DELETE FROM attribute_parts WHERE catalog_id = $1", &[&id])
                     .await?;
                 tx.execute("DELETE FROM catalogs WHERE id = $1", &[&id])

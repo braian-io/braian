@@ -76,6 +76,11 @@ pub struct PlanAffected {
     pub workspaces: i64,
     #[serde(default)]
     pub model_drafts: i64,
+    /// Catalog delete only: finished history removed with the catalog.
+    #[serde(default)]
+    pub closed_proposals: i64,
+    #[serde(default)]
+    pub finished_import_sessions: i64,
 }
 
 /// One step in a config plan.
