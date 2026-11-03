@@ -97,7 +97,7 @@ export type StandardEditableTableProps<T extends { id: string }> = {
 
 type EditCell = { rowId: string; columnId: string }
 
-const ROW_ORDER_KEY = '__rowOrder'
+export const ROW_ORDER_KEY = '__rowOrder'
 
 type GridRowProps = Omit<ComponentPropsWithoutRef<'div'>, 'children'> & {
   rowId: string
@@ -282,10 +282,22 @@ export function StandardEditableTable<T extends { id: string }>({
     if (editing) inputRef.current?.focus()
   }, [editing])
 
+  useEffect(() => {
+    if (Object.keys(draftRows).length === 0) setReorderOrder(null)
+  }, [draftRows])
+
+  const keepRowOrder = (next: Record<string, T>) => {
+    const order = (draftRows as Record<string, unknown>)[ROW_ORDER_KEY]
+    if (Array.isArray(order)) {
+      Object.defineProperty(next, ROW_ORDER_KEY, { value: order, enumerable: false, configurable: true })
+    }
+    return next
+  }
+
   const patchRow = useCallback(
     (rowId: string, next: T) => {
       if (!onDraftRowsChange) return
-      onDraftRowsChange({ ...draftRows, [rowId]: next })
+      onDraftRowsChange(keepRowOrder({ ...draftRows, [rowId]: next }))
     },
     [draftRows, onDraftRowsChange],
   )
@@ -401,7 +413,7 @@ export function StandardEditableTable<T extends { id: string }>({
   const onNewRow = () => {
     if (!createDraftRow || !onDraftRowsChange) return
     const row = createDraftRow()
-    onDraftRowsChange({ ...draftRows, [row.id]: row })
+    onDraftRowsChange(keepRowOrder({ ...draftRows, [row.id]: row }))
     const first = editableColumnsFor(row)[0]
     queueMicrotask(() => {
       activateRow(row)

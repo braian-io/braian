@@ -1,17 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { MoreHorizontal } from 'lucide-react'
+import { Lock, MoreHorizontal } from 'lucide-react'
 import { ApiError, api, textValue, type Json } from './api'
 import { formatCount } from './format'
-import { Checkbox } from './components/ui/checkbox'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './components/ui/dropdown-menu'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select'
 import { copy, uiLanguage } from './i18n'
 import {
   attributeConflict,
   attributeKey,
   attributeRows,
-  effectiveFields,
   objectTypes,
   type AttributeRow,
   type ModelSelection,
@@ -19,9 +16,9 @@ import {
 import { structureCaption } from './graph-scene'
 import { StructureSection } from './structure-tree'
 import { StateNote } from './states'
-import { onDraftChange, setModelFocus, stageModel } from './model-stage'
+import { onDraftChange, requestReview, setModelFocus, stageModel, stageModelSteps } from './model-stage'
 import { chooseModelSelection, getModelSelection, getPreviewType, setPreviewType, subscribeModelSelection } from './model-selection'
-import { openSharedContextMenu } from './shared-context-menu'
+import { ROW_ORDER_KEY, StandardEditableTable, type StandardColumn } from './standard-editable-table'
 
 type View = { state: Json }
 
@@ -61,7 +58,7 @@ export function DataModel({ view }: { view: View }) {
   const defs = preview ?? stored.data
   // Preview (card) removed. Structures stay as a tree (not ModelNav type/list chrome).
   // Object/link/value list/unit tables cover those entities. Type attributes use mode=classes.
-  if (mode === 'classes' || mode === 'attributes') return <AttributeTable defs={defs} />
+  if (mode === 'classes' || mode === 'attributes') return <AttributesTable defs={defs} />
   if (mode === 'impact') return <ImpactNote />
   if (mode === 'card' || mode === 'editor') return <StateNote tone="empty" title={copy.pickModel} />
   return <StructuresPane defs={defs} />
@@ -77,22 +74,120 @@ function StructuresPane({ defs }: { defs: Json | undefined }) {
 }
 
 
-function AttributeTable({ defs }: { defs: Json | undefined }) {
+type AttributeTableRow = AttributeRow & {
+  standard: boolean
+  multiple: boolean
+  min: string
+  max: string
+  valueList: string
+}
+
+function detailRow(defs: Json | undefined, row: AttributeRow): AttributeTableRow {
+  const raw = ((defs?.attributes as Json[]) ?? []).find(
+    (item) => String(item.id ?? '') === row.id || String(item.key ?? '') === row.key,
+  )
+  const kind = (raw?.kind as Json) ?? {}
+  return {
+    ...row,
+    standard: standardAttribute(row.id),
+    multiple: Boolean(raw?.multiple),
+    min: kind.min === null || kind.min === undefined ? '' : String(kind.min),
+    max: kind.max === null || kind.max === undefined ? '' : String(kind.max),
+    valueList: String(kind.list ?? ''),
+  }
+}
+
+function errorText(reason: unknown) {
+  return reason instanceof ApiError ? reason.message : reason instanceof Error ? reason.message : copy.validation
+}
+
+function AttributeMenu({
+  row,
+  lists,
+  onPatch,
+  onDetach,
+  onDelete,
+}: {
+  row: AttributeTableRow
+  lists: string[]
+  onPatch: (patch: Partial<AttributeTableRow>) => void
+  onDetach?: () => void
+  onDelete?: () => void
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger className="icon-btn" aria-label={copy.more} data-testid={`attr-menu-${row.key || row.id}`}>
+        <MoreHorizontal size={14} aria-hidden="true" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" onClick={(event) => event.stopPropagation()}>
+        {row.kind === 'number' ? (
+          <div className="attr-menu-field" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+            <label>
+              {copy.min}
+              <input aria-label={copy.min} value={row.min} onChange={(event) => onPatch({ min: event.target.value })} />
+            </label>
+            <label>
+              {copy.max}
+              <input aria-label={copy.max} value={row.max} onChange={(event) => onPatch({ max: event.target.value })} />
+            </label>
+          </div>
+        ) : null}
+        {row.kind === 'value_list' ? (
+          <div className="attr-menu-field" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+            <label>
+              {copy.valueList}
+              <select
+                aria-label={copy.valueList}
+                value={row.valueList || 'none'}
+                onChange={(event) => onPatch({ valueList: event.target.value === 'none' ? '' : event.target.value })}
+              >
+                <option value="none">{copy.noValue}</option>
+                {lists.map((list) => <option key={list} value={list}>{list}</option>)}
+              </select>
+            </label>
+          </div>
+        ) : null}
+        <DropdownMenuItem onSelect={(event) => { event.preventDefault(); onPatch({ multiple: !row.multiple }) }}>
+          {copy.multiple}{row.multiple ? ' · on' : ''}
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={(event) => { event.preventDefault(); onPatch({ filterable: !row.filterable }) }}>
+          {copy.filterable}{row.filterable ? ' · on' : ''}
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={(event) => { event.preventDefault(); onPatch({ sortable: !row.sortable }) }}>
+          {copy.sortable}{row.sortable ? ' · on' : ''}
+        </DropdownMenuItem>
+        {onDetach ? <DropdownMenuItem onSelect={onDetach}>{copy.removeFromHere}</DropdownMenuItem> : null}
+        {onDelete ? <DropdownMenuItem onSelect={onDelete}>{copy.deleteMenu}</DropdownMenuItem> : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+function AttributesTable({ defs }: { defs: Json | undefined }) {
+  const queryClient = useQueryClient()
   const { selection } = useModelSelection()
-  const rows = attributeRows(defs, selection, uiLanguage)
-  const families = ((defs?.unit_families as Json[]) ?? []).map((item) => String(item.key ?? '')).filter(Boolean)
-  const [message, setMessage] = useState('')
   const [filter, setFilter] = useState('')
-  const [sort, setSort] = useState<'listed' | 'name' | 'kind'>('listed')
+  const [draftRows, setDraftRows] = useState<Record<string, AttributeTableRow>>({})
+  const [message, setMessage] = useState('')
   const selectionKey = selection ? (selection.kind === 'type' ? selection.typeKey : `${selection.structure}/${selection.group}`) : ''
   const keyAttribute = keyAttributeOf(defs, selection)
+  const families = ((defs?.unit_families as Json[]) ?? []).map((item) => String(item.key ?? '')).filter(Boolean)
+  const lists = ((defs?.value_lists as Json[]) ?? []).map((item) => String(item.key ?? '')).filter(Boolean)
+
   useEffect(() => {
+    setDraftRows({})
+    setFilter('')
     setMessage('')
   }, [selectionKey])
-  const run = (name: string, args: Json) => {
-    setMessage('')
-    void propose(name, args).catch((reason: unknown) => setMessage(reason instanceof ApiError ? reason.message : copy.validation))
-  }
+
+  const rows = useMemo(() => {
+    const source = attributeRows(defs, selection, uiLanguage).map((row) => detailRow(defs, row))
+    if (selection?.kind === 'type') {
+      return [...source.filter((row) => row.standard), ...source.filter((row) => !row.standard)]
+    }
+    return source
+  }, [defs, selection])
+
   if (!selection) {
     return (
       <div data-testid="data-model">
@@ -100,460 +195,352 @@ function AttributeTable({ defs }: { defs: Json | undefined }) {
       </div>
     )
   }
+
+  const patch = (row: AttributeTableRow, change: Partial<AttributeTableRow>) => {
+    setDraftRows((current) => ({ ...current, [row.id]: { ...row, ...change } }))
+  }
+
+  const stageRemove = async (row: AttributeTableRow, deleteDefinition: boolean) => {
+    const original = rows.find((item) => item.id === row.id)
+    if (!original) {
+      setDraftRows((current) => {
+        const next = { ...current }
+        delete next[row.id]
+        return next
+      })
+      return
+    }
+    setMessage('')
+    try {
+      if (deleteDefinition) {
+        await stageModelSteps([{ op: 'delete_attribute', key: original.key }])
+      } else if (selection.kind === 'type') {
+        await stageModelSteps([{ op: 'detach_attribute', attribute: original.key, type_key: selection.typeKey }])
+      } else {
+        await stageModelSteps([{ op: 'detach_attribute', attribute: original.key, structure: selection.structure, group: selection.group }])
+      }
+      setDraftRows((current) => {
+        const next = { ...current }
+        delete next[row.id]
+        return next
+      })
+    } catch (reason) {
+      setMessage(errorText(reason))
+    }
+  }
+
+  const attachArgs = (attribute: string) => selection.kind === 'type'
+    ? { attribute, type: selection.typeKey }
+    : { attribute, structure: selection.structure, group: selection.group }
+
+  const createRow = async (row: AttributeTableRow) => {
+    const label = row.label.trim()
+    const key = row.key.trim() || attributeKey(label)
+    if (!label || !key) return
+    const unit = row.kind === 'number' || row.kind === 'range' ? row.unit : ''
+    if (attributeConflict(defs, key, row.kind, unit)) throw new Error(copy.conflictAttribute)
+    const exists = ((defs?.attributes as Json[]) ?? []).some((item) => String(item.key) === key)
+    if (!exists) {
+      await stageModel('model.create_attribute', {
+        key,
+        label,
+        kind: row.kind,
+        unit: unit || null,
+        multiple: row.multiple,
+        languages: row.kind === 'text' ? row.languages : false,
+        required: row.required,
+        searchable: row.searchable,
+        filterable: row.filterable,
+        sortable: row.sortable,
+        ...(row.kind === 'number' && row.min.trim() ? { min: row.min.trim() } : {}),
+        ...(row.kind === 'number' && row.max.trim() ? { max: row.max.trim() } : {}),
+        ...(row.kind === 'value_list' && row.valueList ? { value_list: row.valueList } : {}),
+      })
+    }
+    await stageModel('model.attach_attribute', attachArgs(key))
+  }
+
+  const updateRow = async (original: AttributeTableRow, row: AttributeTableRow) => {
+    const patch: Json = {}
+    const nextKey = row.key.trim()
+    const canRenameKey = !original.standard && original.id !== keyAttribute
+    if (canRenameKey && nextKey && nextKey !== original.key) {
+      await stageModel('model.rename_attribute_key', { key: original.key, new_key: nextKey })
+    }
+    const key = canRenameKey && nextKey ? nextKey : original.key
+    const label = row.label.trim()
+    if (label && label !== original.label) patch.label = label
+    if (row.kind !== original.kind) {
+      patch.kind = row.kind
+      if (row.kind !== 'number' && row.kind !== 'range') patch.clear_unit = true
+    }
+    const unitKind = row.kind === 'number' || row.kind === 'range'
+    if (unitKind && row.unit !== original.unit) {
+      if (row.unit) patch.unit = row.unit
+      else patch.clear_unit = true
+    }
+    if (row.required !== original.required) patch.required = row.required
+    if (row.languages !== original.languages) patch.languages = row.languages
+    if (row.searchable !== original.searchable) patch.searchable = row.searchable
+    if (row.filterable !== original.filterable) patch.filterable = row.filterable
+    if (row.sortable !== original.sortable) patch.sortable = row.sortable
+    if (row.multiple !== original.multiple) patch.multiple = row.multiple
+    if (row.kind === 'number') {
+      if (row.min !== original.min) {
+        if (row.min.trim()) patch.min = row.min.trim()
+        else if (original.min) patch.clear_min = true
+      }
+      if (row.max !== original.max) {
+        if (row.max.trim()) patch.max = row.max.trim()
+        else if (original.max) patch.clear_max = true
+      }
+    }
+    if (row.kind === 'value_list' && row.valueList !== original.valueList) {
+      if (row.valueList) patch.value_list = row.valueList
+      else if (original.valueList) patch.clear_value_list = true
+    }
+    if (Object.keys(patch).length > 0) await stageModel('model.update_attribute', { key, ...patch })
+  }
+
+  const reorderRows = async () => {
+    if (selection.kind !== 'type') return
+    const order = (draftRows as Record<string, unknown>)[ROW_ORDER_KEY]
+    if (!Array.isArray(order)) return
+    const byId = new Map<string, AttributeTableRow>()
+    for (const row of rows) byId.set(row.id, draftRows[row.id] ?? row)
+    for (const [id, row] of Object.entries(draftRows)) if (!byId.has(id)) byId.set(id, row)
+    const seen = new Set<string>()
+    const desired: AttributeTableRow[] = []
+    for (const id of order) {
+      if (typeof id !== 'string') continue
+      const row = byId.get(id)
+      if (!row || seen.has(row.id)) continue
+      seen.add(row.id)
+      desired.push(row)
+    }
+    for (const row of rows) {
+      if (seen.has(row.id)) continue
+      seen.add(row.id)
+      desired.push(draftRows[row.id] ?? row)
+    }
+    for (const row of Object.values(draftRows)) {
+      if (seen.has(row.id)) continue
+      seen.add(row.id)
+      desired.push(row)
+    }
+    const attributes = desired.map((row) => row.key.trim() || attributeKey(row.label)).filter(Boolean)
+    if (attributes.length === 0) return
+    const current = rows.filter((row) => !row.inherited).map((row) => row.key)
+    const existing = attributes.filter((key) => current.includes(key))
+    if (existing.join('\u0000') === current.join('\u0000')) return
+    await stageModel('model.reorder_type_attributes', { type: selection.typeKey, attributes })
+  }
+
+  const save = async () => {
+    setMessage('')
+    try {
+      const existing = new Map(rows.map((row) => [row.id, row]))
+      for (const row of Object.values(draftRows)) {
+        const original = existing.get(row.id)
+        if (original) await updateRow(original, row)
+        else await createRow(row)
+      }
+      await reorderRows()
+      setDraftRows({})
+      await queryClient.invalidateQueries({ queryKey: ['model-draft'] })
+      requestReview()
+    } catch (reason) {
+      setMessage(errorText(reason))
+    }
+  }
+
+  const columns: Array<StandardColumn<AttributeTableRow>> = [
+    {
+      id: 'label',
+      header: copy.attributeName,
+      editable: true,
+      read: (row) => row.label,
+      write: (row, value) => ({ ...row, label: value }),
+      cellTestId: (row) => `attr-label-${row.key || row.id}`,
+    },
+    {
+      id: 'key',
+      header: copy.key,
+      editable: true,
+      read: (row) => row.key,
+      write: (row, value) => ({ ...row, key: value }),
+      cellTestId: (row) => `attr-key-${row.key || row.id}`,
+      display: (row) => {
+        const locked = row.standard || row.id === keyAttribute
+        return (
+          <span className={locked ? 'attr-key-lock' : undefined} data-attr={row.key || undefined} title={row.standard ? copy.standardFlag : undefined}>
+            {locked ? <Lock size={12} aria-hidden="true" /> : null}
+            {row.key || '—'}
+          </span>
+        )
+      },
+    },
+    {
+      id: 'kind',
+      header: copy.attributeType,
+      type: 'enum',
+      editable: true,
+      options: KINDS.map(([value, label]) => ({ value, label })),
+      read: (row) => row.kind,
+      write: (row, value) => ({
+        ...row,
+        kind: value,
+        ...(value === 'number' || value === 'range' ? {} : { unit: '', min: '', max: '', valueList: '' }),
+      }),
+      display: (row) => kindLabel(row.kind),
+    },
+    {
+      id: 'unit',
+      header: copy.unit,
+      type: 'enum',
+      editable: true,
+      options: [{ value: 'none', label: copy.noUnit }, ...families.map((family) => ({ value: family, label: family }))],
+      read: (row) => row.unit || 'none',
+      write: (row, value) => ({ ...row, unit: value === 'none' ? '' : value }),
+      display: (row) => row.unit || '—',
+    },
+    {
+      id: 'required',
+      header: copy.required,
+      type: 'boolean',
+      editable: true,
+      display: 'checkbox',
+      read: (row) => row.required,
+      write: (row, value) => ({ ...row, required: value === 'true' }),
+    },
+    {
+      id: 'languages',
+      header: copy.languages,
+      type: 'boolean',
+      editable: true,
+      display: 'checkbox',
+      read: (row) => row.languages,
+      write: (row, value) => ({ ...row, languages: value === 'true' }),
+    },
+    {
+      id: 'searchable',
+      header: copy.searchable,
+      type: 'boolean',
+      editable: true,
+      display: 'checkbox',
+      read: (row) => row.searchable,
+      write: (row, value) => ({ ...row, searchable: value === 'true' }),
+    },
+  ]
+
+  if (selection.kind === 'group') {
+    columns.push({
+      id: 'from',
+      header: copy.from,
+      type: 'readonly',
+      read: (row) => (row.fromKey ? `${copy.fromSource} ${structureCaption(row.fromKey, defs)}` : ''),
+      display: (row) => row.fromKey
+        ? <span data-testid="attribute-from">{copy.fromSource} {structureCaption(row.fromKey, defs)}</span>
+        : <span>—</span>,
+    })
+  }
+
+  columns.push({
+    id: 'menu',
+    header: copy.more,
+    type: 'readonly',
+    width: 48,
+    read: () => '',
+    display: (row) => {
+      if (row.inherited) return null
+      const canChange = !row.standard && row.id !== keyAttribute
+      return (
+        <AttributeMenu
+          row={row}
+          lists={lists}
+          onPatch={(change) => patch(row, change)}
+          onDetach={canChange ? () => { void stageRemove(row, false) } : undefined}
+          onDelete={canChange ? () => { void stageRemove(row, true) } : undefined}
+        />
+      )
+    },
+  })
+
   const title = selection.kind === 'type'
     ? objectTypes(defs, uiLanguage).find((item) => item.key === selection.typeKey)?.label ?? selection.typeKey
     : structureCaption(selection.group, defs, selection.kind === 'group' ? selection.structure : undefined)
+
   return (
-    <div
-      data-testid="data-model"
-      className="model-attributes"
-      onKeyDown={(event) => {
-        if (!event.altKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return
-        const key = event.target instanceof HTMLElement ? event.target.closest('[data-attr]')?.getAttribute('data-attr') : ''
-        if (!key || selection.kind !== 'type') return
-        event.preventDefault()
-        const order = rows.map((item) => item.key)
-        const index = order.indexOf(key)
-        const next = event.key === 'ArrowUp' ? index - 1 : index + 1
-        if (index < 0 || next < 0 || next >= order.length) return
-        const swapped = [...order]
-        const moved = swapped[index]
-        swapped[index] = swapped[next] ?? moved
-        swapped[next] = moved
-        run('model.reorder_type_attributes', { type: selection.typeKey, attributes: swapped })
-      }}
-      onDragOver={(event) => event.preventDefault()}
-      onDrop={(event) => {
-        if (selection.kind !== 'type') return
-        const key = event.dataTransfer.getData('text/plain')
-        const target = event.target instanceof HTMLElement ? event.target.closest('[data-attr]')?.getAttribute('data-attr') : ''
-        if (!key || !target || key === target) return
-        const order = rows.map((item) => item.key)
-        const from = order.indexOf(key)
-        const to = order.indexOf(target)
-        if (from < 0 || to < 0) return
-        order.splice(from, 1)
-        order.splice(to, 0, key)
-        run('model.reorder_type_attributes', { type: selection.typeKey, attributes: order })
-      }}
-    >
-      <div data-testid="attribute-table" className="attr-table">
-        <div className="attr-title">
-          <span>{title}</span>
-          <TableMenu filter={filter} sort={sort} onFilter={setFilter} onSort={setSort} />
-        </div>
-        {selection.kind === 'type' ? (
-          <>
-            <TypeNameFields
-              defs={defs}
-              typeKey={selection.typeKey}
-              onSave={(patch) => run('model.update_type', { key: selection.typeKey, language: uiLanguage, ...patch })}
-            />
-            <AllowedTrees defs={defs} typeKey={selection.typeKey} />
-          </>
-        ) : null}
-        <div className="attr-head">
-          <span>{copy.attributeName}</span>
-          <span>{copy.key}</span>
-          <span>{copy.attributeType}</span>
-          <span>{copy.unit}</span>
-          <span>{copy.required}</span>
-          <span>{copy.languages}</span>
-          <span>{copy.searchable}</span>
-          <span />
-        </div>
-        {selection.kind === 'type' && visibleRows(rows, filter, sort).some((row) => standardAttribute(row.id)) ? (
-          <p className="attr-section">{copy.standardAttributes}</p>
-        ) : null}
-        {visibleRows(rows, filter, sort).filter((row) => selection.kind !== 'type' || standardAttribute(row.id)).map((row) => (
-          <AttributeLine
-            key={row.id}
-            row={row}
-            families={families}
+    <div data-testid="data-model" className="model-attributes">
+      <div className="attr-title">
+        <span>{title}</span>
+      </div>
+      {selection.kind === 'type' ? (
+        <>
+          <TypeNameFields
             defs={defs}
-            locked={standardAttribute(row.id)}
-            onUpdate={(patch) => run('model.update_attribute', { key: row.key, ...patch })}
-            onRenameKey={(newKey) => run('model.rename_attribute_key', { key: row.key, new_key: newKey })}
-            onRemove={() =>
-              run('model.detach_attribute', {
-                attribute: row.key,
-                ...(selection.kind === 'type'
-                  ? { type: selection.typeKey }
-                  : { structure: selection.structure, group: selection.group }),
-              })
-            }
-            onDelete={standardAttribute(row.id) || row.id === keyAttribute ? undefined : () => run('model.delete_attribute', { attribute: row.key })}
-          />
-        ))}
-        {selection.kind === 'type' ? visibleRows(rows, filter, sort).filter((row) => !standardAttribute(row.id)).map((row) => (
-          <AttributeLine
-            key={row.id}
-            row={row}
-            families={families}
-            defs={defs}
-            locked={row.id === keyAttribute}
-            onUpdate={(patch) => run('model.update_attribute', { key: row.key, ...patch })}
-            onRenameKey={(newKey) => run('model.rename_attribute_key', { key: row.key, new_key: newKey })}
-            onRemove={() =>
-              run('model.detach_attribute', {
-                attribute: row.key,
-                type: selection.typeKey,
-              })
-            }
-            onDelete={row.id === keyAttribute ? undefined : () => run('model.delete_attribute', { attribute: row.key })}
-            onMenu={(event) => {
-              openSharedContextMenu({
-                context: 'attribute',
-                x: event.clientX,
-                y: event.clientY,
-                target: { attributeKey: row.key },
-                extraOnly: true,
-                extra: [
-                  {
-                    id: 'model:delete-attribute',
-                    title: copy.deleteMenu,
-                    contexts: ['attribute'],
-                    group: 'object',
-                    danger: true,
-                  },
-                ],
-              })
+            typeKey={selection.typeKey}
+            onSave={(patchValue) => {
+              setMessage('')
+              void stageModel('model.update_type', { key: selection.typeKey, language: uiLanguage, ...patchValue })
+                .catch((reason: unknown) => setMessage(errorText(reason)))
             }}
           />
-        )) : null}
-        <AddRow
-          key={selectionKey}
-          families={families}
-          defs={defs}
-          selection={selection}
-          onError={setMessage}
-          onPropose={(steps, titleText) => run('model.draft', { title: titleText, steps })}
-        />
-        {message ? <p className="error">{message}</p> : null}
-      </div>
-    </div>
-  )
-}
-
-function AttributeLine({
-  row,
-  families,
-  defs,
-  locked,
-  onUpdate,
-  onRenameKey,
-  onRemove,
-  onDelete,
-  onMenu,
-}: {
-  row: AttributeRow
-  families: string[]
-  defs?: Json
-  locked: boolean
-  onUpdate: (patch: Json) => void
-  onRenameKey: (key: string) => void
-  onRemove: () => void
-  onDelete?: () => void
-  onMenu?: (event: { preventDefault: () => void; clientX: number; clientY: number }) => void
-}) {
-  if (row.inherited) {
-    return (
-      <div className="attr-row inherited" data-inherited="true">
-        <span>
-          {row.label}
-          <small>{copy.fromSource} {structureCaption(row.fromKey ?? '', defs)}</small>
-        </span>
-        <span>{row.key}</span>
-        <span>{kindLabel(row.kind)}</span>
-        <span>{row.unit || '—'}</span>
-        <span>{row.required ? copy.yes : '—'}</span>
-        <span>{row.languages ? copy.yes : '—'}</span>
-        <span>{row.searchable ? copy.yes : '—'}</span>
-        <span />
-      </div>
-    )
-  }
-  return (
-    <div
-      className="attr-row"
-      data-inherited="false"
-      data-attr={row.key}
-      draggable
-      onDragStart={(event) => {
-        event.dataTransfer.setData('text/plain', row.key)
-      }}
-      onContextMenu={(event) => {
-        event.preventDefault()
-        setModelFocus({ kind: 'attribute', key: row.key })
-        onMenu?.(event)
-      }}
-      onFocus={() => setModelFocus({ kind: 'attribute', key: row.key })}
-    >
-      <input
-        aria-label={copy.attributeName}
-        defaultValue={row.label}
-        key={row.label}
-        onBlur={(event) => {
-          const next = event.target.value.trim()
-          if (next && next !== row.label) onUpdate({ label: next })
-        }}
-      />
-      <div>
-      <input
-        aria-label={copy.key}
-        data-testid={`attr-key-${row.key}`}
-        defaultValue={row.key}
-        key={row.key}
-        disabled={locked}
-        onBlur={(event) => {
-          const next = event.target.value.trim()
-          if (next && next !== row.key) onRenameKey(next)
-        }}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') event.currentTarget.blur()
-        }}
-        onContextMenu={(event) => {
-          event.preventDefault()
-          event.currentTarget.focus()
-          event.currentTarget.select()
-        }}
-        onChange={(event) => {
-          const next = event.target.value.trim()
-          const note = event.currentTarget.parentElement?.querySelector('[data-key-warning]')
-          if (note instanceof HTMLElement) note.hidden = !next || next === row.key
-        }}
-      />
-      <p className="warn" data-key-warning hidden>
-        {copy.keyRenameWarning.replace('{key}', row.key)}
-      </p>
-      </div>
-      <Select value={row.kind} onValueChange={(kind) => onUpdate(kind === 'number' || kind === 'range' ? { kind } : { kind, clear_unit: true })}>
-        <SelectTrigger aria-label={copy.attributeType}><SelectValue /></SelectTrigger>
-        <SelectContent>
-          {KINDS.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
-        </SelectContent>
-      </Select>
-      <Select
-        value={row.unit || 'none'}
-        disabled={row.kind !== 'number' && row.kind !== 'range'}
-        onValueChange={(unit) => onUpdate(unit === 'none' ? { clear_unit: true, unit: null } : { unit, kind: row.kind })}
-      >
-        <SelectTrigger aria-label={copy.unit}><SelectValue /></SelectTrigger>
-        <SelectContent>
-          <SelectItem value="none">{copy.noUnit}</SelectItem>
-          {families.map((family) => <SelectItem key={family} value={family}>{family}</SelectItem>)}
-        </SelectContent>
-      </Select>
-      <span className="attr-check"><Checkbox checked={row.required} aria-label={copy.required} onCheckedChange={(value) => onUpdate({ required: value === true })} /></span>
-      <span className="attr-check"><Checkbox checked={row.languages} aria-label={copy.languages} onCheckedChange={(value) => onUpdate({ languages: value === true })} /></span>
-      <span className="attr-check"><Checkbox checked={row.searchable} aria-label={copy.searchable} onCheckedChange={(value) => onUpdate({ searchable: value === true })} /></span>
-      <MoreMenu
-        filterable={row.filterable}
-        sortable={row.sortable}
-        onFilterable={(value) => onUpdate({ filterable: value })}
-        onSortable={(value) => onUpdate({ sortable: value })}
-        onRemove={locked ? undefined : onRemove}
-        onDelete={onDelete}
-      />
-    </div>
-  )
-}
-
-function AddRow({
-  families,
-  defs,
-  selection,
-  onError,
-  onPropose,
-}: {
-  families: string[]
-  defs: Json | undefined
-  selection: ModelSelection
-  onError: (message: string) => void
-  onPropose: (steps: Json[], title: string) => void
-}) {
-  const [name, setName] = useState('')
-  const [kind, setKind] = useState('text')
-  const [unit, setUnit] = useState('none')
-  const [required, setRequired] = useState(false)
-  const [languages, setLanguages] = useState(true)
-  const [searchable, setSearchable] = useState(false)
-  const [filterable, setFilterable] = useState(false)
-  const [sortable, setSortable] = useState(false)
-  const [multiple, setMultiple] = useState(false)
-  const [min, setMin] = useState('')
-  const [max, setMax] = useState('')
-  const [listKey, setListKey] = useState('')
-  const lists = ((defs?.value_lists as Json[]) ?? []).map((item) => String(item.key ?? '')).filter(Boolean)
-  const submit = () => {
-    const label = name.trim()
-    const key = attributeKey(label)
-    if (!key) return
-    const unitKey = kind === 'number' || kind === 'range' ? (unit === 'none' ? '' : unit) : ''
-    if (attributeConflict(defs, key, kind, unitKey)) {
-      onError(copy.conflictAttribute)
-      return
-    }
-    onError('')
-    const exists = ((defs?.attributes as Json[]) ?? []).some((item) => String(item.key) === key)
-    const steps: Json[] = []
-    if (!exists) {
-      steps.push({
-        op: 'create_attribute',
-        key,
-        label,
-        kind,
-        unit: unitKey || null,
-        multiple,
-        languages: kind === 'text' ? languages : false,
-        required,
-        searchable,
-        filterable,
-        sortable,
-        ...(min.trim() ? { min: min.trim() } : {}),
-        ...(max.trim() ? { max: max.trim() } : {}),
-        ...(kind === 'value_list' && listKey ? { value_list: listKey } : {}),
-      })
-    }
-    steps.push({
-      op: 'attach_attribute',
-      attribute: key,
-      ...(selection.kind === 'type'
-        ? { type_key: selection.typeKey }
-        : { structure: selection.structure, group: selection.group }),
-    })
-    onPropose(steps, `${copy.addAttribute} ${label}`)
-    setName('')
-  }
-  return (
-    <form
-      className="attr-row add"
-      onSubmit={(event) => {
-        event.preventDefault()
-        submit()
-      }}
-    >
-      <input aria-label={copy.attributeName} data-testid="attr-add" placeholder={copy.attributeName} value={name} onChange={(event) => setName(event.target.value)} />
-      <span />
-      <Select value={kind} onValueChange={(value) => { setKind(value); setLanguages(value === 'text') }}>
-        <SelectTrigger aria-label={copy.attributeType}><SelectValue /></SelectTrigger>
-        <SelectContent>
-          {KINDS.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
-        </SelectContent>
-      </Select>
-      <Select value={unit} disabled={kind !== 'number' && kind !== 'range'} onValueChange={setUnit}>
-        <SelectTrigger aria-label={copy.unit}><SelectValue /></SelectTrigger>
-        <SelectContent>
-          <SelectItem value="none">{copy.noUnit}</SelectItem>
-          {families.map((family) => <SelectItem key={family} value={family}>{family}</SelectItem>)}
-        </SelectContent>
-      </Select>
-      <span className="attr-check"><Checkbox checked={required} aria-label={copy.required} onCheckedChange={(value) => setRequired(value === true)} /></span>
-      <span className="attr-check"><Checkbox checked={languages} aria-label={copy.languages} onCheckedChange={(value) => setLanguages(value === true)} /></span>
-      <span className="attr-check"><Checkbox checked={searchable} aria-label={copy.searchable} onCheckedChange={(value) => setSearchable(value === true)} /></span>
-      <MoreMenu filterable={filterable} sortable={sortable} onFilterable={setFilterable} onSortable={setSortable} />
-      {kind === 'number' || kind === 'range' ? (
-        <>
-          <input aria-label={copy.min} data-testid="attr-min" placeholder={copy.min} value={min} onChange={(event) => setMin(event.target.value)} />
-          <input aria-label={copy.max} data-testid="attr-max" placeholder={copy.max} value={max} onChange={(event) => setMax(event.target.value)} />
+          <AllowedTrees defs={defs} typeKey={selection.typeKey} />
         </>
       ) : null}
-      {kind === 'value_list' ? (
-        <Select value={listKey || 'none'} onValueChange={(value) => setListKey(value === 'none' ? '' : value)}>
-          <SelectTrigger aria-label={copy.kindValueList}><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">{copy.kindValueList}</SelectItem>
-            {lists.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
-          </SelectContent>
-        </Select>
-      ) : null}
-      <span className="attr-check"><Checkbox checked={multiple} aria-label={copy.multiple} onCheckedChange={(value) => setMultiple(value === true)} /></span>
-    </form>
+      <StandardEditableTable
+        key={selectionKey}
+        testId="attribute-table"
+        columns={columns}
+        rows={rows}
+        draftRows={draftRows}
+        onDraftRowsChange={setDraftRows}
+        createDraftRow={() => ({
+          id: `new-${crypto.randomUUID()}`,
+          key: '',
+          label: '',
+          kind: 'text',
+          unit: '',
+          required: false,
+          languages: true,
+          searchable: false,
+          filterable: false,
+          sortable: false,
+          inherited: false,
+          standard: false,
+          multiple: false,
+          min: '',
+          max: '',
+          valueList: '',
+        })}
+        newRowLabel={copy.newAttribute}
+        filterValue={filter}
+        onFilterChange={setFilter}
+        emptyLabel={copy.noAttributesMatch}
+        getRowTestId={(row) => (row.inherited ? 'attribute-row-inherited' : 'attribute-row')}
+        getRowKeyAttr={(row) => row.key || row.id}
+        rowFlags={(row) => ({
+          fixed: selection.kind === 'type' && row.standard,
+          readOnly: row.inherited,
+        })}
+        reorderable={selection.kind === 'type'}
+        canEdit={(row, column) => {
+          if (row.inherited) return false
+          if (column.id === 'key' && (row.standard || row.id === keyAttribute)) return false
+          if (column.id === 'unit' && row.kind !== 'number' && row.kind !== 'range') return false
+          if (column.id === 'languages' && row.kind !== 'text') return false
+          return true
+        }}
+        onActivateRow={(row) => {
+          if (row.key) setModelFocus({ kind: 'attribute', key: row.key })
+        }}
+        onReviewAndSave={save}
+      />
+      {message ? <p className="error">{message}</p> : null}
+    </div>
   )
 }
-
-function TableMenu({
-  filter,
-  sort,
-  onFilter,
-  onSort,
-}: {
-  filter: string
-  sort: 'listed' | 'name' | 'kind'
-  onFilter: (value: string) => void
-  onSort: (value: 'listed' | 'name' | 'kind') => void
-}) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger className="icon-btn" aria-label={copy.more}>{copy.more}</DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <div className="menu-filter" onPointerDown={(event) => event.stopPropagation()}>
-          <input
-            aria-label={copy.filterRows}
-            placeholder={copy.filterRows}
-            value={filter}
-            onChange={(event) => onFilter(event.target.value)}
-            onKeyDown={(event) => event.stopPropagation()}
-          />
-        </div>
-        <DropdownMenuItem onSelect={(event) => { event.preventDefault(); onSort(sort === 'name' ? 'listed' : 'name') }}>
-          {copy.sortByName}{sort === 'name' ? ' · on' : ''}
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={(event) => { event.preventDefault(); onSort(sort === 'kind' ? 'listed' : 'kind') }}>
-          {copy.sortByType}{sort === 'kind' ? ' · on' : ''}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
-}
-
-function visibleRows(rows: AttributeRow[], filter: string, sort: 'listed' | 'name' | 'kind') {
-  const needle = filter.trim().toLowerCase()
-  const matched = needle
-    ? rows.filter((row) => row.label.toLowerCase().includes(needle) || row.key.includes(needle))
-    : rows
-  if (sort === 'listed') return matched
-  return [...matched].sort((left, right) => {
-    const a = sort === 'name' ? left.label : kindLabel(left.kind)
-    const b = sort === 'name' ? right.label : kindLabel(right.kind)
-    return a.localeCompare(b)
-  })
-}
-
-function MoreMenu({
-  filterable,
-  sortable,
-  onFilterable,
-  onSortable,
-  onRemove,
-  onDelete,
-}: {
-  filterable: boolean
-  sortable: boolean
-  onFilterable: (value: boolean) => void
-  onSortable: (value: boolean) => void
-  onRemove?: () => void
-  onDelete?: () => void
-}) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger className="icon-btn" aria-label={copy.more}>
-        <MoreHorizontal size={14} aria-hidden="true" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onSelect={(event) => { event.preventDefault(); onFilterable(!filterable) }}>
-          {copy.filterable}{filterable ? ' · on' : ''}
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={(event) => { event.preventDefault(); onSortable(!sortable) }}>
-          {copy.sortable}{sortable ? ' · on' : ''}
-        </DropdownMenuItem>
-        {onRemove ? <DropdownMenuItem onSelect={onRemove}>{copy.removeFromHere}</DropdownMenuItem> : null}
-        {onDelete ? <DropdownMenuItem onSelect={onDelete}>{copy.deleteMenu}</DropdownMenuItem> : null}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
-}
-
 
 function AllowedTrees({ defs, typeKey }: { defs: Json | undefined; typeKey: string }) {
   const raw = ((defs?.types as Json[]) ?? []).find((item) => String(item.key) === typeKey)

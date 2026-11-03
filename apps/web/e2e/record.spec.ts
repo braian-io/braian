@@ -28,19 +28,26 @@ async function openCheddar(page: Page) {
   return objectId
 }
 
-async function createdLabel(page: Page) {
-  return page.getByTestId('attr-key-created_at').locator('xpath=ancestor::div[contains(@class,"attr-row")][1]').getByRole('textbox', { name: 'Name' })
+function createdLabel(page: Page) {
+  return page.getByTestId('attr-key-created_at').locator('xpath=ancestor::div[contains(@class,"standard-grid-row")][1]').locator('[data-column="label"]')
 }
 
 async function renameCreated(page: Page, label: string) {
   await page.getByRole('button', { name: 'Data model' }).click()
-  const input = await createdLabel(page)
+  const cell = createdLabel(page)
+  await expect(cell).toBeVisible()
+  await cell.dblclick()
+  const input = page.getByTestId('attr-label-created_at')
   await expect(input).toBeVisible()
   await input.fill(label)
-  await input.blur()
-  await expect(page.getByTestId('confirm-model')).toBeVisible()
-  await page.getByTestId('confirm-model').click()
-  await expect(page.getByTestId('consequence')).toHaveCount(0)
+  await input.press('Enter')
+  const table = page.getByTestId('attribute-table')
+  await expect(table.getByTestId('review-and-save')).toBeVisible()
+  await table.getByTestId('review-and-save').click()
+  const review = page.getByTestId('review-dialog')
+  await expect(review).toBeVisible()
+  await review.getByTestId('confirm-review').click()
+  await expect(page.getByTestId('review-dialog')).toHaveCount(0)
 }
 
 test('the detail pane shows a read-only Record section', async ({ page }) => {

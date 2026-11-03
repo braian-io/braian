@@ -117,5 +117,83 @@ test('a group shows attributes inherited from its ancestors', async ({ page }) =
   const table = page.getByTestId('attribute-table')
   await expect(table).toContainText('Fat content')
   await expect(table).toContainText('from Dairy')
-  await expect(table.getByTestId('attr-add')).toBeVisible()
+  await expect(table.getByTestId('table-add-row')).toBeVisible()
+})
+
+test('type attributes reorder and checkbox persist after reload', async ({ page }) => {
+  test.setTimeout(180_000)
+  await login(page)
+  const definitions = (await (await page.request.get('/v1/definitions')).json()) as {
+    types: Array<{ key: string; kind?: string; attributes?: unknown[] }>
+    attributes: Array<{ id: string; key: string; kind?: { type?: string } }>
+  }
+  const standard = new Set([
+    '018f0000-0000-7000-8000-000000000100',
+    '018f0000-0000-7000-8000-000000000101',
+    '018f0000-0000-7000-8000-00000000a003',
+    '018f0000-0000-7000-8000-00000000a004',
+    '018f0000-0000-7000-8000-00000000a005',
+  ])
+  const byToken = new Map<string, { id: string; key: string; kind?: { type?: string } }>()
+  for (const attribute of definitions.attributes) {
+    byToken.set(String(attribute.id), attribute)
+    byToken.set(String(attribute.key), attribute)
+  }
+  const chosen = definitions.types.find((type) => {
+    if (type.kind === 'link') return false
+    const own = (type.attributes ?? [])
+      .map((token) => byToken.get(String(token)))
+      .filter((attribute): attribute is { id: string; key: string; kind?: { type?: string } } => Boolean(attribute))
+      .filter((attribute) => !standard.has(String(attribute.id)))
+    return own.length >= 2 && own.some((attribute) => attribute.kind?.type === 'boolean')
+  })
+  expect(chosen, 'object type with boolean attributes').toBeTruthy()
+  const own = (chosen?.attributes ?? [])
+    .map((token) => byToken.get(String(token)))
+    .filter((attribute): attribute is { id: string; key: string; kind?: { type?: string } } => Boolean(attribute))
+    .filter((attribute) => !standard.has(String(attribute.id)))
+  const first = own[0]
+  const second = own[1]
+  const boolean = own.find((attribute) => attribute.kind?.type === 'boolean')
+  if (!chosen || !first || !second || !boolean) throw new Error('missing type attributes')
+
+  const openAttributes = async () => {
+    await page.getByRole('button', { name: 'Data model' }).click()
+    const objectTypesTab = page.locator('.pane-tab', { hasText: 'Object types' }).first()
+    await expect(objectTypesTab).toBeVisible({ timeout: 30_000 })
+    await objectTypesTab.click()
+    const typeTable = page.getByTestId('object-types-table')
+    const typeRow = typeTable.locator(`[data-row-id="${chosen.key}"]`)
+    await expect(async () => {
+      await typeRow.click({ timeout: 2_000 })
+    }).toPass({ timeout: 30_000 })
+    await page.locator('.pane-tab', { hasText: 'Type attributes' }).first().click()
+    await expect(page.getByTestId('attribute-table')).toBeVisible()
+  }
+
+  await openAttributes()
+  const table = page.getByTestId('attribute-table')
+  await expect(table.locator(`[data-row-id="${first.id}"]`)).toBeVisible()
+  await table.locator(`[data-row-id="${first.id}"]`).getByLabel('Move row down').click()
+
+  const checkbox = table.locator(`[data-row-id="${boolean.id}"]`).getByRole('checkbox', { name: 'Searchable' })
+  const expected = !(await checkbox.isChecked())
+  await checkbox.click()
+
+  await table.getByTestId('review-and-save').click()
+  const review = page.getByTestId('review-dialog')
+  await expect(review).toBeVisible()
+  await review.getByTestId('confirm-review').click()
+  await expect(review).toHaveCount(0)
+
+  await page.reload()
+  await openAttributes()
+  const reloaded = page.getByTestId('attribute-table')
+  const order = await reloaded.locator('[data-row-id]').evaluateAll((nodes) =>
+    nodes.map((node) => node.getAttribute('data-row-id')),
+  )
+  expect(order.filter((id) => id === first.id || id === second.id)).toEqual([second.id, first.id])
+  const persisted = reloaded.locator(`[data-row-id="${boolean.id}"]`).getByRole('checkbox', { name: 'Searchable' })
+  if (expected) await expect(persisted).toBeChecked()
+  else await expect(persisted).not.toBeChecked()
 })

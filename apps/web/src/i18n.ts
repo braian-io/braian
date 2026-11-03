@@ -285,6 +285,7 @@ export const copy = {
   invalid: 'invalid',
   moveTo: 'Move to…',
   inherited: 'Inherited',
+  from: 'From',
   own: 'Own',
   confirm: 'Confirm',
   cancel: 'Cancel',
