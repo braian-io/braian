@@ -46,6 +46,28 @@ inte via `Start-Process` med en annan arbetskatalog. OneDrive-synkade klones kan
 | `just openapi` | Skriv om `docs/api/openapi.json` från koden |
 | `just psql` | psql mot utvecklingsdatabasen |
 
+## Running the store DB tests locally
+
+The integration tests in `crates/store` need a Postgres they may create databases in. Use a throwaway `postgres:18` container (same major version as CI) on a free port:
+
+```sh
+docker run --rm -d --name my-store-pg -p 127.0.0.1:25432:5432 \
+  -e POSTGRES_USER=braian -e POSTGRES_PASSWORD=braian -e POSTGRES_DB=braian postgres:18
+export BRAIAN_TEST_DATABASE_URL=postgres://braian:braian@127.0.0.1:25432/postgres
+```
+
+`migration_upgrade::branch_migrations_apply_after_main` also needs `BRAIAN_BASELINE_MIGRATIONS`: a folder with main's migrations, which it applies before the ones in your checkout. Without it the test panics with "BRAIAN_BASELINE_MIGRATIONS is not set". Set it the same way CI does (`.github/workflows/ci.yml`, step that runs `git archive origin/main crates/store/migrations`):
+
+```sh
+dest=$HOME/baseline-migrations; rm -rf "$dest"; mkdir -p "$dest"
+git fetch origin main && git archive origin/main crates/store/migrations | tar -x --strip-components=3 -C "$dest"
+test -f "$dest/V3__app.sql" && export BRAIAN_BASELINE_MIGRATIONS=$dest
+```
+
+Replace `origin` with your remote's name if it differs. Then run, for example, `cargo nextest run -p braian-store --test migration_upgrade`, and remove the container with `docker rm -f my-store-pg` when done.
+
+If `/tmp` is a small tmpfs, keep the build output out of it: set `CARGO_TARGET_DIR` to a directory on disk (for example `$HOME/<name>-target`) and put worktrees under `$HOME` too.
+
 ## En binär, flera roller
 
 `braian api`, `braian indexer` och `braian all`.
