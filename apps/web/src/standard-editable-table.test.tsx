@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { StandardEditableTable, type StandardColumn } from './standard-editable-table'
 import { copy } from './i18n'
@@ -204,6 +204,211 @@ describe('standard editable table', () => {
   })
 
 })
+
+type FeatureRow = {
+  id: string
+  name: string
+  active: boolean
+  fixed?: boolean
+  readOnly?: boolean
+}
+
+const featureColumns: Array<StandardColumn<FeatureRow>> = [
+  {
+    id: 'name',
+    header: 'Name',
+    editable: true,
+    read: (row) => row.name,
+    write: (row, value) => ({ ...row, name: value }),
+  },
+  {
+    id: 'active',
+    header: 'Active',
+    type: 'boolean',
+    editable: true,
+    display: 'checkbox',
+    read: (row) => row.active,
+    write: (row, value) => ({ ...row, active: value === 'true' }),
+  },
+]
+
+const featureRows: FeatureRow[] = [
+  { id: 'a', name: 'Alpha', active: true },
+  { id: 'f', name: 'Fixed', active: false, fixed: true },
+  { id: 'b', name: 'Beta', active: true },
+  { id: 'c', name: 'Gamma', active: false },
+]
+
+describe('standard editable table opt-in abilities', () => {
+  it('reorders with Alt+Arrow and stages the new order in draft rows', () => {
+    const onDraft = vi.fn()
+    render(
+      <StandardEditableTable
+        columns={featureColumns}
+        rows={[
+          { id: 'a', name: 'Alpha', active: true },
+          { id: 'b', name: 'Beta', active: true },
+          { id: 'c', name: 'Gamma', active: false },
+        ]}
+        draftRows={{}}
+        onDraftRowsChange={onDraft}
+        getRowTestId={(row) => `row-${row.id}`}
+        reorderable
+      />,
+    )
+    fireEvent.keyDown(screen.getByTestId('row-b'), { key: 'ArrowUp', altKey: true })
+    expect(onDraft).toHaveBeenCalledTimes(1)
+    const next = onDraft.mock.calls[0][0] as Record<string, FeatureRow>
+    expect(Object.keys(next)).toEqual(['b', 'a', 'c'])
+    expect(next.b).toEqual({ id: 'b', name: 'Beta', active: true })
+  })
+
+  it('exposes Move row up, Move row down and Drag to reorder controls', () => {
+    const onDraft = vi.fn()
+    render(
+      <StandardEditableTable
+        columns={featureColumns}
+        rows={[
+          { id: 'a', name: 'Alpha', active: true },
+          { id: 'b', name: 'Beta', active: true },
+        ]}
+        draftRows={{}}
+        onDraftRowsChange={onDraft}
+        getRowTestId={(row) => `row-${row.id}`}
+        reorderable
+      />,
+    )
+    const first = screen.getByTestId('row-a')
+    expect(within(first).getByLabelText('Move row up')).toBeTruthy()
+    expect(within(first).getByLabelText('Drag to reorder')).toBeTruthy()
+    fireEvent.click(within(first).getByLabelText('Move row down'))
+    const next = onDraft.mock.calls[0][0] as Record<string, FeatureRow>
+    expect(Object.keys(next)).toEqual(['b', 'a'])
+  })
+
+  it('keeps fixed rows at their index and refuses to move them', () => {
+    const onDraft = vi.fn()
+    render(
+      <StandardEditableTable
+        columns={featureColumns}
+        rows={featureRows}
+        draftRows={{}}
+        onDraftRowsChange={onDraft}
+        getRowTestId={(row) => `row-${row.id}`}
+        rowFlags={(row) => ({ fixed: row.fixed, readOnly: row.readOnly })}
+        reorderable
+      />,
+    )
+    fireEvent.keyDown(screen.getByTestId('row-c'), { key: 'ArrowUp', altKey: true })
+    const next = onDraft.mock.calls[0][0] as Record<string, FeatureRow>
+    expect(Object.keys(next)).toEqual(['a', 'f', 'c', 'b'])
+    expect(next.f).toEqual({ id: 'f', name: 'Fixed', active: false, fixed: true })
+
+    onDraft.mockClear()
+    fireEvent.keyDown(screen.getByTestId('row-f'), { key: 'ArrowDown', altKey: true })
+    expect(onDraft).not.toHaveBeenCalled()
+  })
+
+  it('shows the reordered draft order and the Review and save control', () => {
+    const onDraft = vi.fn()
+    const rows: FeatureRow[] = [
+      { id: 'a', name: 'Alpha', active: true },
+      { id: 'b', name: 'Beta', active: true },
+      { id: 'c', name: 'Gamma', active: false },
+    ]
+    const { container, rerender } = render(
+      <StandardEditableTable
+        columns={featureColumns}
+        rows={rows}
+        draftRows={{}}
+        onDraftRowsChange={onDraft}
+        onReviewAndSave={() => undefined}
+        getRowTestId={(row) => `row-${row.id}`}
+        reorderable
+      />,
+    )
+    fireEvent.keyDown(screen.getByTestId('row-c'), { key: 'ArrowUp', altKey: true })
+    const next = onDraft.mock.calls[0][0] as Record<string, FeatureRow>
+    rerender(
+      <StandardEditableTable
+        columns={featureColumns}
+        rows={rows}
+        draftRows={next}
+        onDraftRowsChange={onDraft}
+        onReviewAndSave={() => undefined}
+        getRowTestId={(row) => `row-${row.id}`}
+        reorderable
+      />,
+    )
+    const order = [...container.querySelectorAll('[data-row-id]')].map((el) => el.getAttribute('data-row-id'))
+    expect(order).toEqual(['a', 'c', 'b'])
+    expect(screen.getByTestId('review-and-save')).toBeTruthy()
+  })
+
+  it('stages a checkbox click outside edit mode', () => {
+    const onDraft = vi.fn()
+    render(
+      <StandardEditableTable
+        columns={featureColumns}
+        rows={[{ id: 'a', name: 'Alpha', active: true }]}
+        draftRows={{}}
+        onDraftRowsChange={onDraft}
+        getRowTestId={(row) => `row-${row.id}`}
+      />,
+    )
+    const checkbox = screen.getByRole('checkbox') as HTMLInputElement
+    expect(checkbox.checked).toBe(true)
+    fireEvent.click(checkbox)
+    expect(onDraft).toHaveBeenCalledTimes(1)
+    const next = onDraft.mock.calls[0][0] as Record<string, FeatureRow>
+    expect(next.a.active).toBe(false)
+    expect(screen.queryByTestId('standard-cell-editor')).toBeNull()
+  })
+
+  it('dims read-only rows and blocks edits, reordering and checkbox toggles', () => {
+    const onDraft = vi.fn()
+    render(
+      <StandardEditableTable
+        columns={featureColumns}
+        rows={[{ id: 'a', name: 'Alpha', active: true, readOnly: true }]}
+        draftRows={{}}
+        onDraftRowsChange={onDraft}
+        getRowTestId={(row) => `row-${row.id}`}
+        rowFlags={(row) => ({ fixed: row.fixed, readOnly: row.readOnly })}
+        reorderable
+      />,
+    )
+    const row = screen.getByTestId('row-a')
+    expect(row.classList.contains('read-only')).toBe(true)
+    const checkbox = screen.getByRole('checkbox') as HTMLInputElement
+    expect(checkbox.disabled).toBe(true)
+    expect((screen.getByLabelText('Drag to reorder') as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByLabelText('Move row up') as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.keyDown(row, { key: 'Enter' })
+    expect(screen.queryByTestId('standard-cell-editor')).toBeNull()
+    fireEvent.keyDown(row, { key: 'ArrowDown', altKey: true })
+    expect(onDraft).not.toHaveBeenCalled()
+  })
+
+  it('renders exactly as before when the new props are omitted', () => {
+    render(
+      <StandardEditableTable
+        columns={columns}
+        rows={[
+          { id: '1', name: 'Colour', kind: 'value_list' },
+          { id: '2', name: 'Size', kind: 'text' },
+        ]}
+        editable={false}
+      />,
+    )
+    expect(screen.queryByLabelText('Drag to reorder')).toBeNull()
+    expect(screen.queryByLabelText('Move row up')).toBeNull()
+    expect(screen.getAllByRole('columnheader')).toHaveLength(columns.length)
+    expect(screen.getAllByTestId('standard-grid-row')[0].className).toBe('standard-grid-row')
+    expect(screen.queryByRole('checkbox')).toBeNull()
+  })
+})
+
 
 describe('value list master detail helpers', () => {
   it('exposes list values as a separate row set for the detail pane', async () => {

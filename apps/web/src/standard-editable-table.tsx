@@ -4,10 +4,21 @@ import {
   useMemo,
   useRef,
   useState,
+  type ComponentPropsWithoutRef,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from 'react'
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { CSS as DndCSS } from '@dnd-kit/utilities'
 import type { CommandTarget, MenuContext } from './command-registry'
 import { openSharedContextMenu } from './shared-context-menu'
 import { StandardTableChrome } from './standard-table'
@@ -25,8 +36,8 @@ export type StandardColumn<T> = {
   options?: Array<{ value: string; label: string }>
   read: (row: T) => string | number | boolean | null | undefined
   write?: (row: T, value: string) => T
-  /** Render display cell; defaults to String(read(row)). */
-  display?: (row: T) => ReactNode
+  /** Render display cell; defaults to String(read(row)). Use 'checkbox' for a toggleable boolean. */
+  display?: ((row: T) => ReactNode) | 'checkbox'
   /** Native title tooltip for the cell (e.g. full list behind +N). */
   title?: (row: T) => string
   truncate?: boolean
@@ -39,7 +50,10 @@ export type EditRequest = { rowId: string; columnId: string }
 export type StandardEditableTableProps<T extends { id: string }> = {
   columns: Array<StandardColumn<T>>
   rows: T[]
-  /** When set, cell edits and draft rows collect here until Review and save. */
+  /**
+   * When set, cell edits and draft rows collect here until Review and save.
+   * Reordering stages every row in the new order (see reorderable).
+   */
   draftRows?: Record<string, T>
   onDraftRowsChange?: (next: Record<string, T>) => void
   /** New blank row factory for the plus control. */
@@ -69,6 +83,10 @@ export type StandardEditableTableProps<T extends { id: string }> = {
   selectFieldsLabel?: string
   /** Per-row edit gate (e.g. lock standard attribute keys). */
   canEdit?: (row: T, column: StandardColumn<T>) => boolean
+  /** Opt-in row reordering: drag handle, Move up/down and Alt+Arrow. */
+  reorderable?: boolean
+  /** Per-row flags: fixed rows keep their index, read-only rows are locked. */
+  rowFlags?: (row: T) => { fixed?: boolean; readOnly?: boolean }
   /** Shared context menu: context for a row, or empty surface when row is null. */
   menuContext?: MenuContext | ((row: T | null) => MenuContext)
   getMenuTarget?: (row: T | null) => CommandTarget
@@ -79,10 +97,106 @@ export type StandardEditableTableProps<T extends { id: string }> = {
 
 type EditCell = { rowId: string; columnId: string }
 
+const ROW_ORDER_KEY = '__rowOrder'
+
+type GridRowProps = Omit<ComponentPropsWithoutRef<'div'>, 'children'> & {
+  rowId: string
+  children: ReactNode
+  'data-testid'?: string
+  'data-row-id'?: string
+  'data-key'?: string
+  'data-draft'?: string
+  'data-readonly'?: string
+}
+
+function PlainGridRow({ rowId: _rowId, children, ...props }: GridRowProps) {
+  return <div {...props}>{children}</div>
+}
+
+type SortableGridRowProps = GridRowProps & {
+  disabled: boolean
+  canMoveUp: boolean
+  canMoveDown: boolean
+  onMoveUp: () => void
+  onMoveDown: () => void
+}
+
+function SortableGridRow({
+  rowId,
+  children,
+  disabled,
+  canMoveUp,
+  canMoveDown,
+  onMoveUp,
+  onMoveDown,
+  ...props
+}: SortableGridRowProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: rowId,
+    disabled,
+  })
+  return (
+    <div
+      ref={setNodeRef}
+      {...props}
+      style={{
+        ...props.style,
+        transform: DndCSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.85 : undefined,
+        zIndex: isDragging ? 2 : undefined,
+      }}
+    >
+      <div className="standard-grid-cell standard-grid-reorder">
+        <button
+          type="button"
+          className="standard-grid-reorder-btn"
+          aria-label="Move row up"
+          title="Move row up"
+          disabled={disabled || !canMoveUp}
+          onClick={(event) => {
+            event.stopPropagation()
+            onMoveUp()
+          }}
+        >
+          ↑
+        </button>
+        <button
+          type="button"
+          className="standard-grid-reorder-btn"
+          aria-label="Move row down"
+          title="Move row down"
+          disabled={disabled || !canMoveDown}
+          onClick={(event) => {
+            event.stopPropagation()
+            onMoveDown()
+          }}
+        >
+          ↓
+        </button>
+        <button
+          type="button"
+          className="standard-grid-reorder-btn standard-grid-drag-handle"
+          aria-label="Drag to reorder"
+          title="Drag to reorder"
+          disabled={disabled}
+          {...(disabled ? {} : attributes)}
+          {...(disabled ? {} : listeners)}
+          onClick={(event) => event.stopPropagation()}
+        >
+          ⠿
+        </button>
+      </div>
+      {children}
+    </div>
+  )
+}
+
 /**
  * Generic editable grid on top of StandardTableChrome.
  * Plus adds an inline draft row; dirty drafts show Review and save.
  * Keyboard: Enter/F2 edit, Esc cancel, Tab next cell.
+ * With reorderable: Alt+ArrowUp/Down, Move row controls and drag to reorder.
  * Right-click / Shift+F10 / ContextMenu open the shared command menu when configured.
  */
 export function StandardEditableTable<T extends { id: string }>({
@@ -106,6 +220,8 @@ export function StandardEditableTable<T extends { id: string }>({
   onSelectFields,
   selectFieldsLabel,
   canEdit,
+  reorderable = false,
+  rowFlags,
   menuContext,
   getMenuTarget,
   editRequest,
@@ -114,10 +230,13 @@ export function StandardEditableTable<T extends { id: string }>({
   const [editing, setEditing] = useState<EditCell | null>(null)
   const [editValue, setEditValue] = useState('')
   const [internalActiveRowId, setInternalActiveRowId] = useState<string | null>(null)
+  const [reorderOrder, setReorderOrder] = useState<string[] | null>(null)
   const inputRef = useRef<HTMLInputElement | HTMLSelectElement | null>(null)
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
   const dirty = Object.keys(draftRows).length > 0
   const controlled = activeRowIdProp !== undefined
   const activeRowId = controlled ? activeRowIdProp : internalActiveRowId
+  const canReorder = Boolean(reorderable && onDraftRowsChange)
 
   const activateRow = useCallback(
     (row: T) => {
@@ -130,8 +249,26 @@ export function StandardEditableTable<T extends { id: string }>({
   const merged = useMemo(() => {
     const byId = new Map(rows.map((row) => [row.id, row]))
     for (const [id, draft] of Object.entries(draftRows)) byId.set(id, draft)
-    return [...byId.values()]
-  }, [rows, draftRows])
+    const base = [...byId.values()]
+    if (!reorderable) return base
+    const allDrafted = base.length > 0 && base.every((row) => row.id in draftRows)
+    const draftOrder = (draftRows as Record<string, unknown>)[ROW_ORDER_KEY]
+    const keyOrder = Array.isArray(draftOrder)
+      ? draftOrder.filter((id): id is string => typeof id === 'string')
+      : Object.keys(draftRows)
+    const order = reorderOrder ?? (allDrafted ? keyOrder : null)
+    if (!order) return base
+    const ordered: T[] = []
+    const seen = new Set<string>()
+    for (const id of order) {
+      const row = byId.get(id)
+      if (!row || seen.has(row.id)) continue
+      ordered.push(row)
+      seen.add(row.id)
+    }
+    for (const row of base) if (!seen.has(row.id)) ordered.push(row)
+    return ordered
+  }, [rows, draftRows, reorderable, reorderOrder])
 
   const filtered = useMemo(() => {
     const needle = (filterValue ?? '').trim().toLowerCase()
@@ -153,10 +290,64 @@ export function StandardEditableTable<T extends { id: string }>({
     [draftRows, onDraftRowsChange],
   )
 
+  const rowReadOnly = (row: T) => Boolean(rowFlags?.(row)?.readOnly)
+
   const columnEditable = (row: T, column: StandardColumn<T>) => {
+    if (rowReadOnly(row)) return false
     if (!editable || column.editable === false || column.type === 'readonly' || !column.write) return false
     if (canEdit && !canEdit(row, column)) return false
     return true
+  }
+
+  const reorderSlots = useMemo(() => {
+    const slots: number[] = []
+    merged.forEach((row, index) => {
+      if (!rowFlags?.(row)?.fixed) slots.push(index)
+    })
+    return slots
+  }, [merged, rowFlags])
+
+  const slotFor = (rowId: string) => {
+    const index = merged.findIndex((row) => row.id === rowId)
+    return index < 0 ? -1 : reorderSlots.indexOf(index)
+  }
+
+  const applyOrder = (next: T[]) => {
+    if (!onDraftRowsChange) return
+    const nextDrafts: Record<string, T> = {}
+    for (const row of next) nextDrafts[row.id] = draftRows[row.id] ?? row
+    const ids = next.map((row) => row.id)
+    Object.defineProperty(nextDrafts, ROW_ORDER_KEY, { value: ids, enumerable: false, configurable: true })
+    setReorderOrder(ids)
+    onDraftRowsChange(nextDrafts)
+  }
+
+  const moveToSlot = (row: T, targetSlot: number) => {
+    if (!canReorder) return
+    if (rowReadOnly(row) || rowFlags?.(row)?.fixed) return
+    const sourceSlot = slotFor(row.id)
+    if (sourceSlot < 0 || targetSlot < 0 || targetSlot >= reorderSlots.length) return
+    if (sourceSlot === targetSlot) return
+    const movable = reorderSlots.map((index) => merged[index])
+    const nextMovable = arrayMove(movable, sourceSlot, targetSlot)
+    const next = merged.slice()
+    reorderSlots.forEach((index, position) => {
+      next[index] = nextMovable[position]
+    })
+    applyOrder(next)
+  }
+
+  const moveRow = (row: T, delta: number) => {
+    moveToSlot(row, slotFor(row.id) + delta)
+  }
+
+  const onDragEnd = (event: DragEndEvent) => {
+    if (!canReorder) return
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const row = merged.find((item) => item.id === String(active.id))
+    if (!row) return
+    moveToSlot(row, slotFor(String(over.id)))
   }
 
   const beginEdit = (row: T, column: StandardColumn<T>) => {
@@ -274,6 +465,11 @@ export function StandardEditableTable<T extends { id: string }>({
       return
     }
     if (editing) return
+    if (canReorder && event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+      event.preventDefault()
+      moveRow(row, event.key === 'ArrowUp' ? -1 : 1)
+      return
+    }
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       const index = filtered.findIndex((item) => item.id === row.id)
       if (index < 0) return
@@ -299,6 +495,168 @@ export function StandardEditableTable<T extends { id: string }>({
     }
   }
 
+  const gridRows = filtered.map((row) => {
+    const isDraft = Boolean(draftRows[row.id]) && !rows.some((item) => item.id === row.id)
+    const readOnly = rowReadOnly(row)
+    const fixed = Boolean(rowFlags?.(row)?.fixed)
+    const movable = canReorder && !readOnly && !fixed
+    const sourceSlot = slotFor(row.id)
+    const canMoveUp = movable && sourceSlot > 0
+    const canMoveDown = movable && sourceSlot >= 0 && sourceSlot < reorderSlots.length - 1
+    const classes = ['standard-grid-row']
+    if (activeRowId === row.id) classes.push('on')
+    if (isDraft) classes.push('draft')
+    if (readOnly) classes.push('read-only')
+    const rowProps: Omit<GridRowProps, 'rowId' | 'children'> = {
+      className: classes.join(' '),
+      role: 'row',
+      tabIndex: 0,
+      'data-testid': getRowTestId?.(row) ?? 'standard-grid-row',
+      'data-row-id': row.id,
+      'data-key': getRowKeyAttr?.(row),
+      'data-draft': isDraft ? 'true' : undefined,
+      'data-readonly': readOnly ? 'true' : undefined,
+      onClick: () => activateRow(row),
+      onContextMenu: (event) => onRowContextMenu(event, row),
+      onKeyDown: (event) => onRowKey(event, row),
+    }
+    const cells = columns.map((column) => {
+      const isEditing = editing?.rowId === row.id && editing.columnId === column.id
+      const raw = column.read(row)
+      const title = raw === null || raw === undefined ? '' : String(raw)
+      const cellTestId = column.cellTestId?.(row)
+      return (
+        <div
+          key={column.id}
+          className={column.truncate ? 'standard-grid-cell truncate' : 'standard-grid-cell'}
+          role="gridcell"
+          data-column={column.id}
+          style={column.width ? { width: column.width, flex: 'none', minWidth: column.width } : undefined}
+          title={column.title?.(row) || (column.truncate ? title : undefined)}
+          onDoubleClick={() => beginEdit(row, column)}
+        >
+          {isEditing ? (
+            column.type === 'enum' && column.options ? (
+              <select
+                ref={(node) => {
+                  inputRef.current = node
+                }}
+                data-testid={cellTestId ?? 'standard-cell-editor'}
+                value={editValue}
+                onChange={(event) => setEditValue(event.target.value)}
+                onBlur={commitEdit}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    event.preventDefault()
+                    cancelEdit()
+                  } else if (event.key === 'Enter') {
+                    event.preventDefault()
+                    commitEdit()
+                  } else if (event.key === 'Tab') {
+                    event.preventDefault()
+                    moveEdit(row, column, event.shiftKey ? -1 : 1)
+                  }
+                }}
+              >
+                {column.options.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            ) : column.type === 'boolean' ? (
+              <input
+                ref={(node) => {
+                  inputRef.current = node
+                }}
+                type="checkbox"
+                data-testid={cellTestId ?? 'standard-cell-editor'}
+                checked={editValue === 'true'}
+                onChange={(event) => {
+                  const next = event.target.checked ? 'true' : 'false'
+                  setEditValue(next)
+                  if (!column.write) return
+                  patchRow(row.id, column.write(row, next))
+                  setEditing(null)
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    event.preventDefault()
+                    cancelEdit()
+                  } else if (event.key === 'Tab') {
+                    event.preventDefault()
+                    moveEdit(row, column, event.shiftKey ? -1 : 1)
+                  }
+                }}
+              />
+            ) : (
+              <input
+                ref={(node) => {
+                  inputRef.current = node
+                }}
+                data-testid={cellTestId ?? 'standard-cell-editor'}
+                type={column.type === 'number' ? 'number' : column.type === 'date' ? 'date' : column.type === 'datetime' ? 'datetime-local' : 'text'}
+                value={editValue}
+                onChange={(event) => setEditValue(event.target.value)}
+                onBlur={commitEdit}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    event.preventDefault()
+                    cancelEdit()
+                  } else if (event.key === 'Enter') {
+                    event.preventDefault()
+                    commitEdit()
+                  } else if (event.key === 'Tab') {
+                    event.preventDefault()
+                    moveEdit(row, column, event.shiftKey ? -1 : 1)
+                  }
+                }}
+              />
+            )
+          ) : column.display === 'checkbox' ? (
+            <input
+              type="checkbox"
+              data-testid={cellTestId}
+              aria-label={column.header}
+              checked={raw === true}
+              disabled={!columnEditable(row, column)}
+              onClick={(event) => event.stopPropagation()}
+              onDoubleClick={(event) => event.stopPropagation()}
+              onChange={(event) => {
+                if (!column.write || !columnEditable(row, column)) return
+                patchRow(row.id, column.write(row, event.target.checked ? 'true' : 'false'))
+              }}
+            />
+          ) : column.display ? (
+            <span data-testid={cellTestId}>{column.display(row)}</span>
+          ) : column.type === 'boolean' ? (
+            <span data-testid={cellTestId}>{raw === true ? copy.yes : '—'}</span>
+          ) : (
+            <span data-testid={cellTestId}>{title || '—'}</span>
+          )}
+        </div>
+      )
+    })
+    return canReorder ? (
+      <SortableGridRow
+        key={row.id}
+        rowId={row.id}
+        disabled={!movable}
+        canMoveUp={canMoveUp}
+        canMoveDown={canMoveDown}
+        onMoveUp={() => moveRow(row, -1)}
+        onMoveDown={() => moveRow(row, 1)}
+        {...rowProps}
+      >
+        {cells}
+      </SortableGridRow>
+    ) : (
+      <PlainGridRow key={row.id} rowId={row.id} {...rowProps}>
+        {cells}
+      </PlainGridRow>
+    )
+  })
+
   return (
     <StandardTableChrome
       testId={testId}
@@ -320,6 +678,9 @@ export function StandardEditableTable<T extends { id: string }>({
         onContextMenu={onSurfaceContextMenu}
       >
         <div className="standard-grid-head" role="row">
+          {canReorder ? (
+            <div className="standard-grid-cell standard-grid-reorder-head" aria-hidden="true" />
+          ) : null}
           {columns.map((column) => (
             <div
               key={column.id}
@@ -334,130 +695,15 @@ export function StandardEditableTable<T extends { id: string }>({
           ))}
         </div>
         {filtered.length === 0 ? <p className="standard-grid-empty">{emptyLabel}</p> : null}
-        {filtered.map((row) => {
-          const isDraft = Boolean(draftRows[row.id]) && !rows.some((item) => item.id === row.id)
-          return (
-            <div
-              key={row.id}
-              className={
-                activeRowId === row.id ? 'standard-grid-row on' : isDraft ? 'standard-grid-row draft' : 'standard-grid-row'
-              }
-              role="row"
-              tabIndex={0}
-              data-testid={getRowTestId?.(row) ?? 'standard-grid-row'}
-              data-row-id={row.id}
-              data-key={getRowKeyAttr?.(row)}
-              data-draft={isDraft ? 'true' : undefined}
-              onClick={() => activateRow(row)}
-              onContextMenu={(event) => onRowContextMenu(event, row)}
-              onKeyDown={(event) => onRowKey(event, row)}
-            >
-              {columns.map((column) => {
-                const isEditing = editing?.rowId === row.id && editing.columnId === column.id
-                const raw = column.read(row)
-                const title = raw === null || raw === undefined ? '' : String(raw)
-                const cellTestId = column.cellTestId?.(row)
-                return (
-                  <div
-                    key={column.id}
-                    className={column.truncate ? 'standard-grid-cell truncate' : 'standard-grid-cell'}
-                    role="gridcell"
-                    data-column={column.id}
-                    style={column.width ? { width: column.width, flex: 'none', minWidth: column.width } : undefined}
-                    title={column.title?.(row) || (column.truncate ? title : undefined)}
-                    onDoubleClick={() => beginEdit(row, column)}
-                  >
-                    {isEditing ? (
-                      column.type === 'enum' && column.options ? (
-                        <select
-                          ref={(node) => {
-                            inputRef.current = node
-                          }}
-                          data-testid={cellTestId ?? 'standard-cell-editor'}
-                          value={editValue}
-                          onChange={(event) => setEditValue(event.target.value)}
-                          onBlur={commitEdit}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Escape') {
-                              event.preventDefault()
-                              cancelEdit()
-                            } else if (event.key === 'Enter') {
-                              event.preventDefault()
-                              commitEdit()
-                            } else if (event.key === 'Tab') {
-                              event.preventDefault()
-                              moveEdit(row, column, event.shiftKey ? -1 : 1)
-                            }
-                          }}
-                        >
-                          {column.options.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      ) : column.type === 'boolean' ? (
-                        <input
-                          ref={(node) => {
-                            inputRef.current = node
-                          }}
-                          type="checkbox"
-                          data-testid={cellTestId ?? 'standard-cell-editor'}
-                          checked={editValue === 'true'}
-                          onChange={(event) => {
-                            const next = event.target.checked ? 'true' : 'false'
-                            setEditValue(next)
-                            if (!column.write) return
-                            patchRow(row.id, column.write(row, next))
-                            setEditing(null)
-                          }}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Escape') {
-                              event.preventDefault()
-                              cancelEdit()
-                            } else if (event.key === 'Tab') {
-                              event.preventDefault()
-                              moveEdit(row, column, event.shiftKey ? -1 : 1)
-                            }
-                          }}
-                        />
-                      ) : (
-                        <input
-                          ref={(node) => {
-                            inputRef.current = node
-                          }}
-                          data-testid={cellTestId ?? 'standard-cell-editor'}
-                          type={column.type === 'number' ? 'number' : column.type === 'date' ? 'date' : column.type === 'datetime' ? 'datetime-local' : 'text'}
-                          value={editValue}
-                          onChange={(event) => setEditValue(event.target.value)}
-                          onBlur={commitEdit}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Escape') {
-                              event.preventDefault()
-                              cancelEdit()
-                            } else if (event.key === 'Enter') {
-                              event.preventDefault()
-                              commitEdit()
-                            } else if (event.key === 'Tab') {
-                              event.preventDefault()
-                              moveEdit(row, column, event.shiftKey ? -1 : 1)
-                            }
-                          }}
-                        />
-                      )
-                    ) : column.display ? (
-                      <span data-testid={cellTestId}>{column.display(row)}</span>
-                    ) : column.type === 'boolean' ? (
-                      <span data-testid={cellTestId}>{raw === true ? copy.yes : '—'}</span>
-                    ) : (
-                      <span data-testid={cellTestId}>{title || '—'}</span>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          )
-        })}
+        {canReorder ? (
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+            <SortableContext items={filtered.map((row) => row.id)} strategy={verticalListSortingStrategy}>
+              {gridRows}
+            </SortableContext>
+          </DndContext>
+        ) : (
+          gridRows
+        )}
       </div>
     </StandardTableChrome>
   )
