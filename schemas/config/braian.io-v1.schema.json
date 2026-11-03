@@ -19,6 +19,9 @@
       "$ref": "#/$defs/MergeProfileDocument"
     },
     {
+      "$ref": "#/$defs/WorkspaceTemplateDocument"
+    },
+    {
       "$ref": "#/$defs/OwnershipDocument"
     }
   ],
@@ -955,6 +958,55 @@
       "type": "string",
       "enum": [
         "ValueList"
+      ]
+    },
+    "WorkspaceTemplateDocument": {
+      "description": "One workspace template. `definition` is the stored layout object.",
+      "type": "object",
+      "properties": {
+        "apiVersion": {
+          "$ref": "#/$defs/ApiVersion"
+        },
+        "definition": true,
+        "key": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/WorkspaceTemplateKind"
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConfigMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "renamedFrom": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "apiVersion",
+        "kind",
+        "key",
+        "name",
+        "definition"
+      ]
+    },
+    "WorkspaceTemplateKind": {
+      "type": "string",
+      "enum": [
+        "WorkspaceTemplate"
       ]
     }
   }

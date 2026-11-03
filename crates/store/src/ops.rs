@@ -75,6 +75,15 @@ pub enum ProposalWrite {
     OwnershipRules {
         rules: Value,
     },
+    WorkspaceTemplate {
+        key: String,
+        previous_key: Option<String>,
+        name: String,
+        definition: Value,
+    },
+    WorkspaceTemplateDelete {
+        key: String,
+    },
 }
 
 struct CommittedProposalRow {
@@ -1201,6 +1210,51 @@ impl Store {
                     &[&revision, &rules],
                 )
                 .await?;
+                WriteReceipt {
+                    batch_id: BatchId::from_uuid(Uuid::nil()),
+                    last_seq: 0,
+                    versions: Vec::new(),
+                }
+            }
+            ProposalWrite::WorkspaceTemplate {
+                key,
+                previous_key,
+                name,
+                definition,
+            } => {
+                let updated = match previous_key.as_deref() {
+                    Some(previous) if previous != key => {
+                        tx.execute(
+                            "UPDATE workspace_templates
+                             SET key = $2, name = $3, definition = $4, updated_at = now()
+                             WHERE key = $1",
+                            &[&previous, &key, &name, &definition],
+                        )
+                        .await?
+                    }
+                    _ => 0,
+                };
+                if updated == 0 {
+                    tx.execute(
+                        "INSERT INTO workspace_templates (key, name, definition)
+                         VALUES ($1, $2, $3)
+                         ON CONFLICT (key) DO UPDATE
+                           SET name = EXCLUDED.name,
+                               definition = EXCLUDED.definition,
+                               updated_at = now()",
+                        &[&key, &name, &definition],
+                    )
+                    .await?;
+                }
+                WriteReceipt {
+                    batch_id: BatchId::from_uuid(Uuid::nil()),
+                    last_seq: 0,
+                    versions: Vec::new(),
+                }
+            }
+            ProposalWrite::WorkspaceTemplateDelete { key } => {
+                tx.execute("DELETE FROM workspace_templates WHERE key = $1", &[&key])
+                    .await?;
                 WriteReceipt {
                     batch_id: BatchId::from_uuid(Uuid::nil()),
                     last_seq: 0,

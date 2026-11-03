@@ -11,7 +11,7 @@ use braian_model::{
     Class, ClassId, DataPurge, DefinitionSet, Group, GroupId, IndexFlags, LanguageTag, LinkLabel,
     LinkSpec, MergeProfile, MergeProfileMode, ModelChange, ObjectType, OwnershipRule,
     SharedValueList, Structure, StructureId, TextForm, TypeId, TypeKind, Unit, UnitFamily,
-    UnitFamilyId, Uuid, ValueOption, purge_for,
+    UnitFamilyId, Uuid, ValueOption, WorkspaceTemplate, purge_for,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -19,7 +19,8 @@ use serde::{Deserialize, Serialize};
 use crate::{
     AttributeConfig, CatalogDocument, ClassConfig, ConfigDocument, ConfigError, ConfigExtras,
     GroupConfig, MergeProfileDocument, ModelDocument, OwnershipDocument, StructureConfig,
-    TypeConfig, UnitFamilyDocument, ValueListDocument, export_documents_with,
+    TypeConfig, UnitFamilyDocument, ValueListDocument, WorkspaceTemplateDocument,
+    export_documents_with,
 };
 
 /// How a document treats entities missing from it.
@@ -56,6 +57,7 @@ pub enum PlanKind {
     UnitFamily,
     Catalog,
     MergeProfile,
+    WorkspaceTemplate,
     Ownership,
 }
 
@@ -162,6 +164,9 @@ struct Desired {
     merge_profiles_present: bool,
     merge_profiles_full: bool,
     merge_profiles: BTreeMap<String, MergeProfileDocument>,
+    workspace_templates_present: bool,
+    workspace_templates_full: bool,
+    workspace_templates: BTreeMap<String, WorkspaceTemplateDocument>,
     ownership_present: bool,
     ownership_full: bool,
     ownership: BTreeMap<String, OwnershipDocument>,
@@ -181,8 +186,8 @@ pub fn plan_documents(
     plan_documents_with(current, &ConfigExtras::default(), documents)
 }
 
-/// Like [`plan_documents`], also comparing catalogs, merge profiles and
-/// ownership rules supplied by the caller.
+/// Like [`plan_documents`], also comparing catalogs, merge profiles,
+/// workspace templates and ownership rules supplied by the caller.
 pub fn plan_documents_with(
     current: &DefinitionSet,
     extras: &ConfigExtras,
@@ -194,6 +199,7 @@ pub fn plan_documents_with(
     let mut current_unit_families = BTreeMap::new();
     let mut current_catalogs = BTreeMap::new();
     let mut current_merge_profiles = BTreeMap::new();
+    let mut current_workspace_templates = BTreeMap::new();
     let mut current_ownership = BTreeMap::new();
     for document in &current_documents {
         match document {
@@ -209,6 +215,9 @@ pub fn plan_documents_with(
             }
             ConfigDocument::MergeProfile(profile) => {
                 current_merge_profiles.insert(profile.key.clone(), profile.clone());
+            }
+            ConfigDocument::WorkspaceTemplate(template) => {
+                current_workspace_templates.insert(template.key.clone(), template.clone());
             }
             ConfigDocument::Ownership(ownership) => {
                 current_ownership.insert(OWNERSHIP_KEY.to_owned(), ownership.clone());
@@ -396,6 +405,17 @@ pub fn plan_documents_with(
     ));
 
     steps.extend(plan_section(
+        &current_workspace_templates,
+        &desired.workspace_templates,
+        PlanKind::WorkspaceTemplate,
+        desired.workspace_templates_present && desired.workspace_templates_full,
+        |_, item| item.renamed_from.clone(),
+        changed_fields,
+        |_, _| Some(non_counting_purge()),
+        |_, _, _, _| None,
+    ));
+
+    steps.extend(plan_section(
         &current_ownership,
         &desired.ownership,
         PlanKind::Ownership,
@@ -456,6 +476,16 @@ fn desired_from(documents: &[ConfigDocument]) -> Result<Desired, ConfigError> {
                     profile.key.clone(),
                     profile.clone(),
                     "merge profile",
+                )?;
+            }
+            ConfigDocument::WorkspaceTemplate(template) => {
+                desired.workspace_templates_present = true;
+                desired.workspace_templates_full |= template.mode == Some(ConfigMode::Full);
+                insert_entity(
+                    &mut desired.workspace_templates,
+                    template.key.clone(),
+                    template.clone(),
+                    "workspace template",
                 )?;
             }
             ConfigDocument::Ownership(ownership) => {
@@ -880,7 +910,11 @@ fn delete_purge(
         PlanKind::UnitFamily => ModelChange::DeleteUnitFamily {
             key: key.to_owned(),
         },
-        PlanKind::Language | PlanKind::Catalog | PlanKind::MergeProfile | PlanKind::Ownership => {
+        PlanKind::Language
+        | PlanKind::Catalog
+        | PlanKind::MergeProfile
+        | PlanKind::WorkspaceTemplate
+        | PlanKind::Ownership => {
             return Some(non_counting_purge());
         }
     };
@@ -920,8 +954,8 @@ pub fn apply_documents(
     apply_documents_with(current, &ConfigExtras::default(), documents)
 }
 
-/// Like [`apply_documents`], also comparing catalogs, merge profiles and
-/// ownership rules supplied by the caller.
+/// Like [`apply_documents`], also comparing catalogs, merge profiles,
+/// workspace templates and ownership rules supplied by the caller.
 pub fn apply_documents_with(
     current: &DefinitionSet,
     extras: &ConfigExtras,
@@ -1049,12 +1083,14 @@ fn changes_for(
             }),
             // Group and class deletes arrive with their structure upsert.
             // A language list has no model step; see the apply endpoint notes.
-            // Catalogs, merge profiles and ownership are added after this loop.
+            // Catalogs, merge profiles, workspace templates and ownership are
+            // added after this loop.
             PlanKind::Group
             | PlanKind::Class
             | PlanKind::Language
             | PlanKind::Catalog
             | PlanKind::MergeProfile
+            | PlanKind::WorkspaceTemplate
             | PlanKind::Ownership => {}
         }
     }
@@ -1126,6 +1162,30 @@ fn changes_for(
                     crate::MergeModeConfig::Manual => MergeProfileMode::Manual,
                     crate::MergeModeConfig::Continuous => MergeProfileMode::Continuous,
                 },
+            }),
+        });
+    }
+
+    for step in plan
+        .steps
+        .iter()
+        .filter(|step| step.kind == PlanKind::WorkspaceTemplate)
+    {
+        if step.action == PlanAction::Delete {
+            changes.push(ModelChange::DeleteWorkspaceTemplate {
+                key: step.key.clone(),
+            });
+            continue;
+        }
+        let Some(template) = desired.workspace_templates.get(&step.key) else {
+            continue;
+        };
+        changes.push(ModelChange::UpsertWorkspaceTemplate {
+            template: Box::new(WorkspaceTemplate {
+                key: template.key.clone(),
+                renamed_from: template.renamed_from.clone(),
+                name: template.name.clone(),
+                definition: template.definition.clone(),
             }),
         });
     }

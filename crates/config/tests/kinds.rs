@@ -1,9 +1,10 @@
-//! Export and plan for catalogs, merge profiles and ownership rules.
+//! Export and plan for catalogs, merge profiles, workspace templates and ownership rules.
 
 use braian_config::{
     ApiVersion, CatalogDocument, CatalogKind, CatalogSourceKind, ConfigDocument, ConfigExtras,
     MergeModeConfig, MergeProfileDocument, MergeProfileKind, OwnershipDocument, OwnershipKind,
-    OwnershipRuleConfig, PlanAction, PlanKind, export_documents_with, plan_documents_with,
+    OwnershipRuleConfig, PlanAction, PlanKind, WorkspaceTemplateDocument, WorkspaceTemplateKind,
+    export_documents_with, plan_documents_with,
 };
 use braian_model::DefinitionSet;
 use serde::Deserialize;
@@ -56,6 +57,17 @@ fn extras() -> ConfigExtras {
             }),
             run_mode: MergeModeConfig::Manual,
         }],
+        workspace_templates: vec![WorkspaceTemplateDocument {
+            api_version: ApiVersion::BraianIoV1,
+            kind: WorkspaceTemplateKind::WorkspaceTemplate,
+            key: "supplier-review".into(),
+            renamed_from: None,
+            mode: None,
+            name: "Supplier review".into(),
+            definition: json!({
+                "views": [{ "type": "object_table", "title": "Suppliers", "typeKey": "supplier" }]
+            }),
+        }],
         ownership: Some(OwnershipDocument {
             api_version: ApiVersion::BraianIoV1,
             kind: OwnershipKind::Ownership,
@@ -91,6 +103,7 @@ fn new_kinds_export_and_roundtrip_without_ids() {
     let kinds: Vec<&str> = documents.iter().map(ConfigDocument::kind_name).collect();
     assert!(kinds.contains(&"Catalog"), "{kinds:?}");
     assert!(kinds.contains(&"MergeProfile"), "{kinds:?}");
+    assert!(kinds.contains(&"WorkspaceTemplate"), "{kinds:?}");
     assert!(kinds.contains(&"Ownership"), "{kinds:?}");
 
     let json = serde_json::to_string(&documents).expect("json");
@@ -104,6 +117,7 @@ fn new_kinds_export_and_roundtrip_without_ids() {
     assert!(!yaml.contains("018f0000-"), "ids leaked into YAML: {yaml}");
     assert!(yaml.contains("kind: Catalog"), "{yaml}");
     assert!(yaml.contains("kind: MergeProfile"), "{yaml}");
+    assert!(yaml.contains("kind: WorkspaceTemplate"), "{yaml}");
     assert!(yaml.contains("kind: Ownership"), "{yaml}");
     assert!(yaml.contains("sourceCatalog: sap"), "{yaml}");
 }
@@ -232,6 +246,81 @@ fn new_kinds_plan_create_update_rename_and_delete() {
 }
 
 #[test]
+fn workspace_templates_plan_create_rename_and_delete() {
+    let defs = definitions();
+    let extras = extras();
+    let mut documents = export_documents_with(&defs, &extras).expect("export");
+
+    let template = documents
+        .iter_mut()
+        .find_map(|document| match document {
+            ConfigDocument::WorkspaceTemplate(template) => Some(template),
+            _ => None,
+        })
+        .expect("workspace template");
+    template.renamed_from = Some("supplier-review".into());
+    template.key = "supplier-review-v2".into();
+    template.name = "Supplier review v2".into();
+
+    let plan = plan_documents_with(&defs, &extras, &documents).expect("plan");
+    assert!(
+        plan.steps
+            .iter()
+            .any(|step| step.action == PlanAction::Rename
+                && step.kind == PlanKind::WorkspaceTemplate
+                && step.key == "supplier-review-v2"
+                && step.renamed_from.as_deref() == Some("supplier-review")),
+        "{:?}",
+        plan.steps
+    );
+
+    documents.push(ConfigDocument::WorkspaceTemplate(
+        WorkspaceTemplateDocument {
+            api_version: ApiVersion::BraianIoV1,
+            kind: WorkspaceTemplateKind::WorkspaceTemplate,
+            key: "product-review".into(),
+            renamed_from: None,
+            mode: None,
+            name: "Product review".into(),
+            definition: json!({ "views": [] }),
+        },
+    ));
+    let plan = plan_documents_with(&defs, &extras, &documents).expect("plan");
+    assert!(
+        plan.steps
+            .iter()
+            .any(|step| step.action == PlanAction::Create
+                && step.kind == PlanKind::WorkspaceTemplate
+                && step.key == "product-review"),
+        "{:?}",
+        plan.steps
+    );
+
+    let delete_documents = vec![ConfigDocument::WorkspaceTemplate(
+        WorkspaceTemplateDocument {
+            api_version: ApiVersion::BraianIoV1,
+            kind: WorkspaceTemplateKind::WorkspaceTemplate,
+            key: "product-review".into(),
+            renamed_from: None,
+            mode: Some(braian_config::ConfigMode::Full),
+            name: "Product review".into(),
+            definition: json!({ "views": [] }),
+        },
+    )];
+    let plan = plan_documents_with(&defs, &extras, &delete_documents).expect("plan");
+    let step = plan
+        .steps
+        .iter()
+        .find(|step| {
+            step.action == PlanAction::Delete
+                && step.kind == PlanKind::WorkspaceTemplate
+                && step.key == "supplier-review"
+        })
+        .expect("workspace template delete");
+    assert!(step.destructive);
+}
+
+#[test]
 fn apply_builds_changes_for_the_new_kinds() {
     use braian_model::ModelChange;
 
@@ -253,6 +342,14 @@ fn apply_builds_changes_for_the_new_kinds() {
         application.changes.iter().any(|change| matches!(
             change,
             ModelChange::UpsertMergeProfile { profile } if profile.key == "sap-brand" && profile.source_catalog == "sap"
+        )),
+        "{:?}",
+        application.changes
+    );
+    assert!(
+        application.changes.iter().any(|change| matches!(
+            change,
+            ModelChange::UpsertWorkspaceTemplate { template } if template.key == "supplier-review"
         )),
         "{:?}",
         application.changes

@@ -45,8 +45,8 @@ pub fn export_documents(defs: &DefinitionSet) -> Result<Vec<ConfigDocument>, Con
     export_documents_with(defs, &ConfigExtras::default())
 }
 
-/// Like [`export_documents`], with catalogs, merge profiles and ownership rules
-/// appended in a deterministic order.
+/// Like [`export_documents`], with catalogs, merge profiles, workspace
+/// templates and ownership rules appended in a deterministic order.
 pub fn export_documents_with(
     defs: &DefinitionSet,
     extras: &ConfigExtras,
@@ -131,6 +131,13 @@ pub fn export_documents_with(
     let mut merge_profiles = extras.merge_profiles.clone();
     merge_profiles.sort_by(|left, right| left.key.cmp(&right.key));
     documents.extend(merge_profiles.into_iter().map(ConfigDocument::MergeProfile));
+    let mut workspace_templates = extras.workspace_templates.clone();
+    workspace_templates.sort_by(|left, right| left.key.cmp(&right.key));
+    documents.extend(
+        workspace_templates
+            .into_iter()
+            .map(ConfigDocument::WorkspaceTemplate),
+    );
     if let Some(ownership) = &extras.ownership {
         documents.push(ConfigDocument::Ownership(ownership.clone()));
     }

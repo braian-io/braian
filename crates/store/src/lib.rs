@@ -24,6 +24,7 @@ mod split;
 pub mod testing;
 mod types;
 mod view_repair;
+mod workspace_templates;
 
 pub use catalog_resolve::{
     CatalogRef, default_catalog_id, effective_catalog_id, view_catalog_override,
@@ -44,6 +45,7 @@ pub use product::{AssortmentUsage, AttributeUsageCount, HistoryEntry, ProposalRo
 pub use scan::{EXPORT_CHUNK, ExportObject, ExportOrder, ExportScan};
 pub use session::{DbLane, HeldConnection, PoolConfig, Store, scope_origin};
 pub use split::StorageForm;
+pub use workspace_templates::WorkspaceTemplateRecord;
 
 /// Connections used to create the databases the spike and the tests measure.
 pub mod admin {

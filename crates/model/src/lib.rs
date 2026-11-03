@@ -43,9 +43,9 @@ pub use language::{LanguageTag, LanguageTagError};
 pub use link::{RefConversion, RefLinkPlan, convert_object_refs, explain_link};
 pub use model_change::{
     ApplyError, AttributeBounds, Catalog, CatalogKind, ChangeImpact, MergeProfile,
-    MergeProfileMode, ModelChange, NamedOption, OwnershipRule, UnitSpec, apply_all,
-    change_needs_reindex, deletes_data, diff as model_diff, groups_removed_by_structure_upserts,
-    interpret, preview,
+    MergeProfileMode, ModelChange, NamedOption, OwnershipRule, UnitSpec, WorkspaceTemplate,
+    apply_all, change_needs_reindex, deletes_data, diff as model_diff,
+    groups_removed_by_structure_upserts, interpret, preview,
 };
 pub use object::Object;
 pub use patch::{AttributePatch, ObjectPatch, ValuePatch, apply_object_patch, apply_value_patch};
