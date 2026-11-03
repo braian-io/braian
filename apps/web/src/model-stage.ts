@@ -50,6 +50,13 @@ export async function stageModel(name: string, args: Json = {}) {
   return draft
 }
 
+/** Raw steps collected in the draft. Deletes use this because the operation cannot. */
+export async function stageModelSteps(steps: Array<{ op: string } & Record<string, unknown>>) {
+  const draft = await api.post('/v1/model/draft/steps', { body: { steps } })
+  emitDraft()
+  return draft
+}
+
 export function openModelDialog(kind: 'type' | 'list' | 'family' | 'tree' | 'link') {
   window.dispatchEvent(new CustomEvent('braian-model-dialog', { detail: kind }))
 }

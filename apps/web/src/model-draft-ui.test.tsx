@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ModelDraftHost } from './model-draft-ui'
+import { requestReview } from './model-stage'
 
 const mock = vi.hoisted(() => {
   const methods = { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() }
@@ -28,8 +29,9 @@ const draft = {
   consequence: { destructive: false, lines: ['Create type recipe'] },
 }
 
-function Host() {
-  const [client] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: false } } }))
+function Host({ client: provided }: { client?: QueryClient } = {}) {
+  const [fallback] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: false } } }))
+  const client = provided ?? fallback
   return (
     <QueryClientProvider client={client}>
       <ModelDraftHost />
@@ -47,6 +49,24 @@ describe('review dialog', () => {
 
   afterEach(() => {
     cleanup()
+  })
+
+  it('opens review when steps are staged after the cached draft was read', async () => {
+    let count = 0
+    mock.use((path) => {
+      if (path === '/v1/model/draft') {
+        return Promise.resolve({ ...draft, count, lines: count > 0 ? draft.lines : [], consequence: { ...draft.consequence, lines: count > 0 ? draft.lines : [] } })
+      }
+      return Promise.resolve({})
+    })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<Host client={client} />)
+    await waitFor(() => expect(client.getQueryData(['model-draft'])).toBeTruthy())
+    count = 1
+    requestReview()
+    const dialog = await screen.findByTestId('review-dialog')
+    expect(dialog).toBeTruthy()
+    expect(await screen.findByText('Create type recipe')).toBeTruthy()
   })
 
   it('closes on Escape without saving and returns focus', async () => {
