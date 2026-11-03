@@ -16,8 +16,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AttributeConfig, ClassConfig, ConfigDocument, ConfigError, GroupConfig, ModelDocument,
-    StructureConfig, TypeConfig, UnitFamilyDocument, ValueListDocument, export_documents,
+    AttributeConfig, CatalogDocument, ClassConfig, ConfigDocument, ConfigError, ConfigExtras,
+    GroupConfig, MergeProfileDocument, ModelDocument, OwnershipDocument, StructureConfig,
+    TypeConfig, UnitFamilyDocument, ValueListDocument, export_documents_with,
 };
 
 /// How a document treats entities missing from it.
@@ -52,6 +53,9 @@ pub enum PlanKind {
     Class,
     ValueList,
     UnitFamily,
+    Catalog,
+    MergeProfile,
+    Ownership,
 }
 
 /// Stored rows a destructive step touches.
@@ -137,7 +141,19 @@ struct Desired {
     units_present: bool,
     units_full: bool,
     unit_families: BTreeMap<String, UnitFamilyDocument>,
+    catalogs_present: bool,
+    catalogs_full: bool,
+    catalogs: BTreeMap<String, CatalogDocument>,
+    merge_profiles_present: bool,
+    merge_profiles_full: bool,
+    merge_profiles: BTreeMap<String, MergeProfileDocument>,
+    ownership_present: bool,
+    ownership_full: bool,
+    ownership: BTreeMap<String, OwnershipDocument>,
 }
+
+/// The ownership document is a singleton, so plan steps use this key.
+const OWNERSHIP_KEY: &str = "ownership";
 
 /// Plan every create, update, rename and delete step from `documents`.
 ///
@@ -147,10 +163,23 @@ pub fn plan_documents(
     current: &DefinitionSet,
     documents: &[ConfigDocument],
 ) -> Result<ConfigPlan, ConfigError> {
-    let current_documents = export_documents(current)?;
+    plan_documents_with(current, &ConfigExtras::default(), documents)
+}
+
+/// Like [`plan_documents`], also comparing catalogs, merge profiles and
+/// ownership rules supplied by the caller.
+pub fn plan_documents_with(
+    current: &DefinitionSet,
+    extras: &ConfigExtras,
+    documents: &[ConfigDocument],
+) -> Result<ConfigPlan, ConfigError> {
+    let current_documents = export_documents_with(current, extras)?;
     let mut existing = ModelView::default();
     let mut current_value_lists = BTreeMap::new();
     let mut current_unit_families = BTreeMap::new();
+    let mut current_catalogs = BTreeMap::new();
+    let mut current_merge_profiles = BTreeMap::new();
+    let mut current_ownership = BTreeMap::new();
     for document in &current_documents {
         match document {
             ConfigDocument::Model(model) => existing = view_from_model(model)?,
@@ -159,6 +188,15 @@ pub fn plan_documents(
             }
             ConfigDocument::UnitFamily(family) => {
                 current_unit_families.insert(family.key.clone(), family.clone());
+            }
+            ConfigDocument::Catalog(catalog) => {
+                current_catalogs.insert(catalog.key.clone(), catalog.clone());
+            }
+            ConfigDocument::MergeProfile(profile) => {
+                current_merge_profiles.insert(profile.key.clone(), profile.clone());
+            }
+            ConfigDocument::Ownership(ownership) => {
+                current_ownership.insert(OWNERSHIP_KEY.to_owned(), ownership.clone());
             }
         }
     }
@@ -320,6 +358,39 @@ pub fn plan_documents(
         |key, before, after, _| unit_family_update_purge(current, key, before, after),
     ));
 
+    steps.extend(plan_section(
+        &current_catalogs,
+        &desired.catalogs,
+        PlanKind::Catalog,
+        desired.catalogs_present && desired.catalogs_full,
+        |_, item| item.renamed_from.clone(),
+        changed_fields,
+        |_, _| Some(non_counting_purge()),
+        |_, _, _, _| None,
+    ));
+
+    steps.extend(plan_section(
+        &current_merge_profiles,
+        &desired.merge_profiles,
+        PlanKind::MergeProfile,
+        desired.merge_profiles_present && desired.merge_profiles_full,
+        |_, item| item.renamed_from.clone(),
+        changed_fields,
+        |_, _| Some(non_counting_purge()),
+        |_, _, _, _| None,
+    ));
+
+    steps.extend(plan_section(
+        &current_ownership,
+        &desired.ownership,
+        PlanKind::Ownership,
+        desired.ownership_present && desired.ownership_full,
+        |_, _| None,
+        changed_fields,
+        |_, _| Some(non_counting_purge()),
+        |_, before, after, _| ownership_update_purge(before, after),
+    ));
+
     Ok(ConfigPlan { steps })
 }
 
@@ -350,6 +421,36 @@ fn desired_from(documents: &[ConfigDocument]) -> Result<Desired, ConfigError> {
                     family.key.clone(),
                     family.clone(),
                     "unit family",
+                )?;
+            }
+            ConfigDocument::Catalog(catalog) => {
+                desired.catalogs_present = true;
+                desired.catalogs_full |= catalog.mode == Some(ConfigMode::Full);
+                insert_entity(
+                    &mut desired.catalogs,
+                    catalog.key.clone(),
+                    catalog.clone(),
+                    "catalog",
+                )?;
+            }
+            ConfigDocument::MergeProfile(profile) => {
+                desired.merge_profiles_present = true;
+                desired.merge_profiles_full |= profile.mode == Some(ConfigMode::Full);
+                insert_entity(
+                    &mut desired.merge_profiles,
+                    profile.key.clone(),
+                    profile.clone(),
+                    "merge profile",
+                )?;
+            }
+            ConfigDocument::Ownership(ownership) => {
+                desired.ownership_present = true;
+                desired.ownership_full |= ownership.mode == Some(ConfigMode::Full);
+                insert_entity(
+                    &mut desired.ownership,
+                    OWNERSHIP_KEY.to_owned(),
+                    ownership.clone(),
+                    "ownership",
                 )?;
             }
         }
@@ -715,6 +816,14 @@ fn unit_family_update_purge(
     purge(current, removed)
 }
 
+fn ownership_update_purge(
+    before: &OwnershipDocument,
+    after: &OwnershipDocument,
+) -> Option<DataPurge> {
+    let removed = before.rules.iter().any(|rule| !after.rules.contains(rule));
+    removed.then(non_counting_purge)
+}
+
 fn delete_purge(
     current: &DefinitionSet,
     kind: PlanKind,
@@ -756,7 +865,9 @@ fn delete_purge(
         PlanKind::UnitFamily => ModelChange::DeleteUnitFamily {
             key: key.to_owned(),
         },
-        PlanKind::Language => return Some(non_counting_purge()),
+        PlanKind::Language | PlanKind::Catalog | PlanKind::MergeProfile | PlanKind::Ownership => {
+            return Some(non_counting_purge());
+        }
     };
     purge(current, vec![change])
 }
@@ -791,6 +902,12 @@ pub fn apply_documents(
     current: &DefinitionSet,
     documents: &[ConfigDocument],
 ) -> Result<ConfigApplication, ConfigError> {
+    if let Some(document) = documents.iter().find(|document| !document.is_applyable()) {
+        return Err(ConfigError::new(format!(
+            "Kind {} cannot be applied yet",
+            document.kind_name()
+        )));
+    }
     let plan = plan_documents(current, documents)?;
     let desired = desired_from(documents)?;
     let changes = changes_for(current, &desired, &plan)?;
@@ -912,7 +1029,13 @@ fn changes_for(
             }),
             // Group and class deletes arrive with their structure upsert.
             // A language list has no model step; see the apply endpoint notes.
-            PlanKind::Group | PlanKind::Class | PlanKind::Language => {}
+            // The new config kinds cannot be applied yet.
+            PlanKind::Group
+            | PlanKind::Class
+            | PlanKind::Language
+            | PlanKind::Catalog
+            | PlanKind::MergeProfile
+            | PlanKind::Ownership => {}
         }
     }
 

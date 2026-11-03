@@ -14,7 +14,7 @@ pub const EXIT_NO_CHANGES: i32 = 0;
 pub const EXIT_CHANGES: i32 = 2;
 pub const EXIT_BLOCKED: i32 = 3;
 
-const KIND_ORDER: [PlanKind; 8] = [
+const KIND_ORDER: [PlanKind; 11] = [
     PlanKind::Language,
     PlanKind::Attribute,
     PlanKind::Type,
@@ -23,6 +23,9 @@ const KIND_ORDER: [PlanKind; 8] = [
     PlanKind::Class,
     PlanKind::ValueList,
     PlanKind::UnitFamily,
+    PlanKind::Catalog,
+    PlanKind::MergeProfile,
+    PlanKind::Ownership,
 ];
 
 #[derive(Subcommand)]
@@ -452,6 +455,9 @@ fn kind_label(kind: PlanKind) -> &'static str {
         PlanKind::Class => "Class",
         PlanKind::ValueList => "ValueList",
         PlanKind::UnitFamily => "UnitFamily",
+        PlanKind::Catalog => "Catalog",
+        PlanKind::MergeProfile => "MergeProfile",
+        PlanKind::Ownership => "Ownership",
     }
 }
 
@@ -606,6 +612,46 @@ mod tests {
         assert!(summary.contains("- weight"), "{summary}");
         assert!(
             summary.contains("BLOCKED: deletes 12 objects, 3 links"),
+            "{summary}"
+        );
+    }
+
+    #[test]
+    fn plan_summary_includes_the_new_config_kinds() {
+        let plan = ConfigPlan {
+            steps: vec![
+                step(
+                    PlanAction::Create,
+                    PlanKind::Catalog,
+                    "sap",
+                    false,
+                    false,
+                    PlanAffected::default(),
+                ),
+                step(
+                    PlanAction::Update,
+                    PlanKind::MergeProfile,
+                    "sap-brand",
+                    false,
+                    false,
+                    PlanAffected::default(),
+                ),
+                step(
+                    PlanAction::Delete,
+                    PlanKind::Ownership,
+                    "ownership",
+                    true,
+                    true,
+                    PlanAffected::default(),
+                ),
+            ],
+        };
+
+        let summary = format_plan(&plan);
+        assert!(summary.contains("Catalog\n  + sap"), "{summary}");
+        assert!(summary.contains("MergeProfile\n  ~ sap-brand"), "{summary}");
+        assert!(
+            summary.contains("Ownership\n  - ownership [BLOCKED]"),
             "{summary}"
         );
     }

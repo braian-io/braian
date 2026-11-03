@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from './compone
 import { readConfigDocuments } from './config-drop'
 
 type PlanAction = 'create' | 'update' | 'rename' | 'delete'
-type PlanKind = 'language' | 'attribute' | 'type' | 'structure' | 'group' | 'class' | 'value_list' | 'unit_family'
+type PlanKind = 'language' | 'attribute' | 'type' | 'structure' | 'group' | 'class' | 'value_list' | 'unit_family' | 'catalog' | 'merge_profile' | 'ownership'
 type PlanAffected = {
   objects?: number
   values?: number
@@ -35,12 +35,18 @@ const KIND_ORDER: PlanKind[] = [
   'class',
   'value_list',
   'unit_family',
+  'catalog',
+  'merge_profile',
+  'ownership',
 ]
 
 const GROUPS: Array<{ id: string; label: string }> = [
   { id: 'model', label: 'Model' },
   { id: 'value_list', label: 'Value lists' },
   { id: 'unit_family', label: 'Unit families' },
+  { id: 'catalog', label: 'Catalogs' },
+  { id: 'merge_profile', label: 'Merge profiles' },
+  { id: 'ownership', label: 'Ownership' },
 ]
 
 const ACTION_LABELS: Record<PlanAction, string> = {
@@ -52,6 +58,7 @@ const ACTION_LABELS: Record<PlanAction, string> = {
 
 function groupOf(kind: PlanKind) {
   if (kind === 'value_list' || kind === 'unit_family') return kind
+  if (kind === 'catalog' || kind === 'merge_profile' || kind === 'ownership') return kind
   return 'model'
 }
 

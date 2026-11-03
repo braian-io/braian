@@ -77,6 +77,45 @@ async fn call(
     (status, headers, bytes.to_vec())
 }
 
+async fn seed_extras(db: &TestDb) {
+    let sap = db
+        .store()
+        .create_catalog(
+            braian_store::CatalogId::new(),
+            "sap",
+            "SAP ERP",
+            braian_store::CatalogKind::Source,
+            true,
+        )
+        .await
+        .unwrap();
+    db.store()
+        .put_merge_profile(
+            uuid::Uuid::now_v7(),
+            "sap-brand",
+            "SAP brand",
+            sap.id,
+            &json!({
+                "match_attributes": ["number"],
+                "master_key": "number",
+                "attributes": [{ "source": "brand", "target": "brand" }],
+                "on_no_match": "create",
+                "on_delete": "ignore",
+                "owns_existence_for": ["product"]
+            }),
+            "manual",
+        )
+        .await
+        .unwrap();
+    db.store()
+        .put_ownership_rules(&json!([{
+            "attribute": "brand",
+            "profiles": ["sap-brand"]
+        }]))
+        .await
+        .unwrap();
+}
+
 async fn app() -> (TestDb, axum::Router) {
     load_env();
     let db = TestDb::create().await;
@@ -214,4 +253,71 @@ async fn schema_is_served_and_requires_a_token() {
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     let (status, _, _) = call(&app, "GET", "/v1/config/export", None, &[], None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn export_includes_catalogs_merge_profiles_and_ownership() {
+    let (db, app) = app().await;
+    seed_extras(&db).await;
+
+    let (status, _, body) = call(&app, "GET", "/v1/config/export", Some(HUMAN), &[], None).await;
+    assert_eq!(status, StatusCode::OK);
+    let yaml = String::from_utf8(body).unwrap();
+    assert!(yaml.contains("kind: Catalog"), "{yaml}");
+    assert!(yaml.contains("kind: MergeProfile"), "{yaml}");
+    assert!(yaml.contains("kind: Ownership"), "{yaml}");
+    assert!(yaml.contains("sourceCatalog: sap"), "{yaml}");
+    assert!(yaml.contains("catalogKind: master"), "{yaml}");
+    assert!(!yaml.contains("018f1000-"), "ids leaked into YAML: {yaml}");
+
+    let (status, _, body) = call(
+        &app,
+        "GET",
+        "/v1/config/export?format=json",
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let documents: Vec<Value> = serde_json::from_slice(&body).unwrap();
+    let kinds: Vec<&str> = documents
+        .iter()
+        .filter_map(|document| document["kind"].as_str())
+        .collect();
+    assert!(kinds.contains(&"Catalog"), "{kinds:?}");
+    assert!(kinds.contains(&"MergeProfile"), "{kinds:?}");
+    assert!(kinds.contains(&"Ownership"), "{kinds:?}");
+    assert!(
+        !String::from_utf8_lossy(&body).contains("018f1000-"),
+        "ids leaked into JSON"
+    );
+
+    let (status, _, body) = call(
+        &app,
+        "GET",
+        "/v1/config/export?format=zip",
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let mut archive = zip::ZipArchive::new(Cursor::new(body)).unwrap();
+    let names: Vec<String> = (0..archive.len())
+        .map(|index| archive.by_index(index).unwrap().name().to_owned())
+        .collect();
+    assert!(
+        names.contains(&"catalogs/master.yaml".to_owned()),
+        "{names:?}"
+    );
+    assert!(names.contains(&"catalogs/sap.yaml".to_owned()), "{names:?}");
+    assert!(
+        names.contains(&"merge-profiles/sap-brand.yaml".to_owned()),
+        "{names:?}"
+    );
+    assert!(
+        names.contains(&"ownership/ownership.yaml".to_owned()),
+        "{names:?}"
+    );
 }

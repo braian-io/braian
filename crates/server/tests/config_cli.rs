@@ -107,6 +107,8 @@ async fn export_plan_and_apply_round_trip() {
     );
     assert_eq!(plan_exit_code(&changed), 2);
 
+    // Catalogs, merge profiles and ownership export but cannot be applied yet.
+    documents.retain(ConfigDocument::is_applyable);
     match client.apply(&documents, false).await.unwrap() {
         ApplyOutcome::Accepted(accepted) => {
             assert!(!accepted.proposal_id.is_empty());

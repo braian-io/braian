@@ -76,6 +76,45 @@ async fn call(
     (status, headers, bytes.to_vec())
 }
 
+async fn seed_extras(db: &TestDb) {
+    let sap = db
+        .store()
+        .create_catalog(
+            braian_store::CatalogId::new(),
+            "sap",
+            "SAP ERP",
+            braian_store::CatalogKind::Source,
+            true,
+        )
+        .await
+        .unwrap();
+    db.store()
+        .put_merge_profile(
+            uuid::Uuid::now_v7(),
+            "sap-brand",
+            "SAP brand",
+            sap.id,
+            &json!({
+                "match_attributes": ["number"],
+                "master_key": "number",
+                "attributes": [{ "source": "brand", "target": "brand" }],
+                "on_no_match": "create",
+                "on_delete": "ignore",
+                "owns_existence_for": ["product"]
+            }),
+            "manual",
+        )
+        .await
+        .unwrap();
+    db.store()
+        .put_ownership_rules(&json!([{
+            "attribute": "brand",
+            "profiles": ["sap-brand"]
+        }]))
+        .await
+        .unwrap();
+}
+
 async fn app() -> (TestDb, axum::Router) {
     load_env();
     let db = TestDb::create().await;
@@ -306,5 +345,112 @@ async fn plan_requires_a_token_and_rejects_a_wrong_version() {
     assert!(
         status == StatusCode::BAD_REQUEST || status == StatusCode::UNPROCESSABLE_ENTITY,
         "{status}"
+    );
+}
+
+fn catalog<'a>(documents: &'a mut [Value], key: &str) -> &'a mut Value {
+    documents
+        .iter_mut()
+        .find(|document| document["kind"] == "Catalog" && document["key"] == key)
+        .expect("catalog document")
+}
+
+async fn run_plan(app: &axum::Router, documents: &[Value]) -> Value {
+    let (status, _, body) = call(
+        app,
+        "POST",
+        "/v1/config/plan",
+        Some(HUMAN),
+        &[("content-type", "application/json")],
+        Some(&serde_json::to_string(documents).unwrap()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    serde_json::from_slice(&body).unwrap()
+}
+
+#[tokio::test]
+async fn new_kinds_roundtrip_and_plan_changes() {
+    let (db, app) = app().await;
+    seed_extras(&db).await;
+
+    let documents = exported(&app).await;
+    let plan = run_plan(&app, &documents).await;
+    assert!(plan["steps"].as_array().unwrap().is_empty(), "{plan}");
+
+    let mut desired = documents;
+    let sap = catalog(&mut desired, "sap");
+    sap["renamedFrom"] = json!("sap");
+    sap["key"] = json!("sap-erp");
+    let profile = desired
+        .iter_mut()
+        .find(|document| document["kind"] == "MergeProfile" && document["key"] == "sap-brand")
+        .expect("merge profile document");
+    profile["name"] = json!("SAP brand v2");
+    desired.push(json!({
+        "apiVersion": "braian.io/v1",
+        "kind": "Catalog",
+        "key": "erp",
+        "name": "ERP",
+        "catalogKind": "source",
+        "editable": false
+    }));
+    let ownership = desired
+        .iter_mut()
+        .find(|document| document["kind"] == "Ownership")
+        .expect("ownership document");
+    ownership["mode"] = json!("full");
+    ownership["rules"] = json!([]);
+
+    let plan = run_plan(&app, &desired).await;
+    let steps = plan["steps"].as_array().unwrap();
+    assert!(
+        steps.iter().any(|step| step["action"] == "rename"
+            && step["kind"] == "catalog"
+            && step["key"] == "sap-erp"
+            && step["renamedFrom"] == "sap"),
+        "{plan}"
+    );
+    assert!(
+        steps.iter().any(|step| step["action"] == "create"
+            && step["kind"] == "catalog"
+            && step["key"] == "erp"),
+        "{plan}"
+    );
+    assert!(
+        steps.iter().any(|step| step["action"] == "update"
+            && step["kind"] == "merge_profile"
+            && step["key"] == "sap-brand"
+            && step["fields"]
+                .as_array()
+                .is_some_and(|fields| fields.iter().any(|field| field.as_str() == Some("name")))),
+        "{plan}"
+    );
+    let ownership = steps
+        .iter()
+        .find(|step| step["kind"] == "ownership")
+        .expect("ownership step");
+    assert_eq!(ownership["action"], "update", "{plan}");
+    assert_eq!(ownership["destructive"], true, "{plan}");
+    assert_eq!(ownership["blocked"], true, "{plan}");
+    assert_eq!(ownership["affected"]["objects"], 0, "{plan}");
+
+    let mut delete_documents = desired.clone();
+    let sap = catalog(&mut delete_documents, "sap-erp");
+    sap["mode"] = json!("full");
+    delete_documents.retain(|document| {
+        !(document["kind"] == "Catalog"
+            && (document["key"] == "master" || document["key"] == "erp"))
+    });
+    let plan = run_plan(&app, &delete_documents).await;
+    assert!(
+        plan["steps"].as_array().unwrap().iter().any(|step| {
+            step["action"] == "delete"
+                && step["kind"] == "catalog"
+                && step["key"] == "master"
+                && step["destructive"] == true
+                && step["blocked"] == true
+        }),
+        "{plan}"
     );
 }

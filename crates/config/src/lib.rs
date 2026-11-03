@@ -13,10 +13,10 @@ use std::collections::BTreeMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-pub use convert::{ConfigError, export_documents};
+pub use convert::{ConfigError, export_documents, export_documents_with};
 pub use plan::{
     ConfigApplication, ConfigMode, ConfigPlan, PlanAction, PlanAffected, PlanKind, PlanStep,
-    apply_documents, plan_documents,
+    apply_documents, plan_documents, plan_documents_with,
 };
 
 /// The only wire version this crate reads and writes.
@@ -40,6 +40,31 @@ pub enum ConfigDocument {
     Model(ModelDocument),
     ValueList(ValueListDocument),
     UnitFamily(UnitFamilyDocument),
+    Catalog(CatalogDocument),
+    MergeProfile(MergeProfileDocument),
+    Ownership(OwnershipDocument),
+}
+
+impl ConfigDocument {
+    /// The wire `kind` value.
+    pub fn kind_name(&self) -> &'static str {
+        match self {
+            Self::Model(_) => "Model",
+            Self::ValueList(_) => "ValueList",
+            Self::UnitFamily(_) => "UnitFamily",
+            Self::Catalog(_) => "Catalog",
+            Self::MergeProfile(_) => "MergeProfile",
+            Self::Ownership(_) => "Ownership",
+        }
+    }
+
+    /// Whether the apply endpoint can turn this document into a model change.
+    pub fn is_applyable(&self) -> bool {
+        matches!(
+            self,
+            Self::Model(_) | Self::ValueList(_) | Self::UnitFamily(_)
+        )
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -117,6 +142,111 @@ pub struct UnitFamilyDocument {
     pub base_unit: String,
     #[serde(default)]
     pub units: Vec<UnitConfig>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "PascalCase")]
+pub enum CatalogKind {
+    Catalog,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum CatalogSourceKind {
+    Master,
+    Source,
+}
+
+/// One catalog record, referenced elsewhere by key.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CatalogDocument {
+    #[serde(rename = "apiVersion")]
+    pub api_version: ApiVersion,
+    pub kind: CatalogKind,
+    pub key: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub renamed_from: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<ConfigMode>,
+    pub name: String,
+    /// Whether this catalog is the master or a source. `kind` is the document
+    /// header, so the domain field uses another name.
+    pub catalog_kind: CatalogSourceKind,
+    pub editable: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "PascalCase")]
+pub enum MergeProfileKind {
+    MergeProfile,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MergeModeConfig {
+    Manual,
+    Continuous,
+}
+
+/// One merge profile. `source_catalog` names a catalog document by key and
+/// `spec` is the stored profile specification unchanged.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MergeProfileDocument {
+    #[serde(rename = "apiVersion")]
+    pub api_version: ApiVersion,
+    pub kind: MergeProfileKind,
+    pub key: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub renamed_from: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<ConfigMode>,
+    pub name: String,
+    /// Key of the source catalog this profile reads.
+    pub source_catalog: String,
+    pub spec: serde_json::Value,
+    /// `mode` is the document mode, so the profile mode uses another name.
+    pub run_mode: MergeModeConfig,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "PascalCase")]
+pub enum OwnershipKind {
+    Ownership,
+}
+
+/// The ownership rule set. There is one set, so this document has no key.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OwnershipDocument {
+    #[serde(rename = "apiVersion")]
+    pub api_version: ApiVersion,
+    pub kind: OwnershipKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<ConfigMode>,
+    #[serde(default)]
+    pub rules: Vec<OwnershipRuleConfig>,
+}
+
+/// Which profiles own one master attribute and language. References use keys.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OwnershipRuleConfig {
+    pub attribute: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    #[serde(default)]
+    pub profiles: Vec<String>,
+}
+
+/// Stored catalogs, merge profiles and ownership rules, which live outside the
+/// definition set. Exported after the model, value lists and unit families.
+#[derive(Debug, Clone, Default)]
+pub struct ConfigExtras {
+    pub catalogs: Vec<CatalogDocument>,
+    pub merge_profiles: Vec<MergeProfileDocument>,
+    pub ownership: Option<OwnershipDocument>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
