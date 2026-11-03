@@ -87,8 +87,8 @@ test('right-click shows only item actions', async ({ page }) => {
   await item.click({ button: 'right' })
   const menu = page.getByTestId('context-menu')
   await expect(menu).toBeVisible()
-  await expect(menu.getByRole('button', { name: /^Open/ })).toBeVisible()
-  await expect(menu.getByRole('button', { name: /^Rename/ })).toBeVisible()
+  await expect(menu.getByRole('button', { name: /^Open(\s+Enter)?$/ })).toBeVisible()
+  await expect(menu.getByRole('button', { name: /^Rename(\s+F2)?$/ })).toBeVisible()
   for (const global of [
     'Search…',
     'Send feedback',
