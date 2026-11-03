@@ -30,10 +30,15 @@ export function ModelDraftHost() {
   useEffect(() => {
     const open = () => {
       setError('')
-      if (Number(draft.data?.count ?? 0) > 0 && draft.data?.conflict !== true) {
-        rememberOpener()
-        setReview(true)
-      }
+      // Steps can be staged right before the request, so the cached count may
+      // still be zero. Read the draft again before deciding whether to open.
+      void draft.refetch().then((result) => {
+        const body = result.data
+        if (Number(body?.count ?? 0) > 0 && body?.conflict !== true) {
+          rememberOpener()
+          setReview(true)
+        }
+      })
     }
     const discard = () => {
       void api.delete('/v1/model/draft').then(() => {
@@ -49,7 +54,7 @@ export function ModelDraftHost() {
       window.removeEventListener('braian-discard-draft', discard)
       window.removeEventListener('braian-model-dialog', ask)
     }
-  }, [draft.data, queryClient])
+  }, [draft.refetch, queryClient])
   const count = Number(draft.data?.count ?? 0)
   const conflict = draft.data?.conflict === true
   const refresh = () => {
