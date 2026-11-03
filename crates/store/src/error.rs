@@ -62,6 +62,8 @@ pub enum Error {
     CatalogNotFound(String),
     #[error("catalog {0} already exists")]
     CatalogExists(String),
+    #[error("catalog {key} is in use: {detail}")]
+    CatalogInUse { key: String, detail: String },
     #[error("definition revision {got} does not follow {current}")]
     BadRevision { current: u64, got: u64 },
     #[error("definitions: {0}")]

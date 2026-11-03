@@ -3,8 +3,7 @@
 use braian_config::{
     ApiVersion, CatalogDocument, CatalogKind, CatalogSourceKind, ConfigDocument, ConfigExtras,
     MergeModeConfig, MergeProfileDocument, MergeProfileKind, OwnershipDocument, OwnershipKind,
-    OwnershipRuleConfig, PlanAction, PlanKind, apply_documents, export_documents_with,
-    plan_documents_with,
+    OwnershipRuleConfig, PlanAction, PlanKind, export_documents_with, plan_documents_with,
 };
 use braian_model::DefinitionSet;
 use serde::Deserialize;
@@ -233,22 +232,46 @@ fn new_kinds_plan_create_update_rename_and_delete() {
 }
 
 #[test]
-fn apply_rejects_the_new_kinds() {
-    for document in export_documents_with(&definitions(), &extras())
-        .expect("export")
-        .into_iter()
-        .filter(|document| !document.is_applyable())
-    {
-        let error = apply_documents(&definitions(), std::slice::from_ref(&document))
-            .expect_err("new kinds are not applyable");
-        assert!(
-            error.to_string().contains(&format!(
-                "Kind {} cannot be applied yet",
-                document.kind_name()
-            )),
-            "{error}"
-        );
-    }
+fn apply_builds_changes_for_the_new_kinds() {
+    use braian_model::ModelChange;
+
+    let application = braian_config::apply_documents_with(
+        &definitions(),
+        &ConfigExtras::default(),
+        &extras_documents(),
+    )
+    .expect("apply plan");
+    assert!(
+        application
+            .changes
+            .iter()
+            .any(|change| matches!(change, ModelChange::UpsertCatalog { catalog } if catalog.key == "sap")),
+        "{:?}",
+        application.changes
+    );
+    assert!(
+        application.changes.iter().any(|change| matches!(
+            change,
+            ModelChange::UpsertMergeProfile { profile } if profile.key == "sap-brand" && profile.source_catalog == "sap"
+        )),
+        "{:?}",
+        application.changes
+    );
+    assert!(
+        application.changes.iter().any(|change| matches!(
+            change,
+            ModelChange::SetOwnershipRules { rules } if rules.iter().any(|rule| rule.attribute == "brand")
+        )),
+        "{:?}",
+        application.changes
+    );
+    let (after, _) =
+        braian_model::preview(&definitions(), &application.changes).expect("steps apply");
+    assert_eq!(after, definitions());
+}
+
+fn extras_documents() -> Vec<ConfigDocument> {
+    export_documents_with(&definitions(), &extras()).expect("export")
 }
 
 #[test]

@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 pub use convert::{ConfigError, export_documents, export_documents_with};
 pub use plan::{
     ConfigApplication, ConfigMode, ConfigPlan, PlanAction, PlanAffected, PlanKind, PlanStep,
-    apply_documents, plan_documents, plan_documents_with,
+    apply_documents, apply_documents_with, plan_documents, plan_documents_with,
 };
 
 /// The only wire version this crate reads and writes.
@@ -60,10 +60,7 @@ impl ConfigDocument {
 
     /// Whether the apply endpoint can turn this document into a model change.
     pub fn is_applyable(&self) -> bool {
-        matches!(
-            self,
-            Self::Model(_) | Self::ValueList(_) | Self::UnitFamily(_)
-        )
+        true
     }
 }
 

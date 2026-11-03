@@ -80,6 +80,7 @@ pub struct ProfileSpec {
 /// The first profile in `profiles` that has a link to the object wins.
 /// An empty list means Braian owns the field and a person may edit it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OwnershipRule {
     pub attribute: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]

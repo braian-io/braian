@@ -7,8 +7,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use braian_model::{
-    Attribute, AttributeId, AttributeKind, Cardinality, Class, ClassId, DataPurge, DefinitionSet,
-    Group, GroupId, IndexFlags, LanguageTag, LinkLabel, LinkSpec, ModelChange, ObjectType,
+    Attribute, AttributeId, AttributeKind, Cardinality, Catalog, CatalogKind as ModelCatalogKind,
+    Class, ClassId, DataPurge, DefinitionSet, Group, GroupId, IndexFlags, LanguageTag, LinkLabel,
+    LinkSpec, MergeProfile, MergeProfileMode, ModelChange, ObjectType, OwnershipRule,
     SharedValueList, Structure, StructureId, TextForm, TypeId, TypeKind, Unit, UnitFamily,
     UnitFamilyId, Uuid, ValueOption, purge_for,
 };
@@ -66,6 +67,20 @@ pub struct PlanAffected {
     pub values: i64,
     pub links: i64,
     pub selections: i64,
+    /// Catalog delete only: rows of each kind that keep the catalog alive.
+    #[serde(default)]
+    pub import_sessions: i64,
+    #[serde(default)]
+    pub proposals: i64,
+    #[serde(default)]
+    pub workspaces: i64,
+    #[serde(default)]
+    pub model_drafts: i64,
+    /// Catalog delete only: finished history removed with the catalog.
+    #[serde(default)]
+    pub closed_proposals: i64,
+    #[serde(default)]
+    pub finished_import_sessions: i64,
 }
 
 /// One step in a config plan.
@@ -902,20 +917,25 @@ pub fn apply_documents(
     current: &DefinitionSet,
     documents: &[ConfigDocument],
 ) -> Result<ConfigApplication, ConfigError> {
-    if let Some(document) = documents.iter().find(|document| !document.is_applyable()) {
-        return Err(ConfigError::new(format!(
-            "Kind {} cannot be applied yet",
-            document.kind_name()
-        )));
-    }
-    let plan = plan_documents(current, documents)?;
+    apply_documents_with(current, &ConfigExtras::default(), documents)
+}
+
+/// Like [`apply_documents`], also comparing catalogs, merge profiles and
+/// ownership rules supplied by the caller.
+pub fn apply_documents_with(
+    current: &DefinitionSet,
+    extras: &ConfigExtras,
+    documents: &[ConfigDocument],
+) -> Result<ConfigApplication, ConfigError> {
+    let plan = plan_documents_with(current, extras, documents)?;
     let desired = desired_from(documents)?;
-    let changes = changes_for(current, &desired, &plan)?;
+    let changes = changes_for(current, extras, &desired, &plan)?;
     Ok(ConfigApplication { plan, changes })
 }
 
 fn changes_for(
     current: &DefinitionSet,
+    extras: &ConfigExtras,
     desired: &Desired,
     plan: &ConfigPlan,
 ) -> Result<Vec<ModelChange>, ConfigError> {
@@ -1029,7 +1049,7 @@ fn changes_for(
             }),
             // Group and class deletes arrive with their structure upsert.
             // A language list has no model step; see the apply endpoint notes.
-            // The new config kinds cannot be applied yet.
+            // Catalogs, merge profiles and ownership are added after this loop.
             PlanKind::Group
             | PlanKind::Class
             | PlanKind::Language
@@ -1037,6 +1057,100 @@ fn changes_for(
             | PlanKind::MergeProfile
             | PlanKind::Ownership => {}
         }
+    }
+
+    let deleted_catalogs: BTreeSet<&str> = plan
+        .steps
+        .iter()
+        .filter(|step| step.kind == PlanKind::Catalog && step.action == PlanAction::Delete)
+        .map(|step| step.key.as_str())
+        .collect();
+
+    for step in plan
+        .steps
+        .iter()
+        .filter(|step| step.kind == PlanKind::Catalog)
+    {
+        if step.action == PlanAction::Delete {
+            changes.push(ModelChange::DeleteCatalog {
+                key: step.key.clone(),
+            });
+            continue;
+        }
+        let Some(catalog) = desired.catalogs.get(&step.key) else {
+            continue;
+        };
+        changes.push(ModelChange::UpsertCatalog {
+            catalog: Box::new(Catalog {
+                key: catalog.key.clone(),
+                renamed_from: catalog.renamed_from.clone(),
+                name: catalog.name.clone(),
+                kind: match catalog.catalog_kind {
+                    crate::CatalogSourceKind::Master => ModelCatalogKind::Master,
+                    crate::CatalogSourceKind::Source => ModelCatalogKind::Source,
+                },
+                editable: catalog.editable,
+            }),
+        });
+    }
+
+    for step in plan
+        .steps
+        .iter()
+        .filter(|step| step.kind == PlanKind::MergeProfile)
+    {
+        if step.action == PlanAction::Delete {
+            let cascaded = extras
+                .merge_profiles
+                .iter()
+                .find(|profile| profile.key == step.key)
+                .is_some_and(|profile| deleted_catalogs.contains(profile.source_catalog.as_str()));
+            if !cascaded {
+                changes.push(ModelChange::DeleteMergeProfile {
+                    key: step.key.clone(),
+                });
+            }
+            continue;
+        }
+        let Some(profile) = desired.merge_profiles.get(&step.key) else {
+            continue;
+        };
+        changes.push(ModelChange::UpsertMergeProfile {
+            profile: Box::new(MergeProfile {
+                key: profile.key.clone(),
+                renamed_from: profile.renamed_from.clone(),
+                name: profile.name.clone(),
+                source_catalog: profile.source_catalog.clone(),
+                spec: profile.spec.clone(),
+                mode: match profile.run_mode {
+                    crate::MergeModeConfig::Manual => MergeProfileMode::Manual,
+                    crate::MergeModeConfig::Continuous => MergeProfileMode::Continuous,
+                },
+            }),
+        });
+    }
+
+    if plan
+        .steps
+        .iter()
+        .any(|step| step.kind == PlanKind::Ownership)
+    {
+        let rules = desired
+            .ownership
+            .get(OWNERSHIP_KEY)
+            .map(|ownership| {
+                ownership
+                    .rules
+                    .iter()
+                    .map(|rule| OwnershipRule {
+                        attribute: rule.attribute.clone(),
+                        language: rule.language.clone(),
+                        profiles: rule.profiles.clone(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        changes.push(ModelChange::SetOwnershipRules { rules });
     }
 
     Ok(changes)

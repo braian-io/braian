@@ -3160,6 +3160,18 @@ export function ProposalListView({ session }: { session: PanesSession }) {
     />
   )
 }
+const MODEL_OP_LABELS: Record<string, string> = {
+  upsert_catalog: 'Catalog',
+  delete_catalog: 'Catalog',
+  upsert_merge_profile: 'Merge profile',
+  delete_merge_profile: 'Merge profile',
+  set_ownership_rules: 'Ownership',
+}
+
+function modelOpLabel(op: string) {
+  return MODEL_OP_LABELS[op] ?? op
+}
+
 function SuggestionCard({
   row,
   current,
@@ -3179,7 +3191,7 @@ function SuggestionCard({
   return (
     <article className="suggestion-card" data-testid="suggestion-card">
       <h3>
-        {model ? <MetaChip>{String((row.patch as Json | undefined)?.op ?? row.type_key ?? 'model')}</MetaChip> : String(row.object_key ?? row.object_id)}
+        {model ? <MetaChip>{modelOpLabel(String((row.patch as Json | undefined)?.op ?? row.type_key ?? 'model'))}</MetaChip> : String(row.object_key ?? row.object_id)}
         {' '}
         <MetaChip tone={statusTone(String(row.status))}>{String(row.status)}</MetaChip>
         {row.conflict ? ` · ${copy.conflict}` : ''}

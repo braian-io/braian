@@ -4742,3 +4742,64 @@ async fn attribute_paths_filter_and_an_agent_patch_use_the_same_path() {
         json!({"value": "500", "unit": "g"})
     );
 }
+
+#[tokio::test]
+async fn ownership_rules_require_the_typed_shape() {
+    let (_db, app) = app().await;
+    let headers = [("content-type", "application/json")];
+
+    let (status, _, body) = call(
+        &app,
+        "POST",
+        "/v1/merge/ownership",
+        Some(HUMAN),
+        &headers,
+        Some(r#"[{"attribute":"brand","profiles":["sap-brand"],"unknown":true}]"#),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "invalid_ownership", "{body}");
+    assert!(
+        body["detail"]
+            .as_str()
+            .is_some_and(|detail| detail.contains("unknown field")),
+        "{body}"
+    );
+
+    let (status, _, body) = call(
+        &app,
+        "POST",
+        "/v1/merge/ownership",
+        Some(HUMAN),
+        &headers,
+        Some(r#"[{"attribute":"brand"}]"#),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "invalid_ownership", "{body}");
+
+    let (status, _, body) = call(
+        &app,
+        "POST",
+        "/v1/merge/ownership",
+        Some(HUMAN),
+        &headers,
+        Some(r#"{"attribute":"brand","profiles":["sap-brand"]}"#),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "invalid_ownership", "{body}");
+
+    let (status, _, body) = call(
+        &app,
+        "POST",
+        "/v1/merge/ownership",
+        Some(HUMAN),
+        &headers,
+        Some(r#"[{"attribute":"brand","language":"en","profiles":["sap-brand"]}]"#),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["revision"], 1, "{body}");
+    assert_eq!(body["rules"][0]["attribute"], "brand", "{body}");
+}

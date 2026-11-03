@@ -382,6 +382,76 @@ pub enum ModelChange {
     UpsertUnitFamily {
         family: Box<UnitFamily>,
     },
+    /// Creates or updates one catalog. The key resolves to an id when accepted.
+    UpsertCatalog {
+        catalog: Box<Catalog>,
+    },
+    /// Removes one catalog. The key resolves to an id when accepted.
+    DeleteCatalog {
+        #[serde(alias = "id")]
+        key: String,
+    },
+    /// Creates or updates one merge profile. The key and source catalog key
+    /// resolve to ids when accepted.
+    UpsertMergeProfile {
+        profile: Box<MergeProfile>,
+    },
+    /// Removes one merge profile. The key resolves to an id when accepted.
+    DeleteMergeProfile {
+        #[serde(alias = "id")]
+        key: String,
+    },
+    /// Replaces the whole ownership rule list. Profiles use their keys.
+    SetOwnershipRules {
+        rules: Vec<OwnershipRule>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CatalogKind {
+    Master,
+    Source,
+}
+
+/// One catalog document in a model change.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Catalog {
+    pub key: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub renamed_from: Option<String>,
+    pub name: String,
+    pub kind: CatalogKind,
+    pub editable: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MergeProfileMode {
+    Manual,
+    Continuous,
+}
+
+/// One merge profile document in a model change. The source catalog uses its key.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MergeProfile {
+    pub key: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub renamed_from: Option<String>,
+    pub name: String,
+    pub source_catalog: String,
+    pub spec: serde_json::Value,
+    pub mode: MergeProfileMode,
+}
+
+/// Which profiles own one master attribute and language. Profiles use their keys.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OwnershipRule {
+    pub attribute: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    pub profiles: Vec<String>,
 }
 
 /// One option on a value list, in the order the step names.
@@ -506,6 +576,8 @@ pub fn deletes_data(change: &ModelChange) -> bool {
             | ModelChange::DeleteValueOption { .. }
             | ModelChange::DeleteUnitFamily { .. }
             | ModelChange::DeleteUnit { .. }
+            | ModelChange::DeleteCatalog { .. }
+            | ModelChange::DeleteMergeProfile { .. }
             | ModelChange::RemoveAttribute { .. }
             | ModelChange::DetachAttribute { .. }
     )
@@ -537,8 +609,34 @@ pub fn preview(
 ) -> Result<(DefinitionSet, ChangeImpact), ApplyError> {
     let mut after = defs.clone();
     apply_all(&mut after, changes)?;
-    let impact = diff(defs, &after);
+    let impact = reference_impact(diff(defs, &after), changes);
     Ok((after, impact))
+}
+
+fn reference_impact(mut impact: ChangeImpact, changes: &[ModelChange]) -> ChangeImpact {
+    for change in changes {
+        match change {
+            ModelChange::UpsertCatalog { catalog } => {
+                impact.lines.push(format!("Save catalog {}", catalog.key));
+            }
+            ModelChange::DeleteCatalog { key } => {
+                impact.lines.push(format!("Delete catalog {key}"));
+            }
+            ModelChange::UpsertMergeProfile { profile } => {
+                impact
+                    .lines
+                    .push(format!("Save merge profile {}", profile.key));
+            }
+            ModelChange::DeleteMergeProfile { key } => {
+                impact.lines.push(format!("Delete merge profile {key}"));
+            }
+            ModelChange::SetOwnershipRules { .. } => {
+                impact.lines.push("Update ownership rules".to_owned());
+            }
+            _ => {}
+        }
+    }
+    impact
 }
 
 /// A sentence the palette and the agent can both run.
@@ -1290,7 +1388,12 @@ fn apply_one(defs: &mut DefinitionSet, change: &ModelChange) -> Result<(), Apply
         | ModelChange::DeleteValueList { .. }
         | ModelChange::DeleteValueOption { .. }
         | ModelChange::DeleteUnitFamily { .. }
-        | ModelChange::DeleteUnit { .. } => Ok(()),
+        | ModelChange::DeleteUnit { .. }
+        | ModelChange::DeleteCatalog { .. }
+        | ModelChange::DeleteMergeProfile { .. }
+        | ModelChange::UpsertCatalog { .. }
+        | ModelChange::UpsertMergeProfile { .. }
+        | ModelChange::SetOwnershipRules { .. } => Ok(()),
         ModelChange::SetStructures {
             type_key,
             structures,
