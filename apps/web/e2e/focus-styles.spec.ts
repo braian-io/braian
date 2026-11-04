@@ -10,6 +10,7 @@ const shots = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'test-resul
 type Paint = {
   accent: string
   accentHover: string
+  accentDim: string
   outlineStyle: string
   outlineWidth: number
   outlineOffset: number
@@ -37,6 +38,8 @@ async function paint(target: Locator): Promise<Paint> {
     const accent = getComputedStyle(probe).color
     probe.style.color = 'var(--accent-hover)'
     const accentHover = getComputedStyle(probe).color
+    probe.style.backgroundColor = 'var(--accent-dim)'
+    const accentDim = getComputedStyle(probe).backgroundColor
     probe.remove()
     const px = (value: string) => Number.parseFloat(value)
     const sides = ['top', 'right', 'bottom', 'left'] as const
@@ -50,6 +53,7 @@ async function paint(target: Locator): Promise<Paint> {
     return {
       accent,
       accentHover,
+      accentDim,
       outlineStyle: style.outlineStyle,
       outlineWidth: px(style.outlineWidth),
       outlineOffset: px(style.outlineOffset),
@@ -151,12 +155,35 @@ test('focus and hover use one indicator aligned to the element', async ({ page }
   expectOneIndicator(nameFocused, 'Detail Name input')
   expect(nameFocused.outlineStyle).toBe('none')
   expect(nameFocused.outlineOffset).toBeLessThanOrEqual(0)
+  expect(nameFocused.borderBottomColor).toBe(nameFocused.accent)
+  expect(nameFocused.borderBottomStyle).toBe('solid')
   expect(nameFocused.backgroundColor).toBe(nameBefore.backgroundColor)
   const cardBackground = await nameField
     .locator('xpath=ancestor::section[contains(@class,"field-card")][1]')
     .evaluate((element) => getComputedStyle(element).backgroundColor)
   expect(nameFocused.backgroundColor).toBe(cardBackground)
   await screenshotElement(page, nameInput, 'detail-name-input')
+
+  await nameInput.evaluate((element) => (element as HTMLElement).blur())
+  await page.mouse.move(5, 5)
+  await nameInput.hover()
+  const nameHovered = await paint(nameInput)
+  expectOneIndicator(nameHovered, 'Detail Name input hover')
+  expect(nameHovered.outlineStyle).toBe('none')
+  expect(nameHovered.borderBottomColor).toBe(nameHovered.accent)
+  expect(nameHovered.borderBottomStyle).toBe('solid')
+  await screenshotElement(page, nameInput, 'detail-name-input-hover')
+
+  const langTag = nameField.locator('.lang-tag').first()
+  await expect(langTag).toHaveText('en')
+  const tagBox = await langTag.boundingBox()
+  const inputBox = await nameInput.boundingBox()
+  if (!tagBox || !inputBox) throw new Error('missing language chip or input box')
+  expect(tagBox.x + tagBox.width).toBeLessThanOrEqual(inputBox.x)
+  const tagCenter = tagBox.y + tagBox.height / 2
+  const inputCenter = inputBox.y + inputBox.height / 2
+  expect(Math.abs(tagCenter - inputCenter)).toBeLessThanOrEqual(2)
+  await screenshotElement(page, nameField.locator('.lang-row').first(), 'language-chip')
 
   const numberField = detail
     .locator('.field')
@@ -181,6 +208,7 @@ test('focus and hover use one indicator aligned to the element', async ({ page }
   expect(active.boxShadow).toBe('none')
   expect(Number.parseFloat(active.after.borderRadius)).toBe(0)
   expect(active.after.backgroundColor).toBe(active.accent)
+  expect(active.backgroundColor).toBe(active.accentDim)
   await screenshotElement(page, activeTab, 'pane-tab-active')
 
   const otherTab = focusedPane.locator('.pane-tab:not(.active)').first()
@@ -203,14 +231,25 @@ test('focus and hover use one indicator aligned to the element', async ({ page }
   await expect(treeTab).toBeVisible()
   await treeTab.click()
   await expect(treeTab).toHaveClass(/active/)
+  await expect(treeTab.locator('xpath=ancestor::section[contains(@class,"pane")][1]')).toHaveClass(/focused/)
   await page.mouse.move(5, 5)
   const tree = await paint(treeTab)
   expectOneIndicator(tree, 'active tree tab')
   expect(tree.outlineStyle).toBe('none')
   expect(tree.boxShadow).toBe('none')
-  expect(tree.backgroundColor).toBe('rgba(0, 0, 0, 0)')
+  expect(tree.backgroundColor).toBe(tree.accentDim)
   expect(Number.parseFloat(tree.after.borderRadius)).toBe(0)
   await screenshotElement(page, treeTab, 'tree-tab-active')
+
+  const unfocusedActive = page.locator('section.pane:not(.focused) .pane-tab.active').first()
+  await expect(unfocusedActive).toBeVisible()
+  const unfocused = await paint(unfocusedActive)
+  expectOneIndicator(unfocused, 'active tab in unfocused pane')
+  expect(unfocused.outlineStyle).toBe('none')
+  expect(unfocused.boxShadow).toBe('none')
+  expect(unfocused.backgroundColor).toBe('rgba(0, 0, 0, 0)')
+  expect(Number.parseFloat(unfocused.after.borderRadius)).toBe(0)
+  await screenshotElement(page, unfocusedActive, 'pane-tab-active-unfocused')
 
   const productRow = table.getByTestId('object-row').filter({ hasText: 'PROD-CHEDDAR' }).first()
   await expect(productRow).toBeVisible()

@@ -350,6 +350,16 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
   background: var(--accent);
   pointer-events: none;
 }
+/* The focused pane's active tab keeps a subtle fill behind the flat underline. */
+.pane.focused .pane-tab.active {
+  background: var(--accent-dim);
+}
+/* Hover belongs to the tab, never to the label inside it. */
+.pane-tab:hover:not(.active) {
+  background: var(--hover);
+  color: var(--text);
+  transition: color var(--dur) var(--ease);
+}
 .spacer { flex: 1; }
 .icon-btn {
   display: inline-flex;
@@ -978,7 +988,7 @@ select.link-type-line { width: 100%; font-weight: 600; }
 .field-card input:hover:not(:focus-visible),
 .field-card textarea:hover:not(:focus-visible),
 .field-card .select-trigger:hover:not(:focus-visible) {
-  border-bottom-color: var(--muted);
+  border-bottom-color: var(--accent);
 }
 /* A detail field already has a bottom rule, so focus recolors that rule instead of adding a ring. */
 .field-card input:focus-visible,
@@ -1002,7 +1012,10 @@ select.link-type-line { width: 100%; font-weight: 600; }
 }
 .lang-row:has(textarea) { align-items: flex-start; }
 .lang-tag {
+  display: inline-flex;
   flex: none;
+  align-items: center;
+  align-self: center;
   width: 2.25em;
   margin: 0;
   padding: 0;
@@ -1012,10 +1025,14 @@ select.link-type-line { width: 100%; font-weight: 600; }
   color: var(--text-2);
   font-size: 11px;
   font-weight: 600;
-  line-height: 30px;
+  line-height: 1;
   text-transform: lowercase;
 }
-.lang-row:has(textarea) .lang-tag { line-height: 22px; padding-top: 6px; }
+.lang-row:has(textarea) .lang-tag {
+  align-self: flex-start;
+  padding-top: 6px;
+  line-height: 1.4;
+}
 .lang-row input,
 .lang-row textarea {
   flex: 1 1 auto;
@@ -2429,7 +2446,6 @@ a,
 }
 a:hover { color: var(--text); }
 .tab:hover:not(.active),
-.pane-tab:hover:not(.active),
 .model-node:hover:not(.on) {
   background: var(--hover);
   color: var(--text);
