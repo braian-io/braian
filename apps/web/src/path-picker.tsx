@@ -128,7 +128,7 @@ export function PathMenu({
     }
   }
   return (
-    <Popover open modal onOpenChange={(next) => { if (!next) close() }}>
+    <Popover open modal={false} onOpenChange={(next) => { if (!next) close() }}>
       <PopoverContent
         className="import-menu path-picker-menu"
         data-testid="path-picker"

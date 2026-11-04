@@ -77,7 +77,7 @@ export function FieldPicker({ paths, order, hidden, onToggle, onMove, onClose }:
     }
   }
   return (
-    <Popover open modal onOpenChange={(next) => { if (!next) close() }}>
+    <Popover open modal={false} onOpenChange={(next) => { if (!next) close() }}>
       <PopoverContent
         className="import-menu field-picker"
         data-testid="field-picker"

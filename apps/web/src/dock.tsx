@@ -403,7 +403,8 @@ function Pane({ frame, leaf }: { frame: Frame; leaf: Leaf }) {
                   <button
                     type="button"
                     className="tab-x"
-                    aria-label={`Close ${title}`}
+                    aria-label="Close tab"
+                    title={`Close ${title}`}
                     data-testid={`close-tab-${id}`}
                     onClick={(event) => {
                       event.stopPropagation()

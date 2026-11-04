@@ -253,6 +253,7 @@ test.describe('field picker on Products', () => {
 
     await page.reload()
     await expect(mainTable(page)).toBeVisible({ timeout: 60_000 })
+    await expect(headers()).toHaveCount(beforeCount, { timeout: 30_000 })
     const reloaded = await headers().allTextContents()
     expect(reloaded.length).toBe(beforeCount)
     expect(reloaded.some((text) => /\ball\b/i.test(text))).toBe(false)
@@ -351,6 +352,7 @@ test.describe('field picker on Products', () => {
 
     await page.reload()
     await expect(mainTable(page)).toBeVisible({ timeout: 60_000 })
+    await expect(hopHeaders()).toHaveCount(3, { timeout: 30_000 })
     const reloaded = await hopHeaders().allTextContents()
     expect(reloaded).toHaveLength(3)
     expect(reloaded[0]).toMatch(/\ball\b/i)
@@ -406,7 +408,13 @@ test.describe('field picker on Products', () => {
     await page.keyboard.press('Escape')
 
     // Close the Detail pane if present so a regression that only reopens Detail is visible.
-    const detailClose = page.locator('.pane').filter({ hasText: /^Product|^Detail/ }).getByRole('button', { name: /close|×|x/i }).first()
+    // Keep the object table: its tab close button is also named "Close tab".
+    const detailClose = page
+      .locator('section.pane')
+      .filter({ hasNot: page.locator('.pane-tab[data-view-type="object_table"]') })
+      .filter({ hasText: /^Product|^Detail/ })
+      .getByRole('button', { name: 'Close tab' })
+      .first()
     if (await detailClose.count()) {
       await detailClose.click({ force: true }).catch(() => undefined)
     }

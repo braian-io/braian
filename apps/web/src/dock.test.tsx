@@ -30,9 +30,11 @@ it('renders the tab close control as a keyboard-reachable button', () => {
     />,
   )
 
-  const close = screen.getByRole('button', { name: 'Close Products' })
+  const close = screen.getByTestId('close-tab-products')
   expect(close.tagName).toBe('BUTTON')
   expect(close.getAttribute('type')).toBe('button')
+  expect(close.getAttribute('aria-label')).toBe('Close tab')
+  expect(close.getAttribute('title')).toBe('Close Products')
 
   fireEvent.click(close)
   expect(onChange).toHaveBeenCalledTimes(1)
