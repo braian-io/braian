@@ -196,6 +196,8 @@ test.describe('palette drill-in, recent order, and global commands', () => {
     await login(page)
     const palette = await openPalette(page)
     const input = page.getByTestId('palette-input')
+    await input.focus()
+    await expect.poll(async () => palette.getByRole('option').count()).toBeGreaterThan(1)
     await page.keyboard.press('ArrowDown')
     const highlighted = palette.locator('.hit.on')
     await expect(highlighted).toBeVisible()
