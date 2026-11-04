@@ -34,10 +34,9 @@ test('object inline create cancels with Escape and Cancel, and only one form ope
 
 test('editable table draft create cancels with Escape and Cancel', async ({ page }) => {
   await login(page)
-  await page.keyboard.press('Control+K')
-  await page.getByTestId('palette-input').fill('Attribute definitions')
-  await page.keyboard.press('Enter')
-  const view = page.getByTestId('attribute-definitions')
+  await page.getByRole('button', { name: 'Data model' }).click()
+  await page.locator('.pane-tab').filter({ hasText: 'Value lists' }).click()
+  const view = page.getByTestId('value-lists-table')
   await expect(view).toBeVisible()
 
   await view.getByTestId('table-add-row').click()
