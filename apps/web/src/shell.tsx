@@ -75,6 +75,7 @@ import {
   peerSourceOf,
   viewSourceLabel,
 } from './view-source'
+import { useDetailFollow } from './detail-follow'
 import { MASTER_CATALOG_ID } from './catalog-ref'
 import { workspaceCatalogRef } from './catalog-scope'
 import { useCatalogNamesById } from './catalog-list'
@@ -391,6 +392,18 @@ export function Shell() {
     queryFn: () => api.get('/v1/objects/{id}', { params: { path: { id: objectId ?? '' } } }),
     enabled: Boolean(objectId),
   })
+  const detailListViews = useMemo(
+    () => viewRows(workspace.data?.views).map((view) => ({ id: view.id, type: view.type })),
+    [workspace.data],
+  )
+  // The detail panel follows the active list. Switching list/view/workspace
+  // resets it to that list's selection instead of keeping a stale object.
+  useDetailFollow(
+    doc,
+    detailListViews,
+    Boolean(doc && workspace.data && workspace.data.id === workspaceId),
+    setObjectId,
+  )
   const feedbackEnabled = me.data?.feedback === true
 
   useEffect(() => {
