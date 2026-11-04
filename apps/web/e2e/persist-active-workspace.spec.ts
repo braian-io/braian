@@ -36,7 +36,8 @@ test('reload restores the active workspace; unknown id falls back', async ({ pag
   expect(userId).toBeTruthy()
   await page.evaluate((key) => localStorage.setItem(key, JSON.stringify('00000000-0000-4000-8000-000000000000')), `braian.activeWorkspace.${userId}`)
 
-  await page.reload()
+  // An explicit ws in the URL wins; clear it to exercise the storage fallback.
+  await page.goto('/')
   await expect(page.getByTestId('dock')).toBeVisible()
   await expect(activeTab(page)).toHaveText(/^Products/, { timeout: 30_000 })
 })
