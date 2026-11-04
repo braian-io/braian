@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { api } from './api'
 import { setAiMode } from './ai-mode'
 import { publishProposal } from './proposal-bus'
-import { submitLink, submitLinks, undoCreatedLinks } from './link-write'
+import { submitLink, submitLinks, undoCreatedLinks, type LinkWrite } from './link-write'
 import { ApiError } from './api'
 
 vi.mock('./proposal-bus', () => ({ publishProposal: vi.fn() }))
@@ -62,21 +62,18 @@ describe('submitLink', () => {
   it('files every agent link in one proposal instead of stopping after the first', async () => {
     const post = vi.spyOn(api, 'post')
       .mockResolvedValueOnce({ proposal_id: 'proposal-1', needs_approval: true } as never)
-      .mockResolvedValueOnce({ id: 'proposal-all' } as never)
+      .mockResolvedValueOnce({ id: 'proposal-rest' } as never)
     const second = { ...body, to_id: 'to-2' }
     await expect(submitLinks([body, second])).resolves.toEqual({ outcome: 'proposed', created: [], filed: 2 })
     expect(post).toHaveBeenCalledTimes(2)
     expect(post).toHaveBeenLastCalledWith('/v1/proposals', {
       body: {
         title: 'Link proposal',
-        rows: [
-          { type_key: 'replaces', patch: { link: body } },
-          { type_key: 'replaces', patch: { link: second } },
-        ],
+        rows: [{ type_key: 'replaces', patch: { link: second } }],
       },
     })
-    expect(publishProposal).toHaveBeenCalledTimes(1)
-    expect(publishProposal).toHaveBeenCalledWith('proposal-all')
+    expect(publishProposal).toHaveBeenCalledWith('proposal-1')
+    expect(publishProposal).toHaveBeenCalledWith('proposal-rest')
   })
 
   it('reports a partial save and keeps the links that were stored', async () => {
@@ -92,7 +89,7 @@ describe('submitLink', () => {
     expect(post).toHaveBeenCalledTimes(2)
   })
 
-  it('files only the links that were not saved when approval starts halfway', async () => {
+  it('uses the server proposal for the current link and files only the rest', async () => {
     const post = vi.spyOn(api, 'post')
       .mockResolvedValueOnce({ id: 'link-1', version: 4 } as never)
       .mockResolvedValueOnce({ proposal_id: 'proposal-1', needs_approval: true } as never)
@@ -104,17 +101,22 @@ describe('submitLink', () => {
       created: [{ body, id: 'link-1', version: 4, label: '' }],
       filed: 2,
     })
+    expect(post).toHaveBeenCalledTimes(3)
     expect(post).toHaveBeenLastCalledWith('/v1/proposals', {
       body: {
         title: 'Link proposal',
-        rows: [
-          { type_key: 'replaces', patch: { link: second } },
-          { type_key: 'replaces', patch: { link: third } },
-        ],
+        rows: [{ type_key: 'replaces', patch: { link: third } }],
       },
     })
-    expect(publishProposal).toHaveBeenCalledTimes(1)
+    expect(publishProposal).toHaveBeenCalledWith('proposal-1')
     expect(publishProposal).toHaveBeenCalledWith('proposal-rest')
+    const proposalRows = post.mock.calls
+      .filter(([path]) => path === '/v1/proposals')
+      .flatMap(([, init]) => {
+        const rows = (init as { body?: { rows?: Array<{ patch?: { link?: LinkWrite } }> } }).body?.rows ?? []
+        return rows.map((row) => row.patch?.link?.to_id)
+      })
+    expect(proposalRows).toEqual(['to-3'])
   })
 })
 
@@ -138,6 +140,17 @@ describe('undoCreatedLinks', () => {
       params: { path: { id: 'changed' }, header: { 'If-Match': 2 } },
     })
     expect(del).toHaveBeenCalledTimes(3)
+  })
+
+  it('reads the version before delete when create did not return one', async () => {
+    const get = vi.spyOn(api, 'get').mockResolvedValue({ version: 5 } as never)
+    const del = vi.spyOn(api, 'delete').mockResolvedValue(undefined as never)
+    const link = { body: saved, id: 'link-no-ver', version: 0, label: 'ART-OK' }
+    await expect(undoCreatedLinks([link])).resolves.toEqual({ undone: [link], kept: [], failed: [] })
+    expect(get).toHaveBeenCalledWith('/v1/objects/{id}', { params: { path: { id: 'link-no-ver' } } })
+    expect(del).toHaveBeenCalledWith('/v1/links/{id}', {
+      params: { path: { id: 'link-no-ver' }, header: { 'If-Match': 5 } },
+    })
   })
 
   it('keeps going when one delete fails for another reason', async () => {

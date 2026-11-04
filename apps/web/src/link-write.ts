@@ -68,19 +68,17 @@ export async function submitLinks(bodies: LinkWrite[]): Promise<LinkSubmitResult
     const record = jsonRecord(result)
     const proposalId = String(record?.proposal_id ?? '')
     if (proposalId && record?.needs_approval === true) {
-      const rest = bodies.slice(created.length)
-      if (rest.length <= 1) {
-        publishProposal(proposalId)
-        return { outcome: 'proposed', created, filed: rest.length }
-      }
-      await fileProposal(rest)
-      return { outcome: 'proposed', created, filed: rest.length }
+      publishProposal(proposalId)
+      const remaining = bodies.slice(created.length + 1)
+      if (remaining.length > 0) await fileProposal(remaining)
+      const filed = 1 + remaining.length
+      return { outcome: 'proposed', created, filed }
     }
     const version = Number(record?.version)
     created.push({
       body,
       id: String(record?.id ?? ''),
-      version: Number.isFinite(version) ? version : 0,
+      version: Number.isFinite(version) && version > 0 ? version : 0,
       label: '',
     })
   }
@@ -112,8 +110,14 @@ export async function undoCreatedLinks(links: CreatedLink[]): Promise<UndoLinksR
 
 async function deleteIfUnchanged(link: CreatedLink): Promise<'undone' | 'kept'> {
   try {
+    let version = link.version
+    if (!(version > 0)) {
+      const current = await api.get('/v1/objects/{id}', { params: { path: { id: link.id } } })
+      version = Number(jsonRecord(current)?.version)
+      if (!(version > 0)) throw new Error(copy.validation)
+    }
     await api.delete('/v1/links/{id}', {
-      params: { path: { id: link.id }, header: { 'If-Match': link.version } },
+      params: { path: { id: link.id }, header: { 'If-Match': version } },
     })
     return 'undone'
   } catch (error) {
