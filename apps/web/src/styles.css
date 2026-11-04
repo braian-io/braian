@@ -191,7 +191,7 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
 :focus { outline: none; }
 :focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline-offset: 0;
 }
 .row:focus-visible,
 .row .cell:focus-visible,
@@ -263,7 +263,7 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
   cursor: pointer;
 }
 .avatar-btn:hover { background: var(--hover); }
-.avatar-btn:focus-visible, .avatar-btn[data-state='open'] { outline: 2px solid var(--accent); outline-offset: 1px; }
+.avatar-btn:focus-visible, .avatar-btn[data-state='open'] { outline: 2px solid var(--accent); outline-offset: 0; }
 
 .catalog-selector-btn {
   display: inline-flex;
@@ -282,7 +282,7 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
 .catalog-selector-btn:hover { background: var(--hover); color: var(--text); }
 .catalog-selector-btn:focus-visible, .catalog-selector-btn[data-state='open'] {
   outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  outline-offset: 0;
   color: var(--text);
 }
 .catalog-selector-btn:disabled { opacity: 0.5; cursor: default; }
@@ -319,6 +319,7 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
 .menu-sep { height: 1px; margin: 4px 0; background: var(--border); }
 .menu-item .menu-icon { margin-right: 6px; vertical-align: -2px; }
 .tab, .pane-tab {
+  position: relative;
   border: 1px solid transparent;
   background: transparent;
   box-shadow: none;
@@ -333,7 +334,32 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
   box-shadow: inset 0 -2px 0 var(--accent);
 }
 .pane-tab { border-radius: var(--r-md); height: 28px; }
-.pane-tab.active { background: var(--accent-dim); color: var(--text); box-shadow: none; }
+/* The active pane tab is one flat underline: no fill, no rounded ends. */
+.pane-tab.active {
+  background: transparent;
+  box-shadow: none;
+}
+.pane-tab.active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  border-radius: 0;
+  background: var(--accent);
+  pointer-events: none;
+}
+/* The focused pane's active tab keeps a subtle fill behind the flat underline. */
+.pane.focused .pane-tab.active {
+  background: var(--accent-dim);
+}
+/* Hover belongs to the tab, never to the label inside it. */
+.pane-tab:hover:not(.active) {
+  background: var(--hover);
+  color: var(--text);
+  transition: color var(--dur) var(--ease);
+}
 .spacer { flex: 1; }
 .icon-btn {
   display: inline-flex;
@@ -402,10 +428,6 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
   overflow: hidden;
 }
 /* The active pane is the tab underline, not a second box around the pane. */
-.pane.focused .pane-tab.active {
-  background: transparent;
-  box-shadow: inset 0 -2px 0 var(--accent);
-}
 .pane-tabs {
   display: flex;
   align-items: center;
@@ -458,6 +480,9 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
   color: inherit;
 }
 .pane-tab-open > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Hover belongs to the tab itself. The inner button must not paint a second box around the text. */
+.pane-tab-open:hover { background: transparent; }
+.pane-tab.active .pane-tab-open:focus-visible { outline: none; }
 .tab-x {
   display: inline-flex;
   align-items: center;
@@ -684,7 +709,7 @@ select.link-type-line { width: 100%; font-weight: 600; }
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-width: 180px;
+  min-width: 0;
   max-width: 280px;
   flex: 1 1 200px;
   height: 30px;
@@ -693,6 +718,12 @@ select.link-type-line { width: 100%; font-weight: 600; }
   border-radius: var(--r-md);
   box-shadow: var(--inset);
   color: var(--muted);
+}
+/* Ring the whole field, not the inner input: the icon and shortcut stay inside one border level. */
+.search-field:hover,
+.search-field:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 0;
 }
 .search-field input {
   flex: 1 1 auto;
@@ -703,6 +734,10 @@ select.link-type-line { width: 100%; font-weight: 600; }
   background: transparent;
   box-shadow: none;
   color: var(--text);
+}
+.search-field input:focus,
+.search-field input:focus-visible {
+  outline: none;
 }
 .search-field kbd { flex: none; }
 .filter-chip {
@@ -822,9 +857,10 @@ select.link-type-line { width: 100%; font-weight: 600; }
 }
 .row.picked { box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 55%, transparent); }
 .row:hover:not(.selected) { background: var(--hover); }
+/* Draft is signalled by the save bar. An amber fill behind a field would read as a second focus state. */
+.draft-user { background: transparent; border-radius: 0; }
+.draft-agent { background: transparent; border-radius: 0; }
 .row.link-drop:hover { background: var(--accent-dim); }
-.draft-user { background: var(--amber-bg); border-radius: var(--r-md); }
-.draft-agent { background: var(--accent-dim); border-radius: var(--r-md); }
 
 .tree button, .tree-row {
   position: relative;
@@ -941,6 +977,7 @@ select.link-type-line { width: 100%; font-weight: 600; }
 .detail-title { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .detail-title strong { font-size: 18px; font-weight: 600; }
 .detail-id { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.detail-meta { margin: 0; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .field-card {
   background: var(--surface);
   border: 0;
@@ -951,9 +988,6 @@ select.link-type-line { width: 100%; font-weight: 600; }
   gap: 6px;
 }
 .field-card h3 { margin: 0; font-size: 12px; font-weight: 500; color: var(--muted); }
-.record-field { display: grid; grid-template-columns: 120px minmax(0, 1fr); column-gap: 10px; align-items: center; }
-.record-field > label { color: var(--muted); font-size: 12px; }
-.record-field input { width: 100%; cursor: text; color: var(--text); }
 .save-bar {
   flex: none;
   display: flex;
@@ -973,26 +1007,30 @@ select.link-type-line { width: 100%; font-weight: 600; }
 .field-card input,
 .field-card textarea,
 .field-card .select-trigger {
-  background: transparent;
+  background: var(--surface);
   border: 0;
   border-bottom: 1px solid transparent;
   border-radius: 0;
   box-shadow: none;
 }
-.field-card input:hover,
-.field-card textarea:hover,
-.field-card .select-trigger:hover,
+.field-card input:hover:not(:focus-visible),
+.field-card textarea:hover:not(:focus-visible),
+.field-card .select-trigger:hover:not(:focus-visible) {
+  border-bottom-color: var(--accent);
+}
+/* A detail field already has a bottom rule, so focus recolors that rule instead of adding a ring. */
 .field-card input:focus-visible,
 .field-card textarea:focus-visible,
 .field-card .select-trigger:focus-visible {
-  border-bottom-color: var(--muted);
+  outline: none;
+  border-bottom-color: var(--accent);
 }
 .form textarea, .detail-form textarea { min-height: 52px; }
 .langs { display: flex; flex-direction: column; gap: 2px; }
 .lang-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
   margin: 0;
   padding: 0;
@@ -1002,8 +1040,11 @@ select.link-type-line { width: 100%; font-weight: 600; }
 }
 .lang-row:has(textarea) { align-items: flex-start; }
 .lang-tag {
+  display: inline-flex;
   flex: none;
-  width: 1.75em;
+  align-items: center;
+  align-self: center;
+  width: 2.25em;
   margin: 0;
   padding: 0;
   background: transparent;
@@ -1012,10 +1053,14 @@ select.link-type-line { width: 100%; font-weight: 600; }
   color: var(--text-2);
   font-size: 11px;
   font-weight: 600;
-  line-height: 30px;
+  line-height: 1;
   text-transform: lowercase;
 }
-.lang-row:has(textarea) .lang-tag { line-height: 22px; padding-top: 6px; }
+.lang-row:has(textarea) .lang-tag {
+  align-self: flex-start;
+  padding-top: 6px;
+  line-height: 1.4;
+}
 .lang-row input,
 .lang-row textarea {
   flex: 1 1 auto;
@@ -1061,6 +1106,8 @@ select.link-type-line { width: 100%; font-weight: 600; }
   color: var(--text);
   font: inherit;
 }
+/* The editor already carries an accent border. Its focus lives there, inside the cell. */
+.cell-editor:focus-visible { outline: none; }
 .meta-chip {
   display: inline-flex;
   align-items: center;
@@ -1223,7 +1270,7 @@ select.link-type-line { width: 100%; font-weight: 600; }
   background: var(--panel);
   border: 2px solid var(--accent);
 }
-.slider-thumb:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.slider-thumb:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
 .slider[data-disabled] { opacity: 0.55; }
 .file-field { display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: wrap; }
 .file-input { display: none; }
@@ -2148,7 +2195,7 @@ button, .pane-tab, .hit, .class-row, .attr-card {
   padding: 4px 6px;
   box-shadow: var(--inset);
 }
-.definition-row.on, .definition-row:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.definition-row.on, .definition-row:focus { outline: 2px solid var(--accent); outline-offset: 0; }
 .definition-row input { width: 100%; min-width: 0; height: 28px; font-size: 12px; }
 .definition-flags, .definition-used { font-size: 12px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .definition-row { max-height: 2.5rem; overflow: hidden; }
@@ -2427,7 +2474,6 @@ a,
 }
 a:hover { color: var(--text); }
 .tab:hover:not(.active),
-.pane-tab:hover:not(.active),
 .model-node:hover:not(.on) {
   background: var(--hover);
   color: var(--text);
