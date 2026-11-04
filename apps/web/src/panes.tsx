@@ -1217,6 +1217,8 @@ export function ObjectTable({
         void queryClient.invalidateQueries({ queryKey: ['objects'] })
         void queryClient.invalidateQueries({ queryKey: ['object', row.id] })
         void queryClient.invalidateQueries({ queryKey: ['path-values'] })
+        void queryClient.invalidateQueries({ queryKey: ['proposal'] })
+        void queryClient.invalidateQueries({ queryKey: ['agent-run'] })
       })
       .catch((reason: unknown) => {
         reportWriteError(reason)
@@ -2446,6 +2448,8 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
         void queryClient.invalidateQueries({ queryKey: ['object', session.objectId] })
         void queryClient.invalidateQueries({ queryKey: ['objects'] })
             void queryClient.invalidateQueries({ queryKey: ['path-values'] })
+        void queryClient.invalidateQueries({ queryKey: ['proposal'] })
+        void queryClient.invalidateQueries({ queryKey: ['agent-run'] })
       })
       .catch((reason: unknown) => {
         const message = writeErrorMessage(reason)
@@ -2464,14 +2468,16 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   const valueKeys = [...new Set([...Object.keys(values), ...fileKeys])]
   const owners = provenance.data?.owners ?? {}
   const origin = provenance.data?.origin
-  const pendingByField = new Map<string, Array<{ proposalId: string; row: Json; line: DiffLine; lines: DiffLine[] }>>()
+  const pendingByField = new Map<string, Array<{ proposalId: string; row: Json; line: DiffLine; lines: DiffLine[]; stale: boolean }>>()
   for (const [index, proposalId] of pendingProposalIds.entries()) {
-    for (const row of pendingRowsForObject(pendingProposals[index]?.data as Json | undefined, session.objectId)) {
+    const proposalBody = pendingProposals[index]?.data as Json | undefined
+    const stale = Boolean(proposalBody?.stale)
+    for (const row of pendingRowsForObject(proposalBody, session.objectId)) {
       const lines = pendingLines(row, values, defs.data)
       for (const line of lines) {
         if (!line.field) continue
         const entries = pendingByField.get(line.field) ?? []
-        entries.push({ proposalId, row, line, lines })
+        entries.push({ proposalId, row, line, lines, stale })
         pendingByField.set(line.field, entries)
       }
     }
@@ -2479,15 +2485,16 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   const renderPending = (key: string) => {
     const entries = pendingByField.get(key)
     if (!entries || entries.length === 0) return null
-    return entries.map(({ proposalId, row, line, lines }) => (
+    return entries.map(({ proposalId, row, line, lines, stale }) => (
       <div
         key={`${String(row.id)}:${line.id}`}
         className="pending-field"
         data-testid="pending-field"
         data-field={key}
         data-line={line.id}
+        data-stale={stale ? 'true' : 'false'}
       >
-        <span className="pending-chip" data-testid="pending-chip">{copy.pending}</span>
+        <span className="pending-chip" data-testid={stale ? 'pending-stale' : 'pending-chip'}>{stale ? copy.proposalStale : copy.pending}</span>
         <span className="pending-value" data-testid="pending-value">
           {line.language ? `${line.language}: ` : ''}{line.after}
         </span>
@@ -2495,7 +2502,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
           type="button"
           data-testid="accept-pending"
           data-line={line.id}
-          disabled={acceptPending.isPending}
+          disabled={acceptPending.isPending || stale}
           onClick={() => acceptPending.mutate({ proposalId, body: acceptPendingLine(line, row, lines, values) })}
         >
           {copy.acceptField}
@@ -3314,6 +3321,7 @@ export function ProposalView({ session }: { session: PanesSession }) {
     )
   }
   const consequence = ((proposal.data?.consequence as Json | undefined)?.lines as unknown[] | undefined)?.map(String) ?? []
+  const proposalStale = Boolean(proposal.data?.stale)
   const droppedIds = new Set(dropped)
   const saveAll = () => {
     accept.mutate(acceptSelection(rows, objects, defs.data, droppedIds))
@@ -3324,7 +3332,8 @@ export function ProposalView({ session }: { session: PanesSession }) {
         <strong>{String(proposal.data?.title ?? '')}</strong>
         {proposal.data ? <span className="meta-chip neutral" data-testid="source-badge">{sourceLabel(proposal.data)}</span> : null}
         {proposal.data?.status ? <MetaChip tone={statusTone(String(proposal.data.status))}>{String(proposal.data.status)}</MetaChip> : null}
-        <button type="button" data-testid="save-all" disabled={loadingObjects || accept.isPending || discard.isPending} onClick={saveAll}>{copy.saveAll}</button>
+        {proposalStale ? <span className="meta-chip" data-testid="proposal-stale">{copy.proposalStale}</span> : null}
+        <button type="button" data-testid="save-all" disabled={loadingObjects || accept.isPending || discard.isPending || proposalStale} onClick={saveAll}>{copy.saveAll}</button>
         <Button type="button" variant="danger" data-testid="discard-all" disabled={accept.isPending || discard.isPending} onClick={() => discard.mutate()}>{copy.discardAll}</Button>
         {error ? <p className="error" data-testid="proposal-error">{error}</p> : null}
         {consequence.length > 0 && session.proposalId ? (

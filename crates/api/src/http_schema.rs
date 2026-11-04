@@ -6,7 +6,7 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use utoipa::openapi::RefOr;
 use utoipa::openapi::schema::{AdditionalProperties, ObjectBuilder, Schema, SchemaType, Type};
 use utoipa::{PartialSchema, ToSchema};
@@ -150,6 +150,95 @@ pub struct AgentReply {
     pub model: String,
     pub reply: String,
     pub tools: Vec<AgentTool>,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct AgentRunCreate {
+    #[schema(value_type = Vec<FreeObject>)]
+    pub messages: Vec<serde_json::Value>,
+    #[serde(default)]
+    #[schema(value_type = FreeObject)]
+    pub context: serde_json::Value,
+    pub workspace_id: Option<Uuid>,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct AgentRunPatch {
+    pub tab_open: Option<bool>,
+    pub view_id: Option<Uuid>,
+    /// `foreground` or `background`. Stored for a later indicator.
+    pub mode: Option<String>,
+    /// Hidden session. Stored for a later view of the agent's own session.
+    pub hidden: Option<bool>,
+    /// `own` or `user`. Stored for a later choice of session.
+    pub session_kind: Option<String>,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct AgentRunFollowUp {
+    pub content: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct AgentRunSummary {
+    pub id: Uuid,
+    pub title: String,
+    /// `working`, `waiting`, `done`, or `failed`.
+    pub status: String,
+    pub mode: String,
+    pub session_kind: String,
+    pub hidden: bool,
+    pub tab_open: bool,
+    pub view_id: Option<Uuid>,
+    pub workspace_id: Option<Uuid>,
+    pub error: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub finished_at: Option<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct AgentMessageView {
+    pub id: Uuid,
+    pub kind: String,
+    #[schema(value_type = JsonValue)]
+    pub body: serde_json::Value,
+    pub created_at: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct AgentProposalView {
+    pub id: Uuid,
+    pub title: String,
+    pub status: String,
+    pub stale: bool,
+    pub stale_reason: Option<String>,
+    pub object_id: Option<Uuid>,
+    pub object_key: Option<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct AgentRunDetail {
+    pub id: Uuid,
+    pub title: String,
+    pub status: String,
+    pub mode: String,
+    pub session_kind: String,
+    pub hidden: bool,
+    pub tab_open: bool,
+    pub view_id: Option<Uuid>,
+    pub workspace_id: Option<Uuid>,
+    pub error: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub finished_at: Option<String>,
+    pub messages: Vec<AgentMessageView>,
+    pub proposals: Vec<AgentProposalView>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct AgentRunList {
+    pub runs: Vec<AgentRunSummary>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -503,6 +592,11 @@ pub struct ProposalView {
     pub created_at: String,
     pub session_id: Option<Uuid>,
     pub counters: Option<JsonValue>,
+    pub stale: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stale_reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_run_id: Option<Uuid>,
     pub rows: Vec<ProposalRowView>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub consequence: Option<DraftConsequence>,

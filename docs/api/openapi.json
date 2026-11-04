@@ -120,6 +120,248 @@
         ]
       }
     },
+    "/v1/agent/runs": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "List this person's agent runs. Tabs, sessions and proposals survive a reload.",
+        "operationId": "list_agent_runs",
+        "responses": {
+          "200": {
+            "description": "Agent runs, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or unknown token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Start an agent run. The call returns while the agent keeps working.",
+        "operationId": "create_agent_run",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentRunCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The run, already stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or unknown token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/agent/runs/{id}": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "One agent run, with its transcript and proposals",
+        "operationId": "get_agent_run",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent run id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Agent run",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or unknown token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Update tab visibility or session flags. Closing the tab does not stop the run.",
+        "operationId": "patch_agent_run",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent run id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentRunPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated agent run",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or unknown token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/agent/runs/{id}/messages": {
+      "post": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Send a follow-up once the run is no longer working",
+        "operationId": "follow_up_agent_run",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent run id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentRunFollowUp"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The run, working on the follow-up",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or unknown token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/v1/assortments": {
       "get": {
         "tags": [
@@ -6797,6 +7039,73 @@
           }
         }
       },
+      "AgentMessageView": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "body",
+          "created_at"
+        ],
+        "properties": {
+          "body": {
+            "$ref": "#/components/schemas/JsonValue"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string"
+          }
+        }
+      },
+      "AgentProposalView": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "status",
+          "stale"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "object_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "object_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stale": {
+            "type": "boolean"
+          },
+          "stale_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
       "AgentReply": {
         "type": "object",
         "required": [
@@ -6820,6 +7129,249 @@
             "items": {
               "$ref": "#/components/schemas/AgentTool"
             }
+          }
+        }
+      },
+      "AgentRunCreate": {
+        "type": "object",
+        "required": [
+          "messages"
+        ],
+        "properties": {
+          "context": {
+            "$ref": "#/components/schemas/FreeObject"
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FreeObject"
+            }
+          },
+          "workspace_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "AgentRunDetail": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "status",
+          "mode",
+          "session_kind",
+          "hidden",
+          "tab_open",
+          "created_at",
+          "updated_at",
+          "messages",
+          "proposals"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hidden": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentMessageView"
+            }
+          },
+          "mode": {
+            "type": "string"
+          },
+          "proposals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentProposalView"
+            }
+          },
+          "session_kind": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "tab_open": {
+            "type": "boolean"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "view_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "workspace_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "AgentRunFollowUp": {
+        "type": "object",
+        "required": [
+          "content"
+        ],
+        "properties": {
+          "content": {
+            "type": "string"
+          }
+        }
+      },
+      "AgentRunList": {
+        "type": "object",
+        "required": [
+          "runs"
+        ],
+        "properties": {
+          "runs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentRunSummary"
+            }
+          }
+        }
+      },
+      "AgentRunPatch": {
+        "type": "object",
+        "properties": {
+          "hidden": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Hidden session. Stored for a later view of the agent's own session."
+          },
+          "mode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`foreground` or `background`. Stored for a later indicator."
+          },
+          "session_kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`own` or `user`. Stored for a later choice of session."
+          },
+          "tab_open": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "view_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "AgentRunSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "status",
+          "mode",
+          "session_kind",
+          "hidden",
+          "tab_open",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hidden": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "session_kind": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "description": "`working`, `waiting`, `done`, or `failed`."
+          },
+          "tab_open": {
+            "type": "boolean"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "view_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "workspace_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
           }
         }
       },
@@ -10804,6 +11356,7 @@
           "conflict",
           "actor",
           "created_at",
+          "stale",
           "rows"
         ],
         "properties": {
@@ -10816,6 +11369,13 @@
               "string",
               "null"
             ]
+          },
+          "agent_run_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
           },
           "behalf_name": {
             "type": [
@@ -10875,6 +11435,15 @@
           },
           "source": {
             "type": "string"
+          },
+          "stale": {
+            "type": "boolean"
+          },
+          "stale_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "status": {
             "type": "string"

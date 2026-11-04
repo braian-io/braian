@@ -1424,7 +1424,7 @@ impl Store {
         let Some(row) = client
             .query_opt(
                 "SELECT p.id, p.title, p.source, p.status, p.conflict, p.actor, p.on_behalf_of, p.created_at,
-                        p.session_id, p.counters,
+                        p.session_id, p.counters, p.stale, p.stale_reason, p.agent_run_id, p.stale_at,
                         a.name AS actor_name, b.name AS behalf_name
                  FROM proposals p
                  LEFT JOIN principals a ON a.id = p.actor
@@ -1456,6 +1456,10 @@ impl Store {
             "created_at": row.get::<_, DateTime<Utc>>("created_at"),
             "session_id": row.get::<_, Option<Uuid>>("session_id"),
             "counters": row.get::<_, Option<Value>>("counters"),
+            "stale": row.get::<_, bool>("stale"),
+            "stale_reason": row.get::<_, Option<String>>("stale_reason"),
+            "agent_run_id": row.get::<_, Option<Uuid>>("agent_run_id"),
+            "stale_at": row.get::<_, Option<DateTime<Utc>>>("stale_at"),
         });
         let items = rows
             .iter()

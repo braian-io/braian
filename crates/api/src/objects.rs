@@ -410,6 +410,7 @@ pub async fn patch_object(
                     receipt.last_seq,
                     &type_key(&cached.defs, stored.object.type_id),
                 );
+                crate::agent_runs::note_object_edited(&state, id, None).await;
                 return Ok(object_response(
                     &state,
                     &cached,

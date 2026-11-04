@@ -4,6 +4,7 @@
 //! how those documents are split. Spike 1 measured every form; see
 //! `docs/measurements/2026-10-24-spike-1-storage.md`.
 
+mod agent_runs;
 mod catalog_resolve;
 mod catalogs;
 mod conflict;
@@ -26,6 +27,9 @@ mod types;
 mod view_repair;
 mod workspace_templates;
 
+pub use agent_runs::{
+    AgentMessageRow, AgentProposalLink, AgentRunRow, AgentRunUpdate, NewAgentRun,
+};
 pub use catalog_resolve::{
     CatalogRef, default_catalog_id, effective_catalog_id, view_catalog_override,
     workspace_catalog_ref,

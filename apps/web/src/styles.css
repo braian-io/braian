@@ -495,6 +495,18 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
   color: var(--muted);
   align-self: center;
 }
+.agent-view { display: flex; flex-direction: column; gap: 12px; }
+.agent-view-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.agent-view-head h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.agent-view-head time { color: var(--muted); font-size: 12px; }
+.agent-log { display: flex; flex-direction: column; gap: 6px; }
+.agent-line { margin: 0; }
+.agent-line-user { color: var(--muted); }
+.agent-proposal { border: 1px solid var(--border); border-radius: var(--r-lg); padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+.agent-proposal header { display: flex; align-items: center; gap: 8px; }
+.agent-follow { display: flex; gap: 8px; }
+.agent-follow input { flex: 1 1 auto; }
+
 .pane-body {
   position: relative;
   min-height: 0;

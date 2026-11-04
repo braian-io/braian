@@ -1502,7 +1502,7 @@ async fn agent(
     .into_response())
 }
 
-async fn drive_agent(
+pub(crate) async fn drive_agent(
     state: &AppState,
     identity: &Identity,
     incoming: Vec<Value>,
@@ -4219,6 +4219,16 @@ async fn accept_proposal(
         .await
         .map_err(store_status)?
         .ok_or_else(|| Problem::new(StatusCode::NOT_FOUND, "not_found", "proposal"))?;
+    if proposal.get("stale").and_then(Value::as_bool) == Some(true) {
+        return Err(Problem::new(
+            StatusCode::CONFLICT,
+            "stale",
+            proposal
+                .get("stale_reason")
+                .and_then(Value::as_str)
+                .unwrap_or("the object changed after this proposal was filed"),
+        ));
+    }
     let rows = proposal
         .get("rows")
         .and_then(Value::as_array)
@@ -4936,6 +4946,7 @@ async fn apply_row(
             "type": type_key,
         }));
         state.index_after_commit(id.as_uuid(), receipt.last_seq);
+        crate::agent_runs::note_object_edited(state, id, Some(proposal_id)).await;
         return Ok(Some(receipt.last_seq));
     }
     let body = CreateObject {
@@ -6031,7 +6042,7 @@ fn uuid_arg(args: &Value, key: &str) -> Result<Uuid, Problem> {
         })
 }
 
-async fn run_operation(
+pub(crate) async fn run_operation(
     state: &AppState,
     identity: &Identity,
     name: &str,
@@ -6353,6 +6364,7 @@ async fn run_operation(
                 json!({ "seq": receipt.last_seq, "op": "update", "object_id": id.as_uuid() }),
             );
             state.index_after_commit(id.as_uuid(), receipt.last_seq);
+            crate::agent_runs::note_object_edited(state, id, None).await;
             Ok(json!({ "seq": receipt.last_seq }))
         }
         "move_to_group" => {

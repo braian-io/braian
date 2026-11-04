@@ -54,6 +54,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/agent/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List this person's agent runs. Tabs, sessions and proposals survive a reload. */
+        get: operations["list_agent_runs"];
+        put?: never;
+        /** Start an agent run. The call returns while the agent keeps working. */
+        post: operations["create_agent_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agent/runs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One agent run, with its transcript and proposals */
+        get: operations["get_agent_run"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update tab visibility or session flags. Closing the tab does not stop the run. */
+        patch: operations["patch_agent_run"];
+        trace?: never;
+    };
+    "/v1/agent/runs/{id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send a follow-up once the run is no longer working */
+        post: operations["follow_up_agent_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/assortments": {
         parameters: {
             query?: never;
@@ -1644,11 +1697,91 @@ export interface components {
             messages: components["schemas"]["FreeObject"][];
             stream?: boolean;
         };
+        AgentMessageView: {
+            body: components["schemas"]["JsonValue"];
+            created_at: string;
+            /** Format: uuid */
+            id: string;
+            kind: string;
+        };
+        AgentProposalView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            object_id?: string | null;
+            object_key?: string | null;
+            stale: boolean;
+            stale_reason?: string | null;
+            status: string;
+            title: string;
+        };
         AgentReply: {
             available: boolean;
             model: string;
             reply: string;
             tools: components["schemas"]["AgentTool"][];
+        };
+        AgentRunCreate: {
+            context?: components["schemas"]["FreeObject"];
+            messages: components["schemas"]["FreeObject"][];
+            /** Format: uuid */
+            workspace_id?: string | null;
+        };
+        AgentRunDetail: {
+            created_at: string;
+            error?: string | null;
+            finished_at?: string | null;
+            hidden: boolean;
+            /** Format: uuid */
+            id: string;
+            messages: components["schemas"]["AgentMessageView"][];
+            mode: string;
+            proposals: components["schemas"]["AgentProposalView"][];
+            session_kind: string;
+            status: string;
+            tab_open: boolean;
+            title: string;
+            updated_at: string;
+            /** Format: uuid */
+            view_id?: string | null;
+            /** Format: uuid */
+            workspace_id?: string | null;
+        };
+        AgentRunFollowUp: {
+            content: string;
+        };
+        AgentRunList: {
+            runs: components["schemas"]["AgentRunSummary"][];
+        };
+        AgentRunPatch: {
+            /** @description Hidden session. Stored for a later view of the agent's own session. */
+            hidden?: boolean | null;
+            /** @description `foreground` or `background`. Stored for a later indicator. */
+            mode?: string | null;
+            /** @description `own` or `user`. Stored for a later choice of session. */
+            session_kind?: string | null;
+            tab_open?: boolean | null;
+            /** Format: uuid */
+            view_id?: string | null;
+        };
+        AgentRunSummary: {
+            created_at: string;
+            error?: string | null;
+            finished_at?: string | null;
+            hidden: boolean;
+            /** Format: uuid */
+            id: string;
+            mode: string;
+            session_kind: string;
+            /** @description `working`, `waiting`, `done`, or `failed`. */
+            status: string;
+            tab_open: boolean;
+            title: string;
+            updated_at: string;
+            /** Format: uuid */
+            view_id?: string | null;
+            /** Format: uuid */
+            workspace_id?: string | null;
         };
         AgentTool: {
             name: components["schemas"]["JsonValue"];
@@ -2721,6 +2854,8 @@ export interface components {
             /** Format: uuid */
             actor: string;
             actor_name?: string | null;
+            /** Format: uuid */
+            agent_run_id?: string | null;
             behalf_name?: string | null;
             conflict: boolean;
             consequence?: null | components["schemas"]["DraftConsequence"];
@@ -2734,6 +2869,8 @@ export interface components {
             /** Format: uuid */
             session_id?: string | null;
             source: string;
+            stale: boolean;
+            stale_reason?: string | null;
             status: string;
             title: string;
         };
@@ -3157,6 +3294,172 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["AgentReply"];
                     "text/event-stream": string;
+                };
+            };
+            /** @description Missing or unknown token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_agent_runs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agent runs, newest first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunList"];
+                };
+            };
+            /** @description Missing or unknown token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    create_agent_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentRunCreate"];
+            };
+        };
+        responses: {
+            /** @description The run, already stored */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunDetail"];
+                };
+            };
+            /** @description Missing or unknown token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_agent_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent run id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agent run */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunDetail"];
+                };
+            };
+            /** @description Missing or unknown token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    patch_agent_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent run id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentRunPatch"];
+            };
+        };
+        responses: {
+            /** @description Updated agent run */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunDetail"];
+                };
+            };
+            /** @description Missing or unknown token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    follow_up_agent_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent run id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentRunFollowUp"];
+            };
+        };
+        responses: {
+            /** @description The run, working on the follow-up */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunDetail"];
                 };
             };
             /** @description Missing or unknown token */
