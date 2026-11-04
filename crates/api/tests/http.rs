@@ -306,7 +306,7 @@ async fn patches_merge_per_language_and_conflict_on_the_same_one() {
         Some(r#"{"values":{"name":{"sv":"Tre"}}}"#),
     )
     .await;
-    assert_eq!(status, StatusCode::CONFLICT, "{again}");
+    assert_eq!(status, StatusCode::PRECONDITION_FAILED, "{again}");
     assert_eq!(again["code"], "conflict");
     assert_eq!(again["conflicts"][0]["attribute"], "name");
     assert_eq!(again["conflicts"][0]["language"], "sv");
