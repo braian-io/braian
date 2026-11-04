@@ -52,6 +52,7 @@ export function StructureSection({
   const [draft, setDraft] = useState<Draft | null>(null)
   const nameRef = useRef<HTMLInputElement | null>(null)
   const focusName = useRef(false)
+  const draftOpenerRef = useRef<HTMLElement | null>(null)
   const [dialog, setDialog] = useState<DialogState | null>(null)
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
@@ -110,8 +111,19 @@ export function StructureSection({
   }
 
   const editName = (next: Draft) => {
+    if (draft) {
+      nameRef.current?.focus()
+      return
+    }
     focusName.current = true
     setDraft(next)
+  }
+
+  const cancelDraft = () => {
+    setDraft(null)
+    const target = draftOpenerRef.current
+    draftOpenerRef.current = null
+    if (target?.isConnected) queueMicrotask(() => target.focus())
   }
 
   const expandGroup = (structure: string, parent: string) => {
@@ -124,7 +136,20 @@ export function StructureSection({
     <section>
       <div className="model-head">
         <h2>{copy.structures}</h2>
-        <button type="button" className="icon-btn" data-testid="new-structure" aria-label={copy.newStructure} onClick={() => setDraft({ kind: 'structure' })}>
+        <button
+          type="button"
+          className="icon-btn"
+          data-testid="new-structure"
+          aria-label={copy.newStructure}
+          onClick={(event) => {
+            if (draft) {
+              nameRef.current?.focus()
+              return
+            }
+            draftOpenerRef.current = event.currentTarget
+            setDraft({ kind: 'structure' })
+          }}
+        >
           <Plus size={14} />
         </button>
       </div>
@@ -133,7 +158,7 @@ export function StructureSection({
           label={copy.newStructure}
           inputRef={nameRef}
           onCommit={(name) => commitName(name, (key, label) => api.post('/v1/structures:create', { body: { key, label } }).then(() => undefined))}
-          onCancel={() => setDraft(null)}
+          onCancel={cancelDraft}
         />
       ) : null}
       {structureKeys(defs).map((key) => {
@@ -154,7 +179,7 @@ export function StructureSection({
                     }
                     void run(() => api.patch('/v1/structures/{id}', { params: { path: { id: key } }, body: { label } }).then(() => undefined))
                   }}
-                  onCancel={() => setDraft(null)}
+                  onCancel={cancelDraft}
                 />
               ) : draft?.kind === 'rename-structure-key' && draft.structure === key ? (
                 <NameField
@@ -165,12 +190,12 @@ export function StructureSection({
                   onCommit={(name) => {
                     const next = name.trim()
                     if (!next || next === key) {
-                      setDraft(null)
+                      cancelDraft()
                       return
                     }
                     void run(() => proposeKey('model.rename_structure_key', { structure: key, new_key: next }))
                   }}
-                  onCancel={() => setDraft(null)}
+                  onCancel={cancelDraft}
                 />
               ) : (
                 <strong>{title}</strong>
@@ -190,7 +215,7 @@ export function StructureSection({
                   label={copy.addChild}
                   inputRef={nameRef}
                   onCommit={(name) => commitName(name, (groupKey, label) => api.post('/v1/structures/{id}/groups', { params: { path: { id: key } }, body: { key: groupKey, label } }).then(() => undefined))}
-                  onCancel={() => setDraft(null)}
+                  onCancel={cancelDraft}
                 />
               </DraftRow>
             ) : null}
@@ -205,6 +230,7 @@ export function StructureSection({
               onPick={onPick}
               draft={draft}
               setDraft={setDraft}
+              onCancelDraft={cancelDraft}
               onAdd={(parent) => {
                 expandGroup(key, parent)
                 editName({ kind: 'group', structure: key, parent })
@@ -268,6 +294,7 @@ function GroupList({
   onPick,
   draft,
   setDraft,
+  onCancelDraft,
   onAdd,
   onCreate,
   onRename,
@@ -286,6 +313,7 @@ function GroupList({
   onPick: (next: ModelSelection) => void
   draft: Draft | null
   setDraft: (draft: Draft | null) => void
+  onCancelDraft: () => void
   onAdd: (parent: string) => void
   onCreate: (parent: string, name: string) => void
   onRename: (group: string, label: string) => void
@@ -310,7 +338,7 @@ function GroupList({
           <div key={node.id} data-testid={`group-${node.key}`}>
             <div className="model-row" style={{ paddingLeft: node.depth * 14 }}>
               {renaming ? (
-                <NameField label={copy.rename} initial={draft.value} inputRef={nameRef} onCommit={(name) => onRenameCommit(node.key, name)} onCancel={() => setDraft(null)} />
+                <NameField label={copy.rename} initial={draft.value} inputRef={nameRef} onCommit={(name) => onRenameCommit(node.key, name)} onCancel={onCancelDraft} />
               ) : keyDraft ? (
                 <NameField
                   label={copy.renameKey}
@@ -320,7 +348,7 @@ function GroupList({
                   onCommit={(name) => {
                     const next = name.trim()
                     if (!next || next === node.key) {
-                      setDraft(null)
+                      onCancelDraft()
                       return
                     }
                     void api.post('/v1/operations/{name}', { params: { path: { name: "model.rename_group_key" } }, body: { structure, group: node.key, new_key: next } }).then(async (result) => {
@@ -333,7 +361,7 @@ function GroupList({
                       reportWriteError(reason)
                     })
                   }}
-                  onCancel={() => setDraft(null)}
+                  onCancel={onCancelDraft}
                 />
               ) : (
                 <button
@@ -368,7 +396,7 @@ function GroupList({
             </div>
             {adding ? (
               <DraftRow depth={node.depth + 1}>
-                <NameField label={copy.addChild} inputRef={nameRef} onCommit={(name) => onCreate(node.key, name)} onCancel={() => setDraft(null)} />
+                <NameField label={copy.addChild} inputRef={nameRef} onCommit={(name) => onCreate(node.key, name)} onCancel={onCancelDraft} />
               </DraftRow>
             ) : null}
           </div>
@@ -468,31 +496,39 @@ function NameField({
     return () => window.clearTimeout(timer)
   }, [])
   return (
-    <>
-    <input
-      ref={setField}
-      className="model-rename"
-      placeholder={label}
-      aria-label={label}
-      data-testid="structure-name"
-      value={value}
-      onChange={(event) => setValue(event.target.value)}
-      onKeyDown={(event) => {
-        const action = renameOnKey(event.key)
-        if (action === 'cancel') {
-          event.preventDefault()
-          onCancel()
-        }
-        if (action === 'commit') {
-          event.preventDefault()
-          onCommit(value)
-        }
-      }}
-    />
-    {warning && value.trim() && value.trim() !== initial ? (
-      <p className="warn" data-testid="key-rename-warning">{warning.replace('{key}', initial)}</p>
-    ) : null}
-    </>
+    <span className="inline-create-field">
+      <input
+        ref={setField}
+        className="model-rename"
+        placeholder={label}
+        aria-label={label}
+        data-testid="structure-name"
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+        onKeyDown={(event) => {
+          const action = renameOnKey(event.key)
+          if (action === 'cancel') {
+            event.preventDefault()
+            onCancel()
+          }
+          if (action === 'commit') {
+            event.preventDefault()
+            onCommit(value)
+          }
+        }}
+      />
+      <span className="inline-create-actions">
+        <button type="button" data-testid="inline-create-cancel" onClick={onCancel}>
+          {copy.cancel}
+        </button>
+        <button type="button" className="primary" data-testid="inline-create-save" onClick={() => onCommit(value)}>
+          {copy.save}
+        </button>
+      </span>
+      {warning && value.trim() && value.trim() !== initial ? (
+        <p className="warn" data-testid="key-rename-warning">{warning.replace('{key}', initial)}</p>
+      ) : null}
+    </span>
   )
 }
 

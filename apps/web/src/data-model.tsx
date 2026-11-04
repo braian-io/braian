@@ -553,11 +553,14 @@ function AllowedTrees({ defs, typeKey, onError }: { defs: Json | undefined; type
     window.addEventListener('braian-allowed-trees', open)
     return () => window.removeEventListener('braian-allowed-trees', open)
   }, [])
-  const save = (next: string[]) => {
-    const id = String(raw?.id ?? typeKey)
+  const save = async (next: string[]) => {
     onError('')
-    void api.put('/v1/types/{id}/structures', { params: { path: { id: id } }, body: { structures: next } })
-      .catch((reason: unknown) => onError(errorText(reason)))
+    try {
+      await stageModel('model.set_structures', { type_key: typeKey, structures: next })
+      requestReview()
+    } catch (reason) {
+      onError(errorText(reason))
+    }
   }
   return (
     <fieldset className="type-names" data-testid="allowed-trees">
@@ -577,7 +580,7 @@ function AllowedTrees({ defs, typeKey, onError }: { defs: Json | undefined; type
                 const next = new Set(selected)
                 if (event.target.checked) next.add(id)
                 else next.delete(id)
-                save([...next])
+                void save([...next])
               }}
             />
             {label}

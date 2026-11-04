@@ -1619,16 +1619,16 @@ export function Shell() {
             {deleteError ? <p className="error" data-testid="workspace-delete-error">{deleteError}</p> : null}
             <div className="dialog-actions">
               <button type="button" disabled={deleteBusy} onClick={() => setDeleteConfirm(null)}>{copy.cancel}</button>
-              <button
+              <Button
                 type="button"
-                className="primary"
+                variant="danger"
                 data-testid="workspace-delete-confirm"
                 disabled={deleteBusy}
                 autoFocus
                 onClick={() => { void deleteWorkspace(deleteConfirm.id) }}
               >
                 {copy.deleteWorkspace}
-              </button>
+              </Button>
             </div>
           </DialogContent>
         </Dialog>
@@ -1670,7 +1670,7 @@ function Login({ onDone }: { onDone: () => void }) {
           <Input data-testid="password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
         </label>
         {error ? <p className="error">{error}</p> : null}
-        <Button type="submit">{copy.signIn}</Button>
+        <Button type="submit" variant="primary">{copy.signIn}</Button>
       </form>
     </div>
   )
