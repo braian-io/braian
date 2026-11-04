@@ -24,6 +24,7 @@ import { openSharedContextMenu, prefersNativeContextMenu } from './shared-contex
 import { StandardTableChrome } from './standard-table'
 import { copy } from './i18n'
 import { reportWriteError } from './write-error'
+import { StateNote } from './states'
 
 export type StandardColumnType = 'text' | 'number' | 'boolean' | 'date' | 'datetime' | 'enum' | 'readonly'
 
@@ -74,6 +75,8 @@ export type StandardEditableTableProps<T extends { id: string }> = {
   testId?: string
   /** Enable inline editing (Enter / F2). Off for product object table. */
   editable?: boolean
+  /** Keep the toolbar but show a loading state until the first response arrives. */
+  loading?: boolean
   emptyLabel?: string
   getRowTestId?: (row: T) => string
   getRowKeyAttr?: (row: T) => string | undefined
@@ -214,6 +217,7 @@ export function StandardEditableTable<T extends { id: string }>({
   onFilterChange,
   testId = 'standard-editable-table',
   editable = true,
+  loading = false,
   emptyLabel = copy.noRows,
   getRowTestId,
   getRowKeyAttr,
@@ -703,7 +707,11 @@ export function StandardEditableTable<T extends { id: string }>({
             </div>
           ))}
         </div>
-        {filtered.length === 0 ? <p className="standard-grid-empty">{emptyLabel}</p> : null}
+        {loading ? (
+          <StateNote className="standard-grid-empty" tone="loading" title={copy.loading} testId="standard-grid-loading" />
+        ) : filtered.length === 0 ? (
+          <StateNote className="standard-grid-empty" tone="empty" title={emptyLabel} testId="standard-grid-empty" />
+        ) : null}
         {canReorder ? (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
             <SortableContext items={filtered.map((row) => row.id)} strategy={verticalListSortingStrategy}>

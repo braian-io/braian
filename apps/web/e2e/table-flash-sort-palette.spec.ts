@@ -67,9 +67,9 @@ test.describe('table flash, sort cycle, fields palette filter', () => {
     await login(page)
     await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
 
-    // object-table mounts only after prefs; while held we show the skeleton shell.
+    // The table shell and toolbar mount immediately; while prefs are held only the body skeletons.
     await expect(page.getByTestId('column-prefs-skeleton').first()).toBeVisible()
-    await expect(mainTable(page)).toHaveCount(0)
+    await expect(mainTable(page)).toBeVisible()
     await expect(mainTable(page).locator('.head [data-testid="col-type"]').first()).toHaveCount(0)
     await expect(mainTable(page).locator('.head [data-testid="col-status"]').first()).toHaveCount(0)
     await expect(mainTable(page).locator('.head [data-testid="col-version"]').first()).toHaveCount(0)

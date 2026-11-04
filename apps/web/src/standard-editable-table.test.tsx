@@ -431,3 +431,34 @@ describe('value list master detail helpers', () => {
     expect(rows[0]?.label).toBe('Red')
   })
 })
+
+describe('standard editable table loading state', () => {
+  it('keeps the toolbar and shows loading before the first response, then the empty text', () => {
+    const { rerender } = render(
+      <StandardEditableTable
+        columns={columns}
+        rows={[]}
+        editable={false}
+        loading
+        emptyLabel="No saved mappings yet."
+      />,
+    )
+    expect(screen.getByTestId('standard-table-bar')).toBeTruthy()
+    expect(screen.getByTestId('standard-grid-loading')).toBeTruthy()
+    expect(screen.queryByText('No saved mappings yet.')).toBeNull()
+
+    rerender(
+      <StandardEditableTable
+        columns={columns}
+        rows={[]}
+        editable={false}
+        loading={false}
+        emptyLabel="No saved mappings yet."
+      />,
+    )
+    expect(screen.getByTestId('standard-table-bar')).toBeTruthy()
+    expect(screen.queryByTestId('standard-grid-loading')).toBeNull()
+    expect(screen.getByTestId('standard-grid-empty')).toBeTruthy()
+    expect(screen.getByText('No saved mappings yet.')).toBeTruthy()
+  })
+})

@@ -9,6 +9,7 @@ import { attributeKey } from './model-view'
 import { onDraftChange, requestReview, setModelFocus, stageModel } from './model-stage'
 import { registerCommandRunner } from './command-registry'
 import { writeErrorMessage } from './write-error'
+import { StateNote } from './states'
 import {
   StandardEditableTable,
   type EditRequest,
@@ -221,10 +222,10 @@ export function AttributeDefinitions() {
   ]
 
   if (listed.isPending && stored.isPending) {
-    return <div data-testid="attribute-definitions"><p>{copy.loading}</p></div>
+    return <div data-testid="attribute-definitions"><StateNote tone="loading" title={copy.loading} /></div>
   }
   if (listed.isError && !listed.data) {
-    return <div data-testid="attribute-definitions"><p className="error">{copy.validation}</p></div>
+    return <div data-testid="attribute-definitions"><StateNote tone="error" title={copy.validation} /></div>
   }
 
   return (
