@@ -23,6 +23,7 @@ import type { CommandTarget, MenuContext } from './command-registry'
 import { openSharedContextMenu, prefersNativeContextMenu } from './shared-context-menu'
 import { StandardTableChrome } from './standard-table'
 import { copy } from './i18n'
+import { reportWriteError } from './write-error'
 
 export type StandardColumnType = 'text' | 'number' | 'boolean' | 'date' | 'datetime' | 'enum' | 'readonly'
 
@@ -422,7 +423,9 @@ export function StandardEditableTable<T extends { id: string }>({
   }
 
   const onReview = () => {
-    void onReviewAndSave?.()
+    void Promise.resolve(onReviewAndSave?.()).catch((reason: unknown) => {
+      reportWriteError(reason)
+    })
   }
 
   useEffect(() => {
@@ -431,7 +434,9 @@ export function StandardEditableTable<T extends { id: string }>({
       if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's') return
       if (!dirty) return
       event.preventDefault()
-      void onReviewAndSave()
+      void Promise.resolve(onReviewAndSave()).catch((reason: unknown) => {
+        reportWriteError(reason)
+      })
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)

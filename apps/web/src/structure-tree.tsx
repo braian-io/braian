@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight, MoreHorizontal, Plus } from 'lucide-react'
-import { ApiError, api, operationId, type Json } from './api'
+import { api, operationId, type Json } from './api'
+import { reportWriteError, writeErrorMessage } from './write-error'
 import { formatCount } from './format'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './components/ui/dropdown-menu'
@@ -56,7 +57,10 @@ export function StructureSection({
   const [busy, setBusy] = useState(false)
   const busyRef = useRef(false)
 
-  const fail = (reason: unknown) => setNotice(reason instanceof ApiError ? reason.message : copy.validation)
+  const fail = (reason: unknown) => {
+    const message = writeErrorMessage(reason)
+    if (message) setNotice(message)
+  }
 
   const refresh = async () => {
     await client.invalidateQueries({ queryKey: ['definitions'] })
@@ -77,8 +81,10 @@ export function StructureSection({
       setDraft(null)
       setDialog(null)
     } catch (reason) {
-      if (dialog) setDialog({ ...dialog, error: reason instanceof ApiError ? reason.message : copy.validation })
-      else fail(reason)
+      if (dialog) {
+        const message = writeErrorMessage(reason)
+        if (message) setDialog({ ...dialog, error: message })
+      } else fail(reason)
     } finally {
       busyRef.current = false
       setBusy(false)
@@ -313,13 +319,18 @@ function GroupList({
                   inputRef={nameRef}
                   onCommit={(name) => {
                     const next = name.trim()
-                    setDraft(null)
-                    if (!next || next === node.key) return
+                    if (!next || next === node.key) {
+                      setDraft(null)
+                      return
+                    }
                     void api.post('/v1/operations/{name}', { params: { path: { name: "model.rename_group_key" } }, body: { structure, group: node.key, new_key: next } }).then(async (result) => {
+                      setDraft(null)
                       const id = operationId(result)
                       if (!id) return
                       const { publishProposal } = await import('./proposal-bus')
                       publishProposal(id)
+                    }).catch((reason: unknown) => {
+                      reportWriteError(reason)
                     })
                   }}
                   onCancel={() => setDraft(null)}

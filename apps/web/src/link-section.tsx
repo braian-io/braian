@@ -5,6 +5,7 @@ import { formatCount } from './format'
 import { copy, uiLanguage } from './i18n'
 import { openSharedContextMenu, prefersNativeContextMenu } from './shared-context-menu'
 import { registerCommandRunner } from './command-registry'
+import { reportWriteError, writeErrorMessage } from './write-error'
 
 type LinkItem = {
   id: string
@@ -42,6 +43,7 @@ export function LinkSections({
   const [adding, setAdding] = useState<LinkSide | null>(null)
   const [confirm, setConfirm] = useState<{ id: string; peer: string } | null>(null)
   const [typed, setTyped] = useState('')
+  const [confirmError, setConfirmError] = useState('')
   const sections = useMemo(() => sectionsFor(defs, typeKey, links), [defs, typeKey, links])
   const onOpenRef = useRef(onOpen)
   onOpenRef.current = onOpen
@@ -56,9 +58,12 @@ export function LinkSections({
     if (hasValues) {
       setConfirm({ id, peer })
       setTyped('')
+      setConfirmError('')
       return
     }
-    void api.delete('/v1/links/{id}', { params: { path: { id: id } } }).then(refresh).catch(() => undefined)
+    void api.delete('/v1/links/{id}', { params: { path: { id: id } } }).then(refresh).catch((reason: unknown) => {
+      reportWriteError(reason)
+    })
   }
   removeRef.current = remove
   const openLinkMenu = (link: LinkItem, x: number, y: number) => {
@@ -179,14 +184,20 @@ export function LinkSections({
             onSubmit={(event) => {
               event.preventDefault()
               if (typed.trim() !== confirm.peer) return
+              setConfirmError('')
               void api.delete('/v1/links/{id}', { params: { path: { id: confirm.id } } }).then(() => {
                 setConfirm(null)
+                setConfirmError('')
                 refresh()
-              }).catch(() => undefined)
+              }).catch((reason: unknown) => {
+                const message = writeErrorMessage(reason)
+                if (message) setConfirmError(message)
+              })
             }}
           >
             <p>{copy.confirmRemoveLink}</p>
             <input aria-label={copy.confirmRemoveLink} value={typed} onChange={(event) => setTyped(event.target.value)} autoFocus />
+            {confirmError ? <p className="error" data-testid="link-confirm-error">{confirmError}</p> : null}
             <div className="toolbar">
               <button type="button" onClick={() => setConfirm(null)}>{copy.cancel}</button>
               <button type="submit" className="primary" disabled={typed.trim() !== confirm.peer}>{copy.removeLink}</button>
@@ -211,6 +222,7 @@ function LinkPicker({
 }) {
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
+  const [error, setError] = useState('')
   const found = useQuery({
     queryKey: ['link-search', query],
     queryFn: () => api.get('/v1/search', { params: { query: { q: query, per_page: 8, lang: uiLanguage } } }),
@@ -232,7 +244,11 @@ function LinkPicker({
     const body = section.direction === 'out'
       ? { type: section.link_type, from_id: objectId, to_id: peer, values: {} }
       : { type: section.link_type, from_id: peer, to_id: objectId, values: {} }
-    void api.post('/v1/links', { body: body }).then(onCreated).catch(() => undefined)
+    setError('')
+    void api.post('/v1/links', { body: body }).then(onCreated).catch((reason: unknown) => {
+      const message = writeErrorMessage(reason)
+      if (message) setError(message)
+    })
   }
   return (
     <div className="menu" role="dialog" aria-label={copy.addLink} data-testid="link-picker">
@@ -258,6 +274,7 @@ function LinkPicker({
           }
         }}
       />
+      {error ? <p className="error" data-testid="link-picker-error">{error}</p> : null}
       <div role="listbox">
         {hits.map((row, index) => (
           <button

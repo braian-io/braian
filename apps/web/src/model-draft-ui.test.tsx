@@ -3,8 +3,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ApiError } from './api'
 import { ModelDraftHost } from './model-draft-ui'
-import { requestReview } from './model-stage'
+import { openModelDialog, requestReview } from './model-stage'
 
 const mock = vi.hoisted(() => {
   const methods = { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() }
@@ -89,5 +90,23 @@ describe('review dialog', () => {
     const saves = mock.calls().filter((call) => String(call[0]).includes('/v1/model/draft/save'))
     expect(saves).toEqual([])
     await waitFor(() => expect(document.activeElement).toBe(opener))
+  })
+
+  it('keeps the create dialog and the typed name when the write fails', async () => {
+    mock.use((path) => {
+      if (path === '/v1/model/draft') return Promise.resolve(draft)
+      if (String(path).includes('/v1/model/draft/steps')) {
+        return Promise.reject(new ApiError(422, 'Unprocessable Entity', { detail: 'the write failed validation' }))
+      }
+      return Promise.resolve({})
+    })
+    render(<Host />)
+    openModelDialog('type')
+    const input = await screen.findByTestId('model-dialog-name')
+    fireEvent.change(input, { target: { value: 'Recipe' } })
+    fireEvent.click(screen.getByTestId('model-dialog-save'))
+    expect(await screen.findByText('the write failed validation')).toBeTruthy()
+    expect(screen.getByTestId('model-dialog')).toBeTruthy()
+    expect((screen.getByTestId('model-dialog-name') as HTMLInputElement).value).toBe('Recipe')
   })
 })

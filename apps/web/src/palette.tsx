@@ -4,6 +4,7 @@ import { Check } from 'lucide-react'
 import { MetaChip, type ChipTone } from './chips'
 import { toast } from 'sonner'
 import { ApiError, api, operationId, textValue, type Json } from './api'
+import { reportWriteError } from './write-error'
 import { streamAgent, type AgentEvent } from './agent-stream'
 import { renderAgentAnswer } from './agent-answer'
 import { Command, CommandInput, CommandItem, CommandList } from './components/ui/command'
@@ -556,7 +557,9 @@ export function CommandPalette({
     const remembered = item.group === 'best' || item.id.startsWith('best:') ? id : item.id
     if (id !== 'ask') {
       touch(remembered)
-      void api.post('/v1/frecency', { body: { id: remembered } }).catch(() => undefined)
+      void api.post('/v1/frecency', { body: { id: remembered } }).catch((reason: unknown) => {
+        reportWriteError(reason)
+      })
     }
     if (item.argument) {
       const paramType = item.argument.type
@@ -663,7 +666,9 @@ export function CommandPalette({
           setQuery('')
           setActive(0)
         })
-        .catch(() => undefined)
+        .catch((reason: unknown) => {
+          reportWriteError(reason)
+        })
       return
     }
     if (id.startsWith('path:filter:')) {
@@ -746,7 +751,9 @@ export function CommandPalette({
     if (id === 'model:delete-link-type') {
       const target = modelFocus()
       if (target?.kind === 'type') {
-        void stageModel('model.delete_link_type', { key: target.key }).catch(() => undefined)
+        void stageModel('model.delete_link_type', { key: target.key }).catch((reason: unknown) => {
+          reportWriteError(reason)
+        })
       }
       onClose()
       return
@@ -763,7 +770,7 @@ export function CommandPalette({
     }
     if (id === 'model:undo') {
       void api.post('/v1/operations/{name}', { params: { path: { name: "model.undo" } }, body: {} }).catch((reason: unknown) => {
-        session.push(reason instanceof Error ? reason.message : copy.validation)
+        reportWriteError(reason)
       })
       onClose()
       return
@@ -771,7 +778,9 @@ export function CommandPalette({
     if (id.startsWith('model:delete-') && id !== 'model:delete-group') {
       const target = modelFocus()
       const runDelete = (name: string, args: Json) => {
-        void stageModel(name, args).catch((reason: unknown) => session.push(reason instanceof Error ? reason.message : copy.validation))
+        void stageModel(name, args).catch((reason: unknown) => {
+          reportWriteError(reason)
+        })
       }
       if (id === 'model:delete-type' && target?.kind === 'type') runDelete('model.delete_type', { type: target.key })
       if (id === 'model:delete-attribute' && target?.kind === 'attribute') runDelete('model.delete_attribute', { attribute: target.key })
@@ -791,7 +800,9 @@ export function CommandPalette({
           if (proposal) {
             void import('./proposal-bus').then(({ publishProposal }) => publishProposal(proposal))
           }
-        }).catch(() => undefined)
+        }).catch((reason: unknown) => {
+          reportWriteError(reason)
+        })
       }
       onClose()
       return
@@ -889,7 +900,7 @@ export function CommandPalette({
           onClose()
         })
         .catch((reason: unknown) => {
-          session.push(reason instanceof Error ? reason.message : copy.validation)
+          reportWriteError(reason)
         })
       return
     }
@@ -953,7 +964,7 @@ export function CommandPalette({
           onClose()
         })
         .catch((reason: unknown) => {
-          session.push(reason instanceof Error ? reason.message : 'The draft has no steps')
+          reportWriteError(reason)
         })
       return
     }
@@ -1021,8 +1032,10 @@ export function CommandPalette({
         dispatchUi('ui.open_template', { template: template.id, id: workspaceId })
         session.openWorkspace(workspaceId)
         session.push(`Workspace ${template.name}`)
+        onClose()
+      }).catch((error: unknown) => {
+        reportWriteError(error)
       })
-      onClose()
       return
     }
     const savedTemplateKey = parseSavedTemplateChoice(id)
@@ -1033,10 +1046,10 @@ export function CommandPalette({
         dispatchUi('ui.open_template', { template: `saved:${template.key}`, id: workspaceId })
         session.openWorkspace(workspaceId)
         session.push(`Workspace ${template.name}`)
+        onClose()
       }).catch((error: unknown) => {
-        session.push(error instanceof Error ? error.message : 'Could not create a workspace from this template.')
+        reportWriteError(error)
       })
-      onClose()
       return
     }
     if (id === 'import:file') {
