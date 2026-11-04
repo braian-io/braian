@@ -61,6 +61,8 @@ test('a pair with no allowed link type explains that in a dialog', async ({ page
   const invalid = page.getByTestId('link-invalid-dialog')
   await expect(invalid).toBeVisible()
   await expect(invalid).toContainText('This is not a valid link type.')
+  await expect(invalid).toContainText("Products can't link to Suppliers.")
+  await expect(invalid).toContainText('Products can link to Articles.')
   await expect(page.getByTestId('link-create-confirm')).toHaveCount(0)
   await shot(page, 'link-invalid-dark.png')
   await page.keyboard.press('Escape')

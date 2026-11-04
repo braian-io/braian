@@ -58,6 +58,7 @@ import { dispatchUi } from './ui-bus'
 import { registerCommandRunner, runCommand } from './command-registry'
 import { useShortcutBindings } from './shortcut-bindings'
 import { setAiMode } from './ai-mode'
+import { LinkDropHost } from './link-drop'
 import { HelpDialog } from './help-dialog'
 import { registerModelCommandRunners } from './model-commands'
 import { createWorkspaceFromTemplate, typeWorkspaceTemplate, workspaceTemplates } from './templates'
@@ -1607,6 +1608,7 @@ export function Shell() {
         onOpenInReview={openConfigReview}
       />
       <SelectionHost session={session} />
+      <LinkDropHost />
       {paletteMode ? (
         <CommandPalette
               fieldsMode={paletteMode === 'fields'}

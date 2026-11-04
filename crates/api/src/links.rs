@@ -10,16 +10,17 @@ use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use braian_model::{ModelChange, Object, ObjectId, ObjectPatch, Uuid};
-use braian_store::{LinkView, ObjectOp, StoredObject};
+use braian_store::{Error, LinkView, ObjectOp, StoredObject};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use utoipa::ToSchema;
 
 use crate::auth::{Auth, delete_forbidden};
 use crate::deletes::{ConsequenceReport, DryRun};
-use crate::headers::require_if_match;
+use crate::headers::{if_match, require_if_match};
 use crate::objects::{
-    SuggestionDraft, file_suggestion, load_object, note_write, object_response, version_of,
+    SuggestionDraft, conflict_problem, file_suggestion, load_object, note_write, object_response,
+    version_of,
 };
 use crate::problem::{Problem, store_status};
 use crate::state::{AppState, CachedModel};
@@ -353,11 +354,14 @@ pub async fn patch_link(
     tag = "objects",
     params(
         ("id" = Uuid, Path, description = "Link id"),
-        ("dry_run" = Option<bool>, Query, description = "Return the consequence analysis and change nothing")
+        ("dry_run" = Option<bool>, Query, description = "Return the consequence analysis and change nothing"),
+        ("If-Match" = Option<u64>, Header, description = "When set, any newer change is a conflict")
     ),
     responses(
         (status = 200, description = "Deleted, or the consequence analysis when dry_run is set", body = ConsequenceReport),
-        (status = 403, description = "An agent or import cannot delete", body = crate::problem::Problem)
+        (status = 403, description = "An agent or import cannot delete", body = crate::problem::Problem),
+        (status = 404, description = "No such link", body = crate::problem::Problem),
+        (status = 409, description = "The link changed since If-Match", body = crate::problem::Problem)
     ),
     security(("bearer" = []))
 )]
@@ -366,6 +370,7 @@ pub async fn delete_link(
     Auth(identity): Auth,
     Path(id): Path<Uuid>,
     Query(query): Query<DryRun>,
+    headers: HeaderMap,
 ) -> Result<Response, Problem> {
     if !identity.may_commit() {
         return Err(delete_forbidden());
@@ -385,17 +390,28 @@ pub async fn delete_link(
         };
         return Ok(Json(report).into_response());
     }
-    let receipt = state
+    let base = if_match(&headers)?;
+    let receipt = match state
         .store
         .write_batch(
             &identity.actor,
             vec![ObjectOp::Delete {
                 id,
-                base_version: None,
+                base_version: base,
             }],
         )
         .await
-        .map_err(store_status)?;
+    {
+        Ok(receipt) => receipt,
+        Err(Error::Conflict {
+            current_version,
+            conflicts,
+        }) => {
+            let cached = state.models.get(&state.store).await?;
+            return Err(conflict_problem(&state, &cached, current_version, conflicts).await);
+        }
+        Err(error) => return Err(store_status(error)),
+    };
     note_write(
         &state,
         "delete",

@@ -13,11 +13,13 @@ import { groupTitle, readPaletteMemory, rememberPaletteItem, resultAnnouncement,
 
 export function LinkObjectPicker({
   sourceId,
+  excludeIds,
   defs,
   onClose,
   onChoose,
 }: {
   sourceId: string
+  excludeIds?: string[]
   defs?: Json
   onClose: () => void
   onChoose: (hit: LinkHit) => void
@@ -39,13 +41,14 @@ export function LinkObjectPicker({
     queryFn: () => api.get('/v1/search', { params: { query: { q: debounced, per_page: 8, lang: uiLanguage } } }),
     enabled: debounced.trim().length > 0,
   })
+  const excluded = useMemo(() => new Set(excludeIds && excludeIds.length > 0 ? excludeIds : [sourceId]), [excludeIds, sourceId])
   const hits = useMemo(() => {
     return ((found.data?.hits as Json[]) ?? [])
       .map((hit) => linkHitFromDocument((hit.document as Json) ?? hit, defs))
-      .filter((hit): hit is LinkHit => hit != null && hit.id !== sourceId)
-  }, [found.data, defs, sourceId])
+      .filter((hit): hit is LinkHit => hit != null && !excluded.has(hit.id))
+  }, [found.data, defs, excluded])
   const frecency = useMemo(() => readFrecency(), [query])
-  const memory = useMemo(() => readPaletteMemory().filter((item) => selectedId(item) !== sourceId), [query, sourceId])
+  const memory = useMemo(() => readPaletteMemory().filter((item) => !excluded.has(selectedId(item) ?? '')), [query, excluded])
   const rows = useMemo(
     () => linkPickerRows({ hits, query: debounced, frecency, memory, defs }),
     [hits, debounced, frecency, memory, defs],
@@ -62,7 +65,7 @@ export function LinkObjectPicker({
     const id = selectedId(row)
     if (!id) return
     const hit = hits.find((item) => item.id === id) ?? hitFromMemory(row)
-    if (!hit || hit.id === sourceId) return
+    if (!hit || excluded.has(hit.id)) return
     touch(`hit:${hit.id}`)
     rememberPaletteItem(linkPaletteItem(hit, defs))
     onChoose(hit)
