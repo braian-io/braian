@@ -184,7 +184,8 @@ No I/O. This phase fixes the vocabulary the rest of the system uses.
     the whole set.
 - **Defaults:**
   - Routes live under `/v1`. Errors are `application/problem+json`. 422 is validation,
-    409 is a conflict or a duplicate key, 410 is a deleted object.
+    409 is a conflict or a duplicate key, 410 is a deleted object, and 412 is an
+    If-Match mismatch on an object write.
   - A write response carries `version`, `seq`, `model_revision`, `warnings` and an `ETag`.
   - The API re-reads and validates at most three times when the object changed after it
     was read (`StaleRead`). The client's base version is only the conflict check.
