@@ -29,16 +29,23 @@ function setup(input: {
   search: Record<string, unknown>
   state?: UrlStateValues
   ready?: boolean
+  viewOpen?: (id: string) => boolean
 }) {
   const navigate = vi.fn()
   const apply = vi.fn()
   const hook = renderHook(
-    (props: { search: Record<string, unknown>; state: UrlStateValues; ready: boolean }) =>
+    (props: {
+      search: Record<string, unknown>
+      state: UrlStateValues
+      ready: boolean
+      viewOpen: ((id: string) => boolean) | undefined
+    }) =>
       useUrlStateSync({
         search: props.search,
         state: props.state,
         ready: props.ready,
         valid,
+        viewOpen: props.viewOpen,
         navigate,
         apply,
       }),
@@ -47,10 +54,17 @@ function setup(input: {
         search: input.search,
         state: input.state ?? base,
         ready: input.ready ?? true,
+        viewOpen: input.viewOpen,
       },
     },
   )
-  return { navigate, apply, rerender: hook.rerender }
+  const rerender = (props: {
+    search: Record<string, unknown>
+    state: UrlStateValues
+    ready: boolean
+    viewOpen?: (id: string) => boolean
+  }) => hook.rerender({ ...props, viewOpen: props.viewOpen ?? input.viewOpen })
+  return { navigate, apply, rerender }
 }
 
 describe('URL state params', () => {
@@ -164,6 +178,66 @@ describe('URL sync', () => {
     })
     expect(hook.apply).toHaveBeenCalledWith({ objectId: 'o1' })
     expect(hook.apply).not.toHaveBeenCalledWith(expect.objectContaining({ workspaceId: 'gone' }))
+  })
+
+  it('does not reopen a view that is already open on first load', () => {
+    const { navigate, apply } = setup({
+      search: { ws: 'w1', view: 'v2', catalog: 'master' },
+      state: base,
+      viewOpen: (id) => id === 'v2',
+    })
+    expect(apply).not.toHaveBeenCalled()
+    expect(navigate).toHaveBeenCalledWith({
+      search: { ws: 'w1', view: 'v1', catalog: 'master' },
+      replace: true,
+    })
+  })
+
+  it('does not push history for state that came from the URL', () => {
+    const hook = setup({
+      search: { ws: 'w1', view: 'v1', catalog: 'master', object: 'o1' },
+      state: base,
+    })
+    expect(hook.apply).toHaveBeenCalledWith({ objectId: 'o1' })
+    hook.navigate.mockClear()
+
+    hook.rerender({
+      search: { ws: 'w1', view: 'v1', catalog: 'master', object: 'o1' },
+      state: { ...base, objectId: 'o1' },
+      ready: true,
+    })
+    expect(hook.navigate).not.toHaveBeenCalled()
+  })
+
+  it('replaces, not pushes, while a URL-derived workspace settles', () => {
+    const hook = setup({ search: { ws: 'w1', view: 'v1', catalog: 'master' } })
+    hook.navigate.mockClear()
+
+    hook.rerender({
+      search: { ws: 'w2', view: 'v1', catalog: 'master' },
+      state: base,
+      ready: true,
+    })
+    expect(hook.apply).toHaveBeenCalledWith({ workspaceId: 'w2' })
+    hook.navigate.mockClear()
+
+    hook.rerender({
+      search: { ws: 'w2', view: 'v1', catalog: 'master' },
+      state: { ...base, workspaceId: 'w2' },
+      ready: true,
+    })
+    hook.navigate.mockClear()
+
+    // The new workspace settles on another view before the URL is updated.
+    hook.rerender({
+      search: { ws: 'w2', view: 'v1', catalog: 'master' },
+      state: { ...base, workspaceId: 'w2', viewId: 'v2' },
+      ready: true,
+    })
+    expect(hook.navigate).toHaveBeenCalledWith({
+      search: { ws: 'w2', view: 'v2', catalog: 'master' },
+      replace: true,
+    })
   })
 
   it('does not run until the shell is ready', () => {

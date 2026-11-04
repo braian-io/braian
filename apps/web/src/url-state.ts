@@ -87,26 +87,34 @@ export function useUrlStateSync(input: {
   state: UrlStateValues
   ready: boolean
   valid: UrlStateValidity
+  /** Views already in the layout. On first load these are not opened again. */
+  viewOpen?: (id: string) => boolean
   navigate: (next: UrlStateNavigation) => void
   apply: (next: UrlStateApply) => void
 }) {
-  const { search, state, ready, valid, navigate, apply } = input
+  const { search, state, ready, valid, viewOpen, navigate, apply } = input
   const parsed = parseUrlState(search)
   const key = urlStateKey(parsed)
   const validRef = useRef(valid)
   validRef.current = valid
+  const viewOpenRef = useRef(viewOpen)
+  viewOpenRef.current = viewOpen
   const applyRef = useRef(apply)
   applyRef.current = apply
   const pending = useRef<Set<Param>>(new Set())
   const lastKey = useRef<string | null>(null)
   const justApplied = useRef(false)
   const synced = useRef(false)
+  // A URL-derived change may need several renders (workspace data, then view)
+  // before app state matches the URL. Never turn that settling into history.
+  const settling = useRef(true)
 
   useEffect(() => {
     if (!ready) return
     if (lastKey.current !== key) {
       lastKey.current = key
       pending.current = new Set(URL_STATE_PARAMS.filter((param) => parsed[param] !== undefined))
+      settling.current = true
     }
     if (pending.current.size === 0) return
 
@@ -128,6 +136,13 @@ export function useUrlStateSync(input: {
         continue
       }
       if ((param === 'view' || param === 'catalog') && waitingForWorkspace) continue
+      // Reload restores the layout and its active view from storage. Re-opening
+      // a view that is already open would remount its table and reload column
+      // prefs; a stale URL view must not do that on first load.
+      if (param === 'view' && !synced.current && viewOpenRef.current?.(value)) {
+        pending.current.delete(param)
+        continue
+      }
       const stateKey = VALUE_KEY[param]
       if (state[stateKey] !== value) changes[stateKey] = value
       pending.current.delete(param)
@@ -147,14 +162,16 @@ export function useUrlStateSync(input: {
     }
     const next = serializeUrlState(state)
     if (sameUrlState(parsed, next)) {
+      settling.current = false
       synced.current = true
       return
     }
     // Catalog is a durable preference, not a navigation step. Workspace, view
     // and object changes are worth a Back entry once the initial URL is set.
+    // While a URL-derived change settles, replace instead of pushing.
     const backWorthy =
       parsed.ws !== next.ws || parsed.view !== next.view || parsed.object !== next.object
-    navigate({ search: next, replace: !synced.current || !backWorthy })
+    navigate({ search: next, replace: !synced.current || !backWorthy || settling.current })
     synced.current = true
   }, [ready, key, state.workspaceId, state.viewId, state.catalogId, state.objectId, parsed.ws, parsed.view, parsed.catalog, parsed.object])
 }

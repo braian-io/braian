@@ -436,6 +436,7 @@ export function Shell() {
       catalog: (id) => Boolean(id),
       object: (id) => Boolean(id),
     },
+    viewOpen: (id) => Boolean(doc && layoutViews(doc.layout).includes(id)),
     navigate: (next) => {
       void navigate({ to: '/', search: next.search, replace: next.replace })
     },
@@ -447,7 +448,11 @@ export function Shell() {
         }))
       }
       if (next.objectId !== undefined) setObjectId(next.objectId)
-      if (next.viewId !== undefined) applyRef.current('ui.open_view', { id: next.viewId })
+      // The URL may be stale or repeat the focused view; re-opening it commits
+      // a new layout and remounts the table (losing loaded column prefs).
+      if (next.viewId !== undefined && docRef.current?.focus !== next.viewId) {
+        applyRef.current('ui.open_view', { id: next.viewId })
+      }
     },
   })
 
