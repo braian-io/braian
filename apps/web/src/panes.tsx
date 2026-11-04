@@ -11,6 +11,8 @@ import { attributeByKey, indexSort, readIndexed, sortKeyForColumnId } from './in
 import { cellEditShouldPatch, cellEditValuesBody, isEditingCell, isEditableColumn, resolveCellEditInitial, valueListKeyForColumn, columnBaseKey } from './cell-edit'
 import { batchGetObjects } from './batch'
 import { MetaChip, optionLabel, statusTone, typeLabel } from './chips'
+import { BulkWriteConfirm } from './bulk-write'
+import { Button } from './components/ui/button'
 import { Slider } from './components/ui/slider'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select'
 import { Switch } from './components/ui/switch'
@@ -47,6 +49,7 @@ import { isExplicitAllSource, peerEmptyState, peerIdsFilter, peerNodeFilter, pee
 import { FieldDiff } from './field-diff-view'
 import { copy, uiLanguage } from './i18n'
 import { openSharedContextMenu, prefersNativeContextMenu } from './shared-context-menu'
+import { buildRowContextMenu } from './row-context-menu'
 import { StandardTableChrome } from './standard-table'
 import { StandardEditableTable, type StandardColumn } from './standard-editable-table'
 import { registerCommandRunner, runCommand } from './command-registry'
@@ -189,6 +192,7 @@ export function ObjectTable({
   // The active cell's column, by key. Left and Right move it; the keyboard menu acts on it.
   const [activeColumn, setActiveColumn] = useState('')
   const [moving, setMoving] = useState<string | null>(null)
+  const [massConfirm, setMassConfirm] = useState(false)
   const [flashId, setFlashId] = useState('')
   const [editingCell, setEditingCell] = useState<{ rowId: string; columnId: string } | null>(null)
   const [editingDraft, setEditingDraft] = useState('')
@@ -900,35 +904,26 @@ export function ObjectTable({
     const hiddenColumns = all
       .filter((id) => hidden.includes(id))
       .map((id) => ({ id, header: columnHeader(id) }))
-    const singular = session.listType ? singularOf(defs.data, session.listType, uiLanguage) : undefined
-    const linkExtras = ((defs.data?.types as Json[]) ?? [])
-      .filter((item) => item.kind === 'link')
-      .map((item) => {
-        const key = String(item.key ?? '')
-        const label =
-          textValue((item.link as Json | undefined)?.to_label && ((item.link as Json).to_label as Json).labels, uiLanguage) ||
-          key
-        return {
-          id: `link:add:${key}`,
-          title: `${copy.linkTo} ${label}`,
-          contexts: [context] as import('./command-registry').MenuContext[],
-          group: 'object' as const,
-          palette: false as const,
-        }
-      })
-    openSharedContextMenu({
+    const menu = buildRowContextMenu({
       context,
-      x,
-      y,
+      defs: defs.data,
+      rowType: row.type || session.listType || '',
+      language: uiLanguage,
       target: {
         objectId: row.id,
         column: column || undefined,
         columnHeader: column ? columnHeader(column) : undefined,
         hiddenColumns,
         typeKey: session.listType ?? undefined,
-        singular: singular || undefined,
       },
-      extra: linkExtras,
+    })
+    openSharedContextMenu({
+      context,
+      x,
+      y,
+      target: menu.target,
+      extra: menu.items,
+      extraOnly: true,
     })
   }
 
@@ -1008,7 +1003,7 @@ export function ObjectTable({
         if (!target.objectId) return
         setSelected((current) => current.includes(String(target.objectId)) ? current : [...current, String(target.objectId)])
       }),
-      registerCommandRunner('table:mass-edit', () => { mass.mutate() }),
+      registerCommandRunner('table:mass-edit', () => { setMassConfirm(true) }),
       registerCommandRunner('table:filter-by', () => setPicker('filter')),
       registerCommandRunner('table:export-columns', () => setPicker('export')),
       registerCommandRunner('table:export', () => { exportVisible() }),
@@ -1031,9 +1026,9 @@ export function ObjectTable({
     const onCommand = (event: Event) => {
       const detail = (event as CustomEvent<{ id: string; target?: { objectId?: string } }>).detail
       if (!detail?.id?.startsWith('link:add:')) return
-      const linkType = detail.id.slice('link:add:'.length)
+      const [linkType, direction] = detail.id.slice('link:add:'.length).split(':')
       if (detail.target?.objectId) session.setObjectId(String(detail.target.objectId))
-      window.dispatchEvent(new CustomEvent('braian-add-link', { detail: { linkType } }))
+      window.dispatchEvent(new CustomEvent('braian-add-link', { detail: { linkType, direction } }))
     }
     window.addEventListener('braian:command', onCommand)
     return () => window.removeEventListener('braian:command', onCommand)
@@ -1833,6 +1828,16 @@ export function ObjectTable({
           }}
         />
       ) : null}
+      <BulkWriteConfirm
+        open={massConfirm}
+        field="status"
+        count={selected.length}
+        onCancel={() => setMassConfirm(false)}
+        onConfirm={() => {
+          setMassConfirm(false)
+          mass.mutate()
+        }}
+      />
     </StandardTableChrome>
   )
 }
@@ -2466,7 +2471,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       </div>
       {dirty ? (
         <div className="save-bar">
-          <button type="button" onClick={() => setDraft({})}>{copy.discard}</button>
+          <Button type="button" variant="danger" onClick={() => setDraft({})}>{copy.discard}</Button>
           <button className="primary" type="submit" data-testid="review-and-save">{copy.reviewAndSave}</button>
         </div>
       ) : null}
@@ -3157,7 +3162,7 @@ export function ProposalView({ session }: { session: PanesSession }) {
         {proposal.data ? <span className="meta-chip neutral" data-testid="source-badge">{sourceLabel(proposal.data)}</span> : null}
         {proposal.data?.status ? <MetaChip tone={statusTone(String(proposal.data.status))}>{String(proposal.data.status)}</MetaChip> : null}
         <button type="button" data-testid="save-all" disabled={loadingObjects || accept.isPending || discard.isPending} onClick={saveAll}>{copy.saveAll}</button>
-        <button type="button" data-testid="discard-all" disabled={accept.isPending || discard.isPending} onClick={() => discard.mutate()}>{copy.discardAll}</button>
+        <Button type="button" variant="danger" data-testid="discard-all" disabled={accept.isPending || discard.isPending} onClick={() => discard.mutate()}>{copy.discardAll}</Button>
         {error ? <p className="error" data-testid="proposal-error">{error}</p> : null}
         {consequence.length > 0 && session.proposalId ? (
           <button type="button" onClick={() => publishProposal(session.proposalId ?? '')}>{copy.reviewChange}</button>

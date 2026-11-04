@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, textValue, type Json } from './api'
+import { Button } from './components/ui/button'
 import { formatCount } from './format'
 import { copy, uiLanguage } from './i18n'
 import { openSharedContextMenu, prefersNativeContextMenu } from './shared-context-menu'
@@ -99,8 +100,12 @@ export function LinkSections({
   }, [])
   useEffect(() => {
     const add = (event: Event) => {
-      const detail = (event as CustomEvent<{ linkType?: string }>).detail ?? {}
-      const section = sections.find((item) => !detail.linkType || item.link_type === detail.linkType) ?? sections[0]
+      const detail = (event as CustomEvent<{ linkType?: string; direction?: 'out' | 'in' }>).detail ?? {}
+      const sameType = sections.filter((item) => !detail.linkType || item.link_type === detail.linkType)
+      const section =
+        sameType.find((item) => !detail.direction || item.direction === detail.direction) ??
+        sameType[0] ??
+        sections[0]
       if (section) setAdding(section)
     }
     const drop = () => {
@@ -199,8 +204,8 @@ export function LinkSections({
             <input aria-label={copy.confirmRemoveLink} value={typed} onChange={(event) => setTyped(event.target.value)} autoFocus />
             {confirmError ? <p className="error" data-testid="link-confirm-error">{confirmError}</p> : null}
             <div className="toolbar">
-              <button type="button" onClick={() => setConfirm(null)}>{copy.cancel}</button>
-              <button type="submit" className="primary" disabled={typed.trim() !== confirm.peer}>{copy.removeLink}</button>
+              <Button type="button" variant="ghost" onClick={() => setConfirm(null)}>{copy.cancel}</Button>
+              <Button type="submit" variant="danger" disabled={typed.trim() !== confirm.peer}>{copy.removeLink}</Button>
             </div>
           </form>
         </div>

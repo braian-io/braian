@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, failureLines, type Json } from './api'
+import { Button } from './components/ui/button'
 import { copy } from './i18n'
 import { formatCount } from './format'
 import { affectedLabel, typeNames } from './type-labels'
@@ -165,16 +166,16 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
         ))}
         {error ? <p className="error">{error}</p> : null}
         <div className="toolbar">
-          <button type="button" onClick={discard} disabled={busy}>{copy.cancel}</button>
-          <button
+          <Button type="button" variant="ghost" onClick={discard} disabled={busy}>{copy.cancel}</Button>
+          <Button
             type="button"
-            className="primary"
+            variant={destructive ? 'danger' : 'primary'}
             data-testid={destructive ? 'confirm-delete' : 'confirm-model'}
             onClick={confirm}
             disabled={busy || errors.length > 0 || !nameMatches}
           >
             {destructive ? copy.delete : copy.confirm}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

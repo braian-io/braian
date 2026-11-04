@@ -192,13 +192,27 @@ describe('type attributes table', () => {
     expect(stageModel).toHaveBeenCalledWith('model.attach_attribute', { attribute: 'extra', type: 'recipe' })
   })
 
-  it('shows an error when saving allowed trees fails', async () => {
+  it('stages allowed trees for Review and save without saving directly', async () => {
     chooseModelSelection({ kind: 'type', typeKey: 'recipe' })
-    mock.methods.put.mockRejectedValueOnce(new Error('could not save allowed trees'))
+    render(<Host />)
+    const trees = await screen.findByTestId('allowed-trees')
+    fireEvent.click(within(trees).getByRole('checkbox', { name: 'Food' }))
+    await waitFor(() => expect(stageModel).toHaveBeenCalledWith('model.set_structures', {
+      type_key: 'recipe',
+      structures: ['structure-food'],
+    }))
+    expect(requestReview).toHaveBeenCalledTimes(1)
+    expect(mock.methods.put).not.toHaveBeenCalled()
+  })
+
+  it('shows an error when staging allowed trees fails', async () => {
+    chooseModelSelection({ kind: 'type', typeKey: 'recipe' })
+    stageModel.mockRejectedValueOnce(new Error('could not save allowed trees'))
     render(<Host />)
     const trees = await screen.findByTestId('allowed-trees')
     fireEvent.click(within(trees).getByRole('checkbox', { name: 'Food' }))
     expect(await screen.findByText('could not save allowed trees')).toBeTruthy()
+    expect(requestReview).not.toHaveBeenCalled()
   })
 
   it('dims inherited rows and shows the From column for a group', async () => {
