@@ -28,7 +28,9 @@ describe('agent run presentation', () => {
   })
 
   it('cleans a failed run error', () => {
-    expect(cleanAgentError('openai error: the model request failed (status 500)')).toBe('the model request failed')
+    expect(cleanAgentError('openai error: the model request failed (status 500)')).toBe(
+      'The model request failed. Try again, or check the AI settings.',
+    )
   })
 
   it('keeps another workspace visible instead of dropping the tab', () => {

@@ -305,3 +305,61 @@ async fn two_runs_are_allowed_and_a_user_edit_marks_the_proposal_stale() {
     assert_eq!(status, StatusCode::OK, "{listed}");
     assert!(listed["runs"].as_array().unwrap().len() >= 2, "{listed}");
 }
+
+#[tokio::test]
+async fn undo_after_a_later_edit_is_precondition_failed() {
+    let (_db, app) = app().await;
+    let object_id = create_item(&app).await;
+    let draft = json!({
+        "title": "Rename",
+        "rows": [{
+            "object_id": object_id,
+            "type_key": "item",
+            "base_version": 1,
+            "patch": { "values": { "name": { "sv": "Ny" } } }
+        }]
+    });
+    let (status, proposal) =
+        call(&app, "POST", "/v1/proposals", Some(&draft.to_string()), &[]).await;
+    assert_eq!(status, StatusCode::OK, "{proposal}");
+    let proposal_id = proposal["id"].as_str().unwrap();
+
+    let (status, accepted) = call(
+        &app,
+        "POST",
+        &format!("/v1/proposals/{proposal_id}/accept"),
+        Some("{}"),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{accepted}");
+    let version = accepted["accepted"][0]["version"]
+        .as_u64()
+        .unwrap_or_else(|| panic!("{accepted}"));
+    assert!(version >= 2, "{accepted}");
+
+    let (status, later) = call(
+        &app,
+        "PATCH",
+        &format!("/v1/objects/{object_id}"),
+        Some(r#"{"values":{"name":{"sv":"Later"}}}"#),
+        &[("if-match", &version.to_string())],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{later}");
+    assert_eq!(later["values"]["name"]["sv"], "Later");
+
+    let (status, undone) = call(
+        &app,
+        "PATCH",
+        &format!("/v1/objects/{object_id}"),
+        Some(r#"{"values":{"name":{"sv":"Stol"}}}"#),
+        &[("if-match", &version.to_string())],
+    )
+    .await;
+    assert_eq!(status, StatusCode::PRECONDITION_FAILED, "{undone}");
+
+    let (status, object) = call(&app, "GET", &format!("/v1/objects/{object_id}"), None, &[]).await;
+    assert_eq!(status, StatusCode::OK, "{object}");
+    assert_eq!(object["values"]["name"]["sv"], "Later", "{object}");
+}

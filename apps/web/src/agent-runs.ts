@@ -126,6 +126,7 @@ export function cleanAgentError(text: string): string {
     .replace(/\s*\(status \d+\)\s*/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim()
+  if (/model request failed/i.test(cleaned)) return copy.agentModelFailed
   return cleaned || copy.agentFailed
 }
 

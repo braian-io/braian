@@ -3622,6 +3622,16 @@
               }
             }
           },
+          "412": {
+            "description": "If-Match does not match the stored version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "422": {
             "description": "Validation failed",
             "content": {

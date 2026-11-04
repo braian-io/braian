@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { api, textValue, type Json } from './api'
+import { ApiError, api, textValue, type Json } from './api'
 import {
   AgentRunError,
   agentDisplayText,
@@ -43,6 +43,18 @@ function decisionText(accept: boolean, lines: DiffLine[]): string {
   return `${verb}: ${changes}`
 }
 
+function acceptedVersion(result: unknown): number | undefined {
+  if (!result || typeof result !== 'object' || !('accepted' in result)) return undefined
+  const accepted = (result as { accepted?: unknown }).accepted
+  if (!Array.isArray(accepted)) return undefined
+  for (const row of accepted) {
+    if (!row || typeof row !== 'object' || !('version' in row)) continue
+    const version = Number((row as { version?: unknown }).version)
+    if (Number.isFinite(version)) return version
+  }
+  return undefined
+}
+
 function restoreValues(current: Json, patch: unknown): Json {
   const proposed = proposedValues(patch)
   const values: Json = {}
@@ -67,6 +79,7 @@ export function AgentView({ runId, push }: AgentViewProps) {
   const focusAfter = useRef(false)
   const [draft, setDraft] = useState('')
   const [error, setError] = useState('')
+  const [reverted, setReverted] = useState<Record<string, boolean>>({})
   const [announced, setAnnounced] = useState('')
   const previousStatus = useRef('')
   const run = useQuery({
@@ -87,26 +100,39 @@ export function AgentView({ runId, push }: AgentViewProps) {
     void queryClient.invalidateQueries({ queryKey: ['object'] })
   }
   const decide = useMutation({
-    mutationFn: async (input: { id: string; accept: boolean; lines: DiffLine[]; undo?: () => Promise<void> }) => {
-      if (input.accept) {
-        await api.post('/v1/proposals/{id}/accept', { params: { path: { id: input.id } }, body: {} })
-      } else {
+    mutationFn: async (input: { id: string; accept: boolean; lines: DiffLine[]; objectId?: string; restore?: Json }) => {
+      if (!input.accept) {
         await api.post('/v1/proposals/{id}/discard', { params: { path: { id: input.id } } })
+        return { ...input, version: undefined as number | undefined }
       }
-      return input
+      const result = await api.post('/v1/proposals/{id}/accept', { params: { path: { id: input.id } }, body: {} })
+      return { ...input, version: acceptedVersion(result) }
     },
     onSuccess: (input) => {
       setError('')
       const message = decisionText(input.accept, input.lines)
       push(message)
-      if (input.accept && input.undo) {
-        const undo = input.undo
+      const version = input.version
+      if (input.accept && input.objectId && input.restore && version != null) {
+        const objectId = input.objectId
+        const restore = input.restore
         toast(message, {
           duration: 5000,
           action: {
             label: copy.undo,
             onClick: () => {
-              void undo().catch((reason: unknown) => {
+              void api.patch('/v1/objects/{id}', {
+                params: { path: { id: objectId }, header: { 'If-Match': version } },
+                body: { values: restore },
+              }).then(() => {
+                setReverted((current) => ({ ...current, [input.id]: true }))
+                refresh()
+              }).catch((reason: unknown) => {
+                if (reason instanceof ApiError && reason.status === 412) {
+                  toast(copy.agentUndoConflict)
+                  push(copy.agentUndoConflict)
+                  return
+                }
                 const detail = reason instanceof Error ? reason.message : copy.validation
                 setError(detail)
                 push(detail)
@@ -209,7 +235,7 @@ export function AgentView({ runId, push }: AgentViewProps) {
       </header>
       <div className="agent-log" data-testid="agent-log" aria-live="polite" aria-busy={working}>
         {data.messages.map((message) => {
-          if (message.kind === 'user' || message.kind === 'proposal') return null
+          if (message.kind === 'user' || message.kind === 'proposal' || message.kind === 'notice') return null
           const text = agentDisplayText(String(message.body.text ?? ''))
           if (!text) return null
           return (
@@ -226,8 +252,14 @@ export function AgentView({ runId, push }: AgentViewProps) {
           proposal={proposal}
           defs={defs.data}
           pending={decide.isPending}
-          onDecide={(accept, lines, undo) => decide.mutate({ id: proposal.id, accept, lines, undo })}
-          onUndoRefresh={refresh}
+          reverted={Boolean(reverted[proposal.id])}
+          onDecide={(accept, lines, restore) => decide.mutate({
+            id: proposal.id,
+            accept,
+            lines,
+            objectId: proposal.object_id ?? undefined,
+            restore,
+          })}
           onRedo={() => {
             setDraft(copy.agentRedoDraft)
             followRef.current?.focus()
@@ -277,15 +309,15 @@ function ProposalCard({
   proposal,
   defs,
   pending,
+  reverted,
   onDecide,
-  onUndoRefresh,
   onRedo,
 }: {
   proposal: AgentProposal
   defs: Json | undefined
   pending: boolean
-  onDecide: (accept: boolean, lines: DiffLine[], undo?: () => Promise<void>) => void
-  onUndoRefresh: () => void
+  reverted: boolean
+  onDecide: (accept: boolean, lines: DiffLine[], restore?: Json) => void
   onRedo: () => void
 }) {
   const object = useQuery({
@@ -296,10 +328,12 @@ function ProposalCard({
   const current = (object.data?.values as Json | undefined) ?? {}
   const lines = suggestionLines(current, proposal.patch, defs)
   const name = textValue(current.name, uiLanguage) || proposal.object_key || ''
-  const open = proposal.status === 'open'
-  const resolved = !open
-    ? `${proposal.status === 'accepted' ? copy.agentApproved : copy.agentRejectedByYou}${proposal.resolved_at ? ` · ${formatTimestamp(proposal.resolved_at)}` : ''}`
-    : ''
+  const open = proposal.status === 'open' && !reverted
+  const resolved = reverted
+    ? copy.agentReverted
+    : proposal.status !== 'open'
+      ? `${proposal.status === 'accepted' ? copy.agentApproved : copy.agentRejectedByYou}${proposal.resolved_at ? ` · ${formatTimestamp(proposal.resolved_at)}` : ''}`
+      : ''
   return (
     <article
       className="agent-proposal"
@@ -310,7 +344,7 @@ function ProposalCard({
       <header>
         {name ? <strong data-testid="agent-proposal-object">{name}</strong> : null}
         {proposal.object_key ? <span className="muted" data-testid="agent-proposal-key">{proposal.object_key}</span> : null}
-        <span className="meta-chip">{statusLabel(proposal.status)}</span>
+        <span className="meta-chip">{reverted ? copy.agentReverted : statusLabel(proposal.status)}</span>
         {proposal.stale ? <span className="meta-chip" data-testid="agent-proposal-stale">{copy.proposalStale}</span> : null}
       </header>
       <FieldDiff lines={lines} />
@@ -324,19 +358,8 @@ function ProposalCard({
             className="agent-approve"
             data-testid="approve-proposal"
             disabled={proposal.stale || pending}
-            onClick={() => {
-              const undo = proposal.object_id
-                ? async () => {
-                    const latest = await api.get('/v1/objects/{id}', { params: { path: { id: proposal.object_id ?? '' } } })
-                    await api.patch('/v1/objects/{id}', {
-                      params: { path: { id: proposal.object_id ?? '' }, header: { 'If-Match': Number(latest.version ?? 0) } },
-                      body: { values: restoreValues(current, proposal.patch) },
-                    })
-                    onUndoRefresh()
-                  }
-                : undefined
-              onDecide(true, lines, undo)
-            }}
+            title={proposal.stale ? copy.agentStaleApprove : undefined}
+            onClick={() => onDecide(true, lines, proposal.object_id ? restoreValues(current, proposal.patch) : undefined)}
           >
             {copy.agentApprove}
           </Button>

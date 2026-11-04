@@ -4565,7 +4565,15 @@ async fn apply_selected_locked(
             }
         }
         match apply_row(state, identity, proposal_id, row_id, &row, claim).await {
-            Ok(Some(seq)) => accepted.push(json!({ "id": row_id, "seq": seq })),
+            Ok(Some(applied)) => {
+                let mut item = json!({ "id": row_id, "seq": applied.seq });
+                if let Some(version) = applied.version
+                    && let Some(object) = item.as_object_mut()
+                {
+                    object.insert("version".to_owned(), json!(version));
+                }
+                accepted.push(item);
+            }
             Ok(None) => {}
             Err(problem)
                 if matches!(
@@ -4863,6 +4871,18 @@ fn relation_proposal(row: &Value) -> Option<(Uuid, String)> {
     Some((to, kind.to_owned()))
 }
 
+struct AppliedRow {
+    seq: i64,
+    version: Option<u64>,
+}
+
+fn applied_row(receipt: &braian_store::WriteReceipt) -> AppliedRow {
+    AppliedRow {
+        seq: receipt.last_seq,
+        version: receipt.versions.first().map(|(_, version)| *version),
+    }
+}
+
 async fn apply_row(
     state: &AppState,
     identity: &Identity,
@@ -4870,24 +4890,30 @@ async fn apply_row(
     row_id: Uuid,
     row: &Value,
     claim: Uuid,
-) -> Result<Option<i64>, Problem> {
+) -> Result<Option<AppliedRow>, Problem> {
     if crate::model_proposal::is_model_row(row) {
         return crate::model_proposal::apply_row(state, identity, proposal_id, row_id, row, claim)
-            .await;
+            .await
+            .map(|seq| seq.map(|seq| AppliedRow { seq, version: None }));
     }
     if row
         .get("patch")
         .and_then(|patch| patch.get("link"))
         .is_some()
     {
-        return apply_link_row(state, identity, proposal_id, row_id, row, claim).await;
+        return apply_link_row(state, identity, proposal_id, row_id, row, claim)
+            .await
+            .map(|seq| seq.map(|seq| AppliedRow { seq, version: None }));
     }
     if row.get("type_key").and_then(Value::as_str) == Some("assortment") {
-        return apply_assortment_row(state, identity, proposal_id, row_id, row, claim).await;
+        return apply_assortment_row(state, identity, proposal_id, row_id, row, claim)
+            .await
+            .map(|seq| seq.map(|seq| AppliedRow { seq, version: None }));
     }
     if let Some((to, kind)) = relation_proposal(row) {
         return accept_legacy_relation(state, identity, proposal_id, row_id, row, to, &kind, claim)
-            .await;
+            .await
+            .map(|seq| seq.map(|seq| AppliedRow { seq, version: None }));
     }
     let cached = state.models.get(&state.store).await?;
     let patch_body = row.get("patch").cloned().unwrap_or(json!({}));
@@ -4938,17 +4964,18 @@ async fn apply_row(
         else {
             return Ok(None);
         };
+        let applied = applied_row(&receipt);
         state.emit(json!({
             "seq": receipt.last_seq,
             "op": "update",
             "object_id": id.as_uuid(),
-            "version": receipt.versions.first().map(|(_, version)| *version).unwrap_or(0),
+            "version": applied.version.unwrap_or(0),
             "type": type_key,
         }));
         state.index_after_commit(id.as_uuid(), receipt.last_seq);
         crate::agent_runs::note_object_edited(state, identity, id, &values, Some(proposal_id))
             .await;
-        return Ok(Some(receipt.last_seq));
+        return Ok(Some(applied));
     }
     let body = CreateObject {
         id: None,
@@ -4980,7 +5007,7 @@ async fn apply_row(
     if let Some((id, _)) = receipt.versions.first() {
         state.index_after_commit(id.as_uuid(), receipt.last_seq);
     }
-    Ok(Some(receipt.last_seq))
+    Ok(Some(applied_row(&receipt)))
 }
 
 /// `Ok(None)` means another accept already took the row. The status change and the

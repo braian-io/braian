@@ -338,12 +338,14 @@ function Pane({ frame, leaf }: { frame: Frame; leaf: Leaf }) {
         <div className="pane-tab-list" ref={tabList}>
           {leaf.views.map((id) => {
             const title = titleOf(frame.viewList, id)
+            const prompt = frame.viewList.find((view) => view.id === id)?.prompt
             return (
               <Tooltip key={id}>
                 <div
                   data-tab={id}
                   data-view-type={frame.viewList.find((view) => view.id === id)?.type ?? ''}
                   className={id === activeId ? 'pane-tab active' : 'pane-tab'}
+                  title={prompt}
                   onContextMenu={(event) => {
                     if (prefersNativeContextMenu(event.target)) return
                     event.preventDefault()
@@ -354,6 +356,7 @@ function Pane({ frame, leaf }: { frame: Frame; leaf: Leaf }) {
                     <button
                       type="button"
                       className="pane-tab-open"
+                      title={prompt}
                       onClick={() => {
                         if (dragged.current) {
                           dragged.current = false
