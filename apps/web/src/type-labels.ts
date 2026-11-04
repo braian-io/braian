@@ -265,6 +265,12 @@ export function newObjectLabel(singular?: string) {
   return singular ? `New ${singular}` : copy.newObject
 }
 
+/** Dialog title in sentence case: "New product", not "New Product". */
+export function newObjectTitle(singular?: string) {
+  if (!singular) return copy.newObject
+  return `New ${singular.charAt(0).toLowerCase()}${singular.slice(1)}`
+}
+
 export function openObjectLabel(singular?: string) {
   return singular ? `Open ${singular}` : copy.openObject
 }

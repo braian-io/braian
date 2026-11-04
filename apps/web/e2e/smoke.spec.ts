@@ -48,15 +48,16 @@ test('login, edit, search, proposal, rollback and live update', async ({ page })
 
   const table = mainTable(page)
   await table.getByTestId('table-add-row').click()
-  await table.getByTestId('new-number').fill('')
-  await table.getByTestId('create-object').click()
-  await expect(table.getByTestId('validation-error')).toBeVisible()
+  const dialog = page.getByTestId('new-object')
+  await dialog.getByTestId('new-number').fill('')
+  await dialog.getByTestId('create-object').click()
+  await expect(dialog.getByTestId('validation-error')).toBeVisible()
 
   const created = `ART-E2E-${Date.now().toString().slice(-6)}`
-  await table.getByTestId('new-number').fill(created)
-  await table.getByTestId('new-name').fill(created)
-  await table.getByTestId('create-object').click()
-  await expect(table.getByTestId('validation-error')).toHaveCount(0)
+  await dialog.getByTestId('new-number').fill(created)
+  await dialog.getByTestId('new-name').fill(created)
+  await dialog.getByTestId('create-object').click()
+  await expect(page.getByTestId('new-object')).toHaveCount(0)
   await expect(page.getByTestId('activity-log')).toContainText(created)
 
   await page.keyboard.press('Control+k')

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { copy } from './i18n'
@@ -84,11 +84,19 @@ describe('value lists table', () => {
     window.removeEventListener('braian-open-value-list', onEvent)
   })
 
-  it('adds a draft row from plus for Review and save', async () => {
+  it('creates a value list from the plus dialog', async () => {
     render(<Host />)
     await screen.findByTestId('value-lists-table')
     fireEvent.click(screen.getByTestId('table-add-row'))
-    await waitFor(() => expect(screen.getByTestId('review-and-save')).toBeTruthy())
+    const dialog = await screen.findByRole('dialog', { name: copy.newValueList })
+    fireEvent.change(within(dialog).getByRole('textbox', { name: copy.name }), { target: { value: 'Shade' } })
+    fireEvent.click(within(dialog).getByTestId('create-object'))
+    await waitFor(() => expect(stageModel).toHaveBeenCalledWith('model.create_value_list', {
+      key: 'shade',
+      label: 'Shade',
+      language: 'en',
+    }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 
   it('reads options for a list key', () => {

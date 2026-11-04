@@ -32,22 +32,19 @@ const columns: Array<StandardColumn<Row>> = [
 ]
 
 describe('standard editable table', () => {
-  it('adds an inline draft row from plus and focuses the first cell', () => {
-    const onDraft = vi.fn()
+  it('calls onNewRow from the plus control', () => {
+    const onNewRow = vi.fn()
     render(
       <StandardEditableTable
         columns={columns}
         rows={[{ id: '1', name: 'Colour', kind: 'value_list' }]}
-        draftRows={{}}
-        onDraftRowsChange={onDraft}
-        createDraftRow={() => ({ id: 'draft-1', name: '', kind: 'text' })}
+        onNewRow={onNewRow}
         editable
       />,
     )
     fireEvent.click(screen.getByTestId('table-add-row'))
-    expect(onDraft).toHaveBeenCalled()
-    const next = onDraft.mock.calls[0][0] as Record<string, Row>
-    expect(next['draft-1']).toEqual({ id: 'draft-1', name: '', kind: 'text' })
+    expect(onNewRow).toHaveBeenCalledTimes(1)
+    expect(screen.queryByTestId('standard-cell-editor')).toBeNull()
   })
 
   it('shows Review and save when drafts exist and runs the save handler', () => {
@@ -58,7 +55,6 @@ describe('standard editable table', () => {
         rows={[]}
         draftRows={{ 'draft-1': { id: 'draft-1', name: 'New', kind: 'text' } }}
         onDraftRowsChange={() => undefined}
-        createDraftRow={() => ({ id: 'x', name: '', kind: 'text' })}
         onReviewAndSave={onReview}
         editable
       />,
@@ -76,7 +72,6 @@ describe('standard editable table', () => {
         rows={[{ id: '1', name: 'Colour', kind: 'value_list' }]}
         draftRows={{}}
         onDraftRowsChange={onDraft}
-        createDraftRow={() => ({ id: 'x', name: '', kind: 'text' })}
         editable
       />,
     )
@@ -95,7 +90,6 @@ describe('standard editable table', () => {
         rows={[{ id: '1', name: 'Colour', kind: 'value_list' }]}
         draftRows={patched}
         onDraftRowsChange={onDraft}
-        createDraftRow={() => ({ id: 'x', name: '', kind: 'text' })}
         editable
       />,
     )
@@ -180,73 +174,6 @@ describe('standard editable table', () => {
     )
     fireEvent.click(screen.getByTestId('standard-grid-row'))
     expect(onActivate).toHaveBeenCalledWith(expect.objectContaining({ id: '1' }))
-  })
-
-  it('cancels a pending create row with Escape after the cell editor closes', () => {
-    const onDraft = vi.fn()
-    const { rerender } = render(
-      <StandardEditableTable
-        columns={columns}
-        rows={[{ id: '1', name: 'Colour', kind: 'value_list' }]}
-        draftRows={{}}
-        onDraftRowsChange={onDraft}
-        createDraftRow={() => ({ id: 'draft-1', name: '', kind: 'text' })}
-        editable
-      />,
-    )
-    fireEvent.click(screen.getByTestId('table-add-row'))
-    const draft = onDraft.mock.calls[0][0] as Record<string, Row>
-    rerender(
-      <StandardEditableTable
-        columns={columns}
-        rows={[{ id: '1', name: 'Colour', kind: 'value_list' }]}
-        draftRows={draft}
-        onDraftRowsChange={onDraft}
-        createDraftRow={() => ({ id: 'draft-1', name: '', kind: 'text' })}
-        editable
-      />,
-    )
-    const draftRow = screen.getAllByTestId('standard-grid-row').find((row) => row.getAttribute('data-draft') === 'true')!
-    fireEvent.keyDown(draftRow, { key: 'Enter' })
-    const editor = screen.getByTestId('standard-cell-editor')
-    fireEvent.change(editor, { target: { value: 'New shade' } })
-    fireEvent.keyDown(editor, { key: 'Escape' })
-    expect(screen.queryByTestId('standard-cell-editor')).toBeNull()
-    fireEvent.keyDown(draftRow, { key: 'Escape' })
-    expect(onDraft).toHaveBeenLastCalledWith({})
-  })
-
-  it('cancels a pending create from the toolbar Cancel control', () => {
-    const onDraft = vi.fn()
-    render(
-      <StandardEditableTable
-        columns={columns}
-        rows={[]}
-        draftRows={{ 'draft-1': { id: 'draft-1', name: 'X', kind: 'text' } }}
-        onDraftRowsChange={onDraft}
-        createDraftRow={() => ({ id: 'draft-1', name: '', kind: 'text' })}
-        editable
-      />,
-    )
-    fireEvent.click(screen.getByTestId('inline-create-cancel'))
-    expect(onDraft).toHaveBeenCalledWith({})
-  })
-
-  it('focuses the existing create row when plus is used twice', () => {
-    const onDraft = vi.fn()
-    render(
-      <StandardEditableTable
-        columns={columns}
-        rows={[]}
-        draftRows={{ 'draft-1': { id: 'draft-1', name: '', kind: 'text' } }}
-        onDraftRowsChange={onDraft}
-        createDraftRow={() => ({ id: 'draft-2', name: '', kind: 'text' })}
-        editable
-      />,
-    )
-    fireEvent.click(screen.getByTestId('table-add-row'))
-    expect(onDraft).not.toHaveBeenCalled()
-    expect(screen.getAllByTestId('standard-grid-row')).toHaveLength(1)
   })
 
   it('keeps an internal active row when activeRowId is omitted', () => {

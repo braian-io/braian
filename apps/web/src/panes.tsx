@@ -3,9 +3,10 @@ import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/rea
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { History as HistoryIcon } from 'lucide-react'
 import { api, catalogName, failureLines, freeObject, jsonRecord, recordNumber, recordTitle, searchQuery, textValue, type Json } from './api'
-import { reportWriteError, writeErrorMessage } from './write-error'
+import { messageFromErrorBody, reportWriteError, writeErrorMessage } from './write-error'
 import { catalogKeyOf, inCatalog, workspaceCatalogRef } from './catalog-scope'
 import { useCatalogIdToKey } from './catalog-list'
+import { CreateDialog, requireText } from './create-dialog'
 import { newObjectBody } from './new-object'
 import { attributeByKey, indexSort, readIndexed, sortKeyForColumnId } from './index-fields'
 import { cellEditShouldPatch, cellEditValuesBody, isEditingCell, isEditableColumn, resolveCellEditInitial, valueListKeyForColumn, columnBaseKey } from './cell-edit'
@@ -21,7 +22,7 @@ import { assortmentDisplayName, jobTypeDisplayTitle } from './demo-labels'
 import { onFlash } from './flash'
 import { GraphMap } from './graph-map'
 import { exportPayload, runExport, saveWorkbook } from './export'
-import { diffLines, historyWho, isCreate, proposedValues, relativeTime, sourceLabel, suggestionLines, valuesFromKept } from './field-diff'
+import { diffLines, historyWho, isCreate, proposedValues, relativeTime, sourceLabel, suggestionLines, valuesFromKept, type DiffLine } from './field-diff'
 import { formatCount, formatMeasure, formatTimestamp } from './format'
 import { PathMenu, type ListedPath } from './path-picker'
 import { publishFieldsHost } from './fields-host'
@@ -61,11 +62,13 @@ import {
   emptyGraph,
   isGenericObjectTitle,
   newObjectLabel,
+  newObjectTitle,
   singularOf,
   typeNames,
   typeOfView,
 } from './type-labels'
 import { publishProposal } from './proposal-bus'
+import { acceptPendingLine, pendingLines, pendingRowsForObject, rejectPendingRow } from './proposal-focus'
 import { ImportWorkspace } from './import/view'
 import { rollbackTargetSeq } from './history-rollback'
 import { StateNote } from './states'
@@ -190,6 +193,8 @@ export function ObjectTable({
   const [prefsLoadFailed, setPrefsLoadFailed] = useState(false)
   // Single current row. Click and arrows both write this; the detail object follows it.
   const [active, setActive] = useState(-1)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [pendingSelectId, setPendingSelectId] = useState<string | null>(null)
   // The active cell's column, by key. Left and Right move it; the keyboard menu acts on it.
   const [activeColumn, setActiveColumn] = useState('')
   const [moving, setMoving] = useState<string | null>(null)
@@ -247,6 +252,7 @@ export function ObjectTable({
 
   const virtualizerRef = useRef<{ scrollToIndex: (index: number) => void }>({ scrollToIndex: () => {} })
   const locateRef = useRef<(id: string) => number>(() => -1)
+  const selectTries = useRef(0)
   const selectMode = useRef<{ extend: boolean; anchor: number } | null>(null)
   useEffect(() => onFlash(setFlashId), [])
 
@@ -627,6 +633,31 @@ export function ObjectTable({
 
   rowsRef.current = byIndex
   const knownStamp = [...byIndex.values()].map((row) => `${row.id}:${row.key}:${row.name}:${row.type}`).join('|')
+  const [selectTick, setSelectTick] = useState(0)
+  // Search is a few seconds behind the write. Keep asking until the new row is on the page.
+  useEffect(() => {
+    if (!pendingSelectId) {
+      selectTries.current = 0
+      return
+    }
+    const index = locateRef.current(pendingSelectId)
+    if (index >= 0) {
+      selectMode.current = null
+      setActive(index)
+      setSelected([pendingSelectId])
+      session.setObjectId(pendingSelectId)
+      setPendingSelectId(null)
+      virtualizerRef.current.scrollToIndex(index)
+      return
+    }
+    if (selectTries.current >= 40) return
+    const timer = setTimeout(() => {
+      selectTries.current += 1
+      void queryClient.invalidateQueries({ queryKey: ['objects'] })
+      setSelectTick((tick) => tick + 1)
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [pendingSelectId, knownStamp, selectTick, session, queryClient])
   const activeStamp = activeRow ? `${activeRow.id}:${activeRow.key}:${activeRow.name}:${activeRow.type}` : ''
   // Rows picked under an old peer filter are out of scope once the source
   // changes. Do not publish them, and drop the local pick so the table cannot
@@ -1016,7 +1047,8 @@ export function ObjectTable({
         window.dispatchEvent(new CustomEvent('braian-fields-palette', { detail: { editColumnId: columnId || null } }))
       }),
       registerCommandRunner('object:new', () => {
-        window.dispatchEvent(new Event('braian-new-object'))
+        if (document.querySelector('[data-testid="command-palette"], [data-testid="fields-mode"]')) return
+        setCreateOpen(true)
       }),
     ]
     return () => stops.forEach((stop) => stop())
@@ -1558,7 +1590,7 @@ export function ObjectTable({
     <StandardTableChrome
       testId="object-table"
       newRowLabel={newRowLabel}
-      onNewRow={() => window.dispatchEvent(new Event('braian-new-object'))}
+      onNewRow={() => setCreateOpen(true)}
       onSelectFields={() => window.dispatchEvent(new CustomEvent('braian-fields-palette', { detail: {} }))}
       selectFieldsLabel={copy.selectFields}
       rowCount={prefsReady && probe.isFetched ? (groupBy ? groups.reduce((sum, group) => sum + group.found, 0) : found) : undefined}
@@ -1575,7 +1607,20 @@ export function ObjectTable({
           {copy.columnPrefsLoadError}
         </p>
       ) : null}
-      <NewObject session={session} typeKey={typeKey} singular={bound?.singular} trigger="event" />
+      <NewObject
+        open={createOpen}
+        session={session}
+        typeKey={typeKey}
+        singular={bound?.singular}
+        onOpenChange={setCreateOpen}
+        onCreated={(created) => {
+          session.setObjectId(created.id)
+          setSelected([created.id])
+          setFilter(created.number)
+          setQueryText(created.number)
+          setPendingSelectId(created.id)
+        }}
+      />
       <div
         className="toolbar-actions standard-table-filters"
         data-testid="standard-table-filters"
@@ -2151,114 +2196,89 @@ function TableFilters({
 }
 
 function NewObject({
+  open,
   session,
   typeKey,
   singular,
-  trigger = 'button',
+  onOpenChange,
+  onCreated,
 }: {
+  open: boolean
   session: PanesSession
   typeKey?: string
   singular?: string
-  /** `event` = only the shared plus / command opens the form (no inline button). */
-  trigger?: 'button' | 'event'
+  onOpenChange: (open: boolean) => void
+  onCreated: (created: { id: string; number: string }) => void
 }) {
-  const [open, setOpen] = useState(false)
   const [number, setNumber] = useState('')
   const [name, setName] = useState('')
-  const [error, setError] = useState('')
-  const openerRef = useRef<HTMLElement | null>(null)
-  const numberRef = useRef<HTMLInputElement | null>(null)
+  const [chosenType, setChosenType] = useState(typeKey || '')
   const queryClient = useQueryClient()
   const defs = useQuery({ queryKey: ['definitions'], queryFn: () => api.get('/v1/definitions') })
-  const closeForm = () => {
-    setOpen(false)
-    setNumber('')
-    setName('')
-    setError('')
-    const target = openerRef.current
-    openerRef.current = null
-    if (target?.isConnected) queueMicrotask(() => target.focus())
-  }
-  const openForm = () => {
-    // Do not open while the command / fields palette has focus (key leaks).
-    if (document.querySelector('[data-testid="command-palette"], [data-testid="fields-mode"]')) return
-    if (open) {
-      numberRef.current?.focus()
+  const choices = useMemo(
+    () => typeNames(defs.data, uiLanguage).filter((item) => item.kind !== 'link'),
+    [defs.data],
+  )
+  const showType = !typeKey && choices.length > 1
+  const wasOpen = useRef(false)
+  useEffect(() => {
+    if (!open) {
+      wasOpen.current = false
       return
     }
-    openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    setError('')
-    setOpen(true)
-  }
-  useEffect(() => {
-    const onOpen = () => openForm()
-    window.addEventListener('braian-new-object', onOpen)
-    return () => window.removeEventListener('braian-new-object', onOpen)
-    // openForm closes over `open`; refresh the listener when it toggles.
-  }, [open])
-  const named = typeNames(defs.data, uiLanguage).find((item) => item.key === (typeKey || 'product'))
-  if (!open) {
-    if (trigger === 'event') return null
-    return (
-      <button
-        type="button"
-        onClick={() => {
-          openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-          setError('')
-          setOpen(true)
-        }}
-      >
-        {newObjectLabel(singular)}
-      </button>
-    )
-  }
+    if (!wasOpen.current) {
+      setNumber('')
+      setName('')
+      setChosenType(typeKey || choices[0]?.key || '')
+      wasOpen.current = true
+      return
+    }
+    if (!typeKey && !chosenType && choices[0]) setChosenType(choices[0].key)
+  }, [open, typeKey, choices, chosenType])
+  const named = choices.find((item) => item.key === (typeKey || chosenType))
+  const fields = [
+    { id: 'number', label: copy.number, value: number, testId: 'new-number', autoFocus: true },
+    { id: 'name', label: copy.name, value: name, testId: 'new-name' },
+    ...(showType ? [{
+      id: 'type',
+      label: copy.type,
+      value: chosenType,
+      testId: 'new-type',
+      options: choices.map((item) => ({ value: item.key, label: item.singular || item.key })),
+    }] : []),
+  ]
   return (
-    <form
-      className="create-row"
-      data-testid="new-object"
-      onKeyDown={(event) => {
-        if (event.key === 'Escape') {
-          event.preventDefault()
-          event.stopPropagation()
-          closeForm()
-        }
+    <CreateDialog
+      open={open}
+      title={newObjectTitle(singular)}
+      description={copy.createObjectHint}
+      dialogTestId="new-object"
+      fields={fields}
+      onField={(id, value) => {
+        if (id === 'number') setNumber(value)
+        else if (id === 'name') setName(value)
+        else setChosenType(value)
       }}
-      onSubmit={(event) => {
-        event.preventDefault()
-        if (!number.trim() || !name.trim()) {
-          setError(copy.validation)
-          return
-        }
-        void api.post('/v1/objects', { body: newObjectBody({
-            typeKey: typeKey || 'product',
-            number,
-            name,
-            group: session.group,
-            structures: named?.structures,
-          }) })
-          .then((created) => {
-            setError('')
-            setOpen(false)
-            setNumber('')
-            setName('')
-            openerRef.current = null
-            if ('id' in created) session.setObjectId(String(created.id))
-            session.push(`${copy.saved} ${number}`)
-            void queryClient.invalidateQueries({ queryKey: ['objects'] })
-            void queryClient.invalidateQueries({ queryKey: ['path-values'] })
-          })
-          .catch((reason: unknown) => {
-            const message = writeErrorMessage(reason)
-            if (message) setError(message)
-          })
+      onClose={() => onOpenChange(false)}
+      onSubmit={async () => {
+        const nextNumber = requireText(number)
+        const nextName = requireText(name)
+        const nextType = typeKey || chosenType
+        if (!nextType) throw new Error(copy.validation)
+        const created = await api.post('/v1/objects', { body: newObjectBody({
+          typeKey: nextType,
+          number: nextNumber,
+          name: nextName,
+          group: session.group,
+          structures: named?.structures,
+        }) })
+        if (!('id' in created)) throw new Error(copy.validation)
+        onCreated({ id: String(created.id), number: nextNumber })
+        session.push(`${copy.saved} ${nextNumber}`)
+        void queryClient.invalidateQueries({ queryKey: ['objects'] })
+        void queryClient.invalidateQueries({ queryKey: ['path-values'] })
       }}
-    >
-      <input ref={numberRef} data-testid="new-number" value={number} onChange={(event) => setNumber(event.target.value)} placeholder={copy.numberPlaceholder} />
-      <input data-testid="new-name" value={name} onChange={(event) => setName(event.target.value)} placeholder={copy.namePlaceholder} aria-label={copy.namePlaceholder} />
-      <button type="button" data-testid="inline-create-cancel" onClick={closeForm}>{copy.cancel}</button>
-      <button className="primary" type="submit" data-testid="create-object">{copy.save}</button>
-      {error ? <span className="error" data-testid="validation-error">{error}</span> : null}
-    </form>
+    />
   )
 }
 
@@ -2334,17 +2354,56 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   })
   const defs = useQuery({ queryKey: ['definitions'], queryFn: () => api.get('/v1/definitions') })
   const suggestions = useQuery({
-    queryKey: ['proposals'],
-    queryFn: () => api.get('/v1/proposals'),
+    queryKey: ['proposals', 'detail', session.objectId],
+    queryFn: () => api.get('/v1/proposals', { params: { query: { status: 'open', limit: 200 } } }),
+    enabled: Boolean(session.objectId),
+  })
+  const pendingProposalIds = [
+    ...(session.proposalId ? [session.proposalId] : []),
+    ...(((suggestions.data?.proposals as Json[] | undefined) ?? [])
+      .filter((item) => String(item.status ?? '') === 'open' && !item.session_id)
+      .map((item) => String(item.id))),
+  ].filter((id, index, all) => Boolean(id) && all.indexOf(id) === index)
+  const pendingProposals = useQueries({
+    queries: pendingProposalIds.map((id) => ({
+      queryKey: ['proposal', id],
+      queryFn: () => api.get('/v1/proposals/{id}', { params: { path: { id } } }),
+    })),
   })
   const [draft, setDraft] = useState<Json>({})
   const [error, setError] = useState('')
+  const [pendingError, setPendingError] = useState('')
   const [flashId, setFlashId] = useState('')
   useEffect(() => onFlash(setFlashId), [])
   useEffect(() => {
     setDraft({})
     setError('')
-  }, [session.objectId])
+    setPendingError('')
+  }, [session.objectId, session.proposalId])
+  const acceptPending = useMutation({
+    mutationFn: ({ proposalId, body }: { proposalId: string; body: { rows: string[]; patches: Record<string, Json> } }) =>
+      api.post('/v1/proposals/{id}/accept', { params: { path: { id: proposalId } }, body }),
+    onSuccess: (result, variables) => {
+      const failed = failureLines(result)
+      if (failed.length > 0) {
+        const message = messageFromErrorBody(failed[0]) || copy.validation
+        setPendingError(message)
+        reportWriteError(new Error(message))
+        return
+      }
+      setPendingError('')
+      session.push(copy.saved)
+      void queryClient.invalidateQueries({ queryKey: ['proposal', variables.proposalId] })
+      void queryClient.invalidateQueries({ queryKey: ['proposals'] })
+      void queryClient.invalidateQueries({ queryKey: ['object', session.objectId] })
+      void queryClient.invalidateQueries({ queryKey: ['objects'] })
+      void queryClient.invalidateQueries({ queryKey: ['path-values'] })
+      void queryClient.invalidateQueries({ queryKey: ['history'] })
+    },
+    onError: (reason: unknown) => {
+      setPendingError(reportWriteError(reason) ?? copy.validation)
+    },
+  })
   useEffect(() => {
     if (!session.objectId || !object.data) return
     const stored = (object.data.values as Json) ?? {}
@@ -2405,6 +2464,54 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   const valueKeys = [...new Set([...Object.keys(values), ...fileKeys])]
   const owners = provenance.data?.owners ?? {}
   const origin = provenance.data?.origin
+  const pendingByField = new Map<string, Array<{ proposalId: string; row: Json; line: DiffLine; lines: DiffLine[] }>>()
+  for (const [index, proposalId] of pendingProposalIds.entries()) {
+    for (const row of pendingRowsForObject(pendingProposals[index]?.data as Json | undefined, session.objectId)) {
+      const lines = pendingLines(row, values, defs.data)
+      for (const line of lines) {
+        if (!line.field) continue
+        const entries = pendingByField.get(line.field) ?? []
+        entries.push({ proposalId, row, line, lines })
+        pendingByField.set(line.field, entries)
+      }
+    }
+  }
+  const renderPending = (key: string) => {
+    const entries = pendingByField.get(key)
+    if (!entries || entries.length === 0) return null
+    return entries.map(({ proposalId, row, line, lines }) => (
+      <div
+        key={`${String(row.id)}:${line.id}`}
+        className="pending-field"
+        data-testid="pending-field"
+        data-field={key}
+        data-line={line.id}
+      >
+        <span className="pending-chip" data-testid="pending-chip">{copy.pending}</span>
+        <span className="pending-value" data-testid="pending-value">
+          {line.language ? `${line.language}: ` : ''}{line.after}
+        </span>
+        <button
+          type="button"
+          data-testid="accept-pending"
+          data-line={line.id}
+          disabled={acceptPending.isPending}
+          onClick={() => acceptPending.mutate({ proposalId, body: acceptPendingLine(line, row, lines, values) })}
+        >
+          {copy.acceptField}
+        </button>
+        <button
+          type="button"
+          data-testid="reject-pending"
+          data-line={line.id}
+          disabled={acceptPending.isPending}
+          onClick={() => acceptPending.mutate({ proposalId, body: rejectPendingRow(row) })}
+        >
+          {copy.rejectField}
+        </button>
+      </div>
+    ))
+  }
   const renderField = (key: string) => {
     const attribute = attributes.find((item) => item.key === key)
     const kind = (attribute?.kind as Json) ?? {}
@@ -2427,6 +2534,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
             onChange={(next) => setDraft((state) => ({ ...state, [key]: next }))}
           />
         </div>
+        {renderPending(key)}
         {owner && origin && typeof origin === 'object' ? (
           <p className="hint" data-testid="field-origin">
             {copy.sourceObject} {String((origin as Json).source_key ?? '')}
@@ -2501,6 +2609,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
             {section.keys.map((key) => renderField(key))}
           </section>
         ))}
+        {pendingError ? <p className="error" data-testid="pending-error">{pendingError}</p> : null}
         {error ? <p className="error" data-testid="detail-error">{error}</p> : null}
       </div>
       {dirty ? (

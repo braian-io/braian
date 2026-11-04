@@ -9,6 +9,7 @@ import {
   emptyDetail,
   migrateSavedWorkspace,
   pluralOf,
+  newObjectTitle,
   singularOf,
   typeNames,
   typeViewPaletteItems,
@@ -33,6 +34,12 @@ const defs: Json = {
 }
 
 describe('type labels', () => {
+  it('names a new object in sentence case', () => {
+    expect(newObjectTitle('Product')).toBe('New product')
+    expect(newObjectTitle('Article')).toBe('New article')
+    expect(newObjectTitle()).toBe('New object')
+  })
+
   it('derives a plural and falls back to the singular label', () => {
     expect(defaultPlural('Product')).toBe('Products')
     expect(defaultPlural('Article')).toBe('Articles')
