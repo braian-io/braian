@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Check } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, type Json } from './api'
 import { copy } from './i18n'
-import { linkCountNoun, type LinkHit } from './link-choices'
+import { linkCountNoun, linkEndLabel, type LinkHit } from './link-choices'
 import { LinkCreateDialog, type LinkEndpoint } from './link-create-dialog'
 import { dispatchLinkDrop, type LinkDropDetail } from './link-drag'
 import { LinkObjectPicker } from './link-object-picker'
-import { type LinkSubmitResult, submitLinks } from './link-write'
+import { type CreatedLink, type LinkSubmitResult, type LinkWrite, submitLinks, undoCreatedLinks } from './link-write'
 import { reportWriteError } from './write-error'
 
 export { dispatchLinkDrop }
@@ -43,10 +44,31 @@ export function LinkDropHost() {
     void queryClient.invalidateQueries({ queryKey: ['object'] })
     void queryClient.invalidateQueries({ queryKey: ['objects'] })
   }
-  const undo = (ids: string[]) => {
-    void Promise.all(ids.filter(Boolean).map((id) => api.delete('/v1/links/{id}', { params: { path: { id } } })))
-      .then(refresh)
-      .catch((reason: unknown) => { reportWriteError(reason) })
+  const undo = (links: CreatedLink[]) => {
+    void undoCreatedLinks(links).then((result) => {
+      refresh()
+      if (result.kept.length > 0) {
+        const names = result.kept.map((link) => link.label).filter(Boolean).join(', ')
+        toast(copy.undoKept
+          .replace('{done}', String(result.undone.length))
+          .replace('{total}', String(links.length))
+          .replace('{name}', names || result.kept.map((link) => link.id).join(', ')), { duration: 8000 })
+      }
+      if (result.failed.length > 0) reportWriteError(new Error(result.failed[0]?.message || copy.validation))
+    })
+  }
+  const noteSaved = (result: LinkSubmitResult, detail: LinkDropDetail) => {
+    const saved = result.created.map((item) => ({ ...item, label: peerLabel(detail, item.body) }))
+    if (saved.length === 0) return
+    refresh()
+    const message = result.outcome === 'proposed'
+      ? copy.linkedFiled.replace('{linked}', String(saved.length)).replace('{filed}', String(result.filed))
+      : linkedMessage(detail.source, detail.targets, saved.length, defs.data)
+    toast(message, {
+      duration: 8000,
+      icon: <Check size={16} />,
+      action: { label: copy.undo, onClick: () => undo(saved) },
+    })
   }
   if (picking && !drop) {
     const exclude = picking.map((item) => item.id)
@@ -82,20 +104,20 @@ export function LinkDropHost() {
           to_id: request.toId,
           values: request.values,
         })))
-        if (result.outcome === 'created') {
-          refresh()
-          const ids = result.created.map((item) => item.id).filter(Boolean)
-          toast(linkedMessage(drop.source, drop.targets, requests.length, defs.data), {
-            duration: 8000,
-            action: ids.length > 0 ? { label: copy.undo, onClick: () => undo(ids) } : undefined,
-          })
-        } else if (result.outcome === 'partial' && result.created.length > 0) {
-          refresh()
+        if (result.outcome === 'created' || result.outcome === 'partial' || result.outcome === 'proposed') {
+          noteSaved(result, drop)
         }
         return result
       }}
     />
   )
+}
+
+function peerLabel(detail: LinkDropDetail, body: LinkWrite) {
+  const peerId = body.from_id === detail.source.id ? body.to_id : body.from_id
+  const peer = detail.targets.find((item) => item.id === peerId)
+    ?? (detail.source.id === peerId ? detail.source : undefined)
+  return peer ? (peer.key || linkEndLabel(peer)) : peerId
 }
 
 function endpointFromHit(hit: LinkHit): LinkEndpoint {

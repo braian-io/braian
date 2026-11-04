@@ -568,9 +568,22 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
   background: var(--accent-dim);
   box-shadow: inset 3px 0 0 var(--accent);
 }
+.field-card.link-drop-deny {
+  opacity: 0.45;
+}
 .grid .row { user-select: none; }
-.link-ends { margin: 0; color: var(--text); font-size: 13px; line-height: 18px; }
-.link-type-line { margin: 0; color: var(--text); font-size: 13px; font-weight: 600; }
+.link-ends {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  margin: 0;
+  color: var(--accent-hover);
+  font-size: 13px;
+  line-height: 18px;
+}
+.link-ends[data-many='true'] { flex-direction: column; align-items: flex-start; }
+.link-end { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.link-type-line { margin: 0; color: var(--accent-hover); font-size: 13px; font-weight: 600; }
 select.link-type-line { width: 100%; font-weight: 600; }
 @media (prefers-reduced-motion: reduce) {
   .dock-preview, .split-divider > span { transition: none; }
@@ -1710,6 +1723,13 @@ kbd {
   border-radius: var(--r-lg) !important;
   box-shadow: var(--shadow-md), var(--inset) !important;
   font-family: var(--font-sans) !important;
+}
+.braian-toast [data-icon],
+.braian-toast [data-button] {
+  color: var(--accent) !important;
+}
+.braian-toast [data-button] {
+  background: transparent !important;
 }
 .flash { animation: flash 600ms var(--ease); }
 @keyframes flash {

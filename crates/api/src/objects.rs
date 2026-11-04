@@ -977,7 +977,7 @@ fn includes_inapplicable_text(include: Option<&str>) -> bool {
     include.is_some_and(|value| value.split(',').any(|item| item.trim() == "inapplicable"))
 }
 
-async fn conflict_problem(
+pub(crate) async fn conflict_problem(
     state: &AppState,
     cached: &CachedModel,
     current_version: u64,

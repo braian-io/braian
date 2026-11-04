@@ -102,6 +102,7 @@ test('a drop with no allowed link type refuses during the drag', async ({ page }
   const section = page.getByTestId('link-section').first()
   await dragOver(page, row(suppliers, 'SUP-COAST'), section)
   await expect(section).not.toHaveAttribute('data-link-drop', 'true')
+  await expect(section).toHaveAttribute('data-link-deny', 'true')
   await expect(page.getByTestId('link-drag-ghost')).toHaveText("Suppliers can't link to Suppliers")
   await shot(page, 'link-drag-over-invalid-dark.png')
   await page.mouse.up()
@@ -143,6 +144,7 @@ test('a partial multi-drop names the failure and does not create the saved link 
   await page.getByTestId('link-create-confirm').click()
   await expect(dialog.getByTestId('link-create-error')).toContainText('Linked 1 of 2')
   await expect(dialog.getByTestId('link-create-error')).toContainText('allows one link')
+  await expect(page.locator('[data-sonner-toast]').filter({ hasText: 'Linked 1 article' })).toBeVisible()
   const firstSaved = posted[0] ?? ''
   const failed = posted[1] ?? ''
   expect(firstSaved).not.toBe('')
@@ -152,6 +154,43 @@ test('a partial multi-drop names the failure and does not create the saved link 
   expect(posted.filter((id) => id === firstSaved)).toHaveLength(1)
   expect(posted[2]).toBe(failed)
   await expect(dialog).toBeHidden()
+})
+
+test('undo keeps a link that changed after it was created', async ({ page }) => {
+  await openArticles(page)
+  await unlink(page, mainTable(page, 'Articles'), 'ART-OAT-1L', 'product_articles')
+  const article = row(mainTable(page, 'Articles'), 'ART-OAT-1L')
+  const product = row(await allProducts(page), 'PROD-COFFEE')
+  await article.dragTo(product)
+  const dialog = page.getByTestId('link-create-dialog')
+  await expect(dialog).toBeVisible()
+  await page.getByTestId('link-create-confirm').click()
+  await expect(dialog).toBeHidden()
+  const notice = page.locator('[data-sonner-toast]').filter({ hasText: 'Linked 1 article' })
+  await expect(notice).toBeVisible()
+  const productId = ((await product.getAttribute('id')) ?? '').replace(/^object-row-/, '')
+  const loaded = await page.request.get(`/v1/objects/${productId}`)
+  expect(loaded.ok()).toBeTruthy()
+  const sides = ((await loaded.json()) as {
+    links?: Array<{ link_type?: string; links?: Array<{ id?: string; peer_key?: string }> }>
+  }).links ?? []
+  const linkId = sides.flatMap((side) => side.link_type === 'product_articles' ? side.links ?? [] : [])
+    .find((link) => link.peer_key === 'ART-OAT-1L')?.id
+  expect(linkId).toBeTruthy()
+  const link = await page.request.get(`/v1/objects/${linkId}`)
+  expect(link.ok()).toBeTruthy()
+  const version = Number(((await link.json()) as { version?: number }).version ?? 0)
+  const patched = await page.request.patch(`/v1/links/${linkId}`, {
+    headers: { 'If-Match': String(version) },
+    data: { values: { sort_order: { value: '9' } } },
+  })
+  expect(patched.ok(), `patch link ${patched.status()} ${await patched.text()}`).toBeTruthy()
+  await notice.getByRole('button', { name: 'Undo' }).click()
+  const kept = page.locator('[data-sonner-toast]').filter({ hasText: 'changed since, kept' })
+  await expect(kept).toContainText('Undid 0 of 1')
+  await expect(kept).toContainText('ART-OAT-1L')
+  await product.click()
+  await expect(page.getByTestId('link-row').filter({ hasText: 'ART-OAT-1L' })).toBeVisible()
 })
 
 test('Escape during a drag clears the preview and the drop highlight', async ({ page }) => {
@@ -205,7 +244,7 @@ test('the light theme shows the drag highlight, dialogs, and toast', async ({ pa
   const product = row(await allProducts(page), 'PROD-CHEDDAR')
   await dragOver(page, article, product)
   await expect(product).toHaveAttribute('data-link-drop', 'true')
-  await expect(page.getByTestId('link-drag-ghost')).toContainText('Link ')
+  await expect(page.getByTestId('link-drag-ghost')).toContainText('400 g')
   await shot(page, 'link-drag-over-light.png')
   await page.mouse.up()
   await expect(page.getByTestId('link-ends')).toContainText('PROD-CHEDDAR')
@@ -311,6 +350,10 @@ async function dragOver(page: Page, source: Locator, target: Locator) {
 async function visiblePoint(locator: Locator) {
   const point = await locator.evaluate((el) => {
     const box = el.getBoundingClientRect()
+    const midX = Math.min(box.left + box.width / 2, window.innerWidth - 2)
+    const midY = Math.min(box.top + box.height / 2, window.innerHeight - 2)
+    const mid = document.elementFromPoint(midX, midY)
+    if (mid && el.contains(mid)) return { x: midX, y: midY }
     const right = Math.min(box.right - 2, window.innerWidth - 2)
     const bottom = Math.min(box.bottom - 2, window.innerHeight - 2)
     for (let y = box.top + 4; y <= bottom; y += 6) {

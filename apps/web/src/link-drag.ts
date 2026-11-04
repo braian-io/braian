@@ -1,6 +1,6 @@
 import type { Json } from './api'
 import { copy } from './i18n'
-import { linkCountNoun, type LinkDirection } from './link-choices'
+import { linkCountNoun, linkDragDenial, type LinkDirection } from './link-choices'
 import type { LinkEndpoint } from './link-create-dialog'
 
 export const linkDragMime = 'application/x-braian-objects'
@@ -56,6 +56,25 @@ export function linkDragContains(id: string) {
 
 export function linkDragPayload(): LinkEndpoint[] {
   return payload
+}
+
+export type LinkDropDecision =
+  | { accept: true; hint: null }
+  | { accept: false; reason: 'loading' | 'denied'; hint: string }
+
+/** While definitions are still loading, nothing is a valid drop. */
+export function linkDropDecision(input: {
+  loading: boolean
+  defs?: Json
+  anchorType: string
+  draggedTypes: string[]
+}): LinkDropDecision {
+  if (input.loading && !input.defs) {
+    return { accept: false, reason: 'loading', hint: copy.linkTypesLoading }
+  }
+  const deny = linkDragDenial(input.defs, input.anchorType, input.draggedTypes)
+  if (deny) return { accept: false, reason: 'denied', hint: deny }
+  return { accept: true, hint: null }
 }
 
 /** `Link Coast & Meadow`, or `Link 3 articles` when several rows share a type. */
@@ -136,7 +155,36 @@ function placeGhost(x: number, y: number) {
     document.body.appendChild(ghost)
   }
   ghost.textContent = hint || label
-  // Below and to the right, so the preview does not cover the row or section heading under the pointer.
-  ghost.style.left = `${x + 18}px`
-  ghost.style.top = `${y + 36}px`
+  const spot = ghostSpot(x, y, ghost.offsetWidth || 180, ghost.offsetHeight || 28)
+  ghost.style.left = `${spot.left}px`
+  ghost.style.top = `${spot.top}px`
+}
+
+/** Below-right of the pointer, outside the row under it so the preview does not cover a drop target. */
+function ghostSpot(x: number, y: number, width: number, height: number) {
+  const anchor = document.elementFromPoint(x, y)?.closest('[data-testid="object-row"], [data-testid="link-section"]')
+  const box = anchor instanceof HTMLElement ? anchor.getBoundingClientRect() : null
+  const margin = 8
+  if (box && anchor?.getAttribute('data-testid') === 'object-row') {
+    const beside = box.right + margin
+    if (beside + width <= window.innerWidth - margin) {
+      return { left: beside, top: Math.max(margin, box.top) }
+    }
+    return {
+      left: Math.max(margin, Math.min(box.right - width - margin, window.innerWidth - width - margin)),
+      top: Math.min(window.innerHeight - height - margin, box.bottom + margin),
+    }
+  }
+  if (box) {
+    let left = box.left + margin
+    if (left + width > window.innerWidth - margin) left = window.innerWidth - margin - width
+    return {
+      left: Math.max(margin, left),
+      top: Math.min(window.innerHeight - height - margin, box.bottom + margin),
+    }
+  }
+  return {
+    left: Math.max(margin, Math.min(x + 24, window.innerWidth - width - margin)),
+    top: Math.max(margin, Math.min(y + 44, window.innerHeight - height - margin)),
+  }
 }

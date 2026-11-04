@@ -1,4 +1,4 @@
-import { api, jsonRecord, type Json } from './api'
+import { ApiError, api, jsonRecord, type Json } from './api'
 import { aiMode } from './ai-mode'
 import { copy } from './i18n'
 import { publishProposal } from './proposal-bus'
@@ -14,12 +14,22 @@ export type LinkWrite = {
 export type CreatedLink = {
   body: LinkWrite
   id: string
+  /** Version from the create response. Undo sends it as If-Match. */
+  version: number
+  /** Peer key or name, used when undo has to say which link was kept. */
+  label: string
 }
 
 export type LinkSubmitResult =
   | { outcome: 'created'; created: CreatedLink[] }
-  | { outcome: 'proposed'; created: CreatedLink[] }
+  | { outcome: 'proposed'; created: CreatedLink[]; filed: number }
   | { outcome: 'partial'; created: CreatedLink[]; failed: { body: LinkWrite; message: string } }
+
+export type UndoLinksResult = {
+  undone: CreatedLink[]
+  kept: CreatedLink[]
+  failed: Array<{ link: CreatedLink; message: string }>
+}
 
 /**
  * A person saves the link. AI mode, and an agent principal, file a proposal
@@ -35,11 +45,14 @@ export async function submitLink(body: LinkWrite): Promise<'created' | 'proposed
  * AI mode files every link in one proposal. A person saves each link.
  * A failure stops the rest and reports the links already stored, so a retry
  * does not create those again. An agent principal gets one proposal for the
- * whole set instead of a proposal per link.
+ * links that are not saved yet, and the message says how many of each.
  */
 export async function submitLinks(bodies: LinkWrite[]): Promise<LinkSubmitResult> {
   if (bodies.length === 0) return { outcome: 'created', created: [] }
-  if (aiMode()) return proposeAll(bodies)
+  if (aiMode()) {
+    await fileProposal(bodies)
+    return { outcome: 'proposed', created: [], filed: bodies.length }
+  }
   const created: CreatedLink[] = []
   for (const body of bodies) {
     let result: unknown
@@ -55,18 +68,62 @@ export async function submitLinks(bodies: LinkWrite[]): Promise<LinkSubmitResult
     const record = jsonRecord(result)
     const proposalId = String(record?.proposal_id ?? '')
     if (proposalId && record?.needs_approval === true) {
-      if (bodies.length === 1 && created.length === 0) {
+      const rest = bodies.slice(created.length)
+      if (rest.length <= 1) {
         publishProposal(proposalId)
-        return { outcome: 'proposed', created }
+        return { outcome: 'proposed', created, filed: rest.length }
       }
-      return proposeAll(bodies)
+      await fileProposal(rest)
+      return { outcome: 'proposed', created, filed: rest.length }
     }
-    created.push({ body, id: String(record?.id ?? '') })
+    const version = Number(record?.version)
+    created.push({
+      body,
+      id: String(record?.id ?? ''),
+      version: Number.isFinite(version) ? version : 0,
+      label: '',
+    })
   }
   return { outcome: 'created', created }
 }
 
-async function proposeAll(bodies: LinkWrite[]): Promise<LinkSubmitResult> {
+/**
+ * Deletes only the links that are still the version we created.
+ * A missing link counts as undone. A newer version is kept. One failure
+ * does not cancel the others.
+ */
+export async function undoCreatedLinks(links: CreatedLink[]): Promise<UndoLinksResult> {
+  const settled = await Promise.allSettled(links.map((link) => deleteIfUnchanged(link)))
+  const undone: CreatedLink[] = []
+  const kept: CreatedLink[] = []
+  const failed: UndoLinksResult['failed'] = []
+  settled.forEach((item, index) => {
+    const link = links[index]
+    if (!link) return
+    if (item.status === 'rejected') {
+      failed.push({ link, message: writeErrorMessage(item.reason) || copy.validation })
+      return
+    }
+    if (item.value === 'kept') kept.push(link)
+    else undone.push(link)
+  })
+  return { undone, kept, failed }
+}
+
+async function deleteIfUnchanged(link: CreatedLink): Promise<'undone' | 'kept'> {
+  try {
+    await api.delete('/v1/links/{id}', {
+      params: { path: { id: link.id }, header: { 'If-Match': link.version } },
+    })
+    return 'undone'
+  } catch (error) {
+    if (error instanceof ApiError && (error.status === 404 || error.status === 410)) return 'undone'
+    if (error instanceof ApiError && error.status === 409) return 'kept'
+    throw error
+  }
+}
+
+async function fileProposal(bodies: LinkWrite[]) {
   const created = await api.post('/v1/proposals', {
     body: {
       title: 'Link proposal',
@@ -76,5 +133,4 @@ async function proposeAll(bodies: LinkWrite[]): Promise<LinkSubmitResult> {
   const id = String(jsonRecord(created)?.id ?? '')
   if (!id) throw new Error(copy.linkProposalFailed)
   publishProposal(id)
-  return { outcome: 'proposed', created: [] }
 }

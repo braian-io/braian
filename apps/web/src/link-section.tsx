@@ -13,8 +13,7 @@ import { reportWriteError, writeErrorMessage } from './write-error'
 import { LinkCreateDialog, type LinkEndpoint } from './link-create-dialog'
 import { LinkObjectPicker } from './link-object-picker'
 import { submitLink } from './link-write'
-import { linkDragDenial } from './link-choices'
-import { dispatchLinkDrop, endLinkDrag, linkDragActive, linkDragMime, linkDragPayload, linkDropFromSection, readLinkDrag, setLinkDragHint } from './link-drag'
+import { dispatchLinkDrop, endLinkDrag, linkDragActive, linkDragMime, linkDragPayload, linkDropDecision, linkDropFromSection, readLinkDrag, setLinkDragHint } from './link-drag'
 
 type LinkItem = {
   id: string
@@ -56,6 +55,7 @@ export function LinkSections({
   objectName,
   objectKey,
   defs,
+  defsLoading = false,
   links,
   onOpen,
 }: {
@@ -64,14 +64,19 @@ export function LinkSections({
   objectName?: string
   objectKey?: string
   defs?: Json
+  defsLoading?: boolean
   links: LinkSide[]
   onOpen: (id: string) => void
 }) {
   const queryClient = useQueryClient()
   const [adding, setAdding] = useState<LinkSide | null>(null)
   const [dropKey, setDropKey] = useState<string | null>(null)
+  const [denyKey, setDenyKey] = useState<string | null>(null)
   useEffect(() => {
-    const clear = () => setDropKey(null)
+    const clear = () => {
+      setDropKey(null)
+      setDenyKey(null)
+    }
     window.addEventListener('braian-link-dragend', clear)
     return () => window.removeEventListener('braian-link-dragend', clear)
   }, [])
@@ -204,35 +209,57 @@ export function LinkSections({
         const markDrop = (event: DragEvent<HTMLElement>) => {
           if (!linkDragActive(event.dataTransfer.types)) return
           const dragged = linkDragPayload()
-          const deny = linkDragDenial(defs, typeKey, dragged.map((item) => item.typeKey))
+          const decision = linkDropDecision({
+            loading: defsLoading,
+            defs,
+            anchorType: typeKey,
+            draggedTypes: dragged.map((item) => item.typeKey),
+          })
           event.preventDefault()
-          if (deny) {
+          if (!decision.accept) {
             event.dataTransfer.dropEffect = 'none'
             setDropKey(null)
-            setLinkDragHint(deny)
+            setDenyKey(decision.reason === 'denied' ? key : null)
+            setLinkDragHint(decision.hint)
             return
           }
+          setDenyKey(null)
           setLinkDragHint(null)
           event.dataTransfer.dropEffect = 'copy'
           setDropKey(key)
         }
+        const tone = dropKey === key ? ' link-drop' : denyKey === key ? ' link-drop-deny' : ''
         return (
         <section
           key={key}
-          className={dropKey === key ? 'field-card link-drop' : 'field-card'}
+          className={`field-card${tone}`}
           data-testid="link-section"
           data-link-drop={dropKey === key ? 'true' : undefined}
+          data-link-deny={denyKey === key ? 'true' : undefined}
           aria-label={section.label}
           onDragEnter={markDrop}
           onDragOver={markDrop}
           onDragLeave={(event) => {
             if (pointerStillInside(event)) return
             setDropKey((current) => (current === key ? null : current))
+            setDenyKey((current) => (current === key ? null : current))
           }}
           onDrop={(event) => {
             if (!linkDragActive(event.dataTransfer.types)) return
             event.preventDefault()
             setDropKey(null)
+            setDenyKey(null)
+            const dragged = linkDragPayload()
+            const decision = linkDropDecision({
+              loading: defsLoading,
+              defs,
+              anchorType: typeKey,
+              draggedTypes: dragged.map((item) => item.typeKey),
+            })
+            if (!decision.accept) {
+              endLinkDrag()
+              return
+            }
             const detail = linkDropFromSection({
               object: { id: objectId, typeKey, name: objectName, key: objectKey },
               dragged: readLinkDrag(event.dataTransfer.getData(linkDragMime)),

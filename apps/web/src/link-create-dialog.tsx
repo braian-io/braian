@@ -168,7 +168,19 @@ function LinkFields({
       >
         <div className="create-head">
           <DialogTitle>{copy.addLink}</DialogTitle>
-          <p className="link-ends" data-testid="link-ends">{summary}</p>
+          <div className="link-ends" data-testid="link-ends" data-many={pending.length > 1 ? 'true' : undefined}>
+            {pending.length > 1 ? (
+              <>
+                <span className="link-end">{linkEndLabel(source)}</span>
+                {pending.slice(0, 5).map((peer) => (
+                  <span className="link-end" key={peer.id}>← {linkEndLabel(peer)}</span>
+                ))}
+                {pending.length > 5 ? <span className="link-end">{copy.linkMore.replace('{count}', String(pending.length - 5))}</span> : null}
+              </>
+            ) : (
+              <span className="link-end">{summary}</span>
+            )}
+          </div>
           <DialogDescription className="sr-only">{summary}</DialogDescription>
         </div>
         <div className="create-fields">

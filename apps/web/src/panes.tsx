@@ -74,8 +74,7 @@ import { rollbackTargetSeq } from './history-rollback'
 import { StateNote } from './states'
 import { classSections } from './class-sections'
 import { LinkSections } from './link-section'
-import { beginLinkDrag, dispatchLinkDrop, endLinkDrag, linkDragActive, linkDragContains, linkDragLabel, linkDragMime, linkDragObjects, linkDragPayload, readLinkDrag, setLinkDragHint } from './link-drag'
-import { linkDragDenial } from './link-choices'
+import { beginLinkDrag, dispatchLinkDrop, endLinkDrag, linkDragActive, linkDragContains, linkDragLabel, linkDragMime, linkDragObjects, linkDragPayload, linkDropDecision, readLinkDrag, setLinkDragHint } from './link-drag'
 import { RecordSection } from './record-section'
 import { groupKeyOf, labelCodes, labelSearchFilter, publishSelectionLabels, SELECTION_APPLIED_EVENT, selectionFilterText, selectionMatchesType } from './assortment-filter'
 import { appendPathFilter, objectTableFilter } from './table-filter'
@@ -931,14 +930,17 @@ export function ObjectTable({
     if (!linkDragActive(event.dataTransfer.types)) return
     if (linkDragContains(row.id)) return
     const dragged = linkDragPayload()
-    const deny = defs.isLoading && !defs.data
-      ? null
-      : linkDragDenial(defs.data, row.type, dragged.map((item) => item.typeKey))
+    const decision = linkDropDecision({
+      loading: defs.isLoading,
+      defs: defs.data,
+      anchorType: row.type,
+      draggedTypes: dragged.map((item) => item.typeKey),
+    })
     event.preventDefault()
-    if (deny) {
+    if (!decision.accept) {
       event.dataTransfer.dropEffect = 'none'
       setLinkDropId(null)
-      setLinkDragHint(deny)
+      setLinkDragHint(decision.hint)
       return
     }
     setLinkDragHint(null)
@@ -952,6 +954,17 @@ export function ObjectTable({
     if (!linkDragActive(event.dataTransfer.types)) return
     event.preventDefault()
     setLinkDropId(null)
+    const dragged = linkDragPayload()
+    const decision = linkDropDecision({
+      loading: defs.isLoading,
+      defs: defs.data,
+      anchorType: row.type,
+      draggedTypes: dragged.map((item) => item.typeKey),
+    })
+    if (!decision.accept) {
+      endLinkDrag()
+      return
+    }
     const targets = readLinkDrag(event.dataTransfer.getData(linkDragMime)).filter((item) => item.id !== row.id)
     endLinkDrag()
     if (targets.length === 0) return
@@ -2690,6 +2703,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
           objectName={name || number}
           objectKey={number}
           defs={defs.data}
+          defsLoading={defs.isLoading}
           links={(object.data.links as never) ?? []}
           onOpen={(id) => session.setObjectId(id)}
         />
