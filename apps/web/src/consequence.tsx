@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, failureLines, type Json } from './api'
 import { Button } from './components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
 import { copy } from './i18n'
 import { formatCount } from './format'
 import { affectedLabel, typeNames } from './type-labels'
@@ -38,17 +39,6 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
     queryFn: () => api.get('/v1/proposals/{id}', { params: { path: { id: id ?? '' } } }),
     enabled: Boolean(id),
   })
-  useEffect(() => {
-    if (!id) return
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      event.stopPropagation()
-      dismiss()
-    }
-    window.addEventListener('keydown', onKey, true)
-    return () => window.removeEventListener('keydown', onKey, true)
-  }, [id])
   if (!id) return null
   const body = proposal.data
   const consequence = (body?.consequence as Json | undefined) ?? {}
@@ -63,12 +53,6 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
   const sentence = String(consequence.sentence ?? '')
   const nameMatches = !destructive || typed === confirmName
   const close = dismiss
-  const onDialogKey = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== 'Escape') return
-    event.preventDefault()
-    event.stopPropagation()
-    dismiss()
-  }
   const discard = () => {
     setBusy(true)
     void api.post('/v1/proposals/{id}/discard', { params: { path: { id: id } } })
@@ -104,13 +88,17 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
       .finally(() => setBusy(false))
   }
   return (
-    <div className="overlay" data-testid="consequence">
-      <div className="dialog consequence" role="dialog" aria-labelledby="consequence-title" onMouseDown={(event) => event.stopPropagation()} onKeyDown={onDialogKey}>
+    <Dialog open onOpenChange={(next) => { if (!next) dismiss() }}>
+      <DialogContent
+        className="consequence"
+        data-testid="consequence"
+        onEscapeKeyDown={(event) => event.stopPropagation()}
+      >
         <div className="toolbar">
-          <strong id="consequence-title">{String(body?.title ?? copy.dataModel)}</strong>
+          <DialogTitle asChild><strong>{String(body?.title ?? copy.dataModel)}</strong></DialogTitle>
           {body?.source ? <span className="chip">{String(body.source)}</span> : null}
         </div>
-        <p className="hint">{copy.reviewChange}</p>
+        <DialogDescription asChild><p className="hint">{copy.reviewChange}</p></DialogDescription>
         {proposal.isPending ? <StateNote tone="loading" title={copy.loadingModel} /> : null}
         {proposal.isError ? <StateNote tone="error" title={copy.errorModel} /> : null}
         {lines.length > 0 ? (
@@ -177,7 +165,7 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
             {destructive ? copy.delete : copy.confirm}
           </Button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }

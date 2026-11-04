@@ -92,22 +92,6 @@ afterEach(() => {
   cleanup()
 })
 
-describe('LinkSections picker', () => {
-  it('closes on Escape and returns focus to the add-link trigger', async () => {
-    renderLinks(link())
-    const trigger = screen.getAllByTestId('add-link')[0]!
-    trigger.focus()
-    fireEvent.click(trigger)
-
-    const picker = await screen.findByTestId('link-picker')
-    expect(picker.getAttribute('role')).toBe('dialog')
-
-    fireEvent.keyDown(picker, { key: 'Escape' })
-    await waitFor(() => expect(screen.queryByTestId('link-picker')).toBeNull())
-    await waitFor(() => expect(document.activeElement).toBe(trigger))
-  })
-})
-
 describe('LinkSections removal', () => {
   it('toasts Undo after removing a link without values and recreates it with its sort order', async () => {
     renderLinks(link({ sort_order: '3' }))
@@ -165,5 +149,24 @@ describe('LinkSections removal', () => {
       expect(del).toHaveBeenCalledWith('/v1/links/{id}', { params: { path: { id: 'link-1' } } })
     })
     expect(copy.confirmRemoveLink).toBe('Type {peer} to confirm')
+  })
+
+  it('describes the confirm dialog and closes it on Escape with focus restored', async () => {
+    renderLinks(link({ has_values: true }))
+    const row = screen.getByTestId('link-row')
+    act(() => row.focus())
+    await act(async () => {
+      window.dispatchEvent(new Event('braian-remove-link'))
+    })
+
+    const dialog = await screen.findByRole('dialog')
+    const description = document.getElementById(dialog.getAttribute('aria-describedby') ?? '')
+    expect(dialog.getAttribute('aria-label')).toBe(copy.removeLink)
+    expect(description?.textContent).toBe('Type Mature cheddar to confirm')
+
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+
+    await waitFor(() => expect(screen.queryByTestId('link-confirm')).toBeNull())
+    await waitFor(() => expect(document.activeElement).toBe(row))
   })
 })

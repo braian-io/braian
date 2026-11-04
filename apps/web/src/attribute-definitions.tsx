@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, jsonRecord, type Json } from './api'
 import { onAttributeAction, type AttributeAction } from './attribute-actions'
 import { rowsFromCatalog, rowsFromDefinitions, type AttributeDefinitionRow, type AttributeFlags } from './attribute-rows'
+import { Dialog, DialogContent, DialogTitle } from './components/ui/dialog'
 import { formatCount } from './format'
 import { copy } from './i18n'
 import { attributeKey } from './model-view'
@@ -401,17 +402,11 @@ function PlacePicker({
     else onPick({ kind: 'group', structure: option.structure, key: option.key })
   }
   return (
-    <div className="overlay" data-testid={mode === 'type' ? 'add-to-type' : 'add-to-group'}>
-      <div
-        className="dialog"
-        role="dialog"
-        aria-label={mode === 'type' ? copy.addToType : copy.addToGroup}
+    <Dialog open onOpenChange={(next) => { if (!next) onClose() }}>
+      <DialogContent
+        data-testid={mode === 'type' ? 'add-to-type' : 'add-to-group'}
+        onEscapeKeyDown={(event) => event.stopPropagation()}
         onKeyDown={(event) => {
-          if (event.key === 'Escape') {
-            event.preventDefault()
-            onClose()
-            return
-          }
           if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
             event.preventDefault()
             setCursor((current) => {
@@ -426,7 +421,7 @@ function PlacePicker({
           }
         }}
       >
-        <h2>{mode === 'type' ? copy.addToType : copy.addToGroup}</h2>
+        <DialogTitle>{mode === 'type' ? copy.addToType : copy.addToGroup}</DialogTitle>
         <input
           autoFocus
           data-testid={mode === 'type' ? 'add-to-type-search' : 'add-to-group-search'}
@@ -452,8 +447,8 @@ function PlacePicker({
         </div>
         {error ? <p className="error">{error}</p> : null}
         <button type="button" onClick={onClose}>{copy.cancel}</button>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 

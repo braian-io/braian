@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from './api'
+import { copy } from './i18n'
 import { ModelDraftHost } from './model-draft-ui'
 import { openModelDialog, requestReview } from './model-stage'
 
@@ -108,5 +109,24 @@ describe('review dialog', () => {
     expect(await screen.findByText('the write failed validation')).toBeTruthy()
     expect(screen.getByTestId('model-dialog')).toBeTruthy()
     expect((screen.getByTestId('model-dialog-name') as HTMLInputElement).value).toBe('Recipe')
+  })
+
+  it('labels the review and create dialogs through the shared dialog', async () => {
+    render(<Host />)
+    fireEvent.click(await screen.findByTestId('review-save'))
+
+    const review = await screen.findByRole('dialog')
+    const reviewTitle = document.getElementById(review.getAttribute('aria-labelledby') ?? '')
+    const reviewDescription = document.getElementById(review.getAttribute('aria-describedby') ?? '')
+    expect(reviewTitle?.textContent).toBe(copy.reviewAndSave)
+    expect(reviewDescription?.textContent).toBe(copy.reviewChange)
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByTestId('review-dialog')).toBeNull())
+
+    openModelDialog('type')
+    const create = await screen.findByTestId('model-dialog')
+    const createTitle = document.getElementById(create.getAttribute('aria-labelledby') ?? '')
+    expect(createTitle?.textContent).toBe(copy.newType)
+    expect(screen.getByRole('button', { name: 'Close' })).toBeTruthy()
   })
 })

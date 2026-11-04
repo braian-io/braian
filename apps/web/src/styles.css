@@ -1824,6 +1824,7 @@ button, .pane-tab, .hit, .class-row, .attr-card {
 .model-rename { flex: 1; width: 100%; min-width: 120px; height: 28px; }
 .model-note { margin: 4px 8px; color: var(--danger, var(--muted)); font-size: 12px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.dialog-form { display: grid; gap: 6px; }
 .feedback-preview {
   margin: 0;
   max-height: 200px;
@@ -2179,7 +2180,7 @@ button, .pane-tab, .hit, .class-row, .attr-card {
 .import-cell.warning { box-shadow: inset 0 0 0 1px var(--amber, #d9a400); border-radius: var(--r-sm); }
 .import-cell.error { box-shadow: inset 0 0 0 1px var(--danger); background: color-mix(in srgb, var(--danger) 16%, transparent); border-radius: var(--r-sm); }
 .import-popover { position: fixed; right: 24px; bottom: 72px; z-index: 2; min-width: 220px; justify-items: stretch; }
-.import-confirm { position: fixed; inset: 0; margin: auto; height: max-content; z-index: 3; }
+.import-confirm { position: fixed; inset: 0; margin: auto; height: max-content; z-index: 82; translate: none; }
 .class-attributes { display: flex; flex-direction: column; gap: 14px; padding: 12px 14px; min-height: 0; }
 .class-section h3 { margin: 0 0 4px; font-size: 12px; font-weight: 600; }
 .class-attr { display: flex; justify-content: space-between; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--line); font-size: 12px; }

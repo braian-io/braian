@@ -13,6 +13,7 @@ import { batchGetObjects } from './batch'
 import { MetaChip, optionLabel, statusTone, typeLabel } from './chips'
 import { BulkWriteConfirm } from './bulk-write'
 import { Button } from './components/ui/button'
+import { Dialog, DialogContent } from './components/ui/dialog'
 import { Slider } from './components/ui/slider'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select'
 import { Switch } from './components/ui/switch'
@@ -1898,49 +1899,48 @@ function MoveToGroup({
   const [choice, setChoice] = useState(choices[0] ? `${choices[0].structure}:${choices[0].group}` : '')
   const [error, setError] = useState('')
   return (
-    <form
-      className="menu"
-      role="dialog"
-      aria-label={copy.moveToGroup}
-      data-testid="move-to-group"
-      onSubmit={(event) => {
-        event.preventDefault()
-        const [structure, group] = choice.split(':')
-        if (!structure) return
-        setError('')
-        void api.get('/v1/objects/{id}', { params: { path: { id: id } } })
-          .then((object) =>
-            api.post('/v1/operations/{name}', { params: { path: { name: "move_to_group" } }, body: {
-                id,
-                structure,
-                group: group || null,
-                base_version: object.version,
-              } }),
-          )
-          .then(() => onMoved())
-          .catch((reason: unknown) => {
-            const message = writeErrorMessage(reason)
-            if (message) setError(message)
-          })
-      }}
-      onKeyDown={(event) => {
-        if (event.key === 'Escape') {
-          event.preventDefault()
-          onClose()
-        }
-      }}
-    >
-      <label>
-        {copy.moveToGroup}
-        <select autoFocus value={choice} onChange={(event) => setChoice(event.target.value)}>
-          {choices.map((item) => (
-            <option key={`${item.structure}:${item.group}`} value={`${item.structure}:${item.group}`}>{item.label}</option>
-          ))}
-        </select>
-      </label>
-      {error ? <p className="error" data-testid="move-to-group-error">{error}</p> : null}
-      <button type="submit">{copy.save}</button>
-    </form>
+    <Dialog open onOpenChange={(next) => { if (!next) onClose() }}>
+      <DialogContent
+        data-testid="move-to-group"
+        aria-label={copy.moveToGroup}
+        onEscapeKeyDown={(event) => event.stopPropagation()}
+      >
+        <form
+          className="dialog-form"
+          onSubmit={(event) => {
+            event.preventDefault()
+            const [structure, group] = choice.split(':')
+            if (!structure) return
+            setError('')
+            void api.get('/v1/objects/{id}', { params: { path: { id: id } } })
+              .then((object) =>
+                api.post('/v1/operations/{name}', { params: { path: { name: "move_to_group" } }, body: {
+                    id,
+                    structure,
+                    group: group || null,
+                    base_version: object.version,
+                  } }),
+              )
+              .then(() => onMoved())
+              .catch((reason: unknown) => {
+                const message = writeErrorMessage(reason)
+                if (message) setError(message)
+              })
+          }}
+        >
+          <label>
+            {copy.moveToGroup}
+            <select autoFocus value={choice} onChange={(event) => setChoice(event.target.value)}>
+              {choices.map((item) => (
+                <option key={`${item.structure}:${item.group}`} value={`${item.structure}:${item.group}`}>{item.label}</option>
+              ))}
+            </select>
+          </label>
+          {error ? <p className="error" data-testid="move-to-group-error">{error}</p> : null}
+          <button type="submit">{copy.save}</button>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
 
