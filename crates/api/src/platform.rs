@@ -104,11 +104,18 @@ pub fn routes() -> axum::Router<AppState> {
         .route("/v1/webhooks", get(list_webhooks).post(create_webhook))
 }
 
+struct Param {
+    name: &'static str,
+    /// `view`, `workspace`, `object`, or an object type key such as `product`.
+    kind: &'static str,
+}
+
 struct Operation {
     name: &'static str,
     title: &'static str,
     permission: Role,
     needs_approval: bool,
+    params: &'static [Param],
 }
 
 fn registry() -> &'static [Operation] {
@@ -118,720 +125,858 @@ fn registry() -> &'static [Operation] {
             title: "Search objects",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "get_object",
             title: "Open object",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[Param {
+                name: "id",
+                kind: "object",
+            }],
         },
         Operation {
             name: "list_objects",
             title: "List objects",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "create_object",
             title: "Create object",
             permission: Role::Editor,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "patch_object",
             title: "Edit object",
             permission: Role::Editor,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "mass_edit",
             title: "Mass edit",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "rollback",
             title: "Restore",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "accept_proposal",
             title: "Accept proposal",
             permission: Role::Editor,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "discard_proposal",
             title: "Discard proposal",
             permission: Role::Editor,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "history",
             title: "History",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "impact",
             title: "Impact analysis",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "save_workspace",
             title: "Save workspace",
             permission: Role::Editor,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "export",
             title: "Export",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "import.start",
             title: "Start import draft",
             permission: Role::Editor,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "import.status",
             title: "Import status",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "import.map",
             title: "Set import mapping",
             permission: Role::Editor,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "import.preview",
             title: "Preview import draft",
             permission: Role::Editor,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "import.discard",
             title: "Discard import draft",
             permission: Role::Editor,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "import.mappings.list",
             title: "List saved import mappings",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "import.mappings.rename",
             title: "Rename saved import mapping",
             permission: Role::Editor,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "import.mappings.delete",
             title: "Delete saved import mapping",
             permission: Role::Editor,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "ui.open_view",
             title: "Open view",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[Param {
+                name: "id",
+                kind: "view",
+            }],
         },
         Operation {
             name: "ui.open_template",
             title: "Open workspace template",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "ui.open_changes",
             title: "Open changes",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "ui.open_workspace",
             title: "Open workspace",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[Param {
+                name: "id",
+                kind: "workspace",
+            }],
         },
         Operation {
             name: "ui.place",
             title: "Place view",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[Param {
+                name: "id",
+                kind: "view",
+            }],
         },
         Operation {
             name: "ui.link",
             title: "Link views",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "ui.filter",
             title: "Filter table",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "ui.group",
             title: "Group table",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "ui.sort",
             title: "Sort table",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "ui.select",
             title: "Select object",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[Param {
+                name: "id",
+                kind: "object",
+            }],
         },
         Operation {
             name: "ui.select_rows",
             title: "Select rows",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "ui.show_column",
             title: "Show column",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "ui.hide_column",
             title: "Hide column",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "ui.move_column",
             title: "Move column",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "ui.set_theme",
             title: "Set theme",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "ui.export",
             title: "Export",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "ui.get_context",
             title: "Read workspace, panes, focus, selection, filters and language",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "ui.get_selection",
             title: "Read the selected objects",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "ui.set_catalog",
             title: "Switch the workspace catalog, or a view override when viewId is set",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "catalog.list",
             title: "List catalogs",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "merge_profile.get",
             title: "Read a merge profile",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "merge.runs",
             title: "Read merge run rows",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "merge.dry_run",
             title: "Dry-run a merge profile",
             permission: Role::Editor,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "merge.run",
             title: "Run a merge profile",
             permission: Role::Editor,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "catalog.cleanup",
             title: "Soft-delete every object in a source catalog",
             permission: Role::Editor,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "open_view",
             title: "Open view",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[Param {
+                name: "id",
+                kind: "view",
+            }],
         },
         Operation {
             name: "move_view",
             title: "Move view",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "split",
             title: "Split view",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "resize",
             title: "Resize pane",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "swap",
             title: "Swap views",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "focus",
             title: "Focus pane",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "move_view_left",
             title: "Move view left",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "move_view_right",
             title: "Move view right",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "move_view_up",
             title: "Move view up",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "move_view_down",
             title: "Move view down",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "zoom",
             title: "Maximize pane",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "close_view",
             title: "Close view",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "get_layout",
             title: "Get layout",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "reset_layout",
             title: "Reset layout",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "model.move_class",
             title: "Move group",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.add_attribute",
             title: "Add attribute",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.remove_attribute",
             title: "Remove attribute",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.reorder_attributes",
             title: "Reorder attributes",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.create_attribute",
             title: "Create attribute",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.attach_attribute",
             title: "Add attribute",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.detach_attribute",
             title: "Remove attribute",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.update_attribute",
             title: "Update attribute",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.update_type",
             title: "Update type names",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.create_type",
             title: "New type",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.create_value_list",
             title: "New value list",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.update_value_list",
             title: "Update value list",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.create_unit_family",
             title: "New unit family",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.update_unit_family",
             title: "Update unit family",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.update_structure",
             title: "Rename structure",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.reorder_type_attributes",
             title: "Reorder attributes",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.undo",
             title: "Undo model change",
             permission: Role::Editor,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "model.create_group",
             title: "Add group",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.rename_group",
             title: "Rename group",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.move_group",
             title: "Move group",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.duplicate_group",
             title: "Duplicate group",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.delete_group",
             title: "Delete group",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.set_structures",
             title: "Allowed trees…",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "move_to_group",
             title: "Move to group…",
             permission: Role::Editor,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "model.rename_type_key",
             title: "Rename key…",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.rename_attribute_key",
             title: "Rename key…",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.rename_structure_key",
             title: "Rename key…",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.rename_group_key",
             title: "Rename key…",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.rename_value_list_key",
             title: "Rename key…",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.rename_unit_family_key",
             title: "Rename key…",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.create_class",
             title: "Create group",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.list_attribute_definitions",
             title: "List attribute definitions",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "list_attribute_paths",
             title: "List attribute paths",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "get_view_column_prefs",
             title: "Get view column preferences",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "put_view_column_prefs",
             title: "Save view column preferences",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "model.attribute_usage",
             title: "Attribute usage",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "list_assortments",
             title: "List selections",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "assortment.save",
             title: "Save selection",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "assortment.update",
             title: "Update selection",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "assortment.delete",
             title: "Delete selection",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.set_parent",
             title: "Set group parent",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.draft",
             title: "Draft data model",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.command",
             title: "Run a data model command",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.create_structure",
             title: "Create structure",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.rename_structure",
             title: "Rename structure",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.delete_structure",
             title: "Delete structure",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.delete_type",
             title: "Delete type",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.delete_attribute",
             title: "Delete attribute",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.delete_value_list",
             title: "Delete value list",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.delete_value_option",
             title: "Delete value list option",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.delete_unit_family",
             title: "Delete unit family",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.delete_unit",
             title: "Delete unit",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "delete_object",
             title: "Delete object",
             permission: Role::Editor,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "list_links",
             title: "List links",
             permission: Role::Viewer,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "create_link",
             title: "Create link",
             permission: Role::Editor,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "update_link",
             title: "Edit link",
             permission: Role::Editor,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "remove_link",
             title: "Remove link",
             permission: Role::Editor,
             needs_approval: false,
+            params: &[],
         },
         Operation {
             name: "model.create_link_type",
             title: "New link type",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.update_link_type",
             title: "Update link type",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
         Operation {
             name: "model.delete_link_type",
             title: "Delete link type",
             permission: Role::Editor,
             needs_approval: true,
+            params: &[],
         },
     ]
 }
@@ -1038,6 +1183,44 @@ fn operation_for_tool(tool: &str) -> Option<&'static str> {
     find_op(tool).map(|op| op.name)
 }
 
+/// JSON Schema for one operation. Empty params stay open so existing callers
+/// can still pass the arguments the handler already accepts.
+fn tool_parameters(op: &Operation) -> Value {
+    if op.params.is_empty() {
+        return json!({
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+        });
+    }
+    let mut properties = serde_json::Map::new();
+    let mut required = Vec::new();
+    for param in op.params {
+        properties.insert(
+            param.name.to_owned(),
+            json!({
+                "type": "string",
+                "description": param.kind,
+                "x-braian-type": param.kind
+            }),
+        );
+        required.push(Value::String(param.name.to_owned()));
+    }
+    json!({
+        "type": "object",
+        "properties": properties,
+        "required": required,
+        "additionalProperties": false
+    })
+}
+
+fn operation_params_json(op: &Operation) -> Vec<Value> {
+    op.params
+        .iter()
+        .map(|param| json!({ "name": param.name, "type": param.kind }))
+        .collect()
+}
+
 pub(crate) fn require(identity: &Identity, role: Role) -> Result<(), Problem> {
     if identity.role.allows(role) {
         Ok(())
@@ -1181,6 +1364,7 @@ async fn list_operations(
                 "title": braian_model::operation_title(op.title, &types, "en"),
                 "permission": op.permission.as_str(),
                 "needs_approval": op.needs_approval || agent_must_propose(&identity, op),
+                "params": operation_params_json(op),
             })
         })
         .collect::<Vec<_>>();
@@ -1215,7 +1399,7 @@ async fn mcp(
             "tools": registry().iter().filter(|op| exposed_to_agent(op)).map(|op| json!({
                 "name": tool_name(op.name),
                 "description": braian_model::operation_title(op.title, &types, "en"),
-                "inputSchema": { "type": "object" }
+                "inputSchema": tool_parameters(op)
             })).collect::<Vec<_>>()
         }),
         "tools/call" => {
@@ -1465,11 +1649,7 @@ fn responses_body(model: &str, messages: &[Value], types: &[braian_model::Object
                 "type": "function",
                 "name": tool_name(op.name),
                 "description": braian_model::operation_title(op.title, types, "en"),
-                "parameters": {
-                    "type": "object",
-                    "properties": {},
-                    "additionalProperties": true
-                }
+                "parameters": tool_parameters(op)
             })
         })
         .collect::<Vec<_>>();
@@ -2067,7 +2247,63 @@ async fn run_search(
     if let Ok(cached) = state.models.get(&state.store).await {
         page = hide_link_hits(page, &cached.defs);
     }
+    enrich_search_page(&mut page);
     Ok(page)
+}
+
+/// Puts `display_name` on each hit. English on the standard name attribute wins
+/// over a legacy `a_namn__sv` field.
+fn enrich_search_page(page: &mut braian_search::SearchPage) {
+    for hit in &mut page.hits {
+        enrich_display_name(&mut hit.document);
+    }
+    for group in &mut page.groups {
+        for hit in &mut group.hits {
+            enrich_display_name(&mut hit.document);
+        }
+    }
+}
+
+fn enrich_display_name(doc: &mut Value) {
+    let Some(map) = doc.as_object_mut() else {
+        return;
+    };
+    if map
+        .get("display_name")
+        .and_then(Value::as_str)
+        .is_some_and(|text| !text.trim().is_empty())
+    {
+        return;
+    }
+    let base = braian_model::attribute_index_field(braian_model::name_id(), None);
+    let name = ["en", "sv", "de"]
+        .into_iter()
+        .find_map(|language| indexed_text(map, &format!("{base}__{language}")))
+        .or_else(|| indexed_text(map, &base))
+        .or_else(|| {
+            [
+                "a_name__en",
+                "a_name__sv",
+                "a_name__de",
+                "a_name",
+                "a_namn__en",
+                "a_namn__sv",
+                "a_namn__de",
+            ]
+            .into_iter()
+            .find_map(|field| indexed_text(map, field))
+        })
+        .unwrap_or_default();
+    map.insert("display_name".into(), Value::String(name));
+}
+
+fn indexed_text(map: &serde_json::Map<String, Value>, field: &str) -> Option<String> {
+    let text = map.get(field)?.as_str()?.trim();
+    if text.is_empty() {
+        None
+    } else {
+        Some(text.to_owned())
+    }
 }
 
 async fn search_fields(
@@ -7416,6 +7652,38 @@ mod tests {
     }
 
     #[test]
+    fn search_display_name_prefers_english_over_a_legacy_swedish_field() {
+        let english = braian_model::attribute_index_field(braian_model::name_id(), Some("en"));
+        let mut doc = json!({
+            "key": "ART-1",
+            "a_namn__sv": "Ost",
+        });
+        doc[english] = json!("Cheddar");
+        enrich_display_name(&mut doc);
+        assert_eq!(doc["display_name"], "Cheddar");
+
+        let mut swedish_only = json!({ "a_namn__sv": "Ost" });
+        enrich_display_name(&mut swedish_only);
+        assert_eq!(swedish_only["display_name"], "Ost");
+    }
+
+    #[test]
+    fn open_commands_publish_a_params_schema() {
+        let open_view = find_op("ui.open_view").expect("view");
+        assert_eq!(
+            operation_params_json(open_view),
+            vec![json!({"name": "id", "type": "view"})]
+        );
+        let workspace = find_op("ui.open_workspace").expect("workspace");
+        assert_eq!(operation_params_json(workspace)[0]["type"], "workspace");
+        let object = find_op("get_object").expect("object");
+        assert_eq!(operation_params_json(object)[0]["type"], "object");
+        let schema = tool_parameters(open_view);
+        assert_eq!(schema["properties"]["id"]["x-braian-type"], "view");
+        assert_eq!(schema["required"][0], "id");
+    }
+
+    #[test]
     fn parse_provided_base_version_keeps_numbers_and_numeric_strings() {
         assert_eq!(
             parse_provided_base_version(&json!({})).expect("missing"),
@@ -7552,6 +7820,15 @@ mod tests {
         }
         assert!(tools.iter().any(|tool| tool["name"] == "create_object"));
         assert!(tools.iter().any(|tool| tool["name"] == "ui_filter"));
+        let open_view = tools
+            .iter()
+            .find(|tool| tool["name"] == "ui_open_view")
+            .expect("ui_open_view");
+        assert_eq!(
+            open_view["parameters"]["properties"]["id"]["x-braian-type"],
+            "view"
+        );
+        assert_eq!(open_view["parameters"]["required"][0], "id");
         assert!(tools.iter().any(|tool| tool["name"] == "model_draft"));
         assert!(tools.iter().any(|tool| tool["name"] == "model_command"));
     }

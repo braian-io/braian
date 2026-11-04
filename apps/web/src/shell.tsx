@@ -756,6 +756,12 @@ export function Shell() {
 
   useShortcutBindings({
     openPalette: () => {
+      // On an entity row, Ctrl+K opens that row's action panel (Raycast).
+      const open = document.querySelector('[data-testid="command-palette"]')
+      if (open?.getAttribute('data-entity-row') === 'true') {
+        window.dispatchEvent(new Event('braian-palette-actions'))
+        return
+      }
       // Remount at list root (clears Fields › / stack left from Select fields ›) and
       // focus synchronously so the first typed character is not dropped.
       flushSync(() => {
@@ -1493,6 +1499,7 @@ export function Shell() {
           session={session}
           workspaces={orderedWorkspaces}
           views={workspace.data?.views ?? []}
+          workspaceReady={Boolean(workspace.data && doc)}
           feedbackEnabled={feedbackEnabled}
           onSendFeedback={openFeedback}
           theme={theme}

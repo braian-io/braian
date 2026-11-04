@@ -4,6 +4,9 @@ export type PaletteGroup = 'recent' | 'best' | 'object' | 'model' | 'views' | 's
 
 export type PaletteChip = { text: string; tone: 'neutral' | 'ok' | 'warn' | 'danger' | 'info' }
 
+/** A command argument the palette turns into a sub-list. `type` comes from the operation schema. */
+export type PaletteArgument = { name: string; type: string }
+
 export type PaletteItem = {
   id: string
   group: PaletteGroup
@@ -17,6 +20,10 @@ export type PaletteItem = {
   typeKey?: string
   /** A row that is explained but cannot be chosen (e.g. a source cycle). */
   disabled?: boolean
+  /** Enter and Tab push a searchable sub-list for this argument. */
+  argument?: PaletteArgument
+  /** A view, workspace, or object. Ctrl+K and Ctrl+Enter open its action panel. */
+  entity?: boolean
 }
 
 export const groupTitle: Record<Exclude<PaletteGroup, 'ask'>, string> = {
@@ -73,10 +80,29 @@ export function visibleRows(
       group: 'ask',
       title: askTitle(query),
       subtitle: '',
-      kbd: 'Tab',
+      kbd: 'Ctrl+J',
     },
   ]
   return rows
+}
+
+/** Recent rows at the top of a sub-list. A query hides them so the matches stay first. */
+export function withRecent(
+  rows: PaletteItem[],
+  frecency: Record<string, FrecencyEntry>,
+  now = Date.now(),
+  query = '',
+): PaletteItem[] {
+  if (query.trim()) return rows
+  const recent = [...rows]
+    .filter((item) => score(frecency[item.id], now) > 0)
+    .sort((left, right) => score(frecency[right.id], now) - score(frecency[left.id], now))
+    .slice(0, 4)
+  const recentIds = new Set(recent.map((item) => item.id))
+  return [
+    ...recent.map((item) => ({ ...item, group: 'recent' as const })),
+    ...rows.filter((item) => !recentIds.has(item.id)),
+  ]
 }
 
 export function askIndex(rows: PaletteItem[]) {

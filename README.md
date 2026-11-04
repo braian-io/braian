@@ -29,7 +29,7 @@ Postgres is the source of truth and the change log. Search, live updates, and ou
 - Live updates in the interface.
 - Search through Typesense.
 - Multilingual attribute values.
-- A keyboard-first UI. Ctrl+K runs the same operations as the screen.
+- A keyboard-first UI. Ctrl+K runs the same operations as the screen. A command that takes an argument (open a view, workspace, or object) opens a searchable sub-list. Tab enters that list. Ctrl+J asks the agent. Ctrl+K or Ctrl+Enter on a result opens its actions.
 
 ## Architecture
 

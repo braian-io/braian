@@ -1579,6 +1579,14 @@ kbd {
   color: var(--accent);
   font-size: 12px;
 }
+.crumb:empty {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
 .ai-panel { border-color: var(--accent); }
 .ai-log {
   display: flex;

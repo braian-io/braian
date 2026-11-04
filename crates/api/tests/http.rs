@@ -4803,3 +4803,59 @@ async fn ownership_rules_require_the_typed_shape() {
     assert_eq!(body["revision"], 1, "{body}");
     assert_eq!(body["rules"][0]["attribute"], "brand", "{body}");
 }
+
+#[tokio::test]
+async fn operation_params_show_up_on_the_http_list_and_mcp_tools() {
+    let (_db, app) = app().await;
+    let (status, _, ops) = call(&app, "GET", "/v1/operations", Some(HUMAN), &[], None).await;
+    assert_eq!(status, StatusCode::OK, "{ops}");
+    let operations = ops["operations"].as_array().expect("operations");
+    let param = |name: &str| {
+        operations
+            .iter()
+            .find(|op| op["name"] == name)
+            .unwrap_or_else(|| panic!("missing {name}"))
+    };
+    assert_eq!(param("ui.open_view")["params"][0]["name"], "id");
+    assert_eq!(param("ui.open_view")["params"][0]["type"], "view");
+    assert_eq!(param("ui.open_workspace")["params"][0]["type"], "workspace");
+    assert_eq!(param("get_object")["params"][0]["type"], "object");
+    assert!(
+        param("search")["params"]
+            .as_array()
+            .expect("params")
+            .is_empty()
+    );
+
+    let (status, _, body) = call(
+        &app,
+        "POST",
+        "/mcp",
+        Some(HUMAN),
+        &[("content-type", "application/json")],
+        Some(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let tools = body["result"]["tools"].as_array().expect("tools");
+    let open_view = tools
+        .iter()
+        .find(|tool| tool["name"] == "ui_open_view")
+        .expect("ui_open_view");
+    assert_eq!(open_view["inputSchema"]["type"], "object");
+    assert_eq!(
+        open_view["inputSchema"]["properties"]["id"]["x-braian-type"],
+        "view"
+    );
+    assert_eq!(open_view["inputSchema"]["required"][0], "id");
+    let search = tools
+        .iter()
+        .find(|tool| tool["name"] == "search")
+        .expect("search");
+    assert!(
+        search["inputSchema"]["properties"]
+            .as_object()
+            .expect("props")
+            .is_empty()
+    );
+}

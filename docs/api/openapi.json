@@ -10187,7 +10187,8 @@
           "name",
           "title",
           "permission",
-          "needs_approval"
+          "needs_approval",
+          "params"
         ],
         "properties": {
           "name": {
@@ -10195,6 +10196,12 @@
           },
           "needs_approval": {
             "type": "boolean"
+          },
+          "params": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OperationParam"
+            }
           },
           "permission": {
             "type": "string"
@@ -10215,6 +10222,22 @@
             "items": {
               "$ref": "#/components/schemas/OperationInfo"
             }
+          }
+        }
+      },
+      "OperationParam": {
+        "type": "object",
+        "required": [
+          "name",
+          "type"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "description": "What the value refers to: `view`, `workspace`, `object`, or an object type key."
           }
         }
       },
