@@ -623,6 +623,7 @@ fn detail_of(
                 object_key: proposal.object_key,
                 patch: proposal.patch,
                 resolved_at: proposal.resolved_at.map(|value| value.to_rfc3339()),
+                reverted_at: proposal.reverted_at.map(|value| value.to_rfc3339()),
             })
             .collect(),
     }

@@ -1135,6 +1135,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/proposals/{id}/revert-accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark an accepted proposal as reverted after undoing its object write */
+        post: operations["revert_proposal_accept"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/proposals/{id}/rows": {
         parameters: {
             query?: never;
@@ -1713,6 +1730,7 @@ export interface components {
             /** @description First row's patch, so the client can render the same field diff as Review. */
             patch: components["schemas"]["JsonValue"];
             resolved_at?: string | null;
+            reverted_at?: string | null;
             stale: boolean;
             stale_reason?: string | null;
             status: string;
@@ -6219,6 +6237,36 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Proposal discarded */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or unknown token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    revert_proposal_accept: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Proposal id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Proposal marked reverted */
             204: {
                 headers: {
                     [name: string]: unknown;

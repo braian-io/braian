@@ -363,3 +363,67 @@ async fn undo_after_a_later_edit_is_precondition_failed() {
     assert_eq!(status, StatusCode::OK, "{object}");
     assert_eq!(object["values"]["name"]["sv"], "Later", "{object}");
 }
+
+#[tokio::test]
+async fn revert_accept_marks_the_proposal_reverted() {
+    let (_db, app) = app().await;
+    let object_id = create_item(&app).await;
+    let draft = json!({
+        "title": "Rename",
+        "rows": [{
+            "object_id": object_id,
+            "type_key": "item",
+            "base_version": 1,
+            "patch": { "values": { "name": { "sv": "Ny" } } }
+        }]
+    });
+    let (status, proposal) =
+        call(&app, "POST", "/v1/proposals", Some(&draft.to_string()), &[]).await;
+    assert_eq!(status, StatusCode::OK, "{proposal}");
+    let proposal_id = proposal["id"].as_str().unwrap();
+
+    let (status, accepted) = call(
+        &app,
+        "POST",
+        &format!("/v1/proposals/{proposal_id}/accept"),
+        Some("{}"),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{accepted}");
+    let version = accepted["accepted"][0]["version"]
+        .as_u64()
+        .unwrap_or_else(|| panic!("{accepted}"));
+
+    let (status, _) = call(
+        &app,
+        "PATCH",
+        &format!("/v1/objects/{object_id}"),
+        Some(r#"{"values":{"name":{"sv":"Stol"}}}"#),
+        &[("if-match", &version.to_string())],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, _) = call(
+        &app,
+        "POST",
+        &format!("/v1/proposals/{proposal_id}/revert-accept"),
+        None,
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (status, detail) = call(
+        &app,
+        "GET",
+        &format!("/v1/proposals/{proposal_id}"),
+        None,
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{detail}");
+    assert_eq!(detail["status"], "accepted", "{detail}");
+    assert!(detail["reverted_at"].as_str().is_some(), "{detail}");
+}

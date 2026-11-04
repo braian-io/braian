@@ -177,6 +177,8 @@ test('approving toasts the change, records who approved it, and undo restores th
   await toast.getByRole('button', { name: 'Undo' }).click()
   await expect(view.getByTestId('agent-resolved')).toContainText('Reverted')
   await expect(view.getByTestId('agent-resolved')).not.toContainText('Approved by you')
+  await page.reload()
+  await expect(agentView(page, title).getByTestId('agent-resolved')).toContainText('Reverted')
   await page.locator('.pane-tab[data-view-type="object_table"]').first().click()
   await expect(row.locator('[data-column="name"]').first()).toContainText(original, { timeout: 30_000 })
 })

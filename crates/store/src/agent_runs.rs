@@ -46,6 +46,7 @@ pub struct AgentProposalLink {
     pub object_key: Option<String>,
     pub patch: Value,
     pub resolved_at: Option<DateTime<Utc>>,
+    pub reverted_at: Option<DateTime<Utc>>,
 }
 
 /// What a person wrote, so a pending agent proposal can say which field changed.
@@ -159,7 +160,7 @@ impl Store {
         let client = self.checkout().await?;
         let rows = client
             .query(
-                "SELECT p.id, p.title, p.status, p.stale, p.stale_reason, p.resolved_at,
+                "SELECT p.id, p.title, p.status, p.stale, p.stale_reason, p.resolved_at, p.reverted_at,
                         (SELECT r.object_id FROM proposal_rows r
                           WHERE r.proposal_id = p.id ORDER BY r.position LIMIT 1),
                         (SELECT COALESCE(r.object_key, o.key)
@@ -183,9 +184,10 @@ impl Store {
                 stale: row.get(3),
                 stale_reason: row.get(4),
                 resolved_at: row.get(5),
-                object_id: row.get(6),
-                object_key: row.get(7),
-                patch: row.get::<_, Option<Value>>(8).unwrap_or_else(|| json!({})),
+                reverted_at: row.get(6),
+                object_id: row.get(7),
+                object_key: row.get(8),
+                patch: row.get::<_, Option<Value>>(9).unwrap_or_else(|| json!({})),
             })
             .collect())
     }

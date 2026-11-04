@@ -35,6 +35,7 @@ export type AgentProposal = {
   object_key?: string | null
   patch?: Json
   resolved_at?: string | null
+  reverted_at?: string | null
 }
 
 export type AgentRunDetail = AgentRunSummary & {

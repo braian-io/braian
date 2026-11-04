@@ -219,6 +219,7 @@ pub struct AgentProposalView {
     #[schema(value_type = JsonValue)]
     pub patch: serde_json::Value,
     pub resolved_at: Option<String>,
+    pub reverted_at: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]

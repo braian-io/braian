@@ -4344,6 +4344,47 @@
         ]
       }
     },
+    "/v1/proposals/{id}/revert-accept": {
+      "post": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Mark an accepted proposal as reverted after undoing its object write",
+        "operationId": "revert_proposal_accept",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Proposal id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Proposal marked reverted"
+          },
+          "401": {
+            "description": "Missing or unknown token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/v1/proposals/{id}/rows": {
       "get": {
         "tags": [
@@ -7105,6 +7146,12 @@
             "description": "First row's patch, so the client can render the same field diff as Review."
           },
           "resolved_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reverted_at": {
             "type": [
               "string",
               "null"

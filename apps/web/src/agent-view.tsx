@@ -79,7 +79,6 @@ export function AgentView({ runId, push }: AgentViewProps) {
   const focusAfter = useRef(false)
   const [draft, setDraft] = useState('')
   const [error, setError] = useState('')
-  const [reverted, setReverted] = useState<Record<string, boolean>>({})
   const [announced, setAnnounced] = useState('')
   const previousStatus = useRef('')
   const run = useQuery({
@@ -124,8 +123,8 @@ export function AgentView({ runId, push }: AgentViewProps) {
               void api.patch('/v1/objects/{id}', {
                 params: { path: { id: objectId }, header: { 'If-Match': version } },
                 body: { values: restore },
-              }).then(() => {
-                setReverted((current) => ({ ...current, [input.id]: true }))
+              }).then(async () => {
+                await api.post('/v1/proposals/{id}/revert-accept', { params: { path: { id: input.id } } })
                 refresh()
               }).catch((reason: unknown) => {
                 if (reason instanceof ApiError && reason.status === 412) {
@@ -252,7 +251,7 @@ export function AgentView({ runId, push }: AgentViewProps) {
           proposal={proposal}
           defs={defs.data}
           pending={decide.isPending}
-          reverted={Boolean(reverted[proposal.id])}
+          reverted={Boolean(proposal.reverted_at)}
           onDecide={(accept, lines, restore) => decide.mutate({
             id: proposal.id,
             accept,

@@ -95,6 +95,10 @@ pub fn routes() -> axum::Router<AppState> {
         .route("/v1/proposals/{id}/rows", get(proposal_rows_page))
         .route("/v1/proposals/{id}/accept", post(accept_proposal))
         .route("/v1/proposals/{id}/discard", post(discard_proposal))
+        .route(
+            "/v1/proposals/{id}/revert-accept",
+            post(revert_proposal_accept),
+        )
         .route("/v1/frecency", get(get_frecency).post(post_frecency))
         .route("/v1/history", get(history))
         .route("/v1/objects/{id}/as-of", get(as_of))
@@ -5170,6 +5174,27 @@ async fn discard_proposal(
     let released = lock.release().await;
     closed.map_err(store_status)?;
     released.map_err(store_status)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn revert_proposal_accept(
+    State(state): State<AppState>,
+    Auth(identity): Auth,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, Problem> {
+    require(&identity, Role::Editor)?;
+    if !identity.may_commit() {
+        return Err(Problem::new(
+            StatusCode::FORBIDDEN,
+            "agent_cannot_revert",
+            "an agent or import cannot revert a proposal accept",
+        ));
+    }
+    state
+        .store
+        .mark_proposal_accept_reverted(id)
+        .await
+        .map_err(store_status)?;
     Ok(StatusCode::NO_CONTENT)
 }
 

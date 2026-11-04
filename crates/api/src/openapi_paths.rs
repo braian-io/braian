@@ -633,6 +633,18 @@ fn operations() -> Vec<(HttpMethod, &'static str, Operation)> {
             true,
         ),
         call(
+            HttpMethod::Post,
+            "/v1/proposals/{id}/revert-accept",
+            "revert_proposal_accept",
+            "Mark an accepted proposal as reverted after undoing its object write",
+            vec![path_uuid("id", "Proposal id")],
+            None,
+            None,
+            "204",
+            "Proposal marked reverted",
+            true,
+        ),
+        call(
             HttpMethod::Get,
             "/v1/frecency",
             "get_frecency",
