@@ -4,7 +4,7 @@
 //! scales the same deterministic generator. The default shape is about
 //! 40 suppliers, 400 products and 1200 articles, on top of the hero objects.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use braian_model::{AttributeId, Cardinality, DefinitionSet, Object, ObjectId, TypeId};
 use braian_rules::CompiledModel;
@@ -1038,6 +1038,38 @@ fn catalog_plan(target: u32) -> (u32, u32, u32) {
     (suppliers, products, articles)
 }
 
+/// The ratio used before the demo shape changed to 40 / 400 / 1200.
+#[cfg(test)]
+fn old_catalog_plan(target: u32) -> (u32, u32, u32) {
+    if target == 0 {
+        return (0, 0, 0);
+    }
+    let mut suppliers = target * 13 / 240;
+    let mut products = target * 57 / 240;
+    if target >= 3 {
+        suppliers = suppliers.max(1);
+        products = products.max(1);
+    } else if target == 2 {
+        suppliers = 1;
+        products = 1;
+    } else {
+        return (1, 0, 0);
+    }
+    if suppliers + products > target {
+        products = target.saturating_sub(suppliers).min(products);
+        if suppliers > target {
+            suppliers = target;
+            products = 0;
+        }
+    }
+    let mut articles = target - suppliers - products;
+    if products > 0 && articles > 0 && articles < products {
+        products = articles;
+        articles = target - suppliers - products;
+    }
+    (suppliers, products, articles)
+}
+
 fn leaf_for(index: u32) -> &'static str {
     LEAVES[(index as usize) % LEAVES.len()]
 }
@@ -1654,14 +1686,64 @@ async fn seed_catalog(
     links: &LinkSeed<'_>,
     target: u32,
 ) -> anyhow::Result<()> {
+    seed_catalog_with_plan(store, actor, links, target, catalog_plan).await
+}
+
+async fn seed_catalog_with_plan(
+    store: &Store,
+    actor: &Actor,
+    links: &LinkSeed<'_>,
+    target: u32,
+    plan: fn(u32) -> (u32, u32, u32),
+) -> anyhow::Result<()> {
     let model = links.model;
     let revision = links.revision;
     let existing: HashSet<String> = store.keys_with_prefix("SYN-").await?.into_iter().collect();
-    let (suppliers, products, articles) = catalog_plan(target);
+    let (suppliers, products, articles) = plan(target);
     if suppliers + products + articles != target {
         return Err(anyhow::anyhow!(
             "seed plan {suppliers}+{products}+{articles} does not add up to {target}"
         ));
+    }
+    // Synthetic ids are deterministic. Load the stored type of every id in the
+    // new plan range once, so a catalog from an older plan is detected before
+    // anything is written over it.
+    let ids: Vec<ObjectId> = (0..target).map(synthetic_id).collect();
+    let stored = store
+        .get_objects_projected(
+            &ids,
+            &braian_store::ObjectProjection {
+                groups: false,
+                values: false,
+                parts: None,
+            },
+        )
+        .await?;
+    let mut types: HashMap<ObjectId, TypeId> = HashMap::new();
+    for object in stored {
+        if object.deleted_at.is_none() {
+            types.insert(object.object.id, object.object.type_id);
+        }
+    }
+    let mut plan_changed = false;
+    for index in 0..target {
+        let Some(stored_type) = types.get(&synthetic_id(index)) else {
+            continue;
+        };
+        let slot = slot_for(index, suppliers, products);
+        let expected = model
+            .type_id(slot.type_key)
+            .ok_or_else(|| anyhow::anyhow!("unknown type {}", slot.type_key))?;
+        if *stored_type != expected {
+            plan_changed = true;
+            break;
+        }
+    }
+    if plan_changed {
+        tracing::warn!(
+            "existing synthetic catalog was seeded with a different plan; skipping catalog/link seeding, reset the DB to reseed"
+        );
+        return Ok(());
     }
     let bulk = Actor {
         kind: BatchKind::Bulk,
@@ -1672,36 +1754,44 @@ async fn seed_catalog(
     let batch = store.open_batch(&bulk).await?;
     let mut pending = Vec::new();
     let mut inserted = 0u32;
-    if existing.len() < target as usize {
-        for index in 0..target {
-            let key = format!("SYN-{index:06}");
-            if existing.contains(&key) {
-                continue;
-            }
-            let object = synthetic_object(model, revision, index, suppliers, products)?;
-            let errors = model.validate(&object);
-            if !errors.is_empty() {
-                return Err(anyhow::anyhow!(
-                    "seed {key} failed validation: {}",
-                    errors[0].message
-                ));
-            }
-            pending.push(ObjectOp::Create(object));
-            if pending.len() == 400 {
-                let chunk = std::mem::take(&mut pending);
-                inserted += u32::try_from(chunk.len()).unwrap_or(0);
-                store.write_ops(batch, &bulk, chunk).await?;
-            }
+    for index in 0..target {
+        let key = format!("SYN-{index:06}");
+        let id = synthetic_id(index);
+        if existing.contains(&key) || types.contains_key(&id) {
+            continue;
         }
-        if !pending.is_empty() {
-            inserted += u32::try_from(pending.len()).unwrap_or(0);
-            store.write_ops(batch, &bulk, pending).await?;
+        let object = synthetic_object(model, revision, index, suppliers, products)?;
+        let errors = model.validate(&object);
+        if !errors.is_empty() {
+            return Err(anyhow::anyhow!(
+                "seed {key} failed validation: {}",
+                errors[0].message
+            ));
         }
+        types.insert(object.id, object.type_id);
+        pending.push(ObjectOp::Create(object));
+        if pending.len() == 400 {
+            let chunk = std::mem::take(&mut pending);
+            inserted += u32::try_from(chunk.len()).unwrap_or(0);
+            store.write_ops(batch, &bulk, chunk).await?;
+        }
+    }
+    if !pending.is_empty() {
+        inserted += u32::try_from(pending.len()).unwrap_or(0);
+        store.write_ops(batch, &bulk, pending).await?;
     }
     println!(
         "seed catalog inserted {inserted} synthetic objects (target {target}, {suppliers} suppliers, {products} products, {articles} articles)"
     );
-    seed_catalog_links(&store, &bulk, batch, links, (suppliers, products, articles)).await?;
+    seed_catalog_links(
+        &store,
+        &bulk,
+        batch,
+        links,
+        (suppliers, products, articles),
+        &types,
+    )
+    .await?;
     Ok(())
 }
 
@@ -1719,6 +1809,8 @@ struct PlannedLink {
     to_id: ObjectId,
     from_one: bool,
     to_one: bool,
+    from_types: Vec<TypeId>,
+    to_types: Vec<TypeId>,
 }
 
 /// Pairs and cardinality-one ends already chosen in this batch.
@@ -1827,6 +1919,8 @@ fn plan_link(
         to_id,
         from_one: spec.from_cardinality == Cardinality::One,
         to_one: spec.to_cardinality == Cardinality::One,
+        from_types: spec.from_types.clone(),
+        to_types: spec.to_types.clone(),
     })
 }
 
@@ -1866,6 +1960,7 @@ async fn seed_catalog_links(
     batch: braian_store::BatchId,
     links: &LinkSeed<'_>,
     counts: (u32, u32, u32),
+    types: &HashMap<ObjectId, TypeId>,
 ) -> anyhow::Result<()> {
     let (suppliers, products, articles) = counts;
     let mut pending = Vec::new();
@@ -1885,6 +1980,7 @@ async fn seed_catalog_links(
                 links,
                 &mut seen,
                 &mut pending,
+                types,
                 LinkRequest {
                     id: synthetic_link_id(1, index),
                     type_key: "product_articles",
@@ -1901,6 +1997,7 @@ async fn seed_catalog_links(
                 links,
                 &mut seen,
                 &mut pending,
+                types,
                 LinkRequest {
                     id: synthetic_link_id(2, index),
                     type_key: "supplier_articles",
@@ -1917,6 +2014,7 @@ async fn seed_catalog_links(
                 links,
                 &mut seen,
                 &mut pending,
+                types,
                 LinkRequest {
                     id: synthetic_link_id(3, index),
                     type_key: "replaces",
@@ -1951,6 +2049,7 @@ async fn queue_link(
     links: &LinkSeed<'_>,
     seen: &mut LinkSeen,
     pending: &mut Vec<ObjectOp>,
+    types: &HashMap<ObjectId, TypeId>,
     request: LinkRequest<'_>,
 ) -> anyhow::Result<()> {
     if store.get_object(request.id).await?.is_some() {
@@ -1966,6 +2065,17 @@ async fn queue_link(
     ) else {
         return Ok(());
     };
+    let (Some(from_type), Some(to_type)) = (types.get(&request.from_id), types.get(&request.to_id))
+    else {
+        return Ok(());
+    };
+    if !plan.from_types.contains(from_type) || !plan.to_types.contains(to_type) {
+        tracing::warn!(
+            link_type = request.type_key,
+            "existing synthetic object type does not match the link type; skipping link"
+        );
+        return Ok(());
+    }
     if link_already_held(store, &plan, seen).await? {
         seen.remember(&plan);
         return Ok(());
@@ -2415,6 +2525,57 @@ mod tests {
         assert_eq!(matching_proposals(db.store()).await, 1);
     }
 
+    /// A catalog seeded with the old 13 / 57 / 170 plan must not make the new
+    /// 40 / 400 / 1200 seed fail. It is a no-op and leaves the existing links alone.
+    #[tokio::test]
+    async fn existing_catalog_from_old_plan_is_skipped_instead_of_failing() {
+        load_test_database_url();
+        let db = braian_store::testing::TestDb::create().await;
+        {
+            let _restore = SeedEnv::set(&[
+                ("BRAIAN_DEMO_EMAIL", "old-plan@example.com"),
+                ("BRAIAN_DEMO_PASSWORD", "seed-test-password"),
+                ("BRAIAN_SEED_COUNT", "0"),
+            ]);
+            run(db.store(), None).await.expect("base seed");
+        }
+        seed_old_catalog(db.store(), "old-plan@example.com", 240)
+            .await
+            .expect("old plan catalog");
+        assert_eq!(
+            db.store().keys_with_prefix("SYN-").await.unwrap().len(),
+            240
+        );
+        {
+            let _restore = SeedEnv::set(&[
+                ("BRAIAN_DEMO_EMAIL", "old-plan@example.com"),
+                ("BRAIAN_DEMO_PASSWORD", "seed-test-password"),
+                ("BRAIAN_SEED_COUNT", "1640"),
+            ]);
+            run(db.store(), None).await.expect("new plan seed");
+        }
+        assert_eq!(
+            db.store().keys_with_prefix("SYN-").await.unwrap().len(),
+            240,
+            "the new plan must not add objects to the old catalog"
+        );
+        assert_link_ends_match_types(&db).await;
+    }
+
+    #[tokio::test]
+    async fn new_seed_twice_on_a_fresh_database_is_ok() {
+        load_test_database_url();
+        let db = braian_store::testing::TestDb::create().await;
+        let _restore = SeedEnv::set(&[
+            ("BRAIAN_DEMO_EMAIL", "fresh-twice@example.com"),
+            ("BRAIAN_DEMO_PASSWORD", "seed-test-password"),
+            ("BRAIAN_SEED_COUNT", "250"),
+        ]);
+        run(db.store(), None).await.expect("first seed");
+        run(db.store(), None).await.expect("second seed");
+        assert_link_ends_match_types(&db).await;
+    }
+
     /// The seed stores ids. A second run repairs leftover keys and does not
     /// replace a saved view or selection. Renaming the brand key leaves the
     /// stored column id in place. `number` is a locked standard attribute, so
@@ -2634,6 +2795,70 @@ mod tests {
             .iter()
             .filter(|item| item["title"] == "Accept ART-CHED-400")
             .count()
+    }
+
+    async fn seed_old_catalog(store: &Store, email: &str, target: u32) -> anyhow::Result<()> {
+        let user = store
+            .user_by_email(email)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("missing demo user"))?;
+        let defs = store.definition_set().await?;
+        let model = CompiledModel::compile(&defs)
+            .map_err(|errors| anyhow::anyhow!("{}", errors[0].message))?;
+        let links = LinkSeed {
+            model: &model,
+            defs: &defs,
+            revision: defs.model_revision,
+        };
+        let actor = Actor {
+            actor: user.principal_id,
+            on_behalf_of: None,
+            kind: BatchKind::Interactive,
+            source: "seed".into(),
+        };
+        seed_catalog_with_plan(store, &actor, &links, target, old_catalog_plan).await
+    }
+
+    async fn assert_link_ends_match_types(db: &braian_store::testing::TestDb) {
+        let defs = db.store().definition_set().await.expect("definitions");
+        let config = braian_store::admin::parse_config(&db.database_url()).expect("config");
+        let conn = braian_store::admin::PgConn::connect(config)
+            .await
+            .expect("test database");
+        let rows = conn
+            .client
+            .query(
+                "SELECT l.link_type_id, f.type_id, t.type_id
+                 FROM links l
+                 JOIN objects link ON link.id = l.object_id AND link.deleted_at IS NULL
+                 JOIN objects f ON f.id = l.from_id
+                 JOIN objects t ON t.id = l.to_id",
+                &[],
+            )
+            .await
+            .expect("links");
+        assert!(!rows.is_empty(), "seeded links are missing");
+        for row in rows {
+            let link_type = TypeId::from_uuid(row.get::<_, Uuid>(0));
+            let from_type = TypeId::from_uuid(row.get::<_, Uuid>(1));
+            let to_type = TypeId::from_uuid(row.get::<_, Uuid>(2));
+            let object_type = defs
+                .types
+                .iter()
+                .find(|item| item.id == link_type)
+                .unwrap_or_else(|| panic!("unknown link type {link_type}"));
+            let spec = object_type.link.as_ref().expect("link spec");
+            assert!(
+                spec.from_types.contains(&from_type),
+                "{} has wrong source type {from_type}",
+                object_type.key
+            );
+            assert!(
+                spec.to_types.contains(&to_type),
+                "{} has wrong target type {to_type}",
+                object_type.key
+            );
+        }
     }
 
     /// V22 demo rows (object refs and a relation) migrate, then the seed runs twice.

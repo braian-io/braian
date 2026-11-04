@@ -127,8 +127,8 @@ async fn main() -> anyhow::Result<()> {
 async fn prepare(seed_first: bool) -> anyhow::Result<(AppState, SocketAddr)> {
     let store = connect().await?;
     let search = typesense();
-    if seed_first {
-        seed::run(&store, search.as_ref()).await?;
+    if seed_first && let Err(error) = seed::run(&store, search.as_ref()).await {
+        tracing::error!(%error, "seed failed; continuing startup");
     }
     let identities = match std::env::var("BRAIAN_DEV_TOKENS") {
         Ok(raw) if !raw.trim().is_empty() => braian_api::identities(&store, &raw).await?,
