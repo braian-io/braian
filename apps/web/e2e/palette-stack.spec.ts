@@ -18,7 +18,8 @@ test.describe('palette sub-lists', () => {
 
     await page.keyboard.press('Control+k')
     await expect(palette).toBeVisible()
-    await page.getByTestId('palette-input').fill('Search and open')
+    // "Search and open" also matches Open object, and Tab follows the best match.
+    await page.getByTestId('palette-input').fill('Open view')
     await expect(palette.getByRole('option', { name: /^Open view/ }).first()).toBeVisible()
     await page.keyboard.press('Tab')
     await expect(page.getByTestId('palette-crumb')).toContainText('Open view ›')
