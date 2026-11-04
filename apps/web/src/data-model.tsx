@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Lock, MoreHorizontal } from 'lucide-react'
 import { ApiError, api, textValue, type Json } from './api'
@@ -18,7 +18,10 @@ import { StructureSection } from './structure-tree'
 import { StateNote } from './states'
 import { onDraftChange, requestReview, setModelFocus, stageModel, stageModelSteps } from './model-stage'
 import { chooseModelSelection, getModelSelection, getPreviewType, setPreviewType, subscribeModelSelection } from './model-selection'
-import { ROW_ORDER_KEY, StandardEditableTable, type StandardColumn } from './standard-editable-table'
+import { findPendingCreateRowId } from './inline-create'
+import { onAttributeAction, type AttributeAction } from './attribute-actions'
+import { writeErrorMessage } from './write-error'
+import { ROW_ORDER_KEY, StandardEditableTable, type StandardColumn, type EditRequest } from './standard-editable-table'
 
 type View = { state: Json }
 
@@ -169,6 +172,7 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
   const [filter, setFilter] = useState('')
   const [draftRows, setDraftRows] = useState<Record<string, AttributeTableRow>>({})
   const [message, setMessage] = useState('')
+  const [editRequest, setEditRequest] = useState<EditRequest | null>(null)
   const selectionKey = selection ? (selection.kind === 'type' ? selection.typeKey : `${selection.structure}/${selection.group}`) : ''
   const keyAttribute = keyAttributeOf(defs, selection)
   const families = ((defs?.unit_families as Json[]) ?? []).map((item) => String(item.key ?? '')).filter(Boolean)
@@ -178,6 +182,7 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
     setDraftRows({})
     setFilter('')
     setMessage('')
+    setEditRequest(null)
   }, [selectionKey])
 
   const rows = useMemo(() => {
@@ -187,6 +192,41 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
     }
     return source
   }, [defs, selection])
+
+  const blankRow = (): AttributeTableRow => ({
+    id: `new-${crypto.randomUUID()}`,
+    key: '',
+    label: '',
+    kind: 'text',
+    unit: '',
+    required: false,
+    languages: true,
+    searchable: false,
+    filterable: false,
+    sortable: false,
+    inherited: false,
+    standard: false,
+    multiple: false,
+    min: '',
+    max: '',
+    valueList: '',
+  })
+
+  const run = (action: AttributeAction) => {
+    if (action !== 'new') return
+    const pending = findPendingCreateRowId(draftRows, rows)
+    if (pending) {
+      setEditRequest({ rowId: pending, columnId: 'label' })
+      return
+    }
+    const row = blankRow()
+    setDraftRows((current) => ({ ...current, [row.id]: row }))
+    setEditRequest({ rowId: row.id, columnId: 'label' })
+  }
+
+  const runRef = useRef(run)
+  runRef.current = run
+  useEffect(() => onAttributeAction((action) => runRef.current(action)), [])
 
   if (!selection) {
     return (
@@ -497,24 +537,7 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
         rows={rows}
         draftRows={draftRows}
         onDraftRowsChange={setDraftRows}
-        createDraftRow={() => ({
-          id: `new-${crypto.randomUUID()}`,
-          key: '',
-          label: '',
-          kind: 'text',
-          unit: '',
-          required: false,
-          languages: true,
-          searchable: false,
-          filterable: false,
-          sortable: false,
-          inherited: false,
-          standard: false,
-          multiple: false,
-          min: '',
-          max: '',
-          valueList: '',
-        })}
+        createDraftRow={blankRow}
         newRowLabel={copy.newAttribute}
         filterValue={filter}
         onFilterChange={setFilter}
@@ -525,6 +548,8 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
           fixed: selection.kind === 'type' && row.standard,
           readOnly: row.inherited,
         })}
+        editRequest={editRequest}
+        onEditRequestHandled={() => setEditRequest(null)}
         reorderable={selection.kind === 'type'}
         canEdit={(row, column) => {
           if (row.inherited) return false
@@ -689,6 +714,7 @@ function ImpactNote() {
   const queryClient = useQueryClient()
   const [attribute, setAttribute] = useState('status')
   const [result, setResult] = useState<Json | null>(null)
+  const [error, setError] = useState('')
   return (
     <div data-testid="data-model">
       <p className="hint">{copy.reviewChange}</p>
@@ -696,16 +722,21 @@ function ImpactNote() {
         className="toolbar"
         onSubmit={(event) => {
           event.preventDefault()
+          setError('')
           void api.post('/v1/impact', { body: { remove_attribute: attribute } })
             .then((body) => {
               setResult(body)
               void queryClient.invalidateQueries({ queryKey: ['definitions'] })
+            })
+            .catch((reason: unknown) => {
+              setError(writeErrorMessage(reason) ?? copy.validation)
             })
         }}
       >
         <input data-testid="impact-attribute" value={attribute} onChange={(event) => setAttribute(event.target.value)} />
         <button type="submit" data-testid="impact-run">{copy.calculate}</button>
       </form>
+      {error ? <p className="error" data-testid="impact-error">{error}</p> : null}
       {result ? (
         <div data-testid="impact-result">
           <p>{copy.affected}: {formatCount(result.affected_objects)}</p>

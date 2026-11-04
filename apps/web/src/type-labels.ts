@@ -251,7 +251,7 @@ function namedType(types: TypeName[], listTypeKey?: string | null) {
 
 export function emptyDetail(types: TypeName[], listTypeKey?: string | null) {
   const type = namedType(types, listTypeKey)
-  if (type) return `Select a ${type.singular.toLowerCase()} to edit its values.`
+  if (type) return `Select a ${type.singular.toLowerCase()} to see its details.`
   return copy.detailEmpty
 }
 
