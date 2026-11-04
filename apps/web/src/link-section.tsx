@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { Check } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, textValue, type Json } from './api'
@@ -10,6 +10,9 @@ import { copy, uiLanguage } from './i18n'
 import { openSharedContextMenu, prefersNativeContextMenu } from './shared-context-menu'
 import { registerCommandRunner } from './command-registry'
 import { reportWriteError, writeErrorMessage } from './write-error'
+import { LinkCreateDialog, type LinkEndpoint } from './link-create-dialog'
+import { LinkObjectPicker } from './link-object-picker'
+import { submitLink } from './link-write'
 
 type LinkItem = {
   id: string
@@ -59,6 +62,8 @@ export function LinkSections({
 }) {
   const queryClient = useQueryClient()
   const [adding, setAdding] = useState<LinkSide | null>(null)
+  const [target, setTarget] = useState<LinkEndpoint | null>(null)
+  const opener = useRef<HTMLElement | null>(null)
   const [confirm, setConfirm] = useState<{ id: string; peer: string } | null>(null)
   const [typed, setTyped] = useState('')
   const [confirmError, setConfirmError] = useState('')
@@ -140,7 +145,11 @@ export function LinkSections({
         sameType.find((item) => !detail.direction || item.direction === detail.direction) ??
         sameType[0] ??
         sections[0]
-      if (section) setAdding(section)
+      if (section) {
+        opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+        setTarget(null)
+        setAdding(section)
+      }
     }
     const drop = () => {
       if (!focused) return
@@ -198,20 +207,46 @@ export function LinkSections({
           <button
             type="button"
             data-testid="add-link"
-            onClick={() => setAdding(section)}
+            onClick={(event) => {
+              opener.current = event.currentTarget
+              setTarget(null)
+              setAdding(section)
+            }}
           >
             {copy.addLink}
           </button>
         </section>
       ))}
-      {adding ? (
-        <LinkPicker
-          section={adding}
-          objectId={objectId}
-          onClose={() => setAdding(null)}
-          onCreated={() => {
+      {adding && !target ? (
+        <LinkObjectPicker
+          sourceId={objectId}
+          defs={defs}
+          onClose={() => {
             setAdding(null)
-            refresh()
+            restoreFocus(opener.current)
+          }}
+          onChoose={setTarget}
+        />
+      ) : null}
+      {adding && target ? (
+        <LinkCreateDialog
+          source={{ id: objectId, typeKey }}
+          target={target}
+          defs={defs}
+          preferred={{ linkType: adding.link_type, direction: adding.direction }}
+          onClose={() => {
+            setTarget(null)
+            setAdding(null)
+            restoreFocus(opener.current)
+          }}
+          onConfirm={async (request) => {
+            const outcome = await submitLink({
+              type: request.type,
+              from_id: request.fromId,
+              to_id: request.toId,
+              values: request.values,
+            })
+            if (outcome === 'created') refresh()
           }}
         />
       ) : null}
@@ -266,88 +301,10 @@ export function LinkSections({
   )
 }
 
-function LinkPicker({
-  section,
-  objectId,
-  onClose,
-  onCreated,
-}: {
-  section: LinkSide
-  objectId: string
-  onClose: () => void
-  onCreated: () => void
-}) {
-  const [query, setQuery] = useState('')
-  const [active, setActive] = useState(0)
-  const [error, setError] = useState('')
-  const found = useQuery({
-    queryKey: ['link-search', query],
-    queryFn: () => api.get('/v1/search', { params: { query: { q: query, per_page: 8, lang: uiLanguage } } }),
-    enabled: query.trim().length > 0,
-  })
-  const hits = (((found.data?.hits as Json[]) ?? [])
-    .map((hit) => (hit.document as Json) ?? hit)
-    .filter((row) => String(row.id ?? '') !== objectId))
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
-  const choose = (row: Json) => {
-    const peer = String(row.id ?? '')
-    if (!peer) return
-    const body = section.direction === 'out'
-      ? { type: section.link_type, from_id: objectId, to_id: peer, values: {} }
-      : { type: section.link_type, from_id: peer, to_id: objectId, values: {} }
-    setError('')
-    void api.post('/v1/links', { body: body }).then(onCreated).catch((reason: unknown) => {
-      const message = writeErrorMessage(reason)
-      if (message) setError(message)
-    })
-  }
-  return (
-    <div className="menu" role="dialog" aria-label={copy.addLink} data-testid="link-picker">
-      <input
-        data-testid="link-search"
-        autoFocus
-        aria-label={copy.addLink}
-        value={query}
-        onChange={(event) => { setQuery(event.target.value); setActive(0) }}
-        onKeyDown={(event) => {
-          if (event.key === 'ArrowDown') {
-            event.preventDefault()
-            setActive((index) => Math.min(hits.length - 1, index + 1))
-          }
-          if (event.key === 'ArrowUp') {
-            event.preventDefault()
-            setActive((index) => Math.max(0, index - 1))
-          }
-          if (event.key === 'Enter') {
-            event.preventDefault()
-            const row = hits[active]
-            if (row) choose(row)
-          }
-        }}
-      />
-      {error ? <p className="error" data-testid="link-picker-error">{error}</p> : null}
-      <div role="listbox">
-        {hits.map((row, index) => (
-          <button
-            key={String(row.id)}
-            type="button"
-            role="option"
-            aria-selected={index === active}
-            className={index === active ? 'on' : ''}
-            onClick={() => choose(row)}
-          >
-            {String(row.key ?? '')} {textValue(row.name) || textValue(row.a_name)}
-          </button>
-        ))}
-      </div>
-    </div>
-  )
+function restoreFocus(node: HTMLElement | null) {
+  window.setTimeout(() => {
+    if (node?.isConnected) node.focus()
+  }, 0)
 }
 
 export function linkChoices(defs: Json | undefined, typeKey: string) {

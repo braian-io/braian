@@ -57,6 +57,7 @@ import { requestNewSelection } from './assortment-filter'
 import { dispatchUi } from './ui-bus'
 import { registerCommandRunner, runCommand } from './command-registry'
 import { useShortcutBindings } from './shortcut-bindings'
+import { setAiMode } from './ai-mode'
 import { HelpDialog } from './help-dialog'
 import { registerModelCommandRunners } from './model-commands'
 import { createWorkspaceFromTemplate, typeWorkspaceTemplate, workspaceTemplates } from './templates'
@@ -202,6 +203,10 @@ export function Shell() {
   /** Bumped on every Ctrl+K / palette:search so list opens at root even if mode was already list. */
   const [paletteEpoch, setPaletteEpoch] = useState(0)
   const [fieldsEditColumnId, setFieldsEditColumnId] = useState<string | null>(null)
+  useEffect(() => {
+    setAiMode(paletteMode === 'ai')
+    return () => setAiMode(false)
+  }, [paletteMode])
   useEffect(() => {
     const close = () => setPaletteMode(null)
     window.addEventListener('braian-close-palette', close)

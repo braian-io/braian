@@ -491,6 +491,16 @@ export const copy = {
   importModel: 'Data model',
   importDeleteObjects: 'This will delete',
   importObjectsWord: 'objects.',
+  linkSearchPlaceholder: 'Search name or number…',
+  linkChoose: 'choose',
+  linkType: 'Link type',
+  linkInvalid: 'This is not a valid link type.',
+  linkInvalidTitle: 'Not a valid link type',
+  linkToName: 'Link to {name}',
+  linkFromHere: 'From this object',
+  linkToHere: 'To this object',
+  linkProposalFailed: 'Could not file the proposal.',
+  noResultsFor: 'No results for "{query}"',
 } as const
 
 export type MessageKey = keyof typeof copy
