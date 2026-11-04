@@ -76,7 +76,7 @@ test('a type is built in a draft, saved, and deleted from the keyboard', async (
 
   await command(page, 'Delete type')
   await expect(dialog).toBeVisible()
-  await page.getByTestId('confirm-name').fill('Recipe')
+  await expect(dialog.getByTestId('confirm-name')).toHaveCount(0)
   await page.getByTestId('confirm-delete').click()
   await expect(dialog).toBeHidden()
   await expect(page.getByTestId('type-recipe')).toHaveCount(0)
