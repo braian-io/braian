@@ -35,7 +35,7 @@ export const copy = {
   sendFeedback: 'Send feedback',
   searchPlaceholder: 'search (= exact, Enter)',
   commandPlaceholder: 'Search, open views, or ask AI',
-  shortcuts: 'Shortcuts',
+  shortcuts: 'Keyboard shortcuts',
   close: 'Close',
   save: 'Save',
   discard: 'Discard',

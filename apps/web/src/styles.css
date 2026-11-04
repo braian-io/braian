@@ -447,18 +447,37 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
     animation-timeline: scroll(self inline);
   }
 }
-.pane-tab { display: inline-flex; align-items: center; flex: none; gap: 4px; max-width: 180px; }
-.pane-tab > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pane-tab { display: inline-flex; align-items: center; flex: none; gap: 2px; max-width: 180px; }
+.pane-tab-open {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  height: 100%;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+}
+.pane-tab-open > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tab-x {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: none;
   width: 14px;
   height: 14px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  box-shadow: none;
   opacity: 0;
   color: var(--muted);
 }
-.pane-tab:hover .tab-x, .pane-tab.active .tab-x { opacity: 1; }
+.tab-x:hover { background: var(--hover); color: var(--text); }
+.pane-tab:hover .tab-x, .pane-tab.active .tab-x, .tab-x:focus-visible { opacity: 1; }
 .pane-chrome { margin-left: auto; display: flex; flex: none; gap: 2px; opacity: 0; }
 .pane:hover .pane-chrome, .pane.focused .pane-chrome, .pane-chrome:focus-within { opacity: 1; }
 .pane-chrome .icon-btn { width: 22px; padding: 0; justify-content: center; }
@@ -1315,6 +1334,23 @@ canvas.graph.panning { cursor: grabbing; }
   overflow: hidden;
 }
 .error { color: var(--danger); font-size: 12px; }
+.popover-content {
+  z-index: 50;
+  min-width: 200px;
+  padding: 4px;
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-md), var(--inset);
+}
+/* Radix positions the wrapper; the reused menu/import-menu classes must not add a second offset. */
+.popover-content.menu,
+.popover-content.import-menu {
+  position: static;
+  top: auto;
+  right: auto;
+  left: auto;
+}
 .menu {
   position: fixed;
   z-index: 20;
@@ -1381,6 +1417,9 @@ canvas.graph.panning { cursor: grabbing; }
   display: grid;
   gap: 6px;
 }
+.help-dialog { max-height: 80vh; overflow: auto; }
+.help-dialog p { margin: 0; }
+.help-dialog > button { justify-self: end; }
 .login { place-items: center; padding-top: 0; background: var(--bg); }
 .login form { width: min(380px, 92vw); padding: 28px 24px; background: var(--panel); gap: 10px; }
 .login h1 { margin: 0; font-size: 22px; font-weight: 600; }
@@ -1400,7 +1439,27 @@ canvas.graph.panning { cursor: grabbing; }
   background: var(--panel);
 }
 .palette-query:focus-within { box-shadow: var(--ring); }
-.palette-query input { background: transparent; border: none; box-shadow: none; }
+.palette-query input,
+.palette-query [cmdk-input-wrapper] {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+.palette-query input:focus,
+.palette-query input:focus-visible,
+.palette-query [cmdk-input-wrapper]:focus-within {
+  outline: none;
+  box-shadow: none;
+}
+.palette-query .palette-close {
+  border: none;
+  box-shadow: none;
+  background: transparent;
+}
+.palette-query .palette-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
 .sr-only {
   position: absolute;
   width: 1px;

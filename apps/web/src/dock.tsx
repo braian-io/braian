@@ -336,77 +336,88 @@ function Pane({ frame, leaf }: { frame: Frame; leaf: Leaf }) {
     >
       <div className="pane-tabs">
         <div className="pane-tab-list" ref={tabList}>
-          {leaf.views.map((id) => (
-            <Tooltip key={id}>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
+          {leaf.views.map((id) => {
+            const title = titleOf(frame.viewList, id)
+            return (
+              <Tooltip key={id}>
+                <div
                   data-tab={id}
                   data-view-type={frame.viewList.find((view) => view.id === id)?.type ?? ''}
                   className={id === activeId ? 'pane-tab active' : 'pane-tab'}
-                  onClick={() => {
-                    if (dragged.current) {
-                      dragged.current = false
-                      if (pendingActive.current) window.clearTimeout(pendingActive.current.timer)
-                      pendingActive.current = null
-                      return
-                    }
-                    if (frame.docRef.current.zoom) return
-                    frame.commit(activateDoc(frame.docRef.current, id))
-                    if (pendingActive.current) window.clearTimeout(pendingActive.current.timer)
-                    const timer = window.setTimeout(() => {
-                      pendingActive.current = null
-                    }, 500)
-                    if (pendingActive.current) pendingActive.current.timer = timer
-                  }}
-                  onDoubleClick={(event) => {
-                    event.preventDefault()
-                    event.stopPropagation()
-                    dragged.current = false
-                    const previous = pendingActive.current?.view
-                    if (pendingActive.current) window.clearTimeout(pendingActive.current.timer)
-                    pendingActive.current = null
-                    const current = frame.docRef.current
-                    if (current.zoom === id) {
-                      frame.commit(zoomView(current, id))
-                      return
-                    }
-                    const base = previous ? activateDoc(current, previous) : current
-                    frame.commit(zoomView(base, id))
-                  }}
-                  onPointerDown={(event) => {
-                    if (!frame.docRef.current.zoom && !pendingActive.current) {
-                      pendingActive.current = { view: leaf.views[leaf.active] ?? id, timer: 0 }
-                    }
-                    beginDrag(event, id)
-                  }}
-                  onMouseDown={(event) => {
-                    if (event.button === 1) {
-                      event.preventDefault()
-                      frame.run('close_view', { view: id })
-                    }
-                  }}
                   onContextMenu={(event) => {
                     if (prefersNativeContextMenu(event.target)) return
                     event.preventDefault()
                     frame.onMenu({ x: event.clientX, y: event.clientY, view: id })
                   }}
                 >
-                  <span>{titleOf(frame.viewList, id)}</span>
-                  <span
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      className="pane-tab-open"
+                      onClick={() => {
+                        if (dragged.current) {
+                          dragged.current = false
+                          if (pendingActive.current) window.clearTimeout(pendingActive.current.timer)
+                          pendingActive.current = null
+                          return
+                        }
+                        if (frame.docRef.current.zoom) return
+                        frame.commit(activateDoc(frame.docRef.current, id))
+                        if (pendingActive.current) window.clearTimeout(pendingActive.current.timer)
+                        const timer = window.setTimeout(() => {
+                          pendingActive.current = null
+                        }, 500)
+                        if (pendingActive.current) pendingActive.current.timer = timer
+                      }}
+                      onDoubleClick={(event) => {
+                        event.preventDefault()
+                        event.stopPropagation()
+                        dragged.current = false
+                        const previous = pendingActive.current?.view
+                        if (pendingActive.current) window.clearTimeout(pendingActive.current.timer)
+                        pendingActive.current = null
+                        const current = frame.docRef.current
+                        if (current.zoom === id) {
+                          frame.commit(zoomView(current, id))
+                          return
+                        }
+                        const base = previous ? activateDoc(current, previous) : current
+                        frame.commit(zoomView(base, id))
+                      }}
+                      onPointerDown={(event) => {
+                        if (!frame.docRef.current.zoom && !pendingActive.current) {
+                          pendingActive.current = { view: leaf.views[leaf.active] ?? id, timer: 0 }
+                        }
+                        beginDrag(event, id)
+                      }}
+                      onMouseDown={(event) => {
+                        if (event.button === 1) {
+                          event.preventDefault()
+                          frame.run('close_view', { view: id })
+                        }
+                      }}
+                    >
+                      <span>{title}</span>
+                    </button>
+                  </TooltipTrigger>
+                  <button
+                    type="button"
                     className="tab-x"
+                    aria-label="Close tab"
+                    title={`Close ${title}`}
+                    data-testid={`close-tab-${id}`}
                     onClick={(event) => {
                       event.stopPropagation()
                       frame.run('close_view', { view: id })
                     }}
                   >
                     <X size={12} aria-hidden="true" />
-                  </span>
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>{frame.doc.zoom === id ? copy.doubleClickRestore : copy.doubleClickMaximize}</TooltipContent>
-            </Tooltip>
-          ))}
+                  </button>
+                </div>
+                <TooltipContent>{frame.doc.zoom === id ? copy.doubleClickRestore : copy.doubleClickMaximize}</TooltipContent>
+              </Tooltip>
+            )
+          })}
         </div>
         {(() => {
           const label = frame.viewList.find((view) => view.id === activeId)?.sourceLabel
