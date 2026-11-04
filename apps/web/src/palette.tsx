@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Check } from 'lucide-react'
 import { MetaChip, type ChipTone } from './chips'
 import { toast } from 'sonner'
+import { announce, takeShortcutTip } from './shortcut-tip'
 import { ApiError, api, operationId, textValue, type Json } from './api'
 import { reportWriteError } from './write-error'
 import { streamAgent, type AgentEvent } from './agent-stream'
@@ -18,8 +19,8 @@ import { structureCaption } from './graph-scene'
 import { chordForCommand } from './shortcuts'
 import { mergeFrecency, readFrecency, touch, writeFrecency } from './frecency'
 import { withModelCommand } from './model-command'
-import { filterPaletteRows, visibleRows, withRecent, groupTitle, type PaletteGroup, type PaletteItem } from './palette-model'
-import { argumentBreadcrumb, isObjectParam, objectTypeFilter, paletteKeyEffect, placeTargetId, type PaletteFrame } from './palette-core'
+import { activeAfterQuery, filterPaletteRows, frecencyId, groupOrder, groupTitle, markedTitle, readPaletteMemory, rememberPaletteItem, rememberRecent, resultAnnouncement, selectedObjectId, sublistPlaceholder, visibleRows, withRecent, type PaletteItem } from './palette-model'
+import { argumentBreadcrumb, isObjectParam, objectTypeFilter, paletteKeyEffect, placeTargetId, tabHint, type PaletteFrame } from './palette-core'
 import { argumentCommands, type OperationRecord } from './palette-operations'
 import { objectPaletteRows } from './palette-objects'
 import { viewPaletteRows } from './palette-views'
@@ -58,7 +59,6 @@ import {
   commandPlaceholder,
   displayViewTitle,
   searchGroupTitle,
-  singularOf,
   typeNames,
   typeOfView,
   typeViewPaletteItems,
@@ -174,7 +174,7 @@ export function CommandPalette({
   useEffect(() => {
     if (mode === 'fields' && fieldsEditColumnId) onFieldsConsumed?.()
   }, [mode, fieldsEditColumnId, onFieldsConsumed])
-  const [active, setActive] = useState<number | null>(null)
+  const [active, setActive] = useState<number | null>(0)
   const [stack, setStack] = useState<PaletteFrame[]>([])
   // Drilling a sub-list replaces the rows under the cursor. Keep the query field
   // focused so Backspace and Esc still reach the palette.
@@ -234,6 +234,7 @@ export function CommandPalette({
     setFrecencyTick((value) => value + 1)
   }, [remoteFrecency.data])
   const frecency = useMemo(() => readFrecency(), [query, turns.length, frecencyTick])
+  const paletteMemory = useMemo(() => readPaletteMemory(), [query, turns.length, frecencyTick])
 
   const defs = useQuery({ queryKey: ['definitions'], queryFn: () => api.get('/v1/definitions'), staleTime: 60_000 })
   const workspaceType = session.workspaceType || session.listType || ''
@@ -261,7 +262,6 @@ export function CommandPalette({
   const savedTemplateList = useMemo(() => savedTemplates.data ?? [], [savedTemplates.data])
   const suggestionTotal = Number(((suggestions.data?.pending as Json | undefined)?.total) ?? 0)
   const selectedKey = String(selectedObject.data?.type ?? '')
-  const selectedSingular = singularOf(defs.data, selectedKey, uiLanguage) || (types.length === 1 ? types[0]?.singular ?? '' : '')
   // Live selections in other views become peer sources (Notion 103 PR 2).
   const selectionVersion = useSyncExternalStore(subscribeUiSelections, uiSelectionVersion, uiSelectionVersion)
   const peerSourceByView = useMemo(() => {
@@ -360,7 +360,7 @@ export function CommandPalette({
   const catalog = useMemo(
     () => [
       ...argumentCommands(operationRecords, types),
-      ...buildCatalog(workspaces, views, session.objectId, types, selectedSingular, selectedKey, suggestionTotal, feedbackEnabled, theme, focusViewId),
+      ...buildCatalog(workspaces, views, types, selectedKey, suggestionTotal, feedbackEnabled, theme, focusViewId),
       switchCatalogRootItem(currentCatalogName),
       {
         id: 'selections',
@@ -409,9 +409,9 @@ export function CommandPalette({
         : []),
       { id: 'model:new-type', group: 'model' as const, title: copy.newType, subtitle: copy.dataModel, keywords: ['create', 'type'] },
       { id: 'model:new-link-type', group: 'model' as const, title: copy.newLinkType, subtitle: copy.dataModel, keywords: ['create', 'link', 'type'] },
-      { id: 'link:to', group: 'object' as const, title: `${copy.linkTo} ›`, subtitle: copy.addLink, keywords: ['link', 'relation'] },
-      { id: 'link:add', group: 'object' as const, title: copy.addLink, subtitle: copy.linkTypes, keywords: ['link', 'add'] },
-      { id: 'link:remove', group: 'object' as const, title: copy.removeLink, subtitle: copy.linkTypes, keywords: ['link', 'remove'] },
+      { id: 'link:to', group: 'views' as const, title: `${copy.linkTo} ›`, subtitle: copy.addLink, keywords: ['link', 'relation'] },
+      { id: 'link:add', group: 'views' as const, title: copy.addLink, subtitle: copy.linkTypes, keywords: ['link', 'add'] },
+      { id: 'link:remove', group: 'views' as const, title: copy.removeLink, subtitle: copy.linkTypes, keywords: ['link', 'remove'] },
       { id: 'model:delete-link-type', group: 'model' as const, title: copy.deleteLinkType, subtitle: copy.dataModel, keywords: ['delete', 'link', 'type'] },
       { id: 'model:new-list', group: 'model' as const, title: copy.newValueList, subtitle: copy.dataModel, keywords: ['create', 'list', 'option'] },
       { id: 'model:new-family', group: 'model' as const, title: copy.newUnitFamily, subtitle: copy.dataModel, keywords: ['create', 'unit'] },
@@ -439,7 +439,7 @@ export function CommandPalette({
           ]),
       { id: 'attr:new', group: 'model' as const, title: copy.newAttribute, subtitle: copy.attributeDefinitions, keywords: ['attribute', 'create'] },
     ],
-    [workspaces, views, session.objectId, session.group, types, selectedSingular, selectedKey, suggestionTotal, feedbackEnabled, theme, tableColumns, defs.data, operationRecords],
+    [workspaces, views, session.group, types, selectedKey, suggestionTotal, feedbackEnabled, theme, tableColumns, defs.data, operationRecords],
   )
   const hits: PaletteItem[] = objectPaletteRows((found.data?.hits as Json[] | undefined) ?? [], defs.data)
   useEffect(() => {
@@ -496,17 +496,26 @@ export function CommandPalette({
     // master-only fallback from the first paint.
   }, [startSwitchCatalog, catalogOptions])
 
-  const rootRows = withModelCommand(query, visibleRows(query, catalog, stack.length === 0 ? hits : [], frecency))
+  const rootRows = withModelCommand(query, visibleRows(query, catalog, stack.length === 0 ? hits : [], frecency, Date.now(), paletteMemory, stack.length === 0 ? session.objectId : null))
   const frameRows = topFrame
     ? filterPaletteRows(isObjectParam(topFrame.paramType) ? hits : topFrame.rows, query)
     : undefined
-  const rows = frameRows ? withRecent(frameRows, frecency, Date.now(), query) : rootRows
+  const frameExtras = topFrame && isObjectParam(topFrame.paramType)
+    ? paletteMemory.filter((item) => topFrame.paramType === 'object' || item.typeKey === topFrame.paramType)
+    : []
+  const rows = frameRows ? withRecent(frameRows, frecency, Date.now(), query, frameExtras) : rootRows
   const activeRow = active == null ? undefined : rows[active]
+  const queryMatchId = !query.trim() || stack.length > 0
+    ? ''
+    : rows[activeAfterQuery(rows, query) ?? -1]?.id ?? ''
 
   useEffect(() => {
-    if (stack.length > 0 || mode !== 'list') return
-    const index = rows.findIndex((row) => row.sourceId === 'model:command' || row.sourceId === 'assortment:save')
-    if (index >= 0) setActive(index)
+    if (mode !== 'list' || stack.length > 0 || !query.trim()) return
+    setActive(activeAfterQuery(rows, query))
+  }, [query, mode, stack.length, queryMatchId])
+  useEffect(() => {
+    if (mode !== 'list' || stack.length === 0 || !query.trim()) return
+    setActive(0)
   }, [query, mode, stack.length])
   useEffect(() => {
     document.querySelector<HTMLElement>('#palette-list .hit.on')?.scrollIntoView({ block: 'nearest' })
@@ -555,9 +564,11 @@ export function CommandPalette({
       onClose()
       return
     }
-    const remembered = item.group === 'best' || item.id.startsWith('best:') ? id : item.id
-    if (id !== 'ask') {
+    if (rememberRecent(item)) {
+      const remembered = frecencyId(item)
       touch(remembered)
+      rememberPaletteItem(item)
+      setFrecencyTick((value) => value + 1)
       void api.post('/v1/frecency', { body: { id: remembered } }).catch((reason: unknown) => {
         reportWriteError(reason)
       })
@@ -969,15 +980,21 @@ export function CommandPalette({
         })
       return
     }
-    if (item.shortcut) toast(`Next time: ${item.shortcut}`)
+    if (item.shortcut) {
+      const tip = takeShortcutTip(item.sourceId ?? item.id, item.shortcut, item.subtitle || item.title)
+      if (tip) {
+        toast(tip)
+        announce(tip)
+      }
+    }
     if (id === 'ask' || item.group === 'ask') {
       void ask(query)
       return
     }
-    if (id.startsWith('hit:') || item.group === 'search') {
-      const objectId = id.startsWith('hit:') ? id.slice(4) : id
-      session.setObjectId(objectId)
-      dispatchUi('ui.select', { id: objectId })
+    const opened = selectedObjectId(item)
+    if (opened) {
+      session.setObjectId(opened)
+      dispatchUi('ui.select', { id: opened })
       onClose()
       return
     }
@@ -1139,14 +1156,13 @@ export function CommandPalette({
     setProposal(null)
     setRunning(true)
     setSteps([{ id: 'read', text: stepText('read'), state: 'run' }])
-    session.push(`Agent: ${prompt}`)
     const messages = history.map((turn) => ({ role: turn.role, content: turn.text }))
     try {
       await streamAgent(messages, (event) => applyEvent(event, setSteps, setAnswer, setProposal, session, stepHint(event, types)))
       setSteps((current) => current.map((step) => ({ ...step, state: 'done' })))
     } catch (error) {
       const message = error instanceof ApiError || error instanceof Error ? error.message : 'The model did not reply.'
-      setAnswer(message)
+      setAnswer(agentText(message))
     } finally {
       setRunning(false)
     }
@@ -1162,8 +1178,7 @@ export function CommandPalette({
   }
 
   const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    const chosen = active == null ? 0 : active
-    const row = rows[chosen]
+    const row = active == null ? undefined : rows[active]
     const effect = paletteKeyEffect({
       key: event.key,
       ctrlKey: event.ctrlKey,
@@ -1184,7 +1199,10 @@ export function CommandPalette({
           }
         : undefined,
     })
-    if (event.key === 'Tab') event.preventDefault()
+    if (event.key === 'Tab' || (event.key === 'Enter' && mode === 'list' && active == null)) {
+      event.preventDefault()
+      event.stopPropagation()
+    }
     if (effect.type === 'caret' || effect.type === 'none') return
     event.preventDefault()
     event.stopPropagation()
@@ -1213,6 +1231,11 @@ export function CommandPalette({
     setActive(effect.index)
   }
 
+  const tab = tabHint({
+    activeIndex: active,
+    argument: Boolean(activeRow?.argument) && !activeRow?.disabled,
+    ask: activeRow?.group === 'ask' || activeRow?.id === 'ask',
+  })
   const highlighted = rows[active ?? 0]
   const highlightedActions = secondaryOf(highlighted)
   const highlightedRef = useRef(highlighted)
@@ -1232,12 +1255,19 @@ export function CommandPalette({
     return () => window.removeEventListener('braian-palette-actions', onActions)
   }, [])
 
-  const groups = groupBlocks(rows.filter((row) => row.group !== 'ask'))
+  const sublist = stack.length > 0
+  const groups = groupBlocks(rows.filter((row) => row.group !== 'ask'), sublist)
   const askRow = rows.find((row) => row.group === 'ask')
+  const resultCount = rows.filter((row) => row.group !== 'ask' && row.id !== 'ask').length
+  const showEmpty = mode === 'list' && query.trim().length > 0 && resultCount === 0
+  const placeholder = mode === 'ai'
+    ? 'Ask AI'
+    : topFrame
+      ? sublistPlaceholder(topFrame, types.map((type) => type.plural))
+      : commandPlaceholder(types)
   const userTurns = turns.filter((turn) => turn.role === 'user')
   const question = userTurns.at(-1)?.text ?? ''
-  const nothingElse = rows.length === 1 && rows[0]?.group === 'ask'
-  const selected = nothingElse ? 0 : active
+  const selected = active
 
 
   if (mode === 'fields') {
@@ -1294,6 +1324,13 @@ export function CommandPalette({
       >
         <div className="palette-query">
           {mode === 'ai' ? <span className="ai-badge" data-testid="ai-badge">AI</span> : null}
+          <div
+            className="crumb"
+            data-testid="palette-crumb"
+            aria-label={crumbAccessibleName(stack.map((crumb) => crumb.label).join(' '))}
+          >
+            {stack.map((crumb) => crumb.label).join(' ')}
+          </div>
           <CommandInput
             ref={inputRef}
             data-testid="palette-input"
@@ -1301,21 +1338,20 @@ export function CommandPalette({
             role="combobox"
             aria-autocomplete="list"
             aria-controls="palette-list"
+            aria-expanded={mode === 'list'}
             data-palette-active={selected == null ? '' : String(selected)}
             value={query}
-            placeholder={mode === 'ai' ? 'Ask AI' : commandPlaceholder(types)}
+            placeholder={placeholder}
             onValueChange={(value) => {
               setQuery(value)
-              setActive(null)
+              setActive(value.trim() ? (stack.length > 0 ? 0 : null) : 0)
             }}
           />
           {mode === 'ai' ? (
             <button type="button" className="icon-btn palette-close" onClick={onClose}>{copy.close}</button>
           ) : null}
         </div>
-        <div className="crumb" data-testid="palette-crumb" aria-live="polite">
-          {stack.map((crumb) => crumb.label).join(' ')}
-        </div>
+        <div className="sr-only" aria-live="polite" data-testid="palette-results">{resultAnnouncement(resultCount, query)}</div>
         {mode === 'ai' ? (
           <div className="ai-log" data-testid="ai-log">
             {userTurns.slice(0, -1).map((turn, index) => (
@@ -1360,10 +1396,13 @@ export function CommandPalette({
             ) : null}
           </div>
         ) : (
-            <CommandList id="palette-list" role="listbox" aria-activedescendant={rows.length > 0 ? `palette-opt-${selected ?? 0}` : undefined}>
+            <CommandList id="palette-list" role="listbox">
+              {showEmpty ? (
+                <p className="palette-empty" data-testid="palette-empty">No results for &quot;{query.trim()}&quot;</p>
+              ) : null}
               {groups.map((group) => (
                 <div key={group.name} className="palette-group">
-                  {group.name !== 'ask' ? <div className="palette-heading">{group.name === 'search' ? searchGroupTitle(hits.map((hit) => hit.typeKey ?? ''), types) : group.name === 'object' && selectedSingular ? `On this ${selectedSingular}` : groupTitle[group.name]}</div> : null}
+                  {group.name !== 'ask' && !(sublist && group.name !== 'recent') ? <div className="palette-heading">{group.name === 'search' ? searchGroupTitle(hits.map((hit) => hit.typeKey ?? ''), types) : groupTitle[group.name]}</div> : null}
                   {group.rows.map((row) => {
                     const index = rows.indexOf(row)
                     return (
@@ -1381,7 +1420,7 @@ export function CommandPalette({
                         onSelect={() => run(row)}
                       >
                         <span className="hit-copy">
-                          <span className="hit-title">{highlight(row.title, query)}</span>
+                          <span className="hit-title">{highlight(markedTitle(row), query)}</span>
                           {row.subtitle ? <small>{row.subtitle}</small> : null}
                         </span>
                         {row.chips && row.chips.length > 0 ? (
@@ -1411,20 +1450,26 @@ export function CommandPalette({
             onSelect={() => run(askRow)}
           >
             <span className="hit-copy">
-              <span className="hit-title">{highlight(askRow.title, query)}</span>
+              <span className="hit-title">{highlight(markedTitle(askRow), query)}</span>
               {askRow.subtitle ? <small>{askRow.subtitle}</small> : null}
             </span>
             {askRow.kbd ? <Kbd>{askRow.kbd}</Kbd> : null}
           </CommandItem>
         ) : null}
-        <div className="palette-foot" data-testid="palette-foot">
-          <span data-testid="palette-active">{activeRow?.subtitle ?? ''}</span>
-          <span><Kbd>Enter</Kbd> run</span>
-          <span><Kbd>Tab</Kbd> open</span>
-          <span><Kbd>Ctrl</Kbd>+<Kbd>K</Kbd> actions</span>
-          <span><Kbd>Ctrl</Kbd>+<Kbd>J</Kbd> ask AI</span>
-          <span><Kbd>Esc</Kbd> back</span>
-        </div>
+        {mode === 'ai' ? (
+          <div className="palette-foot" data-testid="palette-ai-foot">
+            <span><Kbd>Enter</Kbd> send</span>
+            <span><Kbd>Esc</Kbd> close</span>
+          </div>
+        ) : (
+          <div className="palette-foot" data-testid="palette-foot">
+            <span><Kbd>Enter</Kbd> run</span>
+            {tab === 'open' ? <span data-testid="palette-tab-hint"><Kbd>Tab</Kbd> open</span> : null}
+            {stack.length > 0 ? <span data-testid="palette-back-hint">⌫ back</span> : null}
+            <span><Kbd>Ctrl</Kbd>+<Kbd>J</Kbd> ask AI</span>
+            <span><Kbd>Esc</Kbd> close</span>
+          </div>
+        )}
       </Command>
     </div>
   )
@@ -1448,9 +1493,7 @@ function stepHint(event: AgentEvent, types: ReturnType<typeof typeNames>) {
 function buildCatalog(
   workspaces: Array<{ id: string; name: string; share_token?: string | null }>,
   views: Array<{ id: string; title: string; type: string; state?: Json }>,
-  objectId: string | null,
   types: ReturnType<typeof typeNames>,
-  selectedSingular: string,
   openTypeKey: string,
   suggestions: number,
   feedbackEnabled?: boolean,
@@ -1496,7 +1539,6 @@ function buildCatalog(
         }]
       : []),
     { id: 'model:rename-key', group: 'model', title: copy.renameKey, subtitle: 'Change a key. External integrations that use the old key will stop working', keywords: ['rename', 'key', 'attribute'] },
-    { id: 'object:move-group', group: 'object', title: copy.moveToGroup, subtitle: 'Place the open object in a group', keywords: ['move', 'group', 'place'] },
     { id: 'model:allowed-trees', group: 'model', title: copy.allowedTrees, subtitle: 'Choose the trees a type may use', keywords: ['tree', 'structure', 'type'] },
     ...registryPaletteRows({ theme, target: { feedbackEnabled } }),
     { id: 'layout:move_view_left', group: 'views', title: 'Move view left', subtitle: 'Move the focused view left', kbd: chordForCommand('layout:move_view_left'), shortcut: chordForCommand('layout:move_view_left') },
@@ -1523,15 +1565,6 @@ function buildCatalog(
       kbd: chordForCommand('feedback:send'),
       shortcut: chordForCommand('feedback:send'),
     })
-  }
-  if (objectId) {
-    items.push(
-      { id: 'object:open', group: 'object', title: selectedSingular ? `Open ${selectedSingular}` : 'Open detail', subtitle: selectedSingular ? `On this ${selectedSingular}` : 'On the selected object', kbd: 'Enter' },
-      { id: 'object:right', group: 'object', title: 'Open to the right', subtitle: 'Split beside the table' },
-      { id: 'object:history', group: 'object', title: 'History', subtitle: 'As it was, and restore' },
-      { id: 'object:graph', group: 'object', title: 'Graph', subtitle: 'Links and where values come from' },
-      { id: 'object:copy', group: 'object', title: 'Copy id', subtitle: objectId },
-    )
   }
   return items
 }
@@ -1586,9 +1619,16 @@ function columnRows(columns: UiColumn[], hide: boolean): PaletteItem[] {
     }))
 }
 
-function groupBlocks(rows: PaletteItem[]) {
-  const order: PaletteGroup[] = ['recent', 'best', 'object', 'model', 'views', 'search', 'ask']
-  return order
+function groupBlocks(rows: PaletteItem[], sublist: boolean) {
+  if (sublist) {
+    const recent = rows.filter((row) => row.group === 'recent')
+    const rest = rows.filter((row) => row.group !== 'recent')
+    return [
+      ...(recent.length > 0 ? [{ name: 'recent' as const, rows: recent }] : []),
+      ...(rest.length > 0 ? [{ name: 'views' as const, rows: rest }] : []),
+    ]
+  }
+  return groupOrder
     .map((name) => ({ name, rows: rows.filter((row) => row.group === name) }))
     .filter((group) => group.rows.length > 0)
 }
@@ -1642,11 +1682,22 @@ function applyEvent(
     if (id) void loadProposal(id, setProposal, session)
   }
   if (event.type === 'answer') {
-    const text = event.text ?? ''
+    const text = agentText(event.text ?? '')
     setAnswer(text)
     setSteps((current) => current.map((step) => ({ ...step, state: 'done' })))
   }
-  if (event.type === 'error') setAnswer(event.text ?? 'The model did not reply.')
+  if (event.type === 'error') setAnswer(agentText(event.text ?? 'The model did not reply.'))
+}
+
+function crumbAccessibleName(label: string): string | undefined {
+  const name = label.replace(/\s*›\s*$/, '').trim()
+  if (!name) return undefined
+  return `${name}, press Backspace to go back`
+}
+
+function agentText(text: string) {
+  if (/no model is connected|openai_api_key/i.test(text)) return copy.agentUnavailable
+  return text
 }
 
 async function loadProposal(

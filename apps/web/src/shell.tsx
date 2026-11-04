@@ -785,12 +785,10 @@ export function Shell() {
 
   useShortcutBindings({
     openPalette: () => {
-      // On an entity row, Ctrl+K opens that row's action panel (Raycast).
+      // Ctrl+K does nothing while the command list is already open.
+      // Fields mode is still the palette, and Ctrl+K there returns to the root list.
       const open = document.querySelector('[data-testid="command-palette"]')
-      if (open?.getAttribute('data-entity-row') === 'true') {
-        window.dispatchEvent(new Event('braian-palette-actions'))
-        return
-      }
+      if (open && open.getAttribute('data-fields-mode') !== 'true') return
       // Remount at list root (clears Fields › / stack left from Select fields ›) and
       // focus synchronously so the first typed character is not dropped.
       flushSync(() => {

@@ -73,22 +73,24 @@ describe('palette Home/End in the query field', () => {
     await waitFor(() => expect(screen.getAllByRole('option').length).toBeGreaterThan(0))
     fireEvent.keyDown(input, { key: 'ArrowDown' })
     fireEvent.keyDown(input, { key: 'ArrowDown' })
-    const mid = screen.getByTestId('palette-active').textContent
-    expect(mid && mid.length > 0).toBe(true)
+    const highlighted = () => document.querySelector('.hit.on')?.textContent ?? ''
+    const mid = highlighted()
+    expect(mid.length > 0).toBe(true)
+    expect(document.querySelectorAll('.hit.on')).toHaveLength(1)
 
     const home = createEvent.keyDown(input, { key: 'Home' })
     fireEvent(input, home)
     expect(home.defaultPrevented, 'Home must not be preventDefaulted in the query field').toBe(false)
-    expect(screen.getByTestId('palette-active').textContent).toBe(mid)
+    expect(highlighted()).toBe(mid)
 
     const end = createEvent.keyDown(input, { key: 'End' })
     fireEvent(input, end)
     expect(end.defaultPrevented).toBe(false)
-    expect(screen.getByTestId('palette-active').textContent).toBe(mid)
+    expect(highlighted()).toBe(mid)
 
     const shiftHome = createEvent.keyDown(input, { key: 'Home', shiftKey: true })
     fireEvent(input, shiftHome)
     expect(shiftHome.defaultPrevented).toBe(false)
-    expect(screen.getByTestId('palette-active').textContent).toBe(mid)
+    expect(highlighted()).toBe(mid)
   })
 })

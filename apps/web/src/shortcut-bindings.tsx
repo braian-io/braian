@@ -1,6 +1,7 @@
 import { useCallback } from 'react'
 import { useHotkeys } from 'react-hotkeys-hook'
 import { isTextEditingTarget } from './cell-edit'
+import { markShortcutUsed } from './shortcut-tip'
 import { shortcutById, type Shortcut } from './shortcuts'
 
 export type ShortcutHandlers = {
@@ -43,6 +44,7 @@ function useRegisteredHotkey(
       if (isTextEditingTarget(event)) return
       if (def.rejectShift && event.shiftKey) return
       if (def.layoutOnly && (options.paletteOpen || typingTarget(event))) return
+      if (def.commandId) markShortcutUsed(def.commandId)
       handler(event)
     },
     {
@@ -67,7 +69,16 @@ export function useShortcutBindings(handlers: ShortcutHandlers) {
   )
   useRegisteredHotkey('palette.search', openPalette)
 
-  useRegisteredHotkey('palette.ai', useCallback(() => handlers.openAi(), [handlers]))
+  // While the palette is open, Ctrl+J belongs to it: ask with the current query.
+  // The global binding would remount a blank AI panel and drop that query.
+  useRegisteredHotkey(
+    'palette.ai',
+    useCallback((event) => {
+      event.stopPropagation()
+      handlers.openAi()
+    }, [handlers]),
+    { enabled: !handlers.paletteOpen },
+  )
   useRegisteredHotkey('review.save', useCallback(() => handlers.saveReview(), [handlers]))
   useRegisteredHotkey(
     'feedback.send',

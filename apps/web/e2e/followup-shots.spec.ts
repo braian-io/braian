@@ -21,8 +21,8 @@ test('follow-up screenshots', async ({ page }) => {
 
   await login(page)
   await page.keyboard.press('Control+k')
-  await page.getByTestId('palette-input').fill('Articles view')
-  await page.getByTestId('command-palette').locator('.hit').filter({ hasText: 'Articles view' }).filter({ hasText: 'Open view' }).first().click()
+  await page.getByTestId('palette-input').fill('Articles')
+  await page.getByTestId('command-palette').locator('.hit').filter({ hasText: 'Articles' }).filter({ hasText: 'Open view' }).first().click()
   await expect(page.getByTestId('command-palette')).toHaveCount(0)
   await page.getByTestId('object-row').filter({ hasText: 'SYN-' }).filter({ hasText: 'Article' }).first().click()
   await page.getByRole('button', { name: 'Graph' }).click()
