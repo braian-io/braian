@@ -7915,6 +7915,13 @@ mod tests {
                         || character == '-')
             );
             assert_eq!(tool["parameters"]["type"], "object");
+            if name == "ask_person" {
+                assert_eq!(
+                    tool["parameters"]["properties"]["question"]["type"],
+                    "string"
+                );
+                continue;
+            }
             assert!(operation_for_tool(name).is_some(), "{name}");
         }
         assert!(tools.iter().any(|tool| tool["name"] == "create_object"));
