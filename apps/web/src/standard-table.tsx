@@ -19,6 +19,10 @@ export type StandardTableChromeProps = {
   /** When true, show Review and save (same action as Ctrl+S). */
   reviewVisible?: boolean
   onReview?: () => void
+  /** Inline create row open: Cancel and Save stay in this slot (text labels). */
+  inlineCreateOpen?: boolean
+  onCancelCreate?: () => void
+  onSaveCreate?: () => void
   children: ReactNode
   testId?: string
 }
@@ -38,6 +42,9 @@ export function StandardTableChrome({
   filterPlaceholder = copy.search,
   reviewVisible = false,
   onReview,
+  inlineCreateOpen = false,
+  onCancelCreate,
+  onSaveCreate,
   children,
   testId = 'standard-table',
 }: StandardTableChromeProps) {
@@ -67,6 +74,20 @@ export function StandardTableChrome({
             <Plus size={14} aria-hidden="true" />
           </button>
         ) : null}
+        <span className="standard-table-create-actions" data-testid="inline-create-actions">
+          {inlineCreateOpen && onCancelCreate ? (
+            <>
+              <button type="button" data-testid="inline-create-cancel" onClick={onCancelCreate}>
+                {copy.cancel}
+              </button>
+              {onSaveCreate ? (
+                <button type="button" className="primary" data-testid="inline-create-save" onClick={onSaveCreate}>
+                  {copy.save}
+                </button>
+              ) : null}
+            </>
+          ) : null}
+        </span>
         {onSelectFields ? (
           <button
             type="button"

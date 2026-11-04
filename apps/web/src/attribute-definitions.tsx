@@ -7,6 +7,7 @@ import { formatCount } from './format'
 import { copy } from './i18n'
 import { attributeKey } from './model-view'
 import { onDraftChange, requestReview, setModelFocus, stageModel } from './model-stage'
+import { findPendingCreateRowId } from './inline-create'
 import { registerCommandRunner } from './command-registry'
 import { writeErrorMessage } from './write-error'
 import {
@@ -111,6 +112,12 @@ export function AttributeDefinitions() {
 
   const run = (action: AttributeAction) => {
     if (action === 'new') {
+      const existing = findPendingCreateRowId(draftRows, rows)
+      if (existing) {
+        setActiveId(existing)
+        setEditRequest({ rowId: existing, columnId: 'label' })
+        return
+      }
       const row = blankRow()
       setDraftRows((current) => ({ ...current, [row.id]: row }))
       setActiveId(row.id)

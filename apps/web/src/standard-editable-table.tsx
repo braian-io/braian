@@ -24,6 +24,12 @@ import { openSharedContextMenu, prefersNativeContextMenu } from './shared-contex
 import { StandardTableChrome } from './standard-table'
 import { copy } from './i18n'
 import { reportWriteError } from './write-error'
+import {
+  findPendingCreateRowId,
+  focusInlineCreateOpener,
+  isPendingCreateRow,
+  removeDraftRow,
+} from './inline-create'
 
 export type StandardColumnType = 'text' | 'number' | 'boolean' | 'date' | 'datetime' | 'enum' | 'readonly'
 
@@ -233,8 +239,11 @@ export function StandardEditableTable<T extends { id: string }>({
   const [internalActiveRowId, setInternalActiveRowId] = useState<string | null>(null)
   const [reorderOrder, setReorderOrder] = useState<string[] | null>(null)
   const inputRef = useRef<HTMLInputElement | HTMLSelectElement | null>(null)
+  const createOpenerRef = useRef<HTMLElement | null>(null)
+  const gridRef = useRef<HTMLDivElement | null>(null)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
   const dirty = Object.keys(draftRows).length > 0
+  const pendingCreateId = findPendingCreateRowId(draftRows, rows)
   const controlled = activeRowIdProp !== undefined
   const activeRowId = controlled ? activeRowIdProp : internalActiveRowId
   const canReorder = Boolean(reorderable && onDraftRowsChange)
@@ -392,6 +401,35 @@ export function StandardEditableTable<T extends { id: string }>({
 
   const cancelEdit = () => setEditing(null)
 
+  const rememberCreateOpener = () => {
+    const active = document.activeElement
+    if (active instanceof HTMLElement && active.closest('[data-testid="table-add-row"]')) {
+      createOpenerRef.current = active
+      return
+    }
+    const root = gridRef.current?.closest('[data-testid]')
+    const add = root?.querySelector<HTMLElement>('[data-testid="table-add-row"]') ?? null
+    createOpenerRef.current = add
+  }
+
+  const focusPendingCreateRow = (rowId: string) => {
+    const row = merged.find((item) => item.id === rowId)
+    if (!row) return
+    activateRow(row)
+    queueMicrotask(() => {
+      const el = gridRef.current?.querySelector<HTMLElement>(`[data-row-id="${CSS.escape(rowId)}"]`)
+      el?.focus()
+    })
+  }
+
+  const cancelInlineCreate = useCallback(() => {
+    if (!pendingCreateId || !onDraftRowsChange) return
+    setEditing(null)
+    onDraftRowsChange(removeDraftRow(draftRows, pendingCreateId))
+    if (!controlled && activeRowId === pendingCreateId) setInternalActiveRowId(null)
+    focusInlineCreateOpener(createOpenerRef.current)
+  }, [pendingCreateId, onDraftRowsChange, draftRows, controlled, activeRowId])
+
   const editableColumnsFor = (row: T) => columns.filter((column) => columnEditable(row, column))
 
   const moveEdit = (row: T, column: StandardColumn<T>, delta: number) => {
@@ -413,6 +451,14 @@ export function StandardEditableTable<T extends { id: string }>({
 
   const onNewRow = () => {
     if (!createDraftRow || !onDraftRowsChange) return
+    rememberCreateOpener()
+    if (pendingCreateId) {
+      focusPendingCreateRow(pendingCreateId)
+      const row = merged.find((item) => item.id === pendingCreateId)
+      const first = row ? editableColumnsFor(row)[0] : undefined
+      if (first && !editing) queueMicrotask(() => beginEdit(row!, first))
+      return
+    }
     const row = createDraftRow()
     onDraftRowsChange(keepRowOrder({ ...draftRows, [row.id]: row }))
     const first = editableColumnsFor(row)[0]
@@ -441,6 +487,21 @@ export function StandardEditableTable<T extends { id: string }>({
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [editable, dirty, onReviewAndSave])
+
+  useEffect(() => {
+    if (!pendingCreateId || editing) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      const target = event.target
+      if (!(target instanceof Element)) return
+      if (!gridRef.current?.contains(target) && !target.closest('[data-testid="inline-create-actions"]')) return
+      event.preventDefault()
+      event.stopPropagation()
+      cancelInlineCreate()
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [pendingCreateId, editing, cancelInlineCreate])
 
   const resolveContext = (row: T | null): MenuContext | null => {
     if (!menuContext) return null
@@ -475,6 +536,11 @@ export function StandardEditableTable<T extends { id: string }>({
       return
     }
     if (editing) return
+    if (event.key === 'Escape' && isPendingCreateRow(row.id, rows)) {
+      event.preventDefault()
+      cancelInlineCreate()
+      return
+    }
     if (canReorder && event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
       event.preventDefault()
       moveRow(row, event.key === 'ArrowUp' ? -1 : 1)
@@ -672,6 +738,9 @@ export function StandardEditableTable<T extends { id: string }>({
       testId={testId}
       newRowLabel={newRowLabel}
       onNewRow={createDraftRow && onDraftRowsChange ? onNewRow : undefined}
+      inlineCreateOpen={Boolean(pendingCreateId)}
+      onCancelCreate={pendingCreateId ? cancelInlineCreate : undefined}
+      onSaveCreate={pendingCreateId && onReviewAndSave ? onReview : undefined}
       onSelectFields={onSelectFields}
       selectFieldsLabel={selectFieldsLabel}
       rowCount={filtered.length}
@@ -685,6 +754,7 @@ export function StandardEditableTable<T extends { id: string }>({
         className="standard-grid"
         role="grid"
         aria-rowcount={filtered.length}
+        ref={gridRef}
       >
         <div className="standard-grid-head" role="row">
           {canReorder ? (

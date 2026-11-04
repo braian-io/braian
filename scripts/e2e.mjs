@@ -52,6 +52,7 @@ const specs = [
   'e2e/dangling-model-workspace.spec.ts',
   'e2e/inline-cell-edit.spec.ts',
   'e2e/write-error.spec.ts',
+  'e2e/inline-create-cancel.spec.ts',
   'e2e/cell-editor-unloaded-value.spec.ts',
   'e2e/model-table-row-selection.spec.ts',
   'e2e/list-values-mappings-row-selection.spec.ts',
