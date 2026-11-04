@@ -150,4 +150,23 @@ describe('LinkSections removal', () => {
     })
     expect(copy.confirmRemoveLink).toBe('Type {peer} to confirm')
   })
+
+  it('describes the confirm dialog and closes it on Escape with focus restored', async () => {
+    renderLinks(link({ has_values: true }))
+    const row = screen.getByTestId('link-row')
+    act(() => row.focus())
+    await act(async () => {
+      window.dispatchEvent(new Event('braian-remove-link'))
+    })
+
+    const dialog = await screen.findByRole('dialog')
+    const description = document.getElementById(dialog.getAttribute('aria-describedby') ?? '')
+    expect(dialog.getAttribute('aria-label')).toBe(copy.removeLink)
+    expect(description?.textContent).toBe('Type Mature cheddar to confirm')
+
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+
+    await waitFor(() => expect(screen.queryByTestId('link-confirm')).toBeNull())
+    await waitFor(() => expect(document.activeElement).toBe(row))
+  })
 })

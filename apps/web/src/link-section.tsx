@@ -4,6 +4,7 @@ import { Check } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, textValue, type Json } from './api'
 import { Button } from './components/ui/button'
+import { Dialog, DialogContent, DialogDescription } from './components/ui/dialog'
 import { formatCount } from './format'
 import { copy, uiLanguage } from './i18n'
 import { openSharedContextMenu, prefersNativeContextMenu } from './shared-context-menu'
@@ -215,45 +216,51 @@ export function LinkSections({
         />
       ) : null}
       {confirm ? (
-        <div className="overlay" data-testid="link-confirm">
-          <form
-            className="dialog"
-            role="dialog"
+        <Dialog open onOpenChange={(next) => { if (!next) setConfirm(null) }}>
+          <DialogContent
+            data-testid="link-confirm"
             aria-label={copy.removeLink}
-            onSubmit={(event) => {
-              event.preventDefault()
-              if (typed.trim() !== confirm.peer) return
-              setConfirmError('')
-              void api.delete('/v1/links/{id}', { params: { path: { id: confirm.id } } }).then(() => {
-                setConfirm(null)
-                setConfirmError('')
-                refresh()
-              }).catch((reason: unknown) => {
-                const message = writeErrorMessage(reason)
-                if (message) setConfirmError(message)
-              })
-            }}
+            onEscapeKeyDown={(event) => event.stopPropagation()}
           >
-            <p>{copy.confirmRemoveLink.replace('{peer}', confirm.peer)}</p>
-            <input
-              data-testid="link-confirm-input"
-              aria-label={copy.confirmRemoveLink.replace('{peer}', confirm.peer)}
-              value={typed}
-              onChange={(event) => setTyped(event.target.value)}
-              autoFocus
-            />
-            {typed.trim() === confirm.peer ? (
-              <p className="hint" data-testid="link-confirm-match">
-                <Check aria-hidden="true" size={14} /> {copy.matches}
-              </p>
-            ) : null}
-            {confirmError ? <p className="error" data-testid="link-confirm-error">{confirmError}</p> : null}
-            <div className="toolbar">
-              <Button type="button" variant="ghost" onClick={() => setConfirm(null)}>{copy.cancel}</Button>
-              <Button type="submit" variant="danger" data-testid="link-confirm-remove" disabled={typed.trim() !== confirm.peer}>{copy.removeLink}</Button>
-            </div>
-          </form>
-        </div>
+            <form
+              className="dialog-form"
+              onSubmit={(event) => {
+                event.preventDefault()
+                if (typed.trim() !== confirm.peer) return
+                setConfirmError('')
+                void api.delete('/v1/links/{id}', { params: { path: { id: confirm.id } } }).then(() => {
+                  setConfirm(null)
+                  setConfirmError('')
+                  refresh()
+                }).catch((reason: unknown) => {
+                  const message = writeErrorMessage(reason)
+                  if (message) setConfirmError(message)
+                })
+              }}
+            >
+              <DialogDescription asChild>
+                <p>{copy.confirmRemoveLink.replace('{peer}', confirm.peer)}</p>
+              </DialogDescription>
+              <input
+                data-testid="link-confirm-input"
+                aria-label={copy.confirmRemoveLink.replace('{peer}', confirm.peer)}
+                value={typed}
+                onChange={(event) => setTyped(event.target.value)}
+                autoFocus
+              />
+              {typed.trim() === confirm.peer ? (
+                <p className="hint" data-testid="link-confirm-match">
+                  <Check aria-hidden="true" size={14} /> {copy.matches}
+                </p>
+              ) : null}
+              {confirmError ? <p className="error" data-testid="link-confirm-error">{confirmError}</p> : null}
+              <div className="toolbar">
+                <Button type="button" variant="ghost" onClick={() => setConfirm(null)}>{copy.cancel}</Button>
+                <Button type="submit" variant="danger" data-testid="link-confirm-remove" disabled={typed.trim() !== confirm.peer}>{copy.removeLink}</Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
       ) : null}
     </>
   )

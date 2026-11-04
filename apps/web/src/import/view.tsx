@@ -3,6 +3,7 @@ import { useQueries, useQuery } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { toast } from 'sonner'
 import { api, jsonRecord } from '../api'
+import { Dialog, DialogContent, DialogTitle } from '../components/ui/dialog'
 import { copy } from '../i18n'
 import {
   approveImport,
@@ -174,11 +175,19 @@ export function ImportScreen() {
           ) : null}
           {(snap.phase === 'preview' || snap.phase === 'saving' || snap.phase === 'done') && snap.session ? <Preview /> : null}
           {snap.confirm ? (
-            <div className="import-confirm" role="dialog">
-              <p>{snap.confirm === 'replace' ? copy.importReplace : copy.importCloseConfirm}</p>
-              <button type="button" className="primary" onClick={confirmImport}>{copy.importYes}</button>
-              <button type="button" onClick={dismissConfirm}>{copy.importNo}</button>
-            </div>
+            <Dialog open onOpenChange={(next) => { if (!next) dismissConfirm() }}>
+              <DialogContent
+                className="import-confirm"
+                data-testid="import-confirm"
+                onEscapeKeyDown={(event) => event.stopPropagation()}
+              >
+                <DialogTitle asChild>
+                  <p>{snap.confirm === 'replace' ? copy.importReplace : copy.importCloseConfirm}</p>
+                </DialogTitle>
+                <button type="button" className="primary" onClick={confirmImport}>{copy.importYes}</button>
+                <button type="button" onClick={dismissConfirm}>{copy.importNo}</button>
+              </DialogContent>
+            </Dialog>
           ) : null}
         </section>
       ) : null}
