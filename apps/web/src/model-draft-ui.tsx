@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type Json } from './api'
+import { Button } from './components/ui/button'
 import { writeErrorMessage } from './write-error'
 import { formatCount, formatTimestamp } from './format'
 import { copy } from './i18n'
@@ -91,7 +92,7 @@ export function ModelDraftHost() {
           ) : (
             <button type="button" data-testid="review-save" onClick={() => { rememberOpener(); setReview(true) }}>{copy.reviewAndSave}</button>
           )}
-          <button type="button" onClick={() => requestDiscardDraft()}>{copy.discardDraft}</button>
+          <Button type="button" variant="danger" onClick={() => requestDiscardDraft()}>{copy.discardDraft}</Button>
           {error ? <span className="error">{error}</span> : null}
         </div>
       ) : null}

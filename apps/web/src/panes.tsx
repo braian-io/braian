@@ -11,6 +11,8 @@ import { attributeByKey, indexSort, readIndexed, sortKeyForColumnId } from './in
 import { cellEditShouldPatch, cellEditValuesBody, isEditingCell, isEditableColumn, resolveCellEditInitial, valueListKeyForColumn, columnBaseKey } from './cell-edit'
 import { batchGetObjects } from './batch'
 import { MetaChip, optionLabel, statusTone, typeLabel } from './chips'
+import { BulkWriteConfirm } from './bulk-write'
+import { Button } from './components/ui/button'
 import { Slider } from './components/ui/slider'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select'
 import { Switch } from './components/ui/switch'
@@ -190,6 +192,7 @@ export function ObjectTable({
   // The active cell's column, by key. Left and Right move it; the keyboard menu acts on it.
   const [activeColumn, setActiveColumn] = useState('')
   const [moving, setMoving] = useState<string | null>(null)
+  const [massConfirm, setMassConfirm] = useState(false)
   const [flashId, setFlashId] = useState('')
   const [editingCell, setEditingCell] = useState<{ rowId: string; columnId: string } | null>(null)
   const [editingDraft, setEditingDraft] = useState('')
@@ -1000,7 +1003,7 @@ export function ObjectTable({
         if (!target.objectId) return
         setSelected((current) => current.includes(String(target.objectId)) ? current : [...current, String(target.objectId)])
       }),
-      registerCommandRunner('table:mass-edit', () => { mass.mutate() }),
+      registerCommandRunner('table:mass-edit', () => { setMassConfirm(true) }),
       registerCommandRunner('table:filter-by', () => setPicker('filter')),
       registerCommandRunner('table:export-columns', () => setPicker('export')),
       registerCommandRunner('table:export', () => { exportVisible() }),
@@ -1825,6 +1828,16 @@ export function ObjectTable({
           }}
         />
       ) : null}
+      <BulkWriteConfirm
+        open={massConfirm}
+        field="status"
+        count={selected.length}
+        onCancel={() => setMassConfirm(false)}
+        onConfirm={() => {
+          setMassConfirm(false)
+          mass.mutate()
+        }}
+      />
     </StandardTableChrome>
   )
 }
@@ -2458,7 +2471,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       </div>
       {dirty ? (
         <div className="save-bar">
-          <button type="button" onClick={() => setDraft({})}>{copy.discard}</button>
+          <Button type="button" variant="danger" onClick={() => setDraft({})}>{copy.discard}</Button>
           <button className="primary" type="submit" data-testid="review-and-save">{copy.reviewAndSave}</button>
         </div>
       ) : null}
@@ -3149,7 +3162,7 @@ export function ProposalView({ session }: { session: PanesSession }) {
         {proposal.data ? <span className="meta-chip neutral" data-testid="source-badge">{sourceLabel(proposal.data)}</span> : null}
         {proposal.data?.status ? <MetaChip tone={statusTone(String(proposal.data.status))}>{String(proposal.data.status)}</MetaChip> : null}
         <button type="button" data-testid="save-all" disabled={loadingObjects || accept.isPending || discard.isPending} onClick={saveAll}>{copy.saveAll}</button>
-        <button type="button" data-testid="discard-all" disabled={accept.isPending || discard.isPending} onClick={() => discard.mutate()}>{copy.discardAll}</button>
+        <Button type="button" variant="danger" data-testid="discard-all" disabled={accept.isPending || discard.isPending} onClick={() => discard.mutate()}>{copy.discardAll}</Button>
         {error ? <p className="error" data-testid="proposal-error">{error}</p> : null}
         {consequence.length > 0 && session.proposalId ? (
           <button type="button" onClick={() => publishProposal(session.proposalId ?? '')}>{copy.reviewChange}</button>

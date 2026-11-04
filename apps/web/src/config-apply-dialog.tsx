@@ -239,7 +239,7 @@ export function ConfigApplyDialog({
           <div className="dialog-actions" data-testid="config-apply-created">
             <p>Proposal created</p>
             <Button variant="ghost" onClick={onClose}>Close</Button>
-            <Button data-testid="config-apply-open-review" onClick={() => onOpenInReview(proposalId)}>
+            <Button variant="primary" data-testid="config-apply-open-review" onClick={() => onOpenInReview(proposalId)}>
               Open in Review
             </Button>
           </div>
@@ -251,6 +251,7 @@ export function ConfigApplyDialog({
               <>
                 <Button variant="ghost" onClick={onClose}>Cancel</Button>
                 <Button
+                  variant="primary"
                   data-testid="config-apply-create"
                   disabled={!canCreate || planning}
                   onClick={createProposal}
