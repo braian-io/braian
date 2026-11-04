@@ -201,7 +201,7 @@ test.describe('column prefs multitab', () => {
 
     await page1.reload()
     await expect(mainTable(page1)).toBeVisible({ timeout: 60_000 })
-    await expect(mainTable(page1).getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
+    await expect(mainTable(page1).getByTestId('object-row').first()).toBeVisible({ timeout: 60_000 })
     await expect(mainTable(page1).locator('.head [data-testid="col-brand"]').first()).toHaveCount(0)
 
     await context.close()

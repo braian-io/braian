@@ -10,7 +10,7 @@ async function login(page: Page) {
   await expect(page.getByTestId('structure-tree')).toBeVisible()
 }
 
-test('the delete dialog is keyboard only and asks for the name', async ({ page }) => {
+test('the delete dialog is keyboard only and uses a plain danger confirm', async ({ page }) => {
   test.setTimeout(120_000)
   await login(page)
   const created = await page.request.post('/v1/structures/food/groups', {
@@ -30,14 +30,12 @@ test('the delete dialog is keyboard only and asks for the name', async ({ page }
 
   const dialog = page.getByTestId('consequence')
   await expect(dialog).toBeVisible()
-  const name = page.getByTestId('confirm-name')
-  await expect(name).toBeFocused()
+  await expect(dialog.getByTestId('confirm-name')).toHaveCount(0)
+  await expect(dialog.locator('input')).toHaveCount(0)
   await expect(dialog.getByTestId('delete-counts')).toContainText('will be')
-  await name.fill('nope')
   const remove = dialog.getByTestId('confirm-delete')
-  await expect(remove).toBeDisabled()
-  await name.press('Enter')
-  await expect(dialog).toBeVisible()
+  await expect(remove).toBeEnabled()
+  await expect(remove).toHaveClass(/btn-danger/)
   await page.keyboard.press('Escape')
   await expect(dialog).toBeHidden()
   await expect(tree.getByRole('treeitem', { name: 'Cheese' })).toBeVisible()
@@ -48,9 +46,8 @@ test('the delete dialog is keyboard only and asks for the name', async ({ page }
   await palette.fill('Delete the selected')
   await page.keyboard.press('Enter')
   await expect(dialog).toBeVisible()
-  await name.fill('Temp delete')
+  await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused()
   await expect(remove).toBeEnabled()
-  await page.keyboard.press('Tab')
   await page.keyboard.press('Tab')
   await expect(remove).toBeFocused()
   await page.keyboard.press('Enter')
