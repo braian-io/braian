@@ -195,7 +195,6 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
 }
 .row:focus-visible,
 .row .cell:focus-visible,
-.grid:focus-visible,
 .tree:focus-visible,
 .tree button:focus-visible,
 .tree-row:focus-visible,
@@ -203,6 +202,10 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
 .standard-grid-cell:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
+}
+/* The grid is the tab stop. When the active cell can show the keyboard mark, the grid does not add a second ring. */
+.grid:focus-visible:has(.active-cell) {
+  outline: none;
 }
 ::selection { background: var(--accent-dim); }
 
@@ -398,16 +401,10 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
   isolation: isolate;
   overflow: hidden;
 }
-.pane.focused { outline: none; }
-/* Children paint their own backgrounds, so an inset shadow on the pane would be covered by the tab strip. */
-.pane.focused::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: 5;
-  border-radius: inherit;
-  box-shadow: inset 0 0 0 2px var(--accent);
-  pointer-events: none;
+/* The active pane is the tab underline, not a second box around the pane. */
+.pane.focused .pane-tab.active {
+  background: transparent;
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 .pane-tabs {
   display: flex;
@@ -769,11 +766,9 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   background-clip: padding-box;
 }
-/* Active row is one state: fill plus top and bottom rules. DOM focus stays on the grid, so the rules move with the row.
-   No side edges: rows are wider than the viewport when the grid scrolls sideways, and a box would lose its right edge. */
+/* Active row is a fill. The keyboard mark lives on the active cell, so the row itself has no outline. */
 .row.selected {
   background: var(--accent-dim);
-  box-shadow: inset 0 1px 0 var(--accent), inset 0 -1px 0 var(--accent);
 }
 .row.picked { box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 55%, transparent); }
 .row:hover:not(.selected) { background: var(--hover); }
@@ -896,9 +891,10 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
 .detail-title strong { font-size: 18px; font-weight: 600; }
 .detail-id { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .field-card {
-  background: var(--raised);
+  background: var(--surface);
+  border: 0;
   border-radius: var(--r-lg);
-  box-shadow: var(--inset);
+  box-shadow: none;
   padding: 8px 10px 10px;
   display: grid;
   gap: 6px;
@@ -923,18 +919,58 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
 .field > label { color: var(--muted); font-size: 12px; text-align: left; padding-top: 6px; }
 .control { min-width: 0; border-radius: var(--r-md); }
 .control input:not([type='checkbox']), .control select, .control textarea, .control .select-trigger { width: 100%; }
-.field-card input, .field-card textarea, .field-card .select-trigger { background: var(--surface); }
-.form textarea, .detail-form textarea { min-height: 52px; }
-.langs { display: flex; flex-direction: column; gap: 6px; }
-.lang-card {
-  display: grid;
-  gap: 4px;
-  background: var(--surface);
-  border-radius: var(--r-md);
-  padding: 6px 8px;
-  box-shadow: var(--inset);
+.field-card input,
+.field-card textarea,
+.field-card .select-trigger {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+  box-shadow: none;
 }
-.lang-card input, .lang-card textarea { background: var(--raised); width: 100%; }
+.field-card input:hover,
+.field-card textarea:hover,
+.field-card .select-trigger:hover,
+.field-card input:focus-visible,
+.field-card textarea:focus-visible,
+.field-card .select-trigger:focus-visible {
+  border-bottom-color: var(--muted);
+}
+.form textarea, .detail-form textarea { min-height: 52px; }
+.langs { display: flex; flex-direction: column; gap: 2px; }
+.lang-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+.lang-row:has(textarea) { align-items: flex-start; }
+.lang-tag {
+  flex: none;
+  width: 1.75em;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 30px;
+  text-transform: lowercase;
+}
+.lang-row:has(textarea) .lang-tag { line-height: 22px; padding-top: 6px; }
+.lang-row input,
+.lang-row textarea {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
 .measure { display: flex; gap: 4px; align-items: center; }
 .measure input { width: 88px; flex: none; }
 .choices { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -1381,12 +1417,13 @@ canvas.graph.panning { cursor: grabbing; }
 .menu button.danger { color: var(--danger); }
 .menu-note { margin: 0; padding: 4px 8px; color: var(--text-2); font-size: 12px; }
 .menu button:focus-visible { background: var(--accent-dim); outline: none; }
-/* The active cell in the active row: where Shift+F10 opens the menu. */
-/* Cell and column markers only matter while the keyboard is in the grid. */
-.grid:focus-within .row.selected .cell.active-cell { box-shadow: inset 0 0 0 1px var(--accent); }
-.grid:focus-within .head .cell.column-active {
+/* The active cell in the active row: where Shift+F10 opens the menu.
+   Shown for keyboard focus only, so a pointer selection does not add a second ring. */
+.grid:focus-visible .row.selected .cell.active-cell {
+  box-shadow: inset 0 0 0 1px var(--accent-hover);
+}
+.grid:focus-visible .head .cell.column-active {
   box-shadow: inset 0 -2px 0 var(--accent);
-  color: var(--accent);
 }
 .cell-loading {
   display: inline-block;
@@ -2322,7 +2359,6 @@ button[aria-disabled="true"]:hover,
 .standard-grid-row:hover:not(.on):not(.draft) { background: var(--hover); }
 .standard-grid-row.on {
   background: var(--accent-dim);
-  box-shadow: inset 0 1px 0 var(--accent), inset 0 -1px 0 var(--accent);
 }
 .standard-grid-row.draft { background: color-mix(in oklab, var(--warn, #c90) 10%, transparent); }
 .standard-grid-row.read-only { color: var(--muted); opacity: 0.7; }
