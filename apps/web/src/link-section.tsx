@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Check } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, textValue, type Json } from './api'
@@ -13,6 +13,7 @@ import { reportWriteError, writeErrorMessage } from './write-error'
 import { LinkCreateDialog, type LinkEndpoint } from './link-create-dialog'
 import { LinkObjectPicker } from './link-object-picker'
 import { submitLink } from './link-write'
+import { dispatchLinkDrop, endLinkDrag, linkDragActive, linkDragMime, linkDragPayload, linkDropDecision, linkDropFromSection, readLinkDrag, setLinkDragHint } from './link-drag'
 
 type LinkItem = {
   id: string
@@ -51,18 +52,34 @@ let focused: { id: string; peer: string; hasValues: boolean } | null = null
 export function LinkSections({
   objectId,
   typeKey,
+  objectName,
+  objectKey,
   defs,
+  defsLoading = false,
   links,
   onOpen,
 }: {
   objectId: string
   typeKey: string
+  objectName?: string
+  objectKey?: string
   defs?: Json
+  defsLoading?: boolean
   links: LinkSide[]
   onOpen: (id: string) => void
 }) {
   const queryClient = useQueryClient()
   const [adding, setAdding] = useState<LinkSide | null>(null)
+  const [dropKey, setDropKey] = useState<string | null>(null)
+  const [denyKey, setDenyKey] = useState<string | null>(null)
+  useEffect(() => {
+    const clear = () => {
+      setDropKey(null)
+      setDenyKey(null)
+    }
+    window.addEventListener('braian-link-dragend', clear)
+    return () => window.removeEventListener('braian-link-dragend', clear)
+  }, [])
   const [target, setTarget] = useState<LinkEndpoint | null>(null)
   const opener = useRef<HTMLElement | null>(null)
   const [confirm, setConfirm] = useState<Removal | null>(null)
@@ -187,12 +204,71 @@ export function LinkSections({
   }, [sections])
   return (
     <>
-      {sections.map((section) => (
+      {sections.map((section) => {
+        const key = `${section.link_type}:${section.direction}`
+        const markDrop = (event: DragEvent<HTMLElement>) => {
+          if (!linkDragActive(event.dataTransfer.types)) return
+          const dragged = linkDragPayload()
+          const decision = linkDropDecision({
+            loading: defsLoading,
+            defs,
+            anchorType: typeKey,
+            draggedTypes: dragged.map((item) => item.typeKey),
+          })
+          event.preventDefault()
+          if (!decision.accept) {
+            event.dataTransfer.dropEffect = 'none'
+            setDropKey(null)
+            setDenyKey(decision.reason === 'denied' ? key : null)
+            setLinkDragHint(decision.hint)
+            return
+          }
+          setDenyKey(null)
+          setLinkDragHint(null)
+          event.dataTransfer.dropEffect = 'copy'
+          setDropKey(key)
+        }
+        const tone = dropKey === key ? ' link-drop' : denyKey === key ? ' link-drop-deny' : ''
+        return (
         <section
-          key={`${section.link_type}:${section.direction}`}
-          className="field-card"
+          key={key}
+          className={`field-card${tone}`}
           data-testid="link-section"
+          data-link-drop={dropKey === key ? 'true' : undefined}
+          data-link-deny={denyKey === key ? 'true' : undefined}
           aria-label={section.label}
+          onDragEnter={markDrop}
+          onDragOver={markDrop}
+          onDragLeave={(event) => {
+            if (pointerStillInside(event)) return
+            setDropKey((current) => (current === key ? null : current))
+            setDenyKey((current) => (current === key ? null : current))
+          }}
+          onDrop={(event) => {
+            if (!linkDragActive(event.dataTransfer.types)) return
+            event.preventDefault()
+            setDropKey(null)
+            setDenyKey(null)
+            const dragged = linkDragPayload()
+            const decision = linkDropDecision({
+              loading: defsLoading,
+              defs,
+              anchorType: typeKey,
+              draggedTypes: dragged.map((item) => item.typeKey),
+            })
+            if (!decision.accept) {
+              endLinkDrag()
+              return
+            }
+            const detail = linkDropFromSection({
+              object: { id: objectId, typeKey, name: objectName, key: objectKey },
+              dragged: readLinkDrag(event.dataTransfer.getData(linkDragMime)),
+              linkType: section.link_type,
+              direction: section.direction,
+            })
+            endLinkDrag()
+            if (detail) dispatchLinkDrop(detail)
+          }}
         >
           <h3>{section.label} ({formatCount(section.links.length)})</h3>
           {section.links.map((link) => (
@@ -238,7 +314,8 @@ export function LinkSections({
             {copy.addLink}
           </button>
         </section>
-      ))}
+        )
+      })}
       {adding && !target ? (
         <LinkObjectPicker
           sourceId={objectId}
@@ -292,6 +369,14 @@ export function LinkSections({
       ) : null}
     </>
   )
+}
+
+function pointerStillInside(event: DragEvent<HTMLElement>) {
+  if (event.clientX === 0 && event.clientY === 0) return true
+  const next = event.relatedTarget
+  if (next instanceof Node && (event.currentTarget.contains(next) || next === event.currentTarget)) return true
+  const box = event.currentTarget.getBoundingClientRect()
+  return event.clientX >= box.left && event.clientX <= box.right && event.clientY >= box.top && event.clientY <= box.bottom
 }
 
 function restoreFocus(node: HTMLElement | null) {

@@ -14,6 +14,8 @@ type RowContextMenuOptions = {
   defs: Json | undefined
   rowType?: string | null
   language?: string
+  /** More than one selected row adds “Link selected to…”. */
+  selectedCount?: number
 }
 
 function typeKeys(defs: Json | undefined, ids: unknown): string[] {
@@ -72,6 +74,7 @@ export function buildRowContextMenu({
   defs,
   rowType,
   language = 'en',
+  selectedCount = 1,
 }: RowContextMenuOptions): { target: CommandTarget; items: RegistryCommand[] } {
   const rowKey = rowType ? typeKeys(defs, [rowType])[0] ?? rowType : ''
   const singular = rowKey ? singularOf(defs, rowKey, language) : ''
@@ -87,6 +90,15 @@ export function buildRowContextMenu({
     items.push(command)
   }
   for (const command of commandsForContext(context, menuTarget)) push(command)
+  if (selectedCount > 1 && (context === 'row' || context === 'cell')) {
+    push({
+      id: 'link:selected',
+      title: copy.linkSelected,
+      contexts: [context],
+      group: 'object',
+      palette: false,
+    })
+  }
   if (rowKey) {
     for (const command of linkCommands(defs, rowKey, context, language)) push(command)
   }

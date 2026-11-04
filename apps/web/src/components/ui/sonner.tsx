@@ -12,6 +12,8 @@ export function Toaster({ theme = 'dark', ...props }: ToasterProps) {
           toast: 'braian-toast',
           title: 'braian-toast-title',
           description: 'braian-toast-desc',
+          actionButton: 'braian-toast-action',
+          icon: 'braian-toast-icon',
         },
       }}
       {...props}
