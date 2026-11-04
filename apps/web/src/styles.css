@@ -1526,6 +1526,18 @@ canvas.graph.panning { cursor: grabbing; }
   font-size: 11px;
   white-space: nowrap;
 }
+.pending-field { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.pending-chip {
+  padding: 0 4px;
+  border-radius: var(--r-sm);
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.pending-value { color: var(--text); font-size: 12px; }
+.pending-field button { font-size: 11px; }
 kbd {
   border: 1px solid var(--border);
   background: var(--panel);

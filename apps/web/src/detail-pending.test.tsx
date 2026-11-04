@@ -1,0 +1,142 @@
+// @vitest-environment jsdom
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { useState } from 'react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { Json } from './api'
+import { ObjectDetail, type PanesSession } from './panes'
+
+const mock = vi.hoisted(() => {
+  const methods = { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() }
+  const use = (impl: (path: string, init?: { body?: unknown; params?: { path?: Record<string, string> } }) => unknown) => {
+    for (const fn of Object.values(methods)) fn.mockReset().mockImplementation(impl)
+  }
+  return { methods, use }
+})
+
+vi.mock('./api', async () => {
+  const actual = await vi.importActual<typeof import('./api')>('./api')
+  return { ...actual, api: mock.methods }
+})
+
+const NAME_ID = '018f0000-0000-7000-8000-000000000101'
+
+const definitions: Json = {
+  languages: ['en'],
+  types: [{ key: 'article', attributes: [NAME_ID] }],
+  attributes: [
+    {
+      id: NAME_ID,
+      key: 'name',
+      labels: { en: 'Name' },
+      kind: { type: 'text' },
+      language_dependent: true,
+      multiple: false,
+    },
+  ],
+  value_lists: [],
+  unit_families: [],
+  structures: [],
+}
+
+const object: Json = {
+  id: 'obj-1',
+  key: 'ART-1',
+  type: 'article',
+  version: 3,
+  values: { number: 'ART-1', name: { en: 'Old' } },
+  links: [],
+}
+
+const proposal: Json = {
+  id: 'p1',
+  title: 'Agent proposal',
+  status: 'open',
+  source: 'agent',
+  rows: [
+    {
+      id: 'r1',
+      object_id: 'obj-1',
+      object_key: 'ART-1',
+      type_key: 'article',
+      base_version: 3,
+      status: 'pending',
+      conflict: false,
+      patch: { values: { name: { en: 'New' } } },
+    },
+  ],
+}
+
+function Host() {
+  const [client] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: false } } }))
+  const session: PanesSession = {
+    group: null,
+    objectId: 'obj-1',
+    proposalId: 'p1',
+    language: 'en',
+    setGroup: () => undefined,
+    setObjectId: () => undefined,
+    setProposalId: () => undefined,
+    push: () => undefined,
+  }
+  return (
+    <QueryClientProvider client={client}>
+      <ObjectDetail session={session} />
+    </QueryClientProvider>
+  )
+}
+
+function proposalApi(path: string) {
+  if (path === '/v1/objects/{id}') return Promise.resolve(object)
+  if (path === '/v1/definitions') return Promise.resolve(definitions)
+  if (path === '/v1/proposals') return Promise.resolve({ pending: { total: 1, objects: [{ object_id: 'obj-1', count: 1 }] }, proposals: [] })
+  if (path === '/v1/proposals/{id}') return Promise.resolve(proposal)
+  if (path === '/v1/proposals/{id}/accept') return Promise.resolve({ accepted: [{ id: 'r1' }], failed: [] })
+  return Promise.resolve({})
+}
+
+function acceptCall() {
+  return mock.methods.post.mock.calls.find((call) => call[0] === '/v1/proposals/{id}/accept')
+}
+
+beforeEach(() => {
+  mock.use(proposalApi)
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ owners: {}, origin: null })))
+})
+
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+})
+
+describe('pending proposal values in Detail', () => {
+  it('shows the proposed value as pending and accepts only that line', async () => {
+    render(<Host />)
+
+    const pending = await screen.findByTestId('pending-field')
+    expect(pending.textContent).toContain('Pending')
+    expect(pending.textContent).toContain('New')
+    expect(pending.getAttribute('data-field')).toBe('name')
+
+    fireEvent.click(screen.getByTestId('accept-pending'))
+
+    await waitFor(() => expect(acceptCall()).toBeTruthy())
+    expect(acceptCall()?.[1]).toMatchObject({
+      params: { path: { id: 'p1' } },
+      body: { rows: ['r1'], patches: { r1: { values: { name: { en: 'New' } } } } },
+    })
+  })
+
+  it('rejects the pending row through the accept endpoint', async () => {
+    render(<Host />)
+
+    await screen.findByTestId('pending-field')
+    fireEvent.click(screen.getByTestId('reject-pending'))
+
+    await waitFor(() => expect(acceptCall()).toBeTruthy())
+    expect(acceptCall()?.[1]).toMatchObject({
+      params: { path: { id: 'p1' } },
+      body: { rows: ['r1'], patches: { r1: { values: {} } } },
+    })
+  })
+})

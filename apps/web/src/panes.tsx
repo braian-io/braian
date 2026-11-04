@@ -3,7 +3,7 @@ import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/rea
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { History as HistoryIcon } from 'lucide-react'
 import { api, catalogName, failureLines, freeObject, jsonRecord, recordNumber, recordTitle, searchQuery, textValue, type Json } from './api'
-import { reportWriteError, writeErrorMessage } from './write-error'
+import { messageFromErrorBody, reportWriteError, writeErrorMessage } from './write-error'
 import { catalogKeyOf, inCatalog, workspaceCatalogRef } from './catalog-scope'
 import { useCatalogIdToKey } from './catalog-list'
 import { newObjectBody } from './new-object'
@@ -21,7 +21,7 @@ import { assortmentDisplayName, jobTypeDisplayTitle } from './demo-labels'
 import { onFlash } from './flash'
 import { GraphMap } from './graph-map'
 import { exportPayload, runExport, saveWorkbook } from './export'
-import { diffLines, historyWho, isCreate, proposedValues, relativeTime, sourceLabel, suggestionLines, valuesFromKept } from './field-diff'
+import { diffLines, historyWho, isCreate, proposedValues, relativeTime, sourceLabel, suggestionLines, valuesFromKept, type DiffLine } from './field-diff'
 import { formatCount, formatMeasure, formatTimestamp } from './format'
 import { PathMenu, type ListedPath } from './path-picker'
 import { publishFieldsHost } from './fields-host'
@@ -66,6 +66,7 @@ import {
   typeOfView,
 } from './type-labels'
 import { publishProposal } from './proposal-bus'
+import { acceptPendingLine, pendingLines, pendingRowsForObject, rejectPendingRow } from './proposal-focus'
 import { ImportWorkspace } from './import/view'
 import { rollbackTargetSeq } from './history-rollback'
 import { StateNote } from './states'
@@ -2337,14 +2338,45 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
     queryKey: ['proposals'],
     queryFn: () => api.get('/v1/proposals'),
   })
+  const proposal = useQuery({
+    queryKey: ['proposal', session.proposalId],
+    queryFn: () => api.get('/v1/proposals/{id}', { params: { path: { id: session.proposalId ?? '' } } }),
+    enabled: Boolean(session.proposalId),
+  })
   const [draft, setDraft] = useState<Json>({})
   const [error, setError] = useState('')
+  const [pendingError, setPendingError] = useState('')
   const [flashId, setFlashId] = useState('')
   useEffect(() => onFlash(setFlashId), [])
   useEffect(() => {
     setDraft({})
     setError('')
-  }, [session.objectId])
+    setPendingError('')
+  }, [session.objectId, session.proposalId])
+  const acceptPending = useMutation({
+    mutationFn: (body: { rows: string[]; patches: Record<string, Json> }) =>
+      api.post('/v1/proposals/{id}/accept', { params: { path: { id: session.proposalId ?? '' } }, body }),
+    onSuccess: (result) => {
+      const failed = failureLines(result)
+      if (failed.length > 0) {
+        const message = messageFromErrorBody(failed[0]) || copy.validation
+        setPendingError(message)
+        reportWriteError(new Error(message))
+        return
+      }
+      setPendingError('')
+      session.push(copy.saved)
+      void queryClient.invalidateQueries({ queryKey: ['proposal', session.proposalId] })
+      void queryClient.invalidateQueries({ queryKey: ['proposals'] })
+      void queryClient.invalidateQueries({ queryKey: ['object', session.objectId] })
+      void queryClient.invalidateQueries({ queryKey: ['objects'] })
+      void queryClient.invalidateQueries({ queryKey: ['path-values'] })
+      void queryClient.invalidateQueries({ queryKey: ['history'] })
+    },
+    onError: (reason: unknown) => {
+      setPendingError(reportWriteError(reason) ?? copy.validation)
+    },
+  })
   useEffect(() => {
     if (!session.objectId || !object.data) return
     const stored = (object.data.values as Json) ?? {}
@@ -2405,6 +2437,52 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   const valueKeys = [...new Set([...Object.keys(values), ...fileKeys])]
   const owners = provenance.data?.owners ?? {}
   const origin = provenance.data?.origin
+  const pendingByField = new Map<string, Array<{ row: Json; line: DiffLine; lines: DiffLine[] }>>()
+  for (const row of pendingRowsForObject(proposal.data as Json | undefined, session.objectId)) {
+    const lines = pendingLines(row, values, defs.data)
+    for (const line of lines) {
+      if (!line.field) continue
+      const entries = pendingByField.get(line.field) ?? []
+      entries.push({ row, line, lines })
+      pendingByField.set(line.field, entries)
+    }
+  }
+  const renderPending = (key: string) => {
+    const entries = pendingByField.get(key)
+    if (!entries || entries.length === 0) return null
+    return entries.map(({ row, line, lines }) => (
+      <div
+        key={`${String(row.id)}:${line.id}`}
+        className="pending-field"
+        data-testid="pending-field"
+        data-field={key}
+        data-line={line.id}
+      >
+        <span className="pending-chip" data-testid="pending-chip">{copy.pending}</span>
+        <span className="pending-value" data-testid="pending-value">
+          {line.language ? `${line.language}: ` : ''}{line.after}
+        </span>
+        <button
+          type="button"
+          data-testid="accept-pending"
+          data-line={line.id}
+          disabled={acceptPending.isPending}
+          onClick={() => acceptPending.mutate(acceptPendingLine(line, row, lines, values))}
+        >
+          {copy.acceptField}
+        </button>
+        <button
+          type="button"
+          data-testid="reject-pending"
+          data-line={line.id}
+          disabled={acceptPending.isPending}
+          onClick={() => acceptPending.mutate(rejectPendingRow(row))}
+        >
+          {copy.rejectField}
+        </button>
+      </div>
+    ))
+  }
   const renderField = (key: string) => {
     const attribute = attributes.find((item) => item.key === key)
     const kind = (attribute?.kind as Json) ?? {}
@@ -2427,6 +2505,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
             onChange={(next) => setDraft((state) => ({ ...state, [key]: next }))}
           />
         </div>
+        {renderPending(key)}
         {owner && origin && typeof origin === 'object' ? (
           <p className="hint" data-testid="field-origin">
             {copy.sourceObject} {String((origin as Json).source_key ?? '')}
@@ -2501,6 +2580,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
             {section.keys.map((key) => renderField(key))}
           </section>
         ))}
+        {pendingError ? <p className="error" data-testid="pending-error">{pendingError}</p> : null}
         {error ? <p className="error" data-testid="detail-error">{error}</p> : null}
       </div>
       {dirty ? (

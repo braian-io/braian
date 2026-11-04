@@ -46,6 +46,7 @@ export const copy = {
   discardAll: 'Discard all',
   acceptField: 'Accept',
   rejectField: 'Reject',
+  pending: 'Pending',
   suggested: 'suggested',
   suggestedChange: 'suggested change',
   suggestedChanges: 'suggested changes',
