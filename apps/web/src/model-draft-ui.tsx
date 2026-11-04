@@ -118,13 +118,11 @@ function ReviewDialog({ body, onClose, onSaved }: { body: Json; onClose: () => v
   const warnings = (body.warnings as string[] | undefined) ?? []
   const destructive = consequence.destructive === true
   const confirmName = String(consequence.confirm_name ?? '')
-  const [typed, setTyped] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const nameMatches = !destructive || typed === confirmName
   const save = () => {
     setBusy(true)
-    void api.post('/v1/model/draft/save', { body: destructive ? { confirm_name: typed } : {} })
+    void api.post('/v1/model/draft/save', { body: destructive ? { confirm_name: confirmName } : {} })
       .then(() => onSaved())
       .catch((reason: unknown) => {
         const message = writeErrorMessage(reason)
@@ -148,28 +146,10 @@ function ReviewDialog({ body, onClose, onSaved }: { body: Json; onClose: () => v
           {lines.map((line) => <li key={line}>{line}</li>)}
         </ul>
         {warnings.map((warning) => <p key={warning} className="error">{warning}</p>)}
-        {destructive ? (
-          <label className="model-field">
-            {copy.typeNameToConfirm}
-            <input
-              data-testid="review-confirm-name"
-              autoFocus
-              value={typed}
-              aria-label={copy.typeNameToConfirm}
-              onChange={(event) => setTyped(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && nameMatches && !busy) {
-                  event.preventDefault()
-                  save()
-                }
-              }}
-            />
-          </label>
-        ) : null}
         {error ? <p className="error">{error}</p> : null}
         <div className="toolbar">
-          <button type="button" onClick={onClose}>{copy.cancel}</button>
-          <button type="button" className="primary" data-testid="confirm-review" disabled={busy || !nameMatches} onClick={save}>{copy.confirm}</button>
+          <Button type="button" variant="ghost" onClick={onClose}>{copy.cancel}</Button>
+          <Button type="button" variant={destructive ? 'danger' : 'primary'} data-testid="confirm-review" disabled={busy} onClick={save}>{copy.confirm}</Button>
         </div>
       </DialogContent>
     </Dialog>
