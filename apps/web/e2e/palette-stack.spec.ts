@@ -23,8 +23,8 @@ test.describe('palette sub-lists', () => {
     await expect(palette.getByRole('option', { name: /^Open view/ }).first()).toBeVisible()
     await page.keyboard.press('Tab')
     await expect(page.getByTestId('palette-crumb')).toContainText('Open view ›')
+    await expect(page.getByTestId('palette-input')).toHaveAttribute('aria-activedescendant', /.+/ )
     const activeId = await page.getByTestId('palette-input').getAttribute('aria-activedescendant')
-    expect(activeId).toBeTruthy()
     await expect(page.locator(`[id="${activeId}"]`)).toHaveCount(1)
 
     await page.getByTestId('palette-input').fill('Articles')

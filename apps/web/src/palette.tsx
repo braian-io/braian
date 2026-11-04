@@ -1287,7 +1287,7 @@ export function CommandPalette({
             role="combobox"
             aria-autocomplete="list"
             aria-controls="palette-list"
-            aria-activedescendant={rows.length > 0 ? `palette-opt-${selected ?? 0}` : undefined}
+            data-palette-active={selected == null ? '' : String(selected)}
             value={query}
             placeholder={mode === 'ai' ? 'Ask AI' : commandPlaceholder(types)}
             onValueChange={(value) => {
@@ -1356,6 +1356,7 @@ export function CommandPalette({
                       <CommandItem
                         key={row.id}
                         id={`palette-opt-${index}`}
+                        data-palette-index={index}
                         value={row.id}
                         role="option"
                         aria-selected={index === selected}
@@ -1387,6 +1388,7 @@ export function CommandPalette({
         {mode === 'list' && askRow ? (
           <CommandItem
             id={`palette-opt-${rows.indexOf(askRow)}`}
+            data-palette-index={rows.indexOf(askRow)}
             value={askRow.id}
             role="option"
             aria-selected={rows.indexOf(askRow) === selected}

@@ -18,7 +18,12 @@ export const CommandInput = forwardRef<
     const input = inner.current
     if (!input) return
     const root = input.closest('[cmdk-root]')
-    const selected = root?.querySelector<HTMLElement>('[cmdk-item][aria-selected="true"]')
+    // cmdk's own aria-selected lags a controlled value by an effect, so the
+    // palette marks the row it considers active and we follow that.
+    const index = input.getAttribute('data-palette-active')
+    const selected = index != null && index !== ''
+      ? root?.querySelector<HTMLElement>(`[data-palette-index="${index}"]`)
+      : root?.querySelector<HTMLElement>('[cmdk-item][aria-selected="true"]')
     const list = root?.querySelector<HTMLElement>('[cmdk-list]')
     if (selected?.id) {
       input.setAttribute('aria-activedescendant', selected.id)
