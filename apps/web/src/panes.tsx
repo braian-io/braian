@@ -2157,17 +2157,6 @@ function NewObject({
     return () => window.removeEventListener('braian-new-object', onOpen)
     // openForm closes over `open`; refresh the listener when it toggles.
   }, [open])
-  useEffect(() => {
-    if (!open) return
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      event.stopPropagation()
-      closeForm()
-    }
-    window.addEventListener('keydown', onKey, true)
-    return () => window.removeEventListener('keydown', onKey, true)
-  }, [open])
   const named = typeNames(defs.data, uiLanguage).find((item) => item.key === (typeKey || 'product'))
   if (!open) {
     if (trigger === 'event') return null
