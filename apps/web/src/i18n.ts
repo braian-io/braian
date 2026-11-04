@@ -163,7 +163,7 @@ export const copy = {
   newGroup: 'New group',
   proposed: 'Proposed. Review before it is saved.',
   detail: 'Detail',
-  detailEmpty: 'Select a row to edit its values.',
+  detailEmpty: 'Select a row to see its details.',
   detailKeysMove: 'move in the table',
   detailKeysOpen: 'open the row',
   detailKeysPalette: 'search or ask',
