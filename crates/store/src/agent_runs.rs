@@ -25,6 +25,7 @@ pub struct AgentRunRow {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub finished_at: Option<DateTime<Utc>>,
+    pub proposal_count: i32,
 }
 
 #[derive(Debug, Clone)]
@@ -107,7 +108,8 @@ impl Store {
         let row = client
             .query_opt(
                 "SELECT id, user_id, principal_id, workspace_id, view_id, title, status, mode,
-                        session_kind, hidden, tab_open, context, error, created_at, updated_at, finished_at
+                        session_kind, hidden, tab_open, context, error, created_at, updated_at, finished_at,
+                        (SELECT COUNT(*)::int FROM proposals p WHERE p.agent_run_id = agent_runs.id)
                  FROM agent_runs
                  WHERE id = $1
                    AND (principal_id = $2 OR ($3::uuid IS NOT NULL AND user_id = $3))",
@@ -126,7 +128,8 @@ impl Store {
         let rows = client
             .query(
                 "SELECT id, user_id, principal_id, workspace_id, view_id, title, status, mode,
-                        session_kind, hidden, tab_open, context, error, created_at, updated_at, finished_at
+                        session_kind, hidden, tab_open, context, error, created_at, updated_at, finished_at,
+                        (SELECT COUNT(*)::int FROM proposals p WHERE p.agent_run_id = agent_runs.id)
                  FROM agent_runs
                  WHERE principal_id = $1 OR ($2::uuid IS NOT NULL AND user_id = $2)
                  ORDER BY created_at DESC",
@@ -435,5 +438,6 @@ fn read_run(row: &tokio_postgres::Row) -> AgentRunRow {
         created_at: row.get(13),
         updated_at: row.get(14),
         finished_at: row.get(15),
+        proposal_count: row.get(16),
     }
 }

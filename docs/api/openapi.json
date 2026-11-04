@@ -7270,6 +7270,7 @@
           "tab_open",
           "created_at",
           "updated_at",
+          "proposal_count",
           "messages",
           "proposals"
         ],
@@ -7304,6 +7305,10 @@
           },
           "mode": {
             "type": "string"
+          },
+          "proposal_count": {
+            "type": "integer",
+            "format": "int32"
           },
           "proposals": {
             "type": "array",
@@ -7382,7 +7387,7 @@
               "string",
               "null"
             ],
-            "description": "`foreground` or `background`. Stored for a later indicator."
+            "description": "`foreground` or `background`. The person can switch either way while the run continues."
           },
           "session_kind": {
             "type": [
@@ -7417,7 +7422,8 @@
           "hidden",
           "tab_open",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "proposal_count"
         ],
         "properties": {
           "created_at": {
@@ -7444,6 +7450,10 @@
           },
           "mode": {
             "type": "string"
+          },
+          "proposal_count": {
+            "type": "integer",
+            "format": "int32"
           },
           "session_kind": {
             "type": "string"

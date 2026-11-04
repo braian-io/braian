@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { catalogName } from './api'
-import { argumentBreadcrumb, objectTypeFilter, paletteKeyEffect, placeTargetId, tabHint } from './palette-core'
+import { argumentBreadcrumb, isObjectParam, objectTypeFilter, paletteKeyEffect, placeTargetId, tabHint } from './palette-core'
 import { argumentCommands } from './palette-operations'
 import { objectPaletteRows } from './palette-objects'
 import { activeAfterQuery, askIndex, markedTitle, paletteMatchScore, readPaletteMemory, recentSlice, rememberPaletteItem, rememberRecent, resultAnnouncement, selectedObjectId, sublistPlaceholder, visibleRows, withRecent, type PaletteItem } from './palette-model'
@@ -249,6 +249,9 @@ describe('palette rows', () => {
     expect(markedTitle({ id: 'op:open', group: 'views', title: 'Open view ›', subtitle: '' })).toBe('Open view ›')
     expect(markedTitle({ id: 'import:file', group: 'views', title: 'Import file…', subtitle: '' })).toBe('Import file…')
     expect(sublistPlaceholder({ label: 'Open view ›', paramType: 'view' })).toBe('Search views…')
+    expect(sublistPlaceholder({ label: 'Agents ›', paramType: 'agent' })).toBe('Search agents…')
+    expect(isObjectParam('agent')).toBe(false)
+    expect(objectTypeFilter('agent')).toBeUndefined()
     expect(sublistPlaceholder({ label: 'Open workspace ›', paramType: 'workspace' })).toBe('Search workspaces…')
     expect(sublistPlaceholder({ label: 'Open product ›', paramType: 'product' }, ['Products'])).toBe('Search products…')
     expect(sublistPlaceholder({ label: 'Open object ›', paramType: 'object' })).toBe('Search objects…')

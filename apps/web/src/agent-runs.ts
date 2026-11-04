@@ -1,5 +1,7 @@
 import type { Json } from './api'
+import type { ChipTone } from './chips'
 import { copy } from './i18n'
+import type { PaletteItem } from './palette-model'
 import type { UiContextSnapshot } from './ui-context'
 
 export type AgentRunSummary = {
@@ -16,6 +18,7 @@ export type AgentRunSummary = {
   created_at: string
   updated_at: string
   finished_at?: string | null
+  proposal_count?: number
 }
 
 export type AgentMessage = {
@@ -92,7 +95,7 @@ export async function fetchAgentRun(id: string): Promise<AgentRunDetail> {
 
 export async function patchAgentRun(
   id: string,
-  patch: { tab_open?: boolean; view_id?: string },
+  patch: { tab_open?: boolean; view_id?: string; mode?: 'foreground' | 'background' },
 ): Promise<AgentRunDetail> {
   const response = await fetch(`/v1/agent/runs/${id}`, {
     method: 'PATCH',
@@ -145,6 +148,104 @@ export function agentRunPrompt(run: { title: string; messages?: AgentMessage[] }
   const text = run.messages?.find((message) => message.kind === 'user')?.body.text
   if (typeof text === 'string' && text.trim()) return text.trim()
   return run.title
+}
+
+export const openAgentEvent = 'braian-open-agent'
+export const openAgentsTableEvent = 'braian-open-agents-table'
+
+export function requestOpenAgent(run: AgentRunSummary) {
+  window.dispatchEvent(new CustomEvent(openAgentEvent, { detail: run }))
+}
+
+export function requestOpenAgentsTable() {
+  window.dispatchEvent(new CustomEvent(openAgentsTableEvent))
+}
+
+/** Working, Waiting, Done, or Failed. The tab says "Waiting for you". */
+export function agentStatusLabel(status: string, surface: 'tab' | 'table' = 'table'): string {
+  if (status === 'working') return copy.agentWorking
+  if (status === 'waiting') return surface === 'tab' ? copy.agentWaitingForYou : copy.agentWaiting
+  if (status === 'failed') return copy.agentFailed
+  if (status === 'done') return copy.agentDone
+  return status.slice(0, 1).toUpperCase() + status.slice(1)
+}
+
+export function agentStatusTone(status: string): ChipTone {
+  if (status === 'done') return 'ok'
+  if (status === 'failed') return 'danger'
+  if (status === 'waiting') return 'accent'
+  if (status === 'working') return 'info'
+  return 'neutral'
+}
+
+export function backgroundWorkingCount(runs: AgentRunSummary[]): number {
+  return runs.filter((run) => run.mode === 'background' && run.status === 'working').length
+}
+
+export function backgroundWorkingLabel(count: number): string {
+  if (count === 1) return copy.agentWorkingOne
+  return copy.agentsWorking.replace('{count}', String(count))
+}
+
+/** A background run that just finished or started waiting for a decision. */
+export function backgroundNotices(previous: AgentRunSummary[], next: AgentRunSummary[]): AgentRunSummary[] {
+  const before = new Map(previous.map((run) => [run.id, run]))
+  const notices: AgentRunSummary[] = []
+  for (const run of next) {
+    if (run.mode !== 'background') continue
+    if (run.status !== 'done' && run.status !== 'failed' && run.status !== 'waiting') continue
+    const prior = before.get(run.id)
+    // Missed the working state: the first time we see this background run it already finished or is waiting.
+    if (!prior) {
+      notices.push(run)
+      continue
+    }
+    const statusChanged = prior.status !== run.status
+    const movedToBackgroundWhileWaiting = prior.mode !== 'background' && run.status === 'waiting'
+    if (statusChanged || movedToBackgroundWhileWaiting) notices.push(run)
+  }
+  return notices
+}
+
+export function agentNoticeText(run: { title: string; status: string }): string {
+  const template = run.status === 'waiting'
+    ? copy.agentWaitingNotice
+    : run.status === 'failed'
+      ? copy.agentFailedNotice
+      : copy.agentFinishedNotice
+  return template.replace('{title}', run.title)
+}
+
+export function agentsPaletteRoot(): PaletteItem {
+  return {
+    id: 'agents:open',
+    group: 'views',
+    title: `${copy.agents} ›`,
+    subtitle: copy.agentsOpen,
+    keywords: ['agent', 'agents', 'background', 'run'],
+    argument: { name: 'id', type: 'agent' },
+  }
+}
+
+export function agentsTablePaletteItem(): PaletteItem {
+  return {
+    id: 'agents:table',
+    group: 'views',
+    title: copy.agentsTable,
+    subtitle: copy.agents,
+    keywords: ['agent', 'agents', 'table', 'list', 'status'],
+  }
+}
+
+export function agentPaletteRows(runs: AgentRunSummary[]): PaletteItem[] {
+  return runs.map((run) => ({
+    id: `agent-run:${run.id}`,
+    group: 'views' as const,
+    title: run.title,
+    subtitle: agentStatusLabel(run.status),
+    keywords: [run.status, run.mode, agentStatusLabel(run.status), 'agent'],
+    chips: [{ text: agentStatusLabel(run.status), tone: agentStatusTone(run.status) }],
+  }))
 }
 
 /** Open tabs for this workspace, and open tabs that belong somewhere else. */

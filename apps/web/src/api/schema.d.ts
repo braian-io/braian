@@ -1757,6 +1757,8 @@ export interface components {
             id: string;
             messages: components["schemas"]["AgentMessageView"][];
             mode: string;
+            /** Format: int32 */
+            proposal_count: number;
             proposals: components["schemas"]["AgentProposalView"][];
             session_kind: string;
             status: string;
@@ -1777,7 +1779,7 @@ export interface components {
         AgentRunPatch: {
             /** @description Hidden session. Stored for a later view of the agent's own session. */
             hidden?: boolean | null;
-            /** @description `foreground` or `background`. Stored for a later indicator. */
+            /** @description `foreground` or `background`. The person can switch either way while the run continues. */
             mode?: string | null;
             /** @description `own` or `user`. Stored for a later choice of session. */
             session_kind?: string | null;
@@ -1793,6 +1795,8 @@ export interface components {
             /** Format: uuid */
             id: string;
             mode: string;
+            /** Format: int32 */
+            proposal_count: number;
             session_kind: string;
             /** @description `working`, `waiting`, `done`, or `failed`. */
             status: string;

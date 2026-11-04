@@ -188,6 +188,10 @@ fn template_name() -> String {
         include_str!("../migrations/V35__catalog_ops.sql"),
         include_str!("../migrations/V36__dynamic_selections.sql"),
         include_str!("../migrations/V37__workspace_templates.sql"),
+        include_str!("../migrations/V38__agent_runs.sql"),
+        include_str!("../migrations/V39__proposal_resolved_at.sql"),
+        include_str!("../migrations/V40__proposal_reverted_at.sql"),
+        include_str!("../migrations/V41__agent_questions_and_table.sql"),
     ];
     for sql in sqls {
         for byte in sql.as_bytes() {

@@ -262,6 +262,24 @@ async fn execute_run(state: &AppState, identity: &Identity, run_id: Uuid) -> Res
     if model_unavailable() && prompt.to_lowercase().contains("hold the run") {
         tokio::time::sleep(Duration::from_secs(8)).await;
     }
+    // The mock stops for a decision instead of inventing an answer.
+    if model_unavailable() && prompt.to_lowercase().contains("ask me before") {
+        state
+            .store
+            .append_agent_message(
+                run_id,
+                "question",
+                &json!({ "text": "Which value should I use? I will not guess." }),
+            )
+            .await
+            .map_err(|error| error.to_string())?;
+        state
+            .store
+            .set_agent_run_status(run_id, "waiting", None)
+            .await
+            .map_err(|error| error.to_string())?;
+        return Ok(());
+    }
     if model_unavailable() && prompt.to_lowercase().contains("propose a new name") {
         propose_mock_name(state, identity, run_id, &run.context)
             .await
@@ -281,6 +299,14 @@ async fn execute_run(state: &AppState, identity: &Identity, run_id: Uuid) -> Res
         drop(tx);
         let _ = persist.await;
     }
+    if decision_pending(state, run_id).await? {
+        state
+            .store
+            .set_agent_run_status(run_id, "waiting", None)
+            .await
+            .map_err(|error| error.to_string())?;
+        return Ok(());
+    }
     acknowledge_notices(state, run_id)
         .await
         .map_err(|error| error.to_string())?;
@@ -290,6 +316,23 @@ async fn execute_run(state: &AppState, identity: &Identity, run_id: Uuid) -> Res
         .await
         .map_err(|error| error.to_string())?;
     Ok(())
+}
+
+/// A question after the latest user message means the run is waiting.
+async fn decision_pending(state: &AppState, run_id: Uuid) -> Result<bool, String> {
+    let messages = state
+        .store
+        .agent_messages(run_id)
+        .await
+        .map_err(|error| error.to_string())?;
+    let last_user = messages
+        .iter()
+        .rposition(|message| message.kind == "user")
+        .unwrap_or(0);
+    Ok(messages
+        .iter()
+        .skip(last_user)
+        .any(|message| message.kind == "question"))
 }
 
 async fn propose_mock_name(
@@ -365,6 +408,18 @@ async fn persist_event(
     event: &Value,
 ) -> Result<(), braian_store::Error> {
     match event.get("type").and_then(Value::as_str) {
+        Some("question") => {
+            state
+                .store
+                .append_agent_message(
+                    run_id,
+                    "question",
+                    &json!({
+                        "text": event.get("text").and_then(Value::as_str).unwrap_or_default(),
+                    }),
+                )
+                .await?;
+        }
         Some("answer") => {
             state
                 .store
@@ -579,6 +634,7 @@ fn summary_of(run: braian_store::AgentRunRow) -> AgentRunSummary {
         created_at: run.created_at.to_rfc3339(),
         updated_at: run.updated_at.to_rfc3339(),
         finished_at: run.finished_at.map(|value| value.to_rfc3339()),
+        proposal_count: run.proposal_count,
     }
 }
 
@@ -602,6 +658,7 @@ fn detail_of(
         created_at: summary.created_at,
         updated_at: summary.updated_at,
         finished_at: summary.finished_at,
+        proposal_count: summary.proposal_count,
         messages: messages
             .into_iter()
             .map(|message| AgentMessageView {

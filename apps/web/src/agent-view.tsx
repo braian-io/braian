@@ -5,9 +5,11 @@ import { ApiError, api, textValue, type Json } from './api'
 import {
   AgentRunError,
   agentDisplayText,
+  agentStatusLabel,
   cleanAgentError,
   fetchAgentRun,
   followAgentRun,
+  patchAgentRun,
   type AgentProposal,
   type AgentRunDetail,
 } from './agent-runs'
@@ -24,14 +26,10 @@ type AgentViewProps = {
 }
 
 function statusLabel(status: string): string {
-  if (status === 'working') return copy.agentWorking
-  if (status === 'waiting') return copy.agentWaiting
-  if (status === 'failed') return copy.agentFailed
-  if (status === 'done') return copy.agentDone
   if (status === 'open') return copy.agentProposalOpen
   if (status === 'accepted') return copy.agentProposalAccepted
   if (status === 'discarded') return copy.agentProposalDiscarded
-  return status.slice(0, 1).toUpperCase() + status.slice(1)
+  return agentStatusLabel(status, 'tab')
 }
 
 function decisionText(accept: boolean, lines: DiffLine[]): string {
@@ -152,6 +150,17 @@ export function AgentView({ runId, push }: AgentViewProps) {
       refresh()
     },
   })
+  const modeChange = useMutation({
+    mutationFn: (mode: 'foreground' | 'background') => patchAgentRun(runId, { mode }),
+    onSuccess: (detail) => {
+      queryClient.setQueryData(['agent-run', runId], detail)
+      setError('')
+      void queryClient.invalidateQueries({ queryKey: ['agent-runs'] })
+    },
+    onError: (reason: unknown) => {
+      setError(reason instanceof Error ? reason.message : copy.validation)
+    },
+  })
   const follow = useMutation({
     mutationFn: (content: string) => followAgentRun(runId, content),
     onSuccess: (detail) => {
@@ -167,7 +176,9 @@ export function AgentView({ runId, push }: AgentViewProps) {
   useEffect(() => {
     const status = run.data?.status ?? ''
     if (!status) return
-    if (previousStatus.current && previousStatus.current !== status) setAnnounced(statusLabel(status))
+    if (previousStatus.current && previousStatus.current !== status) {
+      setAnnounced(status === 'waiting' ? copy.agentWaitingForYou : statusLabel(status))
+    }
     previousStatus.current = status
   }, [run.data?.status])
   useEffect(() => {
@@ -210,6 +221,7 @@ export function AgentView({ runId, push }: AgentViewProps) {
   }
   const data: AgentRunDetail = run.data
   const working = data.status === 'working'
+  const waiting = data.status === 'waiting'
   const failed = data.status === 'failed'
   const failure = failed ? cleanAgentError(data.error || '') : ''
   const lastPrompt = [...data.messages].reverse().find((message) => message.kind === 'user')
@@ -219,6 +231,7 @@ export function AgentView({ runId, push }: AgentViewProps) {
       className="agent-view"
       data-testid="agent-view"
       data-run={data.id}
+      data-mode={data.mode}
       ref={rootRef}
       onKeyDownCapture={(event) => {
         if (event.key !== 'Escape') return
@@ -230,10 +243,29 @@ export function AgentView({ runId, push }: AgentViewProps) {
       <header className="agent-view-head">
         <h2>{data.title}</h2>
         <span className="meta-chip" data-testid="agent-status" data-status={data.status}>{statusLabel(data.status)}</span>
+        <Button
+          type="button"
+          variant={data.mode === 'background' ? 'primary' : 'default'}
+          data-testid="agent-mode"
+          data-mode={data.mode}
+          disabled={modeChange.isPending}
+          onClick={() => modeChange.mutate(data.mode === 'background' ? 'foreground' : 'background')}
+        >
+          {data.mode === 'background' ? copy.agentBringToFront : copy.agentRunInBackground}
+        </Button>
         <time dateTime={data.created_at}>{formatTimestamp(data.created_at)}</time>
       </header>
       <div className="agent-log" data-testid="agent-log" aria-live="polite" aria-busy={working}>
         {data.messages.map((message) => {
+          if (message.kind === 'question') {
+            const text = agentDisplayText(String(message.body.text ?? ''))
+            if (!text) return null
+            return (
+              <p key={message.id} className="agent-question" data-testid="agent-question">
+                {text}
+              </p>
+            )
+          }
           if (message.kind === 'user' || message.kind === 'proposal' || message.kind === 'notice') return null
           const text = agentDisplayText(String(message.body.text ?? ''))
           if (!text) return null
@@ -296,8 +328,13 @@ export function AgentView({ runId, push }: AgentViewProps) {
           disabled={working || follow.isPending}
           onChange={(event) => setDraft(event.target.value)}
         />
-        <Button type="submit" variant="primary" disabled={working || follow.isPending || draft.trim() === ''}>
-          {copy.agentSend}
+        <Button
+          type="submit"
+          variant="primary"
+          data-testid={waiting ? 'agent-resume' : 'agent-send'}
+          disabled={working || follow.isPending || draft.trim() === ''}
+        >
+          {waiting ? copy.agentResume : copy.agentSend}
         </Button>
       </form>
     </div>

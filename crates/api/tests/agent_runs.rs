@@ -215,6 +215,7 @@ async fn two_runs_are_allowed_and_a_user_edit_marks_the_proposal_stale() {
         1,
         "{finished}"
     );
+    assert_eq!(finished["proposal_count"], 1, "{finished}");
     let proposal_id = finished["proposals"][0]["id"].as_str().unwrap();
     assert_eq!(finished["proposals"][0]["status"], "open");
     assert_eq!(finished["proposals"][0]["stale"], false);
@@ -426,4 +427,113 @@ async fn revert_accept_marks_the_proposal_reverted() {
     assert_eq!(status, StatusCode::OK, "{detail}");
     assert_eq!(detail["status"], "accepted", "{detail}");
     assert!(detail["reverted_at"].as_str().is_some(), "{detail}");
+}
+
+async fn until_status(app: &axum::Router, id: &str, status: &str) -> Value {
+    for _ in 0..200 {
+        let (code, body) = call(app, "GET", &format!("/v1/agent/runs/{id}"), None, &[]).await;
+        assert_eq!(code, StatusCode::OK, "{body}");
+        if body["status"] == status {
+            return body;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    panic!("agent run {id} did not become {status}");
+}
+
+#[tokio::test]
+async fn a_run_can_move_to_the_background_and_back_with_no_cap() {
+    let (_db, app) = app().await;
+    let mut ids = Vec::new();
+    for prompt in ["hold the run alpha", "hold the run beta"] {
+        let body = json!({ "messages": [{ "role": "user", "content": prompt }] });
+        let (status, created) =
+            call(&app, "POST", "/v1/agent/runs", Some(&body.to_string()), &[]).await;
+        assert_eq!(status, StatusCode::OK, "{created}");
+        assert_eq!(created["mode"], "foreground");
+        assert_eq!(created["proposal_count"], 0);
+        ids.push(created["id"].as_str().unwrap().to_owned());
+    }
+    for id in &ids {
+        let (status, patched) = call(
+            &app,
+            "PATCH",
+            &format!("/v1/agent/runs/{id}"),
+            Some(r#"{"mode":"background"}"#),
+            &[],
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{patched}");
+        assert_eq!(patched["mode"], "background");
+        assert_eq!(patched["status"], "working", "{patched}");
+    }
+    let (status, listed) = call(&app, "GET", "/v1/agent/runs", None, &[]).await;
+    assert_eq!(status, StatusCode::OK, "{listed}");
+    let background = listed["runs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|run| run["mode"] == "background" && run["status"] == "working")
+        .count();
+    assert!(background >= 2, "no cap on background agents: {listed}");
+
+    let id = &ids[0];
+    let (status, front) = call(
+        &app,
+        "PATCH",
+        &format!("/v1/agent/runs/{id}"),
+        Some(r#"{"mode":"foreground"}"#),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{front}");
+    assert_eq!(front["mode"], "foreground");
+    assert_eq!(front["status"], "working");
+}
+
+#[tokio::test]
+async fn a_run_waits_for_a_decision_and_resume_continues_it() {
+    let (_db, app) = app().await;
+    let (status, created) = call(
+        &app,
+        "POST",
+        "/v1/agent/runs",
+        Some(r#"{"messages":[{"role":"user","content":"ask me before you continue"}]}"#),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    let id = created["id"].as_str().unwrap();
+    let waiting = until_status(&app, id, "waiting").await;
+    assert_eq!(waiting["status"], "waiting", "{waiting}");
+    let question = waiting["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|message| message["kind"] == "question")
+        .expect("question");
+    assert_eq!(
+        question["body"]["text"],
+        "Which value should I use? I will not guess."
+    );
+    assert!(waiting["finished_at"].is_null(), "{waiting}");
+
+    let (status, resumed) = call(
+        &app,
+        "POST",
+        &format!("/v1/agent/runs/{id}/messages"),
+        Some(r#"{"content":"Use the existing name"}"#),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{resumed}");
+    assert_eq!(resumed["status"], "working");
+    let done = until_done(&app, id).await;
+    assert_eq!(done["status"], "done", "{done}");
+    let answered = done["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|message| message["body"]["text"] == "Use the existing name");
+    assert!(answered, "{done}");
 }

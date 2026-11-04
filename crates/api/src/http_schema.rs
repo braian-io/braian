@@ -166,7 +166,7 @@ pub struct AgentRunCreate {
 pub struct AgentRunPatch {
     pub tab_open: Option<bool>,
     pub view_id: Option<Uuid>,
-    /// `foreground` or `background`. Stored for a later indicator.
+    /// `foreground` or `background`. The person can switch either way while the run continues.
     pub mode: Option<String>,
     /// Hidden session. Stored for a later view of the agent's own session.
     pub hidden: Option<bool>,
@@ -195,6 +195,7 @@ pub struct AgentRunSummary {
     pub created_at: String,
     pub updated_at: String,
     pub finished_at: Option<String>,
+    pub proposal_count: i32,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -237,6 +238,7 @@ pub struct AgentRunDetail {
     pub created_at: String,
     pub updated_at: String,
     pub finished_at: Option<String>,
+    pub proposal_count: i32,
     pub messages: Vec<AgentMessageView>,
     pub proposals: Vec<AgentProposalView>,
 }
