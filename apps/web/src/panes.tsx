@@ -6,6 +6,7 @@ import { api, catalogName, failureLines, freeObject, jsonRecord, recordNumber, r
 import { reportWriteError, writeErrorMessage } from './write-error'
 import { catalogKeyOf, inCatalog, workspaceCatalogRef } from './catalog-scope'
 import { useCatalogIdToKey } from './catalog-list'
+import { CreateDialog, requireText } from './create-dialog'
 import { newObjectBody } from './new-object'
 import { attributeByKey, indexSort, readIndexed, sortKeyForColumnId } from './index-fields'
 import { cellEditShouldPatch, cellEditValuesBody, isEditingCell, isEditableColumn, resolveCellEditInitial, valueListKeyForColumn, columnBaseKey } from './cell-edit'
@@ -190,6 +191,8 @@ export function ObjectTable({
   const [prefsLoadFailed, setPrefsLoadFailed] = useState(false)
   // Single current row. Click and arrows both write this; the detail object follows it.
   const [active, setActive] = useState(-1)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [pendingSelectId, setPendingSelectId] = useState<string | null>(null)
   // The active cell's column, by key. Left and Right move it; the keyboard menu acts on it.
   const [activeColumn, setActiveColumn] = useState('')
   const [moving, setMoving] = useState<string | null>(null)
@@ -247,6 +250,7 @@ export function ObjectTable({
 
   const virtualizerRef = useRef<{ scrollToIndex: (index: number) => void }>({ scrollToIndex: () => {} })
   const locateRef = useRef<(id: string) => number>(() => -1)
+  const selectTries = useRef(0)
   const selectMode = useRef<{ extend: boolean; anchor: number } | null>(null)
   useEffect(() => onFlash(setFlashId), [])
 
@@ -627,6 +631,31 @@ export function ObjectTable({
 
   rowsRef.current = byIndex
   const knownStamp = [...byIndex.values()].map((row) => `${row.id}:${row.key}:${row.name}:${row.type}`).join('|')
+  const [selectTick, setSelectTick] = useState(0)
+  // Search is a few seconds behind the write. Keep asking until the new row is on the page.
+  useEffect(() => {
+    if (!pendingSelectId) {
+      selectTries.current = 0
+      return
+    }
+    const index = locateRef.current(pendingSelectId)
+    if (index >= 0) {
+      selectMode.current = null
+      setActive(index)
+      setSelected([pendingSelectId])
+      session.setObjectId(pendingSelectId)
+      setPendingSelectId(null)
+      virtualizerRef.current.scrollToIndex(index)
+      return
+    }
+    if (selectTries.current >= 40) return
+    const timer = setTimeout(() => {
+      selectTries.current += 1
+      void queryClient.invalidateQueries({ queryKey: ['objects'] })
+      setSelectTick((tick) => tick + 1)
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [pendingSelectId, knownStamp, selectTick, session, queryClient])
   const activeStamp = activeRow ? `${activeRow.id}:${activeRow.key}:${activeRow.name}:${activeRow.type}` : ''
   // Rows picked under an old peer filter are out of scope once the source
   // changes. Do not publish them, and drop the local pick so the table cannot
@@ -1016,7 +1045,8 @@ export function ObjectTable({
         window.dispatchEvent(new CustomEvent('braian-fields-palette', { detail: { editColumnId: columnId || null } }))
       }),
       registerCommandRunner('object:new', () => {
-        window.dispatchEvent(new Event('braian-new-object'))
+        if (document.querySelector('[data-testid="command-palette"], [data-testid="fields-mode"]')) return
+        setCreateOpen(true)
       }),
     ]
     return () => stops.forEach((stop) => stop())
@@ -1558,7 +1588,7 @@ export function ObjectTable({
     <StandardTableChrome
       testId="object-table"
       newRowLabel={newRowLabel}
-      onNewRow={() => window.dispatchEvent(new Event('braian-new-object'))}
+      onNewRow={() => setCreateOpen(true)}
       onSelectFields={() => window.dispatchEvent(new CustomEvent('braian-fields-palette', { detail: {} }))}
       selectFieldsLabel={copy.selectFields}
       rowCount={prefsReady && probe.isFetched ? (groupBy ? groups.reduce((sum, group) => sum + group.found, 0) : found) : undefined}
@@ -1575,7 +1605,20 @@ export function ObjectTable({
           {copy.columnPrefsLoadError}
         </p>
       ) : null}
-      <NewObject session={session} typeKey={typeKey} singular={bound?.singular} trigger="event" />
+      <NewObject
+        open={createOpen}
+        session={session}
+        typeKey={typeKey}
+        singular={bound?.singular}
+        onOpenChange={setCreateOpen}
+        onCreated={(created) => {
+          session.setObjectId(created.id)
+          setSelected([created.id])
+          setFilter(created.number)
+          setQueryText(created.number)
+          setPendingSelectId(created.id)
+        }}
+      />
       <div
         className="toolbar-actions standard-table-filters"
         data-testid="standard-table-filters"
@@ -2151,114 +2194,89 @@ function TableFilters({
 }
 
 function NewObject({
+  open,
   session,
   typeKey,
   singular,
-  trigger = 'button',
+  onOpenChange,
+  onCreated,
 }: {
+  open: boolean
   session: PanesSession
   typeKey?: string
   singular?: string
-  /** `event` = only the shared plus / command opens the form (no inline button). */
-  trigger?: 'button' | 'event'
+  onOpenChange: (open: boolean) => void
+  onCreated: (created: { id: string; number: string }) => void
 }) {
-  const [open, setOpen] = useState(false)
   const [number, setNumber] = useState('')
   const [name, setName] = useState('')
-  const [error, setError] = useState('')
-  const openerRef = useRef<HTMLElement | null>(null)
-  const numberRef = useRef<HTMLInputElement | null>(null)
+  const [chosenType, setChosenType] = useState(typeKey || '')
   const queryClient = useQueryClient()
   const defs = useQuery({ queryKey: ['definitions'], queryFn: () => api.get('/v1/definitions') })
-  const closeForm = () => {
-    setOpen(false)
-    setNumber('')
-    setName('')
-    setError('')
-    const target = openerRef.current
-    openerRef.current = null
-    if (target?.isConnected) queueMicrotask(() => target.focus())
-  }
-  const openForm = () => {
-    // Do not open while the command / fields palette has focus (key leaks).
-    if (document.querySelector('[data-testid="command-palette"], [data-testid="fields-mode"]')) return
-    if (open) {
-      numberRef.current?.focus()
+  const choices = useMemo(
+    () => typeNames(defs.data, uiLanguage).filter((item) => item.kind !== 'link'),
+    [defs.data],
+  )
+  const showType = !typeKey && choices.length > 1
+  const wasOpen = useRef(false)
+  useEffect(() => {
+    if (!open) {
+      wasOpen.current = false
       return
     }
-    openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    setError('')
-    setOpen(true)
-  }
-  useEffect(() => {
-    const onOpen = () => openForm()
-    window.addEventListener('braian-new-object', onOpen)
-    return () => window.removeEventListener('braian-new-object', onOpen)
-    // openForm closes over `open`; refresh the listener when it toggles.
-  }, [open])
-  const named = typeNames(defs.data, uiLanguage).find((item) => item.key === (typeKey || 'product'))
-  if (!open) {
-    if (trigger === 'event') return null
-    return (
-      <button
-        type="button"
-        onClick={() => {
-          openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-          setError('')
-          setOpen(true)
-        }}
-      >
-        {newObjectLabel(singular)}
-      </button>
-    )
-  }
+    if (!wasOpen.current) {
+      setNumber('')
+      setName('')
+      setChosenType(typeKey || choices[0]?.key || '')
+      wasOpen.current = true
+      return
+    }
+    if (!typeKey && !chosenType && choices[0]) setChosenType(choices[0].key)
+  }, [open, typeKey, choices, chosenType])
+  const named = choices.find((item) => item.key === (typeKey || chosenType))
+  const fields = [
+    { id: 'number', label: copy.number, value: number, testId: 'new-number', autoFocus: true },
+    { id: 'name', label: copy.name, value: name, testId: 'new-name' },
+    ...(showType ? [{
+      id: 'type',
+      label: copy.type,
+      value: chosenType,
+      testId: 'new-type',
+      options: choices.map((item) => ({ value: item.key, label: item.singular || item.key })),
+    }] : []),
+  ]
   return (
-    <form
-      className="create-row"
-      data-testid="new-object"
-      onKeyDown={(event) => {
-        if (event.key === 'Escape') {
-          event.preventDefault()
-          event.stopPropagation()
-          closeForm()
-        }
+    <CreateDialog
+      open={open}
+      title={newObjectLabel(singular)}
+      description={copy.createObjectHint}
+      dialogTestId="new-object"
+      fields={fields}
+      onField={(id, value) => {
+        if (id === 'number') setNumber(value)
+        else if (id === 'name') setName(value)
+        else setChosenType(value)
       }}
-      onSubmit={(event) => {
-        event.preventDefault()
-        if (!number.trim() || !name.trim()) {
-          setError(copy.validation)
-          return
-        }
-        void api.post('/v1/objects', { body: newObjectBody({
-            typeKey: typeKey || 'product',
-            number,
-            name,
-            group: session.group,
-            structures: named?.structures,
-          }) })
-          .then((created) => {
-            setError('')
-            setOpen(false)
-            setNumber('')
-            setName('')
-            openerRef.current = null
-            if ('id' in created) session.setObjectId(String(created.id))
-            session.push(`${copy.saved} ${number}`)
-            void queryClient.invalidateQueries({ queryKey: ['objects'] })
-            void queryClient.invalidateQueries({ queryKey: ['path-values'] })
-          })
-          .catch((reason: unknown) => {
-            const message = writeErrorMessage(reason)
-            if (message) setError(message)
-          })
+      onClose={() => onOpenChange(false)}
+      onSubmit={async () => {
+        const nextNumber = requireText(number)
+        const nextName = requireText(name)
+        const nextType = typeKey || chosenType
+        if (!nextType) throw new Error(copy.validation)
+        const created = await api.post('/v1/objects', { body: newObjectBody({
+          typeKey: nextType,
+          number: nextNumber,
+          name: nextName,
+          group: session.group,
+          structures: named?.structures,
+        }) })
+        if (!('id' in created)) throw new Error(copy.validation)
+        onCreated({ id: String(created.id), number: nextNumber })
+        session.push(`${copy.saved} ${nextNumber}`)
+        void queryClient.invalidateQueries({ queryKey: ['objects'] })
+        void queryClient.invalidateQueries({ queryKey: ['path-values'] })
       }}
-    >
-      <input ref={numberRef} data-testid="new-number" value={number} onChange={(event) => setNumber(event.target.value)} placeholder={copy.numberPlaceholder} />
-      <input data-testid="new-name" value={name} onChange={(event) => setName(event.target.value)} placeholder={copy.namePlaceholder} aria-label={copy.namePlaceholder} />
-      <button type="button" data-testid="inline-create-cancel" onClick={closeForm}>{copy.cancel}</button>
-      <button className="primary" type="submit" data-testid="create-object">{copy.save}</button>
-      {error ? <span className="error" data-testid="validation-error">{error}</span> : null}
-    </form>
+    />
   )
 }
 

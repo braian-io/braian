@@ -6,6 +6,7 @@ import { reportWriteError, writeErrorMessage } from './write-error'
 import { formatCount } from './format'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './components/ui/dropdown-menu'
+import { CreateDialog, requireText } from './create-dialog'
 import { copy } from './i18n'
 import { groupNodes, structureKeys, type GroupNode, type ModelSelection } from './model-view'
 import { structureCaption } from './graph-scene'
@@ -19,7 +20,6 @@ import {
 } from './structure-menu'
 
 type Draft =
-  | { kind: 'structure' }
   | { kind: 'group'; structure: string; parent?: string }
   | { kind: 'rename-structure'; structure: string; value: string }
   | { kind: 'rename-structure-key'; structure: string; value: string }
@@ -54,6 +54,9 @@ export function StructureSection({
   const focusName = useRef(false)
   const draftOpenerRef = useRef<HTMLElement | null>(null)
   const [dialog, setDialog] = useState<DialogState | null>(null)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [createName, setCreateName] = useState('')
+  const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
   const busyRef = useRef(false)
@@ -65,6 +68,7 @@ export function StructureSection({
 
   const refresh = async () => {
     await client.invalidateQueries({ queryKey: ['definitions'] })
+    await client.invalidateQueries({ queryKey: ['model-draft'] })
   }
 
   const proposeKey = async (name: string, args: Json) => {
@@ -141,30 +145,41 @@ export function StructureSection({
           className="icon-btn"
           data-testid="new-structure"
           aria-label={copy.newStructure}
-          onClick={(event) => {
-            if (draft) {
-              nameRef.current?.focus()
-              return
-            }
-            draftOpenerRef.current = event.currentTarget
-            setDraft({ kind: 'structure' })
+          onClick={() => {
+            setCreateName('')
+            setCreateOpen(true)
           }}
         >
           <Plus size={14} />
         </button>
       </div>
-      {draft?.kind === 'structure' ? (
-        <NameField
-          label={copy.newStructure}
-          inputRef={nameRef}
-          onCommit={(name) => commitName(name, (key, label) => api.post('/v1/structures:create', { body: { key, label } }).then(() => undefined))}
-          onCancel={cancelDraft}
-        />
-      ) : null}
+      <CreateDialog
+        open={createOpen}
+        title={copy.newStructure}
+        description={copy.createNameHint}
+        fields={[
+          { id: 'name', label: copy.name, value: createName, testId: 'new-name', autoFocus: true },
+        ]}
+        onField={(_id, value) => setCreateName(value)}
+        onClose={() => setCreateOpen(false)}
+        onSubmit={async () => {
+          const label = requireText(createName)
+          const key = structureKeyFromName(label)
+          if (!key) throw new Error(copy.nameRequired)
+          await api.post('/v1/structures:create', { body: { key, label } })
+          await refresh()
+          setSelectedKey(key)
+        }}
+      />
       {structureKeys(defs).map((key) => {
         const title = structureCaption(key, defs, key)
         return (
-          <div key={key} className="model-tree" data-testid={`structure-${key}`}>
+          <div
+            key={key}
+            className="model-tree"
+            data-testid={`structure-${key}`}
+            data-selected={selectedKey === key ? 'true' : undefined}
+          >
             <div className="model-row">
               {draft?.kind === 'rename-structure' && draft.structure === key ? (
                 <NameField
