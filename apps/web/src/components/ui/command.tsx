@@ -25,13 +25,10 @@ export const CommandInput = forwardRef<
       ? root?.querySelector<HTMLElement>(`[data-palette-index="${index}"]`)
       : root?.querySelector<HTMLElement>('[cmdk-item][aria-selected="true"]')
     const list = root?.querySelector<HTMLElement>('[cmdk-list]')
-    if (selected?.id) {
-      input.setAttribute('aria-activedescendant', selected.id)
-      list?.setAttribute('aria-activedescendant', selected.id)
-    } else {
-      input.removeAttribute('aria-activedescendant')
-      list?.removeAttribute('aria-activedescendant')
-    }
+    // The combobox is the only owner of aria-activedescendant.
+    list?.removeAttribute('aria-activedescendant')
+    if (selected?.id && index != null && index !== '') input.setAttribute('aria-activedescendant', selected.id)
+    else input.removeAttribute('aria-activedescendant')
   })
   return (
     <CommandPrimitive.Input

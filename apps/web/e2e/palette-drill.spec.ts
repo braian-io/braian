@@ -27,18 +27,21 @@ test.describe('palette drill-in, recent order, and global commands', () => {
     const command = palette.locator('.hit.on')
     await expect(command).toContainText('Open view')
     await expect(page.getByTestId('palette-tab-hint')).toHaveText(/Tab\s*open/)
-    await expect(palette.locator('.palette-heading', { hasText: 'Best match' })).toBeVisible()
+    await expect(palette.locator('.palette-heading', { hasText: 'Best match' })).toHaveCount(0)
     await expect(palette.getByRole('option', { name: /^Articles view/ })).toHaveCount(0)
+    await expect(palette.locator('.hit.on')).toHaveCount(1)
 
     await page.keyboard.press('Tab')
-    await expect(page.getByTestId('palette-crumb')).toContainText('Open view ›')
-    const articles = palette.getByRole('option', { name: /Articles view/ }).first()
+    await expect(page.locator('.palette-query').getByTestId('palette-crumb')).toContainText('Open view ›')
+    await expect(page.getByTestId('palette-input')).toHaveAttribute('placeholder', 'Search views…')
+    await expect(page.getByTestId('palette-back-hint')).toHaveText('⌫ back')
+    const articles = palette.getByRole('option', { name: /^Articles\b/ }).first()
     await articles.scrollIntoViewIfNeeded()
     await expect(articles).toBeVisible()
     await expect(page.getByTestId('ai-badge')).toHaveCount(0)
     await expect(page.getByTestId('ai-log')).toHaveCount(0)
 
-    await palette.getByRole('option', { name: /Articles view/ }).first().click()
+    await palette.getByRole('option', { name: /^Articles\b/ }).first().click()
     await expect(palette).toHaveCount(0)
     await expect(page.locator('.pane-tab', { hasText: 'Articles' }).first()).toBeVisible({ timeout: 30_000 })
   })
@@ -53,15 +56,16 @@ test.describe('palette drill-in, recent order, and global commands', () => {
     await expect(page.getByTestId('palette-tab-hint')).toHaveText(/Tab\s*open/)
     await page.keyboard.press('Enter')
 
-    await expect(page.getByTestId('palette-crumb')).toContainText('Open view ›')
-    const articles = palette.getByRole('option', { name: /Articles view/ }).first()
+    await expect(page.locator('.palette-query').getByTestId('palette-crumb')).toContainText('Open view ›')
+    await expect(page.getByTestId('palette-input')).toHaveAttribute('placeholder', 'Search views…')
+    const articles = palette.getByRole('option', { name: /^Articles\b/ }).first()
     await articles.scrollIntoViewIfNeeded()
     await expect(articles).toBeVisible()
     await expect(page.getByTestId('ai-badge')).toHaveCount(0)
     await expect(page.getByTestId('ai-log')).toHaveCount(0)
 
-    await page.getByTestId('palette-input').fill('Articles view')
-    await expect(palette.locator('.hit.on')).toContainText('Articles view')
+    await page.getByTestId('palette-input').fill('Articles')
+    await expect(palette.locator('.hit.on')).toContainText('Articles')
     await page.keyboard.press('Enter')
     await expect(palette).toHaveCount(0)
     await expect(page.locator('.pane-tab', { hasText: 'Articles' }).first()).toBeVisible({ timeout: 30_000 })
@@ -79,18 +83,30 @@ test.describe('palette drill-in, recent order, and global commands', () => {
       await expect(palette).toHaveCount(0)
     }
 
-    await run('Reset layout')
-    await run('Reset layout')
+    async function drill(query: string) {
+      const palette = await openPalette(page)
+      await page.getByTestId('palette-input').fill(query)
+      await expect(palette.locator('.hit.on')).toContainText(query)
+      await page.keyboard.press('Enter')
+      await expect(page.getByTestId('palette-crumb')).toContainText(query)
+      await page.keyboard.press('Escape')
+      await expect(palette).toHaveCount(0)
+    }
+
+    await drill('Open view')
+    await drill('Open product')
     await run('Move view left')
+    await run('Reset layout')
+    await run('Reset layout')
 
     const palette = await openPalette(page)
     const recent = palette.locator('.palette-group').filter({
       has: page.locator('.palette-heading', { hasText: 'Recent' }),
     })
-    await expect(recent.getByRole('option').nth(0)).toContainText('Move view left')
-    await expect(recent.getByRole('option').nth(1)).toContainText('Reset layout')
-    await expect(recent.getByRole('option', { name: /Move view left/ })).toHaveCount(1)
-    await expect(recent.getByRole('option', { name: /Reset layout/ })).toHaveCount(1)
+    await expect(recent.getByRole('option').nth(0)).toContainText('Open product')
+    await expect(recent.getByRole('option').nth(1)).toContainText('Open view')
+    await expect(recent.getByRole('option', { name: /Move view left/ })).toHaveCount(0)
+    await expect(recent.getByRole('option', { name: /Reset layout/ })).toHaveCount(0)
   })
 
   test('shows no product context section while a product is open', async ({ page }) => {
@@ -124,9 +140,8 @@ test.describe('palette drill-in, recent order, and global commands', () => {
 
     await input.fill('ov')
     await expect(palette.locator('.hit.on')).toContainText('Open view')
-    await expect(palette.locator('.palette-group').filter({
-      has: page.locator('.palette-heading', { hasText: 'Best match' }),
-    }).getByRole('option').first()).toContainText('Open view')
+    await expect(palette.locator('.hit.on')).toHaveCount(1)
+    await expect(palette.locator('.palette-heading', { hasText: 'Best match' })).toHaveCount(0)
 
     await input.fill('open v')
     await expect(palette.locator('.hit.on')).toContainText('Open view')
@@ -166,6 +181,8 @@ test.describe('palette drill-in, recent order, and global commands', () => {
     await page.keyboard.press('Control+j')
     await expect(page.getByTestId('ai-badge')).toBeVisible()
     await expect(page.getByTestId('ai-question')).toHaveText('how many products')
+    await expect(page.getByTestId('palette-ai-foot')).toHaveText('Enter send · Esc close')
+    await expect(page.getByTestId('ai-answer')).toHaveText("AI isn't set up for this workspace")
     await page.keyboard.press('Escape')
     await expect(palette).toHaveCount(0)
   })
@@ -192,5 +209,56 @@ test.describe('palette drill-in, recent order, and global commands', () => {
     expect(await input.evaluate((el: HTMLInputElement) => el.selectionStart)).toBe('layout'.length)
     await expect(input).toHaveValue('layout')
     await expect(palette).toBeVisible()
+  })
+
+  test('one combobox, no duplicate destinations, no-results, and the ask footer', async ({ page }) => {
+    test.setTimeout(120_000)
+    await login(page)
+    const palette = await openPalette(page)
+    const input = page.getByTestId('palette-input')
+    await expect(input).toHaveAttribute('role', 'combobox')
+    await expect(palette.locator('.hit.on')).toHaveCount(1)
+    await expect(input).toHaveAttribute('aria-activedescendant', /^palette-opt-\d+$/)
+    await expect(palette.locator('[aria-activedescendant]')).toHaveCount(1)
+    await expect(palette.locator('[aria-selected="true"]')).toHaveCount(1)
+    const selectedId = await input.getAttribute('aria-activedescendant')
+    await expect(palette.locator(`[id="${selectedId}"]`)).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByTestId('palette-results')).toContainText(/\d+ results/)
+    await expect(page.getByTestId('palette-foot')).not.toContainText('Ctrl+K')
+    await expect(page.locator('[data-testid="palette-active"]')).toHaveCount(0)
+
+    const headings = (await palette.locator('.palette-heading').allTextContents()).map((text) => text.trim())
+    const wanted = ['Recent', 'Navigation', 'Create', 'Data model', 'Links']
+    let last = -1
+    for (const name of wanted) {
+      const index = headings.indexOf(name)
+      if (index < 0) continue
+      expect(index).toBeGreaterThan(last)
+      last = index
+    }
+    expect(headings).toContain('Navigation')
+    expect(headings).toContain('Create')
+    expect(headings).toContain('Data model')
+    expect(headings).toContain('Links')
+    expect(headings).not.toContain('Views')
+    await expect(palette.getByRole('option', { name: /^Articles view/ })).toHaveCount(0)
+    await expect(palette.getByRole('option', { name: /^Link to/ }).first()).toBeVisible()
+
+    await input.fill('Delete workspace')
+    await expect(palette.locator('.hit.on')).toContainText('Delete workspace…')
+
+    await input.fill('zzzzqqqqnomatch')
+    await expect(page.getByTestId('palette-empty')).toHaveText('No results for "zzzzqqqqnomatch"')
+    await expect(palette.getByRole('option', { name: /Ask AI/ })).toBeVisible()
+    await expect(page.getByTestId('palette-results')).toHaveText('0 results')
+    await expect(input).not.toHaveAttribute('aria-activedescendant', /.+/)
+
+    await page.keyboard.press('Control+k')
+    await expect(page.getByTestId('command-palette')).toHaveCount(1)
+
+    await page.keyboard.press('Control+j')
+    await expect(page.getByTestId('ai-question')).toHaveText('zzzzqqqqnomatch')
+    await expect(page.getByTestId('palette-ai-foot')).toHaveText('Enter send · Esc close')
+    await expect(page.getByTestId('activity-log')).not.toContainText('Agent:')
   })
 })

@@ -43,8 +43,11 @@ test('palette flows for the local screenshot pass', async ({ page }) => {
 
   await page.keyboard.press('Tab')
   await expect(page.getByTestId('palette-crumb')).toContainText('Open view ›')
+  await expect(page.getByTestId('palette-input')).toHaveAttribute('placeholder', 'Search views…')
+  await expect(page.getByTestId('palette-back-hint')).toBeVisible()
   await shot(root, '03-drill-tab.png')
   await shot(root, '05-breadcrumb.png')
+  await shot(page.locator('.palette-query'), '13-sublist-placeholder.png')
   await page.keyboard.press('Backspace')
   await expect(page.getByTestId('palette-crumb')).toBeEmpty()
   await expect(root).toBeVisible()
@@ -67,24 +70,30 @@ test('palette flows for the local screenshot pass', async ({ page }) => {
   await expect(page.getByTestId('ai-badge')).toHaveCount(0)
   await page.keyboard.press('Control+j')
   await expect(page.getByTestId('ai-question')).toHaveText('how many products')
+  await expect(page.getByTestId('palette-ai-foot')).toHaveText('Enter send · Esc close')
+  await expect(page.getByTestId('ai-answer')).toHaveText("AI isn't set up for this workspace")
   await shot(asking, '07-ctrl-j-ask-ai.png')
+  await shot(page.getByTestId('palette-ai-foot'), '12-ask-ai-footer.png')
+  await expect(page.getByTestId('activity-log')).not.toContainText('Agent:')
   await page.keyboard.press('Escape')
 
-  async function run(query: string) {
+  async function drill(query: string) {
     const palette = await openPalette(page)
     await page.getByTestId('palette-input').fill(query)
     await expect(palette.locator('.hit.on')).toContainText(query)
     await page.keyboard.press('Enter')
+    await expect(page.getByTestId('palette-crumb')).toContainText(query)
+    await page.keyboard.press('Escape')
     await expect(palette).toHaveCount(0)
   }
-  await run('Reset layout')
-  await run('Move view left')
+  await drill('Open view')
+  await drill('Open product')
   const recentPalette = await openPalette(page)
   const recent = recentPalette.locator('.palette-group').filter({
     has: page.locator('.palette-heading', { hasText: 'Recent' }),
   })
-  await expect(recent.getByRole('option').nth(0)).toContainText('Move view left')
-  await expect(recent.getByRole('option').nth(1)).toContainText('Reset layout')
+  await expect(recent.getByRole('option').nth(0)).toContainText('Open product')
+  await expect(recent.getByRole('option').nth(1)).toContainText('Open view')
   await shot(recentPalette, '08-recent-order.png')
   await page.keyboard.press('Escape')
 
@@ -96,4 +105,11 @@ test('palette flows for the local screenshot pass', async ({ page }) => {
   await expect(onProduct.locator('.palette-heading', { hasText: 'On selected object' })).toHaveCount(0)
   await expect(onProduct.getByRole('option', { name: 'Open to the right' })).toHaveCount(0)
   await shot(onProduct, '09-product-no-context.png')
+  await page.keyboard.press('Escape')
+
+  const empty = await openPalette(page)
+  await page.getByTestId('palette-input').fill('zzzzqqqqnomatch')
+  await expect(page.getByTestId('palette-empty')).toHaveText('No results for "zzzzqqqqnomatch"')
+  await expect(empty.getByRole('option', { name: /Ask AI/ })).toBeVisible()
+  await shot(empty, '11-no-results.png')
 })

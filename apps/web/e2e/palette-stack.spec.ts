@@ -28,7 +28,7 @@ test.describe('palette sub-lists', () => {
     await expect(page.locator(`[id="${activeId}"]`)).toHaveCount(1)
 
     await page.getByTestId('palette-input').fill('Articles')
-    const articles = palette.locator('.hit').filter({ hasText: 'Articles view' }).first()
+    const articles = palette.locator('.hit').filter({ hasText: 'Articles' }).first()
     await expect(articles).toBeVisible()
     await articles.click()
     await expect(palette).toHaveCount(0)

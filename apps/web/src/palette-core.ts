@@ -59,7 +59,9 @@ export function paletteKeyEffect(input: PaletteKeyInput): PaletteKeyEffect {
     }
     return { type: 'none' }
   }
-  if (mod && (input.key === 'Enter' || input.key === '.' || input.key === 'k' || input.key === 'K')) {
+  // Ctrl+K stays a no-op while the palette is open. Ctrl+Enter still opens row actions.
+  if (mod && (input.key === 'k' || input.key === 'K')) return { type: 'none' }
+  if (mod && (input.key === 'Enter' || input.key === '.')) {
     if (input.mode !== 'list' || input.rowCount === 0) return { type: 'none' }
     const index = input.activeIndex ?? 0
     if (input.row?.entity) return { type: 'actions', index }

@@ -128,7 +128,7 @@ const measuredSeconds = {
   'e2e/palette-root-focus.spec.ts': 10,
   'e2e/palette-home-end.spec.ts': 25,
   'e2e/palette-stack.spec.ts': 20,
-  'e2e/palette-drill.spec.ts': 90,
+  'e2e/palette-drill.spec.ts': 150,
   'e2e/legacy-model-workspace.spec.ts': 17,
   'e2e/dangling-model-workspace.spec.ts': 10,
   'e2e/inline-cell-edit.spec.ts': 7,

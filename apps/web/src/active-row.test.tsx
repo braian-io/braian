@@ -350,15 +350,19 @@ describe('active row', () => {
     await waitFor(() => expect(screen.getAllByRole('option').length).toBeGreaterThan(3))
 
     fireEvent.keyDown(input, { key: 'ArrowDown' })
-    const before = screen.getByTestId('palette-active').textContent
-    expect(before && before.length > 0).toBe(true)
+    const highlighted = () => document.querySelector('.hit.on')?.textContent ?? ''
+    const before = highlighted()
+    expect(before.length > 0).toBe(true)
+    expect(document.querySelectorAll('.hit.on')).toHaveLength(1)
 
     fireEvent.mouseEnter(screen.getAllByRole('option')[0]!)
     fireEvent.pointerMove(screen.getAllByRole('option')[0]!)
-    expect(screen.getByTestId('palette-active').textContent).toBe(before)
+    expect(highlighted()).toBe(before)
+    expect(document.querySelectorAll('.hit.on')).toHaveLength(1)
 
     fireEvent.pointerDown(screen.getByRole('option', { name: /Move view left/ }))
-    expect(screen.getByTestId('palette-active').textContent).toBe('Move the focused view left')
+    expect(highlighted()).toMatch(/Move view left/)
+    expect(document.querySelectorAll('.hit.on')).toHaveLength(1)
     expect(screen.queryByRole('option', { name: 'Open to the right' })).toBeNull()
     expect(screen.queryByRole('option', { name: /Move to group/ })).toBeNull()
   })
@@ -643,7 +647,7 @@ describe('palette entities', () => {
     const input = await screen.findByTestId('palette-input')
     fireEvent.change(input, { target: { value: 'Review' } })
     await waitFor(() => expect(screen.getByRole('option', { name: /Open workspace/ })).toBeTruthy())
-    fireEvent.keyDown(input, { key: 'ArrowDown' })
+    fireEvent.pointerDown(screen.getByRole('option', { name: /Open workspace/ }))
     fireEvent.keyDown(input, { key: 'Enter', ctrlKey: true })
     await waitFor(() => expect(screen.getByRole('option', { name: /Place left/ })).toBeTruthy())
     fireEvent.keyDown(input, { key: 'Enter' })

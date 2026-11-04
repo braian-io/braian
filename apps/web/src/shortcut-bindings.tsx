@@ -1,6 +1,7 @@
 import { useCallback } from 'react'
 import { useHotkeys } from 'react-hotkeys-hook'
 import { isTextEditingTarget } from './cell-edit'
+import { markShortcutUsed } from './shortcut-tip'
 import { shortcutById, type Shortcut } from './shortcuts'
 
 export type ShortcutHandlers = {
@@ -43,6 +44,7 @@ function useRegisteredHotkey(
       if (isTextEditingTarget(event)) return
       if (def.rejectShift && event.shiftKey) return
       if (def.layoutOnly && (options.paletteOpen || typingTarget(event))) return
+      if (def.commandId) markShortcutUsed(def.commandId)
       handler(event)
     },
     {

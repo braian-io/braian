@@ -82,8 +82,7 @@ export const copy = {
   askAgent: 'Ask the agent',
   agentDraft: 'agent draft',
   ownDraft: 'own draft',
-  agentUnavailable:
-    'No model is connected. Set OPENAI_API_KEY to talk to the agent. Proposals, mass edit, and restore still work via operations.',
+  agentUnavailable: "AI isn't set up for this workspace",
   agentEmpty: 'The model replied without text.',
   lightMode: 'Light mode',
   darkMode: 'Dark mode',
