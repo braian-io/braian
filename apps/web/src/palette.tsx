@@ -17,8 +17,8 @@ import { structureCaption } from './graph-scene'
 import { chordForCommand } from './shortcuts'
 import { mergeFrecency, readFrecency, touch, writeFrecency } from './frecency'
 import { withModelCommand } from './model-command'
-import { filterPaletteRows, visibleRows, withRecent, groupTitle, type PaletteGroup, type PaletteItem } from './palette-model'
-import { argumentBreadcrumb, isObjectParam, objectTypeFilter, paletteKeyEffect, placeTargetId, type PaletteFrame } from './palette-core'
+import { activeAfterQuery, filterPaletteRows, frecencyId, readPaletteMemory, rememberPaletteItem, selectedObjectId, visibleRows, withRecent, groupTitle, type PaletteGroup, type PaletteItem } from './palette-model'
+import { argumentBreadcrumb, isObjectParam, objectTypeFilter, paletteKeyEffect, placeTargetId, tabHint, type PaletteFrame } from './palette-core'
 import { argumentCommands, type OperationRecord } from './palette-operations'
 import { objectPaletteRows } from './palette-objects'
 import { viewPaletteRows } from './palette-views'
@@ -57,7 +57,6 @@ import {
   commandPlaceholder,
   displayViewTitle,
   searchGroupTitle,
-  singularOf,
   typeNames,
   typeOfView,
   typeViewPaletteItems,
@@ -233,6 +232,7 @@ export function CommandPalette({
     setFrecencyTick((value) => value + 1)
   }, [remoteFrecency.data])
   const frecency = useMemo(() => readFrecency(), [query, turns.length, frecencyTick])
+  const paletteMemory = useMemo(() => readPaletteMemory(), [query, turns.length, frecencyTick])
 
   const defs = useQuery({ queryKey: ['definitions'], queryFn: () => api.get('/v1/definitions'), staleTime: 60_000 })
   const workspaceType = session.workspaceType || session.listType || ''
@@ -260,7 +260,6 @@ export function CommandPalette({
   const savedTemplateList = useMemo(() => savedTemplates.data ?? [], [savedTemplates.data])
   const suggestionTotal = Number(((suggestions.data?.pending as Json | undefined)?.total) ?? 0)
   const selectedKey = String(selectedObject.data?.type ?? '')
-  const selectedSingular = singularOf(defs.data, selectedKey, uiLanguage) || (types.length === 1 ? types[0]?.singular ?? '' : '')
   // Live selections in other views become peer sources (Notion 103 PR 2).
   const selectionVersion = useSyncExternalStore(subscribeUiSelections, uiSelectionVersion, uiSelectionVersion)
   const peerSourceByView = useMemo(() => {
@@ -359,7 +358,7 @@ export function CommandPalette({
   const catalog = useMemo(
     () => [
       ...argumentCommands(operationRecords, types),
-      ...buildCatalog(workspaces, views, session.objectId, types, selectedSingular, selectedKey, suggestionTotal, feedbackEnabled, theme, focusViewId),
+      ...buildCatalog(workspaces, views, types, selectedKey, suggestionTotal, feedbackEnabled, theme, focusViewId),
       switchCatalogRootItem(currentCatalogName),
       {
         id: 'selections',
@@ -408,9 +407,9 @@ export function CommandPalette({
         : []),
       { id: 'model:new-type', group: 'model' as const, title: copy.newType, subtitle: copy.dataModel, keywords: ['create', 'type'] },
       { id: 'model:new-link-type', group: 'model' as const, title: copy.newLinkType, subtitle: copy.dataModel, keywords: ['create', 'link', 'type'] },
-      { id: 'link:to', group: 'object' as const, title: `${copy.linkTo} ›`, subtitle: copy.addLink, keywords: ['link', 'relation'] },
-      { id: 'link:add', group: 'object' as const, title: copy.addLink, subtitle: copy.linkTypes, keywords: ['link', 'add'] },
-      { id: 'link:remove', group: 'object' as const, title: copy.removeLink, subtitle: copy.linkTypes, keywords: ['link', 'remove'] },
+      { id: 'link:to', group: 'views' as const, title: `${copy.linkTo} ›`, subtitle: copy.addLink, keywords: ['link', 'relation'] },
+      { id: 'link:add', group: 'views' as const, title: copy.addLink, subtitle: copy.linkTypes, keywords: ['link', 'add'] },
+      { id: 'link:remove', group: 'views' as const, title: copy.removeLink, subtitle: copy.linkTypes, keywords: ['link', 'remove'] },
       { id: 'model:delete-link-type', group: 'model' as const, title: copy.deleteLinkType, subtitle: copy.dataModel, keywords: ['delete', 'link', 'type'] },
       { id: 'model:new-list', group: 'model' as const, title: copy.newValueList, subtitle: copy.dataModel, keywords: ['create', 'list', 'option'] },
       { id: 'model:new-family', group: 'model' as const, title: copy.newUnitFamily, subtitle: copy.dataModel, keywords: ['create', 'unit'] },
@@ -438,7 +437,7 @@ export function CommandPalette({
           ]),
       { id: 'attr:new', group: 'model' as const, title: copy.newAttribute, subtitle: copy.attributeDefinitions, keywords: ['attribute', 'create'] },
     ],
-    [workspaces, views, session.objectId, session.group, types, selectedSingular, selectedKey, suggestionTotal, feedbackEnabled, theme, tableColumns, defs.data, operationRecords],
+    [workspaces, views, session.group, types, selectedKey, suggestionTotal, feedbackEnabled, theme, tableColumns, defs.data, operationRecords],
   )
   const hits: PaletteItem[] = objectPaletteRows((found.data?.hits as Json[] | undefined) ?? [], defs.data)
   useEffect(() => {
@@ -495,17 +494,25 @@ export function CommandPalette({
     // master-only fallback from the first paint.
   }, [startSwitchCatalog, catalogOptions])
 
-  const rootRows = withModelCommand(query, visibleRows(query, catalog, stack.length === 0 ? hits : [], frecency))
+  const rootRows = withModelCommand(query, visibleRows(query, catalog, stack.length === 0 ? hits : [], frecency, Date.now(), paletteMemory))
   const frameRows = topFrame
     ? filterPaletteRows(isObjectParam(topFrame.paramType) ? hits : topFrame.rows, query)
     : undefined
-  const rows = frameRows ? withRecent(frameRows, frecency, Date.now(), query) : rootRows
+  const frameExtras = topFrame && isObjectParam(topFrame.paramType)
+    ? paletteMemory.filter((item) => topFrame.paramType === 'object' || item.typeKey === topFrame.paramType)
+    : []
+  const rows = frameRows ? withRecent(frameRows, frecency, Date.now(), query, frameExtras) : rootRows
   const activeRow = active == null ? undefined : rows[active]
+  const bestKey = rows.find((row) => row.group === 'best')?.id ?? ''
 
   useEffect(() => {
-    if (stack.length > 0 || mode !== 'list') return
-    const index = rows.findIndex((row) => row.sourceId === 'model:command' || row.sourceId === 'assortment:save')
-    if (index >= 0) setActive(index)
+    if (mode !== 'list' || stack.length > 0) return
+    const next = activeAfterQuery(rows, query)
+    if (next != null) setActive(next)
+  }, [query, mode, stack.length, bestKey])
+  useEffect(() => {
+    if (mode !== 'list' || stack.length === 0 || !query.trim()) return
+    setActive(0)
   }, [query, mode, stack.length])
   useEffect(() => {
     document.querySelector<HTMLElement>('#palette-list .hit.on')?.scrollIntoView({ block: 'nearest' })
@@ -554,9 +561,11 @@ export function CommandPalette({
       onClose()
       return
     }
-    const remembered = item.group === 'best' || item.id.startsWith('best:') ? id : item.id
-    if (id !== 'ask') {
+    const remembered = frecencyId(item)
+    if (remembered !== 'ask' && item.group !== 'ask') {
       touch(remembered)
+      rememberPaletteItem(item)
+      setFrecencyTick((value) => value + 1)
       void api.post('/v1/frecency', { body: { id: remembered } }).catch((reason: unknown) => {
         reportWriteError(reason)
       })
@@ -973,10 +982,10 @@ export function CommandPalette({
       void ask(query)
       return
     }
-    if (id.startsWith('hit:') || item.group === 'search') {
-      const objectId = id.startsWith('hit:') ? id.slice(4) : id
-      session.setObjectId(objectId)
-      dispatchUi('ui.select', { id: objectId })
+    const opened = selectedObjectId(item)
+    if (opened) {
+      session.setObjectId(opened)
+      dispatchUi('ui.select', { id: opened })
       onClose()
       return
     }
@@ -1161,8 +1170,7 @@ export function CommandPalette({
   }
 
   const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    const chosen = active == null ? 0 : active
-    const row = rows[chosen]
+    const row = active == null ? undefined : rows[active]
     const effect = paletteKeyEffect({
       key: event.key,
       ctrlKey: event.ctrlKey,
@@ -1183,7 +1191,10 @@ export function CommandPalette({
           }
         : undefined,
     })
-    if (event.key === 'Tab') event.preventDefault()
+    if (event.key === 'Tab') {
+      event.preventDefault()
+      event.stopPropagation()
+    }
     if (effect.type === 'caret' || effect.type === 'none') return
     event.preventDefault()
     event.stopPropagation()
@@ -1212,6 +1223,11 @@ export function CommandPalette({
     setActive(effect.index)
   }
 
+  const tab = tabHint({
+    activeIndex: active,
+    argument: Boolean(activeRow?.argument) && !activeRow?.disabled,
+    ask: activeRow?.group === 'ask' || activeRow?.id === 'ask',
+  })
   const highlighted = rows[active ?? 0]
   const highlightedActions = secondaryOf(highlighted)
   const highlightedRef = useRef(highlighted)
@@ -1305,7 +1321,7 @@ export function CommandPalette({
             placeholder={mode === 'ai' ? 'Ask AI' : commandPlaceholder(types)}
             onValueChange={(value) => {
               setQuery(value)
-              setActive(null)
+              setActive(stack.length > 0 && value.trim() ? 0 : null)
             }}
           />
           {mode === 'ai' ? (
@@ -1362,7 +1378,7 @@ export function CommandPalette({
             <CommandList id="palette-list" role="listbox" aria-activedescendant={rows.length > 0 ? `palette-opt-${selected ?? 0}` : undefined}>
               {groups.map((group) => (
                 <div key={group.name} className="palette-group">
-                  {group.name !== 'ask' ? <div className="palette-heading">{group.name === 'search' ? searchGroupTitle(hits.map((hit) => hit.typeKey ?? ''), types) : group.name === 'object' && selectedSingular ? `On this ${selectedSingular}` : groupTitle[group.name]}</div> : null}
+                  {group.name !== 'ask' ? <div className="palette-heading">{group.name === 'search' ? searchGroupTitle(hits.map((hit) => hit.typeKey ?? ''), types) : groupTitle[group.name]}</div> : null}
                   {group.rows.map((row) => {
                     const index = rows.indexOf(row)
                     return (
@@ -1419,7 +1435,8 @@ export function CommandPalette({
         <div className="palette-foot" data-testid="palette-foot">
           <span data-testid="palette-active">{activeRow?.subtitle ?? ''}</span>
           <span><Kbd>Enter</Kbd> run</span>
-          <span><Kbd>Tab</Kbd> open</span>
+          {tab === 'open' ? <span data-testid="palette-tab-hint"><Kbd>Tab</Kbd> open</span> : null}
+          {tab === 'ask' ? <span data-testid="palette-tab-hint"><Kbd>Tab</Kbd> ask AI</span> : null}
           <span><Kbd>Ctrl</Kbd>+<Kbd>K</Kbd> actions</span>
           <span><Kbd>Ctrl</Kbd>+<Kbd>J</Kbd> ask AI</span>
           <span><Kbd>Esc</Kbd> back</span>
@@ -1447,9 +1464,7 @@ function stepHint(event: AgentEvent, types: ReturnType<typeof typeNames>) {
 function buildCatalog(
   workspaces: Array<{ id: string; name: string; share_token?: string | null }>,
   views: Array<{ id: string; title: string; type: string; state?: Json }>,
-  objectId: string | null,
   types: ReturnType<typeof typeNames>,
-  selectedSingular: string,
   openTypeKey: string,
   suggestions: number,
   feedbackEnabled?: boolean,
@@ -1495,7 +1510,6 @@ function buildCatalog(
         }]
       : []),
     { id: 'model:rename-key', group: 'model', title: copy.renameKey, subtitle: 'Change a key. External integrations that use the old key will stop working', keywords: ['rename', 'key', 'attribute'] },
-    { id: 'object:move-group', group: 'object', title: copy.moveToGroup, subtitle: 'Place the open object in a group', keywords: ['move', 'group', 'place'] },
     { id: 'model:allowed-trees', group: 'model', title: copy.allowedTrees, subtitle: 'Choose the trees a type may use', keywords: ['tree', 'structure', 'type'] },
     ...registryPaletteRows({ theme, target: { feedbackEnabled } }),
     { id: 'layout:move_view_left', group: 'views', title: 'Move view left', subtitle: 'Move the focused view left', kbd: chordForCommand('layout:move_view_left'), shortcut: chordForCommand('layout:move_view_left') },
@@ -1522,15 +1536,6 @@ function buildCatalog(
       kbd: chordForCommand('feedback:send'),
       shortcut: chordForCommand('feedback:send'),
     })
-  }
-  if (objectId) {
-    items.push(
-      { id: 'object:open', group: 'object', title: selectedSingular ? `Open ${selectedSingular}` : 'Open detail', subtitle: selectedSingular ? `On this ${selectedSingular}` : 'On the selected object', kbd: 'Enter' },
-      { id: 'object:right', group: 'object', title: 'Open to the right', subtitle: 'Split beside the table' },
-      { id: 'object:history', group: 'object', title: 'History', subtitle: 'As it was, and restore' },
-      { id: 'object:graph', group: 'object', title: 'Graph', subtitle: 'Links and where values come from' },
-      { id: 'object:copy', group: 'object', title: 'Copy id', subtitle: objectId },
-    )
   }
   return items
 }

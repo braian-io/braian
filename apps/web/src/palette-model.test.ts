@@ -1,9 +1,25 @@
 import { describe, expect, it } from 'vitest'
 import { catalogName } from './api'
-import { argumentBreadcrumb, objectTypeFilter, paletteKeyEffect, placeTargetId } from './palette-core'
+import { argumentBreadcrumb, objectTypeFilter, paletteKeyEffect, placeTargetId, tabHint } from './palette-core'
 import { argumentCommands } from './palette-operations'
 import { objectPaletteRows } from './palette-objects'
-import { askIndex, visibleRows, withRecent, type PaletteItem } from './palette-model'
+import { activeAfterQuery, askIndex, readPaletteMemory, rememberPaletteItem, selectedObjectId, visibleRows, withRecent, type PaletteItem } from './palette-model'
+
+function memoryStorage() {
+  const data = new Map<string, string>()
+  return {
+    getItem: (key: string) => data.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      data.set(key, value)
+    },
+    removeItem: (key: string) => {
+      data.delete(key)
+    },
+    clear: () => data.clear(),
+    key: () => null,
+    length: 0,
+  } as Storage
+}
 
 const catalog: PaletteItem[] = [
   { id: 'view:detail', group: 'views', title: 'Detail', subtitle: 'Open the detail view' },
@@ -39,6 +55,68 @@ describe('palette rows', () => {
     expect(ranked.map((row) => row.id)).toEqual(['view:b', 'view:a'])
     expect(withRecent(rows, { 'view:b': { uses: 2, last: now } }, now, 'art').map((row) => row.id)).toEqual(['view:a', 'view:b'])
   })
+
+  it('puts the last run first, even when an older command has more uses', () => {
+    const rows: PaletteItem[] = [
+      { id: 'op:open:product', group: 'views', title: 'Open product ›', subtitle: 'Products', argument: { name: 'id', type: 'product' } },
+      { id: 'layout:reset_layout', group: 'views', title: 'Reset layout', subtitle: 'Restore the saved workspace layout' },
+      { id: 'op:open:product', group: 'views', title: 'Open product ›', subtitle: 'Products', argument: { name: 'id', type: 'product' } },
+    ]
+    const now = 5_000
+    const frecency = {
+      'layout:reset_layout': { uses: 8, last: now - 1_000 },
+      'op:open:product': { uses: 1, last: now },
+    }
+    const ranked = visibleRows('', rows, [], frecency, now)
+    expect(ranked.filter((row) => row.group === 'recent').map((row) => row.id)).toEqual(['op:open:product', 'layout:reset_layout'])
+  })
+
+  it('puts a picked product first and does not list every view as the Open view match', () => {
+    const command: PaletteItem = {
+      id: 'op:ui.open_view',
+      group: 'views',
+      title: 'Open view ›',
+      subtitle: 'Search and open',
+      keywords: ['open', 'view'],
+      argument: { name: 'id', type: 'view' },
+    }
+    const views: PaletteItem[] = [
+      { id: 'view:a', group: 'views', title: 'Articles', subtitle: 'Open view' },
+      { id: 'view:b', group: 'views', title: 'Products', subtitle: 'Open view' },
+    ]
+    const opened = visibleRows('Open view', [command, ...views], [], { 'view:a': { uses: 9, last: 50 } }, 60)
+    const best = opened.find((row) => row.group === 'best')
+    expect(best?.sourceId).toBe('op:ui.open_view')
+    expect(best?.argument).toEqual({ name: 'id', type: 'view' })
+    expect(opened.some((row) => row.id === 'view:a' || row.sourceId === 'view:a')).toBe(false)
+    expect(activeAfterQuery(opened, 'Open view')).toBe(opened.findIndex((row) => row.group === 'best'))
+    expect(visibleRows('Articles', [command, ...views], [], {}).some((row) => row.title === 'Articles')).toBe(true)
+
+    const hits: PaletteItem[] = [
+      { id: 'hit:old', group: 'search', title: 'Old', subtitle: 'Open product', typeKey: 'product' },
+      { id: 'hit:new', group: 'search', title: 'Cheddar', subtitle: 'Open product', typeKey: 'product' },
+    ]
+    const picked = withRecent(hits, {
+      'hit:old': { uses: 4, last: 10 },
+      'hit:new': { uses: 1, last: 30 },
+      'hit:missing': { uses: 1, last: 40 },
+    }, 40, '', [
+      { id: 'hit:missing', group: 'search', title: 'Brie', subtitle: 'Open product', typeKey: 'product' },
+    ])
+    expect(picked[0]?.id).toBe('hit:missing')
+    expect(picked.filter((row) => row.id === 'hit:new')).toHaveLength(1)
+    expect(picked[1]?.id).toBe('hit:new')
+    expect(selectedObjectId(picked[0]!)).toBe('missing')
+  })
+
+  it('remembers a palette row in the same store the list reads back', () => {
+    const store = memoryStorage()
+    rememberPaletteItem(
+      { id: 'hit:ched', group: 'search', title: 'ART-1 · Cheddar', subtitle: 'Open product', typeKey: 'product' },
+      store,
+    )
+    expect(readPaletteMemory(store)[0]).toMatchObject({ id: 'hit:ched', title: 'ART-1 · Cheddar', typeKey: 'product' })
+  })
 })
 
 describe('palette key effect', () => {
@@ -54,6 +132,26 @@ describe('palette key effect', () => {
     rowCount: 3,
     row: { argument: true, entity: false, ask: false, disabled: false },
   }
+
+  it('asks with Tab only when nothing is highlighted or Ask AI is highlighted', () => {
+    expect(tabHint({ activeIndex: 0, argument: true })).toBe('open')
+    expect(paletteKeyEffect({ ...base, key: 'Tab' })).toEqual({ type: 'activate', index: 0 })
+    expect(paletteKeyEffect({ ...base, key: 'Tab', activeIndex: null, row: undefined })).toEqual({ type: 'ask' })
+    expect(paletteKeyEffect({
+      ...base,
+      key: 'Tab',
+      activeIndex: 2,
+      row: { argument: false, entity: false, ask: true, disabled: false },
+    })).toEqual({ type: 'ask' })
+    expect(paletteKeyEffect({
+      ...base,
+      key: 'Tab',
+      activeIndex: 1,
+      row: { argument: false, entity: false, ask: false, disabled: false },
+    })).toEqual({ type: 'none' })
+    expect(tabHint({ activeIndex: null })).toBe('ask')
+    expect(tabHint({ activeIndex: 1 })).toBe('none')
+  })
 
   it('enters a sub-list with Tab or Enter and leaves it with Backspace or Esc', () => {
     expect(paletteKeyEffect({ ...base, key: 'Tab' })).toEqual({ type: 'activate', index: 0 })
@@ -84,7 +182,7 @@ describe('palette providers', () => {
       [{ id: 't1', key: 'product', singular: 'Product', plural: 'Products' }],
     )
     expect(commands.find((row) => row.id === 'op:ui.open_view')?.argument).toEqual({ name: 'id', type: 'view' })
-    expect(commands.find((row) => row.id === 'op:open:product')?.title).toBe('Open product')
+    expect(commands.find((row) => row.id === 'op:open:product')?.title).toBe('Open product ›')
     expect(argumentBreadcrumb('Open view')).toBe('Open view ›')
     expect(placeTargetId('workspace:ws-1')).toBe('ws-1')
     expect(placeTargetId('view:view-1')).toBe('view-1')

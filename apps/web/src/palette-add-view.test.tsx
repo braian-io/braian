@@ -142,8 +142,7 @@ describe('Add view › in Ctrl+K', () => {
     await waitFor(() => {
       expect(screen.getByRole('option', { name: new RegExp(`${copy.addView}`) })).toBeTruthy()
     })
-    // Activate the Add view › row, then Enter to open the submenu.
-    fireEvent.keyDown(input, { key: 'ArrowDown' })
+    // The best match is already highlighted, so Enter opens the submenu.
     fireEvent.keyDown(input, { key: 'Enter' })
     await waitFor(() => {
       expect(screen.getByRole('option', { name: /Detail/ })).toBeTruthy()

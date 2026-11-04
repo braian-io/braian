@@ -349,19 +349,17 @@ describe('active row', () => {
     await waitFor(() => expect(screen.getAllByRole('option').length).toBeGreaterThan(3))
 
     fireEvent.keyDown(input, { key: 'ArrowDown' })
-    fireEvent.keyDown(input, { key: 'ArrowDown' })
-    fireEvent.keyDown(input, { key: 'ArrowDown' })
-    expect(screen.getByTestId('palette-active').textContent).toBe('Split beside the table')
+    const before = screen.getByTestId('palette-active').textContent
+    expect(before && before.length > 0).toBe(true)
 
     fireEvent.mouseEnter(screen.getAllByRole('option')[0]!)
     fireEvent.pointerMove(screen.getAllByRole('option')[0]!)
-    expect(screen.getByTestId('palette-active').textContent).toBe('Split beside the table')
+    expect(screen.getByTestId('palette-active').textContent).toBe(before)
 
-    fireEvent.pointerDown(screen.getByRole('option', { name: /Graph/ }))
-    expect(screen.getByTestId('palette-active').textContent).toBe('Links and where values come from')
-    fireEvent.keyDown(input, { key: 'ArrowDown' })
-    expect(screen.getByTestId('palette-active').textContent).toBe('obj-9')
-    expect(screen.getByTestId('detail').textContent).toBe('obj-9')
+    fireEvent.pointerDown(screen.getByRole('option', { name: /Move view left/ }))
+    expect(screen.getByTestId('palette-active').textContent).toBe('Move the focused view left')
+    expect(screen.queryByRole('option', { name: 'Open to the right' })).toBeNull()
+    expect(screen.queryByRole('option', { name: /Move to group/ })).toBeNull()
   })
 })
 

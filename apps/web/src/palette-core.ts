@@ -57,8 +57,13 @@ export function paletteKeyEffect(input: PaletteKeyInput): PaletteKeyEffect {
   }
   if (mod && (input.key === 'j' || input.key === 'J')) return { type: 'ask' }
   if (input.key === 'Tab' && input.mode === 'list') {
-    const index = input.activeIndex ?? 0
-    if (input.row?.argument && !input.row.disabled) return { type: 'activate', index }
+    const hint = tabHint({
+      activeIndex: input.activeIndex,
+      argument: Boolean(input.row?.argument) && !input.row?.disabled,
+      ask: Boolean(input.row?.ask),
+    })
+    if (hint === 'open') return { type: 'activate', index: input.activeIndex ?? 0 }
+    if (hint === 'ask') return { type: 'ask' }
     return { type: 'none' }
   }
   if (mod && (input.key === 'Enter' || input.key === '.' || input.key === 'k' || input.key === 'K')) {
@@ -100,6 +105,16 @@ export function placeTargetId(sourceId: string): string {
   if (sourceId.startsWith('workspace:')) return sourceId.slice('workspace:'.length)
   if (sourceId.startsWith('view:')) return sourceId.slice('view:'.length)
   return sourceId
+}
+
+/**
+ * Footer hint for Tab. A highlighted drill-in opens. Ask AI is only when
+ * nothing is highlighted, or Ask AI itself is.
+ */
+export function tabHint(input: { activeIndex: number | null; argument?: boolean; ask?: boolean }): 'open' | 'ask' | 'none' {
+  if (input.activeIndex != null && input.argument) return 'open'
+  if (input.activeIndex == null || input.ask) return 'ask'
+  return 'none'
 }
 
 export function argumentBreadcrumb(title: string): string {
