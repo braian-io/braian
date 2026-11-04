@@ -19,7 +19,7 @@ import { structureCaption } from './graph-scene'
 import { chordForCommand } from './shortcuts'
 import { mergeFrecency, readFrecency, touch, writeFrecency } from './frecency'
 import { withModelCommand } from './model-command'
-import { activeAfterQuery, filterPaletteRows, frecencyId, groupOrder, groupTitle, markedTitle, readPaletteMemory, rememberPaletteItem, rememberRecent, selectedObjectId, sublistPlaceholder, visibleRows, withRecent, type PaletteItem } from './palette-model'
+import { activeAfterQuery, filterPaletteRows, frecencyId, groupOrder, groupTitle, markedTitle, readPaletteMemory, rememberPaletteItem, rememberRecent, resultAnnouncement, selectedObjectId, sublistPlaceholder, visibleRows, withRecent, type PaletteItem } from './palette-model'
 import { argumentBreadcrumb, isObjectParam, objectTypeFilter, paletteKeyEffect, placeTargetId, tabHint, type PaletteFrame } from './palette-core'
 import { argumentCommands, type OperationRecord } from './palette-operations'
 import { objectPaletteRows } from './palette-objects'
@@ -1324,7 +1324,11 @@ export function CommandPalette({
       >
         <div className="palette-query">
           {mode === 'ai' ? <span className="ai-badge" data-testid="ai-badge">AI</span> : null}
-          <div className="crumb" data-testid="palette-crumb">
+          <div
+            className="crumb"
+            data-testid="palette-crumb"
+            aria-label={crumbAccessibleName(stack.map((crumb) => crumb.label).join(' '))}
+          >
             {stack.map((crumb) => crumb.label).join(' ')}
           </div>
           <CommandInput
@@ -1347,7 +1351,7 @@ export function CommandPalette({
             <button type="button" className="icon-btn palette-close" onClick={onClose}>{copy.close}</button>
           ) : null}
         </div>
-        <div className="sr-only" aria-live="polite" data-testid="palette-results">{resultCount} results</div>
+        <div className="sr-only" aria-live="polite" data-testid="palette-results">{resultAnnouncement(resultCount, query)}</div>
         {mode === 'ai' ? (
           <div className="ai-log" data-testid="ai-log">
             {userTurns.slice(0, -1).map((turn, index) => (
@@ -1453,7 +1457,10 @@ export function CommandPalette({
           </CommandItem>
         ) : null}
         {mode === 'ai' ? (
-          <div className="palette-foot" data-testid="palette-ai-foot">Enter send · Esc close</div>
+          <div className="palette-foot" data-testid="palette-ai-foot">
+            <span><Kbd>Enter</Kbd> send</span>
+            <span><Kbd>Esc</Kbd> close</span>
+          </div>
         ) : (
           <div className="palette-foot" data-testid="palette-foot">
             <span><Kbd>Enter</Kbd> run</span>
@@ -1680,6 +1687,12 @@ function applyEvent(
     setSteps((current) => current.map((step) => ({ ...step, state: 'done' })))
   }
   if (event.type === 'error') setAnswer(agentText(event.text ?? 'The model did not reply.'))
+}
+
+function crumbAccessibleName(label: string): string | undefined {
+  const name = label.replace(/\s*›\s*$/, '').trim()
+  if (!name) return undefined
+  return `${name}, press Backspace to go back`
 }
 
 function agentText(text: string) {

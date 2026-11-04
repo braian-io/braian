@@ -1399,6 +1399,7 @@ canvas.graph.panning { cursor: grabbing; }
   border-radius: var(--r-md);
   background: var(--panel);
 }
+.palette-query:focus-within { box-shadow: var(--ring); }
 .palette-query input { background: transparent; border: none; box-shadow: none; }
 .sr-only {
   position: absolute;
@@ -1457,7 +1458,8 @@ canvas.graph.panning { cursor: grabbing; }
 .hit:hover, .hit.on, .hit[data-selected='true'] { background: var(--accent-dim); }
 .palette .hit:hover:not(.on),
 .palette .hit[data-selected='true']:not(.on) { background: color-mix(in srgb, var(--text) 6%, transparent); }
-.palette .hit.on { background: var(--accent-dim); }
+/* Solid accent on the raised palette is 3.75:1 (dark) and 5.41:1 (light). The dim wash alone is about 1.2:1. */
+.palette .hit.on { background: var(--accent-dim); box-shadow: inset 3px 0 0 var(--accent); }
 .hit.disabled, .hit[data-disabled='true'] { opacity: 0.5; }
 .hit.disabled:hover, .hit[data-disabled='true']:hover { background: transparent; }
 .hit.ask { z-index: 1; background: var(--raised); border-top: 1px solid var(--border); flex: none; }
@@ -1622,7 +1624,8 @@ kbd {
   padding: 0 8px;
   border-radius: 999px;
   background: var(--accent-dim);
-  color: var(--accent);
+  /* accent on this wash is 3.40:1 in the dark theme. accent-hover is 4.95:1 dark and 6.03:1 light. */
+  color: var(--accent-hover);
   font-size: 12px;
   white-space: nowrap;
   overflow: hidden;

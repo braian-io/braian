@@ -117,7 +117,7 @@ export function recentSlice(
       if (last !== 0) return last
       const frec = score(frecency[identity(right)]) - score(frecency[identity(left)])
       if (frec !== 0) return frec
-      return identity(left).localeCompare(identity(right))
+      return labelOrder(left, right)
     })
     .slice(0, limit)
     .map((item) => ({ ...item, group: 'recent' as const }))
@@ -173,6 +173,19 @@ export function withoutDuplicateDestinations(items: PaletteItem[]): PaletteItem[
 
 function titleOf(item: PaletteItem): string {
   return item.title.toLowerCase().replace(/\s*›\s*$/, '').trim()
+}
+
+/** Equal rank and frecency: alphabetical label, then id only when the labels match. */
+function labelOrder(left: PaletteItem, right: PaletteItem): number {
+  const byLabel = titleOf(left).localeCompare(titleOf(right), 'en')
+  if (byLabel !== 0) return byLabel
+  return identity(left).localeCompare(identity(right))
+}
+
+/** Polite live-region text. An empty query says nothing. */
+export function resultAnnouncement(count: number, query: string): string {
+  if (!query.trim()) return ''
+  return count === 1 ? '1 result' : `${count} results`
 }
 
 /** A command, as opposed to a view, workspace, template, or object row. */
@@ -361,7 +374,7 @@ function compareRank(
   if (frec !== 0) return frec
   const last = (frecency[identity(right)]?.last ?? 0) - (frecency[identity(left)]?.last ?? 0)
   if (last !== 0) return last
-  return identity(left).localeCompare(identity(right))
+  return labelOrder(left, right)
 }
 
 export function visibleRows(

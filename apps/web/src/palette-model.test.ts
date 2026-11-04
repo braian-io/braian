@@ -3,7 +3,7 @@ import { catalogName } from './api'
 import { argumentBreadcrumb, objectTypeFilter, paletteKeyEffect, placeTargetId, tabHint } from './palette-core'
 import { argumentCommands } from './palette-operations'
 import { objectPaletteRows } from './palette-objects'
-import { activeAfterQuery, askIndex, markedTitle, paletteMatchScore, readPaletteMemory, rememberPaletteItem, rememberRecent, selectedObjectId, sublistPlaceholder, visibleRows, withRecent, type PaletteItem } from './palette-model'
+import { activeAfterQuery, askIndex, markedTitle, paletteMatchScore, readPaletteMemory, recentSlice, rememberPaletteItem, rememberRecent, resultAnnouncement, selectedObjectId, sublistPlaceholder, visibleRows, withRecent, type PaletteItem } from './palette-model'
 
 function memoryStorage() {
   const data = new Map<string, string>()
@@ -181,6 +181,32 @@ describe('palette rows', () => {
       'model:new-tree': { uses: 1, last: now - 1_000 },
     }, now)
     expect(later.find((row) => row.group === 'create')?.id).toBe('model:new-type')
+  })
+
+  it('breaks a frecency tie alphabetically by label', () => {
+    const amber: PaletteItem = { id: 'view:a', group: 'views', title: 'Amber', subtitle: 'Open view' }
+    const alpha: PaletteItem = { id: 'view:z', group: 'views', title: 'Alpha', subtitle: 'Open view' }
+    const now = 1_700_000_000_000
+    const frecency = {
+      'view:a': { uses: 2, last: now },
+      'view:z': { uses: 2, last: now },
+    }
+    expect(paletteMatchScore(alpha, 'a')).toBe(paletteMatchScore(amber, 'a'))
+    const ranked = visibleRows('a', [amber, alpha], [], frecency, now)
+    expect(ranked.filter((row) => row.group !== 'ask').map((row) => row.id)).toEqual(['view:z', 'view:a'])
+
+    const zebra: PaletteItem = { id: 'view:a', group: 'views', title: 'Open zebra ›', subtitle: '' }
+    const apple: PaletteItem = { id: 'view:z', group: 'views', title: 'Open apple ›', subtitle: '' }
+    const tied = {
+      'view:a': { uses: 4, last: now - 500 },
+      'view:z': { uses: 4, last: now - 500 },
+    }
+    expect(recentSlice([zebra, apple], tied).map((row) => row.title)).toEqual(['Open apple ›', 'Open zebra ›'])
+    expect(resultAnnouncement(0, '')).toBe('')
+    expect(resultAnnouncement(12, '   ')).toBe('')
+    expect(resultAnnouncement(1, 'a')).toBe('1 result')
+    expect(resultAnnouncement(0, 'zzzz')).toBe('0 results')
+    expect(resultAnnouncement(2, 'a')).toBe('2 results')
   })
 
   it('keeps one row per destination and drops deleted views and objects', () => {

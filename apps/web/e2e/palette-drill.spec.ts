@@ -157,6 +157,9 @@ test.describe('palette drill-in, recent order, and global commands', () => {
     await expect(palette.locator('.hit.on')).toContainText('Open view')
     await page.keyboard.press('Enter')
     await expect(page.getByTestId('palette-crumb')).toContainText('Open view ›')
+    await expect(page.getByTestId('palette-crumb')).toHaveAttribute('aria-label', 'Open view, press Backspace to go back')
+    await expect(page.getByTestId('palette-back-hint')).toBeVisible()
+    await expect(page.getByTestId('palette-foot')).toContainText(/Esc\s*close/)
     await page.keyboard.press('Backspace')
     await expect(page.getByTestId('palette-crumb')).toBeEmpty()
     await expect(palette).toBeVisible()
@@ -181,7 +184,8 @@ test.describe('palette drill-in, recent order, and global commands', () => {
     await page.keyboard.press('Control+j')
     await expect(page.getByTestId('ai-badge')).toBeVisible()
     await expect(page.getByTestId('ai-question')).toHaveText('how many products')
-    await expect(page.getByTestId('palette-ai-foot')).toHaveText('Enter send · Esc close')
+    await expect(page.getByTestId('palette-ai-foot')).toContainText(/Enter\s*send/)
+    await expect(page.getByTestId('palette-ai-foot')).toContainText(/Esc\s*close/)
     await expect(page.getByTestId('ai-answer')).toHaveText("AI isn't set up for this workspace")
     await page.keyboard.press('Escape')
     await expect(palette).toHaveCount(0)
@@ -223,7 +227,7 @@ test.describe('palette drill-in, recent order, and global commands', () => {
     await expect(palette.locator('[aria-selected="true"]')).toHaveCount(1)
     const selectedId = await input.getAttribute('aria-activedescendant')
     await expect(palette.locator(`[id="${selectedId}"]`)).toHaveAttribute('aria-selected', 'true')
-    await expect(page.getByTestId('palette-results')).toContainText(/\d+ results/)
+    await expect(page.getByTestId('palette-results')).toHaveText('')
     await expect(page.getByTestId('palette-foot')).not.toContainText('Ctrl+K')
     await expect(page.locator('[data-testid="palette-active"]')).toHaveCount(0)
 
@@ -246,6 +250,7 @@ test.describe('palette drill-in, recent order, and global commands', () => {
 
     await input.fill('Delete workspace')
     await expect(palette.locator('.hit.on')).toContainText('Delete workspace…')
+    await expect(page.getByTestId('palette-results')).toHaveText(/^\d+ results?$/)
 
     await input.fill('zzzzqqqqnomatch')
     await expect(page.getByTestId('palette-empty')).toHaveText('No results for "zzzzqqqqnomatch"')
@@ -258,7 +263,8 @@ test.describe('palette drill-in, recent order, and global commands', () => {
 
     await page.keyboard.press('Control+j')
     await expect(page.getByTestId('ai-question')).toHaveText('zzzzqqqqnomatch')
-    await expect(page.getByTestId('palette-ai-foot')).toHaveText('Enter send · Esc close')
+    await expect(page.getByTestId('palette-ai-foot')).toContainText(/Enter\s*send/)
+    await expect(page.getByTestId('palette-ai-foot')).toContainText(/Esc\s*close/)
     await expect(page.getByTestId('activity-log')).not.toContainText('Agent:')
   })
 })
