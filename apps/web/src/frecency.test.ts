@@ -39,4 +39,12 @@ describe('frecency', () => {
     const merged = mergeFrecency({ 'ui.filter': { uses: 1, last: 10 } }, { 'ui.filter': { uses: 4, last: 20 } })
     expect(merged['ui.filter']?.uses).toBe(4)
   })
+
+  it('keeps the later timestamp when the server copy has more uses', () => {
+    const merged = mergeFrecency(
+      { 'ui.filter': { uses: 1, last: 50 } },
+      { 'ui.filter': { uses: 4, last: 20 } },
+    )
+    expect(merged['ui.filter']).toEqual({ uses: 4, last: 50 })
+  })
 })

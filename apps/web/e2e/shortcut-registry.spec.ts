@@ -45,7 +45,7 @@ test.describe('shortcut registry', () => {
     await openProducts(page)
 
     await page.keyboard.press('Control+k')
-    await page.getByTestId('palette-input').fill('Articles view')
+    await page.getByTestId('palette-input').fill('Articles')
     const articles = page.locator('[cmdk-item], .hit').filter({ hasText: /Articles/ }).first()
     await expect(articles).toBeVisible()
     await articles.click()
@@ -106,6 +106,7 @@ test.describe('shortcut registry', () => {
     await page.keyboard.press('F1')
     const help = page.getByTestId('help-shortcuts')
     await expect(help).toBeVisible()
+    await expect(help.getByRole('heading', { name: 'Keyboard shortcuts' })).toBeVisible()
     await expect(help.locator('[data-shortcut-id="table.column.move-left"]')).toContainText('Ctrl+Shift+←')
     await expect(help.locator('[data-shortcut-id="help.open"]')).toContainText('F1')
     await page.keyboard.press('Escape')

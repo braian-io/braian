@@ -1,4 +1,5 @@
 import { Check } from 'lucide-react'
+import { useRef } from 'react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,10 +34,12 @@ export function CatalogSelector({
   const current = options.find((row) => row.id === catalogId) ?? options.find((row) => row.key === 'master') ?? options[0]
   const label = current?.name || current?.key || copy.masterCatalog
   const currentId = current?.id || MASTER_CATALOG_ID
+  const trigger = useRef<HTMLButtonElement>(null)
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
+          ref={trigger}
           type="button"
           className="catalog-selector-btn"
           data-testid="catalog-selector"
@@ -47,7 +50,16 @@ export function CatalogSelector({
           <span className="catalog-selector-label">{label}</span>
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="user-menu-content catalog-selector-menu" collisionPadding={8} data-testid="catalog-selector-menu">
+      <DropdownMenuContent
+        align="end"
+        className="user-menu-content catalog-selector-menu"
+        collisionPadding={8}
+        data-testid="catalog-selector-menu"
+        onCloseAutoFocus={(event) => {
+          event.preventDefault()
+          trigger.current?.focus()
+        }}
+      >
         {options.map((row) => {
           const id = row.id || MASTER_CATALOG_ID
           const selected = id === currentId

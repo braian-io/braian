@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useState } from 'react'
 import { afterEach, expect, it } from 'vitest'
 import { PathMenu, type ListedPath } from './path-picker'
@@ -41,4 +41,16 @@ it('opens the link submenu', () => {
   fireEvent.keyDown(menu, { key: 'Enter' })
   fireEvent.keyDown(menu, { key: 'Enter' })
   expect(picked).toEqual(['product>brand'])
+})
+
+it('closes on Escape and returns focus to the opener', async () => {
+  const opener = document.createElement('button')
+  document.body.append(opener)
+  opener.focus()
+  render(<Harness onPick={() => undefined} />)
+  const menu = await screen.findByTestId('path-picker')
+  fireEvent.keyDown(menu, { key: 'Escape' })
+  await waitFor(() => expect(screen.queryByTestId('path-picker')).toBeNull())
+  expect(document.activeElement).toBe(opener)
+  opener.remove()
 })

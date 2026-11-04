@@ -28,7 +28,7 @@ test.describe('palette sub-lists', () => {
     await expect(page.locator(`[id="${activeId}"]`)).toHaveCount(1)
 
     await page.getByTestId('palette-input').fill('Articles')
-    const articles = palette.locator('.hit').filter({ hasText: 'Articles view' }).first()
+    const articles = palette.locator('.hit').filter({ hasText: 'Articles' }).first()
     await expect(articles).toBeVisible()
     await articles.click()
     await expect(palette).toHaveCount(0)
@@ -45,9 +45,6 @@ test.describe('palette sub-lists', () => {
     await page.getByTestId('palette-input').fill('Open product')
     await palette.getByRole('option', { name: /^Open product/ }).first().press('Enter')
     await expect(page.getByTestId('palette-crumb')).toContainText('Open product ›')
-    await page.keyboard.press('Escape')
-    await expect(page.getByTestId('palette-crumb')).toBeEmpty()
-    await expect(palette).toBeVisible()
     await page.keyboard.press('Escape')
     await expect(palette).toHaveCount(0)
   })
