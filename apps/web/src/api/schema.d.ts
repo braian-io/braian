@@ -2542,11 +2542,17 @@ export interface components {
         OperationInfo: {
             name: string;
             needs_approval: boolean;
+            params: components["schemas"]["OperationParam"][];
             permission: string;
             title: string;
         };
         OperationList: {
             operations: components["schemas"]["OperationInfo"][];
+        };
+        OperationParam: {
+            name: string;
+            /** @description What the value refers to: `view`, `workspace`, `object`, or an object type key. */
+            type: string;
         };
         PatchLink: {
             /** Format: uuid */

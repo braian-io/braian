@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useEffect, useMemo, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { toast } from 'sonner'
 import { CommandPalette } from './palette'
 import { ObjectTable, type PanesSession } from './panes'
 import { StructureTree } from './shell'
@@ -606,5 +607,109 @@ describe('palette column entries', () => {
     // Fields › is a palette mode (not the old inline field-picker).
     await waitFor(() => expect(screen.getByTestId('command-palette')).toBeTruthy())
     expect(screen.getByText(/Open an object table to select fields/i)).toBeTruthy()
+  })
+})
+
+describe('palette entities', () => {
+  function EntityHarness() {
+    const [queryClient] = useState(client)
+    const session = useMemo(
+      () => ({
+        objectId: null,
+        setObjectId: () => undefined,
+        setProposalId: () => undefined,
+        push: () => undefined,
+        openWorkspace: () => undefined,
+      }),
+      [],
+    )
+    return (
+      <QueryClientProvider client={queryClient}>
+        <CommandPalette
+          session={session}
+          workspaces={[{ id: 'ws-1', name: 'Review' }]}
+          views={[{ id: 'view-1', title: 'Articles', type: 'object_table' }]}
+          onClose={() => undefined}
+        />
+      </QueryClientProvider>
+    )
+  }
+
+  it('sends a workspace id without the workspace: prefix when placing it', async () => {
+    const events: Array<{ name: string; args: unknown }> = []
+    const stop = onUi((event) => {
+      if (event.name === 'ui.place') events.push({ name: event.name, args: event.args })
+    })
+    render(<EntityHarness />)
+    const input = await screen.findByTestId('palette-input')
+    fireEvent.change(input, { target: { value: 'Review' } })
+    await waitFor(() => expect(screen.getByRole('option', { name: /Open workspace/ })).toBeTruthy())
+    fireEvent.keyDown(input, { key: 'Enter', ctrlKey: true })
+    await waitFor(() => expect(screen.getByRole('option', { name: /Place left/ })).toBeTruthy())
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(events).toEqual([{ name: 'ui.place', args: { id: 'ws-1', zone: 'left' } }])
+    stop()
+  })
+
+  it('shows the display name of a search hit and points aria-activedescendant at that row', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes('/v1/search')) {
+          return json({
+            found: 1,
+            hits: [{ document: { id: 'art-1', key: 'ART-1', type_key: 'article', display_name: 'Cheddar', a_namn__sv: 'Ost' } }],
+          })
+        }
+        if (url.includes('/v1/definitions')) return json({ types: [], attributes: [], structures: [] })
+        if (url.includes('/v1/frecency')) return json({ entries: {} })
+        if (url.includes('/v1/operations')) return json({ operations: [] })
+        return json({})
+      }),
+    )
+    render(<EntityHarness />)
+    const input = (await screen.findByTestId('palette-input')) as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'ched' } })
+    const hit = await screen.findByRole('option', { name: /ART-1 · Cheddar/ })
+    expect(hit.textContent).not.toContain('Ost')
+    fireEvent.keyDown(input, { key: 'ArrowDown' })
+    await waitFor(() => {
+      const active = document.querySelector('.hit.on')
+      expect(active).toBeTruthy()
+      expect(input.getAttribute('aria-activedescendant')).toBe(active?.id)
+    })
+    expect(document.getElementById(input.getAttribute('aria-activedescendant') ?? '')).toBeTruthy()
+  })
+
+  it('keeps the palette open when a layout command runs before the workspace is ready', async () => {
+    const message = vi.spyOn(toast, 'message').mockReturnValue(0)
+    const closed = vi.fn()
+    const [queryClient] = [client()]
+    render(
+      <QueryClientProvider client={queryClient}>
+        <CommandPalette
+          session={{
+            objectId: null,
+            setObjectId: () => undefined,
+            setProposalId: () => undefined,
+            push: () => undefined,
+            openWorkspace: () => undefined,
+          }}
+          workspaceReady={false}
+          views={[]}
+          workspaces={[]}
+          onClose={closed}
+        />
+      </QueryClientProvider>,
+    )
+    const input = await screen.findByTestId('palette-input')
+    fireEvent.change(input, { target: { value: 'Move view left' } })
+    await waitFor(() => expect(screen.getAllByRole('option', { name: /Move view left/ }).length).toBeGreaterThan(0))
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(message).toHaveBeenCalledWith('Opening when the workspace is ready…')
+    expect(closed).not.toHaveBeenCalled()
+    expect(screen.getByTestId('command-palette')).toBeTruthy()
+    message.mockRestore()
   })
 })

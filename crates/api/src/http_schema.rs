@@ -117,11 +117,20 @@ pub struct CreatedToken {
 }
 
 #[derive(Serialize, ToSchema)]
+pub struct OperationParam {
+    pub name: String,
+    /// What the value refers to: `view`, `workspace`, `object`, or an object type key.
+    #[serde(rename = "type")]
+    pub r#type: String,
+}
+
+#[derive(Serialize, ToSchema)]
 pub struct OperationInfo {
     pub name: String,
     pub title: String,
     pub permission: String,
     pub needs_approval: bool,
+    pub params: Vec<OperationParam>,
 }
 
 #[derive(Serialize, ToSchema)]

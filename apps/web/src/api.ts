@@ -64,17 +64,24 @@ export function failureLines(result: object): Json[] {
 
 export type Json = Record<string, unknown>
 
-/** Indexed display name from the standard name attribute. */
+/** Fixed id of the standard Name attribute. Hyphens match the Typesense field. */
+const STANDARD_NAME_ID = '018f0000-0000-7000-8000-000000000101'
+
+/** Display name for a search hit. English wins; a Swedish key field is only a fallback. */
 export function catalogName(doc: Json | undefined, defs?: Json): string {
   if (!doc) return ''
+  const display = textValue(doc.display_name)
+  if (display) return display
   const fields: string[] = []
-  const attribute = ((defs?.attributes as Json[] | undefined) ?? []).find((item) => String(item.key ?? '') === 'name')
-  const id = String(attribute?.id ?? '')
-  if (id) {
-    const base = `a_${id.replaceAll('-', '_')}`
-    fields.push(`${base}__en`, `${base}__sv`, `${base}__en_GB`, base)
-  }
-  fields.push('a_name__en', 'a_name__sv', 'a_name')
+  const attributes = (defs?.attributes as Json[] | undefined) ?? []
+  const attribute =
+    attributes.find((item) => String(item.id ?? '') === STANDARD_NAME_ID)
+    ?? attributes.find((item) => String(item.key ?? '') === 'name')
+    ?? attributes.find((item) => String(item.key ?? '') === 'namn') // english-check: allow-line
+  const id = String(attribute?.id ?? STANDARD_NAME_ID)
+  const base = `a_${id.replaceAll('-', '_')}`
+  fields.push(`${base}__en`, `${base}__sv`, `${base}__de`, `${base}__en_GB`, base)
+  fields.push('a_name__en', 'a_name__sv', 'a_name__de', 'a_name', 'a_namn__en', 'a_namn__sv', 'a_namn__de')
   for (const key of fields) {
     const text = textValue(doc[key])
     if (text) return text

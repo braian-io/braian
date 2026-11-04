@@ -1,5 +1,5 @@
 import { Command as CommandPrimitive } from 'cmdk'
-import { forwardRef, type ComponentProps } from 'react'
+import { forwardRef, useLayoutEffect, useRef, type ComponentProps } from 'react'
 import { cn } from '@/lib/utils'
 
 export function Command({ className, ...props }: ComponentProps<typeof CommandPrimitive>) {
@@ -10,9 +10,36 @@ export const CommandInput = forwardRef<
   HTMLInputElement,
   ComponentProps<typeof CommandPrimitive.Input>
 >(function CommandInput({ className, onKeyDown, ...props }, ref) {
+  const inner = useRef<HTMLInputElement>(null)
+  // cmdk stores the active item id in state that a controlled `value` never updates,
+  // so the input's aria-activedescendant stays empty. Point it at the selected row
+  // after cmdk has painted that row.
+  useLayoutEffect(() => {
+    const input = inner.current
+    if (!input) return
+    const root = input.closest('[cmdk-root]')
+    // cmdk's own aria-selected lags a controlled value by an effect, so the
+    // palette marks the row it considers active and we follow that.
+    const index = input.getAttribute('data-palette-active')
+    const selected = index != null && index !== ''
+      ? root?.querySelector<HTMLElement>(`[data-palette-index="${index}"]`)
+      : root?.querySelector<HTMLElement>('[cmdk-item][aria-selected="true"]')
+    const list = root?.querySelector<HTMLElement>('[cmdk-list]')
+    if (selected?.id) {
+      input.setAttribute('aria-activedescendant', selected.id)
+      list?.setAttribute('aria-activedescendant', selected.id)
+    } else {
+      input.removeAttribute('aria-activedescendant')
+      list?.removeAttribute('aria-activedescendant')
+    }
+  })
   return (
     <CommandPrimitive.Input
-      ref={ref}
+      ref={(node) => {
+        inner.current = node
+        if (typeof ref === 'function') ref(node)
+        else if (ref) ref.current = node
+      }}
       className={cn(className)}
       onKeyDown={(event) => {
         // cmdk root maps Home/End to first/last item with preventDefault (no opt-out prop).
