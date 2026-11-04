@@ -74,8 +74,9 @@ test.describe('object table default columns', () => {
     await prefsResponse
 
     // Definitions is still held, so no fallback columns may be latched.
+    // The toolbar and table shell stay mounted while the body skeletons.
     await expect(page.getByTestId('column-prefs-skeleton').first()).toBeVisible()
-    await expect(mainTable(page)).toHaveCount(0)
+    await expect(mainTable(page)).toBeVisible()
     await expect(mainTable(page).locator('.head [data-testid="col-brand"]').first()).toHaveCount(0)
 
     releaseDefinitions()
