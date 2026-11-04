@@ -3,6 +3,7 @@ import { useHotkeys } from 'react-hotkeys-hook'
 import { isTextEditingTarget } from './cell-edit'
 import { markShortcutUsed } from './shortcut-tip'
 import { shortcutById, type Shortcut } from './shortcuts'
+import { linkUiOpen } from './link-ui'
 
 export type ShortcutHandlers = {
   openPalette: () => void
@@ -41,6 +42,7 @@ function useRegisteredHotkey(
   useHotkeys(
     def.hotkeys.join(','),
     (event) => {
+      if (linkUiOpen()) return
       if (isTextEditingTarget(event)) return
       if (def.rejectShift && event.shiftKey) return
       if (def.layoutOnly && (options.paletteOpen || typingTarget(event))) return

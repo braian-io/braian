@@ -21,13 +21,15 @@ async function command(page: Page, title: string) {
 
 async function openObject(page: Page, key: string) {
   await expect(page.getByTestId('workspace')).toBeVisible()
-  await page.keyboard.press('Control+K')
-  const palette = page.getByTestId('palette-input')
-  await palette.fill(key)
-  await expect(page.getByRole('option').first()).toContainText(key)
-  await expect(palette).toHaveAttribute('data-palette-active', /^\d+$/)
-  await page.keyboard.press('Enter')
+  const title = key.startsWith('PROD-') ? 'Products' : 'Articles'
+  await page.locator('nav.tabs').getByRole('button', { name: new RegExp(`^${title}`) }).click()
+  const pane = paneWithTab(page, title)
+  await pane.getByTestId('quick-filter').fill(key)
+  const row = pane.getByTestId('object-row').filter({ hasText: key }).first()
+  await expect(row).toBeVisible()
+  await row.click()
   await expect(page.getByTestId('object-detail')).toBeVisible()
+  await expect(page.getByTestId('object-detail')).toContainText(key)
 }
 
 test('pairs with links two cheeses from the keyboard and the link type can be deleted', async ({ page }) => {
@@ -61,7 +63,13 @@ test('pairs with links two cheeses from the keyboard and the link type can be de
   await page.getByTestId('link-search').fill('ART-CHED-400')
   await expect(page.getByRole('option').first()).toContainText('ART-CHED-400')
   await page.keyboard.press('Enter')
-  await expect(pairsSection.getByTestId('link-row').filter({ hasText: 'ART-CHED-400' })).toBeVisible()
+  const created = page.getByTestId('link-create-dialog')
+  await expect(created).toBeVisible()
+  await created.getByTestId('link-type-choice').selectOption('pairs_with:out')
+  await created.getByTestId('link-field-note').fill('aged')
+  await created.getByTestId('link-create-confirm').click()
+  await expect(created).toBeHidden()
+  await expect(page.getByTestId('link-row').filter({ hasText: 'ART-CHED-400' }).first()).toBeVisible()
 
   await openObject(page, 'ART-CHED-400')
   await expect(
