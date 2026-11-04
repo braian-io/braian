@@ -1962,12 +1962,8 @@ async fn a_proposal_needs_base_version_and_a_stale_one_does_not_overwrite() {
     )
     .await;
     assert_eq!(status, StatusCode::CONFLICT, "{conflict}");
-    assert_eq!(conflict["code"], "conflict");
-    assert_eq!(conflict["current_version"], 2, "{conflict}");
-    assert!(
-        conflict["detail"].as_str().unwrap().contains("older"),
-        "{conflict}"
-    );
+    // The human edit marked the agent proposal stale. Accept must not apply it.
+    assert_eq!(conflict["code"], "stale", "{conflict}");
     let (status, _, object) = call(
         &app,
         "GET",
@@ -1992,7 +1988,70 @@ async fn a_proposal_needs_base_version_and_a_stale_one_does_not_overwrite() {
     .await;
     assert_eq!(status, StatusCode::OK, "{pending}");
     assert_eq!(pending["status"], "open", "{pending}");
+    assert_eq!(pending["stale"], true, "{pending}");
     assert_eq!(pending["rows"][0]["status"], "pending", "{pending}");
+
+    // A person's own proposal is not marked stale. An older base_version still
+    // conflicts, and the response names the version now stored.
+    let (status, _, user_draft) = call(
+        &app,
+        "POST",
+        "/v1/proposals",
+        Some(HUMAN),
+        &[("content-type", "application/json")],
+        Some(&format!(
+            r#"{{"title":"Mine","rows":[{{"object_id":"{id}","type_key":"item","base_version":2,"patch":{{"values":{{"active":false}}}}}}]}}"#
+        )),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{user_draft}");
+    assert_eq!(user_draft["source"], "user", "{user_draft}");
+    let user_id = user_draft["id"].as_str().unwrap();
+
+    let (status, _, saved_again) = call(
+        &app,
+        "PATCH",
+        &format!("/v1/objects/{id}"),
+        Some(HUMAN),
+        &[("content-type", "application/json"), ("if-match", "2")],
+        Some(r#"{"values":{"sku":"SKU-AGAIN"}}"#),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{saved_again}");
+    assert_eq!(saved_again["version"], 3, "{saved_again}");
+
+    let (status, _, version_conflict) = call(
+        &app,
+        "POST",
+        &format!("/v1/proposals/{user_id}/accept"),
+        Some(HUMAN),
+        &[("content-type", "application/json")],
+        Some("{}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{version_conflict}");
+    assert_eq!(version_conflict["code"], "conflict", "{version_conflict}");
+    assert_eq!(version_conflict["current_version"], 3, "{version_conflict}");
+    assert!(
+        version_conflict["detail"]
+            .as_str()
+            .unwrap()
+            .contains("older"),
+        "{version_conflict}"
+    );
+
+    let (status, _, object) = call(
+        &app,
+        "GET",
+        &format!("/v1/objects/{id}"),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{object}");
+    assert_eq!(object["values"]["sku"], "SKU-AGAIN", "{object}");
+    assert_eq!(object["values"]["active"], true, "{object}");
 }
 
 #[tokio::test]

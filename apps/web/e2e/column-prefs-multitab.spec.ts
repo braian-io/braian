@@ -122,7 +122,7 @@ test.describe('column prefs multitab', () => {
     await page1.reload()
     await expect(page1.getByTestId('workspace')).toBeVisible()
     await openProducts(page1)
-    await expect(page1.getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
+    await expect(mainTable(page1).getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
     await expect(mainTable(page1).locator('.head [data-testid="col-brand"]').first()).toBeVisible()
 
     // Prime tab 1 like a real session that has saved prefs once: hide then show Brand
@@ -151,7 +151,7 @@ test.describe('column prefs multitab', () => {
     await page2.goto('/')
     await expect(page2.getByTestId('workspace')).toBeVisible({ timeout: 60_000 })
     await openProducts(page2)
-    await expect(page2.getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
+    await expect(mainTable(page2).getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
     await expect(mainTable(page2).locator('.head [data-testid="col-brand"]').first()).toBeVisible()
 
     // Tab 2: Ctrl+K → Fields › → uncheck Brand.
@@ -201,7 +201,7 @@ test.describe('column prefs multitab', () => {
 
     await page1.reload()
     await expect(mainTable(page1)).toBeVisible({ timeout: 60_000 })
-    await expect(page1.getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
+    await expect(mainTable(page1).getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
     await expect(mainTable(page1).locator('.head [data-testid="col-brand"]').first()).toHaveCount(0)
 
     await context.close()
