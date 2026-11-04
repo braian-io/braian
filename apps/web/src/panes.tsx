@@ -1798,6 +1798,12 @@ export function ObjectTable({
         <form
           className="create-row"
           data-testid="path-value"
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault()
+              setPicker(null)
+            }
+          }}
           onSubmit={(event) => {
             event.preventDefault()
             const value = pathValue.trim()
@@ -1810,6 +1816,7 @@ export function ObjectTable({
             {picker.label}
             <input autoFocus aria-label={copy.pathValue} value={pathValue} onChange={(event) => setPathValue(event.target.value)} />
           </label>
+          <button type="button" data-testid="inline-create-cancel" onClick={() => setPicker(null)}>{copy.cancel}</button>
           <button className="primary" type="submit">{copy.filter}</button>
         </form>
       ) : null}
@@ -2120,25 +2127,74 @@ function NewObject({
   const [number, setNumber] = useState('')
   const [name, setName] = useState('')
   const [error, setError] = useState('')
+  const openerRef = useRef<HTMLElement | null>(null)
+  const numberRef = useRef<HTMLInputElement | null>(null)
   const queryClient = useQueryClient()
   const defs = useQuery({ queryKey: ['definitions'], queryFn: () => api.get('/v1/definitions') })
-  useEffect(() => {
-    const openForm = () => {
-      // Do not open while the command / fields palette has focus (key leaks).
-      if (document.querySelector('[data-testid="command-palette"], [data-testid="fields-mode"]')) return
-      setOpen(true)
+  const closeForm = () => {
+    setOpen(false)
+    setNumber('')
+    setName('')
+    setError('')
+    const target = openerRef.current
+    openerRef.current = null
+    if (target?.isConnected) queueMicrotask(() => target.focus())
+  }
+  const openForm = () => {
+    // Do not open while the command / fields palette has focus (key leaks).
+    if (document.querySelector('[data-testid="command-palette"], [data-testid="fields-mode"]')) return
+    if (open) {
+      numberRef.current?.focus()
+      return
     }
-    window.addEventListener('braian-new-object', openForm)
-    return () => window.removeEventListener('braian-new-object', openForm)
-  }, [])
+    openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    setError('')
+    setOpen(true)
+  }
+  useEffect(() => {
+    const onOpen = () => openForm()
+    window.addEventListener('braian-new-object', onOpen)
+    return () => window.removeEventListener('braian-new-object', onOpen)
+    // openForm closes over `open`; refresh the listener when it toggles.
+  }, [open])
+  useEffect(() => {
+    if (!open) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopPropagation()
+      closeForm()
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [open])
   const named = typeNames(defs.data, uiLanguage).find((item) => item.key === (typeKey || 'product'))
   if (!open) {
     if (trigger === 'event') return null
-    return <button type="button" onClick={() => setOpen(true)}>{newObjectLabel(singular)}</button>
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+          setError('')
+          setOpen(true)
+        }}
+      >
+        {newObjectLabel(singular)}
+      </button>
+    )
   }
   return (
     <form
       className="create-row"
+      data-testid="new-object"
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          event.stopPropagation()
+          closeForm()
+        }
+      }}
       onSubmit={(event) => {
         event.preventDefault()
         if (!number.trim() || !name.trim()) {
@@ -2155,6 +2211,9 @@ function NewObject({
           .then((created) => {
             setError('')
             setOpen(false)
+            setNumber('')
+            setName('')
+            openerRef.current = null
             if ('id' in created) session.setObjectId(String(created.id))
             session.push(`${copy.saved} ${number}`)
             void queryClient.invalidateQueries({ queryKey: ['objects'] })
@@ -2166,8 +2225,9 @@ function NewObject({
           })
       }}
     >
-      <input data-testid="new-number" value={number} onChange={(event) => setNumber(event.target.value)} placeholder={copy.numberPlaceholder} />
+      <input ref={numberRef} data-testid="new-number" value={number} onChange={(event) => setNumber(event.target.value)} placeholder={copy.numberPlaceholder} />
       <input data-testid="new-name" value={name} onChange={(event) => setName(event.target.value)} placeholder={copy.namePlaceholder} aria-label={copy.namePlaceholder} />
+      <button type="button" data-testid="inline-create-cancel" onClick={closeForm}>{copy.cancel}</button>
       <button className="primary" type="submit" data-testid="create-object">{copy.save}</button>
       {error ? <span className="error" data-testid="validation-error">{error}</span> : null}
     </form>
