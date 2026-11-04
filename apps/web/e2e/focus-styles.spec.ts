@@ -233,6 +233,11 @@ test('focus and hover use one indicator aligned to the element', async ({ page }
   await expect(treeTab).toHaveClass(/active/)
   await expect(treeTab.locator('xpath=ancestor::section[contains(@class,"pane")][1]')).toHaveClass(/focused/)
   await page.mouse.move(5, 5)
+  // Background has a CSS transition from the hover fill; wait for the settled value.
+  await expect.poll(async () => {
+    const p = await paint(treeTab)
+    return p.backgroundColor === p.accentDim
+  }).toBe(true)
   const tree = await paint(treeTab)
   expectOneIndicator(tree, 'active tree tab')
   expect(tree.outlineStyle).toBe('none')
