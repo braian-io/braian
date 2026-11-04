@@ -106,6 +106,7 @@ test.describe('shortcut registry', () => {
     await page.keyboard.press('F1')
     const help = page.getByTestId('help-shortcuts')
     await expect(help).toBeVisible()
+    await expect(help.getByRole('heading', { name: 'Keyboard shortcuts' })).toBeVisible()
     await expect(help.locator('[data-shortcut-id="table.column.move-left"]')).toContainText('Ctrl+Shift+←')
     await expect(help.locator('[data-shortcut-id="help.open"]')).toContainText('F1')
     await page.keyboard.press('Escape')

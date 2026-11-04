@@ -4,6 +4,7 @@ import { Check } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, textValue, type Json } from './api'
 import { Button } from './components/ui/button'
+import { Popover, PopoverContent, PopoverTrigger } from './components/ui/popover'
 import { formatCount } from './format'
 import { copy, uiLanguage } from './i18n'
 import { openSharedContextMenu, prefersNativeContextMenu } from './shared-context-menu'
@@ -155,65 +156,79 @@ export function LinkSections({
   }, [sections])
   return (
     <>
-      {sections.map((section) => (
-        <section
-          key={`${section.link_type}:${section.direction}`}
-          className="field-card"
-          data-testid="link-section"
-          aria-label={section.label}
-        >
-          <h3>{section.label} ({formatCount(section.links.length)})</h3>
-          {section.links.map((link) => (
-            <div
-              key={link.id}
-              className="row"
-              role="row"
-              tabIndex={0}
-              data-testid="link-row"
-              data-peer={link.peer_key}
-              onFocus={() => {
-                focused = { id: link.id, peer: link.peer_key, hasValues: link.has_values }
-              }}
-              onContextMenu={(event) => {
-                if (prefersNativeContextMenu(event.target)) return
-                event.preventDefault()
-                openLinkMenu(link, event.clientX, event.clientY)
-              }}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
-                  event.preventDefault()
-                  const rect = event.currentTarget.getBoundingClientRect()
-                  openLinkMenu(link, rect.left, rect.bottom)
-                }
-                if (event.key === 'Enter' && !event.ctrlKey && !event.metaKey) {
-                  event.preventDefault()
-                  onOpen(link.peer_id)
-                }
-              }}
-            >
-              <span>{link.peer_key}</span>
-            </div>
-          ))}
-          <button
-            type="button"
-            data-testid="add-link"
-            onClick={() => setAdding(section)}
+      {sections.map((section) => {
+        const open = Boolean(
+          adding &&
+          adding.link_type === section.link_type &&
+          adding.direction === section.direction,
+        )
+        return (
+          <section
+            key={`${section.link_type}:${section.direction}`}
+            className="field-card"
+            data-testid="link-section"
+            aria-label={section.label}
           >
-            {copy.addLink}
-          </button>
-        </section>
-      ))}
-      {adding ? (
-        <LinkPicker
-          section={adding}
-          objectId={objectId}
-          onClose={() => setAdding(null)}
-          onCreated={() => {
-            setAdding(null)
-            refresh()
-          }}
-        />
-      ) : null}
+            <h3>{section.label} ({formatCount(section.links.length)})</h3>
+            {section.links.map((link) => (
+              <div
+                key={link.id}
+                className="row"
+                role="row"
+                tabIndex={0}
+                data-testid="link-row"
+                data-peer={link.peer_key}
+                onFocus={() => {
+                  focused = { id: link.id, peer: link.peer_key, hasValues: link.has_values }
+                }}
+                onContextMenu={(event) => {
+                  if (prefersNativeContextMenu(event.target)) return
+                  event.preventDefault()
+                  openLinkMenu(link, event.clientX, event.clientY)
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+                    event.preventDefault()
+                    const rect = event.currentTarget.getBoundingClientRect()
+                    openLinkMenu(link, rect.left, rect.bottom)
+                  }
+                  if (event.key === 'Enter' && !event.ctrlKey && !event.metaKey) {
+                    event.preventDefault()
+                    onOpen(link.peer_id)
+                  }
+                }}
+              >
+                <span>{link.peer_key}</span>
+              </div>
+            ))}
+            <Popover
+              open={open}
+              onOpenChange={(next) => setAdding(next ? section : null)}
+            >
+              <PopoverTrigger asChild>
+                <button type="button" data-testid="add-link">
+                  {copy.addLink}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent
+                className="menu link-picker"
+                data-testid="link-picker"
+                aria-label={copy.addLink}
+                align="start"
+              >
+                <LinkPicker
+                  section={section}
+                  objectId={objectId}
+                  onCreated={() => {
+                    setAdding(null)
+                    refresh()
+                  }}
+                />
+              </PopoverContent>
+            </Popover>
+          </section>
+        )
+      })}
       {confirm ? (
         <div className="overlay" data-testid="link-confirm">
           <form
@@ -262,12 +277,10 @@ export function LinkSections({
 function LinkPicker({
   section,
   objectId,
-  onClose,
   onCreated,
 }: {
   section: LinkSide
   objectId: string
-  onClose: () => void
   onCreated: () => void
 }) {
   const [query, setQuery] = useState('')
@@ -281,13 +294,6 @@ function LinkPicker({
   const hits = (((found.data?.hits as Json[]) ?? [])
     .map((hit) => (hit.document as Json) ?? hit)
     .filter((row) => String(row.id ?? '') !== objectId))
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
   const choose = (row: Json) => {
     const peer = String(row.id ?? '')
     if (!peer) return
@@ -301,7 +307,7 @@ function LinkPicker({
     })
   }
   return (
-    <div className="menu" role="dialog" aria-label={copy.addLink} data-testid="link-picker">
+    <>
       <input
         data-testid="link-search"
         autoFocus
@@ -339,7 +345,7 @@ function LinkPicker({
           </button>
         ))}
       </div>
-    </div>
+    </>
   )
 }
 

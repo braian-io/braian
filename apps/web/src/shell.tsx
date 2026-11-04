@@ -17,7 +17,6 @@ import { importRefreshesObjects, isFileDrag } from './import/model'
 import { SearchRefresh } from './live-refresh'
 import { Button } from './components/ui/button'
 import { Input } from './components/ui/input'
-import { Kbd } from './components/ui/kbd'
 import { Toaster } from './components/ui/sonner'
 import { workspaceDisplayName } from './demo-labels'
 import { WorkspaceDock } from './dock'
@@ -55,7 +54,7 @@ import { requestNewSelection } from './assortment-filter'
 import { dispatchUi } from './ui-bus'
 import { registerCommandRunner, runCommand } from './command-registry'
 import { useShortcutBindings } from './shortcut-bindings'
-import { shortcuts } from './shortcuts'
+import { HelpDialog } from './help-dialog'
 import { registerModelCommandRunners } from './model-commands'
 import { createWorkspaceFromTemplate, typeWorkspaceTemplate, workspaceTemplates } from './templates'
 import { missingTypeWorkspaces, orderWorkspaces, typeKeyFromShare, typeShareToken } from './type-workspaces'
@@ -1647,7 +1646,7 @@ export function Shell() {
         </Dialog>
       ) : null}
       <ImportScreen />
-      {help ? <Help onClose={() => setHelp(false)} placeholder={commandPlaceholder(typeCatalog)} /> : null}
+      {help ? <HelpDialog onClose={() => setHelp(false)} placeholder={commandPlaceholder(typeCatalog)} /> : null}
       <Toaster theme={theme} />
     </div>
   )
@@ -2147,23 +2146,3 @@ function singularFromLive(raw: string, defs: Json | undefined) {
     return undefined
   }
 }
-
-function Help({ onClose, placeholder }: { onClose: () => void; placeholder: string }) {
-  // F1 overlay only — theme / Agent / Sign out stay in the user menu; Ctrl+K uses the registry.
-  const rows = shortcuts.filter((item) => item.id !== 'help.close' && item.id !== 'palette.search')
-  return (
-    <div className="help" data-testid="help-shortcuts" onClick={onClose}>
-      <div onClick={(event) => event.stopPropagation()}>
-        <strong>{copy.shortcuts}</strong>
-        <p><Kbd>Ctrl</Kbd>+<Kbd>K</Kbd> {placeholder}</p>
-        {rows.map((item) => (
-          <p key={item.id} data-shortcut-id={item.id}>
-            <Kbd>{item.chord}</Kbd> {item.description}
-          </p>
-        ))}
-        <button onClick={onClose}>{copy.close}</button>
-      </div>
-    </div>
-  )
-}
-

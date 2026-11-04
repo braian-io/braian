@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { copy } from './i18n'
+import { Popover, PopoverContent } from './components/ui/popover'
 
 export type ListedPath = {
   text: string
@@ -68,6 +69,18 @@ export function PathMenu({
   const [stack, setStack] = useState<Row[][]>([])
   const [active, setActive] = useState(0)
   const input = useRef<HTMLInputElement>(null)
+  const [opener] = useState<HTMLElement | null>(() =>
+    typeof document !== 'undefined' && document.activeElement instanceof HTMLElement ? document.activeElement : null,
+  )
+  const closed = useRef(false)
+  const close = () => {
+    if (closed.current) return
+    closed.current = true
+    onClose()
+    queueMicrotask(() => {
+      if (opener?.isConnected) opener.focus()
+    })
+  }
   const root = pathRows(paths)
   const needle = query.trim().toLowerCase()
   const filtered = useMemo(() => {
@@ -96,7 +109,7 @@ export function PathMenu({
       event.preventDefault()
       event.stopPropagation()
       if (stack.length > 0) setStack((current) => current.slice(0, -1))
-      else onClose()
+      else close()
       return
     }
     if (event.key === 'ArrowDown') {
@@ -115,33 +128,40 @@ export function PathMenu({
     }
   }
   return (
-    <div className="import-menu" data-testid="path-picker" onKeyDown={onKey}>
-      <input
-        ref={input}
-        value={query}
-        placeholder={copy.pathSearch}
+    <Popover open modal onOpenChange={(next) => { if (!next) close() }}>
+      <PopoverContent
+        className="import-menu path-picker-menu"
+        data-testid="path-picker"
         aria-label={copy.pathSearch}
-        onChange={(event) => {
-          setQuery(event.target.value)
-          setStack([])
-        }}
-      />
-      <div className="import-menu-list" role="menu">
-        {rows.length === 0 ? <p>{copy.pathEmpty}</p> : null}
-        {rows.map((row, index) => (
-          <button
-            key={row.key}
-            type="button"
-            role="menuitem"
-            className={index === active ? 'on' : undefined}
-            aria-current={index === active ? 'true' : undefined}
-            onMouseEnter={() => setActive(index)}
-            onClick={() => open(row)}
-          >
-            {row.label}
-          </button>
-        ))}
-      </div>
-    </div>
+        onKeyDown={onKey}
+      >
+        <input
+          ref={input}
+          value={query}
+          placeholder={copy.pathSearch}
+          aria-label={copy.pathSearch}
+          onChange={(event) => {
+            setQuery(event.target.value)
+            setStack([])
+          }}
+        />
+        <div className="import-menu-list" role="menu">
+          {rows.length === 0 ? <p>{copy.pathEmpty}</p> : null}
+          {rows.map((row, index) => (
+            <button
+              key={row.key}
+              type="button"
+              role="menuitem"
+              className={index === active ? 'on' : undefined}
+              aria-current={index === active ? 'true' : undefined}
+              onMouseEnter={() => setActive(index)}
+              onClick={() => open(row)}
+            >
+              {row.label}
+            </button>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
   )
 }

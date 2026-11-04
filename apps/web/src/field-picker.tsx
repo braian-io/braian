@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { copy } from './i18n'
 import type { ListedPath } from './path-picker'
+import { Popover, PopoverContent } from './components/ui/popover'
 
 type FieldPickerProps = {
   paths: ListedPath[]
@@ -19,6 +20,18 @@ export function FieldPicker({ paths, order, hidden, onToggle, onMove, onClose }:
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
   const input = useRef<HTMLInputElement>(null)
+  const [opener] = useState<HTMLElement | null>(() =>
+    typeof document !== 'undefined' && document.activeElement instanceof HTMLElement ? document.activeElement : null,
+  )
+  const closed = useRef(false)
+  const close = () => {
+    if (closed.current) return
+    closed.current = true
+    onClose()
+    queueMicrotask(() => {
+      if (opener?.isConnected) opener.focus()
+    })
+  }
   const labels = useMemo(() => new Map(paths.map((path) => [path.text, path.label])), [paths])
   const known = useMemo(() => new Set(paths.map((path) => path.text)), [paths])
   const rows = useMemo(() => {
@@ -45,7 +58,7 @@ export function FieldPicker({ paths, order, hidden, onToggle, onMove, onClose }:
     if (event.key === 'Escape') {
       event.preventDefault()
       event.stopPropagation()
-      onClose()
+      close()
       return
     }
     if (event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
@@ -64,36 +77,43 @@ export function FieldPicker({ paths, order, hidden, onToggle, onMove, onClose }:
     }
   }
   return (
-    <div className="import-menu field-picker" data-testid="field-picker" onKeyDown={onKey}>
-      <input
-        ref={input}
-        value={query}
-        placeholder={copy.pathSearch}
-        aria-label={copy.pathSearch}
-        data-testid="field-picker-search"
-        onChange={(event) => setQuery(event.target.value)}
-      />
-      <div className="import-menu-list" role="listbox" aria-label={copy.selectFields} aria-multiselectable="true">
-        {visible.length === 0 ? <p>{copy.pathEmpty}</p> : null}
-        {visible.map((id, index) => {
-          const checked = order.includes(id) && !hidden.includes(id)
-          return (
-            <button
-              key={id}
-              type="button"
-              role="option"
-              aria-selected={checked}
-              aria-current={index === active ? 'true' : undefined}
-              className={index === active ? 'on' : undefined}
-              data-testid={`field-picker-${id}`}
-              onMouseEnter={() => setActive(index)}
-              onClick={() => onToggle(id)}
-            >
-              <span aria-hidden="true">{checked ? '✓' : ' '}</span> {labels.get(id) ?? id}
-            </button>
-          )
-        })}
-      </div>
-    </div>
+    <Popover open modal onOpenChange={(next) => { if (!next) close() }}>
+      <PopoverContent
+        className="import-menu field-picker"
+        data-testid="field-picker"
+        aria-label={copy.selectFields}
+        onKeyDown={onKey}
+      >
+        <input
+          ref={input}
+          value={query}
+          placeholder={copy.pathSearch}
+          aria-label={copy.pathSearch}
+          data-testid="field-picker-search"
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        <div className="import-menu-list" role="listbox" aria-label={copy.selectFields} aria-multiselectable="true">
+          {visible.length === 0 ? <p>{copy.pathEmpty}</p> : null}
+          {visible.map((id, index) => {
+            const checked = order.includes(id) && !hidden.includes(id)
+            return (
+              <button
+                key={id}
+                type="button"
+                role="option"
+                aria-selected={checked}
+                aria-current={index === active ? 'true' : undefined}
+                className={index === active ? 'on' : undefined}
+                data-testid={`field-picker-${id}`}
+                onMouseEnter={() => setActive(index)}
+                onClick={() => onToggle(id)}
+              >
+                <span aria-hidden="true">{checked ? '✓' : ' '}</span> {labels.get(id) ?? id}
+              </button>
+            )
+          })}
+        </div>
+      </PopoverContent>
+    </Popover>
   )
 }

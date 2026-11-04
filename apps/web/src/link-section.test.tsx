@@ -92,6 +92,22 @@ afterEach(() => {
   cleanup()
 })
 
+describe('LinkSections picker', () => {
+  it('closes on Escape and returns focus to the add-link trigger', async () => {
+    renderLinks(link())
+    const trigger = screen.getAllByTestId('add-link')[0]!
+    trigger.focus()
+    fireEvent.click(trigger)
+
+    const picker = await screen.findByTestId('link-picker')
+    expect(picker.getAttribute('role')).toBe('dialog')
+
+    fireEvent.keyDown(picker, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByTestId('link-picker')).toBeNull())
+    await waitFor(() => expect(document.activeElement).toBe(trigger))
+  })
+})
+
 describe('LinkSections removal', () => {
   it('toasts Undo after removing a link without values and recreates it with its sort order', async () => {
     renderLinks(link({ sort_order: '3' }))
