@@ -2784,6 +2784,20 @@
             "schema": {
               "type": "boolean"
             }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "description": "When set, any newer change is a conflict",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int64",
+              "minimum": 0
+            }
           }
         ],
         "responses": {
@@ -2799,6 +2813,26 @@
           },
           "403": {
             "description": "An agent or import cannot delete",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such link",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The link changed since If-Match",
             "content": {
               "application/json": {
                 "schema": {

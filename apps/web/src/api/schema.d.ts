@@ -5167,7 +5167,10 @@ export interface operations {
                 /** @description Return the consequence analysis and change nothing */
                 dry_run?: boolean;
             };
-            header?: never;
+            header?: {
+                /** @description When set, any newer change is a conflict */
+                "If-Match"?: number | null;
+            };
             path: {
                 /** @description Link id */
                 id: string;
@@ -5187,6 +5190,24 @@ export interface operations {
             };
             /** @description An agent or import cannot delete */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description No such link */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The link changed since If-Match */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
