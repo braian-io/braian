@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Check } from 'lucide-react'
+import { toast } from 'sonner'
 import { api, textValue, type Json } from './api'
 import { Button } from './components/ui/button'
 import { formatCount } from './format'
@@ -12,8 +14,11 @@ type LinkItem = {
   id: string
   peer_id: string
   peer_key: string
+  peer_name?: string
   peer_type: string
   has_values: boolean
+  sort_order?: string | number | null
+  values?: Json
 }
 
 type LinkSide = {
@@ -24,6 +29,17 @@ type LinkSide = {
 }
 
 type Menu = { id: string; peer: string; hasValues: boolean; x: number; y: number }
+
+type Removal = {
+  id: string
+  peer: string
+  hasValues: boolean
+  linkType: string
+  fromId: string
+  toId: string
+  sortOrder?: string | number | null
+  values?: Json
+}
 
 let focused: { id: string; peer: string; hasValues: boolean } | null = null
 
@@ -50,19 +66,37 @@ export function LinkSections({
   onOpenRef.current = onOpen
   const sectionsRef = useRef(sections)
   sectionsRef.current = sections
-  const removeRef = useRef<(id: string, peer: string, hasValues: boolean) => void>(() => undefined)
+  const removeRef = useRef<(link: LinkItem, section: LinkSide) => void>(() => undefined)
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ['object', objectId] })
     void queryClient.invalidateQueries({ queryKey: ['objects'] })
   }
-  const remove = (id: string, peer: string, hasValues: boolean) => {
-    if (hasValues) {
-      setConfirm({ id, peer })
+  const recreate = (removal: Removal) => {
+    const values: Json = removal.values
+      ? { ...removal.values }
+      : removal.sortOrder == null || removal.sortOrder === ''
+        ? {}
+        : { sort_order: typeof removal.sortOrder === 'object' ? removal.sortOrder : { value: String(removal.sortOrder) } }
+    void api.post('/v1/links', {
+      body: { type: removal.linkType, from_id: removal.fromId, to_id: removal.toId, values },
+    }).then(refresh).catch((reason: unknown) => {
+      reportWriteError(reason)
+    })
+  }
+  const remove = (link: LinkItem, section: LinkSide) => {
+    const removal = removalFor(link, section, objectId)
+    if (removal.hasValues) {
+      setConfirm({ id: removal.id, peer: removal.peer })
       setTyped('')
       setConfirmError('')
       return
     }
-    void api.delete('/v1/links/{id}', { params: { path: { id: id } } }).then(refresh).catch((reason: unknown) => {
+    void api.delete('/v1/links/{id}', { params: { path: { id: removal.id } } }).then(() => {
+      refresh()
+      toast(copy.linkRemoved, {
+        action: { label: copy.undo, onClick: () => recreate(removal) },
+      })
+    }).catch((reason: unknown) => {
       reportWriteError(reason)
     })
   }
@@ -91,9 +125,8 @@ export function LinkSections({
       }),
       registerCommandRunner('link:remove', (target) => {
         if (!target.linkId) return
-        const id = String(target.linkId)
-        const peer = peerKey(sectionsRef.current, id)
-        removeRef.current(id, peer, Boolean(target.hasValues))
+        const found = locate(sectionsRef.current, String(target.linkId))
+        if (found) removeRef.current(found.link, found.section)
       }),
     ]
     return () => stops.forEach((stop) => stop())
@@ -110,7 +143,8 @@ export function LinkSections({
     }
     const drop = () => {
       if (!focused) return
-      remove(focused.id, focused.peer, focused.hasValues)
+      const found = locate(sections, focused.id)
+      if (found) remove(found.link, found.section)
     }
     window.addEventListener('braian-add-link', add)
     window.addEventListener('braian-remove-link', drop)
@@ -200,12 +234,23 @@ export function LinkSections({
               })
             }}
           >
-            <p>{copy.confirmRemoveLink}</p>
-            <input aria-label={copy.confirmRemoveLink} value={typed} onChange={(event) => setTyped(event.target.value)} autoFocus />
+            <p>{copy.confirmRemoveLink.replace('{peer}', confirm.peer)}</p>
+            <input
+              data-testid="link-confirm-input"
+              aria-label={copy.confirmRemoveLink.replace('{peer}', confirm.peer)}
+              value={typed}
+              onChange={(event) => setTyped(event.target.value)}
+              autoFocus
+            />
+            {typed.trim() === confirm.peer ? (
+              <p className="hint" data-testid="link-confirm-match">
+                <Check aria-hidden="true" size={14} /> {copy.matches}
+              </p>
+            ) : null}
             {confirmError ? <p className="error" data-testid="link-confirm-error">{confirmError}</p> : null}
             <div className="toolbar">
               <Button type="button" variant="ghost" onClick={() => setConfirm(null)}>{copy.cancel}</Button>
-              <Button type="submit" variant="danger" disabled={typed.trim() !== confirm.peer}>{copy.removeLink}</Button>
+              <Button type="submit" variant="danger" data-testid="link-confirm-remove" disabled={typed.trim() !== confirm.peer}>{copy.removeLink}</Button>
             </div>
           </form>
         </div>
@@ -343,10 +388,24 @@ function labelOf(label: unknown, fallback: string) {
   return textValue(map as Json, uiLanguage) || textValue(map as Json, 'en') || fallback
 }
 
-function peerKey(sections: LinkSide[], id: string) {
+function locate(sections: LinkSide[], id: string): { link: LinkItem; section: LinkSide } | null {
   for (const section of sections) {
     const link = section.links.find((item) => item.id === id)
-    if (link) return link.peer_key
+    if (link) return { link, section }
   }
-  return ''
+  return null
+}
+
+function removalFor(link: LinkItem, section: LinkSide, objectId: string): Removal {
+  const outgoing = section.direction === 'out'
+  return {
+    id: link.id,
+    peer: link.peer_name || link.peer_key,
+    hasValues: link.has_values,
+    linkType: section.link_type,
+    fromId: outgoing ? objectId : link.peer_id,
+    toId: outgoing ? link.peer_id : objectId,
+    sortOrder: link.sort_order,
+    values: link.values,
+  }
 }

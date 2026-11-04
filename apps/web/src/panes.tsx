@@ -1537,22 +1537,21 @@ export function ObjectTable({
   }
 
   const newRowLabel = newObjectLabel(bound?.singular)
-  // Mount object-table only after prefs apply so e2e waiting on that testid
-  // never asserts columns during the flash-free skeleton window.
-  if (!prefsReady) {
-    return (
-      <div className="table-wrap" data-testid="column-prefs-skeleton" aria-busy="true">
-        <div className="grid">
-          <div className="head head-skeleton">
-            {[280, 160, 160, 128, 72].map((width, index) => (
-              <div key={index} className="cell" style={{ width, minWidth: width, maxWidth: width }}>
-                …
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    )
+  const queryLabel = (queryText || filter || labelFilter || selectionFilter).trim()
+  const hasActiveFilter = Boolean(queryLabel || pathFilters.length > 0)
+  const probeLoading = !peerEmpty && found === 0 && (probe.isPending || !probe.isFetched) && !probe.isError
+  const probeEmpty = !peerEmpty && probe.isFetched && found === 0
+  const emptyTitle = queryLabel
+    ? copy.noMatches.replace('{query}', () => queryLabel)
+    : hasActiveFilter
+      ? copy.noMatchesFilters
+      : copy.noObjects
+  const clearTableFilters = () => {
+    setFilter('')
+    setQueryText('')
+    setSelectionFilter('')
+    setLabelFilter('')
+    setPathFilters([])
   }
   return (
     <StandardTableChrome
@@ -1561,7 +1560,7 @@ export function ObjectTable({
       onNewRow={() => window.dispatchEvent(new Event('braian-new-object'))}
       onSelectFields={() => window.dispatchEvent(new CustomEvent('braian-fields-palette', { detail: {} }))}
       selectFieldsLabel={copy.selectFields}
-      rowCount={groupBy ? groups.reduce((sum, group) => sum + group.found, 0) : found}
+      rowCount={prefsReady && probe.isFetched ? (groupBy ? groups.reduce((sum, group) => sum + group.found, 0) : found) : undefined}
       filterValue={filter}
       onFilterChange={setFilter}
     >
@@ -1618,6 +1617,17 @@ export function ObjectTable({
           })}
         </div>
       ) : null}
+      {!prefsReady ? (
+        <div className="grid" data-testid="column-prefs-skeleton" aria-busy="true">
+          <div className="head head-skeleton">
+            {[280, 160, 160, 128, 72].map((width, index) => (
+              <div key={index} className="cell" style={{ width, minWidth: width, maxWidth: width }}>
+                …
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
       <div
         className="grid"
         ref={parent}
@@ -1766,13 +1776,37 @@ export function ObjectTable({
             })}
           </div>
         )}
-        {!peerEmpty && (probe.isError || (!peerSource && !probe.isLoading && found === 0)) ? (
-          <div className="table-status">
-            {probe.isError ? <p className="error">{(probe.error as Error).message}</p> : null}
-            {!probe.isLoading && found === 0 ? <p>{copy.noRows}</p> : null}
-          </div>
+        {!peerEmpty && probe.isError ? (
+          <StateNote
+            className="table-status"
+            tone="error"
+            title={copy.objectsError}
+            detail={(probe.error as Error).message}
+            testId="object-table-error"
+          />
+        ) : probeLoading ? (
+          <StateNote
+            className="table-status"
+            tone="loading"
+            title={copy.loadingObjects}
+            testId="object-table-loading"
+          />
+        ) : probeEmpty ? (
+          <StateNote
+            className="table-status"
+            tone="empty"
+            title={emptyTitle}
+            detail={hasActiveFilter ? copy.noMatchesHint : undefined}
+            action={hasActiveFilter ? (
+              <button type="button" className="btn-ghost" data-testid="clear-search" onClick={clearTableFilters}>
+                {copy.clearSearch}
+              </button>
+            ) : undefined}
+            testId="object-table-empty"
+          />
         ) : null}
       </div>
+      )}
       {/* Fields › lives in the Ctrl+K palette */}
       {picker === 'filter' || picker === 'export' ? (
         <PathMenu
@@ -2835,12 +2869,14 @@ export function HistoryView({ session }: { session: PanesSession }) {
   const seqs = rows.map((row) => Number(row.seq)).sort((left, right) => left - right)
   const minSeq = seqs[0] ?? 0
   const maxSeq = seqs.at(-1) ?? 0
-  if (!session.objectId) return <StateNote tone="empty" title={copy.history} testId="history" />
+  if (!session.objectId) return <StateNote tone="empty" title={copy.historyEmpty} testId="history" />
   return (
     <div data-testid="history">
       <div className="history-head">
         <span className="hint">
-          {formatCount(rows.length)} {rows.length === 1 ? copy.oneChange : copy.manyChanges}
+          {changes.isPending
+            ? copy.loading
+            : `${formatCount(rows.length)} ${rows.length === 1 ? copy.oneChange : copy.manyChanges}`}
         </span>
         <button type="button" data-testid="time-travel" aria-pressed={travel} onClick={() => setTravel((value) => !value)}>
           <HistoryIcon size={14} aria-hidden="true" />
@@ -2874,7 +2910,19 @@ export function HistoryView({ session }: { session: PanesSession }) {
         </div>
       ) : null}
       <div className="timeline">
-        {rows.map((row) => {
+        {changes.isError ? (
+          <StateNote
+            tone="error"
+            title={copy.historyError}
+            detail={(changes.error as Error).message}
+            testId="history-error"
+          />
+        ) : changes.isPending ? (
+          <StateNote tone="loading" title={copy.loading} testId="history-loading" />
+        ) : rows.length === 0 ? (
+          <StateNote tone="empty" title={copy.historyEmpty} testId="history-empty" />
+        ) : null}
+        {!changes.isError && !changes.isPending ? rows.map((row) => {
           const at = Number(row.seq)
           const expanded = open === at
           const created = isCreate(row)
@@ -2921,8 +2969,7 @@ export function HistoryView({ session }: { session: PanesSession }) {
               ) : null}
             </article>
           )
-        })}
-        {rows.length === 0 ? <p>{copy.noRows}</p> : null}
+        }) : null}
       </div>
     </div>
   )
@@ -3031,6 +3078,7 @@ export function JobHistory({ view }: { view: PanesView }) {
     queryFn: () => api.get('/v1/job-types/{key}/runs', { params: { path: { key: key } } }),
     enabled: Boolean(key),
   })
+  const runRows = runs.data?.runs ?? []
   return (
     <div data-testid="jobs">
       <div className="toolbar">
@@ -3040,12 +3088,18 @@ export function JobHistory({ view }: { view: PanesView }) {
           </button>
         ))}
       </div>
-      {(runs.data?.runs ?? []).length === 0 ? <p>{copy.noRows}</p> : null}
-      {(runs.data?.runs ?? []).map((row) => (
+      {runs.isError ? (
+        <StateNote tone="error" title={copy.jobsError} detail={(runs.error as Error).message} testId="jobs-error" />
+      ) : runs.isPending ? (
+        <StateNote tone="loading" title={copy.loading} testId="jobs-loading" />
+      ) : runRows.length === 0 ? (
+        <StateNote tone="empty" title={copy.noRuns} testId="jobs-empty" />
+      ) : null}
+      {!runs.isError && !runs.isPending ? runRows.map((row) => (
         <article key={String(row.id)}>
           <MetaChip tone={statusTone(String(row.status))}>{String(row.status)}</MetaChip> {String(row.progress_done ?? '')}/{String(row.progress_total ?? '')} {String(row.log ?? '')}
         </article>
-      ))}
+      )) : null}
     </div>
   )
 }
@@ -3234,6 +3288,8 @@ export function ProposalListView({ session }: { session: PanesSession }) {
       columns={columns}
       rows={rows}
       editable={false}
+      loading={list.isPending}
+      emptyLabel="No proposals yet."
       filterValue={filter}
       onFilterChange={setFilter}
       activeRowId={session.proposalId}

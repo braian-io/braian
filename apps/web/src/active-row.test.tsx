@@ -13,6 +13,7 @@ import { dispatchUi, onUi } from './ui-bus'
 import { registerCommandRunner } from './command-registry'
 import { SharedContextMenuHost } from './shared-context-menu'
 import { publishColumns, readUiContext, resetUiContext } from './ui-context'
+import { copy } from './i18n'
 
 const { scrollToIndex } = vi.hoisted(() => ({ scrollToIndex: vi.fn() }))
 
@@ -710,5 +711,77 @@ describe('palette entities', () => {
     expect(closed).not.toHaveBeenCalled()
     expect(screen.getByTestId('command-palette')).toBeTruthy()
     message.mockRestore()
+  })
+})
+
+describe('object table loading vs empty', () => {
+  it('renders the toolbar immediately, waits for the response, and only then shows no-match text', async () => {
+    let searchCalls = 0
+    let releaseInitial!: () => void
+    let releaseFilter!: () => void
+    const initialGate = new Promise<void>((resolve) => {
+      releaseInitial = resolve
+    })
+    const filterGate = new Promise<void>((resolve) => {
+      releaseFilter = resolve
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes('/v1/search')) {
+          if (url.includes('group=groups')) return json({ groups: [] })
+          searchCalls += 1
+          if (searchCalls === 1) {
+            await initialGate
+            return json({
+              found: tableRows.length,
+              hits: tableRows.map((name, index) => ({
+                document: {
+                  id: `id-${index}`,
+                  key: `ART-${index}`,
+                  type_key: 'article',
+                  version: '1',
+                  a_name__en: name,
+                  a_status: 'ok',
+                },
+              })),
+            })
+          }
+          if (searchCalls === 2) {
+            await filterGate
+            return json({ found: 0, hits: [] })
+          }
+          return json({ found: 0, hits: [] })
+        }
+        if (url.includes('/v1/definitions')) {
+          return json({ types: [], attributes: [], unit_families: [], structures: [] })
+        }
+        if (url.includes('/v1/assortments')) return json({ assortments: [] })
+        if (url.includes('/v1/frecency')) return json({ entries: {} })
+        return json({})
+      }),
+    )
+
+    render(<TableHarness />)
+
+    await waitFor(() => expect(screen.getByTestId('object-table-loading')).toBeTruthy())
+    expect(screen.getByTestId('standard-table-bar')).toBeTruthy()
+    expect(screen.queryByTestId('object-table-empty')).toBeNull()
+
+    releaseInitial()
+    await waitFor(() => expect(screen.getAllByTestId('object-row')).toHaveLength(tableRows.length))
+
+    fireEvent.change(screen.getByTestId('quick-filter'), { target: { value: 'zzz' } })
+    await waitFor(() => expect(searchCalls).toBe(2))
+    expect(screen.getByTestId('standard-table-bar')).toBeTruthy()
+    expect(screen.queryByTestId('object-table-empty')).toBeNull()
+
+    releaseFilter()
+    await waitFor(() => expect(screen.getByTestId('object-table-empty')).toBeTruthy())
+    expect(screen.getByText('No matches for “zzz”.')).toBeTruthy()
+    expect(screen.getByText(copy.noMatchesHint)).toBeTruthy()
+    fireEvent.click(screen.getByTestId('clear-search'))
+    await waitFor(() => expect((screen.getByTestId('quick-filter') as HTMLInputElement).value).toBe(''))
   })
 })
