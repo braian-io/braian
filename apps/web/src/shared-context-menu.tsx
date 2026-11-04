@@ -69,11 +69,20 @@ function clamp(x: number, y: number) {
   }
 }
 
+function uniqueCommands(items: RegistryCommand[]): RegistryCommand[] {
+  const seen = new Set<string>()
+  return items.filter((item) => {
+    if (seen.has(item.id)) return false
+    seen.add(item.id)
+    return true
+  })
+}
+
 function itemsFor(request: OpenMenuRequest): RegistryCommand[] {
-  if (request.extraOnly) return [...(request.extra ?? [])]
+  if (request.extraOnly) return uniqueCommands([...(request.extra ?? [])])
   const target = request.target ?? {}
   const base = commandsForContext(request.context, target)
-  return [...base, ...(request.extra ?? [])]
+  return uniqueCommands([...base, ...(request.extra ?? [])])
 }
 
 export function SharedContextMenuHost({

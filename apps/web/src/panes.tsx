@@ -47,6 +47,7 @@ import { isExplicitAllSource, peerEmptyState, peerIdsFilter, peerNodeFilter, pee
 import { FieldDiff } from './field-diff-view'
 import { copy, uiLanguage } from './i18n'
 import { openSharedContextMenu, prefersNativeContextMenu } from './shared-context-menu'
+import { buildRowContextMenu } from './row-context-menu'
 import { StandardTableChrome } from './standard-table'
 import { StandardEditableTable, type StandardColumn } from './standard-editable-table'
 import { registerCommandRunner, runCommand } from './command-registry'
@@ -900,35 +901,26 @@ export function ObjectTable({
     const hiddenColumns = all
       .filter((id) => hidden.includes(id))
       .map((id) => ({ id, header: columnHeader(id) }))
-    const singular = session.listType ? singularOf(defs.data, session.listType, uiLanguage) : undefined
-    const linkExtras = ((defs.data?.types as Json[]) ?? [])
-      .filter((item) => item.kind === 'link')
-      .map((item) => {
-        const key = String(item.key ?? '')
-        const label =
-          textValue((item.link as Json | undefined)?.to_label && ((item.link as Json).to_label as Json).labels, uiLanguage) ||
-          key
-        return {
-          id: `link:add:${key}`,
-          title: `${copy.linkTo} ${label}`,
-          contexts: [context] as import('./command-registry').MenuContext[],
-          group: 'object' as const,
-          palette: false as const,
-        }
-      })
-    openSharedContextMenu({
+    const menu = buildRowContextMenu({
       context,
-      x,
-      y,
+      defs: defs.data,
+      rowType: row.type || session.listType || '',
+      language: uiLanguage,
       target: {
         objectId: row.id,
         column: column || undefined,
         columnHeader: column ? columnHeader(column) : undefined,
         hiddenColumns,
         typeKey: session.listType ?? undefined,
-        singular: singular || undefined,
       },
-      extra: linkExtras,
+    })
+    openSharedContextMenu({
+      context,
+      x,
+      y,
+      target: menu.target,
+      extra: menu.items,
+      extraOnly: true,
     })
   }
 
@@ -1031,9 +1023,9 @@ export function ObjectTable({
     const onCommand = (event: Event) => {
       const detail = (event as CustomEvent<{ id: string; target?: { objectId?: string } }>).detail
       if (!detail?.id?.startsWith('link:add:')) return
-      const linkType = detail.id.slice('link:add:'.length)
+      const [linkType, direction] = detail.id.slice('link:add:'.length).split(':')
       if (detail.target?.objectId) session.setObjectId(String(detail.target.objectId))
-      window.dispatchEvent(new CustomEvent('braian-add-link', { detail: { linkType } }))
+      window.dispatchEvent(new CustomEvent('braian-add-link', { detail: { linkType, direction } }))
     }
     window.addEventListener('braian:command', onCommand)
     return () => window.removeEventListener('braian:command', onCommand)
