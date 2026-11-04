@@ -197,3 +197,66 @@ test('type attributes reorder and checkbox persist after reload', async ({ page 
   if (expected) await expect(persisted).toBeChecked()
   else await expect(persisted).not.toBeChecked()
 })
+
+test('allowed trees are staged for Review and save', async ({ page }) => {
+  test.setTimeout(180_000)
+  await login(page)
+  const definitions = (await (await page.request.get('/v1/definitions')).json()) as {
+    types: Array<{ id: string; key: string; kind?: string; structures?: unknown[] }>
+    structures: Array<{ id: string; key: string; labels?: Record<string, string> }>
+  }
+  const structure = definitions.structures[0]
+  if (!structure) throw new Error('missing structure')
+  const structureId = String(structure.id)
+  const structureKey = String(structure.key)
+  const structureLabel = structure.labels?.en || structureKey
+  const hasStructure = (type: { structures?: unknown[] }) =>
+    (type.structures ?? []).map(String).some((token) => token === structureId || token === structureKey)
+  const objectTypes = definitions.types.filter((type) => type.kind !== 'link')
+  const chosen = objectTypes.find((type) => !hasStructure(type)) ?? objectTypes[0]
+  if (!chosen) throw new Error('missing object type')
+  const initiallyAllowed = hasStructure(chosen)
+  const expected = !initiallyAllowed
+
+  const openAttributes = async () => {
+    await page.locator('nav.tabs').getByRole('button', { name: /^Data model/ }).click()
+    const objectTypesTab = page.locator('.pane-tab', { hasText: 'Object types' }).first()
+    await expect(objectTypesTab).toBeVisible({ timeout: 30_000 })
+    await objectTypesTab.click()
+    const typeRow = page.getByTestId('object-types-table').locator(`[data-row-id="${chosen.key}"]`)
+    await expect(async () => {
+      await typeRow.click({ timeout: 2_000 })
+    }).toPass({ timeout: 30_000 })
+    await page.locator('.pane-tab', { hasText: 'Type attributes' }).first().click()
+    await expect(page.getByTestId('attribute-table')).toBeVisible()
+  }
+
+  const persisted = async () => {
+    const body = (await (await page.request.get('/v1/definitions')).json()) as {
+      types: Array<{ key: string; structures?: unknown[] }>
+    }
+    const type = body.types.find((item) => item.key === chosen.key)
+    return (type?.structures ?? []).map(String).some((token) => token === structureId || token === structureKey)
+  }
+
+  await openAttributes()
+  const trees = page.getByTestId('allowed-trees')
+  const checkbox = trees.getByRole('checkbox', { name: structureLabel, exact: true })
+  if (initiallyAllowed) await expect(checkbox).toBeChecked()
+  else await expect(checkbox).not.toBeChecked()
+
+  await checkbox.click()
+  const review = page.getByTestId('review-dialog')
+  await expect(review).toBeVisible()
+  expect(await persisted(), 'nothing persisted before Review and save').toBe(initiallyAllowed)
+
+  await review.getByTestId('confirm-review').click()
+  await expect(review).toHaveCount(0)
+  await expect.poll(persisted).toBe(expected)
+
+  await page.reload()
+  await openAttributes()
+  const reloaded = page.getByTestId('allowed-trees').getByRole('checkbox', { name: structureLabel, exact: true })
+  if (expected) await expect(reloaded).toBeChecked()
+  else await expect(reloaded).not.toBeChecked()
+})

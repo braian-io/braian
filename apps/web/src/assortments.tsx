@@ -215,7 +215,7 @@ export function NewSelectionDialog({ session }: { session: SelectionSession }) {
             <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
               {copy.cancel}
             </Button>
-            <Button type="submit">{copy.saveAssortment}</Button>
+            <Button type="submit" variant="primary">{copy.saveAssortment}</Button>
           </div>
         </form>
       </DialogContent>
