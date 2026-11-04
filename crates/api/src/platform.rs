@@ -8063,7 +8063,16 @@ mod tests {
             .filter(|op| exposed_to_agent(op))
             .map(|op| tool_name(op.name))
             .collect::<BTreeSet<_>>();
-        assert_eq!(tools, mcp, "the agent and MCP must expose the same tools");
+        assert!(
+            tools.contains("ask_person"),
+            "ask_person stops the run until a person decides"
+        );
+        let mut registered_tools = tools.clone();
+        registered_tools.remove("ask_person");
+        assert_eq!(
+            registered_tools, mcp,
+            "the agent and MCP must expose the same tools"
+        );
         assert!(tools.contains("get_object"));
         assert!(tools.contains("search"));
         assert!(tools.contains("list_objects"));
