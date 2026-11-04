@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { copy } from './i18n'
 import { DataModel } from './data-model'
+import { requestAttributeAction } from './attribute-actions'
 import { chooseModelSelection } from './model-selection'
 
 const mock = vi.hoisted(() => {
@@ -116,11 +117,11 @@ const allAttributes = [
   },
 ]
 
-function Host() {
+function Host({ mode = 'classes' }: { mode?: string }) {
   const [client] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: false } } }))
   return (
     <QueryClientProvider client={client}>
-      <DataModel view={{ state: { mode: 'classes' } }} />
+      <DataModel view={{ state: { mode } }} />
     </QueryClientProvider>
   )
 }
@@ -139,6 +140,7 @@ describe('type attributes table', () => {
       return Promise.resolve({})
     })
     mock.methods.put.mockReset()
+    mock.methods.post.mockReset()
     stageModel.mockClear()
     stageModelSteps.mockClear()
     requestReview.mockClear()
@@ -190,6 +192,37 @@ describe('type attributes table', () => {
       kind: 'text',
     })))
     expect(stageModel).toHaveBeenCalledWith('model.attach_attribute', { attribute: 'extra', type: 'recipe' })
+  })
+
+  it('opens one pending create row and cancels it with Escape', async () => {
+    chooseModelSelection({ kind: 'type', typeKey: 'recipe' })
+    const { container } = render(<Host />)
+    await screen.findByTestId('attribute-table')
+
+    expect(requestAttributeAction('new')).toBe(true)
+    await waitFor(() => expect(container.querySelectorAll('[data-draft="true"]')).toHaveLength(1))
+    const pendingId = container.querySelector('[data-draft="true"]')?.getAttribute('data-row-id')
+
+    expect(requestAttributeAction('new')).toBe(true)
+    await waitFor(() => expect(container.querySelectorAll('[data-draft="true"]')).toHaveLength(1))
+    expect(container.querySelector('[data-draft="true"]')?.getAttribute('data-row-id')).toBe(pendingId)
+    await waitFor(() => expect(container.querySelector('input[data-testid^="attr-label-"]')).not.toBeNull())
+
+    const editor = container.querySelector('input[data-testid^="attr-label-"]')
+    if (!(editor instanceof HTMLInputElement)) throw new Error('missing new row editor')
+    fireEvent.keyDown(editor, { key: 'Escape' })
+    await waitFor(() => expect(container.querySelector('input[data-testid^="attr-label-"]')).toBeNull())
+    const draftRow = container.querySelector('[data-draft="true"]')
+    if (!(draftRow instanceof HTMLElement)) throw new Error('missing draft row')
+    fireEvent.keyDown(draftRow, { key: 'Escape' })
+    await waitFor(() => expect(container.querySelectorAll('[data-draft="true"]')).toHaveLength(0))
+  })
+
+  it('shows an error when the impact calculation fails', async () => {
+    mock.methods.post.mockRejectedValueOnce(new Error('impact failed'))
+    render(<Host mode="impact" />)
+    fireEvent.click(await screen.findByTestId('impact-run'))
+    expect((await screen.findByTestId('impact-error')).textContent).toBe('impact failed')
   })
 
   it('stages allowed trees for Review and save without saving directly', async () => {
