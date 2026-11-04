@@ -2602,14 +2602,14 @@ function Editor({
     return (
       <div className="langs">
         {cards.map((language) => (
-          <div key={language} className="lang-card">
-            <MetaChip>{language}</MetaChip>
+          <label key={language} className="lang-row">
+            <span className="lang-tag">{language}</span>
             {form === 'long' ? (
               <textarea data-field="true" readOnly={readOnly} value={textValue(record[language])} onChange={(event) => onChange({ ...record, [language]: event.target.value })} />
             ) : (
               <input data-field="true" readOnly={readOnly} value={textValue(record[language])} onChange={(event) => onChange({ ...record, [language]: event.target.value })} />
             )}
-          </div>
+          </label>
         ))}
       </div>
     )

@@ -176,6 +176,7 @@ test('double-click a tab maximizes that view and restores the layout', async ({ 
   await expect(page.getByRole('tooltip')).toContainText('Maximize')
   await expect(page.getByRole('tooltip')).toContainText('Z')
   const tab = pane.locator('.pane-tab', { hasText: 'Products' })
+  await expect(tab.getByRole('button', { name: 'Close tab' })).toHaveCount(1)
   await tab.hover()
   await expect(page.getByRole('tooltip')).toContainText('Double-click to maximize')
   await tab.dblclick()
