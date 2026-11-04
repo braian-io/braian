@@ -21,13 +21,12 @@ async function command(page: Page, title: string) {
 
 async function openObject(page: Page, key: string) {
   await expect(page.getByTestId('workspace')).toBeVisible()
-  const title = key.startsWith('PROD-') ? 'Products' : 'Articles'
-  await page.locator('nav.tabs').getByRole('button', { name: new RegExp(`^${title}`) }).click()
-  const pane = paneWithTab(page, title)
-  await pane.getByTestId('quick-filter').fill(key)
-  const row = pane.getByTestId('object-row').filter({ hasText: key }).first()
-  await expect(row).toBeVisible()
-  await row.click()
+  await page.keyboard.press('Control+K')
+  const palette = page.getByTestId('palette-input')
+  await palette.fill(key)
+  await expect(page.getByRole('option').first()).toContainText(key)
+  await expect(palette).toHaveAttribute('data-palette-active', /^\d+$/)
+  await page.keyboard.press('Enter')
   await expect(page.getByTestId('object-detail')).toBeVisible()
   await expect(page.getByTestId('object-detail')).toContainText(key)
 }
