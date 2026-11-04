@@ -30,6 +30,7 @@ import { searchDocuments, structureCaption } from './graph-scene'
 import { copy, uiLanguage } from './i18n'
 import { registerCommandRunner } from './command-registry'
 import { typeNames } from './type-labels'
+import { writeErrorMessage } from './write-error'
 
 type SelectionSession = {
   group: string | null
@@ -68,6 +69,7 @@ export function NewSelectionDialog({ session }: { session: SelectionSession }) {
   const [typeKey, setTypeKey] = useState(workspaceType)
   const [query, setQuery] = useState('')
   const [editing, setEditing] = useState<Json | null>(null)
+  const [error, setError] = useState('')
   const queryClient = useQueryClient()
 
   useEffect(() => {
@@ -82,6 +84,7 @@ export function NewSelectionDialog({ session }: { session: SelectionSession }) {
       setKind(draft.kind === 'dynamic' ? 'dynamic' : 'manual')
       setQuery(draft.query ?? '')
       setTypeKey(draft.type || workspaceType || firstType)
+      setError('')
       setOpen(true)
     }
     const onEdit = (event: Event) => {
@@ -92,6 +95,7 @@ export function NewSelectionDialog({ session }: { session: SelectionSession }) {
       setKind(selectionKind(item.kind))
       setQuery(selectionFilterText(item.query))
       setTypeKey(String(item.type ?? item.type_id ?? (workspaceType || firstType)))
+      setError('')
       setOpen(true)
     }
     window.addEventListener(NEW_SELECTION_EVENT, onOpen)
@@ -107,9 +111,10 @@ export function NewSelectionDialog({ session }: { session: SelectionSession }) {
     const chosen = typeKey || workspaceType
     if (!title || !chosen) return
     if (kind === 'dynamic' && !query.trim()) {
-      session.push(copy.filterQueryRequired)
+      setError(copy.filterQueryRequired)
       return
     }
+    setError('')
     const manual = (editing?.query as Json | undefined) ?? manualSelectionQuery(session)
     const body = {
       ...(editing ? { id: String(editing.id) } : {}),
@@ -125,12 +130,14 @@ export function NewSelectionDialog({ session }: { session: SelectionSession }) {
         await api.post('/v1/assortments', { body })
       }
       session.push(copy.saved)
+      setError('')
       setOpen(false)
       setEditing(null)
       setName('')
       void queryClient.invalidateQueries({ queryKey: ['assortments'] })
     } catch (reason) {
-      session.push(reason instanceof Error ? reason.message : copy.validation)
+      const message = writeErrorMessage(reason)
+      if (message) setError(message)
     }
   }
 
@@ -203,6 +210,7 @@ export function NewSelectionDialog({ session }: { session: SelectionSession }) {
               <small>{copy.filterQueryHint}</small>
             </label>
           ) : null}
+          {error ? <p className="error" data-testid="selection-error">{error}</p> : null}
           <div className="dialog-actions">
             <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
               {copy.cancel}
@@ -218,6 +226,7 @@ export function NewSelectionDialog({ session }: { session: SelectionSession }) {
 export function DeleteSelectionDialog({ session }: { session: SelectionSession }) {
   const [item, setItem] = useState<Json | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [error, setError] = useState('')
   const queryClient = useQueryClient()
   const id = String(item?.id ?? '')
   const usage = useQuery({
@@ -230,7 +239,10 @@ export function DeleteSelectionDialog({ session }: { session: SelectionSession }
   useEffect(() => {
     const onDelete = (event: Event) => {
       const next = (event as CustomEvent<Json>).detail
-      if (next) setItem(next)
+      if (next) {
+        setError('')
+        setItem(next)
+      }
     }
     window.addEventListener(DELETE_SELECTION_EVENT, onDelete)
     return () => window.removeEventListener(DELETE_SELECTION_EVENT, onDelete)
@@ -242,12 +254,14 @@ export function DeleteSelectionDialog({ session }: { session: SelectionSession }
     try {
       await api.delete('/v1/assortments/{id}', { params: { path: { id } } })
       session.push(copy.selectionDeleted)
+      setError('')
       setItem(null)
       void queryClient.invalidateQueries({ queryKey: ['assortments'] })
       void queryClient.invalidateQueries({ queryKey: ['workspace'] })
       void queryClient.invalidateQueries({ queryKey: ['workspaces'] })
     } catch (reason) {
-      session.push(reason instanceof Error ? reason.message : copy.validation)
+      const message = writeErrorMessage(reason)
+      if (message) setError(message)
     } finally {
       setDeleting(false)
     }
@@ -277,6 +291,7 @@ export function DeleteSelectionDialog({ session }: { session: SelectionSession }
             )}
           </div>
         )}
+        {error ? <p className="error" data-testid="delete-selection-error">{error}</p> : null}
         <div className="dialog-actions">
           <Button type="button" variant="ghost" onClick={() => setItem(null)}>
             {copy.cancel}

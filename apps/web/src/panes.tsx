@@ -2,7 +2,8 @@ import { useMemo, useEffect, useLayoutEffect, useRef, useState, useSyncExternalS
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { History as HistoryIcon } from 'lucide-react'
-import { ApiError, api, catalogName, failureLines, freeObject, jsonRecord, recordNumber, recordTitle, searchQuery, textValue, type Json } from './api'
+import { api, catalogName, failureLines, freeObject, jsonRecord, recordNumber, recordTitle, searchQuery, textValue, type Json } from './api'
+import { reportWriteError, writeErrorMessage } from './write-error'
 import { catalogKeyOf, inCatalog, workspaceCatalogRef } from './catalog-scope'
 import { useCatalogIdToKey } from './catalog-list'
 import { newObjectBody } from './new-object'
@@ -261,7 +262,9 @@ export function ObjectTable({
           pane: view.pane ?? 'center',
           position: view.position ?? 0,
           state,
-        } })
+        } }).catch((reason: unknown) => {
+          reportWriteError(reason)
+        })
     }, 400)
     return () => clearTimeout(timer)
   }, [filter, sort, groupBy, sizes, view, workspace])
@@ -719,7 +722,7 @@ export function ObjectTable({
         session.push(copy.exportReady)
       })
       .catch((error: unknown) => {
-        session.push(error instanceof Error ? error.message : copy.exportFailed)
+        reportWriteError(error)
       })
   }
   const mass = useMutation({
@@ -737,6 +740,9 @@ export function ObjectTable({
       const id = String(jsonRecord(result)?.id ?? '')
       session.setProposalId(id)
       session.push(`${copy.proposals} ${id}`)
+    },
+    onError: (reason: unknown) => {
+      reportWriteError(reason)
     },
   })
 
@@ -1185,8 +1191,7 @@ export function ObjectTable({
         void queryClient.invalidateQueries({ queryKey: ['path-values'] })
       })
       .catch((reason: unknown) => {
-        const message = reason instanceof ApiError ? reason.message : copy.validation
-        session.push(message)
+        reportWriteError(reason)
       })
   }
 
@@ -1845,6 +1850,7 @@ function MoveToGroup({
     })),
   )
   const [choice, setChoice] = useState(choices[0] ? `${choices[0].structure}:${choices[0].group}` : '')
+  const [error, setError] = useState('')
   return (
     <form
       className="menu"
@@ -1855,6 +1861,7 @@ function MoveToGroup({
         event.preventDefault()
         const [structure, group] = choice.split(':')
         if (!structure) return
+        setError('')
         void api.get('/v1/objects/{id}', { params: { path: { id: id } } })
           .then((object) =>
             api.post('/v1/operations/{name}', { params: { path: { name: "move_to_group" } }, body: {
@@ -1865,7 +1872,10 @@ function MoveToGroup({
               } }),
           )
           .then(() => onMoved())
-          .catch(() => onClose())
+          .catch((reason: unknown) => {
+            const message = writeErrorMessage(reason)
+            if (message) setError(message)
+          })
       }}
       onKeyDown={(event) => {
         if (event.key === 'Escape') {
@@ -1882,6 +1892,7 @@ function MoveToGroup({
           ))}
         </select>
       </label>
+      {error ? <p className="error" data-testid="move-to-group-error">{error}</p> : null}
       <button type="submit">{copy.save}</button>
     </form>
   )
@@ -2149,7 +2160,10 @@ function NewObject({
             void queryClient.invalidateQueries({ queryKey: ['objects'] })
             void queryClient.invalidateQueries({ queryKey: ['path-values'] })
           })
-          .catch((reason: unknown) => setError(reason instanceof ApiError ? reason.message : copy.validation))
+          .catch((reason: unknown) => {
+            const message = writeErrorMessage(reason)
+            if (message) setError(message)
+          })
       }}
     >
       <input data-testid="new-number" value={number} onChange={(event) => setNumber(event.target.value)} placeholder={copy.numberPlaceholder} />
@@ -2286,7 +2300,10 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
         void queryClient.invalidateQueries({ queryKey: ['objects'] })
             void queryClient.invalidateQueries({ queryKey: ['path-values'] })
       })
-      .catch((reason: unknown) => setError(reason instanceof ApiError ? reason.message : copy.validation))
+      .catch((reason: unknown) => {
+        const message = writeErrorMessage(reason)
+        if (message) setError(message)
+      })
   }
   const status = textValue(values.status)
   const number = recordNumber(values)
@@ -2758,7 +2775,7 @@ export function HistoryView({ session }: { session: PanesSession }) {
       session.push(copy.proposed)
     },
     onError: (reason: unknown) => {
-      session.push(reason instanceof Error ? reason.message : copy.validation)
+      reportWriteError(reason)
     },
   })
   const seqs = rows.map((row) => Number(row.seq)).sort((left, right) => left - right)

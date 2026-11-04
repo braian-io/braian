@@ -8,6 +8,7 @@ import { copy } from './i18n'
 import { attributeKey } from './model-view'
 import { onDraftChange, requestReview, setModelFocus, stageModel } from './model-stage'
 import { registerCommandRunner } from './command-registry'
+import { writeErrorMessage } from './write-error'
 import {
   StandardEditableTable,
   type EditRequest,
@@ -78,8 +79,11 @@ export function AttributeDefinitions() {
     try {
       await stageModel(name, args)
       void queryClient.invalidateQueries({ queryKey: ['model-draft'] })
+      return true
     } catch (reason) {
-      setMessage(reason instanceof Error ? reason.message : copy.validation)
+      const message = writeErrorMessage(reason)
+      if (message) setMessage(message)
+      return false
     }
   }
 
@@ -300,16 +304,19 @@ export function AttributeDefinitions() {
             if (isNew) {
               const key = row.key.trim() || attributeKey(row.label)
               if (!key || !row.label.trim()) continue
-              await stage('model.create_attribute', { key, label: row.label.trim(), kind: row.kind })
+              const created = await stage('model.create_attribute', { key, label: row.label.trim(), kind: row.kind })
+              if (!created) return
               continue
             }
             const original = rows.find((item) => item.id === row.id)
             if (!original) continue
             if (row.label.trim() && row.label !== original.label) {
-              await stage('model.rename_attribute', { attribute: original.key, label: row.label.trim() })
+              const renamed = await stage('model.rename_attribute', { attribute: original.key, label: row.label.trim() })
+              if (!renamed) return
             }
             if (!row.standard && row.key.trim() && row.key !== original.key) {
-              await stage('model.rename_attribute_key', { key: original.key, new_key: row.key.trim() })
+              const renamed = await stage('model.rename_attribute_key', { key: original.key, new_key: row.key.trim() })
+              if (!renamed) return
             }
           }
           setDraftRows({})
@@ -321,12 +328,16 @@ export function AttributeDefinitions() {
         <PlacePicker
           mode={dialog.kind}
           defs={defs}
+          error={message}
           onClose={() => setDialog(null)}
           onPick={(place) => {
             const attribute = dialog.attribute
-            setDialog(null)
-            if (place.kind === 'type') void stage('model.attach_attribute', { attribute, type: place.key })
-            else void stage('model.attach_attribute', { attribute, structure: place.structure, group: place.key })
+            const run = place.kind === 'type'
+              ? stage('model.attach_attribute', { attribute, type: place.key })
+              : stage('model.attach_attribute', { attribute, structure: place.structure, group: place.key })
+            void run.then((ok) => {
+              if (ok) setDialog(null)
+            })
           }}
         />
       ) : null}
@@ -337,11 +348,13 @@ export function AttributeDefinitions() {
 function PlacePicker({
   mode,
   defs,
+  error,
   onClose,
   onPick,
 }: {
   mode: 'type' | 'group'
   defs: Json | undefined
+  error: string
   onClose: () => void
   onPick: (place: { kind: 'type'; key: string } | { kind: 'group'; structure: string; key: string }) => void
 }) {
@@ -429,6 +442,7 @@ function PlacePicker({
             </button>
           ))}
         </div>
+        {error ? <p className="error">{error}</p> : null}
         <button type="button" onClick={onClose}>{copy.cancel}</button>
       </div>
     </div>

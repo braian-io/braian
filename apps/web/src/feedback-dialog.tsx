@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { ApiError, api } from './api'
+import { api } from './api'
+import { writeErrorMessage } from './write-error'
 import { Checkbox } from './components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
 import {
@@ -77,7 +78,7 @@ export function FeedbackDialog({
         toast.success('Feedback sent')
         onClose()
       } catch (reason: unknown) {
-        const detail = reason instanceof ApiError ? reason.message : 'Could not send feedback'
+        const detail = writeErrorMessage(reason) ?? 'Could not send feedback'
         setError(detail)
       } finally {
         setBusy(false)

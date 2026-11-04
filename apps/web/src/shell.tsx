@@ -27,6 +27,7 @@ import { dropReparents, groupKeyFromLabel } from './group-tree'
 import { publishProposal } from './proposal-bus'
 import { formatCount, formatTimestamp } from './format'
 import { toast } from 'sonner'
+import { reportWriteError, writeErrorMessage } from './write-error'
 import {
   clearQueuedOpenTypeView,
   peekQueuedOpenTypeView,
@@ -227,6 +228,7 @@ export function Shell() {
   const [help, setHelp] = useState(false)
   const [tabMenu, setTabMenu] = useState<{ x: number; y: number; id: string } | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string } | null>(null)
+  const [deleteError, setDeleteError] = useState('')
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [doc, setDoc] = useState<LayoutDoc | null>(null)
   // Gate dock paint while a dangling/incomplete Data model layout is healed in one pass.
@@ -370,7 +372,8 @@ export function Shell() {
       for (const type of missing) {
         try {
           await createWorkspaceFromTemplate(typeWorkspaceTemplate(type), { shareToken: typeShareToken(type.key) })
-        } catch {
+        } catch (reason) {
+          reportWriteError(reason)
           ensuredTypes.current.delete(type.key)
         }
       }
@@ -608,7 +611,9 @@ export function Shell() {
               position: found.position ?? 0,
               state,
             },
-          }).then(() => queryClient.invalidateQueries({ queryKey: ['workspace', surfaceNow.id] }))
+          }).then(() => queryClient.invalidateQueries({ queryKey: ['workspace', surfaceNow.id] })).catch((reason: unknown) => {
+            reportWriteError(reason)
+          })
           return
         }
         void api.post('/v1/workspaces', {
@@ -625,7 +630,11 @@ export function Shell() {
           void queryClient.invalidateQueries({ queryKey: ['workspaces'] })
           void queryClient.invalidateQueries({ queryKey: ['objects'] })
           void queryClient.invalidateQueries({ queryKey: ['definitions'] })
+        }).catch((reason: unknown) => {
+          reportWriteError(reason)
         })
+      }).catch((reason: unknown) => {
+        reportWriteError(reason)
       })
     }
     window.addEventListener('braian-set-catalog', onSet)
@@ -699,7 +708,11 @@ export function Shell() {
         setDoc(next)
         writeLayoutStore(key, next)
       })
-      .catch(() => undefined)
+      .catch((reason: unknown) => {
+        // A missing personal layout is a 200 with a null document. Anything else
+        // leaves the local copy on screen, and the user still needs the reason.
+        reportWriteError(reason)
+      })
     return () => {
       cancelled = true
     }
@@ -717,6 +730,8 @@ export function Shell() {
         body: { environment: LAYOUT_ENVIRONMENT, document: freeObject(current) },
       }).then(() => {
         if (saveGen.current === gen) dirtyRef.current = false
+      }).catch((reason: unknown) => {
+        reportWriteError(reason)
       })
       if (!editsArePersonal(ws)) {
         void api.post('/v1/workspaces', { body: {
@@ -727,6 +742,8 @@ export function Shell() {
             layout: current.layout,
           } }).then(() => {
           canonicalRef.current = current.layout
+        }).catch((reason: unknown) => {
+          reportWriteError(reason)
         })
       }
     }, 700)
@@ -873,6 +890,7 @@ export function Shell() {
       const docNow = docRef.current
       if (!key || !surfaceNow || !docNow) return
       void (async () => {
+        try {
         let views: View[] = viewRows(surfaceNow.views)
         let found = views.find((view) => view.type === 'value_list_values')
         const title = copy.valueListValues
@@ -931,6 +949,9 @@ export function Shell() {
         })
         placeOverride.current = undefined
         if (result.handled && result.doc !== current) commitDoc(result.doc)
+        } catch (reason) {
+          reportWriteError(reason)
+        }
       })()
     }
     window.addEventListener('braian-open-value-list', openList)
@@ -1065,6 +1086,8 @@ export function Shell() {
             void api.put('/v1/workspaces/{id}/state', {
               params: { path: { id: current.id } },
               body: { environment: LAYOUT_ENVIRONMENT, document: freeObject(next) },
+            }).catch((reason: unknown) => {
+              reportWriteError(reason)
             })
           }
         }
@@ -1073,8 +1096,9 @@ export function Shell() {
         await queryClient.invalidateQueries({ queryKey: ['workspace', current.id] })
         await queryClient.invalidateQueries({ queryKey: ['workspaces'] })
       })
-      .catch(() => {
-        // Allow a later open/reload to retry; never surface as an unhandled page error.
+      .catch((reason: unknown) => {
+        reportWriteError(reason)
+        // Allow a later open/reload to retry. Roll the painted layout back to canonical.
         migratedRef.current.delete(current.id)
         healPendingFor.current = null
         setLayoutHealPending(false)
@@ -1119,6 +1143,7 @@ export function Shell() {
       push(item.locked ? copy.deleteWorkspaceLocked : copy.deleteWorkspaceLast)
       return
     }
+    setDeleteError('')
     setDeleteConfirm({ id: item.id, name: item.name })
   }
   requestDeleteActiveRef.current = requestDeleteActive
@@ -1132,6 +1157,7 @@ export function Shell() {
         ?? ordered.find((item) => item.id !== id)?.id
         ?? null
     setDeleteBusy(true)
+    setDeleteError('')
     try {
       await api.delete('/v1/workspaces/{id}', { params: { path: { id } } })
       await queryClient.invalidateQueries({ queryKey: ['workspaces'] })
@@ -1140,10 +1166,13 @@ export function Shell() {
         if (neighbor) setWorkspaceId(neighbor)
       }
       push(copy.deleteWorkspace)
-    } finally {
-      setDeleteBusy(false)
       setDeleteConfirm(null)
       setTabMenu(null)
+    } catch (reason) {
+      const message = writeErrorMessage(reason)
+      if (message) setDeleteError(message)
+    } finally {
+      setDeleteBusy(false)
     }
   }
 
@@ -1168,6 +1197,9 @@ export function Shell() {
     void queryClient.cancelQueries({ queryKey: ['me'] })
     void api.post('/v1/logout').then(() => {
       queryClient.setQueryData(['me'], undefined)
+    }).catch((reason: unknown) => {
+      setSignedOut(false)
+      reportWriteError(reason)
     })
   }
   signOutRef.current = signOut
@@ -1232,6 +1264,7 @@ export function Shell() {
   }
 
   applyViewTypeSourceRef.current = async (typeToken: string, viewId?: string) => {
+    try {
     const surfaceNow = workspaceRef.current
     if (!surfaceNow || surfaceNow.locked) return
     const types = typeNames(queryClient.getQueryData<Json>(['definitions']))
@@ -1267,9 +1300,13 @@ export function Shell() {
     }
     workspaceRef.current = nextSurface
     queryClient.setQueryData(['workspace', surfaceNow.id], nextSurface)
+    } catch (reason) {
+      reportWriteError(reason)
+    }
   }
 
   applyViewPeerSourceRef.current = async (peerViewId: string, viewId?: string, linkType?: string) => {
+    try {
     const surfaceNow = workspaceRef.current
     if (!surfaceNow || surfaceNow.locked) return
     const defs = queryClient.getQueryData<Json>(['definitions'])
@@ -1315,6 +1352,9 @@ export function Shell() {
     }
     workspaceRef.current = nextSurface
     queryClient.setQueryData(['workspace', surfaceNow.id], nextSurface)
+    } catch (reason) {
+      reportWriteError(reason)
+    }
   }
 
   openTypeViewRef.current = (typeId: string) => {
@@ -1330,6 +1370,7 @@ export function Shell() {
     const type = typeNames(queryClient.getQueryData<Json>(['definitions'])).find((item) => item.id === typeId)
     if (!type || type.kind === 'link') return
     void (async () => {
+      try {
       let views: View[] = viewRows(surfaceNow.views)
       let found = views.find((view) => view.type === 'object_table' && (String(view.state.object_type ?? '') === type.id || String(view.state.type_key ?? '') === type.key))
       if (!found) {
@@ -1372,6 +1413,9 @@ export function Shell() {
         place: placeOverride.current,
       })
       if (result.handled && result.doc !== current) commitDoc(result.doc)
+      } catch (reason) {
+        reportWriteError(reason)
+      }
     })()
   }
 
@@ -1387,6 +1431,8 @@ export function Shell() {
       void queryClient.invalidateQueries({ queryKey: ['workspaces'] })
       void queryClient.invalidateQueries({ queryKey: ['workspace', item.id] })
       push(item.locked ? copy.unlockWorkspace : copy.lockWorkspace)
+    }).catch((reason: unknown) => {
+      reportWriteError(reason)
     })
     setTabMenu(null)
   }
@@ -1553,6 +1599,7 @@ export function Shell() {
                 title={deleteTitle}
                 onClick={() => {
                   setTabMenu(null)
+                  setDeleteError('')
                   setDeleteConfirm({ id: item.id, name: item.name })
                 }}
               >
@@ -1569,6 +1616,7 @@ export function Shell() {
             <DialogTitle>{copy.deleteWorkspace}</DialogTitle>
             <DialogDescription>{copy.deleteWorkspaceConfirm}</DialogDescription>
             <p>{workspaceDisplayName(deleteConfirm.name, workspaces.data?.workspaces.find((w) => w.id === deleteConfirm.id)?.share_token)}</p>
+            {deleteError ? <p className="error" data-testid="workspace-delete-error">{deleteError}</p> : null}
             <div className="dialog-actions">
               <button type="button" disabled={deleteBusy} onClick={() => setDeleteConfirm(null)}>{copy.cancel}</button>
               <button
@@ -1603,7 +1651,9 @@ function Login({ onDone }: { onDone: () => void }) {
           event.preventDefault()
           void api.post('/v1/login', { body: { email, password } })
             .then(onDone)
-            .catch(() => setError(copy.loginFailed))
+            .catch((reason: unknown) => {
+              setError(writeErrorMessage(reason) ?? copy.loginFailed)
+            })
         }}
       >
         <div className="brand">
@@ -1785,9 +1835,9 @@ export function StructureTree({ session, view }: { session: Session; view: View 
   }
   const propose = async (name: string, args: Json) => {
     setMenu(null)
-    setEditing(null)
     try {
       const result = await stageModel(name, args)
+      setEditing(null)
       const id = operationId(result)
       if (id && name.includes('delete')) {
         publishProposal(id)
@@ -1797,7 +1847,7 @@ export function StructureTree({ session, view }: { session: Session; view: View 
         session.push(`${copy.unsavedChanges}`)
       }
     } catch (reason) {
-      session.push(reason instanceof Error ? reason.message : copy.validation)
+      reportWriteError(reason)
     }
   }
   const startEdit = (row: TreeEntry, mode: 'rename' | 'child' | 'sibling' | 'key') => {
@@ -1815,20 +1865,32 @@ export function StructureTree({ session, view }: { session: Session; view: View 
     if (!editing) return
     const { row, mode } = editing
     const typed = (typedRaw ?? editing.value).trim()
-    setEditing(null)
-    if (!typed) return
+    if (!typed) {
+      setEditing(null)
+      return
+    }
+    if (typedRaw != null) setEditing({ ...editing, value: typedRaw })
     if (mode === 'rename') {
-      if (typed === structureCaption(row.key, defs.data, row.structureKey) || typed === row.key) return
+      if (typed === structureCaption(row.key, defs.data, row.structureKey) || typed === row.key) {
+        setEditing(null)
+        return
+      }
       void propose('model.rename_group', { structure: row.structureKey, group: row.key, label: typed })
       return
     }
     if (mode === 'key') {
-      if (typed === row.key) return
+      if (typed === row.key) {
+        setEditing(null)
+        return
+      }
       void propose('model.rename_group_key', { structure: row.structureKey, group: row.key, new_key: typed })
       return
     }
     const name = groupKeyFromLabel(typed)
-    if (!name) return
+    if (!name) {
+      setEditing(null)
+      return
+    }
     const parent = mode === 'child' ? row.key : row.parentKey
     void propose('model.create_group', {
       structure: row.structureKey,

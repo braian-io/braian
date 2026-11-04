@@ -141,7 +141,7 @@ export function del<Path extends PathsWith<'delete'>, Init extends MaybeOptional
   return settle(client.DELETE<Path, Init>(path, ...init))
 }
 
-/** Fire-and-forget JSON PUT that survives tab close. */
+/** Fire-and-forget JSON PUT that survives tab close. A failed response is toasted. */
 export function keepaliveJsonPut(path: string, body: unknown): void {
   void fetch(path, {
     method: 'PUT',
@@ -149,6 +149,24 @@ export function keepaliveJsonPut(path: string, body: unknown): void {
     keepalive: true,
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
+  }).then(async (response) => {
+    if (response.ok) return
+    let parsed: unknown = null
+    const text = await response.text()
+    if (text) {
+      try {
+        parsed = JSON.parse(text) as unknown
+      } catch {
+        parsed = null
+      }
+    }
+    const { messageFromErrorBody, reportWriteError } = await import('../write-error')
+    const detail = messageFromErrorBody(parsed) || response.statusText || text
+    reportWriteError(new ApiError(response.status, detail, parsed))
+  }).catch((reason: unknown) => {
+    void import('../write-error').then(({ reportWriteError }) => {
+      reportWriteError(reason)
+    })
   })
 }
 

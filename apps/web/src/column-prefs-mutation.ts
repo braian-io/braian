@@ -16,6 +16,7 @@ import {
   type ColumnPrefsResponse,
 } from './column-prefs'
 import { LAYOUT_ENVIRONMENT } from './workspace-doc'
+import { reportWriteError } from './write-error'
 
 export function columnPrefsQueryKey(viewId: string) {
   return ['column-prefs', viewId] as const
@@ -68,10 +69,11 @@ export function columnPrefsMutationOptions(
       })
       return { previous }
     },
-    onError: (_error, _vars, context) => {
+    onError: (error, _vars, context) => {
       if (context?.previous !== undefined) {
         queryClient.setQueryData(queryKey, context.previous)
       }
+      reportWriteError(error)
     },
     onSettled: () => {
       // Only refetch when no other save for this view is still in flight.

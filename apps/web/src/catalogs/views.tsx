@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCatalogsQuery } from '../catalog-list'
 import { useState } from 'react'
 import { copy } from '../i18n'
+import { ApiError } from '../api'
+import { messageFromErrorBody, writeErrorMessage } from '../write-error'
 
 type CatalogRow = { key: string; name: string; kind: string; editable?: boolean }
 type ProfileRow = { key: string; name: string; mode: string; revision?: number; spec?: Spec; source_catalog_id?: string }
@@ -34,8 +36,24 @@ async function sendJson(path: string, body: unknown) {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   })
-  if (!response.ok) throw new Error(await response.text())
+  if (!response.ok) {
+    const text = await response.text()
+    let parsed: unknown = null
+    if (text) {
+      try {
+        parsed = JSON.parse(text) as unknown
+      } catch {
+        parsed = null
+      }
+    }
+    const detail = messageFromErrorBody(parsed) || response.statusText || text || `HTTP ${response.status}`
+    throw new ApiError(response.status, detail, parsed)
+  }
   return response.json()
+}
+
+function failedWrite(reason: unknown, fallback: string) {
+  return writeErrorMessage(reason) ?? fallback
 }
 
 export function CatalogsView() {
@@ -53,15 +71,15 @@ export function CatalogsView() {
       setError('')
       void queryClient.invalidateQueries({ queryKey: ['catalogs'] })
     },
-    onError: (reason: Error) => setError(reason.message),
+    onError: (reason: unknown) => setError(failedWrite(reason, 'Could not create the catalog')),
   })
   const infer = useMutation({
     mutationFn: (catalog: string) => sendJson(`/v1/catalogs/${catalog}/infer`, { headers: [] }),
-    onError: (reason: Error) => setError(reason.message),
+    onError: (reason: unknown) => setError(failedWrite(reason, 'Could not infer the model')),
   })
   const cleanup = useMutation({
     mutationFn: (catalog: string) => sendJson(`/v1/catalogs/${catalog}/cleanup`, {}),
-    onError: (reason: Error) => setError(reason.message),
+    onError: (reason: unknown) => setError(failedWrite(reason, 'Could not clean up the catalog')),
   })
   return (
     <div className="catalog-admin" data-testid="catalogs-view">
@@ -139,7 +157,7 @@ export function MergeProfilesView() {
       setError('')
       void queryClient.invalidateQueries({ queryKey: ['merge-profiles'] })
     },
-    onError: (reason: Error) => setError(reason.message),
+    onError: (reason: unknown) => setError(failedWrite(reason, 'Could not save the profile')),
   })
   const run = useMutation({
     mutationFn: (dry: boolean) => sendJson(`/v1/merge/profiles/${draft.key}/run`, { dry_run: dry }),
@@ -147,7 +165,7 @@ export function MergeProfilesView() {
       setRows(body.rows ?? [])
       setError('')
     },
-    onError: (reason: Error) => setError(reason.message),
+    onError: (reason: unknown) => setError(failedWrite(reason, 'Could not run the profile')),
   })
   const maps = (draft.spec.attributes ?? []).map((row) => `${row.source}=${row.target}`).join('\n')
   return (
@@ -268,7 +286,7 @@ export function OwnershipView() {
   const save = useMutation({
     mutationFn: () => sendJson('/v1/merge/ownership', JSON.parse(shown)),
     onSuccess: () => setError(''),
-    onError: (reason: Error) => setError(reason.message),
+    onError: (reason: unknown) => setError(failedWrite(reason, 'Could not save the rules')),
   })
   return (
     <div className="catalog-admin" data-testid="ownership-view">
@@ -315,7 +333,7 @@ export function MergeRunsView() {
         ? sendJson('/v1/merge/links/remove', { profile: key, source_object_id: sourceId })
         : sendJson('/v1/merge/links', { profile: key, source_object_id: sourceId, master_object_id: masterId }),
     onSuccess: () => setError(''),
-    onError: (reason: Error) => setError(reason.message),
+    onError: (reason: unknown) => setError(failedWrite(reason, 'Could not update the link')),
   })
   return (
     <div className="catalog-admin" data-testid="merge-runs-view">

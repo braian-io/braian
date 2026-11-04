@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ApiError, api, type Json } from './api'
+import { api, type Json } from './api'
+import { writeErrorMessage } from './write-error'
 import { formatCount, formatTimestamp } from './format'
 import { copy } from './i18n'
 import { attributeKey } from './model-view'
@@ -42,8 +43,12 @@ export function ModelDraftHost() {
     }
     const discard = () => {
       void api.delete('/v1/model/draft').then(() => {
+        setError('')
         void queryClient.invalidateQueries({ queryKey: ['model-draft'] })
-      }).catch(() => undefined)
+      }).catch((reason: unknown) => {
+        const message = writeErrorMessage(reason)
+        if (message) setError(message)
+      })
     }
     const ask = (event: Event) => setDialog((event as CustomEvent<DialogKind>).detail)
     window.addEventListener('braian-review-save', open)
@@ -72,8 +77,12 @@ export function ModelDraftHost() {
             <button
               type="button"
               onClick={() => {
-                void api.post('/v1/model/draft/rebase').then(refresh).catch((reason: unknown) => {
-                  setError(reason instanceof ApiError ? reason.message : copy.validation)
+                void api.post('/v1/model/draft/rebase').then(() => {
+                  setError('')
+                  refresh()
+                }).catch((reason: unknown) => {
+                  const message = writeErrorMessage(reason)
+                  if (message) setError(message)
                 })
               }}
             >
@@ -131,7 +140,10 @@ function ReviewDialog({ body, onClose, onSaved }: { body: Json; onClose: () => v
     setBusy(true)
     void api.post('/v1/model/draft/save', { body: destructive ? { confirm_name: typed } : {} })
       .then(() => onSaved())
-      .catch((reason: unknown) => setError(reason instanceof ApiError ? reason.message : copy.validation))
+      .catch((reason: unknown) => {
+        const message = writeErrorMessage(reason)
+        if (message) setError(message)
+      })
       .finally(() => setBusy(false))
   }
   return (
@@ -241,7 +253,8 @@ function CreateDialog({ kind, onClose }: { kind: DialogKind; onClose: () => void
             })
           : stageModel('model.create_structure', { key, label: name })
     void work.then(() => onClose()).catch((reason: unknown) => {
-      setError(reason instanceof ApiError ? reason.message : copy.validation)
+      const message = writeErrorMessage(reason)
+      if (message) setError(message)
     })
   }
   return (
