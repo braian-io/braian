@@ -50,6 +50,8 @@ import { detectConfigFiles } from './config-drop'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
 import { installClientLog } from './feedback-log'
 import { prepareFeedbackCapture, type FeedbackCapture } from './feedback'
+import { AgentView } from './agent-view'
+import { agentRunPrompt, agentRunsForWorkspace, agentTabTitle, listAgentRuns, patchAgentRun, type AgentMessage } from './agent-runs'
 import { CommandPalette } from './palette'
 import { SharedContextMenuHost, prefersNativeContextMenu } from './shared-context-menu'
 import { StateNote } from './states'
@@ -148,6 +150,7 @@ type Session = {
   push: (line: string) => void
   openWorkspace: (id: string) => void
   openTypeView: (typeId: string) => void
+  workspaceId: string | null
 }
 
 function readStore<T>(key: string, fallback: T): T {
@@ -253,6 +256,8 @@ export function Shell() {
   const loadedFor = useRef('')
   const applyRef = useRef<(name: string, args: Record<string, unknown>) => void>(() => {})
   const openTypeViewRef = useRef<(typeId: string) => void>(() => {})
+  const openAgentRunRef = useRef<(run: { id: string; title: string; view_id?: string | null; messages?: AgentMessage[] }) => void>(() => {})
+  const restoredAgents = useRef<string | null>(null)
   const applyViewTypeSourceRef = useRef<(typeId: string, viewId?: string) => Promise<void>>(async () => undefined)
   const applyViewPeerSourceRef = useRef<(peerViewId: string, viewId?: string, linkType?: string) => Promise<void>>(async () => undefined)
   const migratedRef = useRef(new Set<string>())
@@ -639,6 +644,20 @@ export function Shell() {
   const userId = me.data?.user_id ?? ''
   const workspaceRef = useRef(workspace.data)
   workspaceRef.current = workspace.data
+
+  useEffect(() => {
+    const surface = workspace.data
+    if (!surface || !doc || !userId) return
+    if (restoredAgents.current === surface.id) return
+    restoredAgents.current = surface.id
+    void listAgentRuns()
+      .then((runs) => {
+        const { here, elsewhere } = agentRunsForWorkspace(runs, surface.id)
+        if (elsewhere.length > 0) toast.message(copy.agentOpenElsewhere)
+        for (const run of here) openAgentRunRef.current(run)
+      })
+      .catch((reason: unknown) => reportWriteError(reason))
+  }, [workspace.data, doc, userId])
 
   useEffect(() => {
     const onSet = (event: Event) => {
@@ -1191,6 +1210,7 @@ export function Shell() {
     push,
     openWorkspace: setWorkspaceId,
     openTypeView: (typeId) => openTypeViewRef.current(typeId),
+    workspaceId,
   }
 
   useProposalFocus(
@@ -1302,6 +1322,12 @@ export function Shell() {
       }
     }
     const place = name === 'open_view' || name === 'ui.open_view' || name === 'ui.place' ? placeOverride.current : undefined
+    if (name === 'close_view') {
+      const closing = typeof args.view === 'string' ? args.view : typeof args.id === 'string' ? args.id : current.focus
+      const closingView = viewRows(workspace.data.views).find((view) => view.id === closing)
+      const runId = closingView?.type === 'agent' ? String(closingView.state.run_id ?? '') : ''
+      if (runId) void patchAgentRun(runId, { tab_open: false }).catch((reason: unknown) => reportWriteError(reason))
+    }
     const result = applyLayoutCommand(current, name, nextArgs, {
       views: viewRows(workspace.data.views).map((view) => ({ id: view.id, title: view.title, type: view.type })),
       canonical: canonicalRef.current,
@@ -1428,6 +1454,64 @@ export function Shell() {
     } catch (reason) {
       reportWriteError(reason)
     }
+  }
+
+  openAgentRunRef.current = (run) => {
+    void (async () => {
+      const surfaceNow = workspaceRef.current
+      const docNow = docRef.current
+      if (!surfaceNow || !docNow) return
+      let views: View[] = viewRows(surfaceNow.views)
+      let found = views.find((view) => view.type === 'agent' && String(view.state.run_id ?? '') === run.id)
+      if (!found) {
+        const id = crypto.randomUUID()
+        const prompt = agentRunPrompt(run)
+        const title = agentTabTitle(prompt) || copy.agent
+        found = {
+          id,
+          type: 'agent',
+          title,
+          pane: 'center',
+          position: views.length,
+          state: freeObject({ run_id: run.id, prompt }),
+        }
+        await api.post('/v1/views', {
+          body: {
+            id,
+            workspace_id: surfaceNow.id,
+            type: found.type,
+            title: found.title,
+            pane: 'center',
+            position: views.length,
+            state: freeObject(found.state),
+          },
+        })
+        views = [...views, found]
+        const nextSurface = {
+          ...surfaceNow,
+          views: views.map((view) => ({
+            ...view,
+            pane: view.pane ?? 'center',
+            position: view.position ?? 0,
+            state: freeObject(view.state),
+          })),
+        }
+        workspaceRef.current = nextSurface
+        queryClient.setQueryData(['workspace', surfaceNow.id], nextSurface)
+      }
+      if (found.id !== run.view_id) {
+        void patchAgentRun(run.id, { view_id: found.id }).catch((reason: unknown) => reportWriteError(reason))
+      }
+      const current = docRef.current
+      if (!current) return
+      if (layoutViews(current.layout).includes(found.id)) return
+      const result = applyLayoutCommand(current, 'ui.open_view', { id: found.id, zone: 'center' }, {
+        views: views.map((view) => ({ id: view.id, title: view.title, type: view.type })),
+        canonical: canonicalRef.current,
+        place: placeOverride.current,
+      })
+      if (result.handled && result.doc !== current) commitDoc(result.doc)
+    })().catch((reason: unknown) => reportWriteError(reason))
   }
 
   openTypeViewRef.current = (typeId: string) => {
@@ -1559,7 +1643,15 @@ export function Shell() {
         {doc && surface && !layoutHealPending ? (
           <WorkspaceDock
             doc={doc}
-            views={viewRows(surface.views).map((view) => ({ ...view, title: displayViewTitle(view, typeCatalog, openTypeKey), sourceLabel: viewSourceLabel(view, typeCatalog, workspaceCatalogRef(surface), catalogNamesById, peerLabelFor(view)) }))}
+            views={viewRows(surface.views).map((view) => {
+              const prompt = view.type === 'agent' ? String(view.state?.prompt ?? view.title) : undefined
+              return {
+                ...view,
+                title: prompt ? agentTabTitle(prompt) : displayViewTitle(view, typeCatalog, openTypeKey),
+                prompt,
+                sourceLabel: viewSourceLabel(view, typeCatalog, workspaceCatalogRef(surface), catalogNamesById, peerLabelFor(view)),
+              }
+            })}
             onChange={commitDoc}
             renderView={(item) => {
               const full = viewRows(surface.views).find((view) => view.id === item.id)
@@ -1617,6 +1709,7 @@ export function Shell() {
           key={`${paletteMode}:${paletteEpoch}:${paletteStartAddView ? 'add-view' : paletteStartSelectSource ? 'select-source' : paletteStartNewFromTemplate ? 'new-template' : paletteStartSwitchCatalog ? 'switch-catalog' : 'root'}`}
           ai={paletteMode === 'ai'}
           session={session}
+          onAgentRun={(run) => openAgentRunRef.current(run)}
           workspaces={orderedWorkspaces}
           views={workspace.data?.views ?? []}
           workspaceReady={Boolean(workspace.data && doc)}
@@ -1766,6 +1859,7 @@ function ViewBody({ view, session, workspace }: { view: View; session: Session; 
   }
   if (view.type === 'data_model') return <DataModel view={view} />
   if (view.type === 'attribute_definitions') return <AttributeDefinitions />
+  if (view.type === 'agent') return <AgentView runId={String(view.state.run_id ?? '')} push={session.push} />
   if (view.type === 'proposal') return <ProposalView session={session} />
   if (view.type === 'proposal_list') return <ProposalListView session={session} />
   if (view.type === 'import_mappings') return <ImportMappingsView />

@@ -1424,7 +1424,8 @@ impl Store {
         let Some(row) = client
             .query_opt(
                 "SELECT p.id, p.title, p.source, p.status, p.conflict, p.actor, p.on_behalf_of, p.created_at,
-                        p.session_id, p.counters,
+                        p.session_id, p.counters, p.stale, p.stale_reason, p.agent_run_id, p.stale_at,
+                        p.resolved_at, p.reverted_at,
                         a.name AS actor_name, b.name AS behalf_name
                  FROM proposals p
                  LEFT JOIN principals a ON a.id = p.actor
@@ -1456,6 +1457,12 @@ impl Store {
             "created_at": row.get::<_, DateTime<Utc>>("created_at"),
             "session_id": row.get::<_, Option<Uuid>>("session_id"),
             "counters": row.get::<_, Option<Value>>("counters"),
+            "stale": row.get::<_, bool>("stale"),
+            "stale_reason": row.get::<_, Option<String>>("stale_reason"),
+            "agent_run_id": row.get::<_, Option<Uuid>>("agent_run_id"),
+            "stale_at": row.get::<_, Option<DateTime<Utc>>>("stale_at"),
+            "resolved_at": row.get::<_, Option<DateTime<Utc>>>("resolved_at"),
+            "reverted_at": row.get::<_, Option<DateTime<Utc>>>("reverted_at"),
         });
         let items = rows
             .iter()
@@ -1560,7 +1567,7 @@ impl Store {
         let updated = tx
             .execute(
                 "UPDATE proposals
-                 SET status = $2, claimed_by = NULL, claimed_until = NULL
+                 SET status = $2, claimed_by = NULL, claimed_until = NULL, resolved_at = now()
                  WHERE id = $1 AND claimed_by = $3",
                 &[&id, &status, &claim],
             )
@@ -1569,6 +1576,41 @@ impl Store {
             return Err(Error::ProposalClaimLost(id));
         }
         tx.commit().await?;
+        Ok(())
+    }
+
+    /// Records that a person undid an accept without reopening the proposal.
+    pub async fn mark_proposal_accept_reverted(&self, id: Uuid) -> Result<(), Error> {
+        let client = self.checkout().await?;
+        let row = client
+            .query_opt(
+                "SELECT status, reverted_at FROM proposals WHERE id = $1",
+                &[&id],
+            )
+            .await?;
+        let Some(row) = row else {
+            return Err(Error::ProposalNotFound(id));
+        };
+        if row.get::<_, Option<DateTime<Utc>>>(1).is_some() {
+            return Ok(());
+        }
+        let status: String = row.get(0);
+        if status != "accepted" {
+            return Err(Error::ProposalTransition {
+                id,
+                from: status,
+                to: "reverted".into(),
+            });
+        }
+        let updated = client
+            .execute(
+                "UPDATE proposals SET reverted_at = now() WHERE id = $1 AND status = 'accepted'",
+                &[&id],
+            )
+            .await?;
+        if updated != 1 {
+            return Err(Error::ProposalNotFound(id));
+        }
         Ok(())
     }
 

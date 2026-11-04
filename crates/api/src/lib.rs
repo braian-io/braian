@@ -6,6 +6,7 @@
 //! Definitions can be written one entity at a time or imported as a whole set.
 //! Objects are created, patched, read and deleted with validation always on.
 
+mod agent_runs;
 mod attribute_catalog;
 mod auth;
 mod bulk_gate;
@@ -188,6 +189,7 @@ fn build_router(state: AppState) -> axum::Router {
         .merge(model_draft::routes())
         .merge(feedback::routes())
         .merge(platform::routes())
+        .merge(agent_runs::routes())
         .merge(import::routes())
         .layer(DefaultBodyLimit::max(BODY_LIMIT));
     let upload = axum::Router::new()

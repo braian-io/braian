@@ -341,6 +341,7 @@ pub async fn batch_get(
         (status = 200, description = "Updated object", body = ObjectResponse),
         (status = 202, description = "Filed as a suggestion. An agent or import does not save.", body = Suggestion),
         (status = 409, description = "Conflict", body = crate::problem::Problem),
+        (status = 412, description = "If-Match does not match the stored version", body = crate::problem::Problem),
         (status = 422, description = "Validation failed", body = crate::problem::Problem),
         (status = 428, description = "If-Match is required", body = crate::problem::Problem)
     ),
@@ -410,6 +411,8 @@ pub async fn patch_object(
                     receipt.last_seq,
                     &type_key(&cached.defs, stored.object.type_id),
                 );
+                crate::agent_runs::note_object_edited(&state, &identity, id, &body.values, None)
+                    .await;
                 return Ok(object_response(
                     &state,
                     &cached,
@@ -426,7 +429,15 @@ pub async fn patch_object(
                 current_version,
                 conflicts,
             }) => {
-                return Err(conflict_problem(&state, &cached, current_version, conflicts).await);
+                let mut problem =
+                    conflict_problem(&state, &cached, current_version, conflicts).await;
+                // If-Match failed: the caller named a version that is no longer current.
+                problem.status = StatusCode::PRECONDITION_FAILED.as_u16();
+                problem.title = StatusCode::PRECONDITION_FAILED
+                    .canonical_reason()
+                    .unwrap_or("Precondition Failed")
+                    .to_owned();
+                return Err(problem);
             }
             Err(error) => return Err(store_status(error)),
         }
