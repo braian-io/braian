@@ -8,9 +8,10 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: 'btn-accent',
-        raised: 'btn-raised',
+        default: 'btn-raised',
+        primary: 'btn-accent',
         ghost: 'btn-ghost',
+        icon: 'btn-ghost',
         danger: 'btn-danger',
       },
       size: {
@@ -18,6 +19,7 @@ const buttonVariants = cva(
         icon: 'size-7',
       },
     },
+    compoundVariants: [{ variant: 'icon', size: 'default', class: 'size-7 px-0' }],
     defaultVariants: { variant: 'default', size: 'default' },
   },
 )

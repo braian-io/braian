@@ -7,6 +7,7 @@ import { ApiError, api, operationId, textValue, type Json } from './api'
 import { reportWriteError } from './write-error'
 import { streamAgent, type AgentEvent } from './agent-stream'
 import { renderAgentAnswer } from './agent-answer'
+import { Button } from './components/ui/button'
 import { Command, CommandInput, CommandItem, CommandList } from './components/ui/command'
 import { Kbd } from './components/ui/kbd'
 import { dynamicSelectionFilter, emitSavedSelection, requestDeleteSelection, requestEditSelection, requestNewSelection, selectionMatchesType } from './assortment-filter'
@@ -1352,7 +1353,7 @@ export function CommandPalette({
                 ))}
                 {proposal.error ? <p className="error">{proposal.error}</p> : null}
                 <div className="toolbar">
-                  <button type="button" onClick={() => void api.post('/v1/proposals/{id}/discard', { params: { path: { id: proposal.id } } }).then(() => setProposal(null))}>{copy.discardAll}</button>
+                  <Button type="button" variant="danger" onClick={() => void api.post('/v1/proposals/{id}/discard', { params: { path: { id: proposal.id } } }).then(() => setProposal(null))}>{copy.discardAll}</Button>
                   <button type="button" className="primary" onClick={() => void api.post('/v1/proposals/{id}/accept', { params: { path: { id: proposal.id } }, body: {} }).then(() => { session.setProposalId(proposal.id); setProposal(null); session.push(copy.saved) })}>{copy.saveAll}</button>
                 </div>
               </div>
