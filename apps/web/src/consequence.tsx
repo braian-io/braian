@@ -19,7 +19,6 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
   const [id, setId] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [typed, setTyped] = useState('')
   const opener = useRef<HTMLElement | null>(null)
   const dismiss = () => {
     const target = opener.current
@@ -30,7 +29,6 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
   useEffect(() => onProposal((proposal) => {
     opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     setError('')
-    setTyped('')
     setId(proposal.id)
   }), [])
   const defs = useQuery({ queryKey: ['definitions'], queryFn: () => api.get('/v1/definitions'), staleTime: 60_000 })
@@ -48,10 +46,8 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
   const jobs = (consequence.jobs as Json[] | undefined) ?? []
   const errors = (consequence.definition_errors as string[] | undefined) ?? []
   const destructive = consequence.destructive === true
-  const confirmName = String(consequence.confirm_name ?? '')
   const detail = (consequence.detail as string[] | undefined) ?? []
   const sentence = String(consequence.sentence ?? '')
-  const nameMatches = !destructive || typed === confirmName
   const close = dismiss
   const discard = () => {
     setBusy(true)
@@ -117,22 +113,6 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
         {destructive ? (
           <div data-testid="delete-counts">
             {detail.length > 0 ? detail.map((line) => <p key={line}>{line}</p>) : sentence ? <p>{sentence}</p> : null}
-            <label className="model-field">
-              {copy.typeNameToConfirm}
-              <input
-                data-testid="confirm-name"
-                autoFocus
-                value={typed}
-                aria-label={copy.typeNameToConfirm}
-                onChange={(event) => setTyped(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' && nameMatches && !busy && errors.length === 0) {
-                    event.preventDefault()
-                    confirm()
-                  }
-                }}
-              />
-            </label>
           </div>
         ) : null}
         <div data-testid="impact-result">
@@ -160,7 +140,7 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
             variant={destructive ? 'danger' : 'primary'}
             data-testid={destructive ? 'confirm-delete' : 'confirm-model'}
             onClick={confirm}
-            disabled={busy || errors.length > 0 || !nameMatches}
+            disabled={busy || errors.length > 0}
           >
             {destructive ? copy.delete : copy.confirm}
           </Button>

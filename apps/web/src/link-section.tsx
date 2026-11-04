@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, textValue, type Json } from './api'
 import { Button } from './components/ui/button'
@@ -34,6 +33,7 @@ type Menu = { id: string; peer: string; hasValues: boolean; x: number; y: number
 type Removal = {
   id: string
   peer: string
+  peerId: string
   hasValues: boolean
   linkType: string
   fromId: string
@@ -59,8 +59,7 @@ export function LinkSections({
 }) {
   const queryClient = useQueryClient()
   const [adding, setAdding] = useState<LinkSide | null>(null)
-  const [confirm, setConfirm] = useState<{ id: string; peer: string } | null>(null)
-  const [typed, setTyped] = useState('')
+  const [confirm, setConfirm] = useState<Removal | null>(null)
   const [confirmError, setConfirmError] = useState('')
   const sections = useMemo(() => sectionsFor(defs, typeKey, links), [defs, typeKey, links])
   const onOpenRef = useRef(onOpen)
@@ -68,9 +67,17 @@ export function LinkSections({
   const sectionsRef = useRef(sections)
   sectionsRef.current = sections
   const removeRef = useRef<(link: LinkItem, section: LinkSide) => void>(() => undefined)
-  const refresh = () => {
+  // Every list that can show either endpoint or the link itself follows the write.
+  const refresh = (peerId?: string) => {
     void queryClient.invalidateQueries({ queryKey: ['object', objectId] })
+    if (peerId) void queryClient.invalidateQueries({ queryKey: ['object', peerId] })
     void queryClient.invalidateQueries({ queryKey: ['objects'] })
+    void queryClient.invalidateQueries({ queryKey: ['peer-links'] })
+    void queryClient.invalidateQueries({ queryKey: ['link-search'] })
+    void queryClient.invalidateQueries({ queryKey: ['history', objectId] })
+    if (peerId) void queryClient.invalidateQueries({ queryKey: ['history', peerId] })
+    void queryClient.invalidateQueries({ queryKey: ['graph', objectId] })
+    if (peerId) void queryClient.invalidateQueries({ queryKey: ['graph', peerId] })
   }
   const recreate = (removal: Removal) => {
     const values: Json = removal.values
@@ -80,25 +87,39 @@ export function LinkSections({
         : { sort_order: typeof removal.sortOrder === 'object' ? removal.sortOrder : { value: String(removal.sortOrder) } }
     void api.post('/v1/links', {
       body: { type: removal.linkType, from_id: removal.fromId, to_id: removal.toId, values },
-    }).then(refresh).catch((reason: unknown) => {
+    }).then(() => refresh(removal.peerId)).catch((reason: unknown) => {
       reportWriteError(reason)
     })
   }
   const remove = (link: LinkItem, section: LinkSide) => {
     const removal = removalFor(link, section, objectId)
     if (removal.hasValues) {
-      setConfirm({ id: removal.id, peer: removal.peer })
-      setTyped('')
+      setConfirm(removal)
       setConfirmError('')
       return
     }
     void api.delete('/v1/links/{id}', { params: { path: { id: removal.id } } }).then(() => {
-      refresh()
+      refresh(removal.peerId)
       toast(copy.linkRemoved, {
         action: { label: copy.undo, onClick: () => recreate(removal) },
       })
     }).catch((reason: unknown) => {
       reportWriteError(reason)
+    })
+  }
+  const confirmRemove = () => {
+    if (!confirm) return
+    const removal = confirm
+    void api.delete('/v1/links/{id}', { params: { path: { id: removal.id } } }).then(() => {
+      setConfirm(null)
+      setConfirmError('')
+      refresh(removal.peerId)
+      toast(copy.linkRemoved, {
+        action: { label: copy.undo, onClick: () => recreate(removal) },
+      })
+    }).catch((reason: unknown) => {
+      const message = writeErrorMessage(reason)
+      if (message) setConfirmError(message)
     })
   }
   removeRef.current = remove
@@ -222,43 +243,14 @@ export function LinkSections({
             aria-label={copy.removeLink}
             onEscapeKeyDown={(event) => event.stopPropagation()}
           >
-            <form
-              className="dialog-form"
-              onSubmit={(event) => {
-                event.preventDefault()
-                if (typed.trim() !== confirm.peer) return
-                setConfirmError('')
-                void api.delete('/v1/links/{id}', { params: { path: { id: confirm.id } } }).then(() => {
-                  setConfirm(null)
-                  setConfirmError('')
-                  refresh()
-                }).catch((reason: unknown) => {
-                  const message = writeErrorMessage(reason)
-                  if (message) setConfirmError(message)
-                })
-              }}
-            >
-              <DialogDescription asChild>
-                <p>{copy.confirmRemoveLink.replace('{peer}', confirm.peer)}</p>
-              </DialogDescription>
-              <input
-                data-testid="link-confirm-input"
-                aria-label={copy.confirmRemoveLink.replace('{peer}', confirm.peer)}
-                value={typed}
-                onChange={(event) => setTyped(event.target.value)}
-                autoFocus
-              />
-              {typed.trim() === confirm.peer ? (
-                <p className="hint" data-testid="link-confirm-match">
-                  <Check aria-hidden="true" size={14} /> {copy.matches}
-                </p>
-              ) : null}
-              {confirmError ? <p className="error" data-testid="link-confirm-error">{confirmError}</p> : null}
-              <div className="toolbar">
-                <Button type="button" variant="ghost" onClick={() => setConfirm(null)}>{copy.cancel}</Button>
-                <Button type="submit" variant="danger" data-testid="link-confirm-remove" disabled={typed.trim() !== confirm.peer}>{copy.removeLink}</Button>
-              </div>
-            </form>
+            <DialogDescription asChild>
+              <p>{copy.confirmRemoveLink.replace('{peer}', confirm.peer)}</p>
+            </DialogDescription>
+            {confirmError ? <p className="error" data-testid="link-confirm-error">{confirmError}</p> : null}
+            <div className="toolbar">
+              <Button type="button" variant="ghost" onClick={() => setConfirm(null)}>{copy.cancel}</Button>
+              <Button type="button" variant="danger" data-testid="link-confirm-remove" onClick={confirmRemove}>{copy.removeLink}</Button>
+            </div>
           </DialogContent>
         </Dialog>
       ) : null}
@@ -408,6 +400,7 @@ function removalFor(link: LinkItem, section: LinkSide, objectId: string): Remova
   return {
     id: link.id,
     peer: link.peer_name || link.peer_key,
+    peerId: link.peer_id,
     hasValues: link.has_values,
     linkType: section.link_type,
     fromId: outgoing ? objectId : link.peer_id,
