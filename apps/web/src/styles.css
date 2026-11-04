@@ -1962,6 +1962,15 @@ button, .pane-tab, .hit, .class-row, .attr-card {
   border-radius: var(--r-md);
   box-shadow: none;
 }
+/* The shared :focus-visible ring sits 2px outside the border. These inputs
+   already have a border, so focus recolors that border and drops the ring. */
+.create-dialog .create-field input:focus-visible,
+.create-dialog .create-field select:focus-visible {
+  outline: none;
+  outline-width: 0;
+  border-color: var(--accent);
+  box-shadow: none;
+}
 .create-dialog .error { margin: 0; }
 .create-dialog .dialog-actions { margin-top: 0; }
 .create-dialog .dialog-actions button:disabled,

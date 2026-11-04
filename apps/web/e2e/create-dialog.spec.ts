@@ -36,6 +36,37 @@ async function shootThemes(page: Page, opener: Locator, dialog: Locator, name: s
   await setTheme(page, 'dark')
 }
 
+/** Focus paints the control's own border, not a second ring outside it. */
+async function expectFocusBorder(control: Locator) {
+  const paint = await control.evaluate((el) => {
+    const probe = document.createElement('span')
+    probe.style.color = 'var(--accent)'
+    document.body.append(probe)
+    const accent = getComputedStyle(probe).color
+    probe.remove()
+    const style = getComputedStyle(el)
+    return {
+      outlineStyle: style.outlineStyle,
+      outlineWidth: Number.parseFloat(style.outlineWidth) || 0,
+      borderTopColor: style.borderTopColor,
+      borderRightColor: style.borderRightColor,
+      borderBottomColor: style.borderBottomColor,
+      borderLeftColor: style.borderLeftColor,
+      borderTopWidth: Number.parseFloat(style.borderTopWidth),
+      boxShadow: style.boxShadow,
+      accent,
+    }
+  })
+  expect(paint.outlineStyle).toBe('none')
+  expect(paint.outlineWidth).toBe(0)
+  expect(paint.borderTopWidth).toBeGreaterThan(0)
+  expect(paint.borderTopColor).toBe(paint.accent)
+  expect(paint.borderRightColor).toBe(paint.accent)
+  expect(paint.borderBottomColor).toBe(paint.accent)
+  expect(paint.borderLeftColor).toBe(paint.accent)
+  expect(paint.boxShadow).toBe('none')
+}
+
 async function trap(page: Page, dialog: Locator) {
   for (let step = 0; step < 8; step += 1) {
     await page.keyboard.press('Tab')
@@ -110,6 +141,7 @@ async function exercise(page: Page, options: {
   await expect(dialog.getByRole('heading', { name: options.title })).toBeVisible()
   const first = dialog.getByTestId(options.firstField)
   await expect(first).toBeFocused()
+  await expectFocusBorder(first)
   await trap(page, dialog)
   await first.click()
   await page.keyboard.press('Escape')
