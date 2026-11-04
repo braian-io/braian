@@ -1919,6 +1919,61 @@ button, .pane-tab, .hit, .class-row, .attr-card {
 .model-note { margin: 4px 8px; color: var(--danger, var(--muted)); font-size: 12px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 .dialog-form { display: grid; gap: 6px; }
+/* Create dialog only. One padding for header, fields, and footer.
+   Each control has a single border — no raised card around it. */
+.dialog.create-dialog {
+  padding: 22px;
+  gap: 0;
+}
+.create-dialog .dialog-close { top: 16px; right: 16px; }
+.create-dialog .create-form { gap: 18px; }
+.create-dialog .create-head {
+  display: grid;
+  gap: 4px;
+  padding-right: 28px;
+}
+.create-dialog .create-head h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 22px;
+}
+.create-dialog .create-fields { display: grid; gap: 14px; }
+.create-dialog .create-field {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.create-dialog .create-field label {
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+}
+.create-dialog .create-field input,
+.create-dialog .create-field select {
+  width: 100%;
+  height: 32px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: none;
+}
+.create-dialog .error { margin: 0; }
+.create-dialog .dialog-actions { margin-top: 0; }
+.create-dialog .dialog-actions button:disabled,
+.create-dialog .dialog-actions button:disabled:hover {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.create-dialog .dialog-actions button:disabled:hover { background: var(--raised); }
+.create-dialog .dialog-actions button.primary:disabled:hover {
+  background: var(--accent);
+  color: white;
+}
 .feedback-preview {
   margin: 0;
   max-height: 200px;

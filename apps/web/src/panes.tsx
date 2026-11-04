@@ -62,6 +62,7 @@ import {
   emptyGraph,
   isGenericObjectTitle,
   newObjectLabel,
+  newObjectTitle,
   singularOf,
   typeNames,
   typeOfView,
@@ -2248,7 +2249,7 @@ function NewObject({
   return (
     <CreateDialog
       open={open}
-      title={newObjectLabel(singular)}
+      title={newObjectTitle(singular)}
       description={copy.createObjectHint}
       dialogTestId="new-object"
       fields={fields}

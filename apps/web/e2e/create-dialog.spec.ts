@@ -1,7 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { mkdirSync } from 'node:fs'
 import { demoCredentials } from './demo'
-import { mainTable } from './ui'
+import { mainTable, setTheme } from './ui'
 
 const shots = process.env.BRAIAN_CREATE_SHOTS
 
@@ -18,10 +18,22 @@ async function workspace(page: Page, name: RegExp) {
   await page.locator('nav.tabs').getByRole('button', { name }).click()
 }
 
-async function shot(dialog: Locator, name: string) {
+async function shootThemes(page: Page, opener: Locator, dialog: Locator, name: string) {
   if (!shots) return
   mkdirSync(shots, { recursive: true })
-  await dialog.screenshot({ path: `${shots}/${name}.png` })
+  for (const theme of ['dark', 'light'] as const) {
+    if (await dialog.count()) {
+      await page.keyboard.press('Escape')
+      await expect(dialog).toHaveCount(0)
+    }
+    await setTheme(page, theme)
+    await opener.click()
+    await expect(dialog).toBeVisible()
+    await dialog.screenshot({ path: `${shots}/${name}-${theme}.png` })
+  }
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  await setTheme(page, 'dark')
 }
 
 async function trap(page: Page, dialog: Locator) {
@@ -91,11 +103,11 @@ async function exercise(page: Page, options: {
 }) {
   const { opener } = options
   await expect(opener).toBeVisible()
-  await opener.click()
   const dialog = page.getByTestId(options.dialogTestId)
+  await shootThemes(page, opener, dialog, options.shot)
+  await opener.click()
   await expect(dialog).toBeVisible()
   await expect(dialog.getByRole('heading', { name: options.title })).toBeVisible()
-  await shot(dialog, options.shot)
   const first = dialog.getByTestId(options.firstField)
   await expect(first).toBeFocused()
   await trap(page, dialog)
@@ -123,6 +135,26 @@ async function exercise(page: Page, options: {
   const alert = dialog.getByRole('alert')
   await expect(alert).toBeVisible()
   await expect(alert).toContainText('number already exists')
+  if (shots && options.shot === 'new-product') {
+    await dialog.screenshot({ path: `${shots}/server-error-dark.png` })
+    await page.keyboard.press('Escape')
+    await expect(dialog).toHaveCount(0)
+    await setTheme(page, 'light')
+    await opener.click()
+    await expect(dialog).toBeVisible()
+    await fill(dialog, options.failure)
+    await page.keyboard.press('Enter')
+    await expect(dialog.getByRole('alert')).toContainText('number already exists')
+    await dialog.screenshot({ path: `${shots}/server-error-light.png` })
+    await page.keyboard.press('Escape')
+    await expect(dialog).toHaveCount(0)
+    await setTheme(page, 'dark')
+    await opener.click()
+    await expect(dialog).toBeVisible()
+    await fill(dialog, options.failure)
+    await page.keyboard.press('Enter')
+    await expect(dialog.getByRole('alert')).toContainText('number already exists')
+  }
   for (const [testId, value] of Object.entries(options.failure)) {
     await expect(dialog.getByTestId(testId)).toHaveValue(value)
   }
@@ -156,7 +188,7 @@ test('Products create dialog', async ({ page }) => {
   await exercise(page, {
     opener: table.getByTestId('table-add-row'),
     dialogTestId: 'new-object',
-    title: 'New Product',
+    title: 'New product',
     shot: 'new-product',
     firstField: 'new-number',
     failure: { 'new-number': 'DUP-PRODUCT', 'new-name': 'Duplicate product' },
@@ -176,7 +208,7 @@ test('Articles create dialog', async ({ page }) => {
   await exercise(page, {
     opener: table.getByTestId('table-add-row'),
     dialogTestId: 'new-object',
-    title: 'New Article',
+    title: 'New article',
     shot: 'new-article',
     firstField: 'new-number',
     failure: { 'new-number': 'DUP-ARTICLE', 'new-name': 'Duplicate article' },
@@ -196,7 +228,7 @@ test('Suppliers create dialog', async ({ page }) => {
   await exercise(page, {
     opener: table.getByTestId('table-add-row'),
     dialogTestId: 'new-object',
-    title: 'New Supplier',
+    title: 'New supplier',
     shot: 'new-supplier',
     firstField: 'new-number',
     failure: { 'new-number': 'DUP-SUPPLIER', 'new-name': 'Duplicate supplier' },

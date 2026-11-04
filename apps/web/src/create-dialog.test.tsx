@@ -32,10 +32,12 @@ function Host({
 describe('create dialog', () => {
   it('keeps the typed value and shows a server error', async () => {
     render(<Host onSubmit={async () => { throw new Error('number already exists') }} />)
+    expect(screen.getByLabelText('Number')).toBe(screen.getByTestId('new-number'))
+    expect(document.activeElement).toBe(screen.getByTestId('new-number'))
     fireEvent.click(screen.getByTestId('create-object'))
     const alert = await screen.findByRole('alert')
     expect(alert.textContent).toBe('number already exists')
-    expect((screen.getByTestId('new-number') as HTMLInputElement).value).toBe('ART-1')
+    expect((screen.getByLabelText('Number') as HTMLInputElement).value).toBe('ART-1')
     expect(screen.getByRole('dialog', { name: 'New product' })).toBeTruthy()
   })
 

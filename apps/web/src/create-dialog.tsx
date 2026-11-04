@@ -80,43 +80,53 @@ export function CreateDialog({
     <Dialog open={open} onOpenChange={(next) => { if (!next) close() }}>
       {open ? (
       <DialogContent
+        className="create-dialog"
         data-testid={dialogTestId}
         onEscapeKeyDown={(event) => event.stopPropagation()}
       >
         <form
-          className="dialog-form"
+          className="dialog-form create-form"
           onSubmit={(event) => {
             event.preventDefault()
             submit()
           }}
         >
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
-          {fields.map((field) => (
-            <label className="model-field" key={field.id}>
-              {field.label}
-              {field.options ? (
-                <select
-                  data-testid={field.testId}
-                  aria-label={field.label}
-                  value={field.value}
-                  onChange={(event) => onField(field.id, event.target.value)}
-                >
-                  {field.options.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  data-testid={field.testId}
-                  aria-label={field.label}
-                  autoFocus={field.autoFocus}
-                  value={field.value}
-                  onChange={(event) => onField(field.id, event.target.value)}
-                />
-              )}
-            </label>
-          ))}
+          <div className="create-head">
+            <DialogTitle>{title}</DialogTitle>
+            <DialogDescription className="hint">{description}</DialogDescription>
+          </div>
+          <div className="create-fields">
+            {fields.map((field, index) => {
+              const inputId = `${dialogTestId}-${field.id}`
+              const focus = field.autoFocus || (index === 0 && !fields.some((item) => item.autoFocus))
+              return (
+                <div className="create-field" key={field.id}>
+                  <label htmlFor={inputId}>{field.label}</label>
+                  {field.options ? (
+                    <select
+                      id={inputId}
+                      data-testid={field.testId}
+                      autoFocus={focus}
+                      value={field.value}
+                      onChange={(event) => onField(field.id, event.target.value)}
+                    >
+                      {field.options.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      id={inputId}
+                      data-testid={field.testId}
+                      autoFocus={focus}
+                      value={field.value}
+                      onChange={(event) => onField(field.id, event.target.value)}
+                    />
+                  )}
+                </div>
+              )
+            })}
+          </div>
           {error ? (
             <p className="error" role="alert" data-testid="validation-error">{error}</p>
           ) : null}
