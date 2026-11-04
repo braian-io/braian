@@ -48,22 +48,13 @@ test('final surfaces', async ({ page }) => {
   await page.screenshot({ path: `${shots}/command-palette.png` })
   await page.keyboard.press('Escape')
 
-  await page.route('**/v1/agent', async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 4000))
-    await route.fulfill({
-      status: 200,
-      headers: { 'content-type': 'text/event-stream' },
-      body: 'data: {"type":"step","id":"read","op":"search","args":{"q":"hej"},"state":"run"}\n\ndata: {"type":"answer","text":"Done. No changes.","available":true}\n\n',
-    })
-  })
-  await page.keyboard.press('Control+j')
+  await page.keyboard.press('Control+k')
   await page.getByTestId('palette-input').fill('hej')
-  await page.keyboard.press('Enter')
-  await expect(page.getByTestId('ai-progress')).toBeVisible()
+  await page.keyboard.press('Control+j')
+  await expect(page.getByTestId('command-palette')).toHaveCount(0)
+  await expect(page.getByTestId('agent-view')).toContainText('hej')
   await expect(page.getByTestId('agent')).toHaveCount(0)
   await page.screenshot({ path: `${shots}/command-palette-ai.png` })
-  await page.keyboard.press('Escape')
-  await page.unroute('**/v1/agent')
 
   await page.getByTestId('object-row').filter({ hasText: 'ART-' }).first().click()
   await page.getByRole('button', { name: 'Graph' }).click()

@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { announce, takeShortcutTip } from './shortcut-tip'
 import { ApiError, api, operationId, textValue, type Json } from './api'
 import { reportWriteError } from './write-error'
-import { streamAgent, type AgentEvent } from './agent-stream'
+import { createAgentRun } from './agent-runs'
 import { renderAgentAnswer } from './agent-answer'
 import { Button } from './components/ui/button'
 import { Command, CommandInput, CommandItem, CommandList } from './components/ui/command'
@@ -53,7 +53,6 @@ import { MASTER_CATALOG_ID } from './catalog-ref'
 import { publishProposal } from './proposal-bus'
 import { modelFocus, openModelDialog, requestDiscardDraft, requestReview, stageModel } from './model-stage'
 import { isStandardAttribute, queueViewType, requestAttributeAction } from './attribute-actions'
-import { stepText } from './steps'
 import { createWorkspaceFromTemplate, workspaceTemplates } from './templates'
 import {
   commandPlaceholder,
@@ -64,7 +63,7 @@ import {
   typeViewPaletteItems,
 } from './type-labels'
 import { linkedTypeLinks, peerSourceOf } from './view-source'
-import { applyUiResult, dispatchUi, uiOperations } from './ui-bus'
+import { dispatchUi } from './ui-bus'
 import {
   readSelection,
   readTreeNode,
@@ -89,6 +88,7 @@ type SessionLike = {
   push: (line: string) => void
   openWorkspace: (id: string) => void
   openTypeView?: (typeId: string) => void
+  workspaceId?: string | null
 }
 
 type Turn = { role: 'user' | 'assistant'; text: string }
@@ -129,6 +129,7 @@ export function CommandPalette({
   onSelectSourceType,
   onSelectSourcePeer,
   onClose,
+  onAgentRun,
   fieldsMode,
   fieldsEditColumnId,
   onFieldsConsumed,
@@ -152,6 +153,7 @@ export function CommandPalette({
   onSelectSourceType?: (typeId: string) => void
   onSelectSourcePeer?: (viewId: string, linkType?: string) => void
   onClose: () => void
+  onAgentRun?: (run: { id: string; title: string; workspace_id?: string | null }) => void
   fieldsMode?: boolean
   fieldsEditColumnId?: string | null
   onFieldsConsumed?: () => void
@@ -1147,21 +1149,20 @@ export function CommandPalette({
   const ask = async (text: string) => {
     const prompt = text.trim()
     if (!prompt || running) return
-    const history = editing == null ? [...turns, { role: 'user' as const, text: prompt }] : turns.map((turn, index) => (index === editing ? { ...turn, text: prompt } : turn))
-    setTurns(history.filter((turn) => turn.role === 'user' || turn.role === 'assistant'))
-    setEditing(null)
-    setQuery('')
-    setMode('ai')
-    setAnswer('')
-    setProposal(null)
     setRunning(true)
-    setSteps([{ id: 'read', text: stepText('read'), state: 'run' }])
-    const messages = history.map((turn) => ({ role: turn.role, content: turn.text }))
+    setQuery('')
     try {
-      await streamAgent(messages, (event) => applyEvent(event, setSteps, setAnswer, setProposal, session, stepHint(event, types)))
-      setSteps((current) => current.map((step) => ({ ...step, state: 'done' })))
+      const run = await createAgentRun({
+        messages: [{ role: 'user', content: prompt }],
+        context: readUiContext(),
+        workspace_id: session.workspaceId,
+      })
+      onAgentRun?.(run)
+      onClose()
     } catch (error) {
       const message = error instanceof ApiError || error instanceof Error ? error.message : 'The model did not reply.'
+      setMode('ai')
+      setTurns([{ role: 'user', text: prompt }])
       setAnswer(agentText(message))
     } finally {
       setRunning(false)
@@ -1216,7 +1217,8 @@ export function CommandPalette({
       return
     }
     if (effect.type === 'ask') {
-      void ask(query)
+      if (query.trim()) void ask(query)
+      else setMode('ai')
       return
     }
     if (effect.type === 'actions') {
@@ -1483,13 +1485,6 @@ function focusedStandard(defs: Json | undefined) {
   return isStandardAttribute(String(row.id ?? ''), String(row.key ?? ''))
 }
 
-function stepHint(event: AgentEvent, types: ReturnType<typeof typeNames>) {
-  const key = typeof event.args?.type === 'string' ? event.args.type : typeof event.args?.type_key === 'string' ? event.args.type_key : ''
-  const match = key ? types.find((item) => item.key === key) : undefined
-  const type = match ?? (types.length === 1 ? types[0] : undefined)
-  return type ? { singular: type.singular, plural: type.plural } : undefined
-}
-
 function buildCatalog(
   workspaces: Array<{ id: string; name: string; share_token?: string | null }>,
   views: Array<{ id: string; title: string; type: string; state?: Json }>,
@@ -1647,48 +1642,6 @@ function highlight(text: string, query: string) {
   )
 }
 
-function applyEvent(
-  event: AgentEvent,
-  setSteps: (value: Step[] | ((current: Step[]) => Step[])) => void,
-  setAnswer: (value: string) => void,
-  setProposal: (value: ProposalPreview | null) => void,
-  session: SessionLike,
-  typeHint?: { singular?: string; plural?: string },
-) {
-  if (event.type === 'step') {
-    const text = event.op ? stepText(event.op, event.args, typeHint) : event.text ?? ''
-    setSteps((current) => {
-      const id = event.id ?? text
-      const state = event.state ?? 'run'
-      const existing = current.find((step) => step.id === id)
-      if (!existing) return [...current.map((step) => ({ ...step, state: 'done' as const })), { id, text, state }]
-      return current.map((step) => (step.id === id ? { ...step, text: text || step.text, state } : step))
-    })
-  }
-  if (event.type === 'tool' && event.result) {
-    const result = event.result
-    if (result.ui === true) applyUiResult(result)
-    else     if (event.name) {
-      const op = uiOperations.find((name) => name.replaceAll('.', '_') === event.name) ?? event.name
-      if (op.startsWith('ui.') && op !== 'ui.get_context' && op !== 'ui.get_selection') {
-        dispatchUi(op, (result.args as Json) ?? {})
-      }
-    }
-    const proposalId = String(result.proposal_id ?? (result.needs_approval ? result.id ?? '' : ''))
-    if (proposalId) void loadProposal(proposalId, setProposal, session)
-  }
-  if (event.type === 'proposal' && event.proposal) {
-    const id = String(event.proposal.proposal_id ?? event.proposal.id ?? '')
-    if (id) void loadProposal(id, setProposal, session)
-  }
-  if (event.type === 'answer') {
-    const text = agentText(event.text ?? '')
-    setAnswer(text)
-    setSteps((current) => current.map((step) => ({ ...step, state: 'done' })))
-  }
-  if (event.type === 'error') setAnswer(agentText(event.text ?? 'The model did not reply.'))
-}
-
 function crumbAccessibleName(label: string): string | undefined {
   const name = label.replace(/\s*›\s*$/, '').trim()
   if (!name) return undefined
@@ -1698,26 +1651,4 @@ function crumbAccessibleName(label: string): string | undefined {
 function agentText(text: string) {
   if (/no model is connected|openai_api_key/i.test(text)) return copy.agentUnavailable
   return text
-}
-
-async function loadProposal(
-  id: string,
-  setProposal: (value: ProposalPreview | null) => void,
-  session: SessionLike,
-) {
-  const body = await api.get('/v1/proposals/{id}', { params: { path: { id: id } } }).catch(() => null)
-  const rows = ((body?.rows as Json[]) ?? [])
-  const lines = ((body?.consequence as Json | undefined)?.lines as unknown[] | undefined)?.map(String) ?? []
-  setProposal({
-    id,
-    title: String(body?.title ?? 'Proposal'),
-    rows,
-    lines,
-    source: body?.source ? String(body.source) : undefined,
-    actor_name: body?.actor_name,
-    behalf_name: body?.behalf_name,
-    error: rows.some((row) => row.conflict) ? 'Conflict' : undefined,
-  })
-  session.setProposalId(id)
-  if (lines.length > 0) publishProposal(id)
 }

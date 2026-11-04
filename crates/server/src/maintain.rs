@@ -6,6 +6,7 @@ pub(crate) async fn startup(store: &Store) -> anyhow::Result<()> {
     store.ensure_system_principal().await?;
     store.upgrade_standard_attributes().await?;
     store.upgrade_object_refs().await?;
+    store.fail_abandoned_agent_runs().await?;
     Ok(())
 }
 
@@ -315,6 +316,51 @@ mod tests {
         kind: String,
         name: String,
         handle: Option<String>,
+    }
+
+    #[tokio::test]
+    async fn startup_marks_a_working_agent_run_failed() {
+        let db = TestDb::create().await;
+        startup(db.store()).await.unwrap();
+        let client = connect(&db.database_url()).await;
+        let system = SYSTEM_PRINCIPAL.as_uuid();
+        let left = Uuid::now_v7();
+        client
+            .execute(
+                "INSERT INTO agent_runs (id, principal_id, title, status)
+                 VALUES ($1, $2, 'left working', 'working')",
+                &[&left, &system],
+            )
+            .await
+            .unwrap();
+        let finished = Uuid::now_v7();
+        client
+            .execute(
+                "INSERT INTO agent_runs (id, principal_id, title, status)
+                 VALUES ($1, $2, 'finished', 'done')",
+                &[&finished, &system],
+            )
+            .await
+            .unwrap();
+        startup(db.store()).await.unwrap();
+        let status: String = client
+            .query_one("SELECT status FROM agent_runs WHERE id = $1", &[&left])
+            .await
+            .unwrap()
+            .get(0);
+        let error: String = client
+            .query_one("SELECT error FROM agent_runs WHERE id = $1", &[&left])
+            .await
+            .unwrap()
+            .get(0);
+        assert_eq!(status, "failed");
+        assert!(error.contains("restarted"), "{error}");
+        let kept: String = client
+            .query_one("SELECT status FROM agent_runs WHERE id = $1", &[&finished])
+            .await
+            .unwrap()
+            .get(0);
+        assert_eq!(kept, "done");
     }
 
     async fn connect(url: &str) -> tokio_postgres::Client {

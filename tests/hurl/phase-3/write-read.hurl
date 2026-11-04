@@ -166,7 +166,7 @@ Authorization: Bearer {{token}}
 If-Match: "1"
 Content-Type: application/json
 { "values": { "name": { "sv": "B" } } }
-HTTP 409
+HTTP 412
 [Asserts]
 jsonpath "$.code" == "conflict"
 jsonpath "$.conflicts[0].attribute" == "name"

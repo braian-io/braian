@@ -27,7 +27,7 @@ import {
   type Zone,
 } from './layout'
 
-export type DockView = { id: string; title: string; type: string; state?: { catalog?: string }; sourceLabel?: string }
+export type DockView = { id: string; title: string; type: string; state?: { catalog?: string; prompt?: string }; sourceLabel?: string; prompt?: string }
 
 type Hover =
   | { kind: 'edge'; zone: Exclude<Zone, 'center'> }
@@ -338,12 +338,14 @@ function Pane({ frame, leaf }: { frame: Frame; leaf: Leaf }) {
         <div className="pane-tab-list" ref={tabList}>
           {leaf.views.map((id) => {
             const title = titleOf(frame.viewList, id)
+            const prompt = frame.viewList.find((view) => view.id === id)?.prompt
             return (
               <Tooltip key={id}>
                 <div
                   data-tab={id}
                   data-view-type={frame.viewList.find((view) => view.id === id)?.type ?? ''}
                   className={id === activeId ? 'pane-tab active' : 'pane-tab'}
+                  title={prompt}
                   onContextMenu={(event) => {
                     if (prefersNativeContextMenu(event.target)) return
                     event.preventDefault()
@@ -354,6 +356,7 @@ function Pane({ frame, leaf }: { frame: Frame; leaf: Leaf }) {
                     <button
                       type="button"
                       className="pane-tab-open"
+                      title={prompt}
                       onClick={() => {
                         if (dragged.current) {
                           dragged.current = false
@@ -414,7 +417,7 @@ function Pane({ frame, leaf }: { frame: Frame; leaf: Leaf }) {
                     <X size={12} aria-hidden="true" />
                   </button>
                 </div>
-                <TooltipContent>{frame.doc.zoom === id ? copy.doubleClickRestore : copy.doubleClickMaximize}</TooltipContent>
+                <TooltipContent>{frame.viewList.find((view) => view.id === id)?.prompt ?? (frame.doc.zoom === id ? copy.doubleClickRestore : copy.doubleClickMaximize)}</TooltipContent>
               </Tooltip>
             )
           })}

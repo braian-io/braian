@@ -51,6 +51,7 @@ const specs = [
   'e2e/palette-home-end.spec.ts',
   'e2e/palette-stack.spec.ts',
   'e2e/palette-drill.spec.ts',
+  'e2e/agent-tab.spec.ts',
   'e2e/open-type-view-ready.spec.ts',
   'e2e/legacy-model-workspace.spec.ts',
   'e2e/dangling-model-workspace.spec.ts',

@@ -4,7 +4,15 @@ import { mkdirSync } from 'node:fs'
 import { demoCredentials } from './demo'
 
 const shots = '/opt/cursor/artifacts/group-filter'
+const chipShots = '/opt/cursor/artifacts/screenshots'
 mkdirSync(shots, { recursive: true })
+mkdirSync(chipShots, { recursive: true })
+
+async function showProducts(page: Page) {
+  await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
+  await page.locator('.pane-tab[data-view-type="object_table"]').filter({ hasText: /^Products/ }).first().click()
+  await expect(mainTable(page).getByTestId('object-row').first()).toBeVisible({ timeout: 60_000 })
+}
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -12,7 +20,18 @@ async function login(page: Page) {
   await page.getByTestId('email').fill(demo.email)
   await page.getByTestId('password').fill(demo.password)
   await page.getByRole('button', { name: 'Sign in' }).click()
-  await expect(mainTable(page).getByTestId('object-row').first()).toBeVisible()
+  await expect(page.locator('nav.tabs')).toBeVisible({ timeout: 60_000 })
+  await showProducts(page)
+}
+
+async function captureFilterChips(page: Page) {
+  const table = mainTable(page)
+  const filters = table.getByTestId('standard-table-filters')
+  await expect(filters.getByRole('button', { name: 'All', exact: true })).toHaveClass(/on/)
+  await filters.screenshot({ path: `${chipShots}/filter-chips-dark.png` })
+  await setTheme(page, 'light')
+  await filters.screenshot({ path: `${chipShots}/filter-chips-light.png` })
+  await setTheme(page, 'dark')
 }
 
 async function resetEnrich(page: Page) {
@@ -41,6 +60,7 @@ async function choose(table: Locator, name: string) {
 test('selecting a structure group lists the same products as its selection', async ({ page }) => {
   test.setTimeout(120_000)
   await login(page)
+  await captureFilterChips(page)
   await resetEnrich(page)
   await expect(page.getByTestId('structure-tree')).toBeVisible()
   const table = mainTable(page)
