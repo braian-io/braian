@@ -28,6 +28,9 @@ export const CommandInput = forwardRef<
     const row = index != null && index !== ''
       ? root?.querySelector<HTMLElement>(`[data-palette-index="${index}"]`)
       : null
+    root?.querySelectorAll<HTMLElement>('[id^="palette-opt-"]').forEach((node) => {
+      if (node !== row) node.removeAttribute('id')
+    })
     if (row && index != null && index !== '') {
       row.id = `palette-opt-${index}`
       input.setAttribute('aria-activedescendant', row.id)
