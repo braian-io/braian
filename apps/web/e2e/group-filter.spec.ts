@@ -8,13 +8,20 @@ const chipShots = '/opt/cursor/artifacts/screenshots'
 mkdirSync(shots, { recursive: true })
 mkdirSync(chipShots, { recursive: true })
 
+async function showProducts(page: Page) {
+  await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
+  await page.locator('.pane-tab[data-view-type="object_table"]').filter({ hasText: /^Products/ }).first().click()
+  await expect(mainTable(page).getByTestId('object-row').first()).toBeVisible({ timeout: 60_000 })
+}
+
 async function login(page: Page) {
   const demo = demoCredentials()
   await page.goto('/')
   await page.getByTestId('email').fill(demo.email)
   await page.getByTestId('password').fill(demo.password)
   await page.getByRole('button', { name: 'Sign in' }).click()
-  await expect(mainTable(page).getByTestId('object-row').first()).toBeVisible()
+  await expect(page.locator('nav.tabs')).toBeVisible({ timeout: 60_000 })
+  await showProducts(page)
 }
 
 async function captureFilterChips(page: Page) {
