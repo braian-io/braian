@@ -20,10 +20,12 @@ async function command(page: Page, title: string) {
 }
 
 async function openObject(page: Page, key: string) {
+  await expect(page.getByTestId('workspace')).toBeVisible()
   await page.keyboard.press('Control+K')
   const palette = page.getByTestId('palette-input')
   await palette.fill(key)
-  await expect(page.getByTestId('palette-list')).toContainText(key)
+  await expect(page.getByRole('option').first()).toContainText(key)
+  await expect(palette).toHaveAttribute('data-palette-active', /^\d+$/)
   await page.keyboard.press('Enter')
   await expect(page.getByTestId('object-detail')).toBeVisible()
 }
@@ -45,29 +47,37 @@ test('pairs with links two cheeses from the keyboard and the link type can be de
   await page.keyboard.press('Control+S')
   await page.getByTestId('confirm-review').click()
   await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
-  await expect(page.getByTestId('link-type-pairs_with')).toBeVisible()
+  const linkTypeRow = page.getByTestId('link-types-table').locator('[data-row-id="pairs_with"]')
+  await page.locator('.pane-tab', { hasText: 'Link types' }).first().click()
+  await expect(linkTypeRow).toBeVisible()
 
+  const productsTab = page.locator('nav.tabs').getByRole('button', { name: /^Products/ })
+  await productsTab.click()
+  await expect(productsTab).toHaveClass(/active/)
   await openObject(page, 'ART-CHED-200')
-  await page.getByTestId('add-link').first().focus()
+  const pairsSection = page.getByTestId('link-section').filter({ hasText: 'Pairs with' }).first()
+  await pairsSection.getByTestId('add-link').focus()
   await page.keyboard.press('Enter')
   await page.getByTestId('link-search').fill('ART-CHED-400')
   await expect(page.getByRole('option').first()).toContainText('ART-CHED-400')
   await page.keyboard.press('Enter')
-  await expect(page.getByTestId('link-row').first()).toContainText('ART-CHED-400')
+  await expect(pairsSection.getByTestId('link-row').filter({ hasText: 'ART-CHED-400' })).toBeVisible()
 
   await openObject(page, 'ART-CHED-400')
-  await expect(page.getByTestId('link-row').first()).toContainText('ART-CHED-200')
+  await expect(
+    page.getByTestId('link-section').filter({ hasText: 'Pairs with' }).getByTestId('link-row').filter({ hasText: 'ART-CHED-200' }),
+  ).toBeVisible()
 
   await command(page, 'Data model')
-  await page.getByTestId('link-type-pairs_with').focus()
-  await page.keyboard.press('Enter')
+  await page.locator('.pane-tab', { hasText: 'Link types' }).first().click()
+  await linkTypeRow.click()
   await command(page, 'Delete link type')
   const dialog = page.getByTestId('consequence')
   await expect(dialog).toBeVisible()
   await expect(dialog.getByTestId('confirm-name')).toHaveCount(0)
   await page.getByTestId('confirm-delete').click()
   await expect(dialog).toBeHidden()
-  await expect(page.getByTestId('link-type-pairs_with')).toHaveCount(0)
+  await expect(linkTypeRow).toHaveCount(0)
 })
 
 test('removing a link with values opens a plain confirm with no text input', async ({ page }) => {
@@ -124,7 +134,7 @@ test('removing a link with values opens a plain confirm with no text input', asy
     await expect(dialog).toBeHidden()
     await expect(linkRow).toHaveCount(0)
   } finally {
-    await page.request.delete(`/v1/link-types/${key}`)
+    await page.request.delete(`/v1/link-types/${key}`, { timeout: 30_000 }).catch(() => undefined)
   }
 })
 
@@ -180,6 +190,11 @@ test('removing a link updates the peer list at once and Undo brings the row back
   await expect(linkRow).toBeVisible({ timeout: 30_000 })
   await linkRow.click({ button: 'right' })
   await page.getByTestId('context-menu').getByRole('menuitem', { name: 'Remove link' }).click()
+  const confirm = page.getByTestId('link-confirm')
+  if (await confirm.isVisible()) {
+    await confirm.getByTestId('link-confirm-remove').click()
+    await expect(confirm).toBeHidden()
+  }
 
   await expect(removedRow).toHaveCount(0, { timeout: 30_000 })
   await page.getByRole('button', { name: 'Undo' }).click()
