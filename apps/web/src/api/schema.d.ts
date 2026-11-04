@@ -1710,6 +1710,9 @@ export interface components {
             /** Format: uuid */
             object_id?: string | null;
             object_key?: string | null;
+            /** @description First row's patch, so the client can render the same field diff as Review. */
+            patch: components["schemas"]["JsonValue"];
+            resolved_at?: string | null;
             stale: boolean;
             stale_reason?: string | null;
             status: string;

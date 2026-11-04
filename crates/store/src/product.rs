@@ -1425,6 +1425,7 @@ impl Store {
             .query_opt(
                 "SELECT p.id, p.title, p.source, p.status, p.conflict, p.actor, p.on_behalf_of, p.created_at,
                         p.session_id, p.counters, p.stale, p.stale_reason, p.agent_run_id, p.stale_at,
+                        p.resolved_at,
                         a.name AS actor_name, b.name AS behalf_name
                  FROM proposals p
                  LEFT JOIN principals a ON a.id = p.actor
@@ -1460,6 +1461,7 @@ impl Store {
             "stale_reason": row.get::<_, Option<String>>("stale_reason"),
             "agent_run_id": row.get::<_, Option<Uuid>>("agent_run_id"),
             "stale_at": row.get::<_, Option<DateTime<Utc>>>("stale_at"),
+            "resolved_at": row.get::<_, Option<DateTime<Utc>>>("resolved_at"),
         });
         let items = rows
             .iter()
@@ -1564,7 +1566,7 @@ impl Store {
         let updated = tx
             .execute(
                 "UPDATE proposals
-                 SET status = $2, claimed_by = NULL, claimed_until = NULL
+                 SET status = $2, claimed_by = NULL, claimed_until = NULL, resolved_at = now()
                  WHERE id = $1 AND claimed_by = $3",
                 &[&id, &status, &claim],
             )

@@ -27,7 +27,7 @@ import {
   type Zone,
 } from './layout'
 
-export type DockView = { id: string; title: string; type: string; state?: { catalog?: string }; sourceLabel?: string }
+export type DockView = { id: string; title: string; type: string; state?: { catalog?: string; prompt?: string }; sourceLabel?: string; prompt?: string }
 
 type Hover =
   | { kind: 'edge'; zone: Exclude<Zone, 'center'> }
@@ -414,7 +414,7 @@ function Pane({ frame, leaf }: { frame: Frame; leaf: Leaf }) {
                     <X size={12} aria-hidden="true" />
                   </button>
                 </div>
-                <TooltipContent>{frame.doc.zoom === id ? copy.doubleClickRestore : copy.doubleClickMaximize}</TooltipContent>
+                <TooltipContent>{frame.viewList.find((view) => view.id === id)?.prompt ?? (frame.doc.zoom === id ? copy.doubleClickRestore : copy.doubleClickMaximize)}</TooltipContent>
               </Tooltip>
             )
           })}

@@ -51,7 +51,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from './compone
 import { installClientLog } from './feedback-log'
 import { prepareFeedbackCapture, type FeedbackCapture } from './feedback'
 import { AgentView } from './agent-view'
-import { listAgentRuns, patchAgentRun } from './agent-runs'
+import { agentRunPrompt, agentRunsForWorkspace, agentTabTitle, listAgentRuns, patchAgentRun, type AgentMessage } from './agent-runs'
 import { CommandPalette } from './palette'
 import { SharedContextMenuHost, prefersNativeContextMenu } from './shared-context-menu'
 import { StateNote } from './states'
@@ -255,7 +255,7 @@ export function Shell() {
   const loadedFor = useRef('')
   const applyRef = useRef<(name: string, args: Record<string, unknown>) => void>(() => {})
   const openTypeViewRef = useRef<(typeId: string) => void>(() => {})
-  const openAgentRunRef = useRef<(run: { id: string; title: string; view_id?: string | null }) => void>(() => {})
+  const openAgentRunRef = useRef<(run: { id: string; title: string; view_id?: string | null; messages?: AgentMessage[] }) => void>(() => {})
   const restoredAgents = useRef<string | null>(null)
   const applyViewTypeSourceRef = useRef<(typeId: string, viewId?: string) => Promise<void>>(async () => undefined)
   const applyViewPeerSourceRef = useRef<(peerViewId: string, viewId?: string, linkType?: string) => Promise<void>>(async () => undefined)
@@ -651,11 +651,9 @@ export function Shell() {
     restoredAgents.current = surface.id
     void listAgentRuns()
       .then((runs) => {
-        for (const run of runs) {
-          if (!run.tab_open) continue
-          if (run.workspace_id && run.workspace_id !== surface.id) continue
-          openAgentRunRef.current(run)
-        }
+        const { here, elsewhere } = agentRunsForWorkspace(runs, surface.id)
+        if (elsewhere.length > 0) toast.message(copy.agentOpenElsewhere)
+        for (const run of here) openAgentRunRef.current(run)
       })
       .catch((reason: unknown) => reportWriteError(reason))
   }, [workspace.data, doc, userId])
@@ -1466,14 +1464,15 @@ export function Shell() {
       let found = views.find((view) => view.type === 'agent' && String(view.state.run_id ?? '') === run.id)
       if (!found) {
         const id = crypto.randomUUID()
-        const title = run.title.trim() || copy.agent
+        const prompt = agentRunPrompt(run)
+        const title = agentTabTitle(prompt) || copy.agent
         found = {
           id,
           type: 'agent',
           title,
           pane: 'center',
           position: views.length,
-          state: freeObject({ run_id: run.id }),
+          state: freeObject({ run_id: run.id, prompt }),
         }
         await api.post('/v1/views', {
           body: {
@@ -1643,7 +1642,15 @@ export function Shell() {
         {doc && surface && !layoutHealPending ? (
           <WorkspaceDock
             doc={doc}
-            views={viewRows(surface.views).map((view) => ({ ...view, title: displayViewTitle(view, typeCatalog, openTypeKey), sourceLabel: viewSourceLabel(view, typeCatalog, workspaceCatalogRef(surface), catalogNamesById, peerLabelFor(view)) }))}
+            views={viewRows(surface.views).map((view) => {
+              const prompt = view.type === 'agent' ? String(view.state?.prompt ?? view.title) : undefined
+              return {
+                ...view,
+                title: prompt ? agentTabTitle(prompt) : displayViewTitle(view, typeCatalog, openTypeKey),
+                prompt,
+                sourceLabel: viewSourceLabel(view, typeCatalog, workspaceCatalogRef(surface), catalogNamesById, peerLabelFor(view)),
+              }
+            })}
             onChange={commitDoc}
             renderView={(item) => {
               const full = viewRows(surface.views).find((view) => view.id === item.id)

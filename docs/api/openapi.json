@@ -7069,7 +7069,8 @@
           "id",
           "title",
           "status",
-          "stale"
+          "stale",
+          "patch"
         ],
         "properties": {
           "id": {
@@ -7084,6 +7085,16 @@
             "format": "uuid"
           },
           "object_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "patch": {
+            "$ref": "#/components/schemas/JsonValue",
+            "description": "First row's patch, so the client can render the same field diff as Review."
+          },
+          "resolved_at": {
             "type": [
               "string",
               "null"

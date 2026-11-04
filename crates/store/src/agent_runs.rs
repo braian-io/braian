@@ -44,6 +44,15 @@ pub struct AgentProposalLink {
     pub stale_reason: Option<String>,
     pub object_id: Option<Uuid>,
     pub object_key: Option<String>,
+    pub patch: Value,
+    pub resolved_at: Option<DateTime<Utc>>,
+}
+
+/// What a person wrote, so a pending agent proposal can say which field changed.
+pub struct StaleEdit {
+    pub who: String,
+    pub at: DateTime<Utc>,
+    pub fields: Vec<(String, String)>,
 }
 
 #[derive(Debug, Clone)]
@@ -150,10 +159,14 @@ impl Store {
         let client = self.checkout().await?;
         let rows = client
             .query(
-                "SELECT p.id, p.title, p.status, p.stale, p.stale_reason,
+                "SELECT p.id, p.title, p.status, p.stale, p.stale_reason, p.resolved_at,
                         (SELECT r.object_id FROM proposal_rows r
                           WHERE r.proposal_id = p.id ORDER BY r.position LIMIT 1),
-                        (SELECT r.object_key FROM proposal_rows r
+                        (SELECT COALESCE(r.object_key, o.key)
+                           FROM proposal_rows r
+                           LEFT JOIN objects o ON o.id = r.object_id
+                          WHERE r.proposal_id = p.id ORDER BY r.position LIMIT 1),
+                        (SELECT r.patch FROM proposal_rows r
                           WHERE r.proposal_id = p.id ORDER BY r.position LIMIT 1)
                  FROM proposals p
                  WHERE p.agent_run_id = $1
@@ -169,8 +182,10 @@ impl Store {
                 status: row.get(2),
                 stale: row.get(3),
                 stale_reason: row.get(4),
-                object_id: row.get(5),
-                object_key: row.get(6),
+                resolved_at: row.get(5),
+                object_id: row.get(6),
+                object_key: row.get(7),
+                patch: row.get::<_, Option<Value>>(8).unwrap_or_else(|| json!({})),
             })
             .collect())
     }
@@ -285,16 +300,34 @@ impl Store {
 
     /// Mark open agent proposals on this object stale and append a notice
     /// on each run. `except` is the proposal currently being accepted.
+    /// Runs left `working` when the process stopped cannot still be running.
+    pub async fn fail_abandoned_agent_runs(&self) -> Result<u64, Error> {
+        let client = self.checkout().await?;
+        let updated = client
+            .execute(
+                "UPDATE agent_runs
+                 SET status = 'failed',
+                     error = 'The agent stopped when the server restarted.',
+                     finished_at = now(),
+                     updated_at = now()
+                 WHERE status = 'working'",
+                &[],
+            )
+            .await?;
+        Ok(updated)
+    }
+
     pub async fn mark_agent_proposals_stale(
         &self,
         object_id: Uuid,
         except: Option<Uuid>,
+        edit: &StaleEdit,
     ) -> Result<Vec<Uuid>, Error> {
         let mut client = self.checkout().await?;
         let tx = client.transaction().await?;
         let rows = tx
             .query(
-                "SELECT DISTINCT p.id, p.agent_run_id, r.object_key
+                "SELECT DISTINCT p.id, p.agent_run_id
                  FROM proposals p
                  JOIN proposal_rows r ON r.proposal_id = p.id
                  WHERE p.status = 'open'
@@ -310,11 +343,7 @@ impl Store {
         for row in &rows {
             let proposal_id: Uuid = row.get(0);
             let run_id: Option<Uuid> = row.get(1);
-            let object_key: Option<String> = row.get(2);
-            let label = object_key.unwrap_or_else(|| object_id.to_string());
-            let reason = format!(
-                "The user edited {label} while this proposal was still pending. The proposal is stale and was not applied."
-            );
+            let reason = stale_text(edit);
             tx.execute(
                 "UPDATE proposals
                  SET stale = true, stale_at = now(), stale_reason = $2, conflict = true
@@ -365,6 +394,25 @@ impl Store {
         tx.commit().await?;
         Ok(proposal_ids)
     }
+}
+
+fn stale_text(edit: &StaleEdit) -> String {
+    let who = if edit.who.trim().is_empty() {
+        "Someone"
+    } else {
+        edit.who.trim()
+    };
+    let changes = if edit.fields.is_empty() {
+        "the object".to_owned()
+    } else {
+        edit.fields
+            .iter()
+            .map(|(field, value)| format!("{field} to {value}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let when = edit.at.format("%Y-%m-%d %H:%M");
+    format!("{who} changed {changes} at {when}. The proposal is stale and was not applied.")
 }
 
 fn read_run(row: &tokio_postgres::Row) -> AgentRunRow {

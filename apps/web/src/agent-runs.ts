@@ -33,6 +33,8 @@ export type AgentProposal = {
   stale_reason?: string | null
   object_id?: string | null
   object_key?: string | null
+  patch?: Json
+  resolved_at?: string | null
 }
 
 export type AgentRunDetail = AgentRunSummary & {
@@ -40,11 +42,20 @@ export type AgentRunDetail = AgentRunSummary & {
   proposals: AgentProposal[]
 }
 
+export class AgentRunError extends Error {
+  status: number
+
+  constructor(status: number, detail: string) {
+    super(detail)
+    this.status = status
+  }
+}
+
 async function parse(response: Response): Promise<Json> {
   const body = (await response.json().catch(() => ({}))) as Json
   if (!response.ok) {
     const detail = typeof body.detail === 'string' ? body.detail : response.statusText
-    throw new Error(detail || 'The agent run could not be saved.')
+    throw new AgentRunError(response.status, detail || 'The agent run could not be saved.')
   }
   return body
 }
@@ -105,4 +116,43 @@ export async function followAgentRun(id: string, content: string): Promise<Agent
 export function agentDisplayText(text: string): string {
   if (/no model is connected|openai_api_key/i.test(text)) return copy.agentUnavailable
   return text
+}
+
+/** Drop transport noise so a failed run shows one readable line. */
+export function cleanAgentError(text: string): string {
+  if (/no model is connected|openai_api_key/i.test(text)) return copy.agentUnavailable
+  const cleaned = text
+    .replace(/^openai error:\s*/i, '')
+    .replace(/\s*\(status \d+\)\s*/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return cleaned || copy.agentFailed
+}
+
+/** Tab label. The full prompt stays on the tooltip. */
+export function agentTabTitle(prompt: string): string {
+  const trimmed = prompt.trim().replace(/\s+/g, ' ')
+  if (trimmed.length <= 48) return trimmed
+  const cut = trimmed.slice(0, 48)
+  const space = cut.lastIndexOf(' ')
+  const base = space > 16 ? cut.slice(0, space) : cut
+  return `${base}…`
+}
+
+export function agentRunPrompt(run: { title: string; messages?: AgentMessage[] }): string {
+  const text = run.messages?.find((message) => message.kind === 'user')?.body.text
+  if (typeof text === 'string' && text.trim()) return text.trim()
+  return run.title
+}
+
+/** Open tabs for this workspace, and open tabs that belong somewhere else. */
+export function agentRunsForWorkspace(runs: AgentRunSummary[], workspaceId: string) {
+  const here: AgentRunSummary[] = []
+  const elsewhere: AgentRunSummary[] = []
+  for (const run of runs) {
+    if (!run.tab_open) continue
+    if (!run.workspace_id || run.workspace_id === workspaceId) here.push(run)
+    else elsewhere.push(run)
+  }
+  return { here, elsewhere }
 }

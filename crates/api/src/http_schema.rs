@@ -215,6 +215,10 @@ pub struct AgentProposalView {
     pub stale_reason: Option<String>,
     pub object_id: Option<Uuid>,
     pub object_key: Option<String>,
+    /// First row's patch, so the client can render the same field diff as Review.
+    #[schema(value_type = JsonValue)]
+    pub patch: serde_json::Value,
+    pub resolved_at: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]

@@ -28,7 +28,7 @@ mod view_repair;
 mod workspace_templates;
 
 pub use agent_runs::{
-    AgentMessageRow, AgentProposalLink, AgentRunRow, AgentRunUpdate, NewAgentRun,
+    AgentMessageRow, AgentProposalLink, AgentRunRow, AgentRunUpdate, NewAgentRun, StaleEdit,
 };
 pub use catalog_resolve::{
     CatalogRef, default_catalog_id, effective_catalog_id, view_catalog_override,

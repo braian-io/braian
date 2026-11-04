@@ -4946,7 +4946,8 @@ async fn apply_row(
             "type": type_key,
         }));
         state.index_after_commit(id.as_uuid(), receipt.last_seq);
-        crate::agent_runs::note_object_edited(state, id, Some(proposal_id)).await;
+        crate::agent_runs::note_object_edited(state, identity, id, &values, Some(proposal_id))
+            .await;
         return Ok(Some(receipt.last_seq));
     }
     let body = CreateObject {
@@ -6364,7 +6365,7 @@ pub(crate) async fn run_operation(
                 json!({ "seq": receipt.last_seq, "op": "update", "object_id": id.as_uuid() }),
             );
             state.index_after_commit(id.as_uuid(), receipt.last_seq);
-            crate::agent_runs::note_object_edited(state, id, None).await;
+            crate::agent_runs::note_object_edited(state, identity, id, &values, None).await;
             Ok(json!({ "seq": receipt.last_seq }))
         }
         "move_to_group" => {

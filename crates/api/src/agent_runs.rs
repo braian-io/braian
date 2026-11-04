@@ -6,6 +6,7 @@
 //! it. A later edit of the same object marks that proposal stale and appends
 //! a notice on the run.
 
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use axum::Json;
@@ -13,7 +14,8 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
 use braian_model::ObjectId;
-use serde_json::{Value, json};
+use chrono::Utc;
+use serde_json::{Map, Value, json};
 use uuid::Uuid;
 
 use crate::auth::{Auth, Identity, Role};
@@ -252,6 +254,11 @@ async fn execute_run(state: &AppState, identity: &Identity, run_id: Uuid) -> Res
         .and_then(|message| message.body.get("text").and_then(Value::as_str))
         .unwrap_or("")
         .to_owned();
+    if model_unavailable() && prompt.to_lowercase().contains("fail this run") {
+        // Stay working long enough for the client to show the retry, then fail.
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        return Err("openai error: the model request failed (status 500)".into());
+    }
     if model_unavailable() && prompt.to_lowercase().contains("hold the run") {
         tokio::time::sleep(Duration::from_secs(8)).await;
     }
@@ -614,18 +621,83 @@ fn detail_of(
                 stale_reason: proposal.stale_reason,
                 object_id: proposal.object_id,
                 object_key: proposal.object_key,
+                patch: proposal.patch,
+                resolved_at: proposal.resolved_at.map(|value| value.to_rfc3339()),
             })
             .collect(),
     }
 }
 
 /// A person edited an object. Pending agent proposals on it become stale.
-pub async fn note_object_edited(state: &AppState, object_id: ObjectId, except: Option<Uuid>) {
+pub async fn note_object_edited(
+    state: &AppState,
+    identity: &Identity,
+    object_id: ObjectId,
+    values: &BTreeMap<String, Value>,
+    except: Option<Uuid>,
+) {
+    let who = identity
+        .display_name
+        .clone()
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or_else(|| identity.handle.clone());
+    let edit = braian_store::StaleEdit {
+        who,
+        at: Utc::now(),
+        fields: stale_fields(values),
+    };
     if let Err(error) = state
         .store
-        .mark_agent_proposals_stale(object_id.as_uuid(), except)
+        .mark_agent_proposals_stale(object_id.as_uuid(), except, &edit)
         .await
     {
         tracing::warn!(%error, "could not mark agent proposals stale");
+    }
+}
+
+fn stale_fields(values: &BTreeMap<String, Value>) -> Vec<(String, String)> {
+    let mut fields = Vec::new();
+    for (key, value) in values {
+        if let Some(map) = value.as_object().filter(|map| is_language_map(map)) {
+            for (language, text) in map {
+                fields.push((format!("{key} ({language})"), display_value(text)));
+            }
+            continue;
+        }
+        fields.push((key.clone(), display_value(value)));
+    }
+    fields
+}
+
+fn is_language_map(map: &Map<String, Value>) -> bool {
+    !map.is_empty()
+        && map.keys().all(|key| {
+            let mut parts = key.split('-');
+            let language = parts.next().unwrap_or("");
+            let region = parts.next();
+            parts.next().is_none()
+                && (2..=3).contains(&language.len())
+                && language.chars().all(|char| char.is_ascii_lowercase())
+                && region.is_none_or(|part| {
+                    (2..=4).contains(&part.len())
+                        && part.chars().all(|char| char.is_ascii_alphanumeric())
+                })
+        })
+}
+
+fn display_value(value: &Value) -> String {
+    let text = match value {
+        Value::String(text) => text.clone(),
+        Value::Number(number) => number.to_string(),
+        Value::Bool(flag) => flag.to_string(),
+        Value::Null => "empty".to_owned(),
+        other => other.to_string(),
+    };
+    let mut chars = text.chars();
+    let short: String = chars.by_ref().take(120).collect();
+    if chars.next().is_some() {
+        format!("{short}…")
+    } else {
+        short
     }
 }

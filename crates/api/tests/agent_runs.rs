@@ -218,6 +218,11 @@ async fn two_runs_are_allowed_and_a_user_edit_marks_the_proposal_stale() {
     let proposal_id = finished["proposals"][0]["id"].as_str().unwrap();
     assert_eq!(finished["proposals"][0]["status"], "open");
     assert_eq!(finished["proposals"][0]["stale"], false);
+    assert_eq!(
+        finished["proposals"][0]["patch"]["values"]["name"]["sv"], "Agent draft",
+        "{finished}"
+    );
+    assert_eq!(finished["proposals"][0]["object_key"], "SKU-AGENT");
 
     let (status, object) = call(&app, "GET", &format!("/v1/objects/{object_id}"), None, &[]).await;
     assert_eq!(status, StatusCode::OK, "{object}");
@@ -259,10 +264,16 @@ async fn two_runs_are_allowed_and_a_user_edit_marks_the_proposal_stale() {
         .iter()
         .find(|message| message["kind"] == "notice")
         .unwrap();
+    let reason = notice["body"]["text"].as_str().unwrap();
+    assert!(reason.contains("stale"), "{notice}");
+    assert!(reason.contains("name (sv)"), "{notice}");
+    assert!(reason.contains("Pall"), "{notice}");
+    assert!(reason.contains("ada"), "{notice}");
     assert!(
-        notice["body"]["text"].as_str().unwrap().contains("stale"),
+        reason.contains(" at 20") && reason.contains(':'),
         "{notice}"
     );
+    assert_eq!(noticed["proposals"][0]["stale_reason"], reason);
 
     let (status, proposal) = call(
         &app,
