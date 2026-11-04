@@ -2,7 +2,9 @@ import { Toaster as Sonner, type ToasterProps } from 'sonner'
 
 export function Toaster({ theme = 'dark', ...props }: ToasterProps) {
   return (
-    <Sonner
+    <>
+      <div id="braian-live" className="sr-only" aria-live="polite" />
+      <Sonner
       theme={theme}
       className="toaster"
       toastOptions={{
@@ -14,5 +16,6 @@ export function Toaster({ theme = 'dark', ...props }: ToasterProps) {
       }}
       {...props}
     />
+    </>
   )
 }

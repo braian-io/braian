@@ -21,17 +21,20 @@ export const CommandInput = forwardRef<
     // cmdk's own aria-selected lags a controlled value by an effect, so the
     // palette marks the row it considers active and we follow that.
     const index = input.getAttribute('data-palette-active')
-    const selected = index != null && index !== ''
-      ? root?.querySelector<HTMLElement>(`[data-palette-index="${index}"]`)
-      : root?.querySelector<HTMLElement>('[cmdk-item][aria-selected="true"]')
     const list = root?.querySelector<HTMLElement>('[cmdk-list]')
-    if (selected?.id) {
-      input.setAttribute('aria-activedescendant', selected.id)
-      list?.setAttribute('aria-activedescendant', selected.id)
-    } else {
-      input.removeAttribute('aria-activedescendant')
-      list?.removeAttribute('aria-activedescendant')
-    }
+    // cmdk stamps its own id and also sets aria-activedescendant on the list.
+    // The combobox owns that attribute, and each row keeps id palette-opt-N.
+    list?.removeAttribute('aria-activedescendant')
+    const row = index != null && index !== ''
+      ? root?.querySelector<HTMLElement>(`[data-palette-index="${index}"]`)
+      : null
+    root?.querySelectorAll<HTMLElement>('[id^="palette-opt-"]').forEach((node) => {
+      if (node !== row) node.removeAttribute('id')
+    })
+    if (row && index != null && index !== '') {
+      row.id = `palette-opt-${index}`
+      input.setAttribute('aria-activedescendant', row.id)
+    } else input.removeAttribute('aria-activedescendant')
   })
   return (
     <CommandPrimitive.Input

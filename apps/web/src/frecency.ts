@@ -33,8 +33,15 @@ export function mergeFrecency(
   const merged = { ...local }
   for (const [id, entry] of Object.entries(remote)) {
     const current = merged[id]
-    if (!current || entry.uses > current.uses || (entry.uses === current.uses && entry.last > current.last)) {
+    if (!current) {
       merged[id] = entry
+      continue
+    }
+    // Keep the higher count and the later timestamp. A stale server copy
+    // with more uses must not bury the command that just ran.
+    merged[id] = {
+      uses: Math.max(current.uses, entry.uses),
+      last: Math.max(current.last, entry.last),
     }
   }
   return merged

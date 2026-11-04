@@ -1,9 +1,9 @@
-import type { PaletteItem } from './palette-model'
+import { withoutDuplicateDestinations, type PaletteItem } from './palette-model'
 import { displayViewTitle, typeViewPaletteItems, type SavedView, type TypeName } from './type-labels'
 
 /** Saved views and "Articles view" rows for the Open view sub-list. */
 export function viewPaletteRows(views: SavedView[], types: TypeName[], openTypeKey = ''): PaletteItem[] {
-  return [
+  return withoutDuplicateDestinations([
     ...typeViewPaletteItems(types).map((row) => ({ ...row, entity: false })),
     ...views.map((view) => ({
       id: `view:${view.id}`,
@@ -13,5 +13,5 @@ export function viewPaletteRows(views: SavedView[], types: TypeName[], openTypeK
       entity: true,
       keywords: [view.type, view.title],
     })),
-  ]
+  ])
 }

@@ -7,7 +7,7 @@ describe('copy', () => {
   beforeEach(() => resetUiContext())
 
   it('keeps the agent fallback in one place', () => {
-    expect(copy.agentUnavailable).toContain('OPENAI_API_KEY')
+    expect(copy.agentUnavailable).toBe("AI isn't set up for this workspace")
     expect(copy.commandPlaceholder).toBe('Search, open views, or ask AI')
   })
 
