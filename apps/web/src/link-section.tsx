@@ -99,8 +99,12 @@ export function LinkSections({
   }, [])
   useEffect(() => {
     const add = (event: Event) => {
-      const detail = (event as CustomEvent<{ linkType?: string }>).detail ?? {}
-      const section = sections.find((item) => !detail.linkType || item.link_type === detail.linkType) ?? sections[0]
+      const detail = (event as CustomEvent<{ linkType?: string; direction?: 'out' | 'in' }>).detail ?? {}
+      const sameType = sections.filter((item) => !detail.linkType || item.link_type === detail.linkType)
+      const section =
+        sameType.find((item) => !detail.direction || item.direction === detail.direction) ??
+        sameType[0] ??
+        sections[0]
       if (section) setAdding(section)
     }
     const drop = () => {
