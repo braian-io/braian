@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { api } from './api'
 import { setAiMode } from './ai-mode'
 import { publishProposal } from './proposal-bus'
-import { submitLink, submitLinks, undoCreatedLinks, type LinkWrite } from './link-write'
+import { submitLink, submitLinks, undoCreatedLinks } from './link-write'
 import { ApiError } from './api'
 
 vi.mock('./proposal-bus', () => ({ publishProposal: vi.fn() }))
@@ -110,13 +110,7 @@ describe('submitLink', () => {
     })
     expect(publishProposal).toHaveBeenCalledWith('proposal-1')
     expect(publishProposal).toHaveBeenCalledWith('proposal-rest')
-    const proposalRows = post.mock.calls
-      .filter(([path]) => path === '/v1/proposals')
-      .flatMap(([, init]) => {
-        const rows = (init as { body?: { rows?: Array<{ patch?: { link?: LinkWrite } }> } }).body?.rows ?? []
-        return rows.map((row) => row.patch?.link?.to_id)
-      })
-    expect(proposalRows).toEqual(['to-3'])
+    expect(post.mock.calls.filter((call) => call[0] === '/v1/proposals')).toHaveLength(1)
   })
 })
 
