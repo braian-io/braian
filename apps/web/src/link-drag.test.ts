@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { linkDragObjects, linkDropFromSection } from './link-drag'
+import { linkDragLabel, linkDragObjects, linkDropFromSection } from './link-drag'
 import type { LinkEndpoint } from './link-create-dialog'
 
 const oat: LinkEndpoint = { id: 'oat', typeKey: 'article', name: 'Oat', key: 'ART-OAT-1L' }
@@ -26,5 +26,13 @@ describe('link drag payload', () => {
       targets: [oat],
       preferred: { linkType: 'replaces', direction: 'out' },
     })
+  })
+
+  it('names one dragged object and counts several of the same type', () => {
+    expect(linkDragLabel([oat])).toBe('Link Oat')
+    expect(linkDragLabel([oat, coffee], {
+      types: [{ key: 'article', kind: 'entity', plural: { en: 'Articles' }, singular: { en: 'Article' } }],
+    })).toBe('Link 2 articles')
+    expect(linkDragLabel([oat, { ...coffee, typeKey: 'product' }])).toBe('Link 2 objects')
   })
 })

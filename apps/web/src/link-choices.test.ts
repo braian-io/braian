@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { allowedLinks, choiceLabel, linkFieldValues, linkPickerRows, linksForEnds, preferredChoice, type LinkHit } from './link-choices'
+import { allowedLinks, choiceLabel, linkDragDenial, linkEndsSummary, linkFieldValues, linkPairExplanation, linkPickerRows, linksForEnds, preferredChoice, type LinkHit } from './link-choices'
 import type { Json } from './api'
 
 const defs: Json = {
@@ -63,6 +63,23 @@ describe('allowed link types', () => {
 
   it('has no link type between a product and a supplier', () => {
     expect(allowedLinks(defs, 'product', 'supplier')).toEqual([])
+  })
+
+  it('names both types when nothing can link, and what each type can link to', () => {
+    expect(linkDragDenial(defs, 'product', ['supplier'])).toBe("products can't link to suppliers")
+    expect(linkDragDenial(defs, 'product', ['article'])).toBeNull()
+    expect(linkPairExplanation(defs, 'product', ['supplier'])).toBe(
+      "products can't link to suppliers. products can link to articles. suppliers can't link to anything.",
+    )
+  })
+
+  it('shows both ends, and stops the list after five', () => {
+    expect(linkEndsSummary(
+      { id: 'p', key: 'PROD-CHEDDAR', name: 'Mature cheddar' },
+      [{ id: 'a', key: 'ART-CHED-400', name: 'Mature cheddar 400 g' }],
+    )).toBe('PROD-CHEDDAR Mature cheddar ← ART-CHED-400 Mature cheddar 400 g')
+    const peers = ['a', 'b', 'c', 'd', 'e', 'f'].map((id) => ({ id, key: id, name: id }))
+    expect(linkEndsSummary({ id: 'p', key: 'P', name: 'Product' }, peers)).toBe('P Product ← a, b, c, d, e +1 more')
   })
 
   it('keeps only the link type every dragged object can use', () => {

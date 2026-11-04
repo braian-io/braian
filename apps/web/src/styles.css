@@ -564,7 +564,14 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
 }
 .drag-ghost svg { color: var(--accent); flex: none; }
 .row.link-drop,
-.field-card.link-drop { background: var(--accent-dim); }
+.field-card.link-drop {
+  background: var(--accent-dim);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.grid .row { user-select: none; }
+.link-ends { margin: 0; color: var(--text); font-size: 13px; line-height: 18px; }
+.link-type-line { margin: 0; color: var(--text); font-size: 13px; font-weight: 600; }
+select.link-type-line { width: 100%; font-weight: 600; }
 @media (prefers-reduced-motion: reduce) {
   .dock-preview, .split-divider > span { transition: none; }
 }
@@ -773,7 +780,7 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
   background: var(--accent-dim);
 }
 .row.picked { box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 55%, transparent); }
-.row:hover:not(.selected) { background: var(--hover); }
+.row:hover:not(.selected):not(.link-drop) { background: var(--hover); }
 .draft-user { background: var(--amber-bg); border-radius: var(--r-md); }
 .draft-agent { background: var(--accent-dim); border-radius: var(--r-md); }
 

@@ -2,6 +2,7 @@ import { catalogName, textValue, type Json } from './api'
 import { typeLabel } from './chips'
 import { score, type FrecencyEntry } from './frecency'
 import { copy, uiLanguage } from './i18n'
+import { pluralOf } from './type-labels'
 import { frecencyId, paletteMatchScore, recentSlice, type PaletteItem } from './palette-model'
 
 const standardKeys = new Set(['number', 'name', 'created_at', 'updated_at', 'updated_by'])
@@ -89,6 +90,50 @@ export function linksForEnds(defs: Json | undefined, sourceType: string, targetT
     )
   }
   return choices
+}
+
+/** Short reason for the drag preview when the pair has no shared link type. */
+export function linkDragDenial(defs: Json | undefined, anchorType: string, draggedTypes: string[]): string | null {
+  if (!defs || !anchorType || draggedTypes.length === 0) return null
+  if (linksForEnds(defs, anchorType, draggedTypes).length > 0) return null
+  return linkCantText(defs, anchorType, draggedTypes)
+}
+
+/** Dialog copy: both type names, then what each type is allowed to link to. */
+export function linkPairExplanation(defs: Json | undefined, anchorType: string, draggedTypes: string[]): string {
+  if (!defs || !anchorType) return ''
+  const targets = [...new Set(draggedTypes.filter(Boolean))]
+  if (targets.length === 0) return ''
+  const head = linkCantText(defs, anchorType, targets)
+  const from = canSentence(defs, anchorType)
+  const rest = targets.filter((type) => type !== anchorType).map((type) => canSentence(defs, type))
+  return [`${head}.`, from, ...rest].filter(Boolean).join(' ')
+}
+
+type LinkEnd = { id: string; name?: string; key?: string }
+
+/** `PROD-CHEDDAR Mature cheddar ← ART-CHED-400 Mature cheddar 400 g`, then `+N more`. */
+export function linkEndsSummary(source: LinkEnd, peers: LinkEnd[]): string {
+  const shown = peers.slice(0, 5).map(linkEndLabel)
+  const extra = peers.length - shown.length
+  const right = extra > 0
+    ? `${shown.join(', ')} ${copy.linkMore.replace('{count}', String(extra))}`
+    : shown.join(', ')
+  return copy.linkEnds.replace('{left}', linkEndLabel(source)).replace('{right}', right)
+}
+
+export function linkEndLabel(item: LinkEnd) {
+  const key = item.key?.trim() ?? ''
+  const name = item.name?.trim() ?? ''
+  if (key && name && key !== name) return `${key} ${name}`
+  return name || key || item.id
+}
+
+/** `3 articles`, or `1 object` when the dragged rows do not share a type. */
+export function linkCountNoun(count: number, defs: Json | undefined, typeKey: string) {
+  if (!typeKey) return count === 1 ? copy.linkOneObject : copy.linkManyObjects.replace('{count}', String(count))
+  const word = (count === 1 ? typeLabel(defs, typeKey, uiLanguage) : pluralOf(defs, typeKey, uiLanguage) || typeKey).toLowerCase()
+  return count === 1 ? `1 ${word}` : `${count} ${word}`
 }
 
 export function preferredChoice(choices: LinkChoice[], preferred?: { linkType: string; direction: LinkDirection }) {
@@ -224,6 +269,36 @@ function idList(defs: Json | undefined, ids: unknown) {
     const match = types.find((item) => String(item.id) === String(id))
     return String(match?.key ?? id)
   })
+}
+
+function linkCantText(defs: Json, anchorType: string, draggedTypes: string[]) {
+  const targets = [...new Set(draggedTypes.filter(Boolean))]
+  const to = targets.length === 1
+    ? typeWord(defs, targets[0] ?? '')
+    : targets.map((type) => typeWord(defs, type)).join(', ')
+  return copy.linkCant.replace('{from}', typeWord(defs, anchorType)).replace('{to}', to)
+}
+
+function canSentence(defs: Json, typeKey: string) {
+  const peers = linkPeerTypes(defs, typeKey).map((type) => typeWord(defs, type))
+  const from = typeWord(defs, typeKey)
+  if (peers.length === 0) return copy.linkCanNothing.replace('{from}', from)
+  return copy.linkCan.replace('{from}', from).replace('{to}', peers.join(', '))
+}
+
+function linkPeerTypes(defs: Json, typeKey: string) {
+  const entities = ((defs.types as Json[]) ?? []).filter((item) => item.kind !== 'link')
+  const keys: string[] = []
+  for (const entity of entities) {
+    const key = String(entity.key ?? '')
+    if (!key) continue
+    if (allowedLinks(defs, typeKey, key).length > 0) keys.push(key)
+  }
+  return keys
+}
+
+function typeWord(defs: Json, typeKey: string) {
+  return pluralOf(defs, typeKey, uiLanguage) || typeLabel(defs, typeKey, uiLanguage) || typeKey
 }
 
 function labelOf(label: unknown, fallback: string) {

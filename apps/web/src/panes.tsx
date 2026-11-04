@@ -74,7 +74,8 @@ import { rollbackTargetSeq } from './history-rollback'
 import { StateNote } from './states'
 import { classSections } from './class-sections'
 import { LinkSections } from './link-section'
-import { beginLinkDrag, dispatchLinkDrop, endLinkDrag, linkDragActive, linkDragContains, linkDragMime, linkDragObjects, readLinkDrag } from './link-drag'
+import { beginLinkDrag, dispatchLinkDrop, endLinkDrag, linkDragActive, linkDragContains, linkDragLabel, linkDragMime, linkDragObjects, linkDragPayload, readLinkDrag, setLinkDragHint } from './link-drag'
+import { linkDragDenial } from './link-choices'
 import { RecordSection } from './record-section'
 import { groupKeyOf, labelCodes, labelSearchFilter, publishSelectionLabels, SELECTION_APPLIED_EVENT, selectionFilterText, selectionMatchesType } from './assortment-filter'
 import { appendPathFilter, objectTableFilter } from './table-filter'
@@ -190,6 +191,11 @@ export function ObjectTable({
   const [sizes, setSizes] = useState<Record<string, number>>(initial.sizes)
   const [selected, setSelected] = useState<string[]>([])
   const [linkDropId, setLinkDropId] = useState<string | null>(null)
+  useEffect(() => {
+    const clear = () => setLinkDropId(null)
+    window.addEventListener('braian-link-dragend', clear)
+    return () => window.removeEventListener('braian-link-dragend', clear)
+  }, [])
   const [hidden, setHidden] = useState<string[]>([])
   const [prefsReady, setPrefsReady] = useState(false)
   const [prefsLoadFailed, setPrefsLoadFailed] = useState(false)
@@ -918,12 +924,24 @@ export function ObjectTable({
   const endpointOf = (row: ObjRow) => ({ id: row.id, typeKey: row.type, name: row.name, key: row.key })
   const onLinkDragStart = (row: ObjRow, event: ReactDragEvent<HTMLDivElement>) => {
     const known = (groupBy ? groupedRows : [...byIndex.values()]).map(endpointOf)
-    beginLinkDrag(event.nativeEvent, linkDragObjects(endpointOf(row), selected, known))
+    const objects = linkDragObjects(endpointOf(row), selected, known)
+    beginLinkDrag(event.nativeEvent, objects, linkDragLabel(objects, defs.data))
   }
   const onLinkDragOver = (row: ObjRow, event: ReactDragEvent<HTMLDivElement>) => {
     if (!linkDragActive(event.dataTransfer.types)) return
     if (linkDragContains(row.id)) return
+    const dragged = linkDragPayload()
+    const deny = defs.isLoading && !defs.data
+      ? null
+      : linkDragDenial(defs.data, row.type, dragged.map((item) => item.typeKey))
     event.preventDefault()
+    if (deny) {
+      event.dataTransfer.dropEffect = 'none'
+      setLinkDropId(null)
+      setLinkDragHint(deny)
+      return
+    }
+    setLinkDragHint(null)
     event.dataTransfer.dropEffect = 'copy'
     setLinkDropId(row.id)
   }
@@ -963,6 +981,8 @@ export function ObjectTable({
     const hiddenColumns = all
       .filter((id) => hidden.includes(id))
       .map((id) => ({ id, header: columnHeader(id) }))
+    const chosen = selected.includes(row.id) ? selected : [row.id]
+    const known = new Map((groupBy ? groupedRows : [...byIndex.values()]).map((item) => [item.id, endpointOf(item)]))
     const menu = buildRowContextMenu({
       context,
       defs: defs.data,
@@ -974,7 +994,12 @@ export function ObjectTable({
         columnHeader: column ? columnHeader(column) : undefined,
         hiddenColumns,
         typeKey: session.listType ?? undefined,
+        objects: chosen.flatMap((id) => {
+          const item = known.get(id)
+          return item ? [item] : []
+        }),
       },
+      selectedCount: chosen.length,
     })
     openSharedContextMenu({
       context,
@@ -1076,6 +1101,11 @@ export function ObjectTable({
       registerCommandRunner('object:new', () => {
         if (document.querySelector('[data-testid="command-palette"], [data-testid="fields-mode"]')) return
         setCreateOpen(true)
+      }),
+      registerCommandRunner('link:selected', (target) => {
+        const objects = Array.isArray(target.objects) ? target.objects.filter((item) => item && typeof item === 'object' && 'id' in item && 'typeKey' in item) : []
+        if (objects.length < 2) return
+        window.dispatchEvent(new CustomEvent('braian-link-pick', { detail: { objects } }))
       }),
     ]
     return () => stops.forEach((stop) => stop())
@@ -2075,7 +2105,7 @@ function Row({
   style?: CSSProperties
 }) {
   // Background and border share this class. Range picks stay quieter so only the active row looks selected.
-  const tone = active ? 'selected' : selected.includes(row.id) ? 'picked' : ''
+  const tone = linkDrop ? '' : active ? 'selected' : selected.includes(row.id) ? 'picked' : ''
   const className = ['row', tone, flash ? 'flash' : '', linkDrop ? 'link-drop' : ''].filter(Boolean).join(' ')
   return (
     <div
@@ -2097,8 +2127,11 @@ function Row({
       onDragEnter={(event) => onLinkDragOver?.(row, event)}
       onDragOver={(event) => onLinkDragOver?.(row, event)}
       onDragLeave={(event) => {
+        if (event.clientX === 0 && event.clientY === 0) return
         const next = event.relatedTarget
-        if (next instanceof Node && event.currentTarget.contains(next)) return
+        if (next instanceof Node && (event.currentTarget.contains(next) || next === event.currentTarget)) return
+        const box = event.currentTarget.getBoundingClientRect()
+        if (event.clientX >= box.left && event.clientX <= box.right && event.clientY >= box.top && event.clientY <= box.bottom) return
         onLinkDragLeave?.(row)
       }}
       onDrop={(event) => onLinkDrop?.(row, event)}

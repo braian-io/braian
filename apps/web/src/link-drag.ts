@@ -1,5 +1,6 @@
+import type { Json } from './api'
 import { copy } from './i18n'
-import type { LinkDirection } from './link-choices'
+import { linkCountNoun, type LinkDirection } from './link-choices'
 import type { LinkEndpoint } from './link-create-dialog'
 
 export const linkDragMime = 'application/x-braian-objects'
@@ -11,6 +12,9 @@ export type LinkDropDetail = {
 }
 
 let dragging = new Set<string>()
+let payload: LinkEndpoint[] = []
+let label = ''
+let hint: string | null = null
 let ghost: HTMLDivElement | null = null
 
 /** Drag every selected row when the gesture starts on one of them. */
@@ -50,6 +54,26 @@ export function linkDragContains(id: string) {
   return dragging.has(id)
 }
 
+export function linkDragPayload(): LinkEndpoint[] {
+  return payload
+}
+
+/** `Link Coast & Meadow`, or `Link 3 articles` when several rows share a type. */
+export function linkDragLabel(objects: LinkEndpoint[], defs?: Json) {
+  const first = objects[0]
+  if (!first || objects.length <= 1) {
+    return copy.linkDragVerb.replace('{label}', first?.name || first?.key || first?.id || '')
+  }
+  const shared = objects.every((item) => item.typeKey === first.typeKey) ? first.typeKey : ''
+  return copy.linkDragVerb.replace('{label}', linkCountNoun(objects.length, defs, shared))
+}
+
+/** Replaces the name while the pointer is over a target that cannot accept the drag. */
+export function setLinkDragHint(text: string | null) {
+  hint = text
+  if (ghost) ghost.textContent = text || label
+}
+
 export function readLinkDrag(raw: string): LinkEndpoint[] {
   if (!raw) return []
   try {
@@ -60,19 +84,22 @@ export function readLinkDrag(raw: string): LinkEndpoint[] {
   }
 }
 
-export function beginLinkDrag(event: DragEvent, objects: LinkEndpoint[]) {
+export function beginLinkDrag(event: DragEvent, objects: LinkEndpoint[], dragLabel: string) {
   if (objects.length === 0 || !event.dataTransfer) return
   dragging = new Set(objects.map((item) => item.id))
+  payload = objects
+  label = dragLabel
+  hint = null
   event.dataTransfer.setData(linkDragMime, JSON.stringify({ objects }))
   event.dataTransfer.effectAllowed = 'copy'
   const blank = document.createElement('canvas')
   blank.width = 1
   blank.height = 1
   event.dataTransfer.setDragImage(blank, 0, 0)
-  placeGhost(objects, event.clientX, event.clientY)
+  placeGhost(event.clientX, event.clientY)
   const move = (next: DragEvent) => {
     if (next.clientX === 0 && next.clientY === 0) return
-    placeGhost(objects, next.clientX, next.clientY)
+    placeGhost(next.clientX, next.clientY)
   }
   const end = () => {
     window.removeEventListener('dragenter', move, true)
@@ -89,26 +116,27 @@ export function beginLinkDrag(event: DragEvent, objects: LinkEndpoint[]) {
 
 export function endLinkDrag() {
   dragging = new Set()
+  payload = []
+  label = ''
+  hint = null
   ghost?.remove()
   ghost = null
+  window.dispatchEvent(new CustomEvent('braian-link-dragend'))
 }
 
 export function dispatchLinkDrop(detail: LinkDropDetail) {
   window.dispatchEvent(new CustomEvent<LinkDropDetail>('braian-link-drop', { detail }))
 }
 
-function placeGhost(objects: LinkEndpoint[], x: number, y: number) {
+function placeGhost(x: number, y: number) {
   if (!ghost) {
     ghost = document.createElement('div')
     ghost.className = 'drag-ghost'
     ghost.dataset.testid = 'link-drag-ghost'
     document.body.appendChild(ghost)
   }
-  const first = objects[0]
-  const label = first?.name || first?.key || first?.id || ''
-  ghost.textContent = objects.length > 1
-    ? copy.linkDragCount.replace('{count}', String(objects.length))
-    : label
-  ghost.style.left = `${x + 12}px`
-  ghost.style.top = `${y + 12}px`
+  ghost.textContent = hint || label
+  // Below and to the right, so the preview does not cover the row or section heading under the pointer.
+  ghost.style.left = `${x + 18}px`
+  ghost.style.top = `${y + 36}px`
 }

@@ -13,7 +13,8 @@ import { reportWriteError, writeErrorMessage } from './write-error'
 import { LinkCreateDialog, type LinkEndpoint } from './link-create-dialog'
 import { LinkObjectPicker } from './link-object-picker'
 import { submitLink } from './link-write'
-import { dispatchLinkDrop, endLinkDrag, linkDragActive, linkDragMime, linkDropFromSection, readLinkDrag } from './link-drag'
+import { linkDragDenial } from './link-choices'
+import { dispatchLinkDrop, endLinkDrag, linkDragActive, linkDragMime, linkDragPayload, linkDropFromSection, readLinkDrag, setLinkDragHint } from './link-drag'
 
 type LinkItem = {
   id: string
@@ -68,6 +69,11 @@ export function LinkSections({
   const queryClient = useQueryClient()
   const [adding, setAdding] = useState<LinkSide | null>(null)
   const [dropKey, setDropKey] = useState<string | null>(null)
+  useEffect(() => {
+    const clear = () => setDropKey(null)
+    window.addEventListener('braian-link-dragend', clear)
+    return () => window.removeEventListener('braian-link-dragend', clear)
+  }, [])
   const [target, setTarget] = useState<LinkEndpoint | null>(null)
   const opener = useRef<HTMLElement | null>(null)
   const [confirm, setConfirm] = useState<{ id: string; peer: string } | null>(null)
@@ -175,7 +181,16 @@ export function LinkSections({
         const key = `${section.link_type}:${section.direction}`
         const markDrop = (event: DragEvent<HTMLElement>) => {
           if (!linkDragActive(event.dataTransfer.types)) return
+          const dragged = linkDragPayload()
+          const deny = linkDragDenial(defs, typeKey, dragged.map((item) => item.typeKey))
           event.preventDefault()
+          if (deny) {
+            event.dataTransfer.dropEffect = 'none'
+            setDropKey(null)
+            setLinkDragHint(deny)
+            return
+          }
+          setLinkDragHint(null)
           event.dataTransfer.dropEffect = 'copy'
           setDropKey(key)
         }
@@ -189,8 +204,7 @@ export function LinkSections({
           onDragEnter={markDrop}
           onDragOver={markDrop}
           onDragLeave={(event) => {
-            const next = event.relatedTarget
-            if (next instanceof Node && event.currentTarget.contains(next)) return
+            if (pointerStillInside(event)) return
             setDropKey((current) => (current === key ? null : current))
           }}
           onDrop={(event) => {
@@ -335,6 +349,14 @@ export function LinkSections({
       ) : null}
     </>
   )
+}
+
+function pointerStillInside(event: DragEvent<HTMLElement>) {
+  if (event.clientX === 0 && event.clientY === 0) return true
+  const next = event.relatedTarget
+  if (next instanceof Node && (event.currentTarget.contains(next) || next === event.currentTarget)) return true
+  const box = event.currentTarget.getBoundingClientRect()
+  return event.clientX >= box.left && event.clientX <= box.right && event.clientY >= box.top && event.clientY <= box.bottom
 }
 
 function restoreFocus(node: HTMLElement | null) {

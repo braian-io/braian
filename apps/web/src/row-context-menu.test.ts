@@ -88,6 +88,18 @@ describe('row context menu', () => {
     expect(menu('article').titles).not.toContain('Open Product')
   })
 
+  it('offers to link the selection when several rows are selected', () => {
+    const { items } = buildRowContextMenu({
+      context: 'cell',
+      defs,
+      rowType: 'article',
+      target: { objectId: 'o1' },
+      selectedCount: 3,
+    })
+    expect(items.map((item) => commandTitle(item, { objectId: 'o1' }))).toContain('Link selected to…')
+    expect(menu('article').titles).not.toContain('Link selected to…')
+  })
+
   it('uses the reverse label for reverse-direction link entries', () => {
     const titles = menu('article').linkTitles
     expect(titles).toContain('Link to Product')
