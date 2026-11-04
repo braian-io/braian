@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Json } from './api'
 import { ConsequenceHost } from './consequence'
+import { copy } from './i18n'
 import { publishProposal } from './proposal-bus'
 
 const mock = vi.hoisted(() => {
@@ -85,5 +86,18 @@ describe('consequence dialog', () => {
     ]
     expect(writes).toEqual([])
     await waitFor(() => expect(document.activeElement).toBe(opener))
+  })
+
+  it('exposes its title and description through the shared dialog', async () => {
+    render(<Host />)
+    publishProposal('proposal-2')
+
+    const dialog = await screen.findByRole('dialog')
+    const title = document.getElementById(dialog.getAttribute('aria-labelledby') ?? '')
+    const description = document.getElementById(dialog.getAttribute('aria-describedby') ?? '')
+
+    expect(title?.textContent).toBe('Delete type')
+    expect(description?.textContent).toBe(copy.reviewChange)
+    expect(screen.getByRole('button', { name: 'Close' })).toBeTruthy()
   })
 })

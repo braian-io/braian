@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AttributeDefinitions } from './attribute-definitions'
+import { copy } from './i18n'
 import { SharedContextMenuHost } from './shared-context-menu'
 
 const mock = vi.hoisted(() => {
@@ -146,6 +147,8 @@ describe('attribute definitions view', () => {
     )
     expect(addType).toBeTruthy()
     fireEvent.click(addType as HTMLButtonElement)
+    const dialog = await screen.findByRole('dialog', { name: copy.addToType })
+    expect(dialog.getAttribute('aria-labelledby')).toBeTruthy()
     const picker = await screen.findByTestId('add-to-type-search')
     fireEvent.change(picker, { target: { value: 'Supplier' } })
     fireEvent.keyDown(picker, { key: 'Enter' })
