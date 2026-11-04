@@ -153,3 +153,89 @@ test('a person saves directly and reviews an agent draft field by field', async 
   expect(saved.values?.name?.sv).toBeUndefined()
   expect(saved.values?.storage).toBe(storage.code)
 })
+
+test('a pending one-object proposal shows inline in Detail and accepts there', async ({ page }) => {
+  test.setTimeout(120_000)
+  await login(page)
+  const articlesTab = page.locator('nav.tabs').getByRole('button', { name: /^Articles/ })
+  await articlesTab.click()
+  await expect(articlesTab).toHaveClass(/active/)
+  const table = mainTable(page, 'Articles')
+  const filter = table.getByTestId('quick-filter').first()
+  const search = page.waitForResponse(
+    (response) => response.url().includes('/v1/search') && response.url().includes('SYN-') && response.ok(),
+  )
+  await filter.fill('SYN-')
+  await search
+  const row = table.getByTestId('object-row').filter({ hasText: /SYN-\d+/ }).first()
+  await expect(row).toBeVisible()
+  const objectId = ((await row.getAttribute('id')) ?? '').replace('object-row-', '')
+  expect(objectId).not.toBe('')
+
+  const loaded = await page.request.get(`/v1/objects/${objectId}`)
+  expect(loaded.ok()).toBeTruthy()
+  const object = (await loaded.json()) as {
+    key?: string
+    type?: string
+    version?: number
+    values?: { number?: string; name?: Record<string, string> }
+  }
+  const number = object.values?.number ?? ''
+  expect(number).not.toBe('')
+  const pendingName = `Pending ${Date.now().toString().slice(-6)}`
+  const created = await page.request.post('/v1/proposals', {
+    data: {
+      title: 'Pending value',
+      rows: [
+        {
+          object_id: objectId,
+          object_key: object.key ?? number,
+          type_key: object.type ?? 'article',
+          base_version: object.version ?? 0,
+          patch: { values: { name: { en: pendingName } } },
+        },
+      ],
+    },
+  })
+  expect(created.ok()).toBeTruthy()
+
+  await articlesTab.click()
+  await expect(articlesTab).toHaveClass(/active/)
+  const articles = mainTable(page, 'Articles')
+  const again = articles.getByTestId('quick-filter')
+  await expect.poll(async () => {
+    await again.fill(number)
+    return page.locator(`#object-row-${objectId}`).count()
+  }, { timeout: 15_000 }).toBe(1)
+  await page.locator(`#object-row-${objectId}`).click()
+  await page.locator('[data-view-type="object_detail"]').first().click()
+
+  const pending = page.getByTestId('pending-field').filter({ hasText: pendingName }).first()
+  await expect(pending).toContainText('Pending')
+  await expect(pending).toContainText(pendingName)
+  await pending.getByTestId('accept-pending').click()
+  await expect(page.getByTestId('activity-log')).toContainText('Saved')
+
+  const accepted = await page.request.get(`/v1/objects/${objectId}`)
+  expect(accepted.ok()).toBeTruthy()
+  const acceptedObject = (await accepted.json()) as { values?: { name?: Record<string, string> } }
+  expect(acceptedObject.values?.name?.en).toBe(pendingName)
+
+  await page.reload()
+  const articlesAfter = page.locator('nav.tabs').getByRole('button', { name: /^Articles/ })
+  await articlesAfter.click()
+  await expect(articlesAfter).toHaveClass(/active/)
+  const reloaded = mainTable(page, 'Articles')
+  const reloadedFilter = reloaded.getByTestId('quick-filter')
+  await expect.poll(async () => {
+    await reloadedFilter.fill(number)
+    return page.locator(`#object-row-${objectId}`).count()
+  }, { timeout: 15_000 }).toBe(1)
+  await page.locator(`#object-row-${objectId}`).click()
+  await page.locator('[data-view-type="object_detail"]').first().click()
+  const nameField = page
+    .locator('[data-testid=object-detail] .field')
+    .filter({ has: page.locator('label', { hasText: /^Name$/ }) })
+    .locator('input')
+  await expect(nameField).toHaveValue(pendingName)
+})

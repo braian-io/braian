@@ -26,6 +26,7 @@ import { flashObject } from './flash'
 import { structureCaption } from './graph-scene'
 import { dropReparents, groupKeyFromLabel } from './group-tree'
 import { publishProposal } from './proposal-bus'
+import { useProposalFocus } from './proposal-focus'
 import { formatCount, formatTimestamp } from './format'
 import { toast } from 'sonner'
 import { reportWriteError, writeErrorMessage } from './write-error'
@@ -1185,6 +1186,12 @@ export function Shell() {
     openWorkspace: setWorkspaceId,
     openTypeView: (typeId) => openTypeViewRef.current(typeId),
   }
+
+  useProposalFocus(
+    session,
+    () => applyRef.current('ui.open_view', { title: 'Detail', zone: 'center' }),
+    queryClient,
+  )
 
   const openConfigReview = (id: string) => {
     const review = orderedWorkspaces.find((workspace) => workspace.share_token === 'braian-review')
