@@ -1,4 +1,5 @@
 import { ApiError, api, jsonRecord, type Schemas } from '../api'
+import { reportWriteError } from '../write-error'
 import {
   acceptsFile,
   firstDroppedFile,
@@ -149,7 +150,7 @@ export function requestCloseImport() {
     patch({ confirm: 'close' })
     return
   }
-  abandonImport()
+  void abandonImport()
 }
 
 export function dismissConfirm() {
@@ -163,22 +164,27 @@ export function confirmImport() {
     void beginUpload(file)
     return
   }
-  abandonImport()
+  void abandonImport()
 }
 
 export function discardImport() {
-  abandonImport()
+  void abandonImport()
 }
 
-function abandonImport() {
+async function abandonImport() {
   const session = state.session
+  if (session && session.id !== 'fixture') {
+    try {
+      await api.delete('/v1/imports/{id}', { params: { path: { id: session.id } } })
+    } catch (reason) {
+      reportWriteError(reason)
+      return
+    }
+  }
   generation += 1
   stopPoll()
   forgetImport()
   patch({ ...initial })
-  if (session && session.id !== 'fixture') {
-    void api.delete('/v1/imports/{id}', { params: { path: { id: session.id } } }).catch(() => undefined)
-  }
 }
 
 function forgetImport() {
