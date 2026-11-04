@@ -31,7 +31,7 @@
   --muted: #8b95a7;
   --accent: #9a4dff;
   --accent-hover: #b27aff;
-  --accent-dim: #9a4dff2e;
+  --accent-dim: #9a4dff47;
   --info: #38bdf8;
   --ok: #47ff9a;
   --warn: #f6c445;
@@ -75,7 +75,7 @@
   --muted: #6b7280;
   --accent: #7c3aed;
   --accent-hover: #6d28d9;
-  --accent-dim: #7c3aed1c;
+  --accent-dim: #7c3aed52;
   --info: #0277b5;
   --ok: #13804f;
   --warn: #a66a00;
@@ -262,7 +262,7 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
   box-shadow: none;
   cursor: pointer;
 }
-.avatar-btn:hover { background: var(--hover); }
+.avatar-btn:hover { background: var(--accent-dim); }
 .avatar-btn:focus-visible, .avatar-btn[data-state='open'] { outline: 2px solid var(--accent); outline-offset: 0; }
 
 .catalog-selector-btn {
@@ -279,7 +279,7 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
   font-weight: 500;
   cursor: pointer;
 }
-.catalog-selector-btn:hover { background: var(--hover); color: var(--text); }
+.catalog-selector-btn:hover { background: var(--accent-dim); color: var(--text); }
 .catalog-selector-btn:focus-visible, .catalog-selector-btn[data-state='open'] {
   outline: 2px solid var(--accent);
   outline-offset: 0;
@@ -354,9 +354,9 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
 .pane.focused .pane-tab.active {
   background: var(--accent-dim);
 }
-/* Hover belongs to the tab, never to the label inside it. */
+/* Hover is weaker than the selected tab's dim fill. */
 .pane-tab:hover:not(.active) {
-  background: var(--hover);
+  background: color-mix(in srgb, var(--accent-dim) 55%, transparent);
   color: var(--text);
   transition: color var(--dur) var(--ease);
 }
@@ -372,7 +372,7 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
   height: 28px;
   padding: 0 8px;
 }
-.icon-btn:hover { background: var(--hover); color: var(--text); }
+.icon-btn:hover { background: var(--accent-dim); color: var(--text); }
 
 .workspace { position: relative; z-index: 0; min-height: 0; min-width: 0; overflow: hidden; }
 .dock-root { position: absolute; inset: 6px; min-width: 0; min-height: 0; }
@@ -498,7 +498,7 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
   opacity: 0;
   color: var(--muted);
 }
-.tab-x:hover { background: var(--hover); color: var(--text); }
+.tab-x:hover { background: var(--accent-dim); color: var(--text); }
 .pane-tab:hover .tab-x, .pane-tab.active .tab-x, .tab-x:focus-visible { opacity: 1; }
 .pane-chrome { margin-left: auto; display: flex; flex: none; gap: 2px; opacity: 0; }
 .pane:hover .pane-chrome, .pane.focused .pane-chrome, .pane-chrome:focus-within { opacity: 1; }
@@ -750,6 +750,10 @@ select.link-type-line { width: 100%; font-weight: 600; }
   font-size: 12px;
 }
 .filter-chip.on { background: var(--accent-dim); color: var(--accent); border-color: transparent; box-shadow: none; }
+.filter-chip:hover:not(.on),
+.choice-chip:hover:not(.on) {
+  background: color-mix(in srgb, var(--accent-dim) 55%, transparent);
+}
 .row-count {
   margin-left: auto;
   color: var(--muted);
@@ -851,9 +855,10 @@ select.link-type-line { width: 100%; font-weight: 600; }
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   background-clip: padding-box;
 }
-/* Active row is a fill. The keyboard mark lives on the active cell, so the row itself has no outline. */
+/* Selected rows carry the dim fill and one full-accent edge marker. */
 .row.selected {
   background: var(--accent-dim);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 .row.picked { box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 55%, transparent); }
 .row:hover:not(.selected) { background: var(--hover); }
@@ -878,7 +883,7 @@ select.link-type-line { width: 100%; font-weight: 600; }
   color: var(--text-2);
 }
 .tree button.on, .tree-row.on { background: var(--accent-dim); color: var(--text); }
-.tree-row:hover:not(.on) { background: color-mix(in srgb, var(--accent-dim) 65%, transparent); }
+.tree-row:hover:not(.on) { background: var(--hover); }
 .tree strong { display: block; padding: 6px 8px 2px; font-size: 12px; font-weight: 500; color: var(--muted); }
 .tree-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tree-count {
@@ -1511,10 +1516,11 @@ canvas.graph.panning { cursor: grabbing; }
 }
 .menu .menu-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .menu button kbd { flex: none; margin-left: auto; color: var(--muted); }
-.menu button:hover, .menu-item:hover, .menu-item[data-highlighted] { background: var(--accent-dim); }
+.menu button[data-highlighted], .menu-item[data-highlighted] { background: var(--accent-dim); }
+/* Legacy fixed menus without a highlighted item still get a weak pointer hover. */
+.menu:not(:has([data-highlighted])) button:hover { background: color-mix(in srgb, var(--accent-dim) 55%, transparent); }
 .menu button.danger { color: var(--danger); }
 .menu-note { margin: 0; padding: 4px 8px; color: var(--text-2); font-size: 12px; }
-.menu button:focus-visible { background: var(--accent-dim); outline: none; }
 /* The active cell in the active row: where Shift+F10 opens the menu.
    Shown for keyboard focus only, so a pointer selection does not add a second ring. */
 .grid:focus-visible .row.selected .cell.active-cell {
@@ -1651,7 +1657,7 @@ canvas.graph.panning { cursor: grabbing; }
 }
 .hit:hover, .hit.on, .hit[data-selected='true'] { background: var(--accent-dim); }
 .palette .hit:hover:not(.on),
-.palette .hit[data-selected='true']:not(.on) { background: color-mix(in srgb, var(--text) 6%, transparent); }
+.palette .hit[data-selected='true']:not(.on) { background: color-mix(in srgb, var(--accent-dim) 55%, transparent); }
 /* Solid accent on the raised palette is 3.75:1 (dark) and 5.41:1 (light). The dim wash alone is about 1.2:1. */
 .palette .hit.on { background: var(--accent-dim); box-shadow: inset 3px 0 0 var(--accent); }
 .hit.disabled, .hit[data-disabled='true'] { opacity: 0.5; }
@@ -2473,7 +2479,11 @@ a,
   cursor: pointer;
 }
 a:hover { color: var(--text); }
-.tab:hover:not(.active),
+.tab:hover:not(.active) {
+  background: color-mix(in srgb, var(--accent-dim) 55%, transparent);
+  color: var(--text);
+}
+/* Model rows are tree rows, so their hover stays on the neutral surface. */
 .model-node:hover:not(.on) {
   background: var(--hover);
   color: var(--text);
@@ -2583,6 +2593,7 @@ button.tab-x:disabled:hover {
   padding: 0;
   border: none;
   background: transparent;
+  box-shadow: none;
   color: inherit;
   font-size: 12px;
   line-height: 1;
