@@ -6,9 +6,9 @@ import { rowsFromCatalog, rowsFromDefinitions, type AttributeDefinitionRow, type
 import { Dialog, DialogContent, DialogTitle } from './components/ui/dialog'
 import { formatCount } from './format'
 import { copy } from './i18n'
+import { CreateDialog, requireText } from './create-dialog'
 import { attributeKey } from './model-view'
 import { onDraftChange, requestReview, setModelFocus, stageModel } from './model-stage'
-import { findPendingCreateRowId } from './inline-create'
 import { registerCommandRunner } from './command-registry'
 import { writeErrorMessage } from './write-error'
 import { StateNote } from './states'
@@ -45,6 +45,11 @@ export function AttributeDefinitions() {
   const [message, setMessage] = useState('')
   const [draftRows, setDraftRows] = useState<Record<string, AttributeDefinitionRow>>({})
   const [editRequest, setEditRequest] = useState<EditRequest | null>(null)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [createName, setCreateName] = useState('')
+  const [createKey, setCreateKey] = useState('')
+  const [createKind, setCreateKind] = useState('text')
+  const [pendingKey, setPendingKey] = useState<string | null>(null)
   const activeIdRef = useRef<string | null>(null)
   const rowsRef = useRef<AttributeDefinitionRow[]>([])
 
@@ -59,6 +64,15 @@ export function AttributeDefinitions() {
     const source = preview ? rowsFromDefinitions(preview, catalog) : rowsFromCatalog(catalog)
     return source.sort((left, right) => left.label.localeCompare(right.label) || left.key.localeCompare(right.key))
   }, [preview, catalog])
+
+  useEffect(() => {
+    if (!pendingKey) return
+    const row = rows.find((item) => item.key === pendingKey)
+    if (!row) return
+    setActiveId(row.id)
+    setModelFocus({ kind: 'attribute', key: row.key })
+    setPendingKey(null)
+  }, [rows, pendingKey])
 
   const filteredBase = useMemo(() => {
     const needle = query.trim().toLowerCase()
@@ -90,40 +104,12 @@ export function AttributeDefinitions() {
     }
   }
 
-  const blankRow = (): AttributeDefinitionRow => ({
-    id: `new-${crypto.randomUUID()}`,
-    key: '',
-    label: '',
-    kind: 'text',
-    unitFamily: '',
-    valueList: '',
-    flags: {
-      required: false,
-      multiple: false,
-      languages: false,
-      searchable: false,
-      filterable: false,
-      sortable: false,
-      standard: false,
-    },
-    standard: false,
-    objects: 0,
-    types: [],
-    groups: [],
-  })
-
   const run = (action: AttributeAction) => {
     if (action === 'new') {
-      const existing = findPendingCreateRowId(draftRows, rows)
-      if (existing) {
-        setActiveId(existing)
-        setEditRequest({ rowId: existing, columnId: 'label' })
-        return
-      }
-      const row = blankRow()
-      setDraftRows((current) => ({ ...current, [row.id]: row }))
-      setActiveId(row.id)
-      setEditRequest({ rowId: row.id, columnId: 'label' })
+      setCreateName('')
+      setCreateKey('')
+      setCreateKind('text')
+      setCreateOpen(true)
       return
     }
     const row =
@@ -244,7 +230,7 @@ export function AttributeDefinitions() {
         rows={filteredBase}
         draftRows={draftRows}
         onDraftRowsChange={setDraftRows}
-        createDraftRow={blankRow}
+        onNewRow={() => run('new')}
         newRowLabel={copy.newAttribute}
         filterValue={query}
         onFilterChange={(value) => {
@@ -330,6 +316,36 @@ export function AttributeDefinitions() {
           }
           setDraftRows({})
           requestReview()
+        }}
+      />
+      <CreateDialog
+        open={createOpen}
+        title={copy.newAttribute}
+        description={copy.createNameHint}
+        fields={[
+          { id: 'name', label: copy.name, value: createName, testId: 'new-name', autoFocus: true },
+          { id: 'key', label: copy.key, value: createKey, testId: 'new-key' },
+          {
+            id: 'kind',
+            label: copy.attributeType,
+            value: createKind,
+            testId: 'new-type',
+            options: KINDS.map(([value, label]) => ({ value, label })),
+          },
+        ]}
+        onField={(id, value) => {
+          if (id === 'name') setCreateName(value)
+          else if (id === 'key') setCreateKey(value)
+          else setCreateKind(value)
+        }}
+        onClose={() => setCreateOpen(false)}
+        onSubmit={async () => {
+          const label = requireText(createName)
+          const key = attributeKey(createKey || label)
+          if (!key) throw new Error(copy.validation)
+          await stageModel('model.create_attribute', { key, label, kind: createKind })
+          setPendingKey(key)
+          void queryClient.invalidateQueries({ queryKey: ['model-draft'] })
         }}
       />
       {message ? <p className="error">{message}</p> : null}

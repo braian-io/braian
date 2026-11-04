@@ -175,47 +175,36 @@ describe('type attributes table', () => {
     expect(requestReview).toHaveBeenCalled()
   })
 
-  it('adds a draft row and stages create and attach on review', async () => {
+  it('creates an attribute from the dialog and attaches it', async () => {
     chooseModelSelection({ kind: 'type', typeKey: 'recipe' })
-    const { container } = render(<Host />)
+    render(<Host />)
     await screen.findByTestId('attribute-table')
     fireEvent.click(screen.getByTestId('table-add-row'))
-    await waitFor(() => expect(container.querySelector('input[data-testid^="attr-label-"]')).toBeTruthy())
-    const editor = container.querySelector('input[data-testid^="attr-label-"]')
-    if (!(editor instanceof HTMLInputElement)) throw new Error('missing new row editor')
-    fireEvent.change(editor, { target: { value: 'Extra' } })
-    fireEvent.keyDown(editor, { key: 'Enter' })
-    fireEvent.click(screen.getByTestId('review-and-save'))
+    const dialog = await screen.findByRole('dialog', { name: copy.newAttribute })
+    fireEvent.change(within(dialog).getByRole('textbox', { name: copy.name }), { target: { value: 'Extra' } })
+    fireEvent.click(within(dialog).getByTestId('create-object'))
     await waitFor(() => expect(stageModel).toHaveBeenCalledWith('model.create_attribute', expect.objectContaining({
       key: 'extra',
       label: 'Extra',
       kind: 'text',
     })))
     expect(stageModel).toHaveBeenCalledWith('model.attach_attribute', { attribute: 'extra', type: 'recipe' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 
-  it('opens one pending create row and cancels it with Escape', async () => {
+  it('opens one create dialog and closes it with Escape', async () => {
     chooseModelSelection({ kind: 'type', typeKey: 'recipe' })
-    const { container } = render(<Host />)
+    render(<Host />)
     await screen.findByTestId('attribute-table')
 
     expect(requestAttributeAction('new')).toBe(true)
-    await waitFor(() => expect(container.querySelectorAll('[data-draft="true"]')).toHaveLength(1))
-    const pendingId = container.querySelector('[data-draft="true"]')?.getAttribute('data-row-id')
-
+    const dialog = await screen.findByRole('dialog', { name: copy.newAttribute })
     expect(requestAttributeAction('new')).toBe(true)
-    await waitFor(() => expect(container.querySelectorAll('[data-draft="true"]')).toHaveLength(1))
-    expect(container.querySelector('[data-draft="true"]')?.getAttribute('data-row-id')).toBe(pendingId)
-    await waitFor(() => expect(container.querySelector('input[data-testid^="attr-label-"]')).not.toBeNull())
-
-    const editor = container.querySelector('input[data-testid^="attr-label-"]')
-    if (!(editor instanceof HTMLInputElement)) throw new Error('missing new row editor')
-    fireEvent.keyDown(editor, { key: 'Escape' })
-    await waitFor(() => expect(container.querySelector('input[data-testid^="attr-label-"]')).toBeNull())
-    const draftRow = container.querySelector('[data-draft="true"]')
-    if (!(draftRow instanceof HTMLElement)) throw new Error('missing draft row')
-    fireEvent.keyDown(draftRow, { key: 'Escape' })
-    await waitFor(() => expect(container.querySelectorAll('[data-draft="true"]')).toHaveLength(0))
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
+    fireEvent.change(within(dialog).getByRole('textbox', { name: copy.name }), { target: { value: 'Draft' } })
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(screen.queryByText('Draft')).toBeNull()
   })
 
   it('shows an error when the impact calculation fails', async () => {

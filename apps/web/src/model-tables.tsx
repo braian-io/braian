@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, textValue, type Json } from './api'
+import { CreateDialog, requireText } from './create-dialog'
 import { copy, uiLanguage } from './i18n'
-import { objectTypes } from './model-view'
+import { attributeKey, objectTypes } from './model-view'
 import { onDraftChange, setModelFocus, stageModel } from './model-stage'
 import { StandardEditableTable, type StandardColumn } from './standard-editable-table'
 import { chooseModelSelection } from './model-selection'
@@ -62,6 +63,11 @@ export function ObjectTypesTable() {
   const [filter, setFilter] = useState('')
   const { activeRowId, setActiveRowId } = useActiveRowId()
   const [draftRows, setDraftRows] = useState<Record<string, TypeRow>>({})
+  const [createOpen, setCreateOpen] = useState(false)
+  const [singularName, setSingularName] = useState('')
+  const [pluralName, setPluralName] = useState('')
+  const [typeKey, setTypeKey] = useState('')
+  const [pendingKey, setPendingKey] = useState<string | null>(null)
   const rows = useMemo(() => {
     const raw = ((defs?.types as Json[]) ?? []).filter((item) => item.kind !== 'link')
     return objectTypes({ ...defs, types: raw }, uiLanguage).map((item) => ({
@@ -73,6 +79,15 @@ export function ObjectTypesTable() {
       kind: 'object',
     }))
   }, [defs])
+
+  useEffect(() => {
+    if (!pendingKey) return
+    const row = rows.find((item) => item.id === pendingKey || item.key === pendingKey)
+    if (!row) return
+    setActiveRowId(row.id)
+    setModelFocus({ kind: 'type', key: row.key })
+    setPendingKey(null)
+  }, [rows, pendingKey])
 
   const columns: Array<StandardColumn<TypeRow>> = [
     {
@@ -102,21 +117,20 @@ export function ObjectTypesTable() {
   if (stored.isError) return <StateNote tone="error" title={copy.errorModel} />
 
   return (
+    <>
     <StandardEditableTable
       testId="object-types-table"
       columns={columns}
       rows={rows}
       draftRows={draftRows}
       onDraftRowsChange={setDraftRows}
-      createDraftRow={() => ({
-        id: `new-${crypto.randomUUID()}`,
-        key: '',
-        label: '',
-        singular: '',
-        plural: '',
-        kind: 'object',
-      })}
-      newRowLabel={copy.objectTypes}
+      onNewRow={() => {
+        setSingularName('')
+        setPluralName('')
+        setTypeKey('')
+        setCreateOpen(true)
+      }}
+      newRowLabel={copy.newType}
       filterValue={filter}
       onFilterChange={(value) => {
         setFilter(value)
@@ -155,6 +169,36 @@ export function ObjectTypesTable() {
         await reviewDraft()
       }}
     />
+    <CreateDialog
+      open={createOpen}
+      title={copy.newType}
+      description={copy.createNameHint}
+      fields={[
+        { id: 'singular', label: copy.singular, value: singularName, testId: 'new-name', autoFocus: true },
+        { id: 'plural', label: copy.plural, value: pluralName, testId: 'new-plural' },
+        { id: 'key', label: copy.key, value: typeKey, testId: 'new-key' },
+      ]}
+      onField={(id, value) => {
+        if (id === 'singular') setSingularName(value)
+        else if (id === 'plural') setPluralName(value)
+        else setTypeKey(value)
+      }}
+      onClose={() => setCreateOpen(false)}
+      onSubmit={async () => {
+        const singular = requireText(singularName)
+        const key = attributeKey(typeKey || singular)
+        if (!key) throw new Error(copy.validation)
+        await stageModel('model.create_type', {
+          key,
+          label: singular,
+          singular,
+          plural: pluralName.trim() || singular,
+          language: uiLanguage,
+        })
+        setPendingKey(key)
+      }}
+    />
+    </>
   )
 }
 
@@ -163,6 +207,18 @@ export function LinkTypesTable() {
   const [filter, setFilter] = useState('')
   const { activeRowId, setActiveRowId } = useActiveRowId()
   const [draftRows, setDraftRows] = useState<Record<string, TypeRow>>({})
+  const [createOpen, setCreateOpen] = useState(false)
+  const [linkName, setLinkName] = useState('')
+  const [fromType, setFromType] = useState('')
+  const [toType, setToType] = useState('')
+  const [pendingKey, setPendingKey] = useState<string | null>(null)
+  const entities = useMemo(
+    () => ((defs?.types as Json[]) ?? [])
+      .filter((item) => item.kind !== 'link')
+      .map((item) => String(item.key ?? ''))
+      .filter(Boolean),
+    [defs],
+  )
   const rows = useMemo(() => {
     const raw = ((defs?.types as Json[]) ?? []).filter((item) => item.kind === 'link')
     return objectTypes({ ...defs, types: raw }, uiLanguage).map((item) => ({
@@ -174,6 +230,15 @@ export function LinkTypesTable() {
       kind: 'link',
     }))
   }, [defs])
+
+  useEffect(() => {
+    if (!pendingKey) return
+    const row = rows.find((item) => item.id === pendingKey || item.key === pendingKey)
+    if (!row) return
+    setActiveRowId(row.id)
+    setModelFocus({ kind: 'type', key: row.key })
+    setPendingKey(null)
+  }, [rows, pendingKey])
 
   const columns: Array<StandardColumn<TypeRow>> = [
     {
@@ -203,21 +268,20 @@ export function LinkTypesTable() {
   if (stored.isError) return <StateNote tone="error" title={copy.errorModel} />
 
   return (
+    <>
     <StandardEditableTable
       testId="link-types-table"
       columns={columns}
       rows={rows}
       draftRows={draftRows}
       onDraftRowsChange={setDraftRows}
-      createDraftRow={() => ({
-        id: `new-${crypto.randomUUID()}`,
-        key: '',
-        label: '',
-        singular: '',
-        plural: '',
-        kind: 'link',
-      })}
-      newRowLabel={copy.linkTypes}
+      onNewRow={() => {
+        setLinkName('')
+        setFromType(entities[0] ?? '')
+        setToType(entities[0] ?? '')
+        setCreateOpen(true)
+      }}
+      newRowLabel={copy.newLinkType}
       filterValue={filter}
       onFilterChange={(value) => {
         setFilter(value)
@@ -254,6 +318,46 @@ export function LinkTypesTable() {
         await reviewDraft()
       }}
     />
+    <CreateDialog
+      open={createOpen}
+      title={copy.newLinkType}
+      description={copy.createNameHint}
+      fields={[
+        { id: 'name', label: copy.name, value: linkName, testId: 'new-name', autoFocus: true },
+        { id: 'from', label: copy.fromType, value: fromType, testId: 'new-type', options: entities.map((key) => ({ value: key, label: key })) },
+        { id: 'to', label: copy.toType, value: toType, testId: 'new-to-type', options: entities.map((key) => ({ value: key, label: key })) },
+      ]}
+      onField={(id, value) => {
+        if (id === 'name') setLinkName(value)
+        else if (id === 'from') setFromType(value)
+        else setToType(value)
+      }}
+      onClose={() => setCreateOpen(false)}
+      onSubmit={async () => {
+        const name = requireText(linkName)
+        const key = attributeKey(name)
+        if (!key || !fromType || !toType) throw new Error(copy.validation)
+        const side = attributeKey(name)
+        await stageModel('model.create_link_type', {
+          key,
+          label: name,
+          singular: name,
+          plural: name,
+          language: uiLanguage,
+          from_types: [fromType],
+          to_types: [toType],
+          from_key: side,
+          from_label: name,
+          to_key: `${side}_to`,
+          to_label: name,
+          from_cardinality: 'many',
+          to_cardinality: 'many',
+          attributes: [],
+        })
+        setPendingKey(key)
+      }}
+    />
+    </>
   )
 }
 
@@ -262,6 +366,10 @@ export function ValueListsTable({ onOpenList }: { onOpenList?: (key: string) => 
   const [filter, setFilter] = useState('')
   const { activeRowId, setActiveRowId } = useActiveRowId()
   const [draftRows, setDraftRows] = useState<Record<string, ListRow>>({})
+  const [createOpen, setCreateOpen] = useState(false)
+  const [listName, setListName] = useState('')
+  const [listKeyField, setListKeyField] = useState('')
+  const [pendingKey, setPendingKey] = useState<string | null>(null)
   const rows = useMemo<ListRow[]>(
     () =>
       ((defs?.value_lists as Json[]) ?? []).map((list) => {
@@ -275,6 +383,15 @@ export function ValueListsTable({ onOpenList }: { onOpenList?: (key: string) => 
       }),
     [defs],
   )
+
+  useEffect(() => {
+    if (!pendingKey) return
+    const row = rows.find((item) => item.id === pendingKey || item.key === pendingKey)
+    if (!row) return
+    setActiveRowId(row.id)
+    setModelFocus({ kind: 'value_list', key: row.key })
+    setPendingKey(null)
+  }, [rows, pendingKey])
 
   const columns: Array<StandardColumn<ListRow>> = [
     {
@@ -304,14 +421,19 @@ export function ValueListsTable({ onOpenList }: { onOpenList?: (key: string) => 
   if (stored.isError) return <StateNote tone="error" title={copy.errorModel} />
 
   return (
+    <>
     <StandardEditableTable
       testId="value-lists-table"
       columns={columns}
       rows={rows}
       draftRows={draftRows}
       onDraftRowsChange={setDraftRows}
-      createDraftRow={() => ({ id: `new-${crypto.randomUUID()}`, key: '', label: '', optionCount: 0 })}
-      newRowLabel={copy.valueLists}
+      onNewRow={() => {
+        setListName('')
+        setListKeyField('')
+        setCreateOpen(true)
+      }}
+      newRowLabel={copy.newValueList}
       filterValue={filter}
       onFilterChange={(value) => {
         setFilter(value)
@@ -348,6 +470,28 @@ export function ValueListsTable({ onOpenList }: { onOpenList?: (key: string) => 
         await reviewDraft()
       }}
     />
+    <CreateDialog
+      open={createOpen}
+      title={copy.newValueList}
+      description={copy.createNameHint}
+      fields={[
+        { id: 'name', label: copy.name, value: listName, testId: 'new-name', autoFocus: true },
+        { id: 'key', label: copy.key, value: listKeyField, testId: 'new-key' },
+      ]}
+      onField={(id, value) => {
+        if (id === 'name') setListName(value)
+        else setListKeyField(value)
+      }}
+      onClose={() => setCreateOpen(false)}
+      onSubmit={async () => {
+        const label = requireText(listName)
+        const key = attributeKey(listKeyField || label)
+        if (!key) throw new Error(copy.validation)
+        await stageModel('model.create_value_list', { key, label, language: uiLanguage })
+        setPendingKey(key)
+      }}
+    />
+    </>
   )
 }
 
@@ -356,7 +500,19 @@ export function ValueListValuesTable({ listKey }: { listKey: string }) {
   const [filter, setFilter] = useState('')
   const { activeRowId, setActiveRowId } = useActiveRowId()
   const [draftRows, setDraftRows] = useState<Record<string, OptionRow>>({})
+  const [createOpen, setCreateOpen] = useState(false)
+  const [optionName, setOptionName] = useState('')
+  const [optionCode, setOptionCode] = useState('')
+  const [pendingKey, setPendingKey] = useState<string | null>(null)
   const rows = useMemo(() => valueListOptions(defs, listKey), [defs, listKey])
+
+  useEffect(() => {
+    if (!pendingKey) return
+    const row = rows.find((item) => item.id === pendingKey || item.code === pendingKey)
+    if (!row) return
+    setActiveRowId(row.id)
+    setPendingKey(null)
+  }, [rows, pendingKey])
 
   const columns: Array<StandardColumn<OptionRow>> = [
     {
@@ -379,19 +535,19 @@ export function ValueListValuesTable({ listKey }: { listKey: string }) {
   if (stored.isPending) return <StateNote tone="loading" title={copy.loadingModel} />
 
   return (
+    <>
     <StandardEditableTable
       testId="value-list-values-table"
       columns={columns}
       rows={rows}
       draftRows={draftRows}
       onDraftRowsChange={setDraftRows}
-      createDraftRow={() => ({
-        id: `${listKey}:new-${crypto.randomUUID()}`,
-        code: '',
-        label: '',
-        listKey,
-      })}
-      newRowLabel={copy.valueListValues}
+      onNewRow={() => {
+        setOptionName('')
+        setOptionCode('')
+        setCreateOpen(true)
+      }}
+      newRowLabel={copy.newListValue}
       filterValue={filter}
       onFilterChange={(value) => {
         setFilter(value)
@@ -428,6 +584,31 @@ export function ValueListValuesTable({ listKey }: { listKey: string }) {
         await reviewDraft()
       }}
     />
+    <CreateDialog
+      open={createOpen}
+      title={copy.newListValue}
+      description={copy.createNameHint}
+      fields={[
+        { id: 'name', label: copy.name, value: optionName, testId: 'new-name', autoFocus: true },
+        { id: 'code', label: copy.key, value: optionCode, testId: 'new-key' },
+      ]}
+      onField={(id, value) => {
+        if (id === 'name') setOptionName(value)
+        else setOptionCode(value)
+      }}
+      onClose={() => setCreateOpen(false)}
+      onSubmit={async () => {
+        const label = requireText(optionName)
+        const code = attributeKey(optionCode || label)
+        if (!code) throw new Error(copy.validation)
+        await stageModel('model.update_value_list', {
+          key: listKey,
+          options: [...rows.map((row) => ({ code: row.code, label: row.label })), { code, label }],
+        })
+        setPendingKey(code)
+      }}
+    />
+    </>
   )
 }
 
@@ -436,6 +617,11 @@ export function UnitsTable() {
   const [filter, setFilter] = useState('')
   const { activeRowId, setActiveRowId } = useActiveRowId()
   const [draftRows, setDraftRows] = useState<Record<string, UnitRow>>({})
+  const [createOpen, setCreateOpen] = useState(false)
+  const [familyName, setFamilyName] = useState('')
+  const [unitCode, setUnitCode] = useState('')
+  const [factor, setFactor] = useState('1')
+  const [pendingId, setPendingId] = useState<string | null>(null)
   const rows = useMemo<UnitRow[]>(() => {
     const out: UnitRow[] = []
     for (const family of (defs?.unit_families as Json[] | undefined) ?? []) {
@@ -455,6 +641,14 @@ export function UnitsTable() {
     }
     return out
   }, [defs])
+
+  useEffect(() => {
+    if (!pendingId) return
+    const row = rows.find((item) => item.id === pendingId)
+    if (!row) return
+    setActiveRowId(row.id)
+    setPendingId(null)
+  }, [rows, pendingId])
 
   const columns: Array<StandardColumn<UnitRow>> = [
     {
@@ -485,19 +679,20 @@ export function UnitsTable() {
   if (stored.isError) return <StateNote tone="error" title={copy.errorModel} />
 
   return (
+    <>
     <StandardEditableTable
       testId="units-table"
       columns={columns}
       rows={rows}
       draftRows={draftRows}
       onDraftRowsChange={setDraftRows}
-      createDraftRow={() => ({
-        id: `new-${crypto.randomUUID()}`,
-        family: '',
-        code: '',
-        factor: '1',
-      })}
-      newRowLabel={copy.unitsView}
+      onNewRow={() => {
+        setFamilyName('')
+        setUnitCode('')
+        setFactor('1')
+        setCreateOpen(true)
+      }}
+      newRowLabel={copy.newUnit}
       filterValue={filter}
       onFilterChange={(value) => {
         setFilter(value)
@@ -544,6 +739,43 @@ export function UnitsTable() {
         await reviewDraft()
       }}
     />
+    <CreateDialog
+      open={createOpen}
+      title={copy.newUnit}
+      description={copy.createNameHint}
+      fields={[
+        { id: 'family', label: copy.unitFamilies, value: familyName, testId: 'new-name', autoFocus: true },
+        { id: 'code', label: copy.unit, value: unitCode, testId: 'new-key' },
+        { id: 'factor', label: copy.factor, value: factor, testId: 'new-factor' },
+      ]}
+      onField={(id, value) => {
+        if (id === 'family') setFamilyName(value)
+        else if (id === 'code') setUnitCode(value)
+        else setFactor(value)
+      }}
+      onClose={() => setCreateOpen(false)}
+      onSubmit={async () => {
+        const family = requireText(familyName)
+        const code = unitCode.trim() || family
+        const hasFamily = ((defs?.unit_families as Json[]) ?? []).some((item) => String(item.key) === family)
+        if (!hasFamily) {
+          await stageModel('model.create_unit_family', {
+            key: family,
+            dimension: family,
+            base_unit: code,
+            units: [{ code, factor: factor.trim() || '1' }],
+          })
+        } else {
+          await stageModel('model.add_unit', {
+            unit_family: family,
+            code,
+            factor: factor.trim() || '1',
+          })
+        }
+        setPendingId(`${family}:${code}`)
+      }}
+    />
+    </>
   )
 }
 

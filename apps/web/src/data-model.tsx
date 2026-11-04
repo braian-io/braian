@@ -18,10 +18,10 @@ import { StructureSection } from './structure-tree'
 import { StateNote } from './states'
 import { onDraftChange, requestReview, setModelFocus, stageModel, stageModelSteps } from './model-stage'
 import { chooseModelSelection, getModelSelection, getPreviewType, setPreviewType, subscribeModelSelection } from './model-selection'
-import { findPendingCreateRowId } from './inline-create'
+import { CreateDialog, requireText } from './create-dialog'
 import { onAttributeAction, type AttributeAction } from './attribute-actions'
 import { writeErrorMessage } from './write-error'
-import { ROW_ORDER_KEY, StandardEditableTable, type StandardColumn, type EditRequest } from './standard-editable-table'
+import { ROW_ORDER_KEY, StandardEditableTable, type StandardColumn } from './standard-editable-table'
 
 type View = { state: Json }
 
@@ -172,7 +172,11 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
   const [filter, setFilter] = useState('')
   const [draftRows, setDraftRows] = useState<Record<string, AttributeTableRow>>({})
   const [message, setMessage] = useState('')
-  const [editRequest, setEditRequest] = useState<EditRequest | null>(null)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [createName, setCreateName] = useState('')
+  const [createKind, setCreateKind] = useState('text')
+  const [pendingKey, setPendingKey] = useState<string | null>(null)
+  const [activeRowId, setActiveRowId] = useState<string | null>(null)
   const selectionKey = selection ? (selection.kind === 'type' ? selection.typeKey : `${selection.structure}/${selection.group}`) : ''
   const keyAttribute = keyAttributeOf(defs, selection)
   const families = ((defs?.unit_families as Json[]) ?? []).map((item) => String(item.key ?? '')).filter(Boolean)
@@ -182,7 +186,9 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
     setDraftRows({})
     setFilter('')
     setMessage('')
-    setEditRequest(null)
+    setCreateOpen(false)
+    setPendingKey(null)
+    setActiveRowId(null)
   }, [selectionKey])
 
   const rows = useMemo(() => {
@@ -193,35 +199,20 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
     return source
   }, [defs, selection])
 
-  const blankRow = (): AttributeTableRow => ({
-    id: `new-${crypto.randomUUID()}`,
-    key: '',
-    label: '',
-    kind: 'text',
-    unit: '',
-    required: false,
-    languages: true,
-    searchable: false,
-    filterable: false,
-    sortable: false,
-    inherited: false,
-    standard: false,
-    multiple: false,
-    min: '',
-    max: '',
-    valueList: '',
-  })
+  useEffect(() => {
+    if (!pendingKey) return
+    const row = rows.find((item) => item.key === pendingKey)
+    if (!row) return
+    setActiveRowId(row.id)
+    setModelFocus({ kind: 'attribute', key: row.key })
+    setPendingKey(null)
+  }, [rows, pendingKey])
 
   const run = (action: AttributeAction) => {
     if (action !== 'new') return
-    const pending = findPendingCreateRowId(draftRows, rows)
-    if (pending) {
-      setEditRequest({ rowId: pending, columnId: 'label' })
-      return
-    }
-    const row = blankRow()
-    setDraftRows((current) => ({ ...current, [row.id]: row }))
-    setEditRequest({ rowId: row.id, columnId: 'label' })
+    setCreateName('')
+    setCreateKind('text')
+    setCreateOpen(true)
   }
 
   const runRef = useRef(run)
@@ -537,7 +528,7 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
         rows={rows}
         draftRows={draftRows}
         onDraftRowsChange={setDraftRows}
-        createDraftRow={blankRow}
+        onNewRow={() => run('new')}
         newRowLabel={copy.newAttribute}
         filterValue={filter}
         onFilterChange={setFilter}
@@ -548,8 +539,6 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
           fixed: selection.kind === 'type' && row.standard,
           readOnly: row.inherited,
         })}
-        editRequest={editRequest}
-        onEditRequestHandled={() => setEditRequest(null)}
         reorderable={selection.kind === 'type'}
         canEdit={(row, column) => {
           if (row.inherited) return false
@@ -558,10 +547,57 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
           if (column.id === 'languages' && row.kind !== 'text') return false
           return true
         }}
+        activeRowId={activeRowId}
         onActivateRow={(row) => {
+          setActiveRowId(row.id)
           if (row.key) setModelFocus({ kind: 'attribute', key: row.key })
         }}
         onReviewAndSave={save}
+      />
+      <CreateDialog
+        open={createOpen}
+        title={copy.newAttribute}
+        description={copy.createNameHint}
+        fields={[
+          { id: 'name', label: copy.name, value: createName, testId: 'new-name', autoFocus: true },
+          {
+            id: 'kind',
+            label: copy.attributeType,
+            value: createKind,
+            testId: 'new-type',
+            options: KINDS.map(([value, label]) => ({ value, label })),
+          },
+        ]}
+        onField={(id, value) => {
+          if (id === 'name') setCreateName(value)
+          else setCreateKind(value)
+        }}
+        onClose={() => setCreateOpen(false)}
+        onSubmit={async () => {
+          const label = requireText(createName)
+          const key = attributeKey(label)
+          if (!key) throw new Error(copy.validation)
+          await createRow({
+            id: key,
+            key,
+            label,
+            kind: createKind,
+            unit: '',
+            required: false,
+            languages: createKind === 'text',
+            searchable: false,
+            filterable: false,
+            sortable: false,
+            inherited: false,
+            standard: false,
+            multiple: false,
+            min: '',
+            max: '',
+            valueList: '',
+          })
+          setPendingKey(key)
+          void queryClient.invalidateQueries({ queryKey: ['model-draft'] })
+        }}
       />
       {message ? <p className="error">{message}</p> : null}
     </div>

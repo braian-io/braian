@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AttributeDefinitions } from './attribute-definitions'
@@ -162,10 +162,20 @@ describe('attribute definitions view', () => {
     })
   })
 
-  it('adds a draft row from plus and shows Review and save', async () => {
+  it('creates an attribute from the plus dialog', async () => {
     render(<Host />)
     await screen.findAllByTestId('attribute-definition-row')
     fireEvent.click(screen.getByRole('button', { name: /new attribute/i }))
-    await waitFor(() => expect(screen.getByRole('button', { name: /review and save/i })).toBeTruthy())
+    const dialog = await screen.findByRole('dialog', { name: copy.newAttribute })
+    fireEvent.change(within(dialog).getByRole('textbox', { name: copy.name }), { target: { value: 'Colour' } })
+    fireEvent.click(within(dialog).getByTestId('create-object'))
+    await waitFor(() => {
+      const posted = mock.methods.post.mock.calls.find((call) => call[0] === '/v1/model/draft/steps')
+      expect(posted?.[1]?.body).toEqual({
+        operation: 'model.create_attribute',
+        args: { key: 'colour', label: 'Colour', kind: 'text' },
+      })
+    })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: copy.newAttribute })).toBeNull())
   })
 })
