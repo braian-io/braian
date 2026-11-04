@@ -21,22 +21,36 @@ test('reload restores the active workspace; unknown id falls back', async ({ pag
   const tabs = page.locator('nav.tabs')
   await expect(tabs.getByRole('button', { name: /^Articles/ })).toBeVisible()
 
+  const wsParam = () => new URL(page.url()).searchParams.get('ws')
+  const previous = wsParam()
+
   // Non-default workspace.
   await tabs.getByRole('button', { name: /^Articles/ }).click()
   await expect(activeTab(page)).toHaveText(/^Articles/)
+  // Wait until the click has reached the URL before reloading it.
+  await expect.poll(wsParam, { timeout: 15_000 }).not.toBe(previous)
+  const articlesId = wsParam()
+  expect(articlesId).toBeTruthy()
 
+  // Reload with ws in the URL restores that workspace.
   await page.reload()
   await expect(page.getByTestId('dock')).toBeVisible()
   await expect(activeTab(page)).toHaveText(/^Articles/, { timeout: 30_000 })
+  await expect.poll(wsParam).toBe(articlesId)
 
-  // Unknown / removed workspace id → default (first type workspace, Products).
+  // Reload of '/' restores the stored workspace.
+  await page.goto('/')
+  await expect(page.getByTestId('dock')).toBeVisible()
+  await expect(activeTab(page)).toHaveText(/^Articles/, { timeout: 30_000 })
+
+  // Unknown / removed workspace id in the URL falls back to stored/default.
   const me = await page.request.get('/v1/me')
   expect(me.ok()).toBeTruthy()
   const userId = ((await me.json()) as { user_id?: string }).user_id
   expect(userId).toBeTruthy()
   await page.evaluate((key) => localStorage.setItem(key, JSON.stringify('00000000-0000-4000-8000-000000000000')), `braian.activeWorkspace.${userId}`)
 
-  await page.reload()
+  await page.goto('/?ws=00000000-0000-4000-8000-000000000000')
   await expect(page.getByTestId('dock')).toBeVisible()
   await expect(activeTab(page)).toHaveText(/^Products/, { timeout: 30_000 })
 })

@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useNavigate, useSearch } from '@tanstack/react-router'
+import { useUrlStateSync } from './url-state'
 import { ImportMappingsView } from './import/mappings-view'
 import { CatalogsView, MergeProfilesView, MergeRunsView, OwnershipView } from './catalogs/views'
 import { flushSync } from 'react-dom'
@@ -175,6 +177,8 @@ function layoutCommand(name: string) {
 
 export function Shell() {
   const queryClient = useQueryClient()
+  const search = useSearch({ strict: false }) as Record<string, unknown>
+  const navigate = useNavigate()
   const me = useQuery({ queryKey: ['me'], queryFn: () => api.get('/v1/me'), retry: false })
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
   const themeRef = useRef(theme)
@@ -404,6 +408,52 @@ export function Shell() {
     setObjectId,
   )
   const feedbackEnabled = me.data?.feedback === true
+  const urlCatalogId = workspaceCatalogRef(workspace.data)?.catalogId || MASTER_CATALOG_ID
+  const urlReady = Boolean(
+    booted
+    && me.isSuccess
+    && workspaceId
+    && workspace.data
+    && workspace.data.id === workspaceId
+    && doc
+    && doc.id === workspaceId
+    && !layoutHealPending
+    && orderedWorkspaces.length > 0,
+  )
+  useUrlStateSync({
+    search,
+    ready: urlReady,
+    state: {
+      workspaceId,
+      viewId: doc?.focus ?? null,
+      catalogId: urlCatalogId,
+      objectId,
+    },
+    valid: {
+      workspace: (id) => orderedWorkspaces.some((item) => item.id === id),
+      view: (id) => viewRows(workspace.data?.views).some((view) => view.id === id),
+      catalog: (id) => Boolean(id),
+      object: (id) => Boolean(id),
+    },
+    viewOpen: (id) => Boolean(doc && layoutViews(doc.layout).includes(id)),
+    navigate: (next) => {
+      void navigate({ to: '/', search: next.search, replace: next.replace })
+    },
+    apply: (next) => {
+      if (next.workspaceId !== undefined) setWorkspaceId(next.workspaceId)
+      if (next.catalogId !== undefined) {
+        window.dispatchEvent(new CustomEvent('braian-set-catalog', {
+          detail: { scope: 'workspace', catalogId: next.catalogId },
+        }))
+      }
+      if (next.objectId !== undefined) setObjectId(next.objectId)
+      // The URL may be stale or repeat the focused view; re-opening it commits
+      // a new layout and remounts the table (losing loaded column prefs).
+      if (next.viewId !== undefined && docRef.current?.focus !== next.viewId) {
+        applyRef.current('ui.open_view', { id: next.viewId })
+      }
+    },
+  })
 
   useEffect(() => {
     const stops = [
