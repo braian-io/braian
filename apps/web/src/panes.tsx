@@ -2335,13 +2335,21 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   })
   const defs = useQuery({ queryKey: ['definitions'], queryFn: () => api.get('/v1/definitions') })
   const suggestions = useQuery({
-    queryKey: ['proposals'],
-    queryFn: () => api.get('/v1/proposals'),
+    queryKey: ['proposals', 'detail', session.objectId],
+    queryFn: () => api.get('/v1/proposals', { params: { query: { status: 'open', limit: 200 } } }),
+    enabled: Boolean(session.objectId),
   })
-  const proposal = useQuery({
-    queryKey: ['proposal', session.proposalId],
-    queryFn: () => api.get('/v1/proposals/{id}', { params: { path: { id: session.proposalId ?? '' } } }),
-    enabled: Boolean(session.proposalId),
+  const pendingProposalIds = [
+    ...(session.proposalId ? [session.proposalId] : []),
+    ...(((suggestions.data?.proposals as Json[] | undefined) ?? [])
+      .filter((item) => String(item.status ?? '') === 'open' && !item.session_id)
+      .map((item) => String(item.id))),
+  ].filter((id, index, all) => Boolean(id) && all.indexOf(id) === index)
+  const pendingProposals = useQueries({
+    queries: pendingProposalIds.map((id) => ({
+      queryKey: ['proposal', id],
+      queryFn: () => api.get('/v1/proposals/{id}', { params: { path: { id } } }),
+    })),
   })
   const [draft, setDraft] = useState<Json>({})
   const [error, setError] = useState('')
@@ -2354,9 +2362,9 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
     setPendingError('')
   }, [session.objectId, session.proposalId])
   const acceptPending = useMutation({
-    mutationFn: (body: { rows: string[]; patches: Record<string, Json> }) =>
-      api.post('/v1/proposals/{id}/accept', { params: { path: { id: session.proposalId ?? '' } }, body }),
-    onSuccess: (result) => {
+    mutationFn: ({ proposalId, body }: { proposalId: string; body: { rows: string[]; patches: Record<string, Json> } }) =>
+      api.post('/v1/proposals/{id}/accept', { params: { path: { id: proposalId } }, body }),
+    onSuccess: (result, variables) => {
       const failed = failureLines(result)
       if (failed.length > 0) {
         const message = messageFromErrorBody(failed[0]) || copy.validation
@@ -2366,7 +2374,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       }
       setPendingError('')
       session.push(copy.saved)
-      void queryClient.invalidateQueries({ queryKey: ['proposal', session.proposalId] })
+      void queryClient.invalidateQueries({ queryKey: ['proposal', variables.proposalId] })
       void queryClient.invalidateQueries({ queryKey: ['proposals'] })
       void queryClient.invalidateQueries({ queryKey: ['object', session.objectId] })
       void queryClient.invalidateQueries({ queryKey: ['objects'] })
@@ -2437,20 +2445,22 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   const valueKeys = [...new Set([...Object.keys(values), ...fileKeys])]
   const owners = provenance.data?.owners ?? {}
   const origin = provenance.data?.origin
-  const pendingByField = new Map<string, Array<{ row: Json; line: DiffLine; lines: DiffLine[] }>>()
-  for (const row of pendingRowsForObject(proposal.data as Json | undefined, session.objectId)) {
-    const lines = pendingLines(row, values, defs.data)
-    for (const line of lines) {
-      if (!line.field) continue
-      const entries = pendingByField.get(line.field) ?? []
-      entries.push({ row, line, lines })
-      pendingByField.set(line.field, entries)
+  const pendingByField = new Map<string, Array<{ proposalId: string; row: Json; line: DiffLine; lines: DiffLine[] }>>()
+  for (const [index, proposalId] of pendingProposalIds.entries()) {
+    for (const row of pendingRowsForObject(pendingProposals[index]?.data as Json | undefined, session.objectId)) {
+      const lines = pendingLines(row, values, defs.data)
+      for (const line of lines) {
+        if (!line.field) continue
+        const entries = pendingByField.get(line.field) ?? []
+        entries.push({ proposalId, row, line, lines })
+        pendingByField.set(line.field, entries)
+      }
     }
   }
   const renderPending = (key: string) => {
     const entries = pendingByField.get(key)
     if (!entries || entries.length === 0) return null
-    return entries.map(({ row, line, lines }) => (
+    return entries.map(({ proposalId, row, line, lines }) => (
       <div
         key={`${String(row.id)}:${line.id}`}
         className="pending-field"
@@ -2467,7 +2477,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
           data-testid="accept-pending"
           data-line={line.id}
           disabled={acceptPending.isPending}
-          onClick={() => acceptPending.mutate(acceptPendingLine(line, row, lines, values))}
+          onClick={() => acceptPending.mutate({ proposalId, body: acceptPendingLine(line, row, lines, values) })}
         >
           {copy.acceptField}
         </button>
@@ -2476,7 +2486,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
           data-testid="reject-pending"
           data-line={line.id}
           disabled={acceptPending.isPending}
-          onClick={() => acceptPending.mutate(rejectPendingRow(row))}
+          onClick={() => acceptPending.mutate({ proposalId, body: rejectPendingRow(row) })}
         >
           {copy.rejectField}
         </button>

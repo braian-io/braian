@@ -199,11 +199,6 @@ test('a pending one-object proposal shows inline in Detail and accepts there', a
   })
   expect(created.ok()).toBeTruthy()
 
-  // The bus is not reachable from Playwright. Opening Review sets the shell's
-  // proposal id, the same state an agent proposal leaves behind.
-  await page.locator('nav.tabs').getByRole('button', { name: /Review/ }).click()
-  await expect(page.getByTestId('proposal')).toContainText(pendingName)
-
   await articlesTab.click()
   await expect(articlesTab).toHaveClass(/active/)
   const articles = mainTable(page, 'Articles')
@@ -215,7 +210,7 @@ test('a pending one-object proposal shows inline in Detail and accepts there', a
   await page.locator(`#object-row-${objectId}`).click()
   await page.locator('[data-view-type="object_detail"]').first().click()
 
-  const pending = page.getByTestId('pending-field').filter({ has: page.getByTestId('pending-value') }).first()
+  const pending = page.getByTestId('pending-field').filter({ hasText: pendingName }).first()
   await expect(pending).toContainText('Pending')
   await expect(pending).toContainText(pendingName)
   await pending.getByTestId('accept-pending').click()

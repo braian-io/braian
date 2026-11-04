@@ -67,12 +67,12 @@ const proposal: Json = {
   ],
 }
 
-function Host() {
+function Host({ proposalId = 'p1' }: { proposalId?: string | null }) {
   const [client] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: false } } }))
   const session: PanesSession = {
     group: null,
     objectId: 'obj-1',
-    proposalId: 'p1',
+    proposalId,
     language: 'en',
     setGroup: () => undefined,
     setObjectId: () => undefined,
@@ -89,7 +89,10 @@ function Host() {
 function proposalApi(path: string) {
   if (path === '/v1/objects/{id}') return Promise.resolve(object)
   if (path === '/v1/definitions') return Promise.resolve(definitions)
-  if (path === '/v1/proposals') return Promise.resolve({ pending: { total: 1, objects: [{ object_id: 'obj-1', count: 1 }] }, proposals: [] })
+  if (path === '/v1/proposals') return Promise.resolve({
+    pending: { total: 1, objects: [{ object_id: 'obj-1', count: 1 }] },
+    proposals: [{ id: 'p1', title: 'Agent proposal', status: 'open' }],
+  })
   if (path === '/v1/proposals/{id}') return Promise.resolve(proposal)
   if (path === '/v1/proposals/{id}/accept') return Promise.resolve({ accepted: [{ id: 'r1' }], failed: [] })
   return Promise.resolve({})
@@ -117,6 +120,21 @@ describe('pending proposal values in Detail', () => {
     expect(pending.textContent).toContain('Pending')
     expect(pending.textContent).toContain('New')
     expect(pending.getAttribute('data-field')).toBe('name')
+
+    fireEvent.click(screen.getByTestId('accept-pending'))
+
+    await waitFor(() => expect(acceptCall()).toBeTruthy())
+    expect(acceptCall()?.[1]).toMatchObject({
+      params: { path: { id: 'p1' } },
+      body: { rows: ['r1'], patches: { r1: { values: { name: { en: 'New' } } } } },
+    })
+  })
+
+  it('shows pending values from any open proposal, not only the selected one', async () => {
+    render(<Host proposalId={null} />)
+
+    const pending = await screen.findByTestId('pending-field')
+    expect(pending.textContent).toContain('New')
 
     fireEvent.click(screen.getByTestId('accept-pending'))
 
