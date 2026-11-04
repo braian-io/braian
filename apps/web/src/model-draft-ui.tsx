@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type Json } from './api'
 import { Button } from './components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
 import { writeErrorMessage } from './write-error'
 import { formatCount, formatTimestamp } from './format'
 import { copy } from './i18n'
@@ -121,22 +122,6 @@ function ReviewDialog({ body, onClose, onSaved }: { body: Json; onClose: () => v
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const nameMatches = !destructive || typed === confirmName
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      event.stopPropagation()
-      onClose()
-    }
-    window.addEventListener('keydown', onKey, true)
-    return () => window.removeEventListener('keydown', onKey, true)
-  }, [onClose])
-  const onDialogKey = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== 'Escape') return
-    event.preventDefault()
-    event.stopPropagation()
-    onClose()
-  }
   const save = () => {
     setBusy(true)
     void api.post('/v1/model/draft/save', { body: destructive ? { confirm_name: typed } : {} })
@@ -148,12 +133,16 @@ function ReviewDialog({ body, onClose, onSaved }: { body: Json; onClose: () => v
       .finally(() => setBusy(false))
   }
   return (
-    <div className="overlay" data-testid="review-dialog">
-      <div className="dialog consequence" role="dialog" aria-labelledby="review-title" onMouseDown={(event) => event.stopPropagation()} onKeyDown={onDialogKey}>
+    <Dialog open onOpenChange={(next) => { if (!next) onClose() }}>
+      <DialogContent
+        className="consequence"
+        data-testid="review-dialog"
+        onEscapeKeyDown={(event) => event.stopPropagation()}
+      >
         <div className="toolbar">
-          <strong id="review-title">{copy.reviewAndSave}</strong>
+          <DialogTitle asChild><strong>{copy.reviewAndSave}</strong></DialogTitle>
         </div>
-        <p className="hint">{copy.reviewChange}</p>
+        <DialogDescription asChild><p className="hint">{copy.reviewChange}</p></DialogDescription>
         {body.error ? <p className="error">{String(body.error)}</p> : null}
         <ul className="proposal-tree" data-testid="review-lines">
           {lines.map((line) => <li key={line}>{line}</li>)}
@@ -182,8 +171,8 @@ function ReviewDialog({ body, onClose, onSaved }: { body: Json; onClose: () => v
           <button type="button" onClick={onClose}>{copy.cancel}</button>
           <button type="button" className="primary" data-testid="confirm-review" disabled={busy || !nameMatches} onClick={save}>{copy.confirm}</button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -204,16 +193,6 @@ function CreateDialog({ kind, onClose }: { kind: DialogKind; onClose: () => void
     if (!toType && entities[0]) setToType(entities[0])
   }, [kind, fromType, toType, entities])
   const title = kind === 'link' ? copy.newLinkType : kind === 'type' ? copy.newType : kind === 'list' ? copy.newValueList : kind === 'family' ? copy.newUnitFamily : copy.newTree
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        onClose()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
   const submit = () => {
     const name = label.trim()
     const key = attributeKey(name)
@@ -259,60 +238,62 @@ function CreateDialog({ kind, onClose }: { kind: DialogKind; onClose: () => void
     })
   }
   return (
-    <div className="overlay" data-testid="model-dialog">
-      <form
-        className="dialog"
-        role="dialog"
-        aria-labelledby="model-dialog-title"
-        onMouseDown={(event) => event.stopPropagation()}
-        onSubmit={(event) => {
-          event.preventDefault()
-          submit()
-        }}
+    <Dialog open onOpenChange={(next) => { if (!next) onClose() }}>
+      <DialogContent
+        data-testid="model-dialog"
+        onEscapeKeyDown={(event) => event.stopPropagation()}
       >
-        <strong id="model-dialog-title">{title}</strong>
-        <label className="model-field">
-          {copy.attributeName}
-          <input data-testid="model-dialog-name" autoFocus aria-label={copy.attributeName} value={label} onChange={(event) => setLabel(event.target.value)} />
-        </label>
-        {kind === 'link' ? (
-          <>
-            <label className="model-field">
-              {copy.fromType}
-              <select data-testid="link-type-from" aria-label={copy.fromType} value={fromType} onChange={(event) => setFromType(event.target.value)}>
-                {entities.map((key) => <option key={key} value={key}>{key}</option>)}
-              </select>
-            </label>
-            <label className="model-field">
-              {copy.toType}
-              <select data-testid="link-type-to" aria-label={copy.toType} value={toType} onChange={(event) => setToType(event.target.value)}>
-                {entities.map((key) => <option key={key} value={key}>{key}</option>)}
-              </select>
-            </label>
-            <label className="model-field">
-              {copy.linkAttribute}
-              <input data-testid="link-type-attribute" aria-label={copy.linkAttribute} value={extra} onChange={(event) => setExtra(event.target.value)} />
-            </label>
-          </>
-        ) : null}
-        {kind === 'list' ? (
+        <form
+          className="dialog-form"
+          onSubmit={(event) => {
+            event.preventDefault()
+            submit()
+          }}
+        >
+          <DialogTitle asChild><strong>{title}</strong></DialogTitle>
           <label className="model-field">
-            {copy.options}
-            <input data-testid="model-dialog-options" aria-label={copy.options} value={extra} onChange={(event) => setExtra(event.target.value)} />
+            {copy.attributeName}
+            <input data-testid="model-dialog-name" autoFocus aria-label={copy.attributeName} value={label} onChange={(event) => setLabel(event.target.value)} />
           </label>
-        ) : null}
-        {kind === 'family' ? (
-          <label className="model-field">
-            {copy.baseUnit}
-            <input data-testid="model-dialog-unit" aria-label={copy.baseUnit} value={extra} onChange={(event) => setExtra(event.target.value)} />
-          </label>
-        ) : null}
-        {error ? <p className="error">{error}</p> : null}
-        <div className="toolbar">
-          <button type="button" onClick={onClose}>{copy.cancel}</button>
-          <button type="submit" className="primary" data-testid="model-dialog-save">{copy.save}</button>
-        </div>
-      </form>
-    </div>
+          {kind === 'link' ? (
+            <>
+              <label className="model-field">
+                {copy.fromType}
+                <select data-testid="link-type-from" aria-label={copy.fromType} value={fromType} onChange={(event) => setFromType(event.target.value)}>
+                  {entities.map((key) => <option key={key} value={key}>{key}</option>)}
+                </select>
+              </label>
+              <label className="model-field">
+                {copy.toType}
+                <select data-testid="link-type-to" aria-label={copy.toType} value={toType} onChange={(event) => setToType(event.target.value)}>
+                  {entities.map((key) => <option key={key} value={key}>{key}</option>)}
+                </select>
+              </label>
+              <label className="model-field">
+                {copy.linkAttribute}
+                <input data-testid="link-type-attribute" aria-label={copy.linkAttribute} value={extra} onChange={(event) => setExtra(event.target.value)} />
+              </label>
+            </>
+          ) : null}
+          {kind === 'list' ? (
+            <label className="model-field">
+              {copy.options}
+              <input data-testid="model-dialog-options" aria-label={copy.options} value={extra} onChange={(event) => setExtra(event.target.value)} />
+            </label>
+          ) : null}
+          {kind === 'family' ? (
+            <label className="model-field">
+              {copy.baseUnit}
+              <input data-testid="model-dialog-unit" aria-label={copy.baseUnit} value={extra} onChange={(event) => setExtra(event.target.value)} />
+            </label>
+          ) : null}
+          {error ? <p className="error">{error}</p> : null}
+          <div className="toolbar">
+            <button type="button" onClick={onClose}>{copy.cancel}</button>
+            <button type="submit" className="primary" data-testid="model-dialog-save">{copy.save}</button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
