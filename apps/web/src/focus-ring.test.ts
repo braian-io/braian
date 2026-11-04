@@ -14,7 +14,6 @@ function rule(selector: string) {
 const insetSelectors = [
   '.row:focus-visible',
   '.row .cell:focus-visible',
-  '.grid:focus-visible',
   '.tree:focus-visible',
   '.tree button:focus-visible',
   '.tree-row:focus-visible',
@@ -38,9 +37,15 @@ describe('focus ring', () => {
 
   it('does not hide keyboard focus on rows or the user menu', () => {
     expect(css).not.toMatch(/\.row:focus(?:-visible)?[^{]*\{[^}]*outline:\s*none/)
-    expect(css).not.toMatch(/\.grid:focus(?:-visible)?[^{]*\{[^}]*outline:\s*none/)
     expect(css).not.toMatch(/\.standard-grid-row[^{]*:focus[^{]*\{[^}]*outline:\s*none/)
     expect(css).not.toMatch(/\.user-menu-content \.menu-item\s*\{[^}]*outline:\s*none/)
+  })
+
+  it('puts the grid keyboard mark on the active cell', () => {
+    expect(rule('.grid:focus-visible')).toContain('outline: none')
+    const cell = rule('.grid:focus-visible .row.selected .cell.active-cell')
+    expect(cell).toContain('box-shadow: inset 0 0 0 1px var(--accent-hover)')
+    expect(css).not.toMatch(/\.grid:focus-within/)
   })
 
   it('keeps the selected row on its fill and the ring on focus', () => {

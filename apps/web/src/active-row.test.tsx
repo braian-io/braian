@@ -235,19 +235,30 @@ function installRowStyles() {
   const end = source.indexOf('.draft-user')
   if (start < 0 || end < start) throw new Error('row selection styles missing')
   const rules = source.slice(start, end)
-  // One rule carries fill and rules. Hover is a neutral surface, not that fill.
-  expect(rules).toMatch(/\.row\.selected\s*\{[^}]*background:\s*var\(--accent-dim\)[^}]*box-shadow:\s*inset 0 1px 0 var\(--accent\), inset 0 -1px 0 var\(--accent\)/)
+  // The selected row is a fill. Hover is a neutral surface, not that fill.
+  expect(rules).toMatch(/\.row\.selected\s*\{[^}]*background:\s*var\(--accent-dim\)/)
+  expect(rules).not.toMatch(/\.row\.selected\s*\{[^}]*box-shadow/)
   expect(rules).toMatch(/\.row:hover:not\(\.selected\)\s*\{[^}]*background:\s*var\(--hover\)/)
   expect(rules).not.toMatch(/\.row:hover[^{]*\{[^}]*accent/)
+  // jsdom drops a custom property that is unset when the sheet is parsed.
+  document.documentElement.style.setProperty('--accent-dim', 'rgba(154, 77, 255, 0.18)')
+  document.documentElement.style.setProperty('--hover', 'rgb(38, 50, 71)')
   const style = document.createElement('style')
   style.textContent = rules
   document.head.appendChild(style)
 }
 
 function selectedLook(row: Element) {
-  const style = getComputedStyle(row)
-  // jsdom keeps these specified values when the color is a custom property.
-  return style.boxShadow.includes('inset 0 1px 0') && style.boxShadow.includes('inset 0 -1px 0')
+  let fill = false
+  for (const sheet of document.styleSheets) {
+    for (const rule of sheet.cssRules) {
+      if (!(rule instanceof CSSStyleRule)) continue
+      if (!row.matches(rule.selectorText)) continue
+      if (rule.style.backgroundColor.includes('accent-dim') || rule.style.background.includes('accent-dim')) fill = true
+      if (rule.style.boxShadow.includes('inset')) return false
+    }
+  }
+  return fill && getComputedStyle(row).boxShadow === 'none'
 }
 
 describe('active row', () => {
