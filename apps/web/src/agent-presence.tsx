@@ -36,6 +36,7 @@ export function AgentPresence({ enabled, onReview }: AgentPresenceProps) {
     const pending = backgroundNotices(prior, list)
     const notices = agentNotices(pending)
     const live = document.getElementById('braian-live')
+    // The toast may collapse several finishes into one line. The live region still names each run.
     if (live && pending.length > 0) live.textContent = pending.map((run) => agentNoticeText(run)).join('. ')
     for (const notice of notices) {
       const show = notice.failed ? toast.error : toast
