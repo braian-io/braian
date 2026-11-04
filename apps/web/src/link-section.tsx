@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Check } from 'lucide-react'
 import { toast } from 'sonner'
@@ -13,6 +13,7 @@ import { reportWriteError, writeErrorMessage } from './write-error'
 import { LinkCreateDialog, type LinkEndpoint } from './link-create-dialog'
 import { LinkObjectPicker } from './link-object-picker'
 import { submitLink } from './link-write'
+import { dispatchLinkDrop, endLinkDrag, linkDragActive, linkDragMime, linkDropFromSection, readLinkDrag } from './link-drag'
 
 type LinkItem = {
   id: string
@@ -50,18 +51,23 @@ let focused: { id: string; peer: string; hasValues: boolean } | null = null
 export function LinkSections({
   objectId,
   typeKey,
+  objectName,
+  objectKey,
   defs,
   links,
   onOpen,
 }: {
   objectId: string
   typeKey: string
+  objectName?: string
+  objectKey?: string
   defs?: Json
   links: LinkSide[]
   onOpen: (id: string) => void
 }) {
   const queryClient = useQueryClient()
   const [adding, setAdding] = useState<LinkSide | null>(null)
+  const [dropKey, setDropKey] = useState<string | null>(null)
   const [target, setTarget] = useState<LinkEndpoint | null>(null)
   const opener = useRef<HTMLElement | null>(null)
   const [confirm, setConfirm] = useState<{ id: string; peer: string } | null>(null)
@@ -165,12 +171,41 @@ export function LinkSections({
   }, [sections])
   return (
     <>
-      {sections.map((section) => (
+      {sections.map((section) => {
+        const key = `${section.link_type}:${section.direction}`
+        const markDrop = (event: DragEvent<HTMLElement>) => {
+          if (!linkDragActive(event.dataTransfer.types)) return
+          event.preventDefault()
+          event.dataTransfer.dropEffect = 'copy'
+          setDropKey(key)
+        }
+        return (
         <section
-          key={`${section.link_type}:${section.direction}`}
-          className="field-card"
+          key={key}
+          className={dropKey === key ? 'field-card link-drop' : 'field-card'}
           data-testid="link-section"
+          data-link-drop={dropKey === key ? 'true' : undefined}
           aria-label={section.label}
+          onDragEnter={markDrop}
+          onDragOver={markDrop}
+          onDragLeave={(event) => {
+            const next = event.relatedTarget
+            if (next instanceof Node && event.currentTarget.contains(next)) return
+            setDropKey((current) => (current === key ? null : current))
+          }}
+          onDrop={(event) => {
+            if (!linkDragActive(event.dataTransfer.types)) return
+            event.preventDefault()
+            setDropKey(null)
+            const detail = linkDropFromSection({
+              object: { id: objectId, typeKey, name: objectName, key: objectKey },
+              dragged: readLinkDrag(event.dataTransfer.getData(linkDragMime)),
+              linkType: section.link_type,
+              direction: section.direction,
+            })
+            endLinkDrag()
+            if (detail) dispatchLinkDrop(detail)
+          }}
         >
           <h3>{section.label} ({formatCount(section.links.length)})</h3>
           {section.links.map((link) => (
@@ -216,7 +251,8 @@ export function LinkSections({
             {copy.addLink}
           </button>
         </section>
-      ))}
+        )
+      })}
       {adding && !target ? (
         <LinkObjectPicker
           sourceId={objectId}

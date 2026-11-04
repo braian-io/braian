@@ -563,6 +563,8 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
   white-space: nowrap;
 }
 .drag-ghost svg { color: var(--accent); flex: none; }
+.row.link-drop,
+.field-card.link-drop { background: var(--accent-dim); }
 @media (prefers-reduced-motion: reduce) {
   .dock-preview, .split-divider > span { transition: none; }
 }

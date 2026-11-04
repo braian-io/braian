@@ -2,10 +2,10 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
 import { copy } from './i18n'
 import {
-  allowedLinks,
   choiceLabel,
   choiceValue,
   linkFieldValues,
+  linksForEnds,
   preferredChoice,
   type LinkChoice,
   type LinkDirection,
@@ -31,28 +31,36 @@ export type LinkCreateRequest = {
 
 /**
  * Shared confirm step for a link whose ends are already known.
- * Drag-and-drop uses the same dialog: pass the dropped object as `target`.
+ * Drag-and-drop passes the drop anchor as `source` and every dragged object as `targets`.
  * Several allowed link types show a choice; none shows that the pair is not valid.
  */
 export function LinkCreateDialog({
   source,
   target,
+  targets,
   defs,
   preferred,
   onClose,
   onConfirm,
+  onConfirmMany,
 }: {
   source: LinkEndpoint
   target: LinkEndpoint
+  /** Every object that gets the same link to `source`. Defaults to `target`. */
+  targets?: LinkEndpoint[]
   defs?: Json
   preferred?: { linkType: string; direction: LinkDirection }
   onClose: () => void
   /** Resolves when the link is saved or filed. Throw to keep the dialog open. */
   onConfirm: (request: LinkCreateRequest) => Promise<void>
+  /** Several dragged objects. One call files or saves every link. */
+  onConfirmMany?: (requests: LinkCreateRequest[]) => Promise<void>
 }) {
+  const peers = targets && targets.length > 0 ? targets : [target]
+  const peerTypes = peers.map((item) => item.typeKey).join('|')
   const choices = useMemo(
-    () => allowedLinks(defs, source.typeKey, target.typeKey),
-    [defs, source.typeKey, target.typeKey],
+    () => linksForEnds(defs, source.typeKey, peerTypes.split('|').filter(Boolean)),
+    [defs, source.typeKey, peerTypes],
   )
   if (choices.length === 0) {
     return (
@@ -69,29 +77,32 @@ export function LinkCreateDialog({
   return (
     <LinkFields
       source={source}
-      target={target}
+      peers={peers}
       choices={choices}
       preferred={preferred}
       onClose={onClose}
       onConfirm={onConfirm}
+      onConfirmMany={onConfirmMany}
     />
   )
 }
 
 function LinkFields({
   source,
-  target,
+  peers,
   choices,
   preferred,
   onClose,
   onConfirm,
+  onConfirmMany,
 }: {
   source: LinkEndpoint
-  target: LinkEndpoint
+  peers: LinkEndpoint[]
   choices: LinkChoice[]
   preferred?: { linkType: string; direction: LinkDirection }
   onClose: () => void
   onConfirm: (request: LinkCreateRequest) => Promise<void>
+  onConfirmMany?: (requests: LinkCreateRequest[]) => Promise<void>
 }) {
   const initial = preferredChoice(choices, preferred) ?? choices[0]
   const [selected, setSelected] = useState(initial ? choiceValue(initial) : '')
@@ -104,20 +115,28 @@ function LinkFields({
     setError('')
   }, [selected])
   if (!choice) return null
-  const targetName = target.name || target.key || target.id
+  const anchorName = source.name || source.key || source.id
+  const peerName = peers[0]?.name || peers[0]?.key || peers[0]?.id || ''
+  const summary = peers.length > 1
+    ? copy.linkToCount.replace('{name}', anchorName).replace('{count}', String(peers.length))
+    : copy.linkToName.replace('{name}', peerName)
   const submit = () => {
     if (saving) return
     const outgoing = choice.direction === 'out'
-    const request: LinkCreateRequest = {
+    const values = linkFieldValues(choice.fields, draft)
+    const requests = peers.map((peer) => ({
       type: choice.linkType,
       direction: choice.direction,
-      fromId: outgoing ? source.id : target.id,
-      toId: outgoing ? target.id : source.id,
-      values: linkFieldValues(choice.fields, draft),
-    }
+      fromId: outgoing ? source.id : peer.id,
+      toId: outgoing ? peer.id : source.id,
+      values,
+    }))
     setSaving(true)
     setError('')
-    void onConfirm(request)
+    const write = onConfirmMany
+      ? onConfirmMany(requests)
+      : requests.reduce((chain, request) => chain.then(() => onConfirm(request)), Promise.resolve())
+    void write
       .then(onClose)
       .catch((reason: unknown) => {
         setSaving(false)
@@ -135,7 +154,7 @@ function LinkFields({
       >
         <div className="create-head">
           <DialogTitle>{copy.addLink}</DialogTitle>
-          <DialogDescription className="hint">{copy.linkToName.replace('{name}', targetName)}</DialogDescription>
+          <DialogDescription className="hint">{summary}</DialogDescription>
         </div>
         <div className="create-fields">
           {choices.length > 1 ? (

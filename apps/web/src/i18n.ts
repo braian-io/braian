@@ -497,6 +497,8 @@ export const copy = {
   linkInvalid: 'This is not a valid link type.',
   linkInvalidTitle: 'Not a valid link type',
   linkToName: 'Link to {name}',
+  linkToCount: 'Link {name} to {count} objects',
+  linkDragCount: '{count} objects',
   linkFromHere: 'From this object',
   linkToHere: 'To this object',
   linkProposalFailed: 'Could not file the proposal.',

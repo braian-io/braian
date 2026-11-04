@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
+import { useMemo, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { History as HistoryIcon } from 'lucide-react'
@@ -74,6 +74,7 @@ import { rollbackTargetSeq } from './history-rollback'
 import { StateNote } from './states'
 import { classSections } from './class-sections'
 import { LinkSections } from './link-section'
+import { beginLinkDrag, dispatchLinkDrop, endLinkDrag, linkDragActive, linkDragContains, linkDragMime, linkDragObjects, readLinkDrag } from './link-drag'
 import { RecordSection } from './record-section'
 import { groupKeyOf, labelCodes, labelSearchFilter, publishSelectionLabels, SELECTION_APPLIED_EVENT, selectionFilterText, selectionMatchesType } from './assortment-filter'
 import { appendPathFilter, objectTableFilter } from './table-filter'
@@ -188,6 +189,7 @@ export function ObjectTable({
   const [order, setOrder] = useState<string[]>([])
   const [sizes, setSizes] = useState<Record<string, number>>(initial.sizes)
   const [selected, setSelected] = useState<string[]>([])
+  const [linkDropId, setLinkDropId] = useState<string | null>(null)
   const [hidden, setHidden] = useState<string[]>([])
   const [prefsReady, setPrefsReady] = useState(false)
   const [prefsLoadFailed, setPrefsLoadFailed] = useState(false)
@@ -911,6 +913,31 @@ export function ObjectTable({
     const node = parent.current
     if (!node || document.activeElement === node) return
     node.focus({ preventScroll: true })
+  }
+
+  const endpointOf = (row: ObjRow) => ({ id: row.id, typeKey: row.type, name: row.name, key: row.key })
+  const onLinkDragStart = (row: ObjRow, event: ReactDragEvent<HTMLDivElement>) => {
+    const known = (groupBy ? groupedRows : [...byIndex.values()]).map(endpointOf)
+    beginLinkDrag(event.nativeEvent, linkDragObjects(endpointOf(row), selected, known))
+  }
+  const onLinkDragOver = (row: ObjRow, event: ReactDragEvent<HTMLDivElement>) => {
+    if (!linkDragActive(event.dataTransfer.types)) return
+    if (linkDragContains(row.id)) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+    setLinkDropId(row.id)
+  }
+  const onLinkDragLeave = (row: ObjRow) => {
+    setLinkDropId((current) => (current === row.id ? null : current))
+  }
+  const onLinkDrop = (row: ObjRow, event: ReactDragEvent<HTMLDivElement>) => {
+    if (!linkDragActive(event.dataTransfer.types)) return
+    event.preventDefault()
+    setLinkDropId(null)
+    const targets = readLinkDrag(event.dataTransfer.getData(linkDragMime)).filter((item) => item.id !== row.id)
+    endLinkDrag()
+    if (targets.length === 0) return
+    dispatchLinkDrop({ source: endpointOf(row), targets })
   }
 
   const onRowClick = (index: number, event: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean }) => {
@@ -1782,6 +1809,11 @@ export function ObjectTable({
                           beginCellEdit(row, column)
                         }}
                         onFocusGrid={focusGrid}
+                        linkDrop={linkDropId === row.id}
+                        onLinkDragStart={onLinkDragStart}
+                        onLinkDragOver={onLinkDragOver}
+                        onLinkDragLeave={onLinkDragLeave}
+                        onLinkDrop={onLinkDrop}
                       />
                     )
                   })}
@@ -1816,6 +1848,11 @@ export function ObjectTable({
                     beginCellEdit(row, column)
                   }}
                   onFocusGrid={focusGrid}
+                  linkDrop={linkDropId === row.id}
+                  onLinkDragStart={onLinkDragStart}
+                  onLinkDragOver={onLinkDragOver}
+                  onLinkDragLeave={onLinkDragLeave}
+                  onLinkDrop={onLinkDrop}
                   style={{ position: 'absolute', transform: `translateY(${item.start}px)`, width: '100%' }}
                 />
               )
@@ -2009,6 +2046,11 @@ function Row({
   onMenu,
   onFocusGrid,
   onCellDoubleClick,
+  linkDrop,
+  onLinkDragStart,
+  onLinkDragOver,
+  onLinkDragLeave,
+  onLinkDrop,
   style,
 }: {
   row: ObjRow
@@ -2025,28 +2067,41 @@ function Row({
   onMenu: (index: number, x: number, y: number, column: string) => void
   onFocusGrid: () => void
   onCellDoubleClick?: (row: ObjRow, column: string) => void
+  linkDrop?: boolean
+  onLinkDragStart?: (row: ObjRow, event: ReactDragEvent<HTMLDivElement>) => void
+  onLinkDragOver?: (row: ObjRow, event: ReactDragEvent<HTMLDivElement>) => void
+  onLinkDragLeave?: (row: ObjRow) => void
+  onLinkDrop?: (row: ObjRow, event: ReactDragEvent<HTMLDivElement>) => void
   style?: CSSProperties
 }) {
   // Background and border share this class. Range picks stay quieter so only the active row looks selected.
   const tone = active ? 'selected' : selected.includes(row.id) ? 'picked' : ''
-  const className = ['row', tone, flash ? 'flash' : ''].filter(Boolean).join(' ')
+  const className = ['row', tone, flash ? 'flash' : '', linkDrop ? 'link-drop' : ''].filter(Boolean).join(' ')
   return (
     <div
       id={objectRowId(row.id)}
       role="row"
       aria-selected={active}
       data-testid="object-row"
+      data-link-drop={linkDrop ? 'true' : undefined}
       data-index={index}
+      draggable
       className={className}
       style={style}
       onMouseDown={(event) => {
-        // tabindex used to land on the row, so its focus ring stayed put while arrows moved the fill.
+        // Leave the default mousedown so a drag can start. The grid still takes focus on click.
         if (event.button !== 0) return
-        // detail>=2 is the second press of a double-click. preventDefault here drops
-        // click/dblclick in Firefox (and broke Description cell edit after #108).
-        if (event.detail < 2) event.preventDefault()
         onFocusGrid()
       }}
+      onDragStart={(event) => onLinkDragStart?.(row, event)}
+      onDragEnter={(event) => onLinkDragOver?.(row, event)}
+      onDragOver={(event) => onLinkDragOver?.(row, event)}
+      onDragLeave={(event) => {
+        const next = event.relatedTarget
+        if (next instanceof Node && event.currentTarget.contains(next)) return
+        onLinkDragLeave?.(row)
+      }}
+      onDrop={(event) => onLinkDrop?.(row, event)}
       onClick={(event) => {
         const column = columnOf(event.target)
         // Open the cell editor on the second click; skip row activate so Detail is not the only result.
@@ -2599,6 +2654,8 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
         <LinkSections
           objectId={session.objectId}
           typeKey={String(object.data.type ?? '')}
+          objectName={name || number}
+          objectKey={number}
           defs={defs.data}
           links={(object.data.links as never) ?? []}
           onOpen={(id) => session.setObjectId(id)}

@@ -74,6 +74,23 @@ export function allowedLinks(defs: Json | undefined, sourceType: string, targetT
   return choices
 }
 
+/**
+ * Link types that work for every target type against the same source.
+ * A mixed drag only offers a type the whole drop can use.
+ */
+export function linksForEnds(defs: Json | undefined, sourceType: string, targetTypes: string[]): LinkChoice[] {
+  const unique = [...new Set(targetTypes.filter(Boolean))]
+  if (!sourceType || unique.length === 0) return []
+  let choices = allowedLinks(defs, sourceType, unique[0] ?? '')
+  for (const type of unique.slice(1)) {
+    const next = allowedLinks(defs, sourceType, type)
+    choices = choices.filter((choice) =>
+      next.some((item) => item.linkType === choice.linkType && item.direction === choice.direction),
+    )
+  }
+  return choices
+}
+
 export function preferredChoice(choices: LinkChoice[], preferred?: { linkType: string; direction: LinkDirection }) {
   if (choices.length === 0) return null
   const match = preferred

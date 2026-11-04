@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { allowedLinks, choiceLabel, linkFieldValues, linkPickerRows, preferredChoice, type LinkHit } from './link-choices'
+import { allowedLinks, choiceLabel, linkFieldValues, linkPickerRows, linksForEnds, preferredChoice, type LinkHit } from './link-choices'
 import type { Json } from './api'
 
 const defs: Json = {
@@ -63,6 +63,11 @@ describe('allowed link types', () => {
 
   it('has no link type between a product and a supplier', () => {
     expect(allowedLinks(defs, 'product', 'supplier')).toEqual([])
+  })
+
+  it('keeps only the link type every dragged object can use', () => {
+    expect(linksForEnds(defs, 'product', ['article', 'article']).map((choice) => choice.linkType)).toEqual(['product_articles'])
+    expect(linksForEnds(defs, 'product', ['article', 'supplier'])).toEqual([])
   })
 
   it('keeps the section the person started from when that side is allowed', () => {
