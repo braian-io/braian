@@ -287,9 +287,21 @@ function Pane({ frame, leaf }: { frame: Frame; leaf: Leaf }) {
   const tabList = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    const tab = activeId ? tabList.current?.querySelector<HTMLElement>(`[data-tab="${CSS.escape(activeId)}"]`) : null
-    tab?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-  }, [activeId])
+    const list = tabList.current
+    const tab = activeId ? list?.querySelector<HTMLElement>(`[data-tab="${CSS.escape(activeId)}"]`) : null
+    if (!list || !tab) return
+    const listRect = list.getBoundingClientRect()
+    const tabRect = tab.getBoundingClientRect()
+    // Keep the start of the title in the strip. A tab wider than the strip
+    // aligns to the left so the ellipsis falls at the end.
+    if (tabRect.left < listRect.left || tabRect.width > listRect.width) {
+      list.scrollLeft += tabRect.left - listRect.left
+      return
+    }
+    if (tabRect.right > listRect.right) {
+      list.scrollLeft += tabRect.right - listRect.right
+    }
+  }, [activeId, leaf.views])
 
   const beginDrag = (event: ReactPointerEvent<HTMLButtonElement>, id: string) => {
     if (event.button !== 0) return

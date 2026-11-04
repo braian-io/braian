@@ -7,6 +7,10 @@ export function Toaster({ theme = 'dark', ...props }: ToasterProps) {
       <Sonner
       theme={theme}
       className="toaster"
+      offset={16}
+      gap={10}
+      visibleToasts={4}
+      expand
       toastOptions={{
         classNames: {
           toast: 'braian-toast',

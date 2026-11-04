@@ -31,17 +31,23 @@ export function AgentsTable() {
     run,
   }))
   const columns: Array<StandardColumn<AgentTableRow>> = [
-    { id: 'name', header: copy.agentColumnName, type: 'readonly', truncate: true, read: (row) => row.name },
+    {
+      id: 'name',
+      header: copy.agentColumnName,
+      type: 'readonly',
+      read: (row) => row.name,
+      title: (row) => row.name,
+    },
     {
       id: 'status',
       header: copy.agentColumnStatus,
       type: 'readonly',
-      width: 110,
+      width: 108,
       read: (row) => row.status,
       display: (row) => <MetaChip tone={agentStatusTone(row.run.status)}>{row.status}</MetaChip>,
     },
-    { id: 'proposals', header: copy.agentColumnProposals, type: 'readonly', width: 110, read: (row) => row.proposals },
-    { id: 'updated', header: copy.agentColumnUpdated, type: 'readonly', width: 160, read: (row) => row.updated },
+    { id: 'proposals', header: copy.agentColumnProposals, type: 'readonly', width: 88, read: (row) => row.proposals },
+    { id: 'updated', header: copy.agentColumnUpdated, type: 'readonly', width: 148, read: (row) => row.updated },
   ]
   const error = list.isError ? (list.error instanceof Error ? list.error.message : copy.agentsEmpty) : ''
   return (

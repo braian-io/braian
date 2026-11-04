@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
   agentNoticeText,
+  agentNotices,
   backgroundNotices,
   backgroundWorkingCount,
   backgroundWorkingLabel,
@@ -32,15 +33,22 @@ export function AgentPresence({ enabled, onReview }: AgentPresenceProps) {
     const prior = previous.current
     previous.current = list
     if (!prior) return
-    for (const run of backgroundNotices(prior, list)) {
-      const failed = run.status === 'failed'
-      const show = failed ? toast.error : toast
-      show(agentNoticeText(run), {
-        id: `agent-notice-${run.id}-${run.status}`,
+    const pending = backgroundNotices(prior, list)
+    const notices = agentNotices(pending)
+    const live = document.getElementById('braian-live')
+    if (live && pending.length > 0) live.textContent = pending.map((run) => agentNoticeText(run)).join('. ')
+    for (const notice of notices) {
+      const show = notice.failed ? toast.error : toast
+      const run = notice.run
+      show(notice.text, {
+        id: notice.id,
         duration: 20000,
         action: {
           label: copy.agentReviewResults,
-          onClick: () => onReview(run),
+          onClick: () => {
+            if (run) onReview(run)
+            else requestOpenAgentsTable()
+          },
         },
       })
     }

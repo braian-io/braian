@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { agentNoticeText, agentPaletteRows, agentRunPrompt, agentRunsForWorkspace, agentStatusLabel, agentTabTitle, agentsPaletteRoot, backgroundNotices, backgroundWorkingCount, cleanAgentError, type AgentRunSummary } from './agent-runs'
+import { agentNoticeText, agentNotices, agentPaletteRows, agentRunPrompt, agentRunsForWorkspace, agentStatusLabel, agentTabTitle, agentsPaletteRoot, backgroundNotices, backgroundWorkingCount, cleanAgentError, type AgentRunSummary } from './agent-runs'
 
 function run(patch: Partial<AgentRunSummary>): AgentRunSummary {
   return {
@@ -65,7 +65,11 @@ describe('agent run presentation', () => {
     expect(backgroundNotices([done], [done])).toEqual([])
     expect(backgroundNotices([], [done]).map((item) => item.id)).toEqual(['a'])
     expect(agentNoticeText(waiting)).toBe('rename the product is waiting for you')
-    expect(agentNoticeText(done)).toBe('rename the product finished')
+    expect(agentNoticeText({ ...done, proposal_count: 2 })).toBe('rename the product finished · 2 proposals')
+    expect(agentNotices([
+      run({ id: 'a', title: 'alpha', status: 'done', mode: 'background' }),
+      run({ id: 'b', title: 'beta', status: 'done', mode: 'background' }),
+    ]).map((notice) => notice.text)).toEqual(['2 agents finished'])
     const foreground = run({ id: 'b', mode: 'foreground', status: 'waiting' })
     const sentBack = run({ ...foreground, mode: 'background' })
     expect(backgroundNotices([foreground], [sentBack]).map((item) => item.id)).toEqual(['b'])
@@ -83,11 +87,17 @@ describe('agent run presentation', () => {
     expect(agentsPaletteRoot().argument).toEqual({ name: 'id', type: 'agent' })
     expect(agentsPaletteRoot().title.endsWith('›')).toBe(true)
     const rows = agentPaletteRows([
-      run({ id: 'run-1', title: 'ask me before you continue', status: 'waiting' }),
+      run({
+        id: 'run-1',
+        title: 'ask me before you continue',
+        status: 'waiting',
+        question: 'Which value should I use? I will not guess.',
+      }),
     ])
     expect(rows[0]?.id).toBe('agent-run:run-1')
     expect(rows[0]?.title).toBe('ask me before you continue')
-    expect(rows[0]?.subtitle).toBe('Waiting')
+    expect(rows[0]?.subtitle).toBe('Which value should I use? I will not guess.')
+    expect(rows[0]?.chips?.map((chip) => chip.text)).toEqual(['Waiting'])
   })
 
   it('uses the first user message as the full prompt', () => {

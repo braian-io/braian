@@ -19,6 +19,7 @@ export type AgentRunSummary = {
   updated_at: string
   finished_at?: string | null
   proposal_count?: number
+  question?: string | null
 }
 
 export type AgentMessage = {
@@ -207,13 +208,46 @@ export function backgroundNotices(previous: AgentRunSummary[], next: AgentRunSum
   return notices
 }
 
-export function agentNoticeText(run: { title: string; status: string }): string {
-  const template = run.status === 'waiting'
-    ? copy.agentWaitingNotice
-    : run.status === 'failed'
-      ? copy.agentFailedNotice
-      : copy.agentFinishedNotice
-  return template.replace('{title}', run.title)
+export function proposalCountLabel(count: number): string {
+  if (count === 1) return copy.agentProposalCountOne
+  return copy.agentProposalCount.replace('{count}', String(count))
+}
+
+export function agentNoticeText(run: { title: string; status: string; proposal_count?: number }): string {
+  if (run.status === 'waiting') return copy.agentWaitingNotice.replace('{title}', run.title)
+  if (run.status === 'failed') return copy.agentFailedNotice.replace('{title}', run.title)
+  return copy.agentFinishedNotice
+    .replace('{title}', run.title)
+    .replace('{proposals}', proposalCountLabel(run.proposal_count ?? 0))
+}
+
+export type AgentNotice = {
+  id: string
+  text: string
+  failed: boolean
+  /** Set when Review results should open this run. Absent for a collapsed batch. */
+  run: AgentRunSummary | null
+}
+
+/** One toast per run, or a single line when several background runs finish together. */
+export function agentNotices(runs: AgentRunSummary[]): AgentNotice[] {
+  if (runs.length === 0) return []
+  const finished = runs.filter((run) => run.status === 'done')
+  if (runs.length > 1 && finished.length === runs.length) {
+    const ids = finished.map((run) => run.id).sort().join('-')
+    return [{
+      id: `agent-notice-finished-${ids}`,
+      text: copy.agentsFinished.replace('{count}', String(finished.length)),
+      failed: false,
+      run: finished[0] ?? null,
+    }]
+  }
+  return runs.map((run) => ({
+    id: `agent-notice-${run.id}-${run.status}`,
+    text: agentNoticeText(run),
+    failed: run.status === 'failed',
+    run,
+  }))
 }
 
 export function agentsPaletteRoot(): PaletteItem {
@@ -238,14 +272,17 @@ export function agentsTablePaletteItem(): PaletteItem {
 }
 
 export function agentPaletteRows(runs: AgentRunSummary[]): PaletteItem[] {
-  return runs.map((run) => ({
-    id: `agent-run:${run.id}`,
-    group: 'views' as const,
-    title: run.title,
-    subtitle: agentStatusLabel(run.status),
-    keywords: [run.status, run.mode, agentStatusLabel(run.status), 'agent'],
-    chips: [{ text: agentStatusLabel(run.status), tone: agentStatusTone(run.status) }],
-  }))
+  return runs.map((run) => {
+    const question = run.question?.trim() ?? ''
+    return {
+      id: `agent-run:${run.id}`,
+      group: 'views' as const,
+      title: run.title,
+      subtitle: run.status === 'waiting' && question ? question : '',
+      keywords: [run.status, run.mode, agentStatusLabel(run.status), question, 'agent'],
+      chips: [{ text: agentStatusLabel(run.status), tone: agentStatusTone(run.status) }],
+    }
+  })
 }
 
 /** Open tabs for this workspace, and open tabs that belong somewhere else. */

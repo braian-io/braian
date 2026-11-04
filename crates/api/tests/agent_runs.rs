@@ -516,6 +516,10 @@ async fn a_run_waits_for_a_decision_and_resume_continues_it() {
         question["body"]["text"],
         "Which value should I use? I will not guess."
     );
+    assert_eq!(
+        waiting["question"],
+        "Which value should I use? I will not guess."
+    );
     assert!(waiting["finished_at"].is_null(), "{waiting}");
 
     let (status, resumed) = call(

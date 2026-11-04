@@ -7316,6 +7316,12 @@
               "$ref": "#/components/schemas/AgentProposalView"
             }
           },
+          "question": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "session_kind": {
             "type": "string"
           },
@@ -7454,6 +7460,13 @@
           "proposal_count": {
             "type": "integer",
             "format": "int32"
+          },
+          "question": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The question shown while status is `waiting`."
           },
           "session_kind": {
             "type": "string"

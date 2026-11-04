@@ -591,11 +591,9 @@ export function CommandPalette({
         setActive(0)
       }
       if (paramType === 'agent') {
-        const openAgents = (runs: Awaited<ReturnType<typeof listAgentRuns>>) => pushRows(agentPaletteRows(runs))
-        if (agentRunList.data) openAgents(agentRunList.data)
-        else {
-          void listAgentRuns().then(openAgents).catch((reason: unknown) => reportWriteError(reason))
-        }
+        void listAgentRuns()
+          .then((runs) => pushRows(agentPaletteRows(runs)))
+          .catch((reason: unknown) => reportWriteError(reason))
         return
       }
       const rows = paramType === 'view'

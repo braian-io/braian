@@ -245,7 +245,8 @@ export function AgentView({ runId, push }: AgentViewProps) {
         <span className="meta-chip" data-testid="agent-status" data-status={data.status}>{statusLabel(data.status)}</span>
         <Button
           type="button"
-          variant={data.mode === 'background' ? 'primary' : 'default'}
+          variant="ghost"
+          className="agent-mode"
           data-testid="agent-mode"
           data-mode={data.mode}
           disabled={modeChange.isPending}
@@ -267,7 +268,11 @@ export function AgentView({ runId, push }: AgentViewProps) {
             )
           }
           if (message.kind === 'user' || message.kind === 'proposal' || message.kind === 'notice') return null
-          const text = agentDisplayText(String(message.body.text ?? ''))
+          const raw = String(message.body.text ?? '')
+          const unavailable = /no model is connected|openai_api_key/i.test(raw)
+          const setupOnly = data.proposals.length === 0 && !data.messages.some((item) => item.kind === 'question')
+          if (unavailable && !setupOnly) return null
+          const text = unavailable ? copy.agentUnavailableHint : agentDisplayText(raw)
           if (!text) return null
           return (
             <p key={message.id} className={`agent-line agent-line-${message.kind}`} data-testid={message.kind === 'assistant' ? 'agent-answer' : message.kind === 'notice' ? 'agent-notice' : 'agent-line'} data-kind={message.kind}>
@@ -299,7 +304,7 @@ export function AgentView({ runId, push }: AgentViewProps) {
       ))}
       {failure ? (
         <div className="agent-failed" role="alert" data-testid="agent-run-error">
-          <p>{failure}</p>
+          <p>{/no model is connected|openai_api_key/i.test(data.error || '') || failure === copy.agentUnavailable ? copy.agentUnavailableHint : failure}</p>
           <Button
             type="button"
             data-testid="agent-try-again"
@@ -330,7 +335,8 @@ export function AgentView({ runId, push }: AgentViewProps) {
         />
         <Button
           type="submit"
-          variant="primary"
+          variant={!working && !follow.isPending && draft.trim() !== '' ? 'primary' : 'ghost'}
+          className="agent-submit"
           data-testid={waiting ? 'agent-resume' : 'agent-send'}
           disabled={working || follow.isPending || draft.trim() === ''}
         >

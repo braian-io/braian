@@ -1760,6 +1760,7 @@ export interface components {
             /** Format: int32 */
             proposal_count: number;
             proposals: components["schemas"]["AgentProposalView"][];
+            question?: string | null;
             session_kind: string;
             status: string;
             tab_open: boolean;
@@ -1797,6 +1798,8 @@ export interface components {
             mode: string;
             /** Format: int32 */
             proposal_count: number;
+            /** @description The question shown while status is `waiting`. */
+            question?: string | null;
             session_kind: string;
             /** @description `working`, `waiting`, `done`, or `failed`. */
             status: string;

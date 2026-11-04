@@ -635,6 +635,7 @@ fn summary_of(run: braian_store::AgentRunRow) -> AgentRunSummary {
         updated_at: run.updated_at.to_rfc3339(),
         finished_at: run.finished_at.map(|value| value.to_rfc3339()),
         proposal_count: run.proposal_count,
+        question: run.question,
     }
 }
 
@@ -659,6 +660,7 @@ fn detail_of(
         updated_at: summary.updated_at,
         finished_at: summary.finished_at,
         proposal_count: summary.proposal_count,
+        question: summary.question,
         messages: messages
             .into_iter()
             .map(|message| AgentMessageView {
