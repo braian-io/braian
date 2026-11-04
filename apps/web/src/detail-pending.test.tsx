@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Json } from './api'
+import { resetObjectWriteState } from './object-write'
 import { ObjectDetail, type PanesSession } from './panes'
 
 const mock = vi.hoisted(() => {
@@ -67,8 +68,9 @@ const proposal: Json = {
   ],
 }
 
-function Host({ proposalId = 'p1' }: { proposalId?: string | null }) {
-  const [client] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: false } } }))
+function Host({ proposalId = 'p1', client: provided }: { proposalId?: string | null; client?: QueryClient }) {
+  const [created] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: false } } }))
+  const client = provided ?? created
   const session: PanesSession = {
     group: null,
     objectId: 'obj-1',
@@ -103,6 +105,7 @@ function acceptCall() {
 }
 
 beforeEach(() => {
+  resetObjectWriteState()
   mock.use(proposalApi)
   vi.stubGlobal('fetch', vi.fn(async () => Response.json({ owners: {}, origin: null })))
 })
@@ -156,5 +159,60 @@ describe('pending proposal values in Detail', () => {
       params: { path: { id: 'p1' } },
       body: { rows: ['r1'], patches: { r1: { values: {} } } },
     })
+  })
+})
+
+describe('Detail save', () => {
+  it('keeps the new name after save even when a stale GET resolves', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const updated: Json = {
+      ...object,
+      version: 4,
+      seq: 9,
+      values: { number: 'ART-1', name: { en: 'New' } },
+    }
+    let objectGets = 0
+    mock.methods.get.mockImplementation((path: string) => {
+      if (path === '/v1/objects/{id}') {
+        objectGets += 1
+        return Promise.resolve(object)
+      }
+      if (path === '/v1/definitions') return Promise.resolve(definitions)
+      if (path === '/v1/proposals') return Promise.resolve({ proposals: [] })
+      return Promise.resolve({})
+    })
+    mock.methods.patch.mockImplementation(() => Promise.resolve(updated))
+
+    render(<Host proposalId={null} client={client} />)
+
+    const title = await waitFor(() => {
+      const node = document.querySelector('.detail-title strong')
+      expect(node?.textContent).toBe('Old')
+      return node as HTMLElement
+    })
+    const editor = screen
+      .getAllByDisplayValue('Old')
+      .find((node) => !(node as HTMLInputElement).readOnly) as HTMLInputElement
+    fireEvent.change(editor, { target: { value: 'New' } })
+    expect(title.textContent).toBe('New')
+
+    const seen: string[] = [title.textContent ?? '']
+    const observer = new MutationObserver(() => {
+      const text = title.textContent ?? ''
+      if (seen[seen.length - 1] !== text) seen.push(text)
+    })
+    observer.observe(title, { childList: true, subtree: true, characterData: true })
+
+    fireEvent.click(screen.getByTestId('review-and-save'))
+    await waitFor(() => expect(mock.methods.patch).toHaveBeenCalled())
+    await waitFor(() => expect(title.textContent).toBe('New'))
+
+    const before = objectGets
+    await client.invalidateQueries({ queryKey: ['object', 'obj-1'] })
+    await waitFor(() => expect(objectGets).toBeGreaterThan(before))
+    await waitFor(() => expect(title.textContent).toBe('New'))
+
+    observer.disconnect()
+    expect(seen).toEqual(['New'])
   })
 })

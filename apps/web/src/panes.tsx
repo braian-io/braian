@@ -44,6 +44,7 @@ import { fetchColumnPrefs, isHopPath, orderHiddenToDocument, ensureSystemColumns
 import { columnPrefsMutationKey, columnPrefsQueryKey, useSaveColumnPrefs } from './column-prefs-mutation'
 import { readPathFromDoc, summarizePathValues } from './path-cell'
 import { cellPathValues, fetchPathValues } from './path-values'
+import { applyObjectWrite, currentSearchWaitSeq, reconcileObjectWrite } from './object-write'
 import { shouldHoldTablePaint, shouldRefreshTableSnapshot } from './table-live-paint'
 import { searchPeerArticles, type PeerPickOption } from './peer-search'
 import { linkedPeerIds } from './peer-source'
@@ -1212,11 +1213,9 @@ export function ObjectTable({
       uiLanguage,
     })
     void api.patch('/v1/objects/{id}', { params: { path: { id: row.id }, header: { 'If-Match': Number(row.version ?? 0) } }, body: { values: freeObject(bodyValues) } })
-      .then(() => {
+      .then(async (saved) => {
         session.push(copy.saved)
-        void queryClient.invalidateQueries({ queryKey: ['objects'] })
-        void queryClient.invalidateQueries({ queryKey: ['object', row.id] })
-        void queryClient.invalidateQueries({ queryKey: ['path-values'] })
+        await applyObjectWrite(queryClient, saved as Json)
         void queryClient.invalidateQueries({ queryKey: ['proposal'] })
         void queryClient.invalidateQueries({ queryKey: ['agent-run'] })
       })
@@ -2101,6 +2100,8 @@ async function loadPage(q: string, filter: string, sort: string, groupBy: string
   if (filter) params.set('filter', filter)
   if (sort) params.set('sort', sort)
   if (groupBy) params.set('group', groupBy)
+  const waitSeq = currentSearchWaitSeq()
+  if (waitSeq > 0) params.set('wait_seq', String(waitSeq))
   const body = await api.get('/v1/search', { params: { query: searchQuery(params) } })
   return { ...body, page }
 }
@@ -2287,7 +2288,10 @@ function NewObject({
 export function ClassAttributes({ session }: { session: PanesSession }) {
   const object = useQuery({
     queryKey: ['object', session.objectId],
-    queryFn: () => api.get('/v1/objects/{id}', { params: { path: { id: session.objectId ?? '' } } }),
+    queryFn: async () => {
+      const id = session.objectId ?? ''
+      return reconcileObjectWrite(id, await api.get('/v1/objects/{id}', { params: { path: { id } } }))
+    },
     enabled: Boolean(session.objectId),
   })
   const defs = useQuery({ queryKey: ['definitions'], queryFn: () => api.get('/v1/definitions') })
@@ -2342,7 +2346,10 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   const queryClient = useQueryClient()
   const object = useQuery({
     queryKey: ['object', session.objectId],
-    queryFn: () => api.get('/v1/objects/{id}', { params: { path: { id: session.objectId ?? '' } } }),
+    queryFn: async () => {
+      const id = session.objectId ?? ''
+      return reconcileObjectWrite(id, await api.get('/v1/objects/{id}', { params: { path: { id } } }))
+    },
     enabled: Boolean(session.objectId),
   })
   const provenance = useQuery({
@@ -2441,13 +2448,11 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   const save = () => {
     if (Object.keys(draft).length === 0) return
     void api.patch('/v1/objects/{id}', { params: { path: { id: session.objectId ?? '' }, header: { 'If-Match': Number(object.data?.version ?? 0) } }, body: { values: freeObject(draft) } })
-      .then(() => {
+      .then(async (saved) => {
+        await applyObjectWrite(queryClient, saved as Json)
         setDraft({})
         setError('')
         session.push(`${copy.saved} ${label}`)
-        void queryClient.invalidateQueries({ queryKey: ['object', session.objectId] })
-        void queryClient.invalidateQueries({ queryKey: ['objects'] })
-            void queryClient.invalidateQueries({ queryKey: ['path-values'] })
         void queryClient.invalidateQueries({ queryKey: ['proposal'] })
         void queryClient.invalidateQueries({ queryKey: ['agent-run'] })
       })
