@@ -47,21 +47,21 @@ export type PaletteKeyEffect =
  */
 export function paletteKeyEffect(input: PaletteKeyInput): PaletteKeyEffect {
   const mod = input.ctrlKey || input.metaKey
-  if (input.key === 'Escape') {
-    if (input.escapeCloses && input.mode === 'list' && input.stackDepth > 0) return { type: 'close' }
-    if (input.stackDepth > 0 && input.mode === 'list') return { type: 'back' }
-    return { type: 'close' }
-  }
+  // Esc always dismisses. Backspace on an empty query is the only way back one level.
+  if (input.key === 'Escape') return { type: 'close' }
   if (input.key === 'Backspace' && input.query === '' && input.stackDepth > 0 && input.mode === 'list') {
     return { type: 'back' }
   }
   if (mod && (input.key === 'j' || input.key === 'J')) return { type: 'ask' }
   if (input.key === 'Tab' && input.mode === 'list') {
-    const index = input.activeIndex ?? 0
-    if (input.row?.argument && !input.row.disabled) return { type: 'activate', index }
+    if (input.activeIndex != null && input.row?.argument && !input.row.disabled) {
+      return { type: 'activate', index: input.activeIndex }
+    }
     return { type: 'none' }
   }
-  if (mod && (input.key === 'Enter' || input.key === '.' || input.key === 'k' || input.key === 'K')) {
+  // Ctrl+K stays a no-op while the palette is open. Ctrl+Enter still opens row actions.
+  if (mod && (input.key === 'k' || input.key === 'K')) return { type: 'none' }
+  if (mod && (input.key === 'Enter' || input.key === '.')) {
     if (input.mode !== 'list' || input.rowCount === 0) return { type: 'none' }
     const index = input.activeIndex ?? 0
     if (input.row?.entity) return { type: 'actions', index }
@@ -76,7 +76,11 @@ export function paletteKeyEffect(input: PaletteKeyInput): PaletteKeyEffect {
   }
   if (input.mode === 'ai' && input.key === 'Enter' && input.inQueryField) return { type: 'ask' }
   if (input.rowCount === 0 || input.mode === 'ai') return { type: 'none' }
-  if (input.key === 'Enter') return { type: 'activate', index: input.activeIndex ?? 0 }
+  // Enter runs the highlighted row only. Ask AI is that row, or Ctrl+J — never a fallback.
+  if (input.key === 'Enter') {
+    if (input.activeIndex == null || input.row?.disabled) return { type: 'none' }
+    return { type: 'activate', index: input.activeIndex }
+  }
   const page = 8
   const current = input.activeIndex ?? -1
   const last = input.rowCount - 1
@@ -100,6 +104,12 @@ export function placeTargetId(sourceId: string): string {
   if (sourceId.startsWith('workspace:')) return sourceId.slice('workspace:'.length)
   if (sourceId.startsWith('view:')) return sourceId.slice('view:'.length)
   return sourceId
+}
+
+/** Footer hint for Tab. A highlighted drill-in opens. Tab never asks AI. */
+export function tabHint(input: { activeIndex: number | null; argument?: boolean; ask?: boolean }): 'open' | 'none' {
+  if (input.activeIndex != null && input.argument) return 'open'
+  return 'none'
 }
 
 export function argumentBreadcrumb(title: string): string {

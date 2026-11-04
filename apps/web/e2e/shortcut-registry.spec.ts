@@ -45,7 +45,7 @@ test.describe('shortcut registry', () => {
     await openProducts(page)
 
     await page.keyboard.press('Control+k')
-    await page.getByTestId('palette-input').fill('Articles view')
+    await page.getByTestId('palette-input').fill('Articles')
     const articles = page.locator('[cmdk-item], .hit').filter({ hasText: /Articles/ }).first()
     await expect(articles).toBeVisible()
     await articles.click()

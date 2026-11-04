@@ -53,7 +53,7 @@ export function withModelCommand(query: string, rows: PaletteItem[]): PaletteIte
   const command: PaletteItem = {
     id: hint.id,
     sourceId: hint.sourceId,
-    group: 'best',
+    group: 'model',
     title: hint.title,
     subtitle: hint.subtitle,
   }

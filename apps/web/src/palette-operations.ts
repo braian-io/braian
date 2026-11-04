@@ -1,3 +1,4 @@
+import { argumentBreadcrumb } from './palette-core'
 import type { PaletteArgument, PaletteItem } from './palette-model'
 import type { TypeName } from './type-labels'
 
@@ -40,7 +41,7 @@ export function argumentCommands(operations: OperationRecord[] | undefined, type
       const row: PaletteItem = {
         id: `op:${operation.name}`,
         group: 'views',
-        title: operation.title,
+        title: argumentBreadcrumb(operation.title),
         subtitle: 'Search and open',
         keywords: [operation.name, argument.type, 'open'],
         argument,
@@ -52,7 +53,7 @@ export function argumentCommands(operations: OperationRecord[] | undefined, type
     .map((type) => ({
       id: `op:open:${type.key}`,
       group: 'views' as const,
-      title: `Open ${type.singular.toLowerCase()}`,
+      title: argumentBreadcrumb(`Open ${type.singular.toLowerCase()}`),
       subtitle: type.plural,
       keywords: [type.key, type.singular, type.plural, 'open'],
       argument: { name: 'id', type: type.key },

@@ -1388,7 +1388,30 @@ canvas.graph.panning { cursor: grabbing; }
 .login label { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
 .login .brand { margin-bottom: 4px; }
 .palette input, .command input { height: 36px; padding: 0 10px; background: var(--panel); }
-.palette-query { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.palette-query {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 0 2px 4px;
+  padding-left: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--panel);
+}
+.palette-query:focus-within { box-shadow: var(--ring); }
+.palette-query input { background: transparent; border: none; box-shadow: none; }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 .palette-query [cmdk-input-wrapper] { flex: 1; min-width: 0; display: flex; }
 .palette-query input { width: 100%; min-width: 0; }
 .palette-close { flex: none; }
@@ -1433,6 +1456,10 @@ canvas.graph.panning { cursor: grabbing; }
   color: var(--text);
 }
 .hit:hover, .hit.on, .hit[data-selected='true'] { background: var(--accent-dim); }
+.palette .hit:hover:not(.on),
+.palette .hit[data-selected='true']:not(.on) { background: color-mix(in srgb, var(--text) 6%, transparent); }
+/* Solid accent on the raised palette is 3.75:1 (dark) and 5.41:1 (light). The dim wash alone is about 1.2:1. */
+.palette .hit.on { background: var(--accent-dim); box-shadow: inset 3px 0 0 var(--accent); }
 .hit.disabled, .hit[data-disabled='true'] { opacity: 0.5; }
 .hit.disabled:hover, .hit[data-disabled='true']:hover { background: transparent; }
 .hit.ask { z-index: 1; background: var(--raised); border-top: 1px solid var(--border); flex: none; }
@@ -1594,17 +1621,27 @@ kbd {
   font-size: 11px;
 }
 .palette-foot kbd { margin-right: 4px; }
-.palette-foot [data-testid='palette-active']:empty { display: none; }
+.palette-empty {
+  margin: 8px 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
 .crumb {
   display: inline-flex;
   align-items: center;
+  flex: none;
   gap: 6px;
   height: 22px;
+  max-width: 46%;
   padding: 0 8px;
   border-radius: 999px;
   background: var(--accent-dim);
-  color: var(--accent);
+  /* accent on this wash is 3.40:1 in the dark theme. accent-hover is 4.95:1 dark and 6.03:1 light. */
+  color: var(--accent-hover);
   font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .crumb:empty {
   position: absolute;

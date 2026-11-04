@@ -1,6 +1,6 @@
 import { copy } from './i18n'
 import { displayViewTitle, type TypeName } from './type-labels'
-import type { PaletteItem } from './palette-model'
+import { withoutDuplicateDestinations, type PaletteItem } from './palette-model'
 import type { Json } from './api'
 
 export type AddableView = {
@@ -43,7 +43,7 @@ export function addViewSubmenuRows(
       subtitle: copy.addView,
       keywords: [type.key, type.singular, type.plural],
     }))
-  return [...fromViews, ...fromTypes]
+  return withoutDuplicateDestinations([...fromViews, ...fromTypes])
 }
 
 export function isAddViewRoot(id: string) {

@@ -17,8 +17,8 @@ async function login(page: Page) {
 
 async function tour(page: Page, theme: 'dark' | 'light') {
   await page.keyboard.press('Control+k')
-  await page.getByTestId('palette-input').fill('Articles view')
-  await page.getByTestId('command-palette').locator('.hit').filter({ hasText: 'Articles view' }).filter({ hasText: 'Open view' }).first().click()
+  await page.getByTestId('palette-input').fill('Articles')
+  await page.getByTestId('command-palette').locator('.hit').filter({ hasText: 'Articles' }).filter({ hasText: 'Open view' }).first().click()
   await expect(page.getByTestId('command-palette')).toHaveCount(0)
   await page.getByRole('button', { name: 'All', exact: true }).click()
   await expect(page.getByTestId('row-count')).toBeVisible()
