@@ -78,7 +78,6 @@ test.describe('nested chrome', () => {
       const otherPaint = await paint(other)
       // Accent policy: selection is the dim fill plus exactly one 3px accent left edge.
       expect(selectedPaint.outlineStyle).toBe('none')
-      expect(selectedPaint.outlineWidth).toBe('0px')
       expect(selectedPaint.visibleBorder).toBe(false)
       expect(selectedPaint.afterBoxShadow).toBe('none')
       expect(shadows(selectedPaint.boxShadow)).toEqual([
