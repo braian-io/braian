@@ -780,7 +780,8 @@ select.link-type-line { width: 100%; font-weight: 600; }
   background: var(--accent-dim);
 }
 .row.picked { box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 55%, transparent); }
-.row:hover:not(.selected):not(.link-drop) { background: var(--hover); }
+.row:hover:not(.selected) { background: var(--hover); }
+.row.link-drop:hover { background: var(--accent-dim); }
 .draft-user { background: var(--amber-bg); border-radius: var(--r-md); }
 .draft-agent { background: var(--accent-dim); border-radius: var(--r-md); }
 
