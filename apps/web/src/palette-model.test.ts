@@ -92,6 +92,19 @@ describe('palette rows', () => {
     expect(activeAfterQuery(opened, 'Open view')).toBe(opened.findIndex((row) => row.group === 'best'))
     expect(visibleRows('Articles', [command, ...views], [], {}).some((row) => row.title === 'Articles')).toBe(true)
 
+    const overview: PaletteItem = { id: 'view:overview', group: 'views', title: 'Overview', subtitle: 'Open view', entity: true }
+    const vintage: PaletteItem = { id: 'view:vintage', group: 'views', title: 'Open vintage', subtitle: 'Open view', entity: true }
+    const product: PaletteItem = {
+      id: 'op:open:product',
+      group: 'views',
+      title: 'Open product ›',
+      subtitle: 'Products',
+      argument: { name: 'id', type: 'product' },
+    }
+    const ranked = [command, product, overview, vintage, ...views]
+    expect(visibleRows('ov', ranked, [], {}).find((row) => row.group === 'best')?.sourceId).toBe('op:ui.open_view')
+    expect(visibleRows('open v', ranked, [], {}).find((row) => row.group === 'best')?.sourceId).toBe('op:ui.open_view')
+
     const hits: PaletteItem[] = [
       { id: 'hit:old', group: 'search', title: 'Old', subtitle: 'Open product', typeKey: 'product' },
       { id: 'hit:new', group: 'search', title: 'Cheddar', subtitle: 'Open product', typeKey: 'product' },
@@ -133,32 +146,51 @@ describe('palette key effect', () => {
     row: { argument: true, entity: false, ask: false, disabled: false },
   }
 
-  it('asks with Tab only when nothing is highlighted or Ask AI is highlighted', () => {
+  it('drills in with Tab or Enter and never asks AI as a fallback', () => {
     expect(tabHint({ activeIndex: 0, argument: true })).toBe('open')
     expect(paletteKeyEffect({ ...base, key: 'Tab' })).toEqual({ type: 'activate', index: 0 })
-    expect(paletteKeyEffect({ ...base, key: 'Tab', activeIndex: null, row: undefined })).toEqual({ type: 'ask' })
+    expect(paletteKeyEffect({ ...base, key: 'Enter' })).toEqual({ type: 'activate', index: 0 })
+    expect(paletteKeyEffect({ ...base, key: 'Tab', activeIndex: null, row: undefined })).toEqual({ type: 'none' })
+    expect(paletteKeyEffect({ ...base, key: 'Enter', activeIndex: null, row: undefined })).toEqual({ type: 'none' })
     expect(paletteKeyEffect({
       ...base,
       key: 'Tab',
       activeIndex: 2,
       row: { argument: false, entity: false, ask: true, disabled: false },
-    })).toEqual({ type: 'ask' })
+    })).toEqual({ type: 'none' })
+    expect(paletteKeyEffect({
+      ...base,
+      key: 'Enter',
+      activeIndex: 2,
+      row: { argument: false, entity: false, ask: true, disabled: false },
+    })).toEqual({ type: 'activate', index: 2 })
     expect(paletteKeyEffect({
       ...base,
       key: 'Tab',
       activeIndex: 1,
       row: { argument: false, entity: false, ask: false, disabled: false },
     })).toEqual({ type: 'none' })
-    expect(tabHint({ activeIndex: null })).toBe('ask')
-    expect(tabHint({ activeIndex: 1 })).toBe('none')
+    expect(tabHint({ activeIndex: null })).toBe('none')
+    expect(tabHint({ activeIndex: 1, ask: true })).toBe('none')
+    expect(paletteKeyEffect({ ...base, key: 'j', ctrlKey: true, activeIndex: null, row: undefined })).toEqual({ type: 'ask' })
   })
 
-  it('enters a sub-list with Tab or Enter and leaves it with Backspace or Esc', () => {
-    expect(paletteKeyEffect({ ...base, key: 'Tab' })).toEqual({ type: 'activate', index: 0 })
-    expect(paletteKeyEffect({ ...base, key: 'Enter' })).toEqual({ type: 'activate', index: 0 })
+  it('goes back one level with Backspace and closes with Esc', () => {
     expect(paletteKeyEffect({ ...base, key: 'Backspace' })).toEqual({ type: 'back' })
-    expect(paletteKeyEffect({ ...base, key: 'Escape' })).toEqual({ type: 'back' })
+    expect(paletteKeyEffect({ ...base, key: 'Backspace', query: 'x' })).toEqual({ type: 'none' })
+    expect(paletteKeyEffect({ ...base, key: 'Escape' })).toEqual({ type: 'close' })
     expect(paletteKeyEffect({ ...base, key: 'Escape', stackDepth: 0 })).toEqual({ type: 'close' })
+    expect(paletteKeyEffect({ ...base, key: 'Escape', mode: 'ai' })).toEqual({ type: 'close' })
+  })
+
+  it('moves the highlight with arrows and keeps Home and End in the query', () => {
+    expect(paletteKeyEffect({ ...base, key: 'ArrowDown', activeIndex: null, row: undefined })).toEqual({ type: 'move', index: 0 })
+    expect(paletteKeyEffect({ ...base, key: 'ArrowDown', activeIndex: 0 })).toEqual({ type: 'move', index: 1 })
+    expect(paletteKeyEffect({ ...base, key: 'ArrowUp', activeIndex: 0 })).toEqual({ type: 'move', index: 0 })
+    expect(paletteKeyEffect({ ...base, key: 'ArrowUp', activeIndex: null, row: undefined })).toEqual({ type: 'move', index: 2 })
+    expect(paletteKeyEffect({ ...base, key: 'Home' })).toEqual({ type: 'caret' })
+    expect(paletteKeyEffect({ ...base, key: 'End', inQueryField: true })).toEqual({ type: 'caret' })
+    expect(paletteKeyEffect({ ...base, key: 'End', inQueryField: false })).toEqual({ type: 'move', index: 2 })
   })
 
   it('opens actions on an entity with Ctrl+Enter and Ctrl+K, and asks with Ctrl+J', () => {

@@ -642,6 +642,7 @@ describe('palette entities', () => {
     const input = await screen.findByTestId('palette-input')
     fireEvent.change(input, { target: { value: 'Review' } })
     await waitFor(() => expect(screen.getByRole('option', { name: /Open workspace/ })).toBeTruthy())
+    fireEvent.keyDown(input, { key: 'ArrowDown' })
     fireEvent.keyDown(input, { key: 'Enter', ctrlKey: true })
     await waitFor(() => expect(screen.getByRole('option', { name: /Place left/ })).toBeTruthy())
     fireEvent.keyDown(input, { key: 'Enter' })

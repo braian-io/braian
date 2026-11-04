@@ -89,12 +89,103 @@ export function recentSlice(
     .map((item) => ({ ...item, group: 'recent' as const }))
 }
 
-function relevance(item: PaletteItem, needle: string): number {
-  const title = item.title.toLowerCase().replace(/\s*›\s*$/, '').trim()
-  if (title === needle) return 3
-  if (title.startsWith(needle)) return 2
-  if (title.includes(needle)) return 1
-  return 0
+function titleOf(item: PaletteItem): string {
+  return item.title.toLowerCase().replace(/\s*›\s*$/, '').trim()
+}
+
+/** A command, as opposed to a view, workspace, template, or object row. */
+function isCommandRow(item: PaletteItem): boolean {
+  if (item.argument || /›\s*$/.test(item.title)) return true
+  if (item.group === 'ask' || item.group === 'search' || item.entity) return false
+  const id = frecencyId(item)
+  return !/^(view|workspace|hit|type-view|template|saved-template):/.test(id)
+}
+
+function wordsOf(value: string): string[] {
+  return value.split(/[\s\-_./]+/).filter(Boolean)
+}
+
+/** Each token is a prefix of a later word: "open v" matches "open view". */
+function coversWords(words: string[], tokens: string[]): boolean {
+  let from = 0
+  for (const token of tokens) {
+    let found = -1
+    for (let index = from; index < words.length; index += 1) {
+      if (words[index]?.startsWith(token)) {
+        found = index
+        break
+      }
+    }
+    if (found < 0) return false
+    from = found + 1
+  }
+  return true
+}
+
+/** "ov" matches the initials of "open view". */
+function isInitials(words: string[], needle: string): boolean {
+  if (needle.length < 2 || needle.length > words.length) return false
+  return needle.split('').every((char, index) => words[index]?.startsWith(char))
+}
+
+/**
+ * Sequential fuzzy score in 0..1. Consecutive characters and word starts
+ * score higher than jumps inside a word. Missing characters score 0.
+ */
+function fuzzyScore(text: string, needle: string): number {
+  let score = 1
+  let from = 0
+  let previous = -1
+  for (const char of needle) {
+    const index = text.indexOf(char, from)
+    if (index < 0) return 0
+    if (previous >= 0) {
+      const boundary = text[index - 1]
+      if (index === previous + 1) score *= 1
+      else if (boundary === ' ' || boundary === '-' || boundary === '/') score *= 0.9
+      else score *= 0.3 * 0.95 ** (index - previous - 1)
+    }
+    previous = index
+    from = index + 1
+  }
+  if (text.length !== needle.length) score *= 0.99
+  return score
+}
+
+/**
+ * Higher is better. Exact and prefix beat word prefixes, initials, substrings,
+ * then a weaker fuzzy score. Command-name hits at initials or stronger add a
+ * bonus so they outrank an item with a better string score.
+ */
+function stringRank(text: string, needle: string): number {
+  if (!text || !needle) return 0
+  if (text === needle) return 1000
+  if (text.startsWith(needle)) return 800
+  const words = wordsOf(text)
+  const tokens = needle.split(/\s+/).filter(Boolean)
+  if (tokens.length > 1 && coversWords(words, tokens)) return 700
+  if (tokens.length === 1 && isInitials(words, tokens[0] ?? '')) return 650
+  if (text.includes(needle)) return 400
+  const fuzzy = fuzzyScore(text, needle)
+  // Long jumps (a query stretched across an unrelated sentence) stay out of the list.
+  if (fuzzy < 0.2) return 0
+  return Math.round(fuzzy * 300)
+}
+
+const commandNameBonus = 500
+
+/** Rank for sorting and filtering. Zero means the row does not match. */
+export function paletteMatchScore(item: PaletteItem, needle: string): number {
+  const query = needle.trim().toLowerCase()
+  if (!query) return 1
+  const title = titleOf(item)
+  const titleScore = stringRank(title, query)
+  const haystack = paletteHaystack(item).toLowerCase()
+  const extraScore = haystack === title ? 0 : Math.min(stringRank(haystack, query), 399)
+  const score = Math.max(titleScore, extraScore)
+  if (score <= 0) return 0
+  if (isCommandRow(item) && titleScore >= 650) return score + commandNameBonus
+  return score
 }
 
 /** Id stored in frecency for a row, including a Best match copy of that row. */
@@ -164,7 +255,9 @@ function localStorageOrNull() {
 export function filterPaletteRows(rows: PaletteItem[], query: string): PaletteItem[] {
   const needle = query.trim().toLowerCase()
   if (!needle) return rows
-  return rows.filter((item) => paletteHaystack(item).toLowerCase().includes(needle))
+  return rows
+    .filter((item) => paletteMatchScore(item, needle) > 0)
+    .sort((left, right) => paletteMatchScore(right, needle) - paletteMatchScore(left, needle))
 }
 
 export function visibleRows(
@@ -176,14 +269,18 @@ export function visibleRows(
   memory: PaletteItem[] = [],
 ): PaletteItem[] {
   const needle = query.trim().toLowerCase()
-  const matches = (item: PaletteItem) => !needle || paletteHaystack(item).toLowerCase().includes(needle)
+  const matches = (item: PaletteItem) => !needle || paletteMatchScore(item, needle) > 0
   const pool = dedupe(catalog)
   const scored = [...pool].sort((left, right) => score(frecency[right.id], now) - score(frecency[left.id], now))
   const recent = needle ? [] : recentSlice([...pool, ...memory], frecency)
   const recentIds = new Set(recent.map((item) => identity(item)))
   const matched = scored
     .filter((item) => matches(item) && !recentIds.has(identity(item)))
-    .sort((left, right) => relevance(right, needle) - relevance(left, needle) || (frecency[identity(right)]?.last ?? 0) - (frecency[identity(left)]?.last ?? 0))
+    .sort(
+      (left, right) =>
+        paletteMatchScore(right, needle) - paletteMatchScore(left, needle) ||
+        (frecency[identity(right)]?.last ?? 0) - (frecency[identity(left)]?.last ?? 0),
+    )
   const best = needle ? matched[0] : undefined
   const rest = matched.filter((item) => identity(item) !== (best ? identity(best) : undefined))
   const rows: PaletteItem[] = [

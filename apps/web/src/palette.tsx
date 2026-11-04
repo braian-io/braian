@@ -1192,7 +1192,7 @@ export function CommandPalette({
           }
         : undefined,
     })
-    if (event.key === 'Tab') {
+    if (event.key === 'Tab' || (event.key === 'Enter' && mode === 'list' && active == null)) {
       event.preventDefault()
       event.stopPropagation()
     }
@@ -1252,8 +1252,7 @@ export function CommandPalette({
   const askRow = rows.find((row) => row.group === 'ask')
   const userTurns = turns.filter((turn) => turn.role === 'user')
   const question = userTurns.at(-1)?.text ?? ''
-  const nothingElse = rows.length === 1 && rows[0]?.group === 'ask'
-  const selected = nothingElse ? 0 : active
+  const selected = active
 
 
   if (mode === 'fields') {
@@ -1437,10 +1436,9 @@ export function CommandPalette({
           <span data-testid="palette-active">{activeRow?.subtitle ?? ''}</span>
           <span><Kbd>Enter</Kbd> run</span>
           {tab === 'open' ? <span data-testid="palette-tab-hint"><Kbd>Tab</Kbd> open</span> : null}
-          {tab === 'ask' ? <span data-testid="palette-tab-hint"><Kbd>Tab</Kbd> ask AI</span> : null}
           <span><Kbd>Ctrl</Kbd>+<Kbd>K</Kbd> actions</span>
           <span><Kbd>Ctrl</Kbd>+<Kbd>J</Kbd> ask AI</span>
-          <span><Kbd>Esc</Kbd> back</span>
+          <span><Kbd>Esc</Kbd> close</span>
         </div>
       </Command>
     </div>

@@ -47,23 +47,16 @@ export type PaletteKeyEffect =
  */
 export function paletteKeyEffect(input: PaletteKeyInput): PaletteKeyEffect {
   const mod = input.ctrlKey || input.metaKey
-  if (input.key === 'Escape') {
-    if (input.escapeCloses && input.mode === 'list' && input.stackDepth > 0) return { type: 'close' }
-    if (input.stackDepth > 0 && input.mode === 'list') return { type: 'back' }
-    return { type: 'close' }
-  }
+  // Esc always dismisses. Backspace on an empty query is the only way back one level.
+  if (input.key === 'Escape') return { type: 'close' }
   if (input.key === 'Backspace' && input.query === '' && input.stackDepth > 0 && input.mode === 'list') {
     return { type: 'back' }
   }
   if (mod && (input.key === 'j' || input.key === 'J')) return { type: 'ask' }
   if (input.key === 'Tab' && input.mode === 'list') {
-    const hint = tabHint({
-      activeIndex: input.activeIndex,
-      argument: Boolean(input.row?.argument) && !input.row?.disabled,
-      ask: Boolean(input.row?.ask),
-    })
-    if (hint === 'open') return { type: 'activate', index: input.activeIndex ?? 0 }
-    if (hint === 'ask') return { type: 'ask' }
+    if (input.activeIndex != null && input.row?.argument && !input.row.disabled) {
+      return { type: 'activate', index: input.activeIndex }
+    }
     return { type: 'none' }
   }
   if (mod && (input.key === 'Enter' || input.key === '.' || input.key === 'k' || input.key === 'K')) {
@@ -81,7 +74,11 @@ export function paletteKeyEffect(input: PaletteKeyInput): PaletteKeyEffect {
   }
   if (input.mode === 'ai' && input.key === 'Enter' && input.inQueryField) return { type: 'ask' }
   if (input.rowCount === 0 || input.mode === 'ai') return { type: 'none' }
-  if (input.key === 'Enter') return { type: 'activate', index: input.activeIndex ?? 0 }
+  // Enter runs the highlighted row only. Ask AI is that row, or Ctrl+J — never a fallback.
+  if (input.key === 'Enter') {
+    if (input.activeIndex == null || input.row?.disabled) return { type: 'none' }
+    return { type: 'activate', index: input.activeIndex }
+  }
   const page = 8
   const current = input.activeIndex ?? -1
   const last = input.rowCount - 1
@@ -107,13 +104,9 @@ export function placeTargetId(sourceId: string): string {
   return sourceId
 }
 
-/**
- * Footer hint for Tab. A highlighted drill-in opens. Ask AI is only when
- * nothing is highlighted, or Ask AI itself is.
- */
-export function tabHint(input: { activeIndex: number | null; argument?: boolean; ask?: boolean }): 'open' | 'ask' | 'none' {
+/** Footer hint for Tab. A highlighted drill-in opens. Tab never asks AI. */
+export function tabHint(input: { activeIndex: number | null; argument?: boolean; ask?: boolean }): 'open' | 'none' {
   if (input.activeIndex != null && input.argument) return 'open'
-  if (input.activeIndex == null || input.ask) return 'ask'
   return 'none'
 }
 
