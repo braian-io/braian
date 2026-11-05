@@ -3,6 +3,7 @@ import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/rea
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { History as HistoryIcon } from 'lucide-react'
 import { api, catalogName, failureLines, freeObject, jsonRecord, recordNumber, recordTitle, searchQuery, textValue, type Json } from './api'
+import { AutoResizeTextarea } from './auto-resize-textarea'
 import { messageFromErrorBody, reportWriteError, writeErrorMessage } from './write-error'
 import { catalogKeyOf, inCatalog, workspaceCatalogRef } from './catalog-scope'
 import { useCatalogIdToKey } from './catalog-list'
@@ -2739,7 +2740,6 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
     >
       <div className="detail-scroll">
         <header className="detail-head">
-          <p className="detail-kicker">{singularOf(defs.data, String(object.data.type), uiLanguage)}</p>
           <div className="detail-title">
             <strong>{name || number}</strong>
             {number ? <span className="detail-id">{number}</span> : null}
@@ -2861,7 +2861,7 @@ function Editor({
           <label key={language} className="lang-row">
             <span className="lang-tag">{language}</span>
             {form === 'long' ? (
-              <textarea data-field="true" readOnly={readOnly} value={textValue(record[language])} onChange={(event) => onChange({ ...record, [language]: event.target.value })} />
+              <AutoResizeTextarea data-field="true" readOnly={readOnly} value={textValue(record[language])} onChange={(event) => onChange({ ...record, [language]: event.target.value })} />
             ) : (
               <input data-field="true" readOnly={readOnly} value={textValue(record[language])} onChange={(event) => onChange({ ...record, [language]: event.target.value })} />
             )}
@@ -2948,7 +2948,7 @@ function Editor({
     )
   }
   if (form === 'long' || (typeof value === 'string' && value.length > 80)) {
-    return <textarea data-field="true" value={textValue(value)} onChange={(event) => onChange(event.target.value)} />
+    return <AutoResizeTextarea data-field="true" value={textValue(value)} onChange={(event) => onChange(event.target.value)} />
   }
   return <input data-field="true" value={textValue(value)} onChange={(event) => onChange(event.target.value)} />
 }
