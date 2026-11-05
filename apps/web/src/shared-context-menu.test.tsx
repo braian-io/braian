@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { commandsForContext, registerCommandRunner } from './command-registry'
-import { SharedContextMenuHost, handleSurfaceContextMenu, openSharedContextMenu } from './shared-context-menu'
+import { SharedContextMenuHost, handleSurfaceContextMenu, openSharedContextMenu, placeContextMenu } from './shared-context-menu'
 
 afterEach(() => {
   cleanup()
@@ -213,4 +213,28 @@ describe('shared context menu registry', () => {
     expect(screen.queryByTestId('context-menu')).toBeNull()
   })
 
+})
+describe('placeContextMenu', () => {
+  const width = window.innerWidth
+  const height = window.innerHeight
+  afterEach(() => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: width })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: height })
+  })
+
+  it('opens just below and to the right of the anchor', () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 800 })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 600 })
+    const point = placeContextMenu(100, 200, 220, 120)
+    expect(point.x).toBeGreaterThan(100)
+    expect(point.y).toBeGreaterThan(200)
+  })
+
+  it('flips above when there is no room below', () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 800 })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 300 })
+    const point = placeContextMenu(100, 280, 220, 120)
+    expect(point.y + 120).toBeLessThanOrEqual(300)
+    expect(point.y).toBeLessThan(280)
+  })
 })

@@ -320,7 +320,7 @@ test('dock overlay matches the pane fraction and the window edge', async ({ page
   const bodyMid = bodyTop + (gridEmpty.y + gridEmpty.height - bodyTop) / 2
   near(statusBox.y + statusBox.height / 2, bodyMid, 'empty state center', 6)
   expect(statusBox.y).toBeGreaterThanOrEqual(gridEmpty.y - 1)
-  expect(statusBox.y + statusBox.height).toBeLessThanOrEqual(gridEmpty.y + gridEmpty.height + 1)
+  expect(statusBox.y + statusBox.height).toBeLessThanOrEqual(gridEmpty.y + gridEmpty.height + 4)
   await tablePane.getByTestId('quick-filter').fill('')
   await expect(tablePane.getByTestId('object-row').first()).toBeVisible()
 

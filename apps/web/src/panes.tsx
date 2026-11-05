@@ -2198,8 +2198,9 @@ function Row({
       onContextMenu={(event) => {
         if (prefersNativeContextMenu(event.target)) return
         event.preventDefault()
-        // The menu acts on the cell under the pointer, so it needs that cell's column key.
-        onMenu(index, event.clientX, event.clientY, columnOf(event.target))
+        // Place under the row so Status/Version stay visible (H6); X stays at the pointer.
+        const box = event.currentTarget.getBoundingClientRect()
+        onMenu(index, event.clientX, box.bottom, columnOf(event.target))
       }}
     >
       {shown.map((id) => {
