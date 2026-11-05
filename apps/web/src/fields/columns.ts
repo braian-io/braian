@@ -158,6 +158,12 @@ export function withReplacedQualifier(column: ViewColumn, next: AppliedQualifier
   return makeViewColumn(column.fieldPath, qualifiers, fields) ?? { ...column, qualifiers, id: columnIdOf(column.path, qualifiers) }
 }
 
+function showsByDefault(defs: DefsJson, key: string): boolean {
+  const attributes = (defs.attributes as DefsJson[] | undefined) ?? []
+  const attribute = attributes.find((item) => String(item.key) === key || String(item.id) === key)
+  return attribute?.show_by_default !== false
+}
+
 /** Default visible columns per object type (identifier, name, a few key attributes). */
 export function defaultColumnIdsForType(typeKey: string, defs?: DefsJson): string[] {
   const base = ['number', 'name']
@@ -178,7 +184,7 @@ export function defaultColumnIdsForType(typeKey: string, defs?: DefsJson): strin
           ? ['status']
           : ['status']
   for (const key of prefer) {
-    if (catalog.some((f) => f.id === key) && !ids.includes(key)) ids.push(key)
+    if (showsByDefault(defs, key) && catalog.some((f) => f.id === key) && !ids.includes(key)) ids.push(key)
   }
   return ids
 }
