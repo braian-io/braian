@@ -6,7 +6,7 @@ import { demoCredentials } from './demo'
 import { mainTable, setTheme } from './ui'
 
 const shots = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'test-results', 'design-polish-screenshots')
-const agentShots = '/cursor/stores/bc-c19c1a7c-924e-5d74-9a17-f9261da84058/screenshots'
+const agentShots = '/cursor/stores/self/screenshots'
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -59,7 +59,23 @@ test.describe('design polish low rows', () => {
       const palette = page.getByTestId('command-palette')
       await expect(palette).toBeVisible()
       await page.getByTestId('palette-input').fill('Open view')
-      await expect(palette.locator('.hit.on')).toContainText('Open view')
+      const active = palette.locator('.hit.on')
+      await expect(active).toContainText('Open view')
+      await expect(palette.locator('.hit.on')).toHaveCount(1)
+      const activeRow = active.first()
+      const activePaint = await activeRow.evaluate((el) => {
+        const style = getComputedStyle(el)
+        const mark = el.querySelector('.mark')
+        const markStyle = mark ? getComputedStyle(mark) : null
+        return {
+          color: style.color,
+          text: getComputedStyle(document.documentElement).getPropertyValue('--text').trim(),
+          markBg: markStyle?.backgroundColor ?? '',
+          markWeight: markStyle?.fontWeight ?? '',
+        }
+      })
+      expect(activePaint.markWeight).toMatch(/6[0-9]{2}|700|bold/)
+      expect(activePaint.markBg).toBe('rgba(0, 0, 0, 0)')
       await page.keyboard.press('Tab')
       await expect(page.getByTestId('palette-crumb')).toContainText('Open view ›')
       expect(await crumbColor(page)).toBe(await accentToken(page))
@@ -67,7 +83,7 @@ test.describe('design polish low rows', () => {
       await expect(paletteHoverTarget).toBeVisible()
       await paletteHoverTarget.hover()
       const paletteHoverBg = await paletteHoverTarget.evaluate((el) => getComputedStyle(el).backgroundColor)
-      expect(paletteHoverBg).not.toBe('rgba(0, 0, 0, 0)')
+      expect(paletteHoverBg).toBe('rgba(0, 0, 0, 0)')
       const paletteActiveShadow = await palette.locator('.hit.on').first().evaluate((el) => getComputedStyle(el).boxShadow)
       await saveShot(page, `f6-f8-palette-crumb-${theme}.png`)
       await page.keyboard.press('Escape')
@@ -87,7 +103,13 @@ test.describe('design polish low rows', () => {
 
       const allergen = detail.locator('.choice-chip').first()
       await expect(allergen).toBeVisible()
+      await expect(allergen).not.toHaveClass(/on/)
       await allergen.hover()
+      const hoverPaint = await allergen.evaluate((el) => {
+        const style = getComputedStyle(el)
+        return { bg: style.backgroundColor, color: style.color, weight: style.fontWeight }
+      })
+      expect(hoverPaint.weight).not.toMatch(/6[0-9]{2}|700|bold/)
       await saveShot(page, `h5-allergen-hover-${theme}.png`)
 
       const addLink = detail.getByTestId('add-link').first()

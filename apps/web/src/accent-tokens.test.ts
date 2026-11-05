@@ -63,9 +63,11 @@ describe('accent tokens', () => {
     expect(css).toMatch(/\.popover-content\.import-menu[\s\S]*box-shadow:\s*var\(--shadow-md\),\s*var\(--inset\)/)
   })
 
-  it('uses the same palette list marks for hover and active rows', () => {
+  it('tints only the active palette row and keeps query marks typographic', () => {
     expect(css).toMatch(/\.palette \.hit\.on,\s*\n\.palette \.hit\.on:hover/)
-    expect(css).toMatch(/\.palette \.hit:hover:not\(\.on\)/)
+    expect(css).toMatch(/\.palette \.hit:hover:not\(\.on\)[\s\S]*background:\s*transparent/)
+    expect(css).toMatch(/\.palette \.hit\.on \.mark[\s\S]*background:\s*transparent/)
+    expect(css).toMatch(/\.palette \.hit\.on \.mark[\s\S]*text-decoration:\s*underline/)
   })
 
   it('keeps light accent-dim strong enough for text on the wash', () => {
