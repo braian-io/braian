@@ -62,8 +62,11 @@ test('a second Products view opens beside the first and both accept a link drag'
 
   const left = panes.nth(0)
   const right = panes.nth(1)
-  const leftRow = left.getByTestId('object-row').first()
-  const rightRow = right.getByTestId('object-row').first()
+  // Same sort in both panes — pick two different product keys so the drop is not self.
+  const leftRow = left.getByTestId('object-row').filter({ hasText: 'PROD-CHEDDAR' }).first()
+  const rightRow = right.getByTestId('object-row').filter({ hasText: 'PROD-OAT' }).first()
+  await expect(leftRow).toBeVisible()
+  await expect(rightRow).toBeVisible()
   await dragOver(page, leftRow, rightRow)
   const ghost = page.getByTestId('link-drag-ghost')
   await expect(ghost).toBeVisible()
