@@ -54,6 +54,7 @@ const specs = [
   'e2e/palette-drill.spec.ts',
   'e2e/agent-tab.spec.ts',
   'e2e/agent-presence.spec.ts',
+  'e2e/agent-session.spec.ts',
   'e2e/open-type-view-ready.spec.ts',
   'e2e/legacy-model-workspace.spec.ts',
   'e2e/dangling-model-workspace.spec.ts',
@@ -169,6 +170,7 @@ const measuredSeconds = {
   'e2e/open-type-view-ready.spec.ts': 25,
   'e2e/shortcut-registry.spec.ts': 20,
   'e2e/agent-presence.spec.ts': 120,
+  'e2e/agent-session.spec.ts': 150,
 }
 
 const reseedSeconds = 4

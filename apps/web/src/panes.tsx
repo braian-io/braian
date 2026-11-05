@@ -50,6 +50,8 @@ import { searchPeerArticles, type PeerPickOption } from './peer-search'
 import { linkedPeerIds } from './peer-source'
 import { isExplicitAllSource, peerEmptyState, peerIdsFilter, peerNodeFilter, peerSourceOf } from './view-source'
 import { FieldDiff } from './field-diff-view'
+import { proposeInAgentSession } from './agent-runs'
+import { viewingAgentRunId } from './agent-session'
 import { copy, uiLanguage } from './i18n'
 import { openSharedContextMenu, prefersNativeContextMenu } from './shared-context-menu'
 import { buildRowContextMenu } from './row-context-menu'
@@ -1282,6 +1284,24 @@ export function ObjectTable({
       languageDependent: Boolean(attr?.language_dependent),
       uiLanguage,
     })
+    const agentSession = viewingAgentRunId()
+    if (agentSession) {
+      void proposeInAgentSession(agentSession, {
+        objectId: row.id,
+        objectKey: row.key,
+        typeKey: row.type,
+        baseVersion: Number(row.version ?? 0),
+        values: bodyValues,
+      }).then(() => {
+        session.push(copy.agentSessionProposed)
+        void queryClient.invalidateQueries({ queryKey: ['agent-run'] })
+        void queryClient.invalidateQueries({ queryKey: ['agent-runs'] })
+        void queryClient.invalidateQueries({ queryKey: ['proposals'] })
+      }).catch((reason: unknown) => {
+        reportWriteError(reason)
+      })
+      return
+    }
     void api.patch('/v1/objects/{id}', { params: { path: { id: row.id }, header: { 'If-Match': Number(row.version ?? 0) } }, body: { values: freeObject(bodyValues) } })
       .then(async (saved) => {
         session.push(copy.saved)
@@ -2548,6 +2568,27 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   const suggestionCount = suggestionIndex(suggestions.data).get(session.objectId) ?? 0
   const save = () => {
     if (Object.keys(draft).length === 0) return
+    const agentSession = viewingAgentRunId()
+    if (agentSession) {
+      void proposeInAgentSession(agentSession, {
+        objectId: session.objectId ?? '',
+        objectKey: label,
+        typeKey: String(object.data?.type ?? ''),
+        baseVersion: Number(object.data?.version ?? 0),
+        values: draft,
+      }).then(() => {
+        setDraft({})
+        setError('')
+        session.push(copy.agentSessionProposed)
+        void queryClient.invalidateQueries({ queryKey: ['agent-run'] })
+        void queryClient.invalidateQueries({ queryKey: ['agent-runs'] })
+        void queryClient.invalidateQueries({ queryKey: ['proposals'] })
+      }).catch((reason: unknown) => {
+        const message = writeErrorMessage(reason)
+        if (message) setError(message)
+      })
+      return
+    }
     void api.patch('/v1/objects/{id}', { params: { path: { id: session.objectId ?? '' }, header: { 'If-Match': Number(object.data?.version ?? 0) } }, body: { values: freeObject(draft) } })
       .then(async (saved) => {
         await applyObjectWrite(queryClient, saved as Json)
@@ -2728,7 +2769,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       {dirty ? (
         <div className="save-bar">
           <Button type="button" variant="danger" onClick={() => setDraft({})}>{copy.discard}</Button>
-          <button className="primary" type="submit" data-testid="review-and-save">{copy.reviewAndSave}</button>
+          <button className="primary" type="submit" data-testid="review-and-save">{viewingAgentRunId() ? copy.agentPropose : copy.reviewAndSave}</button>
         </div>
       ) : null}
     </form>

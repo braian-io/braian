@@ -53,7 +53,8 @@ import { prepareFeedbackCapture, type FeedbackCapture } from './feedback'
 import { AgentPresence } from './agent-presence'
 import { AgentView } from './agent-view'
 import { AgentsTable } from './agents-table'
-import { agentRunPrompt, agentRunsForWorkspace, agentTabTitle, listAgentRuns, openAgentEvent, openAgentsTableEvent, patchAgentRun, type AgentMessage, type AgentRunSummary } from './agent-runs'
+import { agentRunPrompt, agentRunsForWorkspace, agentTabTitle, backToMySessionEvent, listAgentRuns, openAgentEvent, openAgentsTableEvent, patchAgentRun, requestBackToMySession, showAgentSessionEvent, takeOverAgentRun, type AgentMessage, type AgentRunSummary } from './agent-runs'
+import { agentSessionLayout, controllingAgentRuns, holdLayoutFlush, layoutFlushHeld, markedAgentViewIds, setViewingAgentRun, subscribeViewingAgent, viewingAgentRunId } from './agent-session'
 import { CommandPalette } from './palette'
 import { SharedContextMenuHost, prefersNativeContextMenu } from './shared-context-menu'
 import { StateNote } from './states'
@@ -260,6 +261,10 @@ export function Shell() {
   const openTypeViewRef = useRef<(typeId: string) => void>(() => {})
   const openAgentRunRef = useRef<(run: { id: string; title: string; view_id?: string | null; tab_open?: boolean; messages?: AgentMessage[] }) => void>(() => {})
   const openAgentsTableRef = useRef<() => void>(() => {})
+  const showAgentSessionRef = useRef<(run: AgentRunSummary) => void>(() => {})
+  const backToMineRef = useRef<() => void>(() => {})
+  const mineDocRef = useRef<LayoutDoc | null>(null)
+  const viewingRunId = useSyncExternalStore(subscribeViewingAgent, viewingAgentRunId, viewingAgentRunId)
   const restoredAgents = useRef<string | null>(null)
   const applyViewTypeSourceRef = useRef<(typeId: string, viewId?: string) => Promise<void>>(async () => undefined)
   const applyViewPeerSourceRef = useRef<(peerViewId: string, viewId?: string, linkType?: string) => Promise<void>>(async () => undefined)
@@ -651,6 +656,12 @@ export function Shell() {
   }, [online])
 
   const userId = me.data?.user_id ?? ''
+  const agentRunList = useQuery({
+    queryKey: ['agent-runs'],
+    queryFn: listAgentRuns,
+    enabled: Boolean(userId),
+    refetchInterval: userId ? 1000 : false,
+  })
   const workspaceRef = useRef(workspace.data)
   workspaceRef.current = workspace.data
 
@@ -674,11 +685,20 @@ export function Shell() {
       if (run?.id) openAgentRunRef.current(run)
     }
     const onTable = () => openAgentsTableRef.current()
+    const onShow = (event: Event) => {
+      const run = (event as CustomEvent<AgentRunSummary>).detail
+      if (run?.id) showAgentSessionRef.current(run)
+    }
+    const onBack = () => backToMineRef.current()
     window.addEventListener(openAgentEvent, onRun)
     window.addEventListener(openAgentsTableEvent, onTable)
+    window.addEventListener(showAgentSessionEvent, onShow)
+    window.addEventListener(backToMySessionEvent, onBack)
     return () => {
       window.removeEventListener(openAgentEvent, onRun)
       window.removeEventListener(openAgentsTableEvent, onTable)
+      window.removeEventListener(showAgentSessionEvent, onShow)
+      window.removeEventListener(backToMySessionEvent, onBack)
     }
   }, [])
 
@@ -830,6 +850,7 @@ export function Shell() {
   }, [workspaceId, userId, workspace.data?.id])
 
   useEffect(() => {
+    if (layoutFlushHeld()) return
     if (!doc || !dirtyRef.current || !workspaceId || !userId) return
     const gen = saveGen.current
     const timer = window.setTimeout(() => {
@@ -863,6 +884,7 @@ export function Shell() {
 
   useEffect(() => {
     const flush = () => {
+      if (layoutFlushHeld()) return
       if (sessionStorage.getItem('braian.layout.suppressFlush') === '1') return
       const current = docRef.current
       if (!dirtyRef.current || !current || !workspaceId) return
@@ -1321,8 +1343,38 @@ export function Shell() {
   signOutRef.current = signOut
   const surface = workspace.data
 
+  showAgentSessionRef.current = (run) => {
+    const current = docRef.current
+    const surfaceNow = workspaceRef.current
+    if (!current || !surfaceNow) return
+    const known = new Set(viewRows(surfaceNow.views).map((view) => view.id))
+    const ids = [...(run.session?.views ?? [])].filter((id) => known.has(id))
+    if (run.view_id && known.has(run.view_id) && !ids.includes(run.view_id)) ids.push(run.view_id)
+    if (ids.length === 0) return
+    if (!mineDocRef.current) mineDocRef.current = current
+    holdLayoutFlush(true)
+    setViewingAgentRun(run.id)
+    const next = agentSessionLayout(current, ids)
+    docRef.current = next
+    setDoc(next)
+  }
+  backToMineRef.current = () => {
+    const mine = mineDocRef.current
+    holdLayoutFlush(false)
+    setViewingAgentRun(null)
+    mineDocRef.current = null
+    if (!mine) return
+    docRef.current = mine
+    setDoc(mine)
+  }
+
   const commitDoc = (next: LayoutDoc) => {
     if (!workspaceId || !user.user_id) return
+    if (layoutFlushHeld()) {
+      docRef.current = next
+      setDoc(next)
+      return
+    }
     docRef.current = next
     dirtyRef.current = true
     saveGen.current += 1
@@ -1678,9 +1730,22 @@ export function Shell() {
     setTabMenu(null)
   }
 
+  const controlling = controllingAgentRuns(agentRunList.data ?? [])
+  const agentControlled = controlling.length > 0
+  const agentViews = markedAgentViewIds(agentRunList.data ?? [], viewingRunId)
+  const takeOver = () => {
+    for (const run of controlling) {
+      void takeOverAgentRun(run.id).then((detail) => {
+        queryClient.setQueryData(['agent-run', run.id], detail)
+        queryClient.setQueryData(['agent-runs'], (current: AgentRunSummary[] | undefined) =>
+          current?.map((item) => item.id === detail.id ? { ...item, ...detail } : item))
+      }).catch((reason: unknown) => reportWriteError(reason))
+    }
+  }
+
   return (
-    <div className="app">
-      <header className="app-bar">
+    <div className="app" data-agent-control={agentControlled ? 'true' : undefined} data-agent-session={viewingRunId && !agentControlled ? 'true' : undefined}>
+      <header className="app-bar" inert={agentControlled || undefined}>
         <div className="brand">
           <img src="/brand/braian-mark.svg" alt="" width={16} height={16} />
           <span>{copy.product}</span>
@@ -1730,7 +1795,32 @@ export function Shell() {
           onSignOut={() => { void runCommand('session:sign-out') }}
         />
       </header>
-      <main className="workspace" data-testid="workspace">
+      {agentControlled ? (
+        <div className="agent-control-bar" data-testid="agent-control-bar">
+          <span>{copy.agentUsingYourSession}</span>
+          <Button type="button" variant="primary" data-testid="agent-take-over" autoFocus onClick={takeOver}>{copy.agentTakeOver}</Button>
+        </div>
+      ) : viewingRunId ? (
+        <div className="agent-session-bar" data-testid="agent-session-bar">
+          <span>{copy.agentViewingSession}</span>
+          <Button
+            type="button"
+            variant="ghost"
+            className="agent-mode"
+            data-testid="agent-back"
+            onClick={() => {
+              const runId = viewingRunId
+              requestBackToMySession()
+              if (runId) {
+                void patchAgentRun(runId, { hidden: true }).catch((reason: unknown) => reportWriteError(reason))
+              }
+            }}
+          >
+            {copy.agentBackToMine}
+          </Button>
+        </div>
+      ) : null}
+      <main className="workspace" data-testid="workspace" inert={agentControlled || undefined}>
         {doc && surface && !layoutHealPending ? (
           <WorkspaceDock
             doc={doc}
@@ -1744,6 +1834,7 @@ export function Shell() {
               }
             })}
             onChange={commitDoc}
+            agentViews={agentViews}
             renderView={(item) => {
               const full = viewRows(surface.views).find((view) => view.id === item.id)
               return full ? <ViewBody view={full} session={session} workspace={surface} /> : <p>{copy.empty}</p>
@@ -1762,7 +1853,7 @@ export function Shell() {
       </main>
       <div className="bottom-bar">
         <pre className="activity" data-testid="activity-log" data-live={liveState}>{logText}</pre>
-        <StatusBar online={online} live={liveState} locked={Boolean(workspace.data?.locked)} />
+        <StatusBar online={online} live={liveState} locked={Boolean(workspace.data?.locked)} inert={agentControlled} />
       </div>
       <ModelDraftHost />
       <ConsequenceHost session={session} />

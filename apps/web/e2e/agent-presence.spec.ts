@@ -144,6 +144,17 @@ async function expectAgentChromeContrast(page: Page) {
   if (await page.getByTestId('agent-background-indicator').count()) {
     await expectReadable(page, '[data-testid="agent-background-indicator"]', 4.5)
   }
+  if (await page.getByTestId('agent-show').count()) {
+    await expectReadable(page, '[data-testid="agent-show"]', 4.5)
+  }
+  if (await page.getByTestId('agent-session-bar').count()) {
+    await expectReadable(page, '[data-testid="agent-session-bar"]', 4.5)
+    await expectReadable(page, '[data-testid="agent-back"]', 4.5)
+  }
+  if (await page.getByTestId('agent-control-bar').count()) {
+    await expectReadable(page, '[data-testid="agent-control-bar"]', 4.5)
+    await expectReadable(page, '[data-testid="agent-take-over"]', 4.5)
+  }
 }
 
 async function shot(page: Page, name: string) {
@@ -217,8 +228,13 @@ test('waiting stops for a decision, survives reload, and resume continues', asyn
   await expect(restored.getByTestId('agent-status')).toHaveText('Waiting for you')
   await expect(restored.getByTestId('agent-question')).toContainText('I will not guess')
   await expect(restored).toHaveAttribute('data-mode', 'background')
-  await restored.getByTestId('agent-mode').click()
+  await expect(restored.getByRole('button', { name: 'Bring to front' })).toHaveCount(0)
+  const runId = await restored.getAttribute('data-run')
+  expect(runId).toBeTruthy()
+  const foreground = await page.request.patch(`/v1/agent/runs/${runId}`, { data: { mode: 'foreground' } })
+  expect(foreground.ok()).toBeTruthy()
   await expect(restored).toHaveAttribute('data-mode', 'foreground')
+  await expect(restored.getByTestId('agent-mode')).toHaveText('Run in background')
   await restored.getByTestId('agent-mode').click()
   await expect(restored).toHaveAttribute('data-mode', 'background')
   const answer = page.locator('[data-sonner-toast]').filter({ hasText: 'waiting for you' }).getByRole('button', { name: 'Answer' })

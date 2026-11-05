@@ -43,6 +43,7 @@ export function AgentPresence({ enabled, onReview }: AgentPresenceProps) {
       show(notice.text, {
         id: notice.id,
         duration: 20000,
+        className: 'agent-notice-toast',
         action: {
           label: notice.actionLabel,
           onClick: () => {

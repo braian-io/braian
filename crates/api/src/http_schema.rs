@@ -168,10 +168,21 @@ pub struct AgentRunPatch {
     pub view_id: Option<Uuid>,
     /// `foreground` or `background`. The person can switch either way while the run continues.
     pub mode: Option<String>,
-    /// Hidden session. Stored for a later view of the agent's own session.
+    /// `true` when the person is looking at their own layout.
     pub hidden: Option<bool>,
-    /// `own` or `user`. Stored for a later choice of session.
+    /// `own` or `user`.
     pub session_kind: Option<String>,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct AgentSessionProposal {
+    pub title: Option<String>,
+    pub object_id: Uuid,
+    pub object_key: Option<String>,
+    pub type_key: String,
+    pub base_version: i64,
+    #[schema(value_type = JsonValue)]
+    pub values: serde_json::Value,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -183,11 +194,14 @@ pub struct AgentRunFollowUp {
 pub struct AgentRunSummary {
     pub id: Uuid,
     pub title: String,
-    /// `working`, `waiting`, `done`, or `failed`.
+    /// `working`, `waiting`, `done`, `failed`, or `paused`.
     pub status: String,
     pub mode: String,
     pub session_kind: String,
     pub hidden: bool,
+    /// View ids the agent is working in. `hidden` means the person is not looking at them.
+    #[schema(value_type = JsonValue)]
+    pub session: serde_json::Value,
     pub tab_open: bool,
     pub view_id: Option<Uuid>,
     pub workspace_id: Option<Uuid>,
@@ -233,6 +247,8 @@ pub struct AgentRunDetail {
     pub mode: String,
     pub session_kind: String,
     pub hidden: bool,
+    #[schema(value_type = JsonValue)]
+    pub session: serde_json::Value,
     pub tab_open: bool,
     pub view_id: Option<Uuid>,
     pub workspace_id: Option<Uuid>,

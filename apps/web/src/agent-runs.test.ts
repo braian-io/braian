@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { agentNoticeText, agentNotices, agentPaletteRows, agentRunPrompt, agentRunsForWorkspace, agentStatusLabel, agentTabTitle, agentsPaletteRoot, backgroundNotices, backgroundWorkingCount, cleanAgentError, type AgentRunSummary } from './agent-runs'
+import { agentNoticeText, agentNotices, agentPaletteRows, agentRunPrompt, agentRunsForWorkspace, agentStatusLabel, agentTabTitle, agentsPaletteRoot, backgroundNotices, backgroundWorkingCount, cleanAgentError, sortAgentRuns, type AgentRunSummary } from './agent-runs'
 
 function run(patch: Partial<AgentRunSummary>): AgentRunSummary {
   return {
@@ -79,6 +79,17 @@ describe('agent run presentation', () => {
     const foreground = run({ id: 'b', mode: 'foreground', status: 'waiting' })
     const sentBack = run({ ...foreground, mode: 'background' })
     expect(backgroundNotices([foreground], [sentBack]).map((item) => item.id)).toEqual(['b'])
+  })
+
+  it('sorts waiting ahead of working and done', () => {
+    const rows = sortAgentRuns([
+      run({ id: 'done', status: 'done', updated_at: '2026-11-05T12:00:00Z' }),
+      run({ id: 'working', status: 'working', updated_at: '2026-11-05T12:05:00Z' }),
+      run({ id: 'waiting-old', status: 'waiting', updated_at: '2026-11-05T11:00:00Z' }),
+      run({ id: 'waiting-new', status: 'waiting', updated_at: '2026-11-05T12:04:00Z' }),
+    ])
+    expect(rows.map((item) => item.id)).toEqual(['waiting-new', 'waiting-old', 'working', 'done'])
+    expect(agentStatusLabel('paused')).toBe('Paused')
   })
 
   it('labels waiting as Waiting for you in the tab and Waiting in the table', () => {

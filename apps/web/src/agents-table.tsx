@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { agentStatusLabel, agentStatusTone, listAgentRuns, requestOpenAgent, type AgentRunSummary } from './agent-runs'
+import { agentStatusLabel, agentStatusTone, listAgentRuns, requestOpenAgent, sortAgentRuns, type AgentRunSummary } from './agent-runs'
 import { MetaChip } from './chips'
 import { formatTimestamp } from './format'
 import { copy } from './i18n'
@@ -22,7 +22,7 @@ export function AgentsTable() {
     queryFn: listAgentRuns,
     refetchInterval: 1000,
   })
-  const rows: AgentTableRow[] = (list.data ?? []).map((run) => ({
+  const rows: AgentTableRow[] = sortAgentRuns(list.data ?? []).map((run) => ({
     id: run.id,
     name: run.title,
     status: agentStatusLabel(run.status),

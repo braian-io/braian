@@ -129,6 +129,7 @@ use utoipa::OpenApi;
         crate::http_schema::AgentRunCreate,
         crate::http_schema::AgentRunPatch,
         crate::http_schema::AgentRunFollowUp,
+        crate::http_schema::AgentSessionProposal,
         crate::http_schema::AgentRunSummary,
         crate::http_schema::AgentMessageView,
         crate::http_schema::AgentProposalView,

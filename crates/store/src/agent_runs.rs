@@ -21,6 +21,7 @@ pub struct AgentRunRow {
     pub hidden: bool,
     pub tab_open: bool,
     pub context: Value,
+    pub session: Value,
     pub error: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -114,7 +115,8 @@ impl Store {
                         (SELECT COUNT(*)::int FROM proposals p WHERE p.agent_run_id = agent_runs.id),
                         (SELECT m.body->>'text' FROM agent_messages m
                           WHERE m.run_id = agent_runs.id AND m.kind = 'question'
-                          ORDER BY m.created_at DESC LIMIT 1)
+                          ORDER BY m.created_at DESC LIMIT 1),
+                        session
                  FROM agent_runs
                  WHERE id = $1
                    AND (principal_id = $2 OR ($3::uuid IS NOT NULL AND user_id = $3))",
@@ -137,7 +139,8 @@ impl Store {
                         (SELECT COUNT(*)::int FROM proposals p WHERE p.agent_run_id = agent_runs.id),
                         (SELECT m.body->>'text' FROM agent_messages m
                           WHERE m.run_id = agent_runs.id AND m.kind = 'question'
-                          ORDER BY m.created_at DESC LIMIT 1)
+                          ORDER BY m.created_at DESC LIMIT 1),
+                        session
                  FROM agent_runs
                  WHERE principal_id = $1 OR ($2::uuid IS NOT NULL AND user_id = $2)
                  ORDER BY created_at DESC",
@@ -284,6 +287,86 @@ impl Store {
                     &update.hidden,
                     &update.session_kind,
                 ],
+            )
+            .await?;
+        Ok(changed > 0)
+    }
+
+    /// Record which session the run chose. A second call leaves a stored
+    /// session in place, so Show is not undone when the task starts.
+    pub async fn ensure_agent_session(
+        &self,
+        id: Uuid,
+        session_kind: &str,
+        hidden: bool,
+        session: &Value,
+    ) -> Result<bool, Error> {
+        let client = self.checkout().await?;
+        client
+            .execute(
+                "UPDATE agent_runs
+                 SET session_kind = $2, hidden = $3, session = $4, updated_at = now()
+                 WHERE id = $1 AND status = 'working' AND session = '{}'::jsonb",
+                &[&id, &session_kind, &hidden, session],
+            )
+            .await?;
+        let status: Option<String> = client
+            .query_opt("SELECT status FROM agent_runs WHERE id = $1", &[&id])
+            .await?
+            .map(|row| row.get(0));
+        Ok(status.as_deref() == Some("working"))
+    }
+
+    pub async fn agent_run_is_working(&self, id: Uuid) -> Result<bool, Error> {
+        let client = self.checkout().await?;
+        let status: Option<String> = client
+            .query_opt("SELECT status FROM agent_runs WHERE id = $1", &[&id])
+            .await?
+            .map(|row| row.get(0));
+        Ok(status.as_deref() == Some("working"))
+    }
+
+    /// Stop a run that is using the person's session. A run that already
+    /// finished is left as it is.
+    pub async fn take_over_agent_run(
+        &self,
+        id: Uuid,
+        principal_id: Uuid,
+        user_id: Option<Uuid>,
+    ) -> Result<bool, Error> {
+        let client = self.checkout().await?;
+        let changed = client
+            .execute(
+                "UPDATE agent_runs
+                 SET status = 'paused', updated_at = now()
+                 WHERE id = $1
+                   AND status = 'working'
+                   AND session_kind = 'user'
+                   AND (principal_id = $2 OR ($3::uuid IS NOT NULL AND user_id = $3))",
+                &[&id, &principal_id, &user_id],
+            )
+            .await?;
+        Ok(changed > 0)
+    }
+
+    /// Move a working run to `done`, `waiting`, or `failed`. A paused run stays paused.
+    pub async fn finish_agent_run_if_working(
+        &self,
+        id: Uuid,
+        status: &str,
+        error: Option<&str>,
+    ) -> Result<bool, Error> {
+        let client = self.checkout().await?;
+        let finished = matches!(status, "done" | "failed");
+        let changed = client
+            .execute(
+                "UPDATE agent_runs SET
+                    status = $2,
+                    error = $3,
+                    finished_at = CASE WHEN $4 THEN now() ELSE NULL END,
+                    updated_at = now()
+                 WHERE id = $1 AND status = 'working'",
+                &[&id, &status, &error, &finished],
             )
             .await?;
         Ok(changed > 0)
@@ -442,6 +525,7 @@ fn read_run(row: &tokio_postgres::Row) -> AgentRunRow {
         hidden: row.get(9),
         tab_open: row.get(10),
         context: row.get(11),
+        session: row.get(18),
         error: row.get(12),
         created_at: row.get(13),
         updated_at: row.get(14),
