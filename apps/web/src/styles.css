@@ -254,8 +254,10 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
   padding: 0;
   border: none;
   border-radius: 99px;
-  background: var(--raised);
+  appearance: none;
+  background: var(--surface);
   color: var(--text);
+  opacity: 1;
   font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
@@ -335,6 +337,13 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
 }
 .pane-tab { border-radius: var(--r-md); height: 28px; }
 /* The active pane tab is one flat underline: no fill, no rounded ends. */
+.pane-tab.active,
+.pane-tab.active .pane-tab-open,
+.pane-tab.active .pane-tab-open > span {
+  color: var(--text);
+  -webkit-text-fill-color: var(--text);
+  opacity: 1;
+}
 .pane-tab.active {
   background: transparent;
   box-shadow: none;
@@ -353,6 +362,7 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
 /* The focused pane's active tab keeps a subtle fill behind the flat underline. */
 .pane.focused .pane-tab.active {
   background: var(--accent-dim);
+  color: var(--text);
 }
 /* Hover belongs to the tab, never to the label inside it. */
 .pane-tab:hover:not(.active) {
@@ -538,16 +548,18 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
 .agent-view-head h2 { margin: 0; font-size: 14px; font-weight: 600; min-width: 0; }
 .agent-view-head time { color: var(--muted); font-size: 12px; margin-left: auto; }
 button.agent-mode {
+  appearance: none;
   background: transparent;
   color: var(--text);
   border: 1px solid var(--border);
   box-shadow: none;
+  opacity: 1;
 }
 button.agent-mode:hover:not(:disabled) { background: var(--hover); }
 button.agent-submit:disabled,
 button.agent-submit:disabled:hover {
   background: var(--surface);
-  color: var(--muted);
+  color: var(--text-2);
   border: 1px solid var(--border);
   box-shadow: none;
   opacity: 1;
@@ -585,7 +597,8 @@ button.agent-approve:disabled:hover {
 }
 .agent-view-head .meta-chip[data-status='waiting'] {
   background: var(--accent-dim);
-  color: var(--accent);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 button.agent-bg-indicator {
   display: inline-flex;
@@ -593,17 +606,18 @@ button.agent-bg-indicator {
   gap: 6px;
   height: 22px;
   padding: 0 8px;
-  border: none;
+  border: 1px solid var(--accent);
   border-radius: 999px;
   background: var(--accent-dim);
-  color: var(--accent);
+  color: var(--text);
   box-shadow: none;
   font-size: 12px;
   font-weight: 600;
+  opacity: 1;
 }
 button.agent-bg-indicator:hover {
   background: color-mix(in srgb, var(--accent) 24%, transparent);
-  color: var(--accent);
+  color: var(--text);
 }
 button.agent-bg-indicator strong { font-variant-numeric: tabular-nums; }
 
@@ -809,8 +823,14 @@ select.link-type-line { width: 100%; font-weight: 600; }
   box-shadow: none;
   font-size: 12px;
   appearance: none;
+  opacity: 1;
 }
-.filter-chip.on { background: var(--accent-dim); color: var(--accent); border-color: transparent; box-shadow: none; }
+.filter-chip.on {
+  background: var(--accent-dim);
+  color: var(--text);
+  border-color: var(--accent);
+  box-shadow: none;
+}
 .row-count {
   margin-left: auto;
   color: var(--muted);
@@ -1854,6 +1874,9 @@ kbd {
   box-shadow: var(--shadow-md);
 }
 [data-sonner-toaster] { pointer-events: none; }
+/* Sit in the gutter before the detail pane, above the status bar, so a finish toast does not cover Detail. */
+[data-sonner-toaster][data-x-position='right'] { right: var(--toast-right, 24px) !important; }
+[data-sonner-toaster][data-y-position='bottom'] { bottom: 32px !important; }
 [data-sonner-toast] { pointer-events: auto; }
 .braian-toast {
   background: var(--raised) !important;
@@ -2070,6 +2093,13 @@ kbd {
 .model-tree:focus-visible { outline: 2px solid var(--accent); border-radius: var(--r-md); }
 button, .pane-tab, .hit, .class-row, .attr-card {
   transition: background var(--dur) var(--ease), color var(--dur) var(--ease), outline-color var(--dur) var(--ease);
+}
+/* Theme swaps change color variables. Interpolating them paints every control grey. */
+html[data-theme-switching],
+html[data-theme-switching] *,
+html[data-theme-switching] *::before,
+html[data-theme-switching] *::after {
+  transition: none !important;
 }
 @keyframes rise {
   from { opacity: 0; transform: translateY(4px); }
@@ -2586,7 +2616,7 @@ button.tab-x:disabled:hover {
 :root[data-theme='light'] button:not(.tab):not(.pane-tab):not(.pane-tab-open):not(.icon-btn):not(.btn-ghost):not(.btn-accent):not(.btn-danger):not(.primary):not(.avatar-btn):not(.catalog-selector-btn):not(.tab-x):not(.filter-chip):not(.choice-chip):not(.legend-chip):not(.agent-bg-indicator):not(.agent-mode):not(.agent-submit):disabled,
 :root[data-theme='light'] button:not(.tab):not(.pane-tab):not(.pane-tab-open):not(.icon-btn):not(.btn-ghost):not(.btn-accent):not(.btn-danger):not(.primary):not(.avatar-btn):not(.catalog-selector-btn):not(.tab-x):not(.filter-chip):not(.choice-chip):not(.legend-chip):not(.agent-bg-indicator):not(.agent-mode):not(.agent-submit):disabled:hover {
   background: #f3f4f6;
-  color: #9ca3af;
+  color: #4b5563;
   border-color: #e5e7eb;
   opacity: 1;
 }
@@ -2597,8 +2627,8 @@ button.tab-x:disabled:hover {
 }
 :root[data-theme='light'] button.filter-chip.on {
   background: var(--accent-dim);
-  color: var(--accent);
-  border-color: transparent;
+  color: #111827;
+  border-color: var(--accent);
 }
 :root[data-theme='light'] button.agent-mode {
   background: #ffffff;
@@ -2609,8 +2639,12 @@ button.tab-x:disabled:hover {
 :root[data-theme='light'] button.agent-submit:disabled,
 :root[data-theme='light'] button.agent-submit:disabled:hover {
   background: #f3f4f6;
-  color: #6b7280;
+  color: #4b5563;
   border-color: #e5e7eb;
+  opacity: 1;
+}
+button:disabled,
+button[aria-disabled='true'] {
   opacity: 1;
 }
 .pane-body,

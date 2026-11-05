@@ -337,8 +337,14 @@ export function Shell() {
   }, [])
   useEffect(() => {
     if (!booted) return
-    document.documentElement.dataset.theme = theme
+    const root = document.documentElement
+    // Color and background transition. Drop them for the variable swap so labels
+    // do not fade through a grey that matches the fill.
+    root.setAttribute('data-theme-switching', '')
+    root.dataset.theme = theme
     writeStore('braian.theme', theme)
+    const frame = requestAnimationFrame(() => root.removeAttribute('data-theme-switching'))
+    return () => cancelAnimationFrame(frame)
   }, [theme, booted])
 
   const push = (line: string) => {

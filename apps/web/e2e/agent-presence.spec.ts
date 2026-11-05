@@ -75,13 +75,84 @@ async function expectTabStartVisible(page: Page, title: string) {
   }).toBe(true)
 }
 
+async function expectReadable(page: Page, selector: string, minimum: number) {
+  const failures = await page.locator(selector).evaluateAll((nodes, floor) => {
+    const parse = (value: string) => {
+      const match = value.match(/rgba?\(([^)]+)\)/)
+      if (!match) return null
+      const parts = match[1].split(',').map((part) => Number.parseFloat(part.trim()))
+      return { r: parts[0] ?? 0, g: parts[1] ?? 0, b: parts[2] ?? 0, a: parts[3] ?? 1 }
+    }
+    const channel = (value: number) => {
+      const scaled = value / 255
+      return scaled <= 0.04045 ? scaled / 12.92 : ((scaled + 0.055) / 1.055) ** 2.4
+    }
+    const lum = (color: { r: number; g: number; b: number }) =>
+      0.2126 * channel(color.r) + 0.7152 * channel(color.g) + 0.0722 * channel(color.b)
+    const opaque = (node: Element | null): { r: number; g: number; b: number } => {
+      if (!(node instanceof Element)) return { r: 255, g: 255, b: 255 }
+      const color = parse(getComputedStyle(node).backgroundColor)
+      const parent = opaque(node.parentElement)
+      if (!color || color.a === 0) return parent
+      return {
+        r: color.r * color.a + parent.r * (1 - color.a),
+        g: color.g * color.a + parent.g * (1 - color.a),
+        b: color.b * color.a + parent.b * (1 - color.a),
+      }
+    }
+    return nodes.flatMap((node) => {
+      if (!(node instanceof HTMLElement) || node.offsetParent === null) return []
+      const style = getComputedStyle(node)
+      const fg = parse(style.color)
+      const bg = opaque(node)
+      if (!fg) return [`${node.tagName} has no color`]
+      const painted = {
+        r: fg.r * fg.a + bg.r * (1 - fg.a),
+        g: fg.g * fg.a + bg.g * (1 - fg.a),
+        b: fg.b * fg.a + bg.b * (1 - fg.a),
+      }
+      const hi = Math.max(lum(painted), lum(bg))
+      const lo = Math.min(lum(painted), lum(bg))
+      const ratio = (hi + 0.05) / (lo + 0.05)
+      const label = (node.innerText || node.getAttribute('aria-label') || node.className).replace(/\s+/g, ' ').trim().slice(0, 40)
+      if (ratio + 0.05 >= floor && label.length > 0) return []
+      return [`${label || node.className} ${ratio.toFixed(2)}:1`]
+    })
+  }, minimum)
+  expect(failures, `${selector} below ${minimum}:1`).toEqual([])
+}
+
+async function settleTheme(page: Page, theme: 'dark' | 'light') {
+  await setTheme(page, theme)
+  await expect(page.locator('html')).not.toHaveAttribute('data-theme-switching', '')
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  }))
+}
+
+async function expectAgentChromeContrast(page: Page) {
+  await expectReadable(page, '.pane.focused .pane-tab.active .pane-tab-open', 4.5)
+  await expectReadable(page, 'button.filter-chip', 4.5)
+  await expectReadable(page, 'button.agent-mode', 4.5)
+  await expectReadable(page, 'button.avatar-btn', 4.5)
+  if (await page.locator('button.agent-submit:disabled').count()) {
+    await expectReadable(page, 'button.agent-submit:disabled', 3)
+  }
+  if (await page.getByTestId('peer-show-all').count()) {
+    await expectReadable(page, '[data-testid="peer-show-all"]', 4.5)
+  }
+  if (await page.getByTestId('agent-background-indicator').count()) {
+    await expectReadable(page, '[data-testid="agent-background-indicator"]', 4.5)
+  }
+}
+
 async function shot(page: Page, name: string) {
   const dir = process.env.BRAIAN_AGENT_SHOTS
-  if (!dir) return
-  await setTheme(page, 'dark')
-  await page.screenshot({ path: `${dir}/${name}-dark.png` })
-  await setTheme(page, 'light')
-  await page.screenshot({ path: `${dir}/${name}-light.png` })
+  for (const theme of ['dark', 'light'] as const) {
+    await settleTheme(page, theme)
+    await expectAgentChromeContrast(page)
+    if (dir) await page.screenshot({ path: `${dir}/${name}-${theme}.png` })
+  }
 }
 
 test('background runs show a count and Review results opens the tab', async ({ page }) => {
@@ -111,6 +182,11 @@ test('background runs show a count and Review results opens the tab', async ({ p
   await expect(page.getByTestId('agent-background-indicator')).toBeVisible()
   const review = page.getByRole('button', { name: 'Review results' }).first()
   await expect(review).toBeVisible({ timeout: 30_000 })
+  const toastBox = await page.locator('[data-sonner-toast]').first().boundingBox()
+  const detailBox = await page.locator('section.pane').filter({ has: page.locator('[data-view-type="object_detail"]') }).first().boundingBox()
+  expect(toastBox).toBeTruthy()
+  expect(detailBox).toBeTruthy()
+  expect(toastBox!.x + toastBox!.width).toBeLessThanOrEqual(detailBox!.x + 2)
   await shot(page, 'agent-notification')
   await review.click()
   await expect(page.locator('.pane-tab[data-view-type="agent"]').first()).toBeVisible()
