@@ -482,7 +482,7 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
     animation-timeline: scroll(self inline);
   }
 }
-.pane-tab { display: inline-flex; align-items: center; flex: none; gap: 2px; max-width: 180px; min-width: 0; overflow: hidden; }
+.pane-tab { display: inline-flex; align-items: center; flex: none; gap: 4px; max-width: 180px; min-width: 0; overflow: hidden; }
 .pane-tab-open {
   display: inline-flex;
   align-items: center;
@@ -517,18 +517,20 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
   align-items: center;
   justify-content: center;
   flex: none;
-  width: 14px;
-  height: 14px;
+  width: 22px;
+  height: 22px;
   padding: 0;
   border: 0;
   border-radius: var(--r-sm);
   background: transparent;
   box-shadow: none;
   opacity: 0;
-  color: var(--muted);
+  color: var(--text-2);
+  pointer-events: none;
 }
 .tab-x:hover { background: var(--accent-dim); color: var(--text); }
-.pane-tab:hover .tab-x, .pane-tab.active .tab-x, .tab-x:focus-visible { opacity: 1; }
+.pane-tab:hover .tab-x, .pane-tab.active .tab-x, .tab-x:focus-visible { opacity: 1; pointer-events: auto; }
+.tab-x:focus-visible { outline-offset: -2px; }
 .pane-chrome {
   margin-left: auto;
   display: flex;
