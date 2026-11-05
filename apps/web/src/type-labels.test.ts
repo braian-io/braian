@@ -7,12 +7,15 @@ import {
   defaultPlural,
   displayViewTitle,
   emptyDetail,
+  emptyGraph,
+  indefiniteArticle,
   migrateSavedWorkspace,
   pluralOf,
   newObjectTitle,
   singularOf,
   typeNames,
   typeViewPaletteItems,
+  withIndefinite,
 } from './type-labels'
 
 const defs: Json = {
@@ -147,6 +150,14 @@ describe('type labels', () => {
     ])
   })
 
+  it('chooses a or an from the first letter and lowercases the word', () => {
+    expect(indefiniteArticle('Article')).toBe('an')
+    expect(indefiniteArticle('Product')).toBe('a')
+    expect(indefiniteArticle('empty')).toBe('an')
+    expect(withIndefinite('Article')).toBe('an article')
+    expect(withIndefinite('Product')).toBe('a product')
+  })
+
   it('names list and detail views from the open type', () => {
     const types = typeNames(defs, 'en')
     expect(displayViewTitle({ type: 'object_table', title: 'Objects', state: { type_key: 'article' } }, types)).toBe('Articles')
@@ -155,6 +166,8 @@ describe('type labels', () => {
     expect(displayViewTitle({ type: 'object_detail', title: 'Detail', state: {} }, types)).toBe('Detail')
     expect(displayViewTitle({ type: 'object_detail', title: 'Detail', state: {} }, [types[0]!])).toBe('Product')
     expect(emptyDetail(types, 'product')).toBe('Select a product to see its details.')
+    expect(emptyDetail(types, 'article')).toBe('Select an article to see its details.')
+    expect(emptyGraph(types, 'article')).toBe('Select an article to see its graph.')
     expect(emptyDetail(types)).toBe('Select a row to see its details.')
     expect(commandPlaceholder([types[0]!])).toBe('Search products, open views, or ask AI')
     expect(commandPlaceholder(types)).toBe('Search, open views, or ask AI')

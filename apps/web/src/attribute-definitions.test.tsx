@@ -113,6 +113,9 @@ describe('attribute definitions view', () => {
     expect(weight?.querySelector('[data-testid="used-in"]')?.textContent).toBe('2 places')
     expect(weight?.querySelector('[data-testid="used-in"]')?.getAttribute('title')).toBe('Article (1,200), Food / Cheese (4)')
     expect(weight?.querySelector('[data-testid="used-in"]')?.getAttribute('data-objects')).toBe('1200')
+    const created = rows.find((row) => row.getAttribute('data-key') === 'created_at')
+    expect(created?.querySelector('[data-testid="used-in"]')?.textContent).toBe('1 place')
+    expect(created?.querySelector('[data-testid="used-in"]')?.getAttribute('title')).toBe('Article (3)')
 
     const numberRow = rows.find((row) => row.getAttribute('data-key') === 'number') as HTMLElement
     fireEvent.contextMenu(numberRow)

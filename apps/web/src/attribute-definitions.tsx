@@ -466,9 +466,8 @@ function kindLabel(kind: string, key = '') {
 function usedSummary(row: AttributeDefinitionRow) {
   const places = row.types.length + row.groups.length
   if (places === 0) return '—'
-  const full = usedText(row)
-  if (places <= 1) return full
-  return copy.usedInSummary.replace('{count}', String(places))
+  const summary = places === 1 ? copy.usedInSummaryOne : copy.usedInSummary
+  return summary.replace('{count}', String(places))
 }
 
 function flagText(flags: AttributeFlags) {
