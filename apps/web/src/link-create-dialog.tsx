@@ -363,13 +363,19 @@ function LinkFields({
                   id={`link-field-${field.key}`}
                   data-testid={`link-field-${field.key}`}
                   autoFocus={choices.length === 1 && index === 0}
-                  type={field.kind === 'number' || field.kind === 'range' ? 'number' : undefined}
-                  step={field.kind === 'number' || field.kind === 'range' ? 'any' : undefined}
+                  type={field.kind === 'date' ? 'date' : 'text'}
+                  inputMode={field.kind === 'number' || field.kind === 'range' ? 'decimal' : undefined}
+                  data-kind={field.kind === 'number' || field.kind === 'range' ? 'number' : undefined}
                   value={draft[field.key] ?? ''}
-                  placeholder={field.kind === 'date' ? 'YYYY-MM-DD' : undefined}
-                  inputMode={field.kind === 'number' ? 'decimal' : undefined}
+                  placeholder={field.kind === 'date' ? 'YYYY-MM-DD' : field.kind === 'number' || field.kind === 'range' ? '0' : undefined}
                   aria-invalid={fieldErrors[field.key] ? true : undefined}
-                  onChange={(event) => updateField(field.key, event.target.value, event.target.validity.badInput)}
+                  onChange={(event) => {
+                    const value = event.target.value
+                    const invalid = (field.kind === 'number' || field.kind === 'range')
+                      && value.trim() !== ''
+                      && !Number.isFinite(Number(value.trim()))
+                    updateField(field.key, value, invalid)
+                  }}
                 />
               )}
               {fieldErrors[field.key] ? (
