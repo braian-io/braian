@@ -600,6 +600,14 @@ export function Shell() {
       registerCommandRunner('columns:hide', (target) => {
         if (target.column) dispatchUi('ui.hide_column', { column: String(target.column) })
       }),
+      registerCommandRunner('column:move-left', (target) => {
+        const column = target.column ? String(target.column) : readUiContext().activeColumn
+        if (column) dispatchUi('ui.move_column', { column, direction: 'left' })
+      }),
+      registerCommandRunner('column:move-right', (target) => {
+        const column = target.column ? String(target.column) : readUiContext().activeColumn
+        if (column) dispatchUi('ui.move_column', { column, direction: 'right' })
+      }),
       registerModelCommandRunners(),
     ]
     const onCommand = (event: Event) => {
