@@ -653,13 +653,20 @@ for (const passTheme of ['dark', 'light'] as const) test(`tab close target grows
   await page.mouse.move(5, 5)
   await expect.poll(async () => close.evaluate((el) => getComputedStyle(el).opacity)).toBe('0')
   expect(await close.evaluate((el) => getComputedStyle(el).pointerEvents)).toBe('none')
+  expect(await close.evaluate((el) => getComputedStyle(el).visibility)).toBe('hidden')
   await screenshotElement(page, inactive, `tab-close-hidden-${passTheme}`)
 
   const tabs = pane.locator('.pane-tab')
   const before = await tabs.count()
-  const box = await close.boundingBox()
-  if (!box) throw new Error('missing close target box')
-  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+  // Hidden + pointer-events:none: nothing at the close slot may be a .tab-x.
+  const tabBox = await inactive.boundingBox()
+  if (!tabBox) throw new Error('missing inactive tab box')
+  const topHit = await page.evaluate(({ x, y }) => {
+    const el = document.elementFromPoint(x, y)
+    return el instanceof Element ? { tag: el.tagName, className: el.className } : null
+  }, { x: tabBox.x + tabBox.width - 11, y: tabBox.y + tabBox.height / 2 })
+  expect(String(topHit?.className ?? '')).not.toContain('tab-x')
+  await page.mouse.click(tabBox.x + tabBox.width - 11, tabBox.y + tabBox.height / 2)
   await expect(tabs).toHaveCount(before)
 
   await page.mouse.move(5, 5)

@@ -519,11 +519,16 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
   background: transparent;
   box-shadow: none;
   opacity: 0;
+  visibility: hidden;
   color: var(--text-2);
   pointer-events: none;
 }
 .tab-x:hover { background: var(--accent-dim); color: var(--text); }
-.pane-tab:hover .tab-x, .pane-tab.active .tab-x, .tab-x:focus-visible { opacity: 1; pointer-events: auto; }
+.pane-tab:hover .tab-x, .pane-tab.active .tab-x, .tab-x:focus-visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
 .tab-x:focus-visible { outline-offset: -2px; }
 .pane-chrome { margin-left: auto; display: flex; flex: none; gap: 2px; opacity: 0; }
 .pane:hover .pane-chrome, .pane.focused .pane-chrome, .pane-chrome:focus-within { opacity: 1; }
