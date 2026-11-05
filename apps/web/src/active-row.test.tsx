@@ -376,8 +376,8 @@ describe('active row', () => {
     expect(highlighted()).toBe(before)
     expect(document.querySelectorAll('.hit.on')).toHaveLength(1)
 
-    fireEvent.pointerDown(screen.getByRole('option', { name: /Move view left/ }))
-    expect(highlighted()).toMatch(/Move view left/)
+    fireEvent.pointerDown(screen.getByRole('option', { name: /Move left/ }))
+    expect(highlighted()).toMatch(/Move left/)
     expect(document.querySelectorAll('.hit.on')).toHaveLength(1)
     expect(screen.queryByRole('option', { name: 'Open to the right' })).toBeNull()
     expect(screen.queryByRole('option', { name: /Move to group/ })).toBeNull()
@@ -724,8 +724,8 @@ describe('palette entities', () => {
       </QueryClientProvider>,
     )
     const input = await screen.findByTestId('palette-input')
-    fireEvent.change(input, { target: { value: 'Move view left' } })
-    await waitFor(() => expect(screen.getAllByRole('option', { name: /Move view left/ }).length).toBeGreaterThan(0))
+    fireEvent.change(input, { target: { value: 'Move left' } })
+    await waitFor(() => expect(screen.getAllByRole('option', { name: /Move left/ }).length).toBeGreaterThan(0))
     fireEvent.keyDown(input, { key: 'Enter' })
     expect(message).toHaveBeenCalledWith('Opening when the workspace is ready…')
     expect(closed).not.toHaveBeenCalled()

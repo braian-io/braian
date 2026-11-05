@@ -95,7 +95,7 @@ test.describe('palette drill-in, recent order, and global commands', () => {
 
     await drill('Open view')
     await drill('Open product')
-    await run('Move view left')
+    await run('Move left')
     await run('Reset layout')
     await run('Reset layout')
 
@@ -105,7 +105,7 @@ test.describe('palette drill-in, recent order, and global commands', () => {
     })
     await expect(recent.getByRole('option').nth(0)).toContainText('Open product')
     await expect(recent.getByRole('option').nth(1)).toContainText('Open view')
-    await expect(recent.getByRole('option', { name: /Move view left/ })).toHaveCount(0)
+    await expect(recent.getByRole('option', { name: /Move left/ })).toHaveCount(0)
     await expect(recent.getByRole('option', { name: /Reset layout/ })).toHaveCount(0)
   })
 

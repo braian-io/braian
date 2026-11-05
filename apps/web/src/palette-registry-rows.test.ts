@@ -5,8 +5,14 @@ import { registryColumnMovePaletteRows, registryLayoutFocusPaletteRows, registry
 import { chordForCommand } from './shortcuts'
 
 const agentChord = chordForCommand('agent:open')
+const moveLeftChord = chordForCommand('layout:move_view_left')
+const moveRightChord = chordForCommand('layout:move_view_right')
+const moveUpChord = chordForCommand('layout:move_view_up')
+const moveDownChord = chordForCommand('layout:move_view_down')
+const zoomChord = chordForCommand('layout:zoom')
+const closeViewChord = chordForCommand('layout:close_view')
 
-function baseRows(theme: 'dark' | 'light') {
+function coreRows(theme: 'dark' | 'light') {
   return [
     {
       id: 'theme:toggle',
@@ -34,6 +40,63 @@ function baseRows(theme: 'dark' | 'light') {
   ]
 }
 
+function layoutDockPaletteRows() {
+  return [
+    {
+      id: 'layout:move_view_left',
+      group: 'views',
+      title: copy.moveLeft,
+      subtitle: 'Move the focused view left',
+      kbd: moveLeftChord,
+      shortcut: moveLeftChord,
+    },
+    {
+      id: 'layout:move_view_right',
+      group: 'views',
+      title: copy.moveRight,
+      subtitle: 'Move the focused view right',
+      kbd: moveRightChord,
+      shortcut: moveRightChord,
+    },
+    {
+      id: 'layout:move_view_up',
+      group: 'views',
+      title: copy.moveUp,
+      subtitle: 'Move the focused view up',
+      kbd: moveUpChord,
+      shortcut: moveUpChord,
+    },
+    {
+      id: 'layout:move_view_down',
+      group: 'views',
+      title: copy.moveDown,
+      subtitle: 'Move the focused view down',
+      kbd: moveDownChord,
+      shortcut: moveDownChord,
+    },
+    {
+      id: 'layout:zoom',
+      group: 'views',
+      title: copy.maximize,
+      subtitle: 'Show only the focused pane',
+      kbd: zoomChord,
+      shortcut: zoomChord,
+    },
+    {
+      id: 'layout:close_view',
+      group: 'views',
+      title: copy.closeView,
+      subtitle: 'Close the focused view',
+      kbd: closeViewChord,
+      shortcut: closeViewChord,
+    },
+  ]
+}
+
+function baseRows(theme: 'dark' | 'light') {
+  return [...coreRows(theme), ...layoutDockPaletteRows()]
+}
+
 const reloadRow = {
   id: 'session:reload-new-version',
   group: 'views',
@@ -57,7 +120,12 @@ describe('palette rows from registry commands', () => {
     )
 
     setNewVersionGate(true)
-    expect(registryPaletteRows({ theme: 'dark' })).toEqual([...baseRows('dark'), reloadRow])
+    // reload sits after sign-out and before the dock layout palette:true rows
+    expect(registryPaletteRows({ theme: 'dark' })).toEqual([
+      ...coreRows('dark'),
+      reloadRow,
+      ...layoutDockPaletteRows(),
+    ])
   })
 })
 
@@ -102,5 +170,33 @@ describe('layout focus palette rows from registry', () => {
     expect(rows[1]?.kbd).toBe(chordForCommand('layout:focus:right'))
     expect(rows[2]?.kbd).toBe(chordForCommand('layout:focus:up'))
     expect(rows[3]?.kbd).toBe(chordForCommand('layout:focus:down'))
+  })
+})
+
+describe('layout move/zoom/close palette rows from registry', () => {
+  it('exposes move_view_*/zoom/close via palette:true with dock titles and chords', () => {
+    const rows = registryPaletteRows({ theme: 'dark' })
+    expect(rows.map((row) => row.id)).toEqual(expect.arrayContaining([
+      'layout:move_view_left',
+      'layout:move_view_right',
+      'layout:move_view_up',
+      'layout:move_view_down',
+      'layout:zoom',
+      'layout:close_view',
+    ]))
+    expect(rows.find((row) => row.id === 'layout:move_view_left')).toMatchObject({
+      title: copy.moveLeft,
+      subtitle: 'Move the focused view left',
+      kbd: chordForCommand('layout:move_view_left'),
+      shortcut: chordForCommand('layout:move_view_left'),
+    })
+    expect(rows.find((row) => row.id === 'layout:zoom')).toMatchObject({
+      title: copy.maximize,
+      kbd: chordForCommand('layout:zoom'),
+    })
+    expect(rows.find((row) => row.id === 'layout:close_view')).toMatchObject({
+      title: copy.closeView,
+      kbd: chordForCommand('layout:close_view'),
+    })
   })
 })

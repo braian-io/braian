@@ -526,6 +526,7 @@ export const registryCommands: RegistryCommand[] = [
     contexts: ['dock-view'],
     group: 'views',
     kbd: chordForCommand('layout:move_view_left'),
+    palette: true,
   },
   {
     id: 'layout:move_view_right',
@@ -533,6 +534,7 @@ export const registryCommands: RegistryCommand[] = [
     contexts: ['dock-view'],
     group: 'views',
     kbd: chordForCommand('layout:move_view_right'),
+    palette: true,
   },
   {
     id: 'layout:move_view_up',
@@ -540,6 +542,7 @@ export const registryCommands: RegistryCommand[] = [
     contexts: ['dock-view'],
     group: 'views',
     kbd: chordForCommand('layout:move_view_up'),
+    palette: true,
   },
   {
     id: 'layout:move_view_down',
@@ -547,6 +550,7 @@ export const registryCommands: RegistryCommand[] = [
     contexts: ['dock-view'],
     group: 'views',
     kbd: chordForCommand('layout:move_view_down'),
+    palette: true,
   },
   {
     id: 'layout:zoom',
@@ -554,6 +558,7 @@ export const registryCommands: RegistryCommand[] = [
     contexts: ['dock-view'],
     group: 'views',
     kbd: chordForCommand('layout:zoom'),
+    palette: true,
   },
   {
     id: 'layout:close_view',
@@ -561,6 +566,7 @@ export const registryCommands: RegistryCommand[] = [
     contexts: ['dock-view'],
     group: 'views',
     kbd: chordForCommand('layout:close_view'),
+    palette: true,
   },
   {
     id: 'layout:add-view',
