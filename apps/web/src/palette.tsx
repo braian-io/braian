@@ -755,13 +755,10 @@ export function CommandPalette({
       return
     }
     if (id === 'column:move-left' || id === 'column:move-right') {
-      const column = readUiContext().activeColumn
-      if (column) {
-        dispatchUi('ui.move_column', {
-          column,
-          direction: id === 'column:move-left' ? 'left' : 'right',
-        })
-      }
+      void runCommand(id, {
+        column: readUiContext().activeColumn ?? undefined,
+        columnHeader: undefined,
+      })
       onClose()
       return
     }

@@ -201,6 +201,26 @@ export const registryCommands: RegistryCommand[] = [
     when: (target) => Boolean(target.column),
   },
   {
+    id: 'column:move-left',
+    title: (target) =>
+      target.columnHeader ? `${copy.moveColumnLeft} · ${target.columnHeader}` : copy.moveColumnLeft,
+    contexts: ['table-header', 'cell', 'row'],
+    group: 'views',
+    keywords: ['column', 'move', 'left', 'reorder'],
+    kbd: chordForCommand('column:move-left'),
+    when: (target) => Boolean(target.column),
+  },
+  {
+    id: 'column:move-right',
+    title: (target) =>
+      target.columnHeader ? `${copy.moveColumnRight} · ${target.columnHeader}` : copy.moveColumnRight,
+    contexts: ['table-header', 'cell', 'row'],
+    group: 'views',
+    keywords: ['column', 'move', 'right', 'reorder'],
+    kbd: chordForCommand('column:move-right'),
+    when: (target) => Boolean(target.column),
+  },
+  {
     id: 'fields:select',
     global: true,
     title: `${copy.selectFields}…`,
