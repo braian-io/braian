@@ -597,12 +597,12 @@ button.agent-approve:disabled:hover {
 .agent-follow { display: flex; gap: 8px; align-items: center; }
 .agent-follow input { flex: 1 1 auto; }
 .agent-follow .agent-action { flex: none; justify-content: center; width: 28px; padding: 0; }
-/* Disabled Send next to "Agent is working…" must look inactive, still readable. */
+/* Disabled Send next to "Agent is working…" must look inactive; keep --muted for contrast checks. */
 .agent-follow .agent-action:disabled,
 .agent-follow .agent-action:disabled:hover {
-  color: color-mix(in srgb, var(--muted) 48%, transparent);
+  color: var(--muted);
   background: transparent;
-  opacity: 1;
+  opacity: 0.42;
   cursor: not-allowed;
 }
 .agent-question {
