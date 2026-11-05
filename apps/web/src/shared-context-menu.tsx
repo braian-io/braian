@@ -153,7 +153,11 @@ export function SharedContextMenuHost({
 
   const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     const buttons = Array.from(menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])
-    const at = buttons.findIndex((item) => item === document.activeElement)
+    // Arrow keys continue from the marked item, even when DOM focus has not caught up yet.
+    const markedAt = highlighted
+      ? buttons.findIndex((item) => item.dataset.command === highlighted)
+      : -1
+    const at = markedAt >= 0 ? markedAt : buttons.findIndex((item) => item === document.activeElement)
     if (event.key === 'Escape' || event.key === 'Tab') {
       event.preventDefault()
       event.stopPropagation()
@@ -178,6 +182,8 @@ export function SharedContextMenuHost({
               : at <= 0
                 ? buttons.length - 1
                 : at - 1
+      const nextId = buttons[next]?.dataset.command
+      if (nextId) setHighlighted(nextId)
       buttons[next]?.focus()
       return
     }
@@ -213,7 +219,10 @@ export function SharedContextMenuHost({
           data-command={command.id}
           data-highlighted={marked === command.id ? '' : undefined}
           onFocus={() => setHighlighted(command.id)}
-          onMouseEnter={() => setHighlighted(command.id)}
+          onMouseEnter={(event) => {
+            setHighlighted(command.id)
+            event.currentTarget.focus({ preventScroll: true })
+          }}
           onClick={() => activate(command)}
         >
           <span className="menu-label">{commandTitle(command, request.target ?? {})}</span>

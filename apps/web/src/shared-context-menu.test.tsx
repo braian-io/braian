@@ -139,4 +139,23 @@ describe('shared context menu registry', () => {
     fireEvent.keyDown(menu, { key: 'ArrowUp' })
     expect(document.activeElement).toBe(items[0])
   })
+
+  it('keeps highlight and focus on one item when hovering then arrowing', async () => {
+    registerCommandRunner('object:open', () => undefined)
+    render(<SharedContextMenuHost />)
+    openSharedContextMenu({ context: 'row', x: 12, y: 12, target: { objectId: 'o1' } })
+    const menu = await screen.findByTestId('context-menu')
+    const items = screen.getAllByRole('menuitem')
+    expect(items.length).toBeGreaterThan(2)
+    const marked = () => items.filter((item) => item.hasAttribute('data-highlighted'))
+    expect(marked()).toEqual([items[0]])
+
+    fireEvent.mouseOver(items[1])
+    expect(marked()).toEqual([items[1]])
+    expect(document.activeElement).toBe(items[1])
+
+    fireEvent.keyDown(menu, { key: 'ArrowDown' })
+    expect(marked()).toEqual([items[2]])
+    expect(document.activeElement).toBe(items[2])
+  })
 })

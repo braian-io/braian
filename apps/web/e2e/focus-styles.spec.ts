@@ -370,3 +370,70 @@ test('accent policy: selection, hover, menus, chips and light dim', async ({ pag
   const lightAlpha = alphaOf(await cssToken(page, '--accent-dim'))
   expect(lightAlpha).toBeGreaterThan(darkAlpha)
 })
+
+test('context menu keeps focus and highlight on one item', async ({ page }) => {
+  test.setTimeout(120_000)
+  await page.addInitScript(() => localStorage.setItem('braian.theme', JSON.stringify('dark')))
+  await login(page)
+  await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
+
+  const table = mainTable(page)
+  const row = table.getByTestId('object-row').filter({ hasText: 'PROD-CHEDDAR' }).first()
+  await expect(row).toBeVisible({ timeout: 60_000 })
+  await row.click()
+  await expect(row).toHaveAttribute('aria-selected', 'true')
+
+  const expectOneMarked = async (menu: Locator, label: string) => {
+    const items = menu.getByRole('menuitem')
+    const count = await items.count()
+    expect(count, `${label}: item count`).toBeGreaterThan(2)
+    const marked: number[] = []
+    for (let index = 0; index < count; index += 1) {
+      const item = items.nth(index)
+      const isMarked = await item.evaluate((element) => element.hasAttribute('data-highlighted'))
+      const value = await paint(item)
+      expect(indicators(value).outline, `${label}: item ${index} outline`).toBe(false)
+      if (isMarked) {
+        marked.push(index)
+        expect(value.backgroundColor, `${label}: item ${index} fill`).toBe(value.accentDim)
+      } else {
+        expect(value.backgroundColor, `${label}: item ${index} background`).toBe('rgba(0, 0, 0, 0)')
+      }
+    }
+    expect(marked, `${label}: marked items`).toHaveLength(1)
+    return marked[0]
+  }
+
+  const checkMenu = async (label: string, open: () => Promise<void>) => {
+    await open()
+    const menu = page.getByTestId('context-menu')
+    await expect(menu).toBeVisible()
+    const items = menu.getByRole('menuitem')
+    expect(await expectOneMarked(menu, `${label} opened`)).toBe(0)
+    await screenshotElement(page, menu, `${label}-open`)
+
+    await items.nth(1).hover()
+    expect(await expectOneMarked(menu, `${label} hovered`)).toBe(1)
+    await screenshotElement(page, menu, `${label}-hover`)
+
+    await page.keyboard.press('ArrowDown')
+    expect(await expectOneMarked(menu, `${label} arrow down`)).toBe(2)
+    await screenshotElement(page, menu, `${label}-arrow-down`)
+
+    await page.keyboard.press('Escape')
+    await expect(menu).toHaveCount(0)
+  }
+
+  await checkMenu('context-menu-mouse', async () => {
+    await row.click({ button: 'right' })
+  })
+
+  await checkMenu('context-menu-keyboard', async () => {
+    await row.click()
+    await expect(row).toHaveAttribute('aria-selected', 'true')
+    const grid = table.locator('.grid').first()
+    await grid.focus()
+    await page.keyboard.press('ArrowRight')
+    await page.keyboard.press('Shift+F10')
+  })
+})
