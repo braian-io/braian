@@ -457,7 +457,9 @@ export function StandardEditableTable<T extends { id: string }>({
     if (!menuContext || prefersNativeContextMenu(event.target)) return
     event.preventDefault()
     event.stopPropagation()
-    openMenu(row, event.clientX, event.clientY)
+    // Same as Shift+F10: open under the row so the clicked cells stay readable (H6).
+    const box = event.currentTarget.getBoundingClientRect()
+    openMenu(row, event.clientX, box.bottom)
   }
 
   const onRowKey = (event: ReactKeyboardEvent<HTMLElement>, row: T) => {

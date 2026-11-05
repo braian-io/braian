@@ -61,13 +61,36 @@ export function handleSurfaceContextMenu(
   openSharedContextMenu({ context, target, x: event.clientX, y: event.clientY, extra })
 }
 
-function clamp(x: number, y: number) {
-  const width = typeof window === 'undefined' ? 0 : window.innerWidth
-  const height = typeof window === 'undefined' ? 0 : window.innerHeight
-  return {
-    x: Math.max(8, Math.min(x, width > 0 ? width - 240 : x)),
-    y: Math.max(8, Math.min(y, height > 0 ? height - 160 : y)),
+/** Gap between the anchor (pointer or row bottom) and the menu edge. */
+const MENU_GAP = 4
+const MENU_MIN_MARGIN = 8
+const MENU_FALLBACK_WIDTH = 240
+const MENU_FALLBACK_HEIGHT = 160
+
+/** Place a fixed menu just below/right of (x, y), flipping when it would leave the viewport. */
+export function placeContextMenu(
+  x: number,
+  y: number,
+  menuWidth = MENU_FALLBACK_WIDTH,
+  menuHeight = MENU_FALLBACK_HEIGHT,
+) {
+  const vw = typeof window === 'undefined' ? 0 : window.innerWidth
+  const vh = typeof window === 'undefined' ? 0 : window.innerHeight
+  let left = x + MENU_GAP
+  let top = y + MENU_GAP
+  if (vh > 0 && top + menuHeight > vh - MENU_MIN_MARGIN) {
+    top = Math.max(MENU_MIN_MARGIN, y - menuHeight - MENU_GAP)
   }
+  if (vw > 0 && left + menuWidth > vw - MENU_MIN_MARGIN) {
+    left = Math.max(MENU_MIN_MARGIN, x - menuWidth - MENU_GAP)
+  }
+  left = Math.max(MENU_MIN_MARGIN, vw > 0 ? Math.min(left, vw - Math.min(menuWidth, vw - MENU_MIN_MARGIN)) : left)
+  top = Math.max(MENU_MIN_MARGIN, vh > 0 ? Math.min(top, vh - Math.min(menuHeight, vh - MENU_MIN_MARGIN)) : top)
+  return { x: left, y: top }
+}
+
+function clamp(x: number, y: number) {
+  return placeContextMenu(x, y)
 }
 
 function uniqueCommands(items: RegistryCommand[]): RegistryCommand[] {
@@ -115,9 +138,9 @@ export function SharedContextMenuHost({
       setHighlighted(null)
       setOpenSubmenu(null)
       setSubmenuPos(null)
-      const point = clamp(detail.x, detail.y)
       const target = { ...(detail.target ?? {}), feedbackEnabled: Boolean(feedbackRef.current) }
-      setRequest({ ...detail, target, x: point.x, y: point.y })
+      // Keep the raw anchor; placeContextMenu runs for paint and after measure.
+      setRequest({ ...detail, target, x: detail.x, y: detail.y })
     }
     const onOpen = (event: Event) => {
       const detail = (event as CustomEvent<OpenMenuRequest>).detail
@@ -161,7 +184,14 @@ export function SharedContextMenuHost({
 
   useLayoutEffect(() => {
     if (!request) return
-    menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus()
+    const menu = menuRef.current
+    if (menu) {
+      const size = menu.getBoundingClientRect()
+      const next = placeContextMenu(request.x, request.y, size.width, size.height)
+      menu.style.left = `${next.x}px`
+      menu.style.top = `${next.y}px`
+    }
+    menu?.querySelector<HTMLElement>('[role="menuitem"]')?.focus()
     const onPointer = (event: PointerEvent) => {
       if (
         event.target instanceof Element &&
