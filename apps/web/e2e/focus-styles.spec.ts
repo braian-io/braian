@@ -456,6 +456,7 @@ test('pointer selection accents the column header; keyboard adds the underline',
 
   const assertTheme = async (theme: 'dark' | 'light') => {
     await setTheme(page, theme)
+    await grid.evaluate((element) => (element as HTMLElement).blur())
     await page.mouse.move(5, 5)
     const cell = row.locator('.cell').nth(1)
     await cell.click()
