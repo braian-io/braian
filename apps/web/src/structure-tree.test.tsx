@@ -138,6 +138,14 @@ describe('model structure tree', () => {
     }))
   })
 
+  it('hides decorative icons from assistive technology', () => {
+    render(<Tree />)
+    const add = screen.getByTestId('new-structure')
+    expect(add.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true')
+    const menu = screen.getByTestId('structure-menu-food')
+    expect(menu.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true')
+  })
+
   it('places a new root group under the structure title', async () => {
     render(<Tree />)
     const structure = screen.getByTestId('structure-food')

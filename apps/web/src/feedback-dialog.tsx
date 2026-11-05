@@ -116,7 +116,6 @@ export function FeedbackDialog({
           <Checkbox
             checked={includeScreenshot}
             onCheckedChange={(value) => setIncludeScreenshot(value === true)}
-            aria-label="Include screenshot"
           />
           <span>Include screenshot</span>
         </label>
@@ -124,7 +123,6 @@ export function FeedbackDialog({
           <Checkbox
             checked={includeLog}
             onCheckedChange={(value) => setIncludeLog(value === true)}
-            aria-label="Include recent log"
           />
           <span>Include recent log</span>
         </label>
