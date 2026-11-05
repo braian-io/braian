@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { copy } from './i18n'
 import { resetNewVersionGate, setNewVersionGate } from './new-version-gate'
-import { registryColumnMovePaletteRows, registryPaletteRows } from './palette-registry-rows'
+import { registryColumnMovePaletteRows, registryLayoutFocusPaletteRows, registryPaletteRows } from './palette-registry-rows'
 import { chordForCommand } from './shortcuts'
 
 const agentChord = chordForCommand('agent:open')
@@ -81,5 +81,26 @@ describe('column move palette rows from registry', () => {
 
   it('omits move rows without a column target', () => {
     expect(registryColumnMovePaletteRows({})).toEqual([])
+  })
+})
+
+describe('layout focus palette rows from registry', () => {
+  it('derives the four pane-focus rows with Alt chords', () => {
+    const rows = registryLayoutFocusPaletteRows()
+    expect(rows.map((row) => row.id)).toEqual([
+      'layout:focus:left',
+      'layout:focus:right',
+      'layout:focus:up',
+      'layout:focus:down',
+    ])
+    expect(rows[0]).toMatchObject({
+      title: 'Focus pane left',
+      subtitle: 'Focus the neighbour on the left',
+      kbd: chordForCommand('layout:focus:left'),
+      shortcut: 'Alt+←',
+    })
+    expect(rows[1]?.kbd).toBe(chordForCommand('layout:focus:right'))
+    expect(rows[2]?.kbd).toBe(chordForCommand('layout:focus:up'))
+    expect(rows[3]?.kbd).toBe(chordForCommand('layout:focus:down'))
   })
 })

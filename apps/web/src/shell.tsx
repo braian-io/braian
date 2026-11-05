@@ -521,6 +521,10 @@ export function Shell() {
       registerCommandRunner('layout:reset_layout', () => applyRef.current('reset_layout', {})),
       registerCommandRunner('workspace:delete', () => { requestDeleteActiveRef.current() }),
 
+      registerCommandRunner('layout:focus:left', () => applyRef.current('focus', { direction: 'left' })),
+      registerCommandRunner('layout:focus:right', () => applyRef.current('focus', { direction: 'right' })),
+      registerCommandRunner('layout:focus:up', () => applyRef.current('focus', { direction: 'up' })),
+      registerCommandRunner('layout:focus:down', () => applyRef.current('focus', { direction: 'down' })),
       registerCommandRunner('layout:close_view', (target) =>
         applyRef.current('close_view', target.viewId ? { view: target.viewId } : {}),
       ),
