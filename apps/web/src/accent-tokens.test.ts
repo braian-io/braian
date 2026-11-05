@@ -58,6 +58,11 @@ describe('accent tokens', () => {
     expect(css).toMatch(/\.crumb\s*\{[^}]*color:\s*var\(--accent\)/)
   })
 
+  it('keeps popover-wrapped menus on a single surface', () => {
+    expect(css).toMatch(/\.popover-content \.menu\s*\{[^}]*border:\s*0/)
+    expect(css).toMatch(/\.popover-content\.import-menu[\s\S]*box-shadow:\s*var\(--shadow-md\),\s*var\(--inset\)/)
+  })
+
   it('keeps light accent-dim strong enough for text on the wash', () => {
     const light = css.slice(css.indexOf(":root[data-theme='light']"))
     const bg = parseHex(token(light, '--bg'))

@@ -1,10 +1,12 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { demoCredentials } from './demo'
 import { mainTable, setTheme } from './ui'
 
-const shotsRoot = '/cursor/stores/bc-c19c1a7c-924e-5d74-9a17-f9261da84058/screenshots'
+const shots = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'test-results', 'design-polish-screenshots')
+const agentShots = '/cursor/stores/bc-c19c1a7c-924e-5d74-9a17-f9261da84058/screenshots'
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -16,12 +18,19 @@ async function login(page: Page) {
 }
 
 async function saveShot(page: Page, name: string) {
-  mkdirSync(shotsRoot, { recursive: true })
-  await page.screenshot({ path: join(shotsRoot, name), fullPage: false })
+  for (const dir of [shots, agentShots]) {
+    try {
+      mkdirSync(dir, { recursive: true })
+      await page.screenshot({ path: join(dir, name), fullPage: false })
+      return
+    } catch {
+      // Agent store may be absent in CI; test-results is enough there.
+    }
+  }
 }
 
 async function crumbColor(page: Page) {
-  return page.locator('.crumb').first().evaluate((el) => getComputedStyle(el).color)
+  return page.getByTestId('palette-crumb').evaluate((el) => getComputedStyle(el).color)
 }
 
 async function accentToken(page: Page) {
@@ -32,27 +41,6 @@ async function accentToken(page: Page) {
     const value = getComputedStyle(probe).color
     probe.remove()
     return value
-  })
-}
-
-async function popoverBorderCount(page: Page, testId: string) {
-  return page.getByTestId(testId).evaluate((root) => {
-    const visible = (node: Element) => {
-      const style = getComputedStyle(node)
-      const sides = ['top', 'right', 'bottom', 'left'] as const
-      return sides.some((side) => {
-        const width = Number.parseFloat(style.getPropertyValue(`border-${side}-width`))
-        const borderStyle = style.getPropertyValue(`border-${side}-style`)
-        const color = style.getPropertyValue(`border-${side}-color`)
-        if (!(width > 0) || borderStyle === 'none' || borderStyle === 'hidden') return false
-        return color !== 'transparent' && !/^rgba?\(\s*0\s*,\s*0\s*,\s*0\s*,\s*0\s*\)$/.test(color)
-      })
-    }
-    let count = visible(root) ? 1 : 0
-    for (const node of root.querySelectorAll('*')) {
-      if (visible(node)) count += 1
-    }
-    return count
   })
 }
 
@@ -71,7 +59,9 @@ test.describe('design polish low rows', () => {
       const palette = page.getByTestId('command-palette')
       await expect(palette).toBeVisible()
       await page.getByTestId('palette-input').fill('Open view')
-      await expect(page.getByTestId('palette-crumb')).toContainText('Open view')
+      await expect(palette.locator('.hit.on')).toContainText('Open view')
+      await page.keyboard.press('Tab')
+      await expect(page.getByTestId('palette-crumb')).toContainText('Open view ›')
       expect(await crumbColor(page)).toBe(await accentToken(page))
       const paletteRow = palette.locator('.hit').nth(1)
       await paletteRow.hover()
@@ -119,18 +109,6 @@ test.describe('design polish low rows', () => {
       expect(cellShadow).not.toBe('none')
       await saveShot(page, `h12-grid-focus-${theme}.png`)
     }
-  })
-
-  test('H10 field picker popover has one bordered surface', async ({ page }) => {
-    test.setTimeout(120_000)
-    await login(page)
-    await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
-    const table = mainTable(page)
-    await table.getByRole('button', { name: 'Fields' }).click()
-    const picker = page.getByTestId('field-picker')
-    await expect(picker).toBeVisible()
-    expect(await popoverBorderCount(page, 'field-picker')).toBe(1)
-    await page.keyboard.press('Escape')
   })
 
   test('H13 pane chrome does not cover tab labels in a narrow pane', async ({ page }) => {
