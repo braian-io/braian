@@ -64,6 +64,8 @@ export type RegistryCommand = {
   /** Global command: Ctrl+K only, never in a right-click menu. */
   global?: boolean
   when?: (target: CommandTarget) => boolean
+  /** Nested items shown in a flyout (e.g. Link to ▸). */
+  children?: RegistryCommand[]
 }
 
 type Runner = (target: CommandTarget) => void | Promise<void>

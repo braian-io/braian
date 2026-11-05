@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { commandsForContext, registerCommandRunner } from './command-registry'
 import { SharedContextMenuHost, handleSurfaceContextMenu, openSharedContextMenu } from './shared-context-menu'
@@ -158,4 +158,59 @@ describe('shared context menu registry', () => {
     expect(marked()).toEqual([items[2]])
     expect(document.activeElement).toBe(items[2])
   })
+
+  it('opens Link to as a flyout with arrow keys', async () => {
+    const run = vi.fn()
+    registerCommandRunner('link:add:product_articles:out', run)
+    render(<SharedContextMenuHost />)
+    openSharedContextMenu({
+      context: 'row',
+      x: 16,
+      y: 16,
+      extraOnly: true,
+      extra: [
+        { id: 'object:open', title: 'Open Article', contexts: ['row'] },
+        {
+          id: 'link:to',
+          title: 'Link to',
+          contexts: ['row'],
+          children: [
+            { id: 'link:add:product_articles:out', title: 'Product', contexts: ['row'] },
+            { id: 'link:add:supplier_articles:out', title: 'Supplier', contexts: ['row'] },
+          ],
+        },
+      ],
+    })
+    const menu = await screen.findByTestId('context-menu')
+    expect(screen.queryByRole('menuitem', { name: 'Link to Product' })).toBeNull()
+    const linkTo = screen.getByRole('menuitem', { name: 'Link to' })
+    expect(linkTo.getAttribute('aria-haspopup')).toBe('menu')
+    fireEvent.mouseOver(linkTo)
+    await screen.findByTestId('context-submenu')
+    expect(screen.getByRole('menuitem', { name: 'Product' })).toBeTruthy()
+    expect(screen.getByRole('menuitem', { name: 'Supplier' })).toBeTruthy()
+    // Only the parent is highlighted until ArrowRight.
+    expect(linkTo.hasAttribute('data-highlighted')).toBe(true)
+    expect(screen.getByRole('menuitem', { name: 'Product' }).hasAttribute('data-highlighted')).toBe(false)
+
+    fireEvent.keyDown(menu, { key: 'ArrowRight' })
+    const product = screen.getByRole('menuitem', { name: 'Product' })
+    await waitFor(() => expect(product.hasAttribute('data-highlighted')).toBe(true))
+    expect(linkTo.hasAttribute('data-highlighted')).toBe(false)
+
+    fireEvent.keyDown(screen.getByTestId('context-submenu'), { key: 'ArrowDown' })
+    expect(screen.getByRole('menuitem', { name: 'Supplier' }).hasAttribute('data-highlighted')).toBe(true)
+
+    fireEvent.keyDown(screen.getByTestId('context-submenu'), { key: 'ArrowLeft' })
+    await waitFor(() => expect(screen.queryByTestId('context-submenu')).toBeNull())
+    expect(linkTo.hasAttribute('data-highlighted')).toBe(true)
+
+    fireEvent.mouseOver(linkTo)
+    await screen.findByTestId('context-submenu')
+    fireEvent.keyDown(menu, { key: 'ArrowRight' })
+    fireEvent.keyDown(screen.getByTestId('context-submenu'), { key: 'Enter' })
+    expect(run).toHaveBeenCalled()
+    expect(screen.queryByTestId('context-menu')).toBeNull()
+  })
+
 })

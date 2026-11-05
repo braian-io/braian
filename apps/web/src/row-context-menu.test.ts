@@ -62,24 +62,27 @@ function menu(rowType: string) {
     rowType,
     target: { objectId: 'o1' },
   })
+  const linkRoot = items.find((item) => item.id === 'link:to')
   return {
     items,
     titles: items.map((item) => commandTitle(item, target)),
-    linkTitles: items
-      .filter((item) => item.id.startsWith('link:add:'))
-      .map((item) => commandTitle(item, target)),
+    linkRoot,
+    linkTitles: (linkRoot?.children ?? []).map((item) => commandTitle(item, target)),
   }
 }
 
 describe('row context menu', () => {
-  it('dedupes link entries per link type and direction', () => {
-    expect(menu('product').linkTitles).toEqual(['Link to Articles'])
+  it('nests link destinations under a single Link to row', () => {
+    expect(menu('product').titles.filter((title) => title.startsWith('Link to')).length).toBe(1)
+    expect(menu('product').linkTitles).toEqual(['Articles'])
     expect(menu('article').linkTitles).toEqual([
-      'Link to Product',
-      'Link to Supplier',
-      'Link to Replaced by',
-      'Link to Replaces',
+      'Product',
+      'Supplier',
+      'Replaced by',
+      'Replaces',
     ])
+    expect(menu('article').titles).toContain('Link to')
+    expect(menu('article').titles).not.toContain('Link to Product')
   })
 
   it('labels Open from the clicked row type', () => {
@@ -102,7 +105,7 @@ describe('row context menu', () => {
 
   it('uses the reverse label for reverse-direction link entries', () => {
     const titles = menu('article').linkTitles
-    expect(titles).toContain('Link to Product')
-    expect(titles).not.toContain('Link to Articles')
+    expect(titles).toContain('Product')
+    expect(titles).not.toContain('Articles')
   })
 })
