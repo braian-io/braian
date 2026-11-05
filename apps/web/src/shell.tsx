@@ -28,6 +28,7 @@ import { dropReparents, groupKeyFromLabel } from './group-tree'
 import { publishProposal } from './proposal-bus'
 import { useProposalFocus } from './proposal-focus'
 import { formatCount, formatTimestamp } from './format'
+import { formatBatchLogLine } from './batch-log'
 import { toast } from 'sonner'
 import { reportWriteError, writeErrorMessage } from './write-error'
 import {
@@ -2551,7 +2552,7 @@ function BatchLog() {
     <div className="timeline" data-testid="batch-log">
       {rows.map((row) => (
         <article key={String(row.seq)}>
-          #{String(row.seq)} {String(row.op)} {String(row.actor)} {row.on_behalf_of ? `via ${String(row.via)}` : ''}
+          <span data-testid="batch-log-line">{formatBatchLogLine(row)}</span>
         </article>
       ))}
     </div>
