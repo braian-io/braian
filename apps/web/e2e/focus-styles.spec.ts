@@ -579,6 +579,14 @@ for (const passTheme of ['dark', 'light'] as const) test(`flat icon buttons and 
   await expect(active).toHaveClass(/\bon\b/)
 
   const accentDim = await cssToken(page, '--accent-dim')
+  const filterChipHover = await page.evaluate(() => {
+    const probe = document.createElement('span')
+    probe.style.background = 'color-mix(in srgb, var(--accent-dim) 55%, transparent)'
+    document.body.appendChild(probe)
+    const value = getComputedStyle(probe).backgroundColor
+    probe.remove()
+    return value
+  })
 
   const expectRest = async (target: Locator, label: string, name: string) => {
     await page.mouse.move(5, 5)
@@ -588,11 +596,11 @@ for (const passTheme of ['dark', 'light'] as const) test(`flat icon buttons and 
     await screenshotElement(page, target, `${name}-rest-${passTheme}`)
   }
 
-  const expectHover = async (target: Locator, label: string, name: string) => {
+  const expectHover = async (target: Locator, label: string, name: string, hoverBg = accentDim) => {
     await page.mouse.move(5, 5)
     await target.hover()
     // The fill has a short CSS transition; retry until it settles on the accent wash.
-    await expect.poll(async () => (await paint(target)).backgroundColor).toBe(accentDim)
+    await expect.poll(async () => (await paint(target)).backgroundColor).toBe(hoverBg)
     const value = await paint(target)
     expect(value.boxShadow, `${label} ${passTheme} hover shadow`).toBe('none')
     expect(value.outlineStyle, `${label} ${passTheme} hover outline`).toBe('none')
@@ -603,7 +611,7 @@ for (const passTheme of ['dark', 'light'] as const) test(`flat icon buttons and 
   await expectRest(icon, 'add icon button', 'icon-button')
   await expectRest(inactive, 'inactive chip', 'inactive-chip')
   await expectHover(icon, 'add icon button', 'icon-button')
-  await expectHover(inactive, 'inactive chip', 'inactive-chip')
+  await expectHover(inactive, 'inactive chip', 'inactive-chip', filterChipHover)
 
   await page.mouse.move(5, 5)
   const activePaint = await paint(active)

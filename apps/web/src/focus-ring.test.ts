@@ -36,9 +36,14 @@ describe('focus ring', () => {
   })
 
   it('does not hide keyboard focus on rows or the user menu', () => {
-    expect(css).not.toMatch(/\.row:focus(?:-visible)?[^{]*\{[^}]*outline:\s*none/)
+    expect(css).not.toMatch(/(?<!\.grid:focus-visible:has\(\.active-cell\) )\.row:focus(?:-visible)?[^{]*\{[^}]*outline:\s*none/)
     expect(css).not.toMatch(/\.standard-grid-row[^{]*:focus[^{]*\{[^}]*outline:\s*none/)
     expect(css).not.toMatch(/\.user-menu-content \.menu-item\s*\{[^}]*outline:\s*none/)
+  })
+
+  it('does not stack a row ring on the active cell when the grid has keyboard focus', () => {
+    expect(rule('.grid:focus-visible:has(.active-cell) .row:focus-visible')).toContain('outline: none')
+    expect(rule('.grid:focus-visible:has(.active-cell) .row.selected:focus-visible')).toContain('outline: none')
   })
 
   it('puts the grid keyboard mark on the active cell', () => {
@@ -57,12 +62,12 @@ describe('focus ring', () => {
   })
 
   it('keeps the selected row on its fill and the ring on focus', () => {
-    const selected = rule('.row.selected')
+    const selected = rule('.row.selected {')
     expect(selected).toContain('background: var(--accent-dim)')
     expect(selected).toContain('box-shadow: inset 3px 0 0 var(--accent)')
     expect(selected).not.toContain('outline')
 
-    const focused = rule('.row:focus-visible')
+    const focused = rule('.standard-grid-row:focus-visible')
     expect(focused).toContain('outline: 2px solid var(--accent)')
     expect(focused).not.toContain('background')
   })

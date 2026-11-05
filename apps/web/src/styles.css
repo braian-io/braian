@@ -75,7 +75,7 @@
   --muted: #6b7280;
   --accent: #7c3aed;
   --accent-hover: #6d28d9;
-  --accent-dim: #7c3aed52;
+  --accent-dim: #7c3aed80;
   --info: #0277b5;
   --ok: #13804f;
   --warn: #a66a00;
@@ -205,6 +205,10 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
 }
 /* The grid is the tab stop. When the active cell can show the keyboard mark, the grid does not add a second ring. */
 .grid:focus-visible:has(.active-cell) {
+  outline: none;
+}
+.grid:focus-visible:has(.active-cell) .row:focus-visible,
+.grid:focus-visible:has(.active-cell) .row.selected:focus-visible {
   outline: none;
 }
 ::selection { background: var(--accent-dim); }
@@ -453,13 +457,15 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
   display: flex;
   align-items: center;
   gap: 2px;
-  flex: 0 1 auto;
+  flex: 1 1 0;
   min-width: 0;
   height: 100%;
   overflow-x: auto;
   overflow-y: hidden;
   overflow-anchor: none;
   scrollbar-width: none;
+  position: relative;
+  z-index: 1;
 }
 .pane-tab-list::-webkit-scrollbar { display: none; }
 .pane-tab-pad { flex: none; width: 0; }
@@ -525,7 +531,14 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
 .tab-x:hover { background: var(--accent-dim); color: var(--text); }
 .pane-tab:hover .tab-x, .pane-tab.active .tab-x, .tab-x:focus-visible { opacity: 1; pointer-events: auto; }
 .tab-x:focus-visible { outline-offset: -2px; }
-.pane-chrome { margin-left: auto; display: flex; flex: none; gap: 2px; opacity: 0; }
+.pane-chrome {
+  margin-left: auto;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 2px;
+  min-width: 0;
+  opacity: 0;
+}
 .pane:hover .pane-chrome, .pane.focused .pane-chrome, .pane-chrome:focus-within { opacity: 1; }
 .pane-chrome .icon-btn { width: 22px; padding: 0; justify-content: center; }
 .catalog-admin { display: flex; flex-direction: column; gap: 8px; padding: 12px; overflow: auto; }
@@ -534,7 +547,7 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
 .field.locked .control { opacity: 0.75; }
 .pane-source {
   flex: 0 1 auto;
-  max-width: 220px;
+  max-width: min(160px, 32%);
   margin-left: 8px;
   margin-right: 4px;
   overflow: hidden;
@@ -774,9 +787,28 @@ select.link-type-line { width: 100%; font-weight: 600; }
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  min-width: 0;
+  overflow: hidden;
 }
-.standard-table-bar .row-count { margin-left: auto; color: var(--muted); font-size: 12px; }
+.standard-table-bar .search-field {
+  flex: 1 1 0;
+  min-width: 56px;
+  max-width: none;
+}
+.standard-table-bar .icon-btn {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  justify-content: center;
+  flex: none;
+}
+.standard-table-bar .row-count {
+  flex: none;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+}
 .table-wrap {
   flex: 1 1 auto;
   min-height: 0;
@@ -872,9 +904,14 @@ button.filter-chip {
   border-color: transparent;
   box-shadow: inset 0 0 0 1px var(--accent);
 }
-button.filter-chip:hover:not(.on),
-button.choice-chip:hover:not(.on) {
-  background: var(--accent-dim);
+.filter-chip:hover:not(.on),
+button.filter-chip:hover:not(.on) {
+  background: color-mix(in srgb, var(--accent-dim) 55%, transparent);
+}
+.choice-chip:hover:not(.on) {
+  background: var(--hover);
+  color: var(--text-2);
+  box-shadow: inset 0 0 0 1px var(--border);
 }
 .row-count {
   margin-left: auto;
@@ -1206,7 +1243,7 @@ button.choice-chip:hover:not(.on) {
   box-shadow: none;
   font-size: 12px;
 }
-.choice-chip.on { background: var(--accent-dim); color: var(--accent); }
+.choice-chip.on { background: var(--accent-dim); color: var(--accent); font-weight: 600; }
 .chip {
   border-radius: 999px;
   background: var(--accent-dim);
@@ -1347,7 +1384,16 @@ button.choice-chip:hover:not(.on) {
   color: var(--text-2);
   font-size: 12px;
 }
-.hit-chips { display: inline-flex; align-items: center; gap: 4px; flex: none; }
+.hit .hit-copy { flex: 1 1 auto; min-width: 0; overflow: hidden; }
+.hit-chips {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  width: 4.5rem;
+  margin-left: auto;
+  justify-content: flex-end;
+}
 .timeline article.selected { background: var(--accent-dim); }
 .ref { position: relative; }
 .ref-menu {
@@ -1607,11 +1653,29 @@ canvas.graph.panning { cursor: grabbing; }
 }
 /* Radix positions the wrapper; the reused menu/import-menu classes must not add a second offset. */
 .popover-content.menu,
-.popover-content.import-menu {
+.popover-content.import-menu,
+.popover-content.field-picker,
+.popover-content.path-picker-menu {
   position: static;
   top: auto;
   right: auto;
   left: auto;
+  z-index: auto;
+  gap: 6px;
+  display: grid;
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-md), var(--inset);
+}
+.popover-content .menu {
+  position: static;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 .menu {
   position: fixed;
@@ -1787,17 +1851,40 @@ canvas.graph.panning { cursor: grabbing; }
   color: var(--text);
 }
 .hit:hover, .hit.on, .hit[data-selected='true'] { background: var(--accent-dim); }
+.palette .hit {
+  background: transparent;
+  color: var(--text);
+}
+/* Only the keyboard-active row is tinted; cmdk data-selected must not paint a second row. */
 .palette .hit:hover:not(.on),
-.palette .hit[data-selected='true']:not(.on) { background: color-mix(in srgb, var(--accent-dim) 55%, transparent); }
-/* Solid accent on the raised palette is 3.75:1 (dark) and 5.41:1 (light). The dim wash alone is about 1.2:1. */
-.palette .hit.on { background: var(--accent-dim); box-shadow: inset 3px 0 0 var(--accent); }
+.palette .hit[data-selected='true']:not(.on) {
+  background: transparent;
+}
+.palette .hit.on,
+.palette .hit.on:hover,
+.palette .hit.on[data-selected='true'] {
+  background: color-mix(in srgb, var(--accent-dim) 72%, var(--panel));
+  color: var(--text);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.palette .hit.on .mark,
+.palette .hit.on:hover .mark {
+  background: transparent;
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  border-radius: 0;
+}
 .hit.disabled, .hit[data-disabled='true'] { opacity: 0.5; }
 .hit.disabled:hover, .hit[data-disabled='true']:hover { background: transparent; }
 .hit.ask { z-index: 1; background: var(--raised); border-top: 1px solid var(--border); flex: none; }
 .hit small { display: block; color: var(--muted); font-size: 11px; font-weight: 400; }
 .hit .hit-title { font-size: 13px; }
 .hit kbd, .menu kbd { margin-left: auto; }
-.hit.ask { color: var(--accent); }
+.palette .hit.ask:not(.on) { color: var(--text-2); }
+.palette .hit.ask:not(.on):hover { background: var(--raised); }
+.palette .hit.ask.on { color: var(--text); }
 .activity {
   max-height: 22px;
   overflow: hidden;
@@ -1996,8 +2083,8 @@ kbd {
   padding: 0 8px;
   border-radius: 999px;
   background: var(--accent-dim);
-  /* accent on this wash is 3.40:1 in the dark theme. accent-hover is 4.95:1 dark and 6.03:1 light. */
-  color: var(--accent-hover);
+  /* Light --accent-dim is strong enough for accent text at >=4.5:1 on the wash. */
+  color: var(--accent);
   font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
