@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { agentSessionLayout, controllingAgentRuns, markedAgentViewIds } from './agent-session'
+import { agentMarkerViewIds, agentSessionLayout, controllingAgentRuns, markedAgentViewIds } from './agent-session'
 import type { AgentRunSummary } from './agent-runs'
 import { tabGroup, type LayoutDoc } from './layout'
 
@@ -48,5 +48,19 @@ describe('agent session layout', () => {
     expect(markedAgentViewIds(runs, 'hidden')).toEqual(['products', 'detail'])
     expect(controllingAgentRuns(runs).map((item) => item.id)).toEqual(['screen'])
     expect(controllingAgentRuns([run({ id: 'stopped', session_kind: 'user', status: 'paused' })])).toEqual([])
+  })
+
+  it('keeps the left-edge marker on open Detail panes while the agent is marked elsewhere', () => {
+    const runs = [
+      run({ id: 'screen', session_kind: 'user', status: 'working', session: { views: ['products'] } }),
+    ]
+    const views = [
+      { id: 'products', type: 'object_table' },
+      { id: 'detail', type: 'object_detail' },
+      { id: 'graph', type: 'graph' },
+    ]
+    expect(agentMarkerViewIds(runs, null, views)).toEqual(['products', 'detail'])
+    expect(agentMarkerViewIds(runs, null, [{ id: 'products', type: 'object_table' }])).toEqual(['products'])
+    expect(agentMarkerViewIds([], null, views)).toEqual([])
   })
 })

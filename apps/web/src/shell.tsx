@@ -55,7 +55,7 @@ import { AgentPresence } from './agent-presence'
 import { AgentView } from './agent-view'
 import { AgentsTable } from './agents-table'
 import { agentRunPrompt, agentRunsForWorkspace, agentTabTitle, backToMySessionEvent, listAgentRuns, openAgentEvent, openAgentsTableEvent, patchAgentRun, requestBackToMySession, showAgentSessionEvent, takeOverAgentRun, type AgentMessage, type AgentRunSummary } from './agent-runs'
-import { agentSessionLayout, controllingAgentRuns, holdLayoutFlush, layoutFlushHeld, markedAgentViewIds, setViewingAgentRun, subscribeViewingAgent, viewingAgentRunId } from './agent-session'
+import { agentSessionLayout, controllingAgentRuns, holdLayoutFlush, layoutFlushHeld, agentMarkerViewIds, setViewingAgentRun, subscribeViewingAgent, viewingAgentRunId } from './agent-session'
 import { CommandPalette } from './palette'
 import { SharedContextMenuHost, prefersNativeContextMenu } from './shared-context-menu'
 import { StateNote } from './states'
@@ -1807,7 +1807,11 @@ export function Shell() {
 
   const controlling = controllingAgentRuns(agentRunList.data ?? [])
   const agentControlled = controlling.length > 0
-  const agentViews = markedAgentViewIds(agentRunList.data ?? [], viewingRunId)
+  const agentViews = agentMarkerViewIds(
+    agentRunList.data ?? [],
+    viewingRunId,
+    viewRows(surface?.views ?? []),
+  )
   const takeOver = () => {
     for (const run of controlling) {
       void takeOverAgentRun(run.id).then((detail) => {

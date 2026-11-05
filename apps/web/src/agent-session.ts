@@ -56,6 +56,22 @@ export function markedAgentViewIds(runs: AgentRunSummary[], viewingId: string | 
   return ids
 }
 
+
+/** Left-edge marker view ids, including open Detail panes so the stripe stays consistent there. */
+export function agentMarkerViewIds(
+  runs: AgentRunSummary[],
+  viewingId: string | null,
+  views: Array<{ id: string; type: string }>,
+): string[] {
+  const ids = markedAgentViewIds(runs, viewingId)
+  if (ids.length === 0) return ids
+  const out = [...ids]
+  for (const view of views) {
+    if (view.type === 'object_detail' && view.id && !out.includes(view.id)) out.push(view.id)
+  }
+  return out
+}
+
 export function controllingAgentRuns(runs: AgentRunSummary[]): AgentRunSummary[] {
   return runs.filter((run) => run.session_kind === 'user' && run.status === 'working')
 }
