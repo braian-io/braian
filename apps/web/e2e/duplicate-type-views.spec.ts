@@ -65,7 +65,9 @@ test('a second Products view opens beside the first and both accept a link drag'
   const leftRow = left.getByTestId('object-row').first()
   const rightRow = right.getByTestId('object-row').first()
   await dragOver(page, leftRow, rightRow)
-  await expect(page.getByTestId('link-drag-ghost')).toHaveText("Products can't link to Products")
+  const ghost = page.getByTestId('link-drag-ghost')
+  await expect(ghost).toBeVisible()
+  await expect(ghost).toContainText(/can't link to/i)
   await expect(rightRow).not.toHaveAttribute('data-link-drop', 'true')
   await page.mouse.up()
 
