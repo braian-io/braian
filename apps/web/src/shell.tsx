@@ -38,6 +38,7 @@ import {
 } from './open-type-view-queue'
 import { copy } from './i18n'
 import { applyLayoutCommand, migrateLayout, views as layoutViews, type LayoutDoc, type Place } from './layout'
+import { cloneObjectTableView, objectTableViewForType } from './open-type-view'
 import { ConsequenceHost } from './consequence'
 import { ModelDraftHost } from './model-draft-ui'
 import { stageModel } from './model-stage'
@@ -1705,7 +1706,10 @@ export function Shell() {
     void (async () => {
       try {
       let views: View[] = viewRows(surfaceNow.views)
-      let found = views.find((view) => view.type === 'object_table' && (String(view.state.object_type ?? '') === type.id || String(view.state.type_key ?? '') === type.key))
+      let current = docRef.current
+      const openIds = current ? layoutViews(current.layout) : []
+      let found = objectTableViewForType(views, type, openIds)
+      let duplicate = false
       if (!found) {
         const id = crypto.randomUUID()
         const created: View = {
@@ -1737,10 +1741,29 @@ export function Shell() {
         workspaceRef.current = nextSurface
         queryClient.setQueryData(['workspace', surfaceNow.id], nextSurface)
         found = created
+      } else if (openIds.includes(found.id)) {
+        duplicate = true
+        const created = cloneObjectTableView(found, crypto.randomUUID(), views.length)
+        await api.post('/v1/views', {
+          body: {
+            id: created.id,
+            workspace_id: surfaceNow.id,
+            type: created.type,
+            title: created.title,
+            pane: 'center',
+            position: views.length,
+            state: freeObject(created.state),
+          },
+        })
+        views = [...views, created]
+        const nextSurface = { ...surfaceNow, views: views.map((view) => ({ ...view, pane: view.pane ?? 'center', position: view.position ?? 0, state: freeObject(view.state) })) }
+        workspaceRef.current = nextSurface
+        queryClient.setQueryData(['workspace', surfaceNow.id], nextSurface)
+        found = created
       }
-      const current = docRef.current
+      current = docRef.current
       if (!current) return
-      const result = applyLayoutCommand(current, 'ui.open_view', { id: found.id, zone: 'center' }, {
+      const result = applyLayoutCommand(current, 'ui.open_view', { id: found.id, zone: duplicate ? 'right' : 'center' }, {
         views: views.map((view) => ({ id: view.id, title: view.title, type: view.type })),
         canonical: canonicalRef.current,
         place: placeOverride.current,

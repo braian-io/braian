@@ -80,6 +80,18 @@ describe('add view palette helpers', () => {
     expect(rows.map((row) => row.title)).toEqual(['Detail', 'History'])
   })
 
+  it('keeps the type row when a saved view already opens that type', () => {
+    const rows = addViewSubmenuRows(
+      [{ id: 'v-products', title: 'Products', type: 'object_table' }],
+      [{ id: 't-product', key: 'product', singular: 'Product', plural: 'Products' }],
+    )
+    expect(rows.map((row) => row.id)).toEqual([
+      'add-view:view:v-products',
+      'add-view:type:t-product',
+    ])
+    expect(rows.map((row) => row.title)).toEqual(['Products', 'Products view'])
+  })
+
   it('parses submenu choices', () => {
     expect(parseAddViewChoice('add-view:view:abc')).toEqual({ kind: 'view', value: 'abc' })
     expect(parseAddViewChoice('add-view:type:t1')).toEqual({ kind: 'type', value: 't1' })
