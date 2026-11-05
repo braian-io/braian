@@ -498,7 +498,8 @@ test('pointer selection accents the column header; keyboard adds the underline',
     expect(keyboardHeaderPaint.outlineStyle).toBe('none')
     expect(keyboardHeaderPaint.boxShadow).toContain('inset')
     expect(keyboardHeaderPaint.boxShadow).toContain('2px')
-    expect((await paint(keyboardHeader.locator('.column-header-btn'))).color).toBe(keyboardHeaderPaint.accent)
+    // Header text color has a CSS transition; wait for the settled value.
+    await expect.poll(async () => (await paint(keyboardHeader.locator('.column-header-btn'))).color).toBe(keyboardHeaderPaint.accent)
 
     const keyboardCell = table.locator('.row.selected .cell.active-cell').first()
     await expect(keyboardCell).toHaveAttribute('data-column', keyboardColumn ?? '')
