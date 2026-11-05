@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { copy } from './i18n'
 import { resetNewVersionGate, setNewVersionGate } from './new-version-gate'
-import { registryPaletteRows } from './palette-registry-rows'
+import { registryColumnMovePaletteRows, registryPaletteRows } from './palette-registry-rows'
 import { chordForCommand } from './shortcuts'
 
 const agentChord = chordForCommand('agent:open')
@@ -58,5 +58,28 @@ describe('palette rows from registry commands', () => {
 
     setNewVersionGate(true)
     expect(registryPaletteRows({ theme: 'dark' })).toEqual([...baseRows('dark'), reloadRow])
+  })
+})
+
+describe('column move palette rows from registry', () => {
+  it('derives move-left/right with title, kbd and header keywords when a column is targeted', () => {
+    const rows = registryColumnMovePaletteRows({ column: 'name', columnHeader: 'Name' })
+    expect(rows.map((row) => row.id)).toEqual(['column:move-left', 'column:move-right'])
+    expect(rows[0]).toMatchObject({
+      title: 'Move column left · Name',
+      subtitle: 'Name',
+      kbd: chordForCommand('column:move-left'),
+      shortcut: chordForCommand('column:move-left'),
+    })
+    expect(rows[0]?.keywords).toEqual(expect.arrayContaining(['column', 'move', 'left', 'Name']))
+    expect(rows[1]).toMatchObject({
+      title: 'Move column right · Name',
+      subtitle: 'Name',
+      kbd: chordForCommand('column:move-right'),
+    })
+  })
+
+  it('omits move rows without a column target', () => {
+    expect(registryColumnMovePaletteRows({})).toEqual([])
   })
 })
