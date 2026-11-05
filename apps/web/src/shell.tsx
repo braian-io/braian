@@ -1314,6 +1314,35 @@ export function Shell() {
     }
   }
 
+  const tableScrollRef = useRef<Map<string, number> | null>(null)
+  const agentControlledNow = controllingAgentRuns(agentRunList.data ?? []).length > 0
+  useEffect(() => {
+    const grids = () => [...document.querySelectorAll<HTMLElement>('.workspace .grid')]
+    const keyOf = (node: HTMLElement) => node.closest('section.pane')?.getAttribute('data-pane') ?? ''
+    if (agentControlledNow) {
+      if (!tableScrollRef.current) {
+        const saved = new Map<string, number>()
+        for (const node of grids()) {
+          const key = keyOf(node)
+          if (key) saved.set(key, node.scrollLeft)
+        }
+        tableScrollRef.current = saved
+      }
+      return
+    }
+    const saved = tableScrollRef.current
+    if (!saved) return
+    tableScrollRef.current = null
+    const apply = () => {
+      for (const node of grids()) {
+        const key = keyOf(node)
+        node.scrollLeft = key && saved.has(key) ? (saved.get(key) ?? 0) : 0
+      }
+    }
+    apply()
+    const frame = requestAnimationFrame(apply)
+    return () => cancelAnimationFrame(frame)
+  }, [agentControlledNow])
 
   if (!booted || (me.isPending && !me.data && !signedOut)) return <p className="pane-body">{copy.loading}</p>
   if (signedOut || !me.data) {

@@ -56,3 +56,24 @@ export async function setTheme(page: Page, theme: 'light' | 'dark') {
   }
   await expect(html).toHaveAttribute('data-theme', theme)
 }
+
+function boxesOverlap(a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }) {
+  return a.x < b.x + b.width - 1 && a.x + a.width > b.x + 1 && a.y < b.y + b.height - 1 && a.y + a.height > b.y + 1
+}
+
+/** A notice may cover the detail pane. It must not cover a product or article list. */
+export async function expectToastClearsLists(page: Page, toast: Locator) {
+  const toastBox = await toast.boundingBox()
+  expect(toastBox).toBeTruthy()
+  const lists = page.locator('section.pane').filter({ has: page.locator('[data-view-type="object_table"]') })
+  const count = await lists.count()
+  for (let index = 0; index < count; index += 1) {
+    const box = await lists.nth(index).boundingBox()
+    if (!box || !toastBox) continue
+    expect(boxesOverlap(toastBox, box), 'toast overlaps a list pane').toBe(false)
+  }
+  const detail = await page.locator('section.pane').filter({ has: page.locator('[data-view-type="object_detail"]') }).first().boundingBox()
+  if (!detail || !toastBox) return
+  expect(toastBox.x + 4).toBeGreaterThanOrEqual(detail.x)
+  expect(toastBox.x + toastBox.width).toBeLessThanOrEqual(detail.x + detail.width + 4)
+}

@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
-import { mainTable, setTheme } from './ui'
+import { expectToastClearsLists, mainTable, setTheme } from './ui'
 
 async function showProducts(page: Page) {
   await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
@@ -193,11 +193,9 @@ test('background runs show a count and Review results opens the tab', async ({ p
   await expect(page.getByTestId('agent-background-indicator')).toBeVisible()
   const review = page.getByRole('button', { name: 'Review results' }).first()
   await expect(review).toBeVisible({ timeout: 30_000 })
-  const toastBox = await page.locator('[data-sonner-toast]').first().boundingBox()
-  const detailBox = await page.locator('section.pane').filter({ has: page.locator('[data-view-type="object_detail"]') }).first().boundingBox()
-  expect(toastBox).toBeTruthy()
-  expect(detailBox).toBeTruthy()
-  expect(toastBox!.x + toastBox!.width).toBeLessThanOrEqual(detailBox!.x + 2)
+  const toastBox = page.locator('[data-sonner-toast]').first()
+  await expect(toastBox).toBeVisible()
+  await expectToastClearsLists(page, toastBox)
   await shot(page, 'agent-notification')
   await review.click()
   await expect(page.locator('.pane-tab[data-view-type="agent"]').first()).toBeVisible()

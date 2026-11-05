@@ -1453,7 +1453,11 @@ export function ObjectTable({
       ) : row.name
     }
     if (id === 'type') return <MetaChip>{typeLabel(defs.data, row.type, uiLanguage)}</MetaChip>
-    if (id === 'status') return <MetaChip tone={statusTone(row.status)}>{optionLabel(defs.data, 'status', row.status, uiLanguage)}</MetaChip>
+    if (id === 'status') {
+      const label = optionLabel(defs.data, 'status', row.status, uiLanguage).trim()
+      if (!label) return <span className="muted">{EMPTY_CELL}</span>
+      return <MetaChip tone={statusTone(row.status)}>{label}</MetaChip>
+    }
     if (id === 'version') return <MetaChip>{row.version}</MetaChip>
     if (columnNeedsPathValues(id)) {
       const values = cellPathValues(paintPathValues?.values?.[row.id], id)

@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
-import { mainTable, setTheme } from './ui'
+import { expectToastClearsLists, mainTable, paneWithTab, setTheme } from './ui'
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -10,7 +10,13 @@ async function login(page: Page) {
   await page.getByRole('button', { name: 'Sign in' }).click()
   await expect(page.locator('nav.tabs')).toBeVisible({ timeout: 60_000 })
   await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
-  await expect(mainTable(page).getByTestId('object-row').first()).toBeVisible({ timeout: 60_000 })
+  const row = mainTable(page).getByTestId('object-row').first()
+  const shown = await row.waitFor({ state: 'visible', timeout: 8_000 }).then(() => true).catch(() => false)
+  if (!shown) {
+    const productsTab = page.locator('.pane-tab[data-view-type="object_table"]').filter({ hasText: /^Products/ }).first()
+    if (await productsTab.count()) await productsTab.click()
+  }
+  await expect(row).toBeVisible({ timeout: 60_000 })
 }
 
 async function ask(page: Page, prompt: string) {
@@ -109,6 +115,11 @@ test('show opens the hidden session and edits there become proposals', async ({ 
   const view = agentView(page, title)
   await expect(view).toHaveAttribute('data-session-kind', 'own')
   await expect(view).toHaveAttribute('data-hidden', 'true')
+  const send = view.getByTestId('agent-send')
+  await expect(send).toBeDisabled()
+  await expect(send).toHaveText('Send')
+  await expectReadable(page, '[data-testid="agent-send"]', 3)
+  await expect(view.getByTestId('agent-show')).toHaveText('Show session')
   await expect(view.getByTestId('agent-show')).toBeVisible({ timeout: 15_000 })
   await expect(page.locator('.app')).not.toHaveAttribute('data-agent-control', 'true')
   await expect(page.locator('[data-view-type="object_detail"]')).toBeVisible()
@@ -133,7 +144,7 @@ test('show opens the hidden session and edits there become proposals', async ({ 
   await editor.press('Enter')
   await expect(editor).toHaveCount(0)
   await expect(name).toHaveText(original)
-  await expect(page.getByTestId('activity-log')).toContainText('Proposed')
+  await expect(page.getByTestId('activity-log')).toContainText('Proposed — waiting for approval')
 
   const agentTab = page.locator('.pane-tab[data-view-type="agent"]').last()
   if ((await agentTab.count()) === 0) await page.getByTestId('agent-back').click()
@@ -161,11 +172,16 @@ test('the user session gets a purple frame until take over', async ({ page }) =>
   await expect(page.getByTestId('workspace')).toHaveAttribute('inert', '')
   const second = mainTable(page).getByTestId('object-row').nth(1)
   await expect(second).toHaveAttribute('aria-selected', 'false')
-  await second.click({ timeout: 1_000 }).catch(() => undefined)
+  await second.locator('[data-column="number"], [data-column="key"]').first().click({ timeout: 1_000 }).catch(() => undefined)
   await expect(second).toHaveAttribute('aria-selected', 'false')
   await expectSessionContrast(page)
   const darkDir = process.env.BRAIAN_AGENT_SHOTS
   if (darkDir) await page.screenshot({ path: `${darkDir}/agent-control-dark.png` })
+  const productsGrid = paneWithTab(page, 'Products').locator('.grid').first()
+  await productsGrid.evaluate((node) => {
+    node.scrollLeft = 420
+  })
+  await expect.poll(async () => productsGrid.evaluate((node) => node.scrollLeft)).toBeGreaterThan(200)
 
   await page.getByTestId('agent-take-over').click()
   await expect(page.locator('.app')).not.toHaveAttribute('data-agent-control', 'true')
@@ -173,8 +189,22 @@ test('the user session gets a purple frame until take over', async ({ page }) =>
   await expect(agentView(page, title).getByTestId('agent-status')).toHaveAttribute('data-status', 'paused')
   await expect(agentView(page, title).getByTestId('agent-status')).toHaveText('Paused')
   await expect(page.getByTestId('workspace')).not.toHaveAttribute('inert', '')
-  await second.click()
+  const grid = paneWithTab(page, 'Products').locator('.grid').first()
+  await expect.poll(async () => grid.evaluate((node) => node.scrollLeft)).toBeLessThan(8)
+  const number = paneWithTab(page, 'Products').getByTestId('col-number')
+  const name = paneWithTab(page, 'Products').getByTestId('col-name')
+  await expect(number).toBeVisible()
+  await expect(name).toBeVisible()
+  const paneBox = await paneWithTab(page, 'Products').boundingBox()
+  const numberBox = await number.boundingBox()
+  const nameBox = await name.boundingBox()
+  expect(paneBox && numberBox && nameBox).toBeTruthy()
+  expect(numberBox!.x).toBeGreaterThanOrEqual(paneBox!.x - 1)
+  expect(nameBox!.x).toBeGreaterThanOrEqual(numberBox!.x)
+  expect(nameBox!.x + 24).toBeLessThanOrEqual(paneBox!.x + paneBox!.width)
+  await second.locator('[data-column="number"], [data-column="key"]').first().click()
   await expect(second).toHaveAttribute('aria-selected', 'true')
+  await expect.poll(async () => grid.evaluate((node) => node.scrollLeft)).toBeLessThan(8)
   await shot(page, 'agent-taken-over')
 
   await setTheme(page, 'light')
@@ -212,13 +242,11 @@ test('a waiting notice sits in the gutter on one line', async ({ page }) => {
   expect(metrics.height).toBeLessThan(28)
   expect(metrics.scrollWidth).toBeGreaterThan(metrics.clientWidth)
   const toastBox = await toast.boundingBox()
-  const detailBox = await page.locator('section.pane').filter({ has: page.locator('[data-view-type="object_detail"]') }).first().boundingBox()
   const viewport = page.viewportSize()
   expect(toastBox).toBeTruthy()
-  expect(detailBox).toBeTruthy()
   expect(viewport).toBeTruthy()
-  expect(toastBox!.x + toastBox!.width).toBeLessThanOrEqual(detailBox!.x + 2)
   expect(toastBox!.y + toastBox!.height).toBeGreaterThan((viewport?.height ?? 0) - 120)
+  await expectToastClearsLists(page, toast)
   await shot(page, 'agent-waiting-gutter')
 })
 

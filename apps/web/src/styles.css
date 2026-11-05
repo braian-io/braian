@@ -624,9 +624,6 @@ button.agent-bg-indicator strong { font-variant-numeric: tabular-nums; }
 .app:has(> .agent-session-bar) {
   grid-template-rows: auto auto minmax(0, 1fr) 24px;
 }
-.app[data-agent-control='true'] {
-  box-shadow: inset 0 0 0 3px var(--accent);
-}
 .agent-control-bar,
 .agent-session-bar {
   display: flex;
@@ -656,9 +653,6 @@ button.agent-bg-indicator strong { font-variant-numeric: tabular-nums; }
 }
 .pane[data-agent-working='true'] {
   box-shadow: var(--inset), inset 3px 0 0 var(--accent);
-}
-.pane-tab.agent-working:not(.active) .pane-tab-open {
-  box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 .pane-body {
@@ -1946,7 +1940,9 @@ kbd {
 .agent-notice-toast {
   flex-wrap: nowrap !important;
   align-items: center;
-  max-width: min(420px, calc(100vw - var(--toast-right, 24px) - 16px));
+  min-width: 0 !important;
+  width: min(420px, var(--toast-max, 420px));
+  max-width: min(420px, var(--toast-max, 420px));
 }
 .agent-notice-toast [data-content] {
   min-width: 0;
@@ -2718,6 +2714,15 @@ button.tab-x:disabled:hover {
 button:disabled,
 button[aria-disabled='true'] {
   opacity: 1;
+}
+/* Ghost + the generic disabled rule would leave Send transparent. A filled surface reads as disabled, and text-2 stays above 3:1. */
+button.agent-submit.btn-ghost:disabled,
+button.agent-submit.btn-ghost:disabled:hover {
+  background: var(--surface);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  opacity: 1;
+  cursor: not-allowed;
 }
 .pane-body,
 .detail-empty {

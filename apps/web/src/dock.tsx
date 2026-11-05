@@ -56,7 +56,7 @@ export function WorkspaceDock({
   onChange: (doc: LayoutDoc) => void
   renderView: (view: DockView) => ReactNode
   onAddView: (target: string) => void
-  /** View ids an agent is working in. The pane and tab pick up a purple marker. */
+  /** View ids an agent is working in. The pane picks up one left-edge marker. */
   agentViews?: string[]
 }) {
   const rootRef = useRef<HTMLDivElement>(null)
@@ -389,10 +389,7 @@ function Pane({ frame, leaf }: { frame: Frame; leaf: Leaf }) {
                 <div
                   data-tab={id}
                   data-view-type={frame.viewList.find((view) => view.id === id)?.type ?? ''}
-                  className={[
-                    id === activeId ? 'pane-tab active' : 'pane-tab',
-                    frame.agentViews.has(id) ? 'agent-working' : '',
-                  ].filter(Boolean).join(' ')}
+                  className={id === activeId ? 'pane-tab active' : 'pane-tab'}
                   title={prompt}
                   onContextMenu={(event) => {
                     if (prefersNativeContextMenu(event.target)) return
