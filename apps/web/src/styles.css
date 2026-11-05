@@ -1860,12 +1860,13 @@ canvas.graph.panning { cursor: grabbing; }
   color: var(--text);
 }
 /* Hover is a weak purple wash; only .on is the strong selection (fill + 3px bar).
-   cmdk data-selected alone must not paint a second keyboard-looking row. */
-.palette .hit:hover:not(.on) {
-  background: color-mix(in srgb, var(--accent-dim) 55%, transparent);
-}
+   cmdk data-selected alone must not paint a second keyboard-looking row.
+   Hover comes after data-selected so pointer hover wins when both match. */
 .palette .hit[data-selected='true']:not(.on) {
   background: transparent;
+}
+.palette .hit:hover:not(.on) {
+  background: color-mix(in srgb, var(--accent-dim) 55%, transparent);
 }
 .palette .hit.on,
 .palette .hit.on:hover,
