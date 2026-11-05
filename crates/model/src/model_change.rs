@@ -11,7 +11,7 @@ use rust_decimal::Decimal;
 
 use crate::definition::{
     Attribute, AttributeKind, Class, DefinitionSet, Group, ObjectType, Structure, TextForm, Unit,
-    UnitFamily, ValueOption,
+    UnitFamily, ValueOption, default_true,
 };
 use crate::id::{AttributeId, ClassId, GroupId, StructureId, UnitFamilyId};
 use crate::language::LanguageTag;
@@ -64,6 +64,8 @@ pub enum ModelChange {
         languages: bool,
         #[serde(default)]
         required: bool,
+        #[serde(default = "default_true")]
+        show_by_default: bool,
         #[serde(default)]
         searchable: bool,
         /// Proposals written before index flags were sent still mark the attribute filterable.
@@ -124,6 +126,8 @@ pub enum ModelChange {
         languages: Option<bool>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         required: Option<bool>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        show_by_default: Option<bool>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         searchable: Option<bool>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1192,6 +1196,7 @@ fn apply_one(defs: &mut DefinitionSet, change: &ModelChange) -> Result<(), Apply
             multiple,
             languages,
             required,
+            show_by_default,
             searchable,
             filterable,
             sortable,
@@ -1206,6 +1211,7 @@ fn apply_one(defs: &mut DefinitionSet, change: &ModelChange) -> Result<(), Apply
                 multiple: *multiple,
                 languages: *languages,
                 required: *required,
+                show_by_default: *show_by_default,
                 searchable: *searchable,
                 filterable: *filterable,
                 sortable: *sortable,
@@ -1450,6 +1456,7 @@ fn apply_one(defs: &mut DefinitionSet, change: &ModelChange) -> Result<(), Apply
             clear_unit,
             languages,
             required,
+            show_by_default,
             searchable,
             filterable,
             sortable,
@@ -1465,6 +1472,7 @@ fn apply_one(defs: &mut DefinitionSet, change: &ModelChange) -> Result<(), Apply
                 clear_unit: *clear_unit,
                 languages: *languages,
                 required: *required,
+                show_by_default: *show_by_default,
                 searchable: *searchable,
                 filterable: *filterable,
                 sortable: *sortable,
@@ -1492,6 +1500,7 @@ fn add_attribute_command(rest: &str, defs: &DefinitionSet) -> Option<Vec<ModelCh
             multiple: false,
             languages: false,
             required: false,
+            show_by_default: true,
             searchable: false,
             filterable: true,
             sortable: false,
@@ -2081,6 +2090,7 @@ struct AttributeUpdate<'a> {
     clear_unit: bool,
     languages: Option<bool>,
     required: Option<bool>,
+    show_by_default: Option<bool>,
     searchable: Option<bool>,
     filterable: Option<bool>,
     sortable: Option<bool>,
@@ -2097,6 +2107,7 @@ fn update_attribute(defs: &mut DefinitionSet, patch: AttributeUpdate<'_>) -> Res
         clear_unit,
         languages,
         required,
+        show_by_default,
         searchable,
         filterable,
         sortable,
@@ -2147,6 +2158,7 @@ fn update_attribute(defs: &mut DefinitionSet, patch: AttributeUpdate<'_>) -> Res
         && (kind_changed
             || languages.is_some()
             || required.is_some()
+            || show_by_default.is_some()
             || searchable.is_some()
             || filterable.is_some()
             || sortable.is_some()
@@ -2173,6 +2185,9 @@ fn update_attribute(defs: &mut DefinitionSet, patch: AttributeUpdate<'_>) -> Res
     if let Some(value) = required {
         attribute.required = value;
     }
+    if let Some(value) = show_by_default {
+        attribute.show_by_default = value;
+    }
     if let Some(value) = searchable {
         attribute.index.searchable = value;
     }
@@ -2193,6 +2208,7 @@ struct AttributeDraft<'a> {
     multiple: bool,
     languages: bool,
     required: bool,
+    show_by_default: bool,
     searchable: bool,
     filterable: bool,
     sortable: bool,
@@ -2208,6 +2224,7 @@ fn create_attribute(defs: &mut DefinitionSet, draft: AttributeDraft<'_>) -> Resu
         multiple,
         languages,
         required,
+        show_by_default,
         searchable,
         filterable,
         sortable,
@@ -2234,6 +2251,7 @@ fn create_attribute(defs: &mut DefinitionSet, draft: AttributeDraft<'_>) -> Resu
         language_dependent: languages,
         multiple,
         required,
+        show_by_default,
         kind: wanted,
         index: crate::definition::IndexFlags {
             searchable,
@@ -2526,6 +2544,7 @@ fn ensure_text_attributes(defs: &mut DefinitionSet, keys: &[String]) -> Result<(
                 multiple: false,
                 languages: false,
                 required: false,
+                show_by_default: true,
                 searchable: false,
                 filterable: false,
                 sortable: false,
@@ -2681,6 +2700,7 @@ fn duplicate_key_message(kind: crate::refs::RefKind, key: &str) -> String {
 
 fn rules_changed(before: &Attribute, after: &Attribute) -> bool {
     before.required != after.required
+        || before.show_by_default != after.show_by_default
         || before.multiple != after.multiple
         || before.language_dependent != after.language_dependent
         || before.index != after.index
@@ -3248,6 +3268,7 @@ mod tests {
                     language_dependent: false,
                     multiple: false,
                     required: false,
+                    show_by_default: true,
                     kind: AttributeKind::Number {
                         unit_family: Some(family),
                         min: None,
@@ -3263,6 +3284,7 @@ mod tests {
                     language_dependent: false,
                     multiple: false,
                     required: false,
+                    show_by_default: true,
                     kind: AttributeKind::Text {
                         max_length: None,
                         form: TextForm::Short,
@@ -3474,6 +3496,7 @@ mod tests {
                 multiple: false,
                 languages: false,
                 required: false,
+                show_by_default: true,
                 searchable: false,
                 filterable: true,
                 sortable: true,
@@ -3537,6 +3560,7 @@ mod tests {
             multiple: false,
             languages: false,
             required: false,
+            show_by_default: true,
             searchable: false,
             filterable: false,
             sortable: false,

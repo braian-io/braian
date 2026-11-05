@@ -7925,6 +7925,10 @@
           "required": {
             "type": "boolean",
             "description": "The value must be present when the attribute applies. Absent means optional."
+          },
+          "show_by_default": {
+            "type": "boolean",
+            "description": "When true, the field is shown by default in create, Detail, and tables."
           }
         },
         "additionalProperties": false

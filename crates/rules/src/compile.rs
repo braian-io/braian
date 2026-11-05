@@ -803,6 +803,7 @@ mod tests {
             language_dependent: false,
             multiple: false,
             required: false,
+            show_by_default: true,
             kind: AttributeKind::Text {
                 max_length: Some(32),
                 form: braian_model::TextForm::Short,
@@ -998,6 +999,7 @@ mod tests {
             language_dependent: false,
             multiple: false,
             required: false,
+            show_by_default: true,
             kind: AttributeKind::ValueList {
                 options: vec![
                     ValueOption {
@@ -1063,6 +1065,7 @@ mod tests {
             language_dependent: false,
             multiple: false,
             required: false,
+            show_by_default: true,
             kind: AttributeKind::Number {
                 unit_family: Some(family),
                 min: Some(Decimal::ZERO),
@@ -1206,6 +1209,7 @@ mod tests {
             language_dependent: false,
             multiple: false,
             required: false,
+            show_by_default: true,
             kind: AttributeKind::Number {
                 unit_family: None,
                 min: None,
@@ -1221,6 +1225,7 @@ mod tests {
             language_dependent: false,
             multiple: false,
             required: false,
+            show_by_default: true,
             kind: AttributeKind::Range {
                 unit_family: Some(family),
             },
@@ -1233,6 +1238,7 @@ mod tests {
             language_dependent: false,
             multiple: false,
             required: false,
+            show_by_default: true,
             kind: AttributeKind::ObjectRef {
                 type_key: Some("item".to_owned()),
             },

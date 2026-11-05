@@ -479,6 +479,7 @@ mod tests {
             language_dependent: false,
             multiple,
             required: true,
+            show_by_default: true,
             kind: AttributeKind::ObjectRef {
                 type_key: Some(type_key.to_owned()),
             },

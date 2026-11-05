@@ -105,6 +105,7 @@ mod tests {
             language_dependent: false,
             multiple: false,
             required: false,
+            show_by_default: true,
             kind: AttributeKind::Text {
                 max_length: None,
                 form: crate::definition::TextForm::Short,

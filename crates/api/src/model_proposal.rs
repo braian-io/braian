@@ -715,6 +715,10 @@ pub(crate) fn changes_from(
                 .get("required")
                 .and_then(Value::as_bool)
                 .unwrap_or(false),
+            show_by_default: args
+                .get("show_by_default")
+                .and_then(Value::as_bool)
+                .unwrap_or(true),
             searchable: args
                 .get("searchable")
                 .and_then(Value::as_bool)
@@ -760,6 +764,7 @@ pub(crate) fn changes_from(
                 .unwrap_or(false),
             languages: args.get("languages").and_then(Value::as_bool),
             required: args.get("required").and_then(Value::as_bool),
+            show_by_default: args.get("show_by_default").and_then(Value::as_bool),
             searchable: args.get("searchable").and_then(Value::as_bool),
             filterable: args.get("filterable").and_then(Value::as_bool),
             sortable: args.get("sortable").and_then(Value::as_bool),

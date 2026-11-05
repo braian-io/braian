@@ -300,6 +300,8 @@ pub struct AttributeConfig {
     pub multiple: bool,
     #[serde(default, skip_serializing_if = "is_false")]
     pub required: bool,
+    #[serde(default = "default_true", skip_serializing_if = "is_true")]
+    pub show_by_default: bool,
     pub kind: AttributeKindConfig,
     pub index: IndexFlagsConfig,
 }
@@ -485,6 +487,14 @@ pub struct ClassConfig {
 
 fn is_false(value: &bool) -> bool {
     !*value
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn is_true(value: &bool) -> bool {
+    *value
 }
 
 /// JSON Schema for every document kind. The committed copy lives in

@@ -280,6 +280,7 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
         multiple: row.multiple,
         languages: row.kind === 'text' ? row.languages : false,
         required: row.required,
+        show_by_default: row.showByDefault,
         searchable: row.searchable,
         filterable: row.filterable,
         sortable: row.sortable,
@@ -311,6 +312,7 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
       else patch.clear_unit = true
     }
     if (row.required !== original.required) patch.required = row.required
+    if (row.showByDefault !== original.showByDefault) patch.show_by_default = row.showByDefault
     if (row.languages !== original.languages) patch.languages = row.languages
     if (row.searchable !== original.searchable) patch.searchable = row.searchable
     if (row.filterable !== original.filterable) patch.filterable = row.filterable
@@ -445,6 +447,15 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
       display: 'checkbox',
       read: (row) => row.required,
       write: (row, value) => ({ ...row, required: value === 'true' }),
+    },
+    {
+      id: 'showByDefault',
+      header: copy.showByDefault,
+      type: 'boolean',
+      editable: true,
+      display: 'checkbox',
+      read: (row) => row.showByDefault,
+      write: (row, value) => ({ ...row, showByDefault: value === 'true' }),
     },
     {
       id: 'languages',
@@ -587,6 +598,7 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
             kind: createKind,
             unit: '',
             required: false,
+            showByDefault: true,
             languages: createKind === 'text',
             searchable: false,
             filterable: false,

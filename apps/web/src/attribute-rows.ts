@@ -12,6 +12,7 @@ export type UsedPlace = {
 
 export type AttributeFlags = {
   required: boolean
+  showByDefault: boolean
   multiple: boolean
   languages: boolean
   searchable: boolean
@@ -81,6 +82,7 @@ function rowFromCatalog(row: Json): AttributeDefinitionRow {
     valueList: placeLabel(row.value_list),
     flags: {
       required: flags.required === true,
+      showByDefault: flags.show_by_default !== false,
       multiple: flags.multiple === true,
       languages: flags.languages === true,
       searchable: flags.searchable === true,
@@ -173,6 +175,7 @@ function flagsOf(attribute: Json, standard: boolean): AttributeFlags {
   const index = (attribute.index as Json | undefined) ?? {}
   return {
     required: attribute.required === true,
+    showByDefault: attribute.show_by_default !== false,
     multiple: attribute.multiple === true,
     languages: attribute.language_dependent === true,
     searchable: index.searchable === true,

@@ -366,6 +366,7 @@ export const copy = {
   noJob: 'No job reads these fields.',
   addAttribute: 'Add attribute',
   required: 'Required',
+  showByDefault: 'Show by default',
   multiValue: 'Multi-value',
   languages: 'Languages',
   openFull: 'Open full size',

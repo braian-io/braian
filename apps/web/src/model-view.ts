@@ -12,6 +12,7 @@ export type AttributeRow = {
   kind: string
   unit: string
   required: boolean
+  showByDefault: boolean
   languages: boolean
   searchable: boolean
   filterable: boolean
@@ -46,6 +47,7 @@ type PoolAttribute = {
   kind: string
   unit: string
   required: boolean
+  showByDefault: boolean
   languages: boolean
   searchable: boolean
   filterable: boolean
@@ -271,6 +273,7 @@ function poolOf(defs: Json | undefined, language: string) {
       kind: String(kind.type ?? 'text'),
       unit: family ? String(family.key ?? '') : '',
       required: Boolean(item.required),
+      showByDefault: item.show_by_default !== false,
       languages: Boolean(item.language_dependent),
       searchable: Boolean(index.searchable),
       filterable: Boolean(index.filterable),

@@ -732,6 +732,7 @@ mod tests {
             language_dependent: false,
             multiple: false,
             required: false,
+            show_by_default: true,
             kind: AttributeKind::Text {
                 max_length: None,
                 form: TextForm::Short,
@@ -940,6 +941,7 @@ mod tests {
                 multiple: false,
                 languages: false,
                 required: false,
+                show_by_default: true,
                 searchable: false,
                 filterable: false,
                 sortable: false,
@@ -953,6 +955,7 @@ mod tests {
                 clear_unit: false,
                 languages: None,
                 required: None,
+                show_by_default: None,
                 searchable: None,
                 filterable: None,
                 sortable: None,
