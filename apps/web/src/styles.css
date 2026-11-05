@@ -992,7 +992,10 @@ button.filter-chip:hover:not(.on) {
   background: transparent;
   box-shadow: none;
 }
-/* Header hover is text-only: no fill box that can spill outside the cell. */
+/* Header label is muted at rest; hover/focus brighten text only — no fill that can spill. */
+.head .cell.column-header-cell .column-header-btn {
+  color: var(--muted);
+}
 .head .cell.column-header-cell .column-header-btn:hover,
 .head .cell.column-header-cell .column-header-btn:focus-visible {
   background: transparent;
