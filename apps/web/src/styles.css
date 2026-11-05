@@ -1973,10 +1973,18 @@ canvas.graph.panning { cursor: grabbing; }
 .history-line time { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .history-actions { display: flex; gap: 6px; margin-top: 6px; }
 .field-diff { list-style: none; margin: 2px 0 0; padding: 0; display: grid; gap: 1px; }
-.field-diff li { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Wrap long proposal values instead of truncating with ellipsis (row 193). */
+.field-diff li {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
 .diff-label { color: var(--text-2); }
 .diff-old { color: var(--danger); text-decoration: line-through; }
-.diff-new { color: var(--ok); }
+.diff-new {
+  color: var(--ok);
+  overflow-wrap: anywhere;
+}
 .diff-arrow { color: var(--muted); }
 .lang-chip {
   display: inline-flex;
