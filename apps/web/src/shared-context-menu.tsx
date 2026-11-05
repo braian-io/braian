@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { copy } from './i18n'
 import {
   commandTitle,
@@ -94,6 +94,7 @@ export function SharedContextMenuHost({
   const restoreFocus = useRef<HTMLElement | null>(null)
   const menuRef = useRef<HTMLDivElement | null>(null)
   const [typeahead, setTypeahead] = useState('')
+  const [highlighted, setHighlighted] = useState<string | null>(null)
   const feedbackRef = useRef(feedbackEnabled)
   feedbackRef.current = feedbackEnabled
 
@@ -101,6 +102,7 @@ export function SharedContextMenuHost({
     const open = (detail: OpenMenuRequest) => {
       restoreFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
       setTypeahead('')
+      setHighlighted(null)
       const point = clamp(detail.x, detail.y)
       const target = { ...(detail.target ?? {}), feedbackEnabled: Boolean(feedbackRef.current) }
       setRequest({ ...detail, target, x: point.x, y: point.y })
@@ -121,12 +123,13 @@ export function SharedContextMenuHost({
   const close = () => {
     setRequest(null)
     setTypeahead('')
+    setHighlighted(null)
     const el = restoreFocus.current
     restoreFocus.current = null
     queueMicrotask(() => el?.focus())
   }
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!request) return
     menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus()
     const onPointer = (event: PointerEvent) => {
@@ -150,7 +153,11 @@ export function SharedContextMenuHost({
 
   const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     const buttons = Array.from(menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])
-    const at = buttons.findIndex((item) => item === document.activeElement)
+    // Arrow keys continue from the marked item, even when DOM focus has not caught up yet.
+    const markedAt = highlighted
+      ? buttons.findIndex((item) => item.dataset.command === highlighted)
+      : -1
+    const at = markedAt >= 0 ? markedAt : buttons.findIndex((item) => item === document.activeElement)
     if (event.key === 'Escape' || event.key === 'Tab') {
       event.preventDefault()
       event.stopPropagation()
@@ -175,6 +182,8 @@ export function SharedContextMenuHost({
               : at <= 0
                 ? buttons.length - 1
                 : at - 1
+      const nextId = buttons[next]?.dataset.command
+      if (nextId) setHighlighted(nextId)
       buttons[next]?.focus()
       return
     }
@@ -188,6 +197,7 @@ export function SharedContextMenuHost({
 
   if (!request || items.length === 0) return null
   const point = clamp(request.x, request.y)
+  const marked = highlighted ?? items[0]?.id ?? null
   return (
     <div
       ref={menuRef}
@@ -207,6 +217,12 @@ export function SharedContextMenuHost({
           tabIndex={-1}
           className={command.danger ? 'danger' : undefined}
           data-command={command.id}
+          data-highlighted={marked === command.id ? '' : undefined}
+          onFocus={() => setHighlighted(command.id)}
+          onMouseEnter={(event) => {
+            setHighlighted(command.id)
+            event.currentTarget.focus({ preventScroll: true })
+          }}
           onClick={() => activate(command)}
         >
           <span className="menu-label">{commandTitle(command, request.target ?? {})}</span>

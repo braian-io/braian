@@ -388,7 +388,7 @@ export function AssortmentList({ session }: { session: SelectionSession }) {
             >
               <button
                 type="button"
-                className={selected ? 'on' : ''}
+                className={selected ? 'btn-ghost on' : 'btn-ghost'}
                 onClick={() => {
                   setOpenId(id)
                   const next = (item.query as Json) ?? {}
