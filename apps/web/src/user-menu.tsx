@@ -12,7 +12,7 @@ import { copy } from './i18n'
 export type Connection = 'online' | 'offline'
 
 export function userInitial(user: { name?: string; email?: string; handle?: string }): string {
-  const source = user.name || user.email || user.handle || ''
+  const source = user.email || user.handle || user.name || ''
   const letter = source.trim().charAt(0)
   return letter ? letter.toUpperCase() : '?'
 }

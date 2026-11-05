@@ -2069,7 +2069,7 @@ export function Shell() {
 }
 
 export function Login({ onDone }: { onDone: () => void }) {
-  const [email, setEmail] = useState('admin@braian.local')
+  const [email, setEmail] = useState('admin@braian.io')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   return (
