@@ -495,6 +495,8 @@ export const copy = {
   unknownViewDetail: 'It was removed or replaced. Open another view from the workspace tabs.',
   conflictAttribute: 'That name already exists with a different type or unit.',
   removeFromHere: 'Remove from here',
+  removeFromThisType: 'Remove from this type',
+  deleteAttributeEverywhere: 'Delete attribute everywhere…',
   noUnit: 'None',
   kindText: 'Text',
   kindBoolean: 'Boolean',

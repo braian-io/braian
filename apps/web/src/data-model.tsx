@@ -159,8 +159,8 @@ function AttributeMenu({
         <DropdownMenuItem onSelect={(event) => { event.preventDefault(); onPatch({ sortable: !row.sortable }) }}>
           {copy.sortable}{row.sortable ? ' · on' : ''}
         </DropdownMenuItem>
-        {onDetach ? <DropdownMenuItem onSelect={onDetach}>{copy.removeFromHere}</DropdownMenuItem> : null}
-        {onDelete ? <DropdownMenuItem onSelect={onDelete}>{copy.deleteMenu}</DropdownMenuItem> : null}
+        {onDetach ? <DropdownMenuItem onSelect={onDetach}>{copy.removeFromThisType}</DropdownMenuItem> : null}
+        {onDelete ? <DropdownMenuItem onSelect={onDelete}>{copy.deleteAttributeEverywhere}</DropdownMenuItem> : null}
       </DropdownMenuContent>
     </DropdownMenu>
   )
