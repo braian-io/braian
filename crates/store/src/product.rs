@@ -570,17 +570,33 @@ impl Store {
         document: &Value,
     ) -> Result<DateTime<Utc>, Error> {
         let client = self.checkout().await?;
+        // clientSavedAt is a client clock. A layout save that left the browser
+        // earlier must not overwrite one the person made after switching views.
         let row = client
-            .query_one(
+            .query_opt(
                 "INSERT INTO workspace_states (user_id, environment, workspace_id, document, updated_at)
                  VALUES ($1, $2, $3, $4, now())
                  ON CONFLICT (user_id, environment, workspace_id)
                  DO UPDATE SET document = EXCLUDED.document, updated_at = now()
+                 WHERE COALESCE(CASE WHEN (workspace_states.document->>'clientSavedAt') ~ '^[0-9]+$'
+                                 THEN (workspace_states.document->>'clientSavedAt')::bigint ELSE 0 END, 0)
+                    <= COALESCE(CASE WHEN (EXCLUDED.document->>'clientSavedAt') ~ '^[0-9]+$'
+                                 THEN (EXCLUDED.document->>'clientSavedAt')::bigint ELSE 0 END, 0)
                  RETURNING updated_at",
                 &[&user_id, &environment, &workspace_id, document],
             )
             .await?;
-        Ok(row.get(0))
+        if let Some(row) = row {
+            return Ok(row.get(0));
+        }
+        let current = client
+            .query_one(
+                "SELECT updated_at FROM workspace_states
+                 WHERE user_id = $1 AND environment = $2 AND workspace_id = $3",
+                &[&user_id, &environment, &workspace_id],
+            )
+            .await?;
+        Ok(current.get(0))
     }
 
     pub async fn delete_workspace_state(

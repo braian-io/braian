@@ -49,12 +49,15 @@ export function WorkspaceDock({
   onChange,
   renderView,
   onAddView,
+  agentViews = [],
 }: {
   doc: LayoutDoc
   views: DockView[]
   onChange: (doc: LayoutDoc) => void
   renderView: (view: DockView) => ReactNode
   onAddView: (target: string) => void
+  /** View ids an agent is working in. The pane picks up one left-edge marker. */
+  agentViews?: string[]
 }) {
   const rootRef = useRef<HTMLDivElement>(null)
   const docRef = useRef(doc)
@@ -63,6 +66,7 @@ export function WorkspaceDock({
   docRef.current = doc
   changeRef.current = onChange
   viewsRef.current = viewList
+  const agentViewSet = new Set(agentViews)
   const [drag, setDrag] = useState<Drag | null>(null)
   const dragRef = useRef<Drag | null>(null)
   // View chrome menus open through the shared command registry.
@@ -94,8 +98,9 @@ export function WorkspaceDock({
   const zoomed = zoomHost && doc.zoom ? { ...zoomHost, views: [doc.zoom], active: 0 } : undefined
   const shared: Frame = {
     doc,
-    viewList,
-    drag,
+      viewList,
+      agentViews: agentViewSet,
+      drag,
     docRef,
     rootRef,
     dragRef,
@@ -179,6 +184,7 @@ type Frame = {
   onMenu: (menu: { x: number; y: number; view: string }) => void
   onDrag: (drag: Drag | null) => void
   renderView: (view: DockView) => ReactNode
+  agentViews: Set<string>
 }
 
 function SplitNode({ frame, node, path }: { frame: Frame; node: Node; path: number[] }) {
@@ -365,6 +371,7 @@ function Pane({ frame, leaf }: { frame: Frame; leaf: Leaf }) {
       data-pane={activeId ?? 'empty'}
       data-anchor={activeId ?? ''}
       data-views={leaf.views.join(',')}
+      data-agent-working={activeId && frame.agentViews.has(activeId) ? 'true' : undefined}
       tabIndex={-1}
       onMouseDown={(event) => {
         if (!(event.target instanceof Element)) return

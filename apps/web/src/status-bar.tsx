@@ -26,7 +26,7 @@ function reloadPage() {
 }
 
 /** Shows something only when it is needed. Empty when saved and connected. */
-export function StatusBar({ online, live, locked }: { online: boolean; live: LiveState; locked: boolean }) {
+export function StatusBar({ online, live, locked, inert = false }: { online: boolean; live: LiveState; locked: boolean; inert?: boolean }) {
   const writes = useWriteStatus()
   const version = useNewVersionAvailable()
   const [showSaving, setShowSaving] = useState(false)
@@ -69,6 +69,7 @@ export function StatusBar({ online, live, locked }: { online: boolean; live: Liv
     <span
       className="status-bar"
       data-testid="status-bar"
+      inert={inert || undefined}
       data-kind={message?.kind ?? ''}
       title={message?.title}
       role="status"

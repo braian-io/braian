@@ -362,6 +362,112 @@
         ]
       }
     },
+    "/v1/agent/runs/{id}/proposals": {
+      "post": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "File a proposal for an edit made while viewing the agent's session",
+        "operationId": "propose_in_agent_session",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent run id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentSessionProposal"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The run, with the new proposal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or unknown token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/agent/runs/{id}/take-over": {
+      "post": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Stop an agent that is using the person's session and hand control back",
+        "operationId": "take_over_agent_run",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent run id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The run, paused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or unknown token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/v1/assortments": {
       "get": {
         "tags": [
@@ -7267,6 +7373,7 @@
           "mode",
           "session_kind",
           "hidden",
+          "session",
           "tab_open",
           "created_at",
           "updated_at",
@@ -7321,6 +7428,9 @@
               "string",
               "null"
             ]
+          },
+          "session": {
+            "$ref": "#/components/schemas/JsonValue"
           },
           "session_kind": {
             "type": "string"
@@ -7386,7 +7496,7 @@
               "boolean",
               "null"
             ],
-            "description": "Hidden session. Stored for a later view of the agent's own session."
+            "description": "`true` when the person is looking at their own layout."
           },
           "mode": {
             "type": [
@@ -7400,7 +7510,7 @@
               "string",
               "null"
             ],
-            "description": "`own` or `user`. Stored for a later choice of session."
+            "description": "`own` or `user`."
           },
           "tab_open": {
             "type": [
@@ -7426,6 +7536,7 @@
           "mode",
           "session_kind",
           "hidden",
+          "session",
           "tab_open",
           "created_at",
           "updated_at",
@@ -7468,12 +7579,16 @@
             ],
             "description": "The question shown while status is `waiting`."
           },
+          "session": {
+            "$ref": "#/components/schemas/JsonValue",
+            "description": "View ids the agent is working in. `hidden` means the person is not looking at them."
+          },
           "session_kind": {
             "type": "string"
           },
           "status": {
             "type": "string",
-            "description": "`working`, `waiting`, `done`, or `failed`."
+            "description": "`working`, `waiting`, `done`, `failed`, or `paused`."
           },
           "tab_open": {
             "type": "boolean"
@@ -7497,6 +7612,43 @@
               "null"
             ],
             "format": "uuid"
+          }
+        }
+      },
+      "AgentSessionProposal": {
+        "type": "object",
+        "required": [
+          "object_id",
+          "type_key",
+          "base_version",
+          "values"
+        ],
+        "properties": {
+          "base_version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "object_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "object_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type_key": {
+            "type": "string"
+          },
+          "values": {
+            "$ref": "#/components/schemas/JsonValue"
           }
         }
       },

@@ -541,3 +541,97 @@ async fn a_run_waits_for_a_decision_and_resume_continues_it() {
         .any(|message| message["body"]["text"] == "Use the existing name");
     assert!(answered, "{done}");
 }
+
+#[tokio::test]
+async fn the_agent_starts_in_a_hidden_session_unless_it_needs_the_screen() {
+    let (_db, app) = app().await;
+    let body = r#"{"messages":[{"role":"user","content":"hold the run in your own session"}],"context":{"focused":"products","panes":[{"id":"products","type":"object_table","title":"Products"},{"id":"detail","type":"object_detail","title":"Detail"}]}}"#;
+    let (status, created) = call(&app, "POST", "/v1/agent/runs", Some(body), &[]).await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    assert_eq!(created["session_kind"], "own");
+    assert_eq!(created["hidden"], true);
+    assert_eq!(created["status"], "working");
+    assert_eq!(created["session"]["views"][0], "products");
+    assert_eq!(created["session"]["focus"], "products");
+    let id = created["id"].as_str().unwrap();
+    let (status, shown) = call(
+        &app,
+        "PATCH",
+        &format!("/v1/agent/runs/{id}"),
+        Some(r#"{"hidden":false}"#),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{shown}");
+    assert_eq!(shown["hidden"], false);
+    assert_eq!(shown["session_kind"], "own");
+}
+
+#[tokio::test]
+async fn take_over_stops_the_agent_and_keeps_it_stopped() {
+    let (_db, app) = app().await;
+    let (status, created) = call(
+        &app,
+        "POST",
+        "/v1/agent/runs",
+        Some(
+            r#"{"messages":[{"role":"user","content":"open the product view and hold the run"}]}"#,
+        ),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    assert_eq!(created["session_kind"], "user");
+    assert_eq!(created["hidden"], false);
+    assert_eq!(created["status"], "working");
+    let id = created["id"].as_str().unwrap();
+    let (status, paused) = call(
+        &app,
+        "POST",
+        &format!("/v1/agent/runs/{id}/take-over"),
+        None,
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{paused}");
+    assert_eq!(paused["status"], "paused");
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    let (status, again) = call(&app, "GET", &format!("/v1/agent/runs/{id}"), None, &[]).await;
+    assert_eq!(status, StatusCode::OK, "{again}");
+    assert_eq!(again["status"], "paused", "{again}");
+}
+
+#[tokio::test]
+async fn an_edit_while_viewing_the_agent_session_is_a_proposal() {
+    let (_db, app) = app().await;
+    let object_id = create_item(&app).await;
+    let (status, created) = call(
+        &app,
+        "POST",
+        "/v1/agent/runs",
+        Some(r#"{"messages":[{"role":"user","content":"work in your own session"}]}"#),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    let id = created["id"].as_str().unwrap();
+    let done = until_done(&app, id).await;
+    assert_eq!(done["session_kind"], "own", "{done}");
+    let proposal = format!(
+        r#"{{"object_id":"{object_id}","object_key":"SKU-AGENT","type_key":"item","base_version":1,"values":{{"name":{{"sv":"Agent draft"}}}}}}"#
+    );
+    let (status, filed) = call(
+        &app,
+        "POST",
+        &format!("/v1/agent/runs/{id}/proposals"),
+        Some(&proposal),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{filed}");
+    assert_eq!(filed["proposal_count"], 1, "{filed}");
+    assert_eq!(filed["proposals"][0]["status"], "open");
+    let (status, object) = call(&app, "GET", &format!("/v1/objects/{object_id}"), None, &[]).await;
+    assert_eq!(status, StatusCode::OK, "{object}");
+    assert_eq!(object["values"]["name"]["sv"], "Stol", "{object}");
+}

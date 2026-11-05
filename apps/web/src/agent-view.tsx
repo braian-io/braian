@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { ApiError, api, textValue, type Json } from './api'
@@ -10,9 +10,11 @@ import {
   fetchAgentRun,
   followAgentRun,
   patchAgentRun,
+  requestShowAgentSession,
   type AgentProposal,
   type AgentRunDetail,
 } from './agent-runs'
+import { subscribeViewingAgent, viewingAgentRunId } from './agent-session'
 import { Button } from './components/ui/button'
 import { Input } from './components/ui/input'
 import { proposedValues, suggestionLines, type DiffLine } from './field-diff'
@@ -71,6 +73,7 @@ function restoreValues(current: Json, patch: unknown): Json {
 
 export function AgentView({ runId, push }: AgentViewProps) {
   const queryClient = useQueryClient()
+  const viewingId = useSyncExternalStore(subscribeViewingAgent, viewingAgentRunId, viewingAgentRunId)
   const rootRef = useRef<HTMLDivElement>(null)
   const followRef = useRef<HTMLInputElement>(null)
   const opened = useRef(false)
@@ -245,6 +248,8 @@ export function AgentView({ runId, push }: AgentViewProps) {
       data-testid="agent-view"
       data-run={data.id}
       data-mode={data.mode}
+      data-session-kind={data.session_kind}
+      data-hidden={data.hidden ? 'true' : 'false'}
       ref={rootRef}
       onKeyDownCapture={(event) => {
         if (event.key !== 'Escape') return
@@ -256,17 +261,37 @@ export function AgentView({ runId, push }: AgentViewProps) {
       <header className="agent-view-head">
         <h2>{data.title}</h2>
         <span className="meta-chip" data-testid="agent-status" data-status={data.status}>{statusLabel(data.status)}</span>
-        <Button
-          type="button"
-          variant="ghost"
-          className="agent-mode"
-          data-testid="agent-mode"
-          data-mode={data.mode}
-          disabled={modeChange.isPending}
-          onClick={() => modeChange.mutate(data.mode === 'background' ? 'foreground' : 'background')}
-        >
-          {data.mode === 'background' ? copy.agentBringToFront : copy.agentRunInBackground}
-        </Button>
+        {data.mode === 'foreground' ? (
+          <Button
+            type="button"
+            variant="ghost"
+            className="agent-mode"
+            data-testid="agent-mode"
+            data-mode={data.mode}
+            disabled={modeChange.isPending}
+            onClick={() => modeChange.mutate('background')}
+          >
+            {copy.agentRunInBackground}
+          </Button>
+        ) : null}
+        {data.session_kind === 'own' && (data.session?.views?.length ?? 0) > 0 && viewingId !== data.id ? (
+          <Button
+            type="button"
+            variant="ghost"
+            className="agent-mode"
+            data-testid="agent-show"
+            onClick={() => {
+              requestShowAgentSession(data)
+              void patchAgentRun(data.id, { hidden: false }).then((detail) => {
+                queryClient.setQueryData(['agent-run', runId], detail)
+              }).catch((reason: unknown) => {
+                setError(reason instanceof Error ? reason.message : copy.validation)
+              })
+            }}
+          >
+            {copy.agentShow}
+          </Button>
+        ) : null}
         <time dateTime={data.created_at}>{formatTimestamp(data.created_at)}</time>
       </header>
       <div className="agent-log" data-testid="agent-log" aria-live="polite" aria-busy={working}>

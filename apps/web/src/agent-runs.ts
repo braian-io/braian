@@ -11,6 +11,7 @@ export type AgentRunSummary = {
   mode: string
   session_kind: string
   hidden: boolean
+  session?: { views?: string[]; focus?: string | null } | null
   tab_open: boolean
   view_id?: string | null
   workspace_id?: string | null
@@ -96,13 +97,37 @@ export async function fetchAgentRun(id: string): Promise<AgentRunDetail> {
 
 export async function patchAgentRun(
   id: string,
-  patch: { tab_open?: boolean; view_id?: string; mode?: 'foreground' | 'background' },
+  patch: { tab_open?: boolean; view_id?: string; mode?: 'foreground' | 'background'; hidden?: boolean },
 ): Promise<AgentRunDetail> {
   const response = await fetch(`/v1/agent/runs/${id}`, {
     method: 'PATCH',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(patch),
+  })
+  return (await parse(response)) as AgentRunDetail
+}
+
+export async function takeOverAgentRun(id: string): Promise<AgentRunDetail> {
+  const response = await fetch(`/v1/agent/runs/${id}/take-over`, { method: 'POST', credentials: 'include' })
+  return (await parse(response)) as AgentRunDetail
+}
+
+export async function proposeInAgentSession(
+  id: string,
+  input: { objectId: string; objectKey?: string; typeKey: string; baseVersion: number; values: Json },
+): Promise<AgentRunDetail> {
+  const response = await fetch(`/v1/agent/runs/${id}/proposals`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      object_id: input.objectId,
+      object_key: input.objectKey,
+      type_key: input.typeKey,
+      base_version: input.baseVersion,
+      values: input.values,
+    }),
   })
   return (await parse(response)) as AgentRunDetail
 }
@@ -153,6 +178,16 @@ export function agentRunPrompt(run: { title: string; messages?: AgentMessage[] }
 
 export const openAgentEvent = 'braian-open-agent'
 export const openAgentsTableEvent = 'braian-open-agents-table'
+export const showAgentSessionEvent = 'braian-show-agent-session'
+export const backToMySessionEvent = 'braian-back-to-my-session'
+
+export function requestShowAgentSession(run: AgentRunSummary) {
+  window.dispatchEvent(new CustomEvent(showAgentSessionEvent, { detail: run }))
+}
+
+export function requestBackToMySession() {
+  window.dispatchEvent(new CustomEvent(backToMySessionEvent))
+}
 
 export function requestOpenAgent(run: AgentRunSummary) {
   window.dispatchEvent(new CustomEvent(openAgentEvent, { detail: run }))
@@ -167,6 +202,7 @@ export function agentStatusLabel(status: string, surface: 'tab' | 'table' = 'tab
   if (status === 'working') return copy.agentWorking
   if (status === 'waiting') return surface === 'tab' ? copy.agentWaitingForYou : copy.agentWaiting
   if (status === 'failed') return copy.agentFailed
+  if (status === 'paused') return copy.agentPaused
   if (status === 'done') return copy.agentDone
   return status.slice(0, 1).toUpperCase() + status.slice(1)
 }
@@ -177,6 +213,17 @@ export function agentStatusTone(status: string): ChipTone {
   if (status === 'waiting') return 'accent'
   if (status === 'working') return 'info'
   return 'neutral'
+}
+
+const statusRank: Record<string, number> = { waiting: 0, working: 1, paused: 2, done: 3, failed: 4 }
+
+/** Waiting rows first, then working, then the rest by latest update. */
+export function sortAgentRuns(runs: AgentRunSummary[]): AgentRunSummary[] {
+  return [...runs].sort((left, right) => {
+    const rank = (statusRank[left.status] ?? 9) - (statusRank[right.status] ?? 9)
+    if (rank !== 0) return rank
+    return right.updated_at.localeCompare(left.updated_at)
+  })
 }
 
 export function backgroundWorkingCount(runs: AgentRunSummary[]): number {

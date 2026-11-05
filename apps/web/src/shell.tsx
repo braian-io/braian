@@ -53,7 +53,8 @@ import { prepareFeedbackCapture, type FeedbackCapture } from './feedback'
 import { AgentPresence } from './agent-presence'
 import { AgentView } from './agent-view'
 import { AgentsTable } from './agents-table'
-import { agentRunPrompt, agentRunsForWorkspace, agentTabTitle, listAgentRuns, openAgentEvent, openAgentsTableEvent, patchAgentRun, type AgentMessage, type AgentRunSummary } from './agent-runs'
+import { agentRunPrompt, agentRunsForWorkspace, agentTabTitle, backToMySessionEvent, listAgentRuns, openAgentEvent, openAgentsTableEvent, patchAgentRun, requestBackToMySession, showAgentSessionEvent, takeOverAgentRun, type AgentMessage, type AgentRunSummary } from './agent-runs'
+import { agentSessionLayout, controllingAgentRuns, holdLayoutFlush, layoutFlushHeld, markedAgentViewIds, setViewingAgentRun, subscribeViewingAgent, viewingAgentRunId } from './agent-session'
 import { CommandPalette } from './palette'
 import { SharedContextMenuHost, prefersNativeContextMenu } from './shared-context-menu'
 import { StateNote } from './states'
@@ -170,6 +171,15 @@ function writeStore(key: string, value: unknown) {
   localStorage.setItem(key, JSON.stringify(value))
 }
 
+let layoutStamp = 0
+
+/** Later view switches must beat a layout save that is still in flight. */
+function stampedLayout(document: LayoutDoc) {
+  const now = Date.now()
+  layoutStamp = now > layoutStamp ? now : layoutStamp + 1
+  return freeObject({ ...document, clientSavedAt: layoutStamp })
+}
+
 const layoutCommands = new Set([
   'open_view', 'move_view', 'split', 'resize', 'swap', 'focus',
   'move_view_left', 'move_view_right', 'move_view_up', 'move_view_down',
@@ -260,6 +270,10 @@ export function Shell() {
   const openTypeViewRef = useRef<(typeId: string) => void>(() => {})
   const openAgentRunRef = useRef<(run: { id: string; title: string; view_id?: string | null; tab_open?: boolean; messages?: AgentMessage[] }) => void>(() => {})
   const openAgentsTableRef = useRef<() => void>(() => {})
+  const showAgentSessionRef = useRef<(run: AgentRunSummary) => void>(() => {})
+  const backToMineRef = useRef<() => void>(() => {})
+  const mineDocRef = useRef<LayoutDoc | null>(null)
+  const viewingRunId = useSyncExternalStore(subscribeViewingAgent, viewingAgentRunId, viewingAgentRunId)
   const restoredAgents = useRef<string | null>(null)
   const applyViewTypeSourceRef = useRef<(typeId: string, viewId?: string) => Promise<void>>(async () => undefined)
   const applyViewPeerSourceRef = useRef<(peerViewId: string, viewId?: string, linkType?: string) => Promise<void>>(async () => undefined)
@@ -651,6 +665,12 @@ export function Shell() {
   }, [online])
 
   const userId = me.data?.user_id ?? ''
+  const agentRunList = useQuery({
+    queryKey: ['agent-runs'],
+    queryFn: listAgentRuns,
+    enabled: Boolean(userId),
+    refetchInterval: userId ? 1000 : false,
+  })
   const workspaceRef = useRef(workspace.data)
   workspaceRef.current = workspace.data
 
@@ -674,11 +694,20 @@ export function Shell() {
       if (run?.id) openAgentRunRef.current(run)
     }
     const onTable = () => openAgentsTableRef.current()
+    const onShow = (event: Event) => {
+      const run = (event as CustomEvent<AgentRunSummary>).detail
+      if (run?.id) showAgentSessionRef.current(run)
+    }
+    const onBack = () => backToMineRef.current()
     window.addEventListener(openAgentEvent, onRun)
     window.addEventListener(openAgentsTableEvent, onTable)
+    window.addEventListener(showAgentSessionEvent, onShow)
+    window.addEventListener(backToMySessionEvent, onBack)
     return () => {
       window.removeEventListener(openAgentEvent, onRun)
       window.removeEventListener(openAgentsTableEvent, onTable)
+      window.removeEventListener(showAgentSessionEvent, onShow)
+      window.removeEventListener(backToMySessionEvent, onBack)
     }
   }, [])
 
@@ -830,6 +859,7 @@ export function Shell() {
   }, [workspaceId, userId, workspace.data?.id])
 
   useEffect(() => {
+    if (layoutFlushHeld()) return
     if (!doc || !dirtyRef.current || !workspaceId || !userId) return
     const gen = saveGen.current
     const timer = window.setTimeout(() => {
@@ -838,7 +868,7 @@ export function Shell() {
       if (!current || !ws || ws.id !== workspaceId || saveGen.current !== gen) return
       void api.put('/v1/workspaces/{id}/state', {
         params: { path: { id: workspaceId } },
-        body: { environment: LAYOUT_ENVIRONMENT, document: freeObject(current) },
+        body: { environment: LAYOUT_ENVIRONMENT, document: stampedLayout(current) },
       }).then(() => {
         if (saveGen.current === gen) dirtyRef.current = false
       }).catch((reason: unknown) => {
@@ -863,21 +893,24 @@ export function Shell() {
 
   useEffect(() => {
     const flush = () => {
+      if (layoutFlushHeld()) return
       if (sessionStorage.getItem('braian.layout.suppressFlush') === '1') return
       const current = docRef.current
       if (!dirtyRef.current || !current || !workspaceId) return
       keepaliveJsonPut(`/v1/workspaces/${workspaceId}/state`, {
         environment: LAYOUT_ENVIRONMENT,
-        document: current,
+        document: stampedLayout(current),
       })
     }
     const onHide = () => {
       if (document.visibilityState === 'hidden') flush()
     }
     window.addEventListener('beforeunload', flush)
+    window.addEventListener('pagehide', flush)
     document.addEventListener('visibilitychange', onHide)
     return () => {
       window.removeEventListener('beforeunload', flush)
+      window.removeEventListener('pagehide', flush)
       document.removeEventListener('visibilitychange', onHide)
     }
   }, [workspaceId])
@@ -1194,7 +1227,7 @@ export function Shell() {
             loadedFor.current = `${userId}:${current.id}`
             void api.put('/v1/workspaces/{id}/state', {
               params: { path: { id: current.id } },
-              body: { environment: LAYOUT_ENVIRONMENT, document: freeObject(next) },
+              body: { environment: LAYOUT_ENVIRONMENT, document: stampedLayout(next) },
             }).catch((reason: unknown) => {
               reportWriteError(reason)
             })
@@ -1292,6 +1325,35 @@ export function Shell() {
     }
   }
 
+  const tableScrollRef = useRef<Map<string, number> | null>(null)
+  const agentControlledNow = controllingAgentRuns(agentRunList.data ?? []).length > 0
+  useEffect(() => {
+    const grids = () => [...document.querySelectorAll<HTMLElement>('.workspace .grid')]
+    const keyOf = (node: HTMLElement) => node.closest('section.pane')?.getAttribute('data-pane') ?? ''
+    if (agentControlledNow) {
+      if (!tableScrollRef.current) {
+        const saved = new Map<string, number>()
+        for (const node of grids()) {
+          const key = keyOf(node)
+          if (key) saved.set(key, node.scrollLeft)
+        }
+        tableScrollRef.current = saved
+      }
+      return
+    }
+    const saved = tableScrollRef.current
+    if (!saved) return
+    tableScrollRef.current = null
+    const apply = () => {
+      for (const node of grids()) {
+        const key = keyOf(node)
+        node.scrollLeft = key && saved.has(key) ? (saved.get(key) ?? 0) : 0
+      }
+    }
+    apply()
+    const frame = requestAnimationFrame(apply)
+    return () => cancelAnimationFrame(frame)
+  }, [agentControlledNow])
 
   if (!booted || (me.isPending && !me.data && !signedOut)) return <p className="pane-body">{copy.loading}</p>
   if (signedOut || !me.data) {
@@ -1321,8 +1383,38 @@ export function Shell() {
   signOutRef.current = signOut
   const surface = workspace.data
 
+  showAgentSessionRef.current = (run) => {
+    const current = docRef.current
+    const surfaceNow = workspaceRef.current
+    if (!current || !surfaceNow) return
+    const known = new Set(viewRows(surfaceNow.views).map((view) => view.id))
+    const ids = [...(run.session?.views ?? [])].filter((id) => known.has(id))
+    if (run.view_id && known.has(run.view_id) && !ids.includes(run.view_id)) ids.push(run.view_id)
+    if (ids.length === 0) return
+    if (!mineDocRef.current) mineDocRef.current = current
+    holdLayoutFlush(true)
+    setViewingAgentRun(run.id)
+    const next = agentSessionLayout(current, ids)
+    docRef.current = next
+    setDoc(next)
+  }
+  backToMineRef.current = () => {
+    const mine = mineDocRef.current
+    holdLayoutFlush(false)
+    setViewingAgentRun(null)
+    mineDocRef.current = null
+    if (!mine) return
+    docRef.current = mine
+    setDoc(mine)
+  }
+
   const commitDoc = (next: LayoutDoc) => {
     if (!workspaceId || !user.user_id) return
+    if (layoutFlushHeld()) {
+      docRef.current = next
+      setDoc(next)
+      return
+    }
     docRef.current = next
     dirtyRef.current = true
     saveGen.current += 1
@@ -1678,9 +1770,22 @@ export function Shell() {
     setTabMenu(null)
   }
 
+  const controlling = controllingAgentRuns(agentRunList.data ?? [])
+  const agentControlled = controlling.length > 0
+  const agentViews = markedAgentViewIds(agentRunList.data ?? [], viewingRunId)
+  const takeOver = () => {
+    for (const run of controlling) {
+      void takeOverAgentRun(run.id).then((detail) => {
+        queryClient.setQueryData(['agent-run', run.id], detail)
+        queryClient.setQueryData(['agent-runs'], (current: AgentRunSummary[] | undefined) =>
+          current?.map((item) => item.id === detail.id ? { ...item, ...detail } : item))
+      }).catch((reason: unknown) => reportWriteError(reason))
+    }
+  }
+
   return (
-    <div className="app">
-      <header className="app-bar">
+    <div className="app" data-agent-control={agentControlled ? 'true' : undefined} data-agent-session={viewingRunId && !agentControlled ? 'true' : undefined}>
+      <header className="app-bar" inert={agentControlled || undefined}>
         <div className="brand">
           <img src="/brand/braian-mark.svg" alt="" width={16} height={16} />
           <span>{copy.product}</span>
@@ -1730,7 +1835,32 @@ export function Shell() {
           onSignOut={() => { void runCommand('session:sign-out') }}
         />
       </header>
-      <main className="workspace" data-testid="workspace">
+      {agentControlled ? (
+        <div className="agent-control-bar" data-testid="agent-control-bar">
+          <span>{copy.agentUsingYourSession}</span>
+          <Button type="button" variant="primary" data-testid="agent-take-over" autoFocus onClick={takeOver}>{copy.agentTakeOver}</Button>
+        </div>
+      ) : viewingRunId ? (
+        <div className="agent-session-bar" data-testid="agent-session-bar">
+          <span>{copy.agentViewingSession}</span>
+          <Button
+            type="button"
+            variant="ghost"
+            className="agent-mode"
+            data-testid="agent-back"
+            onClick={() => {
+              const runId = viewingRunId
+              requestBackToMySession()
+              if (runId) {
+                void patchAgentRun(runId, { hidden: true }).catch((reason: unknown) => reportWriteError(reason))
+              }
+            }}
+          >
+            {copy.agentBackToMine}
+          </Button>
+        </div>
+      ) : null}
+      <main className="workspace" data-testid="workspace" inert={agentControlled || undefined}>
         {doc && surface && !layoutHealPending ? (
           <WorkspaceDock
             doc={doc}
@@ -1744,6 +1874,7 @@ export function Shell() {
               }
             })}
             onChange={commitDoc}
+            agentViews={agentViews}
             renderView={(item) => {
               const full = viewRows(surface.views).find((view) => view.id === item.id)
               return full ? <ViewBody view={full} session={session} workspace={surface} /> : <p>{copy.empty}</p>
@@ -1762,7 +1893,7 @@ export function Shell() {
       </main>
       <div className="bottom-bar">
         <pre className="activity" data-testid="activity-log" data-live={liveState}>{logText}</pre>
-        <StatusBar online={online} live={liveState} locked={Boolean(workspace.data?.locked)} />
+        <StatusBar online={online} live={liveState} locked={Boolean(workspace.data?.locked)} inert={agentControlled} />
       </div>
       <ModelDraftHost />
       <ConsequenceHost session={session} />

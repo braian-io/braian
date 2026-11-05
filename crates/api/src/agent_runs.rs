@@ -21,7 +21,7 @@ use uuid::Uuid;
 use crate::auth::{Auth, Identity, Role};
 use crate::http_schema::{
     AgentMessageView, AgentProposalView, AgentRunCreate, AgentRunDetail, AgentRunFollowUp,
-    AgentRunPatch, AgentRunSummary,
+    AgentRunPatch, AgentRunSummary, AgentSessionProposal,
 };
 use crate::platform::{drive_agent, run_operation};
 use crate::problem::{Problem, store_status};
@@ -32,6 +32,8 @@ pub fn routes() -> axum::Router<AppState> {
         .route("/v1/agent/runs", get(list_runs).post(create_run))
         .route("/v1/agent/runs/{id}", get(get_run).patch(patch_run))
         .route("/v1/agent/runs/{id}/messages", post(follow_up))
+        .route("/v1/agent/runs/{id}/take-over", post(take_over))
+        .route("/v1/agent/runs/{id}/proposals", post(propose_in_session))
 }
 
 fn require_viewer(identity: &Identity) -> Result<(), Problem> {
@@ -95,6 +97,13 @@ async fn create_run(
             .await
             .map_err(store_status)?;
     }
+    let (kind, hidden) = session_choice(&prompt);
+    let session = session_document(&context);
+    state
+        .store
+        .ensure_agent_session(id, kind, hidden, &session)
+        .await
+        .map_err(store_status)?;
     spawn_run(state.clone(), identity.clone(), id);
     Ok(Json(load_detail(&state, &identity, id).await?))
 }
@@ -220,13 +229,113 @@ async fn follow_up(
     Ok(Json(load_detail(&state, &identity, id).await?))
 }
 
+async fn take_over(
+    State(state): State<AppState>,
+    Auth(identity): Auth,
+    Path(id): Path<Uuid>,
+) -> Result<Json<AgentRunDetail>, Problem> {
+    require_viewer(&identity)?;
+    let user_id = resolve_user_id(&state, &identity).await?;
+    let stopped = state
+        .store
+        .take_over_agent_run(id, identity.actor.actor.as_uuid(), user_id)
+        .await
+        .map_err(store_status)?;
+    if !stopped {
+        return Err(Problem::new(
+            StatusCode::CONFLICT,
+            "agent_not_controlling",
+            "the agent is not using your session",
+        ));
+    }
+    state
+        .store
+        .append_agent_message(
+            id,
+            "notice",
+            &json!({ "text": "You took over. The agent stopped." }),
+        )
+        .await
+        .map_err(store_status)?;
+    Ok(Json(load_detail(&state, &identity, id).await?))
+}
+
+async fn propose_in_session(
+    State(state): State<AppState>,
+    Auth(identity): Auth,
+    Path(id): Path<Uuid>,
+    Json(body): Json<AgentSessionProposal>,
+) -> Result<Json<AgentRunDetail>, Problem> {
+    crate::platform::require(&identity, Role::Editor)?;
+    let user_id = resolve_user_id(&state, &identity).await?;
+    let run = state
+        .store
+        .agent_run_for(id, identity.actor.actor.as_uuid(), user_id)
+        .await
+        .map_err(store_status)?
+        .ok_or_else(|| Problem::new(StatusCode::NOT_FOUND, "not_found", "agent run"))?;
+    if run.session_kind != "own" {
+        return Err(Problem::new(
+            StatusCode::CONFLICT,
+            "not_agent_session",
+            "proposals from the screen belong to the agent's own session",
+        ));
+    }
+    let title = body
+        .title
+        .as_deref()
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .unwrap_or("Edit while viewing the agent's session");
+    let proposal_id = Uuid::now_v7();
+    let row = braian_store::ProposalRow {
+        id: Uuid::now_v7(),
+        object_id: Some(body.object_id),
+        object_key: body.object_key.clone(),
+        type_key: Some(body.type_key.clone()),
+        base_version: Some(body.base_version),
+        patch: json!({ "values": body.values }),
+        status: "pending".into(),
+        conflict: false,
+        position: 0,
+    };
+    state
+        .store
+        .create_proposal(
+            proposal_id,
+            title,
+            "user",
+            identity.actor.actor,
+            identity.actor.on_behalf_of,
+            false,
+            &[row],
+        )
+        .await
+        .map_err(store_status)?;
+    state
+        .store
+        .attach_proposal_to_run(proposal_id, id)
+        .await
+        .map_err(store_status)?;
+    state
+        .store
+        .append_agent_message(
+            id,
+            "proposal",
+            &json!({ "proposal_id": proposal_id, "text": "Proposed while viewing the agent's session." }),
+        )
+        .await
+        .map_err(store_status)?;
+    Ok(Json(load_detail(&state, &identity, id).await?))
+}
+
 fn spawn_run(state: AppState, identity: Identity, run_id: Uuid) {
     tokio::spawn(async move {
         if let Err(error) = execute_run(&state, &identity, run_id).await {
             tracing::error!(%error, %run_id, "agent run failed");
             let _ = state
                 .store
-                .set_agent_run_status(run_id, "failed", Some(&error))
+                .finish_agent_run_if_working(run_id, "failed", Some(&error))
                 .await;
         }
     });
@@ -260,7 +369,27 @@ async fn execute_run(state: &AppState, identity: &Identity, run_id: Uuid) -> Res
         return Err("openai error: the model request failed (status 500)".into());
     }
     if model_unavailable() && prompt.to_lowercase().contains("hold the run") {
-        tokio::time::sleep(Duration::from_secs(8)).await;
+        // A long hold leaves time to open the hidden session or take over.
+        let steps = hold_steps(&prompt);
+        for _ in 0..steps {
+            if !state
+                .store
+                .agent_run_is_working(run_id)
+                .await
+                .map_err(|error| error.to_string())?
+            {
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+    }
+    if !state
+        .store
+        .agent_run_is_working(run_id)
+        .await
+        .map_err(|error| error.to_string())?
+    {
+        return Ok(());
     }
     // The mock stops for a decision instead of inventing an answer.
     if model_unavailable() && prompt.to_lowercase().contains("ask me before") {
@@ -275,7 +404,7 @@ async fn execute_run(state: &AppState, identity: &Identity, run_id: Uuid) -> Res
             .map_err(|error| error.to_string())?;
         state
             .store
-            .set_agent_run_status(run_id, "waiting", None)
+            .finish_agent_run_if_working(run_id, "waiting", None)
             .await
             .map_err(|error| error.to_string())?;
         return Ok(());
@@ -299,10 +428,18 @@ async fn execute_run(state: &AppState, identity: &Identity, run_id: Uuid) -> Res
         drop(tx);
         let _ = persist.await;
     }
+    if !state
+        .store
+        .agent_run_is_working(run_id)
+        .await
+        .map_err(|error| error.to_string())?
+    {
+        return Ok(());
+    }
     if decision_pending(state, run_id).await? {
         state
             .store
-            .set_agent_run_status(run_id, "waiting", None)
+            .finish_agent_run_if_working(run_id, "waiting", None)
             .await
             .map_err(|error| error.to_string())?;
         return Ok(());
@@ -312,10 +449,79 @@ async fn execute_run(state: &AppState, identity: &Identity, run_id: Uuid) -> Res
         .map_err(|error| error.to_string())?;
     state
         .store
-        .set_agent_run_status(run_id, "done", None)
+        .finish_agent_run_if_working(run_id, "done", None)
         .await
         .map_err(|error| error.to_string())?;
     Ok(())
+}
+
+/// Own hidden session unless the task needs the person's screen, such as opening a product view.
+pub fn session_choice(prompt: &str) -> (&'static str, bool) {
+    let text = prompt.to_lowercase();
+    if text.contains("own session") || text.contains("hidden session") {
+        return ("own", true);
+    }
+    let user_screen = text.contains("my session")
+        || text.contains("my view")
+        || text.contains("take control")
+        || (text.contains("open") && (text.contains("product") || text.contains("view")));
+    if user_screen {
+        return ("user", false);
+    }
+    ("own", true)
+}
+
+fn hold_steps(prompt: &str) -> u32 {
+    let text = prompt.to_lowercase();
+    if text.contains("own session")
+        || text.contains("product view")
+        || text.contains("agents table")
+    {
+        return 150;
+    }
+    40
+}
+
+/// Views the agent is working in. A product table wins over the focused pane.
+pub fn session_document(context: &Value) -> Value {
+    let mut products = Vec::new();
+    let mut tables = Vec::new();
+    if let Some(panes) = context.get("panes").and_then(Value::as_array) {
+        for pane in panes.iter().take(24) {
+            let id = pane
+                .get("id")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .trim()
+                .to_owned();
+            if id.is_empty() {
+                continue;
+            }
+            let kind = pane.get("type").and_then(Value::as_str).unwrap_or("");
+            let title = pane.get("title").and_then(Value::as_str).unwrap_or("");
+            if title.to_lowercase().contains("product") {
+                if !products.contains(&id) {
+                    products.push(id);
+                }
+            } else if kind == "object_table" && !tables.contains(&id) {
+                tables.push(id);
+            }
+        }
+    }
+    let mut views = products;
+    views.extend(tables);
+    if views.is_empty()
+        && let Some(focused) = context.get("focused").and_then(Value::as_str)
+    {
+        let focused = focused.trim();
+        if !focused.is_empty() {
+            views.push(focused.to_owned());
+        }
+    }
+    json!({
+        "views": views,
+        "focus": views.first(),
+    })
 }
 
 /// A question after the latest user message means the run is waiting.
@@ -627,6 +833,7 @@ fn summary_of(run: braian_store::AgentRunRow) -> AgentRunSummary {
         mode: run.mode,
         session_kind: run.session_kind,
         hidden: run.hidden,
+        session: run.session,
         tab_open: run.tab_open,
         view_id: run.view_id,
         workspace_id: run.workspace_id,
@@ -652,6 +859,7 @@ fn detail_of(
         mode: summary.mode,
         session_kind: summary.session_kind,
         hidden: summary.hidden,
+        session: summary.session,
         tab_open: summary.tab_open,
         view_id: summary.view_id,
         workspace_id: summary.workspace_id,
@@ -759,5 +967,45 @@ fn display_value(value: &Value) -> String {
         format!("{short}…")
     } else {
         short
+    }
+}
+
+#[cfg(test)]
+mod session_tests {
+    use super::{session_choice, session_document};
+    use serde_json::json;
+
+    #[test]
+    fn the_agent_keeps_its_own_hidden_session_unless_the_task_needs_the_screen() {
+        assert_eq!(session_choice("hold the run"), ("own", true));
+        assert_eq!(session_choice("ask me before you continue"), ("own", true));
+        assert_eq!(
+            session_choice("hold the run in your own session"),
+            ("own", true)
+        );
+        assert_eq!(
+            session_choice("open the product view and hold the run"),
+            ("user", false)
+        );
+        assert_eq!(
+            session_choice("take control of my session"),
+            ("user", false)
+        );
+    }
+
+    #[test]
+    fn the_session_document_prefers_the_product_table() {
+        let context = json!({
+            "focused": "detail",
+            "panes": [
+                { "id": "detail", "type": "object_detail", "title": "Detail" },
+                { "id": "products", "type": "object_table", "title": "Products" },
+                { "id": "other", "type": "object_table", "title": "Suppliers" }
+            ]
+        });
+        let session = session_document(&context);
+        assert_eq!(session["views"][0], "products");
+        assert_eq!(session["views"][1], "other");
+        assert_eq!(session["focus"], "products");
     }
 }

@@ -620,6 +620,40 @@ button.agent-bg-indicator:hover {
   color: var(--text);
 }
 button.agent-bg-indicator strong { font-variant-numeric: tabular-nums; }
+.app:has(> .agent-control-bar),
+.app:has(> .agent-session-bar) {
+  grid-template-rows: auto auto minmax(0, 1fr) 24px;
+}
+.agent-control-bar,
+.agent-session-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 6px 12px;
+  background: var(--accent-dim);
+  color: var(--text);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.agent-control-bar span,
+.agent-session-bar span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* White on the dark-theme accent is 4.3:1. The same purple as light theme clears 4.5:1. */
+.agent-control-bar .btn-accent {
+  background: #7c3aed;
+  color: #fff;
+}
+.agent-control-bar .btn-accent:hover {
+  background: #6d28d9;
+  color: #fff;
+}
+.pane[data-agent-working='true'] {
+  box-shadow: var(--inset), inset 3px 0 0 var(--accent);
+}
 
 .pane-body {
   position: relative;
@@ -1907,6 +1941,23 @@ kbd {
 .braian-toast [data-button] {
   background: transparent !important;
 }
+.agent-notice-toast {
+  flex-wrap: nowrap !important;
+  align-items: center;
+  min-width: 0 !important;
+  width: min(420px, var(--toast-max, 420px));
+  max-width: min(420px, var(--toast-max, 420px));
+}
+.agent-notice-toast [data-content] {
+  min-width: 0;
+  overflow: hidden;
+}
+.agent-notice-toast [data-title] {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .flash { animation: flash 600ms var(--ease); }
 @keyframes flash {
   from { background: var(--accent-dim); }
@@ -2667,6 +2718,15 @@ button.tab-x:disabled:hover {
 button:disabled,
 button[aria-disabled='true'] {
   opacity: 1;
+}
+/* Ghost + the generic disabled rule would leave Send transparent. A filled surface reads as disabled, and text-2 stays above 3:1. */
+button.agent-submit.btn-ghost:disabled,
+button.agent-submit.btn-ghost:disabled:hover {
+  background: var(--surface);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  opacity: 1;
+  cursor: not-allowed;
 }
 .pane-body,
 .detail-empty {

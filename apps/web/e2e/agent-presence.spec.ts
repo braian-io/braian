@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
-import { mainTable, setTheme } from './ui'
+import { expectToastClearsLists, mainTable, setTheme } from './ui'
 
 async function showProducts(page: Page) {
   await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
@@ -144,6 +144,17 @@ async function expectAgentChromeContrast(page: Page) {
   if (await page.getByTestId('agent-background-indicator').count()) {
     await expectReadable(page, '[data-testid="agent-background-indicator"]', 4.5)
   }
+  if (await page.getByTestId('agent-show').count()) {
+    await expectReadable(page, '[data-testid="agent-show"]', 4.5)
+  }
+  if (await page.getByTestId('agent-session-bar').count()) {
+    await expectReadable(page, '[data-testid="agent-session-bar"]', 4.5)
+    await expectReadable(page, '[data-testid="agent-back"]', 4.5)
+  }
+  if (await page.getByTestId('agent-control-bar').count()) {
+    await expectReadable(page, '[data-testid="agent-control-bar"]', 4.5)
+    await expectReadable(page, '[data-testid="agent-take-over"]', 4.5)
+  }
 }
 
 async function shot(page: Page, name: string) {
@@ -182,11 +193,9 @@ test('background runs show a count and Review results opens the tab', async ({ p
   await expect(page.getByTestId('agent-background-indicator')).toBeVisible()
   const review = page.getByRole('button', { name: 'Review results' }).first()
   await expect(review).toBeVisible({ timeout: 30_000 })
-  const toastBox = await page.locator('[data-sonner-toast]').first().boundingBox()
-  const detailBox = await page.locator('section.pane').filter({ has: page.locator('[data-view-type="object_detail"]') }).first().boundingBox()
-  expect(toastBox).toBeTruthy()
-  expect(detailBox).toBeTruthy()
-  expect(toastBox!.x + toastBox!.width).toBeLessThanOrEqual(detailBox!.x + 2)
+  const toastBox = page.locator('[data-sonner-toast]').first()
+  await expect(toastBox).toBeVisible()
+  await expectToastClearsLists(page, toastBox)
   await shot(page, 'agent-notification')
   await review.click()
   await expect(page.locator('.pane-tab[data-view-type="agent"]').first()).toBeVisible()
@@ -217,8 +226,13 @@ test('waiting stops for a decision, survives reload, and resume continues', asyn
   await expect(restored.getByTestId('agent-status')).toHaveText('Waiting for you')
   await expect(restored.getByTestId('agent-question')).toContainText('I will not guess')
   await expect(restored).toHaveAttribute('data-mode', 'background')
-  await restored.getByTestId('agent-mode').click()
+  await expect(restored.getByRole('button', { name: 'Bring to front' })).toHaveCount(0)
+  const runId = await restored.getAttribute('data-run')
+  expect(runId).toBeTruthy()
+  const foreground = await page.request.patch(`/v1/agent/runs/${runId}`, { data: { mode: 'foreground' } })
+  expect(foreground.ok()).toBeTruthy()
   await expect(restored).toHaveAttribute('data-mode', 'foreground')
+  await expect(restored.getByTestId('agent-mode')).toHaveText('Run in background')
   await restored.getByTestId('agent-mode').click()
   await expect(restored).toHaveAttribute('data-mode', 'background')
   const answer = page.locator('[data-sonner-toast]').filter({ hasText: 'waiting for you' }).getByRole('button', { name: 'Answer' })

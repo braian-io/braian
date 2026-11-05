@@ -107,6 +107,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/agent/runs/{id}/proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** File a proposal for an edit made while viewing the agent's session */
+        post: operations["propose_in_agent_session"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agent/runs/{id}/take-over": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop an agent that is using the person's session and hand control back */
+        post: operations["take_over_agent_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/assortments": {
         parameters: {
             query?: never;
@@ -1761,6 +1795,7 @@ export interface components {
             proposal_count: number;
             proposals: components["schemas"]["AgentProposalView"][];
             question?: string | null;
+            session: components["schemas"]["JsonValue"];
             session_kind: string;
             status: string;
             tab_open: boolean;
@@ -1778,11 +1813,11 @@ export interface components {
             runs: components["schemas"]["AgentRunSummary"][];
         };
         AgentRunPatch: {
-            /** @description Hidden session. Stored for a later view of the agent's own session. */
+            /** @description `true` when the person is looking at their own layout. */
             hidden?: boolean | null;
             /** @description `foreground` or `background`. The person can switch either way while the run continues. */
             mode?: string | null;
-            /** @description `own` or `user`. Stored for a later choice of session. */
+            /** @description `own` or `user`. */
             session_kind?: string | null;
             tab_open?: boolean | null;
             /** Format: uuid */
@@ -1800,8 +1835,10 @@ export interface components {
             proposal_count: number;
             /** @description The question shown while status is `waiting`. */
             question?: string | null;
+            /** @description View ids the agent is working in. `hidden` means the person is not looking at them. */
+            session: components["schemas"]["JsonValue"];
             session_kind: string;
-            /** @description `working`, `waiting`, `done`, or `failed`. */
+            /** @description `working`, `waiting`, `done`, `failed`, or `paused`. */
             status: string;
             tab_open: boolean;
             title: string;
@@ -1810,6 +1847,16 @@ export interface components {
             view_id?: string | null;
             /** Format: uuid */
             workspace_id?: string | null;
+        };
+        AgentSessionProposal: {
+            /** Format: int64 */
+            base_version: number;
+            /** Format: uuid */
+            object_id: string;
+            object_key?: string | null;
+            title?: string | null;
+            type_key: string;
+            values: components["schemas"]["JsonValue"];
         };
         AgentTool: {
             name: components["schemas"]["JsonValue"];
@@ -3482,6 +3529,74 @@ export interface operations {
         };
         responses: {
             /** @description The run, working on the follow-up */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunDetail"];
+                };
+            };
+            /** @description Missing or unknown token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    propose_in_agent_session: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent run id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentSessionProposal"];
+            };
+        };
+        responses: {
+            /** @description The run, with the new proposal */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunDetail"];
+                };
+            };
+            /** @description Missing or unknown token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    take_over_agent_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent run id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The run, paused */
             200: {
                 headers: {
                     [name: string]: unknown;
