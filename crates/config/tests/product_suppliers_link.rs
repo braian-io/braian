@@ -21,7 +21,11 @@ fn additive_document_creates_product_suppliers_on_an_older_demo_model() {
     let mut defs = demo_definitions();
     let before = defs.types.len();
     defs.types.retain(|item| item.key != "product_suppliers");
-    assert_eq!(defs.types.len(), before - 1, "fixture must include the new type");
+    assert_eq!(
+        defs.types.len(),
+        before - 1,
+        "fixture must include the new type"
+    );
 
     let plan = plan_documents(&defs, &product_suppliers_document()).expect("plan");
     assert!(
