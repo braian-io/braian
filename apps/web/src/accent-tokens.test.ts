@@ -63,6 +63,11 @@ describe('accent tokens', () => {
     expect(css).toMatch(/\.popover-content\.import-menu[\s\S]*box-shadow:\s*var\(--shadow-md\),\s*var\(--inset\)/)
   })
 
+  it('uses the same palette list marks for hover and active rows', () => {
+    expect(css).toMatch(/\.palette \.hit\.on,\s*\n\.palette \.hit\.on:hover/)
+    expect(css).toMatch(/\.palette \.hit:hover:not\(\.on\)/)
+  })
+
   it('keeps light accent-dim strong enough for text on the wash', () => {
     const light = css.slice(css.indexOf(":root[data-theme='light']"))
     const bg = parseHex(token(light, '--bg'))
