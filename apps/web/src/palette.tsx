@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { announce, takeShortcutTip } from './shortcut-tip'
 import { ApiError, api, operationId, textValue, type Json } from './api'
 import { reportWriteError } from './write-error'
-import { createAgentRun } from './agent-runs'
+import { agentPaletteRows, agentsPaletteRoot, agentsTablePaletteItem, createAgentRun, listAgentRuns, requestOpenAgent, requestOpenAgentsTable } from './agent-runs'
 import { renderAgentAnswer } from './agent-answer'
 import { Button } from './components/ui/button'
 import { Command, CommandInput, CommandItem, CommandList } from './components/ui/command'
@@ -218,6 +218,12 @@ export function CommandPalette({
       }),
     enabled: mode === 'list' && (Boolean(objectParam) || (debouncedQuery.trim().length > 0 && stack.length === 0)),
   })
+  const agentRunList = useQuery({
+    queryKey: ['agent-runs'],
+    queryFn: listAgentRuns,
+    enabled: mode === 'list',
+    staleTime: 1000,
+  })
   const operations = useQuery({
     queryKey: ['operations'],
     queryFn: () => api.get('/v1/operations'),
@@ -362,6 +368,8 @@ export function CommandPalette({
   const catalog = useMemo(
     () => [
       ...argumentCommands(operationRecords, types),
+      agentsPaletteRoot(),
+      agentsTablePaletteItem(),
       ...buildCatalog(workspaces, views, types, selectedKey, suggestionTotal, feedbackEnabled, theme, focusViewId),
       switchCatalogRootItem(currentCatalogName),
       {
@@ -577,14 +585,45 @@ export function CommandPalette({
     }
     if (item.argument) {
       const paramType = item.argument.type
+      const pushRows = (rows: PaletteItem[]) => {
+        setStack((current) => [...current, { label: argumentBreadcrumb(item.title), paramType, rows }])
+        setQuery('')
+        setActive(0)
+      }
+      if (paramType === 'agent') {
+        void listAgentRuns()
+          .then((runs) => pushRows(agentPaletteRows(runs)))
+          .catch((reason: unknown) => reportWriteError(reason))
+        return
+      }
       const rows = paramType === 'view'
         ? viewPaletteRows(views, types, selectedKey)
         : paramType === 'workspace'
           ? workspacePaletteRows(workspaces)
           : []
-      setStack((current) => [...current, { label: argumentBreadcrumb(item.title), paramType, rows }])
-      setQuery('')
-      setActive(0)
+      pushRows(rows)
+      return
+    }
+    if (id === 'agents:table') {
+      requestOpenAgentsTable()
+      onClose()
+      return
+    }
+    if (id.startsWith('agent-run:')) {
+      const runId = id.slice('agent-run:'.length)
+      const run = agentRunList.data?.find((item) => item.id === runId)
+      requestOpenAgent(run ?? {
+        id: runId,
+        title: item.title,
+        status: 'done',
+        mode: 'foreground',
+        session_kind: 'own',
+        hidden: false,
+        tab_open: true,
+        created_at: '',
+        updated_at: '',
+      })
+      onClose()
       return
     }
     if (isSwitchCatalogRoot(id)) {

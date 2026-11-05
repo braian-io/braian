@@ -12,7 +12,7 @@ export type PaletteGroup =
   | 'best'
   | 'object'
 
-export type PaletteChip = { text: string; tone: 'neutral' | 'ok' | 'warn' | 'danger' | 'info' }
+export type PaletteChip = { text: string; tone: 'neutral' | 'ok' | 'warn' | 'danger' | 'info' | 'accent' }
 
 /** A command argument the palette turns into a sub-list. `type` comes from the operation schema. */
 export type PaletteArgument = { name: string; type: string }
@@ -478,6 +478,7 @@ export function markedTitle(item: PaletteItem): string {
 }
 
 export function sublistPlaceholder(frame: { label: string; paramType?: string }, plurals: string[] = []): string {
+  if (frame.paramType === 'agent' || /\bagents?\b/i.test(frame.label)) return 'Search agents…'
   if (frame.paramType === 'view' || /\bview\b/i.test(frame.label)) return 'Search views…'
   if (frame.paramType === 'workspace' || /\bworkspace\b/i.test(frame.label)) return 'Search workspaces…'
   const plural = plurals.find((name) => name && frame.paramType && name.toLowerCase().startsWith(frame.paramType.toLowerCase()))

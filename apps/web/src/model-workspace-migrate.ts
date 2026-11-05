@@ -35,6 +35,7 @@ export const KNOWN_VIEW_TYPES = new Set([
   'proposal',
   'proposal_list',
   'agent',
+  'agents',
   'batch_log',
   'job_history',
   'embed',

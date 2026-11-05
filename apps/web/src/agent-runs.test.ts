@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { agentRunPrompt, agentRunsForWorkspace, agentTabTitle, cleanAgentError, type AgentRunSummary } from './agent-runs'
+import { agentNoticeText, agentNotices, agentPaletteRows, agentRunPrompt, agentRunsForWorkspace, agentStatusLabel, agentTabTitle, agentsPaletteRoot, backgroundNotices, backgroundWorkingCount, cleanAgentError, type AgentRunSummary } from './agent-runs'
 
 function run(patch: Partial<AgentRunSummary>): AgentRunSummary {
   return {
@@ -44,6 +44,66 @@ describe('agent run presentation', () => {
     )
     expect(split.here.map((item) => item.id)).toEqual(['here'])
     expect(split.elsewhere.map((item) => item.id)).toEqual(['there'])
+  })
+
+  it('counts background agents that are still working', () => {
+    const runs = [
+      run({ id: 'a', mode: 'background', status: 'working' }),
+      run({ id: 'b', mode: 'background', status: 'working' }),
+      run({ id: 'c', mode: 'background', status: 'waiting' }),
+      run({ id: 'd', mode: 'foreground', status: 'working' }),
+    ]
+    expect(backgroundWorkingCount(runs)).toBe(2)
+  })
+
+  it('notifies when a background run finishes or starts waiting', () => {
+    const working = run({ id: 'a', title: 'rename the product', mode: 'background', status: 'working' })
+    const waiting = run({ ...working, status: 'waiting' })
+    const done = run({ ...working, status: 'done' })
+    expect(backgroundNotices([working], [waiting]).map((item) => item.status)).toEqual(['waiting'])
+    expect(backgroundNotices([working], [done]).map((item) => item.id)).toEqual(['a'])
+    expect(backgroundNotices([done], [done])).toEqual([])
+    expect(backgroundNotices([], [done]).map((item) => item.id)).toEqual(['a'])
+    expect(agentNoticeText(waiting)).toBe('rename the product is waiting for you')
+    expect(agentNoticeText({ ...done, proposal_count: 2 })).toBe('rename the product finished · 2 proposals')
+    expect(agentNotices([waiting]).map((notice) => notice.actionLabel)).toEqual(['Answer'])
+    expect(agentNotices([done]).map((notice) => notice.actionLabel)).toEqual(['Review results'])
+    expect(agentNotices([
+      run({ id: 'a', title: 'alpha', status: 'done', mode: 'background' }),
+      run({ id: 'b', title: 'beta', status: 'done', mode: 'background' }),
+    ]).map((notice) => notice.actionLabel)).toEqual(['Review results'])
+    expect(agentNotices([
+      run({ id: 'a', title: 'alpha', status: 'done', mode: 'background' }),
+      run({ id: 'b', title: 'beta', status: 'done', mode: 'background' }),
+    ]).map((notice) => notice.text)).toEqual(['2 agents finished'])
+    const foreground = run({ id: 'b', mode: 'foreground', status: 'waiting' })
+    const sentBack = run({ ...foreground, mode: 'background' })
+    expect(backgroundNotices([foreground], [sentBack]).map((item) => item.id)).toEqual(['b'])
+  })
+
+  it('labels waiting as Waiting for you in the tab and Waiting in the table', () => {
+    expect(agentStatusLabel('waiting', 'tab')).toBe('Waiting for you')
+    expect(agentStatusLabel('waiting', 'table')).toBe('Waiting')
+    expect(agentStatusLabel('working')).toBe('Working')
+    expect(agentStatusLabel('done')).toBe('Done')
+    expect(agentStatusLabel('failed')).toBe('Failed')
+  })
+
+  it('lists agents for the palette drill-in', () => {
+    expect(agentsPaletteRoot().argument).toEqual({ name: 'id', type: 'agent' })
+    expect(agentsPaletteRoot().title.endsWith('›')).toBe(true)
+    const rows = agentPaletteRows([
+      run({
+        id: 'run-1',
+        title: 'ask me before you continue',
+        status: 'waiting',
+        question: 'Which value should I use? I will not guess.',
+      }),
+    ])
+    expect(rows[0]?.id).toBe('agent-run:run-1')
+    expect(rows[0]?.title).toBe('ask me before you continue')
+    expect(rows[0]?.subtitle).toBe('Which value should I use? I will not guess.')
+    expect(rows[0]?.chips?.map((chip) => chip.text)).toEqual(['Waiting'])
   })
 
   it('uses the first user message as the full prompt', () => {

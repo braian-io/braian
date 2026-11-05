@@ -254,8 +254,10 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
   padding: 0;
   border: none;
   border-radius: 99px;
-  background: var(--raised);
+  appearance: none;
+  background: var(--surface);
   color: var(--text);
+  opacity: 1;
   font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
@@ -335,6 +337,13 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
 }
 .pane-tab { border-radius: var(--r-md); height: 28px; }
 /* The active pane tab is one flat underline: no fill, no rounded ends. */
+.pane-tab.active,
+.pane-tab.active .pane-tab-open,
+.pane-tab.active .pane-tab-open > span {
+  color: var(--text);
+  -webkit-text-fill-color: var(--text);
+  opacity: 1;
+}
 .pane-tab.active {
   background: transparent;
   box-shadow: none;
@@ -353,6 +362,7 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
 /* The focused pane's active tab keeps a subtle fill behind the flat underline. */
 .pane.focused .pane-tab.active {
   background: var(--accent-dim);
+  color: var(--text);
 }
 /* Hover is weaker than the selected tab's dim fill. */
 .pane-tab:hover:not(.active) {
@@ -448,29 +458,32 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
   height: 100%;
   overflow-x: auto;
   overflow-y: hidden;
+  overflow-anchor: none;
   scrollbar-width: none;
 }
 .pane-tab-list::-webkit-scrollbar { display: none; }
-@property --tab-fade-start { syntax: '<length>'; inherits: false; initial-value: 0px; }
+.pane-tab-pad { flex: none; width: 0; }
 @property --tab-fade-end { syntax: '<length>'; inherits: false; initial-value: 0px; }
 @keyframes tab-fade {
-  0% { --tab-fade-start: 0px; --tab-fade-end: 24px; }
-  10%, 90% { --tab-fade-start: 24px; --tab-fade-end: 24px; }
-  100% { --tab-fade-start: 24px; --tab-fade-end: 0px; }
+  0%, 90% { --tab-fade-end: 24px; }
+  100% { --tab-fade-end: 0px; }
 }
-/* The scroll timeline is inactive when the tabs fit, so the fades stay at 0px. */
+/* Fade only the trailing edge. A left fade hides the start of the tab that was just scrolled into view. */
 @supports (animation-timeline: scroll()) {
   .pane-tab-list {
-    mask-image: linear-gradient(to right, transparent, #000 var(--tab-fade-start), #000 calc(100% - var(--tab-fade-end)), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - var(--tab-fade-end)), transparent);
     animation: tab-fade linear both;
     animation-timeline: scroll(self inline);
   }
 }
-.pane-tab { display: inline-flex; align-items: center; flex: none; gap: 2px; max-width: 180px; }
+.pane-tab { display: inline-flex; align-items: center; flex: none; gap: 2px; max-width: 180px; min-width: 0; overflow: hidden; }
 .pane-tab-open {
   display: inline-flex;
   align-items: center;
+  justify-content: flex-start;
+  flex: 1 1 auto;
   min-width: 0;
+  max-width: 100%;
   height: 100%;
   gap: 4px;
   padding: 0;
@@ -478,8 +491,18 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
   background: transparent;
   box-shadow: none;
   color: inherit;
+  overflow: hidden;
 }
-.pane-tab-open > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pane-tab-open > span:first-child {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: start;
+  direction: ltr;
+}
 /* Hover belongs to the tab itself. The inner button must not paint a second box around the text. */
 .pane-tab-open:hover { background: transparent; }
 .pane-tab.active .pane-tab-open:focus-visible { outline: none; }
@@ -521,9 +544,26 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
   align-self: center;
 }
 .agent-view { display: flex; flex-direction: column; gap: 12px; }
-.agent-view-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-.agent-view-head h2 { margin: 0; font-size: 14px; font-weight: 600; }
-.agent-view-head time { color: var(--muted); font-size: 12px; }
+.agent-view-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.agent-view-head h2 { margin: 0; font-size: 14px; font-weight: 600; min-width: 0; }
+.agent-view-head time { color: var(--muted); font-size: 12px; margin-left: auto; }
+button.agent-mode {
+  appearance: none;
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  box-shadow: none;
+  opacity: 1;
+}
+button.agent-mode:hover:not(:disabled) { background: var(--hover); }
+button.agent-submit:disabled,
+button.agent-submit:disabled:hover {
+  background: var(--surface);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  box-shadow: none;
+  opacity: 1;
+}
 .agent-log { display: flex; flex-direction: column; gap: 6px; }
 .agent-line { margin: 0; }
 .agent-proposal { border: 0; border-top: 1px solid var(--border); border-radius: 0; padding: 10px 0 0; display: flex; flex-direction: column; gap: 8px; }
@@ -547,6 +587,39 @@ button.agent-approve:disabled:hover {
 .agent-failed p, .agent-fetch-error p { margin: 0; }
 .agent-follow { display: flex; gap: 8px; }
 .agent-follow input { flex: 1 1 auto; }
+.agent-question {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--r-md);
+  background: var(--accent-dim);
+  color: var(--text);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.agent-view-head .meta-chip[data-status='waiting'] {
+  background: var(--accent-dim);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+button.agent-bg-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--accent-dim);
+  color: var(--text);
+  box-shadow: none;
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 1;
+}
+button.agent-bg-indicator:hover {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+  color: var(--text);
+}
+button.agent-bg-indicator strong { font-variant-numeric: tabular-nums; }
 
 .pane-body {
   position: relative;
@@ -744,12 +817,20 @@ select.link-type-line { width: 100%; font-weight: 600; }
   height: 30px;
   padding: 0 10px;
   border-radius: 999px;
-  background: var(--raised);
+  background: transparent;
   color: var(--text-2);
+  border: 1px solid var(--border);
   box-shadow: none;
   font-size: 12px;
+  appearance: none;
+  opacity: 1;
 }
-.filter-chip.on { background: var(--accent-dim); color: var(--accent); border-color: transparent; box-shadow: none; }
+.filter-chip.on {
+  background: var(--accent-dim);
+  color: var(--text);
+  border-color: var(--accent);
+  box-shadow: none;
+}
 .filter-chip:hover:not(.on),
 .choice-chip:hover:not(.on) {
   background: color-mix(in srgb, var(--accent-dim) 55%, transparent);
@@ -1135,6 +1216,7 @@ select.link-type-line { width: 100%; font-weight: 600; }
 .meta-chip.warn { background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--warn); }
 .meta-chip.danger { background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger); }
 .meta-chip.info { background: color-mix(in srgb, var(--info) 18%, transparent); color: var(--info); }
+.meta-chip.accent { background: var(--accent-dim); color: var(--accent); }
 .select-trigger {
   display: inline-flex;
   align-items: center;
@@ -1801,6 +1883,11 @@ kbd {
   font-size: 12px;
   box-shadow: var(--shadow-md);
 }
+[data-sonner-toaster] { pointer-events: none; }
+/* Sit in the gutter before the detail pane, above the status bar, so a finish toast does not cover Detail. */
+[data-sonner-toaster][data-x-position='right'] { right: var(--toast-right, 24px) !important; }
+[data-sonner-toaster][data-y-position='bottom'] { bottom: 32px !important; }
+[data-sonner-toast] { pointer-events: auto; }
 .braian-toast {
   background: var(--raised) !important;
   color: var(--text) !important;
@@ -2016,6 +2103,13 @@ kbd {
 .model-tree:focus-visible { outline: 2px solid var(--accent); border-radius: var(--r-md); }
 button, .pane-tab, .hit, .class-row, .attr-card {
   transition: background var(--dur) var(--ease), color var(--dur) var(--ease), outline-color var(--dur) var(--ease);
+}
+/* Theme swaps change color variables. Interpolating them paints every control grey. */
+html[data-theme-switching],
+html[data-theme-switching] *,
+html[data-theme-switching] *::before,
+html[data-theme-switching] *::after {
+  transition: none !important;
 }
 @keyframes rise {
   from { opacity: 0; transform: translateY(4px); }
@@ -2523,22 +2617,52 @@ button.tab-x:disabled:hover {
   background: transparent;
   color: var(--muted);
 }
-:root[data-theme='light'] button:not(.tab):not(.pane-tab):not(.pane-tab-open):not(.icon-btn):not(.btn-ghost):not(.btn-accent):not(.btn-danger):not(.primary):not(.avatar-btn):not(.catalog-selector-btn):not(.tab-x):not(.filter-chip):not(.choice-chip):not(.legend-chip) {
+:root[data-theme='light'] button:not(.tab):not(.pane-tab):not(.pane-tab-open):not(.icon-btn):not(.btn-ghost):not(.btn-accent):not(.btn-danger):not(.primary):not(.avatar-btn):not(.catalog-selector-btn):not(.tab-x):not(.filter-chip):not(.choice-chip):not(.legend-chip):not(.agent-bg-indicator):not(.agent-mode):not(.agent-submit) {
   background: #ffffff;
   color: #111827;
-  border-color: #4b5563;
+  border-color: #d1d5db;
   box-shadow: none;
 }
-:root[data-theme='light'] button:not(.tab):not(.pane-tab):not(.pane-tab-open):not(.icon-btn):not(.btn-ghost):not(.btn-accent):not(.btn-danger):not(.primary):not(.avatar-btn):not(.catalog-selector-btn):not(.tab-x):not(.filter-chip):not(.choice-chip):not(.legend-chip):hover {
+:root[data-theme='light'] button:not(.tab):not(.pane-tab):not(.pane-tab-open):not(.icon-btn):not(.btn-ghost):not(.btn-accent):not(.btn-danger):not(.primary):not(.avatar-btn):not(.catalog-selector-btn):not(.tab-x):not(.filter-chip):not(.choice-chip):not(.legend-chip):not(.agent-bg-indicator):not(.agent-mode):not(.agent-submit):hover {
   background: #f3f4f6;
   color: #111827;
 }
-:root[data-theme='light'] button:not(.tab):not(.pane-tab):not(.pane-tab-open):not(.icon-btn):not(.btn-ghost):not(.btn-accent):not(.btn-danger):not(.primary):not(.avatar-btn):not(.catalog-selector-btn):not(.tab-x):not(.filter-chip):not(.choice-chip):not(.legend-chip):disabled,
-:root[data-theme='light'] button:not(.tab):not(.pane-tab):not(.pane-tab-open):not(.icon-btn):not(.btn-ghost):not(.btn-accent):not(.btn-danger):not(.primary):not(.avatar-btn):not(.catalog-selector-btn):not(.tab-x):not(.filter-chip):not(.choice-chip):not(.legend-chip):disabled:hover {
+:root[data-theme='light'] button:not(.tab):not(.pane-tab):not(.pane-tab-open):not(.icon-btn):not(.btn-ghost):not(.btn-accent):not(.btn-danger):not(.primary):not(.avatar-btn):not(.catalog-selector-btn):not(.tab-x):not(.filter-chip):not(.choice-chip):not(.legend-chip):not(.agent-bg-indicator):not(.agent-mode):not(.agent-submit):disabled,
+:root[data-theme='light'] button:not(.tab):not(.pane-tab):not(.pane-tab-open):not(.icon-btn):not(.btn-ghost):not(.btn-accent):not(.btn-danger):not(.primary):not(.avatar-btn):not(.catalog-selector-btn):not(.tab-x):not(.filter-chip):not(.choice-chip):not(.legend-chip):not(.agent-bg-indicator):not(.agent-mode):not(.agent-submit):disabled:hover {
   background: #f3f4f6;
-  color: #9ca3af;
+  color: #4b5563;
   border-color: #e5e7eb;
-  opacity: 0.72;
+  opacity: 1;
+}
+:root[data-theme='light'] button.filter-chip:not(.on) {
+  background: #ffffff;
+  color: #374151;
+  border-color: #d1d5db;
+}
+:root[data-theme='light'] button.filter-chip:hover:not(.on) {
+  background: color-mix(in srgb, var(--accent-dim) 55%, transparent);
+}
+:root[data-theme='light'] button.filter-chip.on {
+  background: var(--accent-dim);
+  color: #111827;
+  border-color: var(--accent);
+}
+:root[data-theme='light'] button.agent-mode {
+  background: #ffffff;
+  color: #111827;
+  border-color: #d1d5db;
+}
+:root[data-theme='light'] button.agent-mode:hover:not(:disabled) { background: #f3f4f6; }
+:root[data-theme='light'] button.agent-submit:disabled,
+:root[data-theme='light'] button.agent-submit:disabled:hover {
+  background: #f3f4f6;
+  color: #4b5563;
+  border-color: #e5e7eb;
+  opacity: 1;
+}
+button:disabled,
+button[aria-disabled='true'] {
+  opacity: 1;
 }
 .pane-body,
 .detail-empty {
@@ -2581,6 +2705,10 @@ button.tab-x:disabled:hover {
   background: var(--accent-dim);
   box-shadow: inset 3px 0 0 var(--accent);
 }
+[data-testid='agents-table'] .standard-grid-row:nth-child(even):not(.on) {
+  background: color-mix(in srgb, var(--surface) 72%, var(--panel));
+}
+[data-testid='agents-table'] .standard-grid-cell[data-column='name'] { flex: 1 1 auto; }
 .standard-grid-row.draft { background: color-mix(in oklab, var(--warn, #c90) 10%, transparent); }
 .standard-grid-row.read-only { color: var(--muted); opacity: 0.7; }
 .standard-grid-reorder,

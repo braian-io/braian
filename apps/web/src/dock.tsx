@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { Maximize2, Minimize2, MoreHorizontal, X } from 'lucide-react'
 import { ViewGlyph } from './chips'
@@ -277,6 +277,39 @@ function Divider({
   )
 }
 
+/** Put the active tab's start in the strip. A tab that does not fit aligns left so the ellipsis is at the end. Earlier tabs are pulled in whole, or left fully outside, so a name never starts off-screen. */
+export function revealActiveTab(list: HTMLElement, activeId: string) {
+  const pad = list.querySelector<HTMLElement>(':scope > .pane-tab-pad')
+  if (pad) pad.style.width = `${list.clientWidth}px`
+  const tabs = [...list.querySelectorAll<HTMLElement>('[data-tab]')]
+  const index = tabs.findIndex((item) => item.dataset.tab === activeId)
+  const tab = tabs[index]
+  if (!tab) return
+  const shift = (amount: number) => {
+    if (Math.abs(amount) < 0.5) return
+    const max = Math.max(0, list.scrollWidth - list.clientWidth)
+    list.scrollLeft = Math.min(max, Math.max(0, list.scrollLeft + amount))
+  }
+  const viewOf = () => list.getBoundingClientRect()
+  const activeBox = () => tab.getBoundingClientRect()
+  // Pin the start first. The trailing pad makes this possible for the last tab,
+  // so a neighbor is never left half-visible on the left.
+  shift(activeBox().left - viewOf().left)
+  for (let i = index - 1; i >= 0; i -= 1) {
+    const prev = tabs[i]
+    if (!prev) break
+    const view = viewOf()
+    const active = activeBox()
+    if (active.right > view.right + 0.5) break
+    const prevBox = prev.getBoundingClientRect()
+    const revealBy = view.left - prevBox.left
+    if (revealBy <= 0.5) continue
+    const room = view.right - active.right
+    if (revealBy > room + 0.5) break
+    shift(-revealBy)
+  }
+}
+
 function Pane({ frame, leaf }: { frame: Frame; leaf: Leaf }) {
   const activeId = leaf.views[leaf.active] ?? leaf.views[0]
   const focused = frame.doc.focus != null && leaf.views.includes(frame.doc.focus)
@@ -286,10 +319,15 @@ function Pane({ frame, leaf }: { frame: Frame; leaf: Leaf }) {
   const pendingActive = useRef<{ view: string; timer: number } | null>(null)
   const tabList = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    const tab = activeId ? tabList.current?.querySelector<HTMLElement>(`[data-tab="${CSS.escape(activeId)}"]`) : null
-    tab?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-  }, [activeId])
+  useLayoutEffect(() => {
+    const list = tabList.current
+    if (!list || !activeId) return
+    const reveal = () => revealActiveTab(list, activeId)
+    reveal()
+    const observer = new ResizeObserver(reveal)
+    observer.observe(list)
+    return () => observer.disconnect()
+  }, [activeId, leaf.views])
 
   const beginDrag = (event: ReactPointerEvent<HTMLButtonElement>, id: string) => {
     if (event.button !== 0) return
@@ -421,6 +459,7 @@ function Pane({ frame, leaf }: { frame: Frame; leaf: Leaf }) {
               </Tooltip>
             )
           })}
+          <div className="pane-tab-pad" aria-hidden="true" />
         </div>
         {(() => {
           const label = frame.viewList.find((view) => view.id === activeId)?.sourceLabel

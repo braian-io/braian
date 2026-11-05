@@ -191,7 +191,7 @@ test('Ctrl+K Switch catalog opens straight into the catalog list', async ({ page
 
 test('pane-source differs label; override survives a global switch', async ({ page }) => {
   await login(page)
-  await page.getByRole('button', { name: 'Sources' }).click()
+  await page.locator('nav.tabs').getByRole('button', { name: 'Sources' }).click()
   await expect(page.getByTestId('catalog-selector')).toContainText(/SAP/i)
   // Object table seed title is "SAP" but the dock labels it by type plural "Products".
   await page.locator('.pane-tab-list').getByRole('button', { name: 'Products', exact: true }).click()
@@ -234,7 +234,7 @@ test('pane-source differs label; override survives a global switch', async ({ pa
 
 test('sources workspace, merge profile and a locked brand', async ({ page }) => {
   await login(page)
-  await page.getByRole('button', { name: 'Sources' }).click()
+  await page.locator('nav.tabs').getByRole('button', { name: 'Sources' }).click()
   await expect(page.getByTestId('catalogs-view')).toContainText('SAP ERP')
   await expect(page.getByTestId('catalogs-view')).toContainText('Supplier Nordic')
   // The pane-source spec above activates the center "Products" (SAP) tab and that

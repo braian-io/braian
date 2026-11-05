@@ -1,6 +1,7 @@
 import {
   AppWindow,
   Bookmark,
+  Bot,
   Boxes,
   FileText,
   History,
@@ -19,7 +20,7 @@ import type { ReactNode } from 'react'
 import { textValue, type Json } from './api'
 import { singularOf } from './type-labels'
 
-export type ChipTone = 'neutral' | 'ok' | 'warn' | 'danger' | 'info'
+export type ChipTone = 'neutral' | 'ok' | 'warn' | 'danger' | 'info' | 'accent'
 
 export function statusTone(value: string): ChipTone {
   const text = value.trim().toLowerCase()
@@ -61,6 +62,7 @@ export function ViewGlyph({ type }: { type: string }) {
   if (type === 'value_list_values') return <ListOrdered {...props} />
   if (type === 'units') return <Ruler {...props} />
   if (type === 'proposal' || type === 'proposal_list') return <ScrollText {...props} />
+  if (type === 'agent' || type === 'agents') return <Bot {...props} />
   if (type === 'batch_log') return <ScrollText {...props} />
   if (type === 'job_history') return <ListChecks {...props} />
   return <AppWindow {...props} />

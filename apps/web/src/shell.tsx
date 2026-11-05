@@ -50,8 +50,10 @@ import { detectConfigFiles } from './config-drop'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
 import { installClientLog } from './feedback-log'
 import { prepareFeedbackCapture, type FeedbackCapture } from './feedback'
+import { AgentPresence } from './agent-presence'
 import { AgentView } from './agent-view'
-import { agentRunPrompt, agentRunsForWorkspace, agentTabTitle, listAgentRuns, patchAgentRun, type AgentMessage } from './agent-runs'
+import { AgentsTable } from './agents-table'
+import { agentRunPrompt, agentRunsForWorkspace, agentTabTitle, listAgentRuns, openAgentEvent, openAgentsTableEvent, patchAgentRun, type AgentMessage, type AgentRunSummary } from './agent-runs'
 import { CommandPalette } from './palette'
 import { SharedContextMenuHost, prefersNativeContextMenu } from './shared-context-menu'
 import { StateNote } from './states'
@@ -256,7 +258,8 @@ export function Shell() {
   const loadedFor = useRef('')
   const applyRef = useRef<(name: string, args: Record<string, unknown>) => void>(() => {})
   const openTypeViewRef = useRef<(typeId: string) => void>(() => {})
-  const openAgentRunRef = useRef<(run: { id: string; title: string; view_id?: string | null; messages?: AgentMessage[] }) => void>(() => {})
+  const openAgentRunRef = useRef<(run: { id: string; title: string; view_id?: string | null; tab_open?: boolean; messages?: AgentMessage[] }) => void>(() => {})
+  const openAgentsTableRef = useRef<() => void>(() => {})
   const restoredAgents = useRef<string | null>(null)
   const applyViewTypeSourceRef = useRef<(typeId: string, viewId?: string) => Promise<void>>(async () => undefined)
   const applyViewPeerSourceRef = useRef<(peerViewId: string, viewId?: string, linkType?: string) => Promise<void>>(async () => undefined)
@@ -334,8 +337,14 @@ export function Shell() {
   }, [])
   useEffect(() => {
     if (!booted) return
-    document.documentElement.dataset.theme = theme
+    const root = document.documentElement
+    // Color and background transition. Drop them for the variable swap so labels
+    // do not fade through a grey that matches the fill.
+    root.setAttribute('data-theme-switching', '')
+    root.dataset.theme = theme
     writeStore('braian.theme', theme)
+    const frame = requestAnimationFrame(() => root.removeAttribute('data-theme-switching'))
+    return () => cancelAnimationFrame(frame)
   }, [theme, booted])
 
   const push = (line: string) => {
@@ -658,6 +667,20 @@ export function Shell() {
       })
       .catch((reason: unknown) => reportWriteError(reason))
   }, [workspace.data, doc, userId])
+
+  useEffect(() => {
+    const onRun = (event: Event) => {
+      const run = (event as CustomEvent<AgentRunSummary>).detail
+      if (run?.id) openAgentRunRef.current(run)
+    }
+    const onTable = () => openAgentsTableRef.current()
+    window.addEventListener(openAgentEvent, onRun)
+    window.addEventListener(openAgentsTableEvent, onTable)
+    return () => {
+      window.removeEventListener(openAgentEvent, onRun)
+      window.removeEventListener(openAgentsTableEvent, onTable)
+    }
+  }, [])
 
   useEffect(() => {
     const onSet = (event: Event) => {
@@ -1499,8 +1522,11 @@ export function Shell() {
         workspaceRef.current = nextSurface
         queryClient.setQueryData(['workspace', surfaceNow.id], nextSurface)
       }
-      if (found.id !== run.view_id) {
-        void patchAgentRun(run.id, { view_id: found.id }).catch((reason: unknown) => reportWriteError(reason))
+      const patch: { view_id?: string; tab_open?: boolean } = {}
+      if (found.id !== run.view_id) patch.view_id = found.id
+      if (run.tab_open === false) patch.tab_open = true
+      if (patch.view_id || patch.tab_open) {
+        void patchAgentRun(run.id, patch).catch((reason: unknown) => reportWriteError(reason))
       }
       const current = docRef.current
       if (!current) return
@@ -1510,6 +1536,64 @@ export function Shell() {
         canonical: canonicalRef.current,
         place: placeOverride.current,
       })
+      if (result.handled && result.doc !== current) commitDoc(result.doc)
+    })().catch((reason: unknown) => reportWriteError(reason))
+  }
+
+  openAgentsTableRef.current = () => {
+    void (async () => {
+      const surfaceNow = workspaceRef.current
+      const docNow = docRef.current
+      if (!surfaceNow || !docNow) return
+      let views: View[] = viewRows(surfaceNow.views)
+      let found = views.find((view) => view.type === 'agents')
+      if (!found) {
+        const id = crypto.randomUUID()
+        found = {
+          id,
+          type: 'agents',
+          title: copy.agents,
+          pane: 'center',
+          position: views.length,
+          state: {},
+        }
+        await api.post('/v1/views', {
+          body: {
+            id,
+            workspace_id: surfaceNow.id,
+            type: found.type,
+            title: found.title,
+            pane: 'center',
+            position: views.length,
+            state: {},
+          },
+        })
+        views = [...views, found]
+        const nextSurface = {
+          ...surfaceNow,
+          views: views.map((view) => ({
+            ...view,
+            pane: view.pane ?? 'center',
+            position: view.position ?? 0,
+            state: freeObject(view.state),
+          })),
+        }
+        workspaceRef.current = nextSurface
+        queryClient.setQueryData(['workspace', surfaceNow.id], nextSurface)
+      }
+      const current = docRef.current
+      if (!current || !found) return
+      const open = layoutViews(current.layout).includes(found.id)
+      const result = applyLayoutCommand(
+        current,
+        'ui.open_view',
+        open ? { id: found.id } : { id: found.id, zone: 'center' },
+        {
+          views: views.map((view) => ({ id: view.id, title: view.title, type: view.type })),
+          canonical: canonicalRef.current,
+          place: placeOverride.current,
+        },
+      )
       if (result.handled && result.doc !== current) commitDoc(result.doc)
     })().catch((reason: unknown) => reportWriteError(reason))
   }
@@ -1619,6 +1703,13 @@ export function Shell() {
           ))}
         </nav>
         <span className="spacer" />
+        <AgentPresence
+          enabled={Boolean(userId)}
+          onReview={(run) => {
+            void patchAgentRun(run.id, { mode: 'foreground', tab_open: true }).catch((reason: unknown) => reportWriteError(reason))
+            openAgentRunRef.current({ ...run, tab_open: true })
+          }}
+        />
         <CatalogSelector
           catalogId={workspaceCatalogRef(workspace.data)?.catalogId || MASTER_CATALOG_ID}
           disabled={Boolean(workspace.data?.locked)}
@@ -1860,6 +1951,7 @@ function ViewBody({ view, session, workspace }: { view: View; session: Session; 
   if (view.type === 'data_model') return <DataModel view={view} />
   if (view.type === 'attribute_definitions') return <AttributeDefinitions />
   if (view.type === 'agent') return <AgentView runId={String(view.state.run_id ?? '')} push={session.push} />
+  if (view.type === 'agents') return <AgentsTable />
   if (view.type === 'proposal') return <ProposalView session={session} />
   if (view.type === 'proposal_list') return <ProposalListView session={session} />
   if (view.type === 'import_mappings') return <ImportMappingsView />

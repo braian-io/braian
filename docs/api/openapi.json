@@ -7270,6 +7270,7 @@
           "tab_open",
           "created_at",
           "updated_at",
+          "proposal_count",
           "messages",
           "proposals"
         ],
@@ -7305,11 +7306,21 @@
           "mode": {
             "type": "string"
           },
+          "proposal_count": {
+            "type": "integer",
+            "format": "int32"
+          },
           "proposals": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/AgentProposalView"
             }
+          },
+          "question": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "session_kind": {
             "type": "string"
@@ -7382,7 +7393,7 @@
               "string",
               "null"
             ],
-            "description": "`foreground` or `background`. Stored for a later indicator."
+            "description": "`foreground` or `background`. The person can switch either way while the run continues."
           },
           "session_kind": {
             "type": [
@@ -7417,7 +7428,8 @@
           "hidden",
           "tab_open",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "proposal_count"
         ],
         "properties": {
           "created_at": {
@@ -7444,6 +7456,17 @@
           },
           "mode": {
             "type": "string"
+          },
+          "proposal_count": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "question": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The question shown while status is `waiting`."
           },
           "session_kind": {
             "type": "string"

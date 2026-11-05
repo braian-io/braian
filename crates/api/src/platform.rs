@@ -1557,6 +1557,17 @@ pub(crate) async fn drive_agent(
     let calls = function_calls(&payload);
     let mut outputs = Vec::new();
     for call in &calls {
+        if call.name == "ask_person" {
+            let args: Value = serde_json::from_str(&call.arguments).unwrap_or(json!({}));
+            let question = args
+                .get("question")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|text| !text.is_empty())
+                .unwrap_or("I need a decision before I continue.");
+            let _ = tx.send(json!({ "type": "question", "text": question }));
+            return;
+        }
         let operation = operation_for_tool(&call.name).unwrap_or(call.name.as_str());
         let args: Value = serde_json::from_str(&call.arguments).unwrap_or(json!({}));
         let step_id = if call.call_id.is_empty() {
@@ -1657,11 +1668,33 @@ fn responses_body(model: &str, messages: &[Value], types: &[braian_model::Object
             })
         })
         .collect::<Vec<_>>();
+    let mut tools = tools;
+    tools.push(ask_person_tool());
     json!({
         "model": model,
         "input": messages,
         "tools": tools,
         "reasoning": { "effort": "none" }
+    })
+}
+
+/// Stops the run until the person answers. The agent must not guess.
+fn ask_person_tool() -> Value {
+    json!({
+        "type": "function",
+        "name": "ask_person",
+        "description": "Stop and ask the person one question when you need a decision. Do not guess or continue until they answer.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "question": {
+                    "type": "string",
+                    "description": "The question to show the person"
+                }
+            },
+            "required": ["question"],
+            "additionalProperties": false
+        }
     })
 }
 
@@ -1959,6 +1992,7 @@ fn agent_system_prompt(context: &Value, _latest: &str) -> String {
     format!(
         "You are the Braian agent. You always act for the signed-in person. Write changes must become proposals, not direct writes. \
 Answer in English. \
+When you need a decision, call ask_person with the question and stop. Do not guess. \
 The UI snapshot is the current screen: workspace, open panes with their types, focused pane, selected objects (id, key, name, type, version), active filter and sort, the open table's columns (id, header, hidden), and the data language. \
 To hide or show a column, call ui_hide_column or ui_show_column with {{\"column\": id}}. \
 Answer questions about the selection, the open views, or the workspace from that snapshot. Do not call search or list_objects for those questions, and do not ask for a screenshot. \
@@ -7881,6 +7915,13 @@ mod tests {
                         || character == '-')
             );
             assert_eq!(tool["parameters"]["type"], "object");
+            if name == "ask_person" {
+                assert_eq!(
+                    tool["parameters"]["properties"]["question"]["type"],
+                    "string"
+                );
+                continue;
+            }
             assert!(operation_for_tool(name).is_some(), "{name}");
         }
         assert!(tools.iter().any(|tool| tool["name"] == "create_object"));
@@ -8029,7 +8070,16 @@ mod tests {
             .filter(|op| exposed_to_agent(op))
             .map(|op| tool_name(op.name))
             .collect::<BTreeSet<_>>();
-        assert_eq!(tools, mcp, "the agent and MCP must expose the same tools");
+        assert!(
+            tools.contains("ask_person"),
+            "ask_person stops the run until a person decides"
+        );
+        let mut registered_tools = tools.clone();
+        registered_tools.remove("ask_person");
+        assert_eq!(
+            registered_tools, mcp,
+            "the agent and MCP must expose the same tools"
+        );
         assert!(tools.contains("get_object"));
         assert!(tools.contains("search"));
         assert!(tools.contains("list_objects"));

@@ -119,10 +119,12 @@ export function argumentBreadcrumb(title: string): string {
 
 /** Typesense filter for an object-typed palette argument. `object` searches every type. */
 export function objectTypeFilter(paramType: string | undefined): string | undefined {
-  if (!paramType || paramType === 'object' || paramType === 'view' || paramType === 'workspace') return undefined
+  if (!paramType || paramType === 'object' || paramType === 'view' || paramType === 'workspace' || paramType === 'agent') return undefined
   return `type_key:=${paramType}`
 }
 
+const reservedParams = new Set(['view', 'workspace', 'agent'])
+
 export function isObjectParam(paramType: string | undefined): boolean {
-  return Boolean(paramType && paramType !== 'view' && paramType !== 'workspace')
+  return Boolean(paramType && !reservedParams.has(paramType))
 }
