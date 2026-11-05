@@ -124,6 +124,17 @@ async function cssToken(page: Page, name: string) {
   }, name)
 }
 
+async function cssColor(page: Page, name: string) {
+  return page.evaluate((token) => {
+    const probe = document.createElement('span')
+    probe.style.color = `var(${token})`
+    document.body.appendChild(probe)
+    const value = getComputedStyle(probe).color
+    probe.remove()
+    return value
+  }, name)
+}
+
 function alphaOf(color: string) {
   const match = color.match(/rgba?\(([^)]+)\)/)
   if (!match) return 1
@@ -297,10 +308,73 @@ test('focus and hover use one indicator aligned to the element', async ({ page }
   await search.hover()
   const searchPaint = await paint(search)
   expectOneIndicator(searchPaint, 'hovered search field')
-  expect(searchPaint.outlineStyle).not.toBe('none')
-  expect(searchPaint.outlineOffset).toBeLessThanOrEqual(0)
+  expect(searchPaint.outlineStyle).toBe('none')
+  expect(searchPaint.boxShadow).toContain(searchPaint.accent)
+  expect(searchPaint.boxShadow).toContain('2px')
   expect(searchPaint.visibleBorder).toBe(false)
   await screenshotElement(page, search, 'search-field-hovered')
+})
+
+test('search field focus draws a flush accent ring on the field', async ({ page }) => {
+  test.setTimeout(120_000)
+  await page.addInitScript(() => localStorage.setItem('braian.theme', JSON.stringify('dark')))
+  await login(page)
+  await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
+
+  const table = mainTable(page)
+  await expect(table.getByTestId('object-row').first()).toBeVisible({ timeout: 60_000 })
+  const search = table.locator('.search-field').first()
+  const input = table.getByTestId('quick-filter').first()
+  await expect(search).toBeVisible()
+
+  await page.mouse.move(5, 5)
+  await input.click()
+  await expect(input).toBeFocused()
+
+  const focused = await paint(search)
+  expectOneIndicator(focused, 'focused search field')
+  expect(focused.outlineStyle).toBe('none')
+  expect(focused.boxShadow).toContain(focused.accent)
+  expect(focused.boxShadow).toContain('2px')
+  expect(focused.visibleBorder).toBe(false)
+  expect((await paint(input)).outlineStyle).toBe('none')
+  await screenshotElement(page, search, 'search-field-focused')
+})
+
+test('column header hover changes text only, with no fill box', async ({ page }) => {
+  test.setTimeout(120_000)
+  await page.addInitScript(() => localStorage.setItem('braian.theme', JSON.stringify('dark')))
+  await login(page)
+  await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
+
+  const table = mainTable(page)
+  await expect(table.getByTestId('object-row').first()).toBeVisible({ timeout: 60_000 })
+  const header = table.locator('.head .cell.column-header-cell').first()
+  const button = header.locator('.column-header-btn').first()
+  await expect(button).toBeVisible()
+
+  await page.mouse.move(5, 5)
+  const rest = await paint(button)
+  const restCell = await paint(header)
+  expect(restCell.backgroundColor).toBe('rgba(0, 0, 0, 0)')
+
+  await button.hover()
+  const hover = await paint(button)
+  const hoverCell = await paint(header)
+  expect(hover.backgroundColor).toBe('rgba(0, 0, 0, 0)')
+  expect(hoverCell.backgroundColor).toBe('rgba(0, 0, 0, 0)')
+  expect(hoverCell.boxShadow).toBe(restCell.boxShadow)
+  expect(hover.color).not.toBe(rest.color)
+  await expect.poll(async () => (await paint(button)).color).toBe(await cssColor(page, '--text'))
+
+  const buttonBox = await button.boundingBox()
+  const cellBox = await header.boundingBox()
+  if (!buttonBox || !cellBox) throw new Error('missing header or button box')
+  expect(buttonBox.x).toBeGreaterThanOrEqual(cellBox.x)
+  expect(buttonBox.y).toBeGreaterThanOrEqual(cellBox.y)
+  expect(buttonBox.x + buttonBox.width).toBeLessThanOrEqual(cellBox.x + cellBox.width + 1)
+  expect(buttonBox.y + buttonBox.height).toBeLessThanOrEqual(cellBox.y + cellBox.height + 1)
+  await screenshotElement(page, header, 'column-header-hover')
 })
 
 test('accent policy: selection, hover, menus, chips and light dim', async ({ page }) => {
