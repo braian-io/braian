@@ -104,3 +104,34 @@ describe('create dialog select fields', () => {
     expect(trigger.textContent).toContain('article')
   })
 })
+
+function MoreHost({ moreFields }: { moreFields?: Array<{ id: string; label: string; value: string; testId: string }> }) {
+  return (
+    <CreateDialog
+      open
+      title="New product"
+      description="Enter a number and a name."
+      fields={[{ id: 'number', label: 'Number', value: '', testId: 'new-number', autoFocus: true }]}
+      moreFields={moreFields}
+      onField={() => undefined}
+      onClose={() => undefined}
+      onSubmit={async () => undefined}
+    />
+  )
+}
+
+describe('create dialog show more fields', () => {
+  it('reveals and collapses hidden fields', () => {
+    render(<MoreHost moreFields={[{ id: 'hidden', label: 'Hidden', value: '', testId: 'new-field-hidden' }]} />)
+    expect(screen.queryByTestId('new-field-hidden')).toBeNull()
+    fireEvent.click(screen.getByTestId('show-more-fields'))
+    expect(screen.getByTestId('new-field-hidden')).toBeTruthy()
+    fireEvent.click(screen.getByTestId('show-more-fields'))
+    expect(screen.queryByTestId('new-field-hidden')).toBeNull()
+  })
+
+  it('has no Show more control without hidden fields', () => {
+    render(<MoreHost />)
+    expect(screen.queryByTestId('show-more-fields')).toBeNull()
+  })
+})

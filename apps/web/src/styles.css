@@ -2344,7 +2344,19 @@ html[data-theme-switching] *::after {
   font-weight: 600;
   line-height: 22px;
 }
-.create-dialog .create-fields { display: grid; gap: 14px; }
+.create-dialog .create-fields {
+  display: grid;
+  gap: 14px;
+  max-height: min(60vh, 440px);
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.create-dialog .create-more {
+  justify-self: start;
+  height: 28px;
+  padding: 0 8px;
+  font-size: 12px;
+}
 .create-dialog .create-field {
   display: grid;
   gap: 6px;
@@ -2360,6 +2372,7 @@ html[data-theme-switching] *::after {
   line-height: 16px;
 }
 .create-dialog .create-field input,
+.create-dialog .create-field textarea,
 .create-dialog .create-field select,
 .create-dialog .create-field .select-trigger {
   width: 100%;
@@ -2370,9 +2383,16 @@ html[data-theme-switching] *::after {
   box-shadow: none;
   color: var(--text);
 }
+.create-dialog .create-field textarea {
+  height: auto;
+  min-height: 72px;
+  padding: 6px 8px;
+  resize: vertical;
+}
 /* The shared :focus-visible ring sits 2px outside the border. These inputs
    already have a border, so focus recolors that border and drops the ring. */
 .create-dialog .create-field input:focus-visible,
+.create-dialog .create-field textarea:focus-visible,
 .create-dialog .create-field select:focus-visible,
 .create-dialog .create-field .select-trigger:focus-visible {
   outline: none;
