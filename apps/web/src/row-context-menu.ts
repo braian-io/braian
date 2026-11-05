@@ -57,7 +57,7 @@ function linkCommands(
       seen.add(dedupeKey)
       items.push({
         id: `link:add:${key}:${direction}`,
-        title: `${copy.linkTo} ${endLabel(label, key, language)}`,
+        title: endLabel(label, key, language),
         contexts: [context],
         group: 'object',
         palette: false,
@@ -100,7 +100,17 @@ export function buildRowContextMenu({
     })
   }
   if (rowKey) {
-    for (const command of linkCommands(defs, rowKey, context, language)) push(command)
+    const links = linkCommands(defs, rowKey, context, language)
+    if (links.length > 0) {
+      push({
+        id: 'link:to',
+        title: copy.linkTo,
+        contexts: [context],
+        group: 'object',
+        palette: false,
+        children: links,
+      })
+    }
   }
   return { target: menuTarget, items }
 }

@@ -1712,6 +1712,9 @@ canvas.graph.panning { cursor: grabbing; }
 /* Legacy fixed menus without a highlighted item still get a weak pointer hover. */
 .menu:not(:has([data-highlighted])) button:hover { background: color-mix(in srgb, var(--accent-dim) 55%, transparent); }
 .menu button.danger { color: var(--danger); }
+.menu .menu-chevron { flex: none; margin-left: auto; color: var(--muted); }
+.menu-submenu { z-index: 21; }
+
 .menu-note { margin: 0; padding: 4px 8px; color: var(--text-2); font-size: 12px; }
 /* The active cell in the active row: where Shift+F10 opens the menu.
    Keyboard focus gets the ring and the header underline; a pointer selection
