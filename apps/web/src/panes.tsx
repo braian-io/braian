@@ -81,6 +81,7 @@ import { StateNote } from './states'
 import { classSections } from './class-sections'
 import { LinkSections } from './link-section'
 import { DetailMeta } from './detail-meta'
+import { splitDetailKeys } from './detail-fields'
 import { beginLinkDrag, dispatchLinkDrop, endLinkDrag, linkDragActive, linkDragContains, linkDragLabel, linkDragMime, linkDragObjects, linkDragPayload, linkDropDecision, readLinkDrag, setLinkDragHint } from './link-drag'
 import { groupKeyOf, labelCodes, labelSearchFilter, publishSelectionLabels, SELECTION_APPLIED_EVENT, selectionFilterText, selectionMatchesType } from './assortment-filter'
 import { appendPathFilter, objectTableFilter } from './table-filter'
@@ -2559,11 +2560,13 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   const [error, setError] = useState('')
   const [pendingError, setPendingError] = useState('')
   const [flashId, setFlashId] = useState('')
+  const [showMoreFields, setShowMoreFields] = useState(false)
   useEffect(() => onFlash(setFlashId), [])
   useEffect(() => {
     setDraft({})
     setError('')
     setPendingError('')
+    setShowMoreFields(false)
   }, [session.objectId, session.proposalId])
   const acceptPending = useMutation({
     mutationFn: ({ proposalId, body }: { proposalId: string; body: { rows: string[]; patches: Record<string, Json> } }) =>
@@ -2668,6 +2671,8 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
     .filter((item) => typeIds.has(String(item.id)) && String((item.kind as Json)?.type) === 'file_ref')
     .map((item) => String(item.key))
   const valueKeys = [...new Set([...Object.keys(values), ...fileKeys])]
+  const { primaryKeys, moreKeys } = splitDetailKeys(defs.data, valueKeys)
+  const visibleKeys = showMoreFields ? [...primaryKeys, ...moreKeys] : primaryKeys
   const owners = provenance.data?.owners ?? {}
   const origin = provenance.data?.origin
   const pendingByField = new Map<string, Array<{ proposalId: string; row: Json; line: DiffLine; lines: DiffLine[]; stale: boolean }>>()
@@ -2813,12 +2818,23 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
           links={(object.data.links as never) ?? []}
           onOpen={(id) => session.setObjectId(id)}
         />
-        {fieldSections(valueKeys).map((section) => (
+        {fieldSections(visibleKeys).map((section) => (
           <section key={section.id} className="field-card">
             <h3>{section.title}</h3>
             {section.keys.map((key) => renderField(key))}
           </section>
         ))}
+        {moreKeys.length > 0 ? (
+          <button
+            type="button"
+            className="btn-ghost detail-more"
+            data-testid="detail-show-more-fields"
+            aria-expanded={showMoreFields}
+            onClick={() => setShowMoreFields((shown) => !shown)}
+          >
+            {showMoreFields ? copy.showFewerFields : copy.showMoreFields}
+          </button>
+        ) : null}
         {pendingError ? <p className="error" data-testid="pending-error">{pendingError}</p> : null}
         {error ? <p className="error" data-testid="detail-error">{error}</p> : null}
       </div>
