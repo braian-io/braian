@@ -531,7 +531,8 @@ export function StandardEditableTable<T extends { id: string }>({
     const cells = columns.map((column) => {
       const isEditing = editing?.rowId === row.id && editing.columnId === column.id
       const raw = column.read(row)
-      const title = raw === null || raw === undefined ? '' : String(raw)
+      const readText = raw === null || raw === undefined ? '' : String(raw)
+      const cellTitle = column.title?.(row) || readText
       const cellTestId = column.cellTestId?.(row)
       return (
         <div
@@ -540,7 +541,7 @@ export function StandardEditableTable<T extends { id: string }>({
           role="gridcell"
           data-column={column.id}
           style={column.width ? { width: column.width, flex: 'none', minWidth: column.width } : undefined}
-          title={column.title?.(row) || (column.truncate ? title : undefined)}
+          title={isEditing ? undefined : cellTitle || undefined}
           onDoubleClick={() => beginEdit(row, column)}
         >
           {isEditing ? (
@@ -640,7 +641,7 @@ export function StandardEditableTable<T extends { id: string }>({
           ) : column.type === 'boolean' ? (
             <span data-testid={cellTestId}>{raw === true ? copy.yes : '—'}</span>
           ) : (
-            <span data-testid={cellTestId}>{title || '—'}</span>
+            <span data-testid={cellTestId}>{readText || '—'}</span>
           )}
         </div>
       )

@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
+import { isValidElement, useMemo, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { History as HistoryIcon } from 'lucide-react'
@@ -2104,6 +2104,28 @@ function columnOf(target: EventTarget) {
   return cell?.getAttribute('data-column') ?? ''
 }
 
+/** Plain-text summary of a cell's React content, for the native title tooltip. */
+function cellTitle(node: ReactNode): string | undefined {
+  if (typeof node === 'string' || typeof node === 'number') {
+    const text = String(node).trim()
+    return text || undefined
+  }
+  if (Array.isArray(node)) {
+    const text = node
+      .map(cellTitle)
+      .filter((part): part is string => Boolean(part))
+      .join(' ')
+      .trim()
+    return text || undefined
+  }
+  if (isValidElement<{ children?: ReactNode; title?: string; className?: string }>(node)) {
+    if (typeof node.props.className === 'string' && node.props.className.includes('cell-editor')) return undefined
+    if (typeof node.props.title === 'string' && node.props.title) return node.props.title
+    return cellTitle(node.props.children)
+  }
+  return undefined
+}
+
 function Row({
   row,
   index,
@@ -2207,14 +2229,16 @@ function Row({
     >
       {shown.map((id) => {
         const width = sizes[id] ?? 160
+        const content = cell(row, id)
         return (
           <div
             key={id}
             className={id === activeColumn ? 'cell active-cell' : 'cell'}
             data-column={id}
             style={{ width, minWidth: width, maxWidth: width }}
+            title={cellTitle(content)}
           >
-            {cell(row, id)}
+            {content}
           </div>
         )
       })}

@@ -108,6 +108,19 @@ describe('standard editable table', () => {
     expect(screen.queryByText('value_list')).toBeNull()
   })
 
+  it('sets the full cell text as title even without truncate', () => {
+    const longName = 'A very long attribute label that would be cut off in a narrow grid'
+    render(
+      <StandardEditableTable
+        columns={columns}
+        rows={[{ id: '1', name: longName, kind: 'text' }]}
+        editable={false}
+      />,
+    )
+    const cell = screen.getByText(longName).closest('[data-column]')
+    expect(cell?.getAttribute('title')).toBe(longName)
+  })
+
   it('marks the active row with class on when activeRowId is set', () => {
     render(
       <StandardEditableTable

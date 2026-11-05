@@ -156,6 +156,7 @@ export function AttributeDefinitions() {
       id: 'label',
       header: copy.attributeName,
       editable: true,
+      truncate: true,
       read: (row) => row.label,
       write: (row, value) => ({ ...row, label: value }),
       cellTestId: (row) => (row.key ? `attr-label-${row.key}` : `attr-label-${row.id}`),
@@ -164,6 +165,7 @@ export function AttributeDefinitions() {
       id: 'key',
       header: copy.key,
       editable: true,
+      truncate: true,
       read: (row) => row.key,
       write: (row, value) => ({ ...row, key: value }),
       cellTestId: (row) => (row.key ? `attr-key-${row.key}` : `attr-key-${row.id}`),
@@ -198,6 +200,7 @@ export function AttributeDefinitions() {
       header: copy.flags,
       type: 'readonly',
       editable: false,
+      truncate: true,
       read: (row) => flagText(row.flags) || '—',
     },
     {
