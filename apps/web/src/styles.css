@@ -860,11 +860,12 @@ select.link-type-line { width: 100%; font-weight: 600; }
   box-shadow: var(--inset);
   color: var(--muted);
 }
-/* Ring the whole field, not the inner input: the icon and shortcut stay inside one border level. */
+/* Ring the whole field, not the inner input: the icon and shortcut stay inside one border level.
+   A shadow ring follows the field radius; an outline can sit off the rounded edge next to the inset. */
 .search-field:hover,
 .search-field:focus-within {
-  outline: 2px solid var(--accent);
-  outline-offset: 0;
+  outline: none;
+  box-shadow: var(--inset), 0 0 0 2px var(--accent);
 }
 .search-field input {
   flex: 1 1 auto;
@@ -993,9 +994,14 @@ button.filter-chip:hover:not(.on) {
   background: transparent;
   box-shadow: none;
 }
+/* Header label is muted at rest; hover/focus brighten text only — no fill that can spill. */
+.head .cell.column-header-cell .column-header-btn {
+  color: var(--muted);
+}
 .head .cell.column-header-cell .column-header-btn:hover,
 .head .cell.column-header-cell .column-header-btn:focus-visible {
-  background: var(--hover);
+  background: transparent;
+  color: var(--text);
 }
 .head .column-resize-handle {
   position: absolute;

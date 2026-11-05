@@ -495,15 +495,21 @@ test('Articles search box stays clear of the toolbar and rings the field itself'
       return {
         outlineStyle: style.outlineStyle,
         outlineWidth: Number.parseFloat(style.outlineWidth),
-        outlineColor: style.outlineColor,
+        boxShadow: style.boxShadow,
       }
     }
-    return { input: paint(input), field: paint(field), focused: document.activeElement === input }
+    const probe = document.createElement('span')
+    probe.style.color = 'var(--accent)'
+    document.body.appendChild(probe)
+    const accent = getComputedStyle(probe).color
+    probe.remove()
+    return { input: paint(input), field: paint(field), accent, focused: document.activeElement === input }
   })
   expect(ring, 'focus ring').not.toBeNull()
   expect(ring!.focused).toBe(true)
-  expect(ring!.field.outlineStyle).not.toBe('none')
-  expect(ring!.field.outlineWidth).toBeGreaterThan(0)
+  expect(ring!.field.outlineStyle).toBe('none')
+  expect(ring!.field.boxShadow).toContain(ring!.accent)
+  expect(ring!.field.boxShadow).toContain('2px')
   expect(ring!.input.outlineStyle).toBe('none')
 
   await filter.evaluate((element) => (element as HTMLInputElement).blur())
@@ -513,14 +519,21 @@ test('Articles search box stays clear of the toolbar and rings the field itself'
     const field = input?.closest<HTMLElement>('.search-field')
     if (!field) return null
     const style = getComputedStyle(field)
+    const probe = document.createElement('span')
+    probe.style.color = 'var(--accent)'
+    document.body.appendChild(probe)
+    const accent = getComputedStyle(probe).color
+    probe.remove()
     return {
       hovered: field.matches(':hover'),
       outlineStyle: style.outlineStyle,
-      outlineWidth: Number.parseFloat(style.outlineWidth),
+      boxShadow: style.boxShadow,
+      accent,
     }
   })
   expect(hover, 'hover ring').not.toBeNull()
   expect(hover!.hovered).toBe(true)
-  expect(hover!.outlineStyle).not.toBe('none')
-  expect(hover!.outlineWidth).toBeGreaterThan(0)
+  expect(hover!.outlineStyle).toBe('none')
+  expect(hover!.boxShadow).toContain(hover!.accent)
+  expect(hover!.boxShadow).toContain('2px')
 })
