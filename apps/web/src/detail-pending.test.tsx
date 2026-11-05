@@ -216,3 +216,12 @@ describe('Detail save', () => {
     expect(seen).toEqual(['New'])
   })
 })
+
+describe('Detail header', () => {
+  it('does not repeat the object type as a kicker above the title', async () => {
+    render(<Host proposalId={null} />)
+
+    await screen.findByTestId('object-detail')
+    expect(document.querySelector('.detail-kicker')).toBeNull()
+  })
+})
