@@ -1865,7 +1865,7 @@ canvas.graph.panning { cursor: grabbing; }
 .palette .hit[data-selected='true']:not(.on) {
   background: transparent;
 }
-.palette .hit:hover:not(.on) {
+.palette .hit:hover:not(.on):not(.ask) {
   background: color-mix(in srgb, var(--accent-dim) 55%, transparent);
 }
 .palette .hit.on,
