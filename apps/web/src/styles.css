@@ -670,7 +670,20 @@ button.agent-bg-indicator strong { font-variant-numeric: tabular-nums; }
   color: #fff;
 }
 .pane[data-agent-working='true'] {
-  box-shadow: var(--inset), inset 3px 0 0 var(--accent);
+  box-shadow: var(--inset);
+}
+/* Full-height stripe so Detail (opaque tabs/save bar) matches table panes. */
+.pane[data-agent-working='true']::before {
+  content: '';
+  position: absolute;
+  z-index: 6;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--accent);
+  pointer-events: none;
+  border-radius: var(--r-lg) 0 0 var(--r-lg);
 }
 
 .pane-body {

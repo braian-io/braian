@@ -171,6 +171,8 @@ test('the user session gets a purple frame until take over', async ({ page }) =>
   await expect(bar).toContainText('The agent is using your session')
   await expect(bar.getByTestId('agent-take-over')).toHaveText('Take over')
   await expect(page.locator('section.pane[data-agent-working="true"]').first()).toBeVisible()
+  const detailPane = page.locator('section.pane').filter({ has: page.locator('[data-view-type="object_detail"]') })
+  await expect(detailPane).toHaveAttribute('data-agent-working', 'true')
   await expect(page.getByTestId('workspace')).toHaveAttribute('inert', '')
   const second = mainTable(page).getByTestId('object-row').nth(1)
   await expect(second).toHaveAttribute('aria-selected', 'false')
