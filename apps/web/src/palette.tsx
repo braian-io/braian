@@ -73,7 +73,7 @@ import {
   type UiColumn,
 } from './ui-context'
 import { runCommand } from './command-registry'
-import { registryColumnMovePaletteRows, registryPaletteCommandIds, registryPaletteRows } from './palette-registry-rows'
+import { registryColumnMovePaletteRows, registryLayoutFocusPaletteRows, registryPaletteCommandIds, registryPaletteRows } from './palette-registry-rows'
 import { FieldsMode, type FieldsPaletteOpen } from './fields/fields-mode'
 import { readFieldsHost, subscribeFieldsHost } from './fields-host'
 import { makeViewColumn, parseColumnId } from './fields/columns'
@@ -1576,10 +1576,7 @@ function buildCatalog(
     { id: 'layout:move_view_right', group: 'views', title: 'Move view right', subtitle: 'Move the focused view right', kbd: chordForCommand('layout:move_view_right'), shortcut: chordForCommand('layout:move_view_right') },
     { id: 'layout:move_view_up', group: 'views', title: 'Move view up', subtitle: 'Move the focused view up', kbd: chordForCommand('layout:move_view_up'), shortcut: chordForCommand('layout:move_view_up') },
     { id: 'layout:move_view_down', group: 'views', title: 'Move view down', subtitle: 'Move the focused view down', kbd: chordForCommand('layout:move_view_down'), shortcut: chordForCommand('layout:move_view_down') },
-    { id: 'layout:focus:left', group: 'views', title: 'Focus pane left', subtitle: 'Focus the neighbour on the left', kbd: chordForCommand('layout:focus:left'), shortcut: chordForCommand('layout:focus:left') },
-    { id: 'layout:focus:right', group: 'views', title: 'Focus pane right', subtitle: 'Focus the neighbour on the right', kbd: chordForCommand('layout:focus:right'), shortcut: chordForCommand('layout:focus:right') },
-    { id: 'layout:focus:up', group: 'views', title: 'Focus pane up', subtitle: 'Focus the neighbour above', kbd: chordForCommand('layout:focus:up'), shortcut: chordForCommand('layout:focus:up') },
-    { id: 'layout:focus:down', group: 'views', title: 'Focus pane down', subtitle: 'Focus the neighbour below', kbd: chordForCommand('layout:focus:down'), shortcut: chordForCommand('layout:focus:down') },
+    ...registryLayoutFocusPaletteRows(),
     { id: 'layout:zoom', group: 'views', title: 'Maximize pane', subtitle: 'Show only the focused pane', kbd: chordForCommand('layout:zoom'), shortcut: chordForCommand('layout:zoom') },
     { id: 'layout:close_view', group: 'views', title: 'Close view', subtitle: 'Close the focused view', kbd: chordForCommand('layout:close_view'), shortcut: chordForCommand('layout:close_view') },
     { id: 'layout:reset_layout', group: 'views', title: 'Reset layout', subtitle: 'Restore the saved workspace layout' },
