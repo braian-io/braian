@@ -409,15 +409,18 @@ test('context menu keeps focus and highlight on one item', async ({ page }) => {
     const menu = page.getByTestId('context-menu')
     await expect(menu).toBeVisible()
     const items = menu.getByRole('menuitem')
-    expect(await expectOneMarked(menu, `${label} opened`)).toBe(0)
+    // Menu item fills have a short CSS transition; retry until settled.
+    await expect(async () => expect(await expectOneMarked(menu, `${label} opened`)).toBe(0)).toPass({ timeout: 5_000 })
     await screenshotElement(page, menu, `${label}-open`)
 
     await items.nth(1).hover()
-    expect(await expectOneMarked(menu, `${label} hovered`)).toBe(1)
+    // Menu item fills have a short CSS transition; retry until settled.
+    await expect(async () => expect(await expectOneMarked(menu, `${label} hovered`)).toBe(1)).toPass({ timeout: 5_000 })
     await screenshotElement(page, menu, `${label}-hover`)
 
     await page.keyboard.press('ArrowDown')
-    expect(await expectOneMarked(menu, `${label} arrow down`)).toBe(2)
+    // Menu item fills have a short CSS transition; retry until settled.
+    await expect(async () => expect(await expectOneMarked(menu, `${label} arrow down`)).toBe(2)).toPass({ timeout: 5_000 })
     await screenshotElement(page, menu, `${label}-arrow-down`)
 
     await page.keyboard.press('Escape')
