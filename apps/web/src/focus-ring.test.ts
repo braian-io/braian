@@ -45,7 +45,15 @@ describe('focus ring', () => {
     expect(rule('.grid:focus-visible')).toContain('outline: none')
     const cell = rule('.grid:focus-visible .row.selected .cell.active-cell')
     expect(cell).toContain('box-shadow: inset 0 0 0 1px var(--accent-hover)')
-    expect(css).not.toMatch(/\.grid:focus-within/)
+
+    const pointerHeader = rule('.grid:focus-within .head .cell.column-active .column-header-btn')
+    expect(pointerHeader).toContain('color: var(--accent)')
+    expect(pointerHeader).not.toContain('box-shadow')
+    expect(pointerHeader).not.toContain('outline')
+
+    const keyboardHeader = rule('.grid:focus-visible .head .cell.column-active')
+    expect(keyboardHeader).toContain('box-shadow: inset 0 -2px 0 var(--accent)')
+    expect(css).not.toMatch(/\.grid:focus-within\s*\{[^}]*outline/)
   })
 
   it('keeps the selected row on its fill and the ring on focus', () => {

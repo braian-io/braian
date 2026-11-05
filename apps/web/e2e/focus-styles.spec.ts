@@ -16,6 +16,7 @@ type Paint = {
   outlineOffset: number
   boxShadow: string
   backgroundColor: string
+  color: string
   visibleBorder: boolean
   borderBottomColor: string
   borderBottomStyle: string
@@ -59,6 +60,7 @@ async function paint(target: Locator): Promise<Paint> {
       outlineOffset: px(style.outlineOffset),
       boxShadow: style.boxShadow,
       backgroundColor: style.backgroundColor,
+      color: style.color,
       visibleBorder: sides.some(visible),
       borderBottomColor: style.borderBottomColor,
       borderBottomStyle: style.borderBottomStyle,
@@ -439,6 +441,77 @@ test('context menu keeps focus and highlight on one item', async ({ page }) => {
     await page.keyboard.press('ArrowRight')
     await page.keyboard.press('Shift+F10')
   })
+})
+
+test('pointer selection accents the column header; keyboard adds the underline', async ({ page }) => {
+  test.setTimeout(120_000)
+  await page.addInitScript(() => localStorage.setItem('braian.theme', JSON.stringify('dark')))
+  await login(page)
+  await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
+
+  const table = mainTable(page)
+  const row = table.getByTestId('object-row').filter({ hasText: 'PROD-CHEDDAR' }).first()
+  await expect(row).toBeVisible({ timeout: 60_000 })
+  const grid = table.locator('.grid').first()
+
+  const assertTheme = async (theme: 'dark' | 'light') => {
+    await setTheme(page, theme)
+    await page.mouse.move(5, 5)
+    const cell = row.locator('.cell').nth(1)
+    await cell.click()
+    await expect(row).toHaveAttribute('aria-selected', 'true')
+    const column = await cell.getAttribute('data-column')
+    if (!column) throw new Error('missing clicked column')
+    expect(await grid.evaluate((element) => element.matches(':focus-within'))).toBe(true)
+    await expect.poll(() => grid.evaluate((element) => element.matches(':focus-visible'))).toBe(false)
+
+    const header = table.locator('.head .cell.column-active')
+    const headerButton = header.locator('.column-header-btn')
+    await expect(header).toHaveAttribute('data-column', column)
+    await expect(header).toBeVisible()
+    // The pointer marks the active column with accent text only; no ring or underline.
+    await expect.poll(async () => {
+      const value = await paint(headerButton)
+      return value.color === value.accent
+    }).toBe(true)
+    const pointerHeader = await paint(header)
+    expect(indicators(pointerHeader).count, `pointer header ${theme}`).toBe(0)
+    expect(pointerHeader.outlineStyle).toBe('none')
+    expect(pointerHeader.boxShadow).toBe('none')
+
+    const pointerCell = table.locator('.row.selected .cell.active-cell').first()
+    await expect(pointerCell).toHaveAttribute('data-column', column)
+    const pointerCellPaint = await paint(pointerCell)
+    expect(indicators(pointerCellPaint).count, `pointer active cell ${theme}`).toBe(0)
+    expect(pointerCellPaint.outlineStyle).toBe('none')
+    expect(pointerCellPaint.boxShadow).toBe('none')
+    await screenshotElement(page, header, `grid-pointer-header-${theme}`)
+    await screenshotElement(page, pointerCell, `grid-pointer-cell-${theme}`)
+
+    await page.keyboard.press('ArrowRight')
+    await expect.poll(() => grid.evaluate((element) => element.matches(':focus-visible'))).toBe(true)
+    const keyboardHeader = table.locator('.head .cell.column-active')
+    await expect.poll(async () => (await paint(keyboardHeader)).boxShadow.includes('inset')).toBe(true)
+    const keyboardColumn = await keyboardHeader.getAttribute('data-column')
+    const keyboardHeaderPaint = await paint(keyboardHeader)
+    expectOneIndicator(keyboardHeaderPaint, `keyboard header ${theme}`)
+    expect(keyboardHeaderPaint.outlineStyle).toBe('none')
+    expect(keyboardHeaderPaint.boxShadow).toContain('inset')
+    expect(keyboardHeaderPaint.boxShadow).toContain('2px')
+    expect((await paint(keyboardHeader.locator('.column-header-btn'))).color).toBe(keyboardHeaderPaint.accent)
+
+    const keyboardCell = table.locator('.row.selected .cell.active-cell').first()
+    await expect(keyboardCell).toHaveAttribute('data-column', keyboardColumn ?? '')
+    const keyboardCellPaint = await paint(keyboardCell)
+    expectOneIndicator(keyboardCellPaint, `keyboard active cell ${theme}`)
+    expect(keyboardCellPaint.outlineStyle).toBe('none')
+    expect(keyboardCellPaint.boxShadow).toContain('inset')
+    await screenshotElement(page, keyboardHeader, `grid-keyboard-header-${theme}`)
+    await screenshotElement(page, keyboardCell, `grid-keyboard-cell-${theme}`)
+  }
+
+  await assertTheme('dark')
+  await assertTheme('light')
 })
 
 test('standard grid selected row carries the accent edge', async ({ page }) => {
