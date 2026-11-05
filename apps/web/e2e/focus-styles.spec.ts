@@ -605,10 +605,10 @@ for (const passTheme of ['dark', 'light'] as const) test(`flat icon buttons and 
 
   await page.mouse.move(5, 5)
   const activePaint = await paint(active)
-  // Selected marker is accent text on a transparent base (readable at 4.5:1).
+  // Selected marker is a 1px accent border; text stays readable (--text).
   expect(activePaint.backgroundColor, `active chip ${passTheme} fill`).toBe('rgba(0, 0, 0, 0)')
-  expect(activePaint.boxShadow, `active chip ${passTheme} shadow`).toBe('none')
-  expect(activePaint.visibleBorder, `active chip ${passTheme} border`).toBe(false)
-  await expect.poll(async () => (await paint(active)).color).toBe(activePaint.accent)
+  expect(activePaint.boxShadow, `active chip ${passTheme} shadow`).toContain('inset')
+  expect(activePaint.boxShadow, `active chip ${passTheme} accent`).toContain('1px')
+  await expect.poll(async () => (await paint(active)).color).not.toBe(activePaint.accent)
   await screenshotElement(page, active, `active-chip-${passTheme}`)
 })
