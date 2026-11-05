@@ -831,7 +831,8 @@ button.filter-chip {
 }
 .filter-chip.on {
   background: var(--accent-dim);
-  color: var(--accent);
+  /* Accent-tinted text that keeps 4.5:1 on the dim fill in both themes. */
+  color: color-mix(in srgb, var(--accent) 45%, var(--text));
   border-color: transparent;
   box-shadow: none;
 }
