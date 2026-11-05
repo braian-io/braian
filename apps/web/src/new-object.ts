@@ -8,6 +8,8 @@ export function newObjectBody(input: {
   group: string | null
   /** Missing means any tree. An empty list means the type has no tree. */
   structures?: string[] | null
+  /** Extra attribute values from the create form. Blank values are already omitted. */
+  values?: Record<string, unknown>
 }) {
   return {
     type: input.typeKey,
@@ -15,6 +17,7 @@ export function newObjectBody(input: {
     values: freeObject({
       number: input.number.trim(),
       name: { en: input.name.trim() },
+      ...(input.values ?? {}),
     }),
   }
 }

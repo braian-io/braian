@@ -7,7 +7,8 @@ import { AutoResizeTextarea } from './auto-resize-textarea'
 import { messageFromErrorBody, reportWriteError, writeErrorMessage } from './write-error'
 import { catalogKeyOf, inCatalog, workspaceCatalogRef } from './catalog-scope'
 import { useCatalogIdToKey } from './catalog-list'
-import { CreateDialog, requireText } from './create-dialog'
+import { CreateDialog, requireText, type CreateDialogField } from './create-dialog'
+import { createObjectFields, createObjectFieldValues } from './create-object-fields'
 import { newObjectBody } from './new-object'
 import { attributeByKey, indexSort, readIndexed, sortKeyForColumnId } from './index-fields'
 import { cellEditShouldPatch, cellEditValuesBody, isEditingCell, isEditableColumn, resolveCellEditInitial, valueListKeyForColumn, columnBaseKey } from './cell-edit'
@@ -2371,6 +2372,7 @@ function NewObject({
   const [number, setNumber] = useState('')
   const [name, setName] = useState('')
   const [chosenType, setChosenType] = useState(typeKey || '')
+  const [draftFields, setDraftFields] = useState<Record<string, string>>({})
   const queryClient = useQueryClient()
   const defs = useQuery({ queryKey: ['definitions'], queryFn: () => api.get('/v1/definitions') })
   const choices = useMemo(
@@ -2387,6 +2389,7 @@ function NewObject({
     if (!wasOpen.current) {
       setNumber('')
       setName('')
+      setDraftFields({})
       setChosenType(typeKey || choices[0]?.key || '')
       wasOpen.current = true
       return
@@ -2394,17 +2397,32 @@ function NewObject({
     if (!typeKey && !chosenType && choices[0]) setChosenType(choices[0].key)
   }, [open, typeKey, choices, chosenType])
   const named = choices.find((item) => item.key === (typeKey || chosenType))
-  const fields = [
-    { id: 'number', label: copy.number, value: number, testId: 'new-number', autoFocus: true },
-    { id: 'name', label: copy.name, value: name, testId: 'new-name' },
-    ...(showType ? [{
+  const fieldGroups = useMemo(
+    () => createObjectFields(defs.data, typeKey || chosenType, uiLanguage),
+    [defs.data, typeKey, chosenType],
+  )
+  const dialogField = (field: (typeof fieldGroups.primary)[number]): CreateDialogField => ({
+    id: field.key,
+    label: field.label,
+    value: field.key === 'number' ? number : field.key === 'name' ? name : (draftFields[field.key] ?? ''),
+    testId: field.testId,
+    autoFocus: field.key === 'number',
+    options: field.options,
+    multiline: field.multiline,
+  })
+  const fields = fieldGroups.primary.map(dialogField)
+  if (showType) {
+    const typeField: CreateDialogField = {
       id: 'type',
       label: copy.type,
       value: chosenType,
       testId: 'new-type',
       options: choices.map((item) => ({ value: item.key, label: item.singular || item.key })),
-    }] : []),
-  ]
+    }
+    const nameAt = fieldGroups.primary.findIndex((field) => field.key === 'name')
+    fields.splice(nameAt >= 0 ? nameAt + 1 : fields.length, 0, typeField)
+  }
+  const moreFields = fieldGroups.more.map(dialogField)
   return (
     <CreateDialog
       open={open}
@@ -2412,10 +2430,12 @@ function NewObject({
       description={copy.createObjectHint}
       dialogTestId="new-object"
       fields={fields}
+      moreFields={moreFields}
       onField={(id, value) => {
         if (id === 'number') setNumber(value)
         else if (id === 'name') setName(value)
-        else setChosenType(value)
+        else if (id === 'type') setChosenType(value)
+        else setDraftFields((current) => ({ ...current, [id]: value }))
       }}
       onClose={() => onOpenChange(false)}
       onSubmit={async () => {
@@ -2429,6 +2449,7 @@ function NewObject({
           name: nextName,
           group: session.group,
           structures: named?.structures,
+          values: createObjectFieldValues([...fieldGroups.primary, ...fieldGroups.more], draftFields),
         }) })
         if (!('id' in created)) throw new Error(copy.validation)
         onCreated({ id: String(created.id), number: nextNumber })

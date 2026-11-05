@@ -11,6 +11,7 @@ export type CreateDialogField = {
   testId: string
   autoFocus?: boolean
   options?: Array<{ value: string; label: string }>
+  multiline?: boolean
 }
 
 /**
@@ -24,6 +25,7 @@ export function CreateDialog({
   title,
   description,
   fields,
+  moreFields = [],
   dialogTestId = 'create-dialog',
   submitTestId = 'create-object',
   onField,
@@ -34,6 +36,8 @@ export function CreateDialog({
   title: string
   description: string
   fields: CreateDialogField[]
+  /** Hidden fields behind the "Show more fields" toggle. */
+  moreFields?: CreateDialogField[]
   dialogTestId?: string
   submitTestId?: string
   onField: (id: string, value: string) => void
@@ -43,6 +47,7 @@ export function CreateDialog({
 }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [showMore, setShowMore] = useState(false)
   const generation = useRef(0)
   const wasOpen = useRef(false)
 
@@ -50,6 +55,7 @@ export function CreateDialog({
     if (open && !wasOpen.current) {
       setError('')
       setSaving(false)
+      setShowMore(false)
     }
     wasOpen.current = open
   }, [open])
@@ -79,6 +85,49 @@ export function CreateDialog({
       })
   }
 
+  const renderField = (field: CreateDialogField, index: number, list: CreateDialogField[]) => {
+    const inputId = `${dialogTestId}-${field.id}`
+    const focus = field.autoFocus || (index === 0 && !list.some((item) => item.autoFocus))
+    return (
+      <div className="create-field" key={field.id}>
+        <label htmlFor={inputId}>{field.label}</label>
+        {field.options ? (
+          <Select value={field.value || undefined} onValueChange={(value) => onField(field.id, value)}>
+            <SelectTrigger
+              id={inputId}
+              data-testid={field.testId}
+              autoFocus={focus}
+              aria-label={field.label}
+            >
+              <SelectValue placeholder={copy.noValue} />
+            </SelectTrigger>
+            <SelectContent data-testid={`${field.testId}-list`}>
+              {field.options.map((option) => (
+                <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : field.multiline ? (
+          <textarea
+            id={inputId}
+            data-testid={field.testId}
+            autoFocus={focus}
+            value={field.value}
+            onChange={(event) => onField(field.id, event.target.value)}
+          />
+        ) : (
+          <input
+            id={inputId}
+            data-testid={field.testId}
+            autoFocus={focus}
+            value={field.value}
+            onChange={(event) => onField(field.id, event.target.value)}
+          />
+        )}
+      </div>
+    )
+  }
+
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) close() }}>
       {open ? (
@@ -99,40 +148,19 @@ export function CreateDialog({
             <DialogDescription className="hint">{description}</DialogDescription>
           </div>
           <div className="create-fields">
-            {fields.map((field, index) => {
-              const inputId = `${dialogTestId}-${field.id}`
-              const focus = field.autoFocus || (index === 0 && !fields.some((item) => item.autoFocus))
-              return (
-                <div className="create-field" key={field.id}>
-                  <label htmlFor={inputId}>{field.label}</label>
-                  {field.options ? (
-                    <Select value={field.value || undefined} onValueChange={(value) => onField(field.id, value)}>
-                      <SelectTrigger
-                        id={inputId}
-                        data-testid={field.testId}
-                        autoFocus={focus}
-                        aria-label={field.label}
-                      >
-                        <SelectValue placeholder={copy.noValue} />
-                      </SelectTrigger>
-                      <SelectContent data-testid={`${field.testId}-list`}>
-                        {field.options.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <input
-                      id={inputId}
-                      data-testid={field.testId}
-                      autoFocus={focus}
-                      value={field.value}
-                      onChange={(event) => onField(field.id, event.target.value)}
-                    />
-                  )}
-                </div>
-              )
-            })}
+            {fields.map((field, index) => renderField(field, index, fields))}
+            {moreFields.length > 0 ? (
+              <button
+                type="button"
+                className="btn-ghost create-more"
+                data-testid="show-more-fields"
+                aria-expanded={showMore}
+                onClick={() => setShowMore((shown) => !shown)}
+              >
+                {showMore ? copy.showFewerFields : copy.showMoreFields}
+              </button>
+            ) : null}
+            {showMore ? moreFields.map((field, index) => renderField(field, index, moreFields)) : null}
           </div>
           {error ? (
             <p className="error" role="alert" data-testid="validation-error">{error}</p>

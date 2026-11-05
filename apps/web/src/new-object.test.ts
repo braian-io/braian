@@ -41,4 +41,22 @@ describe('new object', () => {
     })
     expect(supplier.groups).toEqual({})
   })
+
+  it('merges extra create fields into values without changing placement', () => {
+    const body = newObjectBody({
+      typeKey: 'product',
+      number: 'P-4',
+      name: 'Butter',
+      group: 'food:dairy',
+      structures: ['food'],
+      values: { note: 'Salted', weight: { value: '250', unit: 'g' } },
+    })
+    expect(body.groups).toEqual({ food: 'dairy' })
+    expect(body.values).toEqual({
+      number: 'P-4',
+      name: { en: 'Butter' },
+      note: 'Salted',
+      weight: { value: '250', unit: 'g' },
+    })
+  })
 })

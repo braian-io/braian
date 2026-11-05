@@ -367,6 +367,8 @@ export const copy = {
   addAttribute: 'Add attribute',
   required: 'Required',
   showByDefault: 'Show by default',
+  showMoreFields: 'Show more fields',
+  showFewerFields: 'Show fewer fields',
   multiValue: 'Multi-value',
   languages: 'Languages',
   openFull: 'Open full size',
