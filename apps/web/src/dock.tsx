@@ -459,7 +459,7 @@ function Pane({ frame, leaf }: { frame: Frame; leaf: Leaf }) {
                       frame.run('close_view', { view: id })
                     }}
                   >
-                    <X size={12} aria-hidden="true" />
+                    <X size={14} aria-hidden="true" />
                   </button>
                 </div>
                 <TooltipContent>{frame.viewList.find((view) => view.id === id)?.prompt ?? (frame.doc.zoom === id ? copy.doubleClickRestore : copy.doubleClickMaximize)}</TooltipContent>

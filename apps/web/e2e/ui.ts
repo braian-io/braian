@@ -36,10 +36,9 @@ export async function focusMainTable(page: Page, title = 'Products'): Promise<Lo
     .first()
   if ((await peer.count()) > 0) {
     const peerTable = peer.getByTestId('object-table').first()
-    await peer
-      .locator('.pane-tab[data-view-type="object_table"] .tab-x')
-      .first()
-      .click({ force: true })
+    const peerTab = peer.locator('.pane-tab[data-view-type="object_table"]').first()
+    await peerTab.hover()
+    await peerTab.getByRole('button', { name: 'Close tab' }).click()
     await expect(peerTable).toHaveCount(0)
   }
   await rows.first().click()

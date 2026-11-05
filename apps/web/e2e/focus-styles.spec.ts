@@ -614,3 +614,71 @@ for (const passTheme of ['dark', 'light'] as const) test(`flat icon buttons and 
   await expect.poll(async () => (await paint(active)).color).not.toBe(activePaint.accent)
   await screenshotElement(page, active, `active-chip-${passTheme}`)
 })
+
+async function dragTabToPane(page: Page, title: string, pane: Locator) {
+  const tab = page.locator('.pane-tab', { hasText: title }).first()
+  await expect(tab).toBeVisible()
+  const tabBox = await tab.boundingBox()
+  const paneBox = await pane.boundingBox()
+  if (!tabBox || !paneBox) throw new Error(`missing ${title} tab or pane`)
+  await page.mouse.move(tabBox.x + tabBox.width / 2, tabBox.y + tabBox.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(paneBox.x + paneBox.width / 2, paneBox.y + paneBox.height / 2, { steps: 16 })
+  await expect(page.getByTestId('drop-center')).toBeVisible()
+  await page.mouse.up()
+}
+
+for (const passTheme of ['dark', 'light'] as const) test(`tab close target grows and appears on hover (${passTheme})`, async ({ page }) => {
+  test.setTimeout(120_000)
+  await page.addInitScript((t) => localStorage.setItem('braian.theme', JSON.stringify(t)), passTheme)
+  await login(page)
+
+  const productsPane = page.locator('section.pane').filter({
+    has: page.locator('.pane-tab', { hasText: 'Products' }),
+  }).first()
+  await dragTabToPane(page, 'Articles', productsPane)
+
+  const pane = page.locator('section.pane').filter({
+    has: page.locator('.pane-tab', { hasText: 'Products' }),
+  }).filter({
+    has: page.locator('.pane-tab', { hasText: 'Articles' }),
+  }).first()
+  await expect(pane.locator('.pane-tab')).toHaveCount(2)
+  const productsTab = pane.locator('.pane-tab', { hasText: 'Products' }).first()
+  const articlesTab = pane.locator('.pane-tab', { hasText: 'Articles' }).first()
+  const inactive = (await productsTab.evaluate((el) => el.classList.contains('active'))) ? articlesTab : productsTab
+  await expect(inactive).not.toHaveClass(/active/)
+
+  const close = inactive.locator('.tab-x')
+  await page.mouse.move(5, 5)
+  await expect.poll(async () => close.evaluate((el) => getComputedStyle(el).opacity)).toBe('0')
+  expect(await close.evaluate((el) => getComputedStyle(el).pointerEvents)).toBe('none')
+  await screenshotElement(page, inactive, `tab-close-hidden-${passTheme}`)
+
+  const tabs = pane.locator('.pane-tab')
+  const before = await tabs.count()
+  const box = await close.boundingBox()
+  if (!box) throw new Error('missing close target box')
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+  await expect(tabs).toHaveCount(before)
+
+  await page.mouse.move(5, 5)
+  await inactive.hover()
+  await expect.poll(async () => close.evaluate((el) => getComputedStyle(el).opacity)).toBe('1')
+  const shown = await close.evaluate((el) => {
+    const style = getComputedStyle(el)
+    const probe = document.createElement('span')
+    probe.style.color = 'var(--text-2)'
+    document.body.appendChild(probe)
+    const expected = getComputedStyle(probe).color
+    probe.remove()
+    return { pointerEvents: style.pointerEvents, color: style.color, expected }
+  })
+  expect(shown.pointerEvents).toBe('auto')
+  expect(shown.color).toBe(shown.expected)
+  const hit = await close.boundingBox()
+  if (!hit) throw new Error('missing hovered close target box')
+  expect(hit.width).toBeGreaterThanOrEqual(20)
+  expect(hit.height).toBeGreaterThanOrEqual(20)
+  await screenshotElement(page, inactive, `tab-close-hovered-${passTheme}`)
+})
