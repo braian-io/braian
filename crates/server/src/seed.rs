@@ -2239,6 +2239,15 @@ mod tests {
                 .iter()
                 .any(|item| item.key == "supplier_articles" && item.is_link())
         );
+        let product_suppliers = defs
+            .types
+            .iter()
+            .find(|item| item.key == "product_suppliers")
+            .expect("product suppliers link type");
+        assert!(product_suppliers.is_link());
+        let suppliers = product_suppliers.link.as_ref().expect("ends");
+        assert_eq!(suppliers.from_label.key, "product");
+        assert_eq!(suppliers.to_label.key, "suppliers");
         assert!(defs.attributes.iter().any(|item| item.key == "sort_order"));
         assert!(defs.attributes.iter().all(|item| item.key != "product"));
     }

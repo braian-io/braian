@@ -1,0 +1,37 @@
+# Additive (mode: partial). Apply against a live demo/prod DB that already has
+# product + supplier types from an older seed. Does not delete anything.
+# Path: braian config plan crates/server/demo/config/product-suppliers-link.yaml
+#       braian config apply crates/server/demo/config/product-suppliers-link.yaml
+# Then accept the proposal in Review. Or drop the same YAML in the web Config apply dialog.
+apiVersion: braian.io/v1
+kind: Model
+mode: partial
+types:
+  - key: product_suppliers
+    singular:
+      en: Product supplier
+    plural:
+      en: Product suppliers
+    labels:
+      en: Product suppliers
+    keyAttribute: created_at
+    attributes:
+      - created_at
+      - updated_at
+      - updated_by
+    kind: link
+    link:
+      fromTypes:
+        - product
+      toTypes:
+        - supplier
+      fromLabel:
+        key: product
+        labels:
+          en: Product
+      toLabel:
+        key: suppliers
+        labels:
+          en: Suppliers
+      fromCardinality: many
+      toCardinality: many

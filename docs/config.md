@@ -334,6 +334,21 @@ is given `--allow-destructive`. The web dialog exposes the same choice as
 **Allow destructive changes**. Allowing is not a commit: it still creates one
 proposal, and nothing is written until that proposal is accepted.
 
+## Demo: product → supplier link
+
+New seeds load `product_suppliers` from `crates/server/demo/definitions.json`.
+Existing databases that were seeded before that type existed do **not** need a
+reset. Apply the additive document and accept the proposal:
+
+```bash
+braian config plan crates/server/demo/config/product-suppliers-link.yaml
+braian config apply crates/server/demo/config/product-suppliers-link.yaml
+```
+
+Or drop the same YAML in the web **Config apply** dialog. Then open **Review**
+and accept the proposal. The document uses `mode: partial`, so it only creates
+the link type and leaves the rest of the model alone.
+
 ## Deleting a catalog
 
 A catalog delete is a destructive step. The proposal can be created, but
