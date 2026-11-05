@@ -75,6 +75,7 @@ export function AgentView({ runId, push }: AgentViewProps) {
   const followRef = useRef<HTMLInputElement>(null)
   const opened = useRef(false)
   const focusAfter = useRef(false)
+  const focusedWaiting = useRef(false)
   const [draft, setDraft] = useState('')
   const [error, setError] = useState('')
   const [announced, setAnnounced] = useState('')
@@ -182,20 +183,32 @@ export function AgentView({ runId, push }: AgentViewProps) {
     previousStatus.current = status
   }, [run.data?.status])
   useEffect(() => {
-    if (!run.data || (opened.current && !focusAfter.current)) return
-    const deciding = focusAfter.current
+    if (!run.data) return
+    const waiting = run.data.status === 'waiting'
+    if (waiting && focusedWaiting.current) return
+    if (opened.current && !focusAfter.current && !waiting) return
+    let cancel = false
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        if (opened.current && !deciding) return
-        opened.current = true
-        focusAfter.current = false
+        if (cancel) return
         const root = rootRef.current
         if (!root) return
+        opened.current = true
+        focusAfter.current = false
+        if (waiting) {
+          focusedWaiting.current = true
+          root.querySelector<HTMLInputElement>('[data-testid="agent-follow-up"]')?.focus()
+          return
+        }
+        focusedWaiting.current = false
         const next = root.querySelector<HTMLButtonElement>('[data-testid="approve-proposal"]:not([disabled])')
         const reply = root.querySelector<HTMLInputElement>('[data-testid="agent-follow-up"]')
         ;(next ?? reply)?.focus()
       })
     })
+    return () => {
+      cancel = true
+    }
   }, [run.data])
   if (run.isPending) {
     return (

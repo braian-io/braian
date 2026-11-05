@@ -168,7 +168,7 @@ const measuredSeconds = {
   'e2e/delete-workspace.spec.ts': 28,
   'e2e/open-type-view-ready.spec.ts': 25,
   'e2e/shortcut-registry.spec.ts': 20,
-  'e2e/agent-presence.spec.ts': 90,
+  'e2e/agent-presence.spec.ts': 120,
 }
 
 const reseedSeconds = 4

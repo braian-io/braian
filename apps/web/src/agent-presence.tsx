@@ -11,7 +11,6 @@ import {
   requestOpenAgentsTable,
   type AgentRunSummary,
 } from './agent-runs'
-import { copy } from './i18n'
 
 type AgentPresenceProps = {
   enabled: boolean
@@ -45,7 +44,7 @@ export function AgentPresence({ enabled, onReview }: AgentPresenceProps) {
         id: notice.id,
         duration: 20000,
         action: {
-          label: copy.agentReviewResults,
+          label: notice.actionLabel,
           onClick: () => {
             if (run) onReview(run)
             else requestOpenAgentsTable()

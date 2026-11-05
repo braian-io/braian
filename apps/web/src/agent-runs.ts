@@ -225,8 +225,14 @@ export type AgentNotice = {
   id: string
   text: string
   failed: boolean
-  /** Set when Review results should open this run. Absent for a collapsed batch. */
+  /** Opens this run. The first finished run when several finishes share one toast. */
   run: AgentRunSummary | null
+  /** Finished runs review results. A run that is waiting opens so the person can answer. */
+  actionLabel: string
+}
+
+function noticeActionLabel(status: string): string {
+  return status === 'waiting' ? copy.agentAnswer : copy.agentReviewResults
 }
 
 /** One toast per run, or a single line when several background runs finish together. */
@@ -240,6 +246,7 @@ export function agentNotices(runs: AgentRunSummary[]): AgentNotice[] {
       text: copy.agentsFinished.replace('{count}', String(finished.length)),
       failed: false,
       run: finished[0] ?? null,
+      actionLabel: copy.agentReviewResults,
     }]
   }
   return runs.map((run) => ({
@@ -247,6 +254,7 @@ export function agentNotices(runs: AgentRunSummary[]): AgentNotice[] {
     text: agentNoticeText(run),
     failed: run.status === 'failed',
     run,
+    actionLabel: noticeActionLabel(run.status),
   }))
 }
 

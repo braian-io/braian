@@ -66,6 +66,12 @@ describe('agent run presentation', () => {
     expect(backgroundNotices([], [done]).map((item) => item.id)).toEqual(['a'])
     expect(agentNoticeText(waiting)).toBe('rename the product is waiting for you')
     expect(agentNoticeText({ ...done, proposal_count: 2 })).toBe('rename the product finished · 2 proposals')
+    expect(agentNotices([waiting]).map((notice) => notice.actionLabel)).toEqual(['Answer'])
+    expect(agentNotices([done]).map((notice) => notice.actionLabel)).toEqual(['Review results'])
+    expect(agentNotices([
+      run({ id: 'a', title: 'alpha', status: 'done', mode: 'background' }),
+      run({ id: 'b', title: 'beta', status: 'done', mode: 'background' }),
+    ]).map((notice) => notice.actionLabel)).toEqual(['Review results'])
     expect(agentNotices([
       run({ id: 'a', title: 'alpha', status: 'done', mode: 'background' }),
       run({ id: 'b', title: 'beta', status: 'done', mode: 'background' }),

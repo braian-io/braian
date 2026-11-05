@@ -116,6 +116,7 @@ export const copy = {
   agentRunInBackground: 'Run in background',
   agentBringToFront: 'Bring to front',
   agentReviewResults: 'Review results',
+  agentAnswer: 'Answer',
   agentFinishedNotice: '{title} finished · {proposals}',
   agentProposalCountOne: '1 proposal',
   agentProposalCount: '{count} proposals',
