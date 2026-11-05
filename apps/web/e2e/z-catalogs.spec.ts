@@ -191,6 +191,7 @@ test('Ctrl+K Switch catalog opens straight into the catalog list', async ({ page
 
 test('pane-source differs label; override survives a global switch', async ({ page }) => {
   await login(page)
+  await waitForCatalogs(page)
   await page.locator('nav.tabs').getByRole('button', { name: 'Sources' }).click()
   await expect(page.getByTestId('catalog-selector')).toContainText(/SAP/i)
   // Object table seed title is "SAP" but the dock labels it by type plural "Products".
