@@ -116,6 +116,8 @@ test('show opens the hidden session and edits there become proposals', async ({ 
   await expect(view).toHaveAttribute('data-session-kind', 'own')
   await expect(view).toHaveAttribute('data-hidden', 'true')
   const send = view.getByTestId('agent-send')
+  await expect(view.locator('.agent-follow')).toHaveAttribute('data-agent-busy', 'true')
+  await expect(view.getByTestId('agent-follow-up')).toHaveAttribute('placeholder', 'Agent is working…')
   await expect(send).toBeDisabled()
   await expect(send).toHaveAttribute('aria-label', 'Send')
   await expectReadable(page, '[data-testid="agent-send"]', 3)

@@ -391,6 +391,7 @@ export function AgentView({ runId, push }: AgentViewProps) {
       {error ? <p className="error" role="alert" data-testid="agent-error">{error}</p> : null}
       <form
         className="agent-follow"
+        data-agent-busy={working || follow.isPending ? 'true' : undefined}
         onSubmit={(event) => {
           event.preventDefault()
           const content = draft.trim()
