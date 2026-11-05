@@ -1,5 +1,12 @@
 import { toast } from 'sonner'
 import { ApiError } from './api/client'
+import { copy } from './i18n'
+
+export type WriteFieldError = {
+  attribute?: string
+  code?: string
+  message: string
+}
 
 export type QuietWrite = {
   /** Status codes the caller already handled, typically an expected 404. */
@@ -14,12 +21,60 @@ function textOf(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+function validationLines(errors: unknown): string[] {
+  if (!Array.isArray(errors)) return []
+  const lines: string[] = []
+  for (const item of errors) {
+    if (typeof item === 'string' && item.trim()) {
+      lines.push(item.trim())
+      continue
+    }
+    if (item && typeof item === 'object') {
+      const row = item as Record<string, unknown>
+      const line = textOf(row.message) || textOf(row.detail)
+      if (line) lines.push(line)
+    }
+  }
+  return lines
+}
+
+export function errorCodeFromBody(body: unknown): string {
+  if (!body || typeof body !== 'object') return ''
+  const record = body as Record<string, unknown>
+  const code = textOf(record.code)
+  if (code) return code
+  const nested = record.error
+  if (nested && typeof nested === 'object') return errorCodeFromBody(nested)
+  return ''
+}
+
+export function fieldErrorsFromErrorBody(body: unknown): WriteFieldError[] {
+  if (!body || typeof body !== 'object') return []
+  const record = body as Record<string, unknown>
+  if (!Array.isArray(record.errors)) return []
+  const lines: WriteFieldError[] = []
+  for (const item of record.errors) {
+    if (!item || typeof item !== 'object') continue
+    const row = item as Record<string, unknown>
+    const message = textOf(row.message) || textOf(row.detail)
+    if (!message) continue
+    const attribute = textOf(row.attribute)
+    const code = textOf(row.code)
+    lines.push({ ...(attribute ? { attribute } : {}), ...(code ? { code } : {}), message })
+  }
+  return lines
+}
+
 /** Human text from a problem+json body. Empty when the body has none. */
 export function messageFromErrorBody(body: unknown): string {
   if (!body || typeof body !== 'object') return ''
   const record = body as Record<string, unknown>
+  if (textOf(record.code) === 'link_cardinality') return copy.linkCardinalityFailed
   const detail = textOf(record.detail)
-  if (detail) return detail
+  const lines = validationLines(record.errors)
+  const firstLine = lines[0] ?? ''
+  // A generic validation detail hides the actual field or cardinality reason.
+  if (detail && !(detail === 'the write failed validation' && firstLine)) return detail
   const nested = record.error
   if (nested && typeof nested === 'object') {
     const inner = messageFromErrorBody(nested)
@@ -29,22 +84,13 @@ export function messageFromErrorBody(body: unknown): string {
   }
   const message = textOf(record.message)
   if (message) return message
-  const errors = record.errors
-  if (Array.isArray(errors)) {
-    for (const item of errors) {
-      if (typeof item === 'string' && item.trim()) return item.trim()
-      if (item && typeof item === 'object') {
-        const row = item as Record<string, unknown>
-        const line = textOf(row.message) || textOf(row.detail)
-        if (line) return line
-      }
-    }
-  }
+  if (firstLine) return firstLine
   const definitions = record.definition_errors
   if (Array.isArray(definitions)) {
     const line = definitions.find((item) => typeof item === 'string' && item.trim())
     if (typeof line === 'string') return line.trim()
   }
+  if (detail) return detail
   return ''
 }
 

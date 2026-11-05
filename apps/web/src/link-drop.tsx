@@ -109,6 +109,10 @@ export function LinkDropHost() {
         }
         return result
       }}
+      onReplaced={() => {
+        refresh()
+        toast(copy.linkReplaced)
+      }}
     />
   )
 }

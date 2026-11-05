@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { allowedLinks, choiceLabel, linkDragDenial, linkEndsSummary, linkFieldValues, linkPairExplanation, linkPickerRows, linksForEnds, preferredChoice, type LinkHit } from './link-choices'
+import { allowedLinks, choiceLabel, linkCardinalityMessage, linkDragDenial, linkEndsSummary, linkFieldErrors, linkFieldValues, linkPairExplanation, linkPickerRows, linksForEnds, preferredChoice, type LinkHit } from './link-choices'
 import type { Json } from './api'
 
 const defs: Json = {
@@ -138,5 +138,23 @@ describe('link field values', () => {
     const fields = allowedLinks(defs, 'product', 'article')[0]?.fields ?? []
     expect(linkFieldValues(fields, { sort_order: ' 4 ' })).toEqual({ sort_order: { value: '4' } })
     expect(linkFieldValues(fields, { sort_order: '  ' })).toEqual({})
+  })
+
+  it('rejects text in a number field before submit but allows a blank', () => {
+    const fields = allowedLinks(defs, 'product', 'article')[0]?.fields ?? []
+    expect(linkFieldErrors(fields, { sort_order: 'test' })).toEqual({ sort_order: 'Enter a number.' })
+    expect(linkFieldErrors(fields, { sort_order: '  ' })).toEqual({})
+    expect(linkFieldErrors(fields, { sort_order: ' 4.5 ' })).toEqual({})
+  })
+
+  it('names the constrained type when asking to replace', () => {
+    const choice = allowedLinks(defs, 'article', 'product')[0]
+    expect(choice).toBeDefined()
+    expect(linkCardinalityMessage(
+      defs,
+      { ...choice!, toCardinality: 'one' },
+      'article',
+      'product',
+    )).toBe('This article already has a product link. The link type allows only one. Replace it with this link?')
   })
 })
