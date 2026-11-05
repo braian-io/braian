@@ -68,10 +68,11 @@ describe('UserMenu', () => {
 })
 
 describe('userInitial', () => {
-  it('prefers name, then email, then handle', () => {
-    expect(userInitial({ name: 'grace', email: 'a@b' })).toBe('G')
-    expect(userInitial({ email: 'admin@x', handle: 'z' })).toBe('A')
-    expect(userInitial({ handle: 'ada' })).toBe('A')
+  it('prefers email, then handle, then name', () => {
+    expect(userInitial({ name: 'Demo Admin', email: 'admin@braian.io' })).toBe('A')
+    expect(userInitial({ name: 'grace', handle: 'ada', email: 'a@b' })).toBe('A')
+    expect(userInitial({ name: 'grace', handle: 'ada' })).toBe('A')
+    expect(userInitial({ name: 'grace' })).toBe('G')
     expect(userInitial({})).toBe('?')
   })
 })
