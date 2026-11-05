@@ -830,9 +830,9 @@ button.filter-chip {
   border-color: transparent;
 }
 .filter-chip.on {
-  background: var(--accent-dim);
-  /* Accent-tinted text that keeps 4.5:1 on the dim fill in both themes. */
-  color: color-mix(in srgb, var(--accent) 45%, var(--text));
+  /* Accent text is the selected marker; keep the base transparent so contrast stays >= 4.5:1. */
+  background: transparent;
+  color: var(--accent);
   border-color: transparent;
   box-shadow: none;
 }
