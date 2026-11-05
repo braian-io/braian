@@ -559,9 +559,11 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
   align-self: center;
 }
 .agent-view { display: flex; flex-direction: column; gap: 12px; }
-.agent-view-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.agent-view-head h2 { margin: 0; font-size: 14px; font-weight: 600; min-width: 0; }
-.agent-view-head time { color: var(--muted); font-size: 12px; margin-left: auto; }
+.agent-view-head { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; min-width: 0; }
+.agent-view-head h2 { margin: 0; font-size: 14px; font-weight: 600; min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-view-head time { color: var(--muted); font-size: 12px; margin-left: auto; flex: none; }
+.agent-head-actions { display: flex; align-items: center; gap: 2px; flex: none; }
+.agent-view-head .agent-action { flex: none; justify-content: center; padding: 0; width: 28px; }
 button.agent-mode {
   appearance: none;
   background: transparent;
@@ -571,14 +573,6 @@ button.agent-mode {
   opacity: 1;
 }
 button.agent-mode:hover:not(:disabled) { background: var(--hover); }
-button.agent-submit:disabled,
-button.agent-submit:disabled:hover {
-  background: var(--surface);
-  color: var(--text-2);
-  border: 1px solid var(--border);
-  box-shadow: none;
-  opacity: 1;
-}
 .agent-log { display: flex; flex-direction: column; gap: 6px; }
 .agent-line { margin: 0; }
 .agent-proposal { border: 0; border-top: 1px solid var(--border); border-radius: 0; padding: 10px 0 0; display: flex; flex-direction: column; gap: 8px; }
@@ -600,8 +594,9 @@ button.agent-approve:disabled:hover {
 .agent-skeleton i:nth-child(3) { width: 70%; }
 .agent-failed, .agent-fetch-error { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 .agent-failed p, .agent-fetch-error p { margin: 0; }
-.agent-follow { display: flex; gap: 8px; }
+.agent-follow { display: flex; gap: 8px; align-items: center; }
 .agent-follow input { flex: 1 1 auto; }
+.agent-follow .agent-action { flex: none; justify-content: center; width: 28px; padding: 0; }
 .agent-question {
   margin: 0;
   padding: 8px 10px;
@@ -2795,25 +2790,9 @@ button.tab-x:disabled:hover {
   border-color: #d1d5db;
 }
 :root[data-theme='light'] button.agent-mode:hover:not(:disabled) { background: #f3f4f6; }
-:root[data-theme='light'] button.agent-submit:disabled,
-:root[data-theme='light'] button.agent-submit:disabled:hover {
-  background: #f3f4f6;
-  color: #4b5563;
-  border-color: #e5e7eb;
-  opacity: 1;
-}
 button:disabled,
 button[aria-disabled='true'] {
   opacity: 1;
-}
-/* Ghost + the generic disabled rule would leave Send transparent. A filled surface reads as disabled, and text-2 stays above 3:1. */
-button.agent-submit.btn-ghost:disabled,
-button.agent-submit.btn-ghost:disabled:hover {
-  background: var(--surface);
-  color: var(--text-2);
-  border: 1px solid var(--border);
-  opacity: 1;
-  cursor: not-allowed;
 }
 .pane-body,
 .detail-empty {

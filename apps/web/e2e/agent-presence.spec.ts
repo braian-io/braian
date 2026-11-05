@@ -134,9 +134,10 @@ async function expectAgentChromeContrast(page: Page) {
   await expectReadable(page, '.pane.focused .pane-tab.active .pane-tab-open', 4.5)
   await expectReadable(page, 'button.filter-chip', 4.5)
   await expectReadable(page, 'button.agent-mode', 4.5)
+  await expectReadable(page, 'button.agent-action', 4.5)
   await expectReadable(page, 'button.avatar-btn', 4.5)
-  if (await page.locator('button.agent-submit:disabled').count()) {
-    await expectReadable(page, 'button.agent-submit:disabled', 3)
+  if (await page.locator('button.agent-action:disabled').count()) {
+    await expectReadable(page, 'button.agent-action:disabled', 3)
   }
   if (await page.getByTestId('peer-show-all').count()) {
     await expectReadable(page, '[data-testid="peer-show-all"]', 4.5)
@@ -232,7 +233,7 @@ test('waiting stops for a decision, survives reload, and resume continues', asyn
   const foreground = await page.request.patch(`/v1/agent/runs/${runId}`, { data: { mode: 'foreground' } })
   expect(foreground.ok()).toBeTruthy()
   await expect(restored).toHaveAttribute('data-mode', 'foreground')
-  await expect(restored.getByTestId('agent-mode')).toHaveText('Run in background')
+  await expect(restored.getByTestId('agent-mode')).toHaveAttribute('aria-label', 'Run in background')
   await restored.getByTestId('agent-mode').click()
   await expect(restored).toHaveAttribute('data-mode', 'background')
   const answer = page.locator('[data-sonner-toast]').filter({ hasText: 'waiting for you' }).getByRole('button', { name: 'Answer' })
