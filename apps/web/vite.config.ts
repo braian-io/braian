@@ -7,6 +7,7 @@ import path from 'node:path'
 import { fileURLToPath, URL } from 'node:url'
 import type { Plugin } from 'vite'
 import { defineConfig } from 'vite'
+import { prototypeRouteIgnorePattern } from './src/prototype-route-build'
 
 const api = process.env.BRAIAN_API_PROXY ?? 'http://127.0.0.1:8090'
 
@@ -56,35 +57,45 @@ function braianVersionJsonPlugin(buildId: string): Plugin {
   }
 }
 
-export default defineConfig({
-  define: {
-    __BRAIAN_BUILD__: JSON.stringify(braianBuildId),
-  },
-  resolve: {
-    alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
-  },
-  server: {
-    port: 3000,
-    strictPort: true,
-    proxy: {
-      '/v1': {
-        target: api,
-        changeOrigin: true,
-        timeout: 0,
-        proxyTimeout: 0,
-        configure: (proxy) => {
-          proxy.on('proxyRes', (proxyRes) => {
-            const type = proxyRes.headers['content-type']
-            if (typeof type === 'string' && type.includes('text/event-stream')) {
-              proxyRes.headers['cache-control'] = 'no-cache, no-transform'
-              delete proxyRes.headers['content-length']
-            }
-          })
-        },
-      },
-      '/mcp': { target: api, changeOrigin: true, timeout: 0 },
-      '/healthz': { target: api, changeOrigin: true },
+export default defineConfig(({ mode }) => {
+  const routeFileIgnorePattern = prototypeRouteIgnorePattern(mode)
+  return {
+    define: {
+      __BRAIAN_BUILD__: JSON.stringify(braianBuildId),
     },
-  },
-  plugins: [tailwindcss(), tanstackStart(), viteReact(), braianVersionJsonPlugin(braianBuildId)],
+    resolve: {
+      alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
+    },
+    server: {
+      port: 3000,
+      strictPort: true,
+      proxy: {
+        '/v1': {
+          target: api,
+          changeOrigin: true,
+          timeout: 0,
+          proxyTimeout: 0,
+          configure: (proxy) => {
+            proxy.on('proxyRes', (proxyRes) => {
+              const type = proxyRes.headers['content-type']
+              if (typeof type === 'string' && type.includes('text/event-stream')) {
+                proxyRes.headers['cache-control'] = 'no-cache, no-transform'
+                delete proxyRes.headers['content-length']
+              }
+            })
+          },
+        },
+        '/mcp': { target: api, changeOrigin: true, timeout: 0 },
+        '/healthz': { target: api, changeOrigin: true },
+      },
+    },
+    plugins: [
+      tailwindcss(),
+      tanstackStart(
+        routeFileIgnorePattern ? { router: { routeFileIgnorePattern } } : undefined,
+      ),
+      viteReact(),
+      braianVersionJsonPlugin(braianBuildId),
+    ],
+  }
 })
