@@ -455,9 +455,9 @@ test('pointer selection accents the column header; keyboard adds the underline',
   const grid = table.locator('.grid').first()
 
   const assertTheme = async (theme: 'dark' | 'light') => {
-    await setTheme(page, theme)
     // A fresh page resets the browser focus modality left in keyboard mode by the previous pass.
     if (theme === 'light') { await page.reload(); await expect(row).toBeVisible({ timeout: 60_000 }) }
+    await setTheme(page, theme)
     await page.mouse.move(5, 5)
     const cell = row.locator('.cell').nth(1)
     await cell.click()
