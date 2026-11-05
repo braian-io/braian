@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCatalogsQuery } from '../catalog-list'
 import { useState } from 'react'
-import { copy } from '../i18n'
-import { ApiError } from '../api'
+import { copy, uiLanguage } from '../i18n'
+import { ApiError, api, type Json } from '../api'
+import { linkHitFromDocument, type LinkHit } from '../link-choices'
 import { messageFromErrorBody, writeErrorMessage } from '../write-error'
 
 type CatalogRow = { key: string; name: string; kind: string; editable?: boolean }
@@ -316,17 +317,107 @@ export function OwnershipView() {
   )
 }
 
+type MergeChoice = { id: string; key: string; name: string }
+
+export function mergeChoiceLabel(choice: MergeChoice) {
+  if (choice.key && choice.name && choice.key !== choice.name) return `${choice.key} · ${choice.name}`
+  return choice.name || choice.key || choice.id
+}
+
+function mergeValueText(value: unknown) {
+  if (value == null) return ''
+  const text = typeof value === 'string' ? value : JSON.stringify(value)
+  return text.length > 28 ? `${text.slice(0, 28)}…` : text
+}
+
+export function mergeValuesSummary(values: Record<string, unknown>) {
+  const entries = Object.entries(values)
+  if (entries.length === 0) return copy.noValue
+  const shown = entries.slice(0, 3).map(([key, value]) => `${key}: ${mergeValueText(value)}`)
+  const extra = entries.length - shown.length
+  return extra > 0 ? `${shown.join(' · ')} +${extra}` : shown.join(' · ')
+}
+
+function MergeObjectPicker({
+  label,
+  testId,
+  choice,
+  onChoose,
+}: {
+  label: string
+  testId: string
+  choice: MergeChoice | null
+  onChoose: (choice: MergeChoice) => void
+}) {
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+  const found = useQuery({
+    queryKey: ['merge-object-search', query],
+    queryFn: () => api.get('/v1/search', { params: { query: { q: query.trim(), per_page: 8, lang: uiLanguage } } }),
+    enabled: open && query.trim().length > 1,
+  })
+  const hits = (((found.data?.hits as Json[]) ?? [])
+    .map((hit) => linkHitFromDocument((hit.document as Json) ?? hit))
+    .filter((hit): hit is LinkHit => hit != null))
+  const pick = (hit: LinkHit) => {
+    onChoose({ id: hit.id, key: hit.key, name: hit.name })
+    setQuery('')
+    setOpen(false)
+  }
+  return (
+    <div className="merge-picker">
+      <label htmlFor={`${testId}-input`}>{label}</label>
+      <div className="ref">
+        <input
+          id={`${testId}-input`}
+          data-testid={testId}
+          value={open ? query : choice ? mergeChoiceLabel(choice) : ''}
+          placeholder={copy.pickObject}
+          autoComplete="off"
+          onFocus={() => {
+            setOpen(true)
+            setQuery('')
+          }}
+          onBlur={() => window.setTimeout(() => setOpen(false), 150)}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        {open && query.trim().length > 1 ? (
+          <div className="ref-menu" role="listbox" data-testid={`${testId}-results`}>
+            {hits.length === 0 && !found.isFetching ? (
+              <p data-testid={`${testId}-empty`}>{copy.noResultsFor.replace('{query}', query.trim())}</p>
+            ) : null}
+            {hits.map((hit) => (
+              <button
+                key={hit.id}
+                type="button"
+                role="option"
+                data-testid={`${testId}-option`}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => pick(hit)}
+              >
+                {mergeChoiceLabel(hit)}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 export function MergeRunsView() {
   const profiles = useQuery({ queryKey: ['merge-profiles'], queryFn: () => getJson<ProfileRow[]>('/v1/merge/profiles') })
   const [key, setKey] = useState('sap-brand')
-  const [sourceId, setSourceId] = useState('')
-  const [masterId, setMasterId] = useState('')
+  const [source, setSource] = useState<MergeChoice | null>(null)
+  const [master, setMaster] = useState<MergeChoice | null>(null)
   const [error, setError] = useState('')
   const rows = useQuery({
     queryKey: ['merge-rows', key],
     queryFn: () => getJson<RunRow[]>(`/v1/merge/profiles/${key}/rows`),
     enabled: Boolean(key),
   })
+  const sourceId = source?.id ?? ''
+  const masterId = master?.id ?? ''
   const link = useMutation({
     mutationFn: (remove: boolean) =>
       remove
@@ -344,11 +435,36 @@ export function MergeRunsView() {
         ))}
       </select>
       <DiffTable rows={rows.data ?? []} />
-      <input aria-label={copy.sourceObjectId} value={sourceId} placeholder={copy.sourceObjectId} onChange={(event) => setSourceId(event.target.value)} />
-      <input aria-label={copy.masterObjectId} value={masterId} placeholder={copy.masterObjectId} onChange={(event) => setMasterId(event.target.value)} />
-      <button type="button" onClick={() => link.mutate(false)}>{copy.linkObjects}</button>
-      <button type="button" onClick={() => link.mutate(true)}>{copy.unlinkObjects}</button>
+      <div className="merge-link-form">
+        <MergeObjectPicker label={copy.sourceObject} testId="merge-source-picker" choice={source} onChoose={setSource} />
+        <MergeObjectPicker label={copy.masterObject} testId="merge-master-picker" choice={master} onChoose={setMaster} />
+        <button type="button" className="btn-ghost" onClick={() => link.mutate(false)}>{copy.linkObjects}</button>
+        <button type="button" className="btn-ghost" onClick={() => link.mutate(true)}>{copy.unlinkObjects}</button>
+      </div>
       {error ? <p className="error">{error}</p> : null}
+    </div>
+  )
+}
+
+function MergeValues({ values }: { values: Record<string, unknown> }) {
+  const [expanded, setExpanded] = useState(false)
+  const summary = mergeValuesSummary(values)
+  return (
+    <div className="merge-values">
+      <button
+        type="button"
+        className="merge-values-summary"
+        data-testid="merge-values-summary"
+        aria-expanded={expanded}
+        aria-label={`${expanded ? copy.collapse : copy.expand} ${copy.mergeValues}`}
+        title={summary}
+        onClick={() => setExpanded((current) => !current)}
+      >
+        {summary}
+      </button>
+      {expanded ? (
+        <pre className="merge-values-expand" data-testid="merge-values-expand">{JSON.stringify(values, null, 2)}</pre>
+      ) : null}
     </div>
   )
 }
@@ -356,16 +472,26 @@ export function MergeRunsView() {
 export function DiffTable({ rows }: { rows: RunRow[] }) {
   if (rows.length === 0) return null
   return (
-    <div className="import-preview" data-testid="merge-preview">
-      {rows.map((row, index) => (
-        <div key={`${row.source_key}-${index}`} className={`import-row ${row.action ?? ''}`} data-testid={`merge-row-${row.action}`}>
-          <span>{row.action}</span>
-          <span>{row.source_key}</span>
-          <span>{row.master_key ?? ''}</span>
-          <span>{JSON.stringify(row.detail?.values ?? {})}</span>
-          <span>{(row.detail?.errors ?? []).map((error) => error.message).join('; ')}</span>
-        </div>
-      ))}
+    <div className="import-preview merge-preview" data-testid="merge-preview">
+      <div className="merge-row merge-header" data-testid="merge-header">
+        <span>{copy.mergeAction}</span>
+        <span>{copy.mergeSource}</span>
+        <span>{copy.mergeMaster}</span>
+        <span>{copy.mergeValues}</span>
+        <span>{copy.mergeErrors}</span>
+      </div>
+      {rows.map((row, index) => {
+        const errors = (row.detail?.errors ?? []).map((error) => error.message).join('; ')
+        return (
+          <div key={`${row.source_key}-${index}`} className={`merge-row ${row.action ?? ''}`} data-testid={`merge-row-${row.action}`}>
+            <span>{row.action}</span>
+            <span title={row.source_key}>{row.source_key}</span>
+            <span title={row.master_key ?? ''}>{row.master_key ?? ''}</span>
+            <MergeValues values={row.detail?.values ?? {}} />
+            <span title={errors}>{errors}</span>
+          </div>
+        )
+      })}
     </div>
   )
 }

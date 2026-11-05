@@ -544,6 +544,61 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
 .catalog-admin { display: flex; flex-direction: column; gap: 8px; padding: 12px; overflow: auto; }
 .catalog-admin input, .catalog-admin select, .catalog-admin textarea { font: inherit; }
 .catalog-admin ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.merge-row {
+  display: grid;
+  grid-template-columns: 90px minmax(110px, 1fr) minmax(110px, 1fr) minmax(200px, 2fr) minmax(150px, 1.5fr);
+  gap: 8px;
+  align-items: start;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: var(--r-md);
+}
+.merge-row > span,
+.merge-row > div { min-width: 0; }
+.merge-row > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.merge-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.merge-values { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.merge-values-summary {
+  min-height: 0;
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--text);
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.merge-values-summary:hover { background: none; color: var(--accent); }
+.merge-values-expand {
+  margin: 0;
+  padding: 6px;
+  max-height: 220px;
+  overflow: auto;
+  border-radius: var(--r-sm);
+  background: var(--raised);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.merge-link-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+.merge-link-form button { flex: none; }
+.merge-picker { display: flex; flex-direction: column; gap: 4px; min-width: 220px; max-width: 320px; }
+.merge-picker > label { color: var(--muted); font-size: 12px; }
+.merge-picker input { width: 100%; }
+.merge-picker .ref-menu p { margin: 4px 6px; color: var(--muted); font-size: 12px; }
 .field.locked .control { opacity: 0.75; }
 .pane-source {
   flex: 0 1 auto;
