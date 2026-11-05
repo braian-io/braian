@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react'
 import { Columns3, Plus, Search } from 'lucide-react'
 import { copy } from './i18n'
 import { formatCount } from './format'
@@ -15,6 +15,7 @@ export type StandardTableChromeProps = {
   /** Generic text filter shared by every table that opts in. */
   filterValue?: string
   onFilterChange?: (value: string) => void
+  filterOnKeyDown?: (event: ReactKeyboardEvent<HTMLInputElement>) => void
   filterPlaceholder?: string
   /** When true, show Review and save (same action as Ctrl+S). */
   reviewVisible?: boolean
@@ -35,6 +36,7 @@ export function StandardTableChrome({
   rowCount,
   filterValue,
   onFilterChange,
+  filterOnKeyDown,
   filterPlaceholder = copy.search,
   reviewVisible = false,
   onReview,
@@ -52,6 +54,7 @@ export function StandardTableChrome({
               placeholder={filterPlaceholder}
               value={filterValue ?? ''}
               onChange={(event) => onFilterChange(event.target.value)}
+              onKeyDown={filterOnKeyDown}
             />
             <Kbd>/</Kbd>
           </label>

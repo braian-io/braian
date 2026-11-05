@@ -26,7 +26,7 @@ test('attribute definitions open from the keyboard, show usage, and attach in a 
   await expect(view).toBeVisible()
   await expect(page.getByTestId('attribute-definition-row')).toHaveCount(54)
 
-  const search = page.getByTestId('attribute-search')
+  const search = view.getByTestId('quick-filter')
   await search.fill('number')
   await search.press('ArrowDown')
   const number = page.locator('[data-testid="attribute-definition-row"][data-key="number"]')

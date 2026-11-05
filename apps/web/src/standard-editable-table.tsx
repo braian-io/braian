@@ -72,6 +72,7 @@ export type StandardEditableTableProps<T extends { id: string }> = {
   activeRowId?: string | null
   filterValue?: string
   onFilterChange?: (value: string) => void
+  filterOnKeyDown?: (event: ReactKeyboardEvent<HTMLInputElement>) => void
   testId?: string
   /** Enable inline editing (Enter / F2). Off for product object table. */
   editable?: boolean
@@ -215,6 +216,7 @@ export function StandardEditableTable<T extends { id: string }>({
   activeRowId: activeRowIdProp,
   filterValue,
   onFilterChange,
+  filterOnKeyDown,
   testId = 'standard-editable-table',
   editable = true,
   loading = false,
@@ -673,6 +675,7 @@ export function StandardEditableTable<T extends { id: string }>({
       rowCount={filtered.length}
       filterValue={filterValue}
       onFilterChange={onFilterChange}
+      filterOnKeyDown={filterOnKeyDown}
       reviewVisible={editable && dirty}
       onReview={onReview}
     >
