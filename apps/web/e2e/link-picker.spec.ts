@@ -82,6 +82,27 @@ test('Escape closes the picker and returns focus to Add link', async ({ page }) 
   await expect(add).toBeFocused()
 })
 
+test('Add link dialog is vertically centered', async ({ page }) => {
+  await open(page, 'ART-CHED-400')
+  await page.getByTestId('add-link').first().focus()
+  await page.keyboard.press('Enter')
+  await page.getByTestId('link-search').fill('ART-COFFEE-250')
+  await expect(page.getByRole('option', { name: /Breakfast filter coffee 250 g/ })).toBeVisible()
+  await choose(page, 'ART-COFFEE-250')
+  await page.keyboard.press('Enter')
+  const dialog = page.getByTestId('link-create-dialog')
+  await expect(dialog).toBeVisible()
+  const box = await dialog.boundingBox()
+  const viewport = page.viewportSize()
+  expect(box).toBeTruthy()
+  expect(viewport).toBeTruthy()
+  const dialogMid = box!.y + box!.height / 2
+  const viewMid = viewport!.height / 2
+  // Shared Dialog (#199) centers with top/left 50% + translate -50%.
+  expect(Math.abs(dialogMid - viewMid)).toBeLessThanOrEqual(24)
+  await page.keyboard.press('Escape')
+})
+
 test('the light theme shows the same picker and dialog', async ({ page }) => {
   test.skip(!shots, 'screenshots are taken only when BRAIAN_SHOTS is set')
   await setTheme(page, 'light')
