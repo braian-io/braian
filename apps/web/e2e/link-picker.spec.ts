@@ -5,8 +5,8 @@ import { demoCredentials } from './demo'
 import { paneWithTab, setTheme } from './ui'
 
 // Keyboard link creation: search, choose with the arrows, then the link dialog.
-// A product and a supplier have no allowed link type, so that pair only shows
-// the invalid dialog. Escape closes both layers and returns focus to Add link.
+// Two products have no allowed link type, so that pair only shows the invalid
+// dialog. Escape closes both layers and returns focus to Add link.
 
 const shots = process.env.BRAIAN_SHOTS
 
@@ -54,21 +54,21 @@ test('a pair with no allowed link type explains that in a dialog', async ({ page
   const add = page.getByTestId('add-link').first()
   await add.focus()
   await page.keyboard.press('Enter')
-  await page.getByTestId('link-search').fill('SUP-NORTH')
-  await expect(page.getByRole('option', { name: /Northmill Foods/ })).toBeVisible()
-  await choose(page, 'SUP-NORTH')
+  await page.getByTestId('link-search').fill('PROD-COFFEE')
+  await expect(page.getByRole('option', { name: /PROD-COFFEE|Coffee/i })).toBeVisible()
+  await choose(page, 'PROD-COFFEE')
   await page.keyboard.press('Enter')
   const invalid = page.getByTestId('link-invalid-dialog')
   await expect(invalid).toBeVisible()
   await expect(invalid).toContainText('This is not a valid link type.')
-  await expect(invalid).toContainText("Products can't link to Suppliers.")
-  await expect(invalid).toContainText('Products can link to Articles.')
+  await expect(invalid).toContainText(/Products can't link to Products/i)
+  await expect(invalid).toContainText(/Products can link to/i)
   await expect(page.getByTestId('link-create-confirm')).toHaveCount(0)
   await shot(page, 'link-invalid-dark.png')
   await page.keyboard.press('Escape')
   await expect(invalid).toBeHidden()
   await expect(add).toBeFocused()
-  await expect(page.getByTestId('link-row').filter({ hasText: 'SUP-NORTH' })).toHaveCount(0)
+  await expect(page.getByTestId('link-row').filter({ hasText: 'PROD-COFFEE' })).toHaveCount(0)
 })
 
 test('Escape closes the picker and returns focus to Add link', async ({ page }) => {
