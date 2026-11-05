@@ -2068,7 +2068,7 @@ export function Shell() {
   )
 }
 
-function Login({ onDone }: { onDone: () => void }) {
+export function Login({ onDone }: { onDone: () => void }) {
   const [email, setEmail] = useState('admin@braian.local')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -2091,13 +2091,26 @@ function Login({ onDone }: { onDone: () => void }) {
         <h1>{copy.loginTitle}</h1>
         <label>
           {copy.email}
-          <Input data-testid="email" value={email} onChange={(event) => setEmail(event.target.value)} />
+          <Input
+            data-testid="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? 'login-error' : undefined}
+          />
         </label>
         <label>
           {copy.password}
-          <Input data-testid="password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+          <Input
+            data-testid="password"
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? 'login-error' : undefined}
+          />
         </label>
-        {error ? <p className="error">{error}</p> : null}
+        {error ? <p className="error" role="alert" id="login-error" data-testid="login-error">{error}</p> : null}
         <Button type="submit" variant="primary">{copy.signIn}</Button>
       </form>
     </div>
