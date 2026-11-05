@@ -522,6 +522,13 @@ jobs:
         run: |
           test -x "${BRAIAN_BIN}"
           node scripts/e2e.mjs
+      - name: Upload focus screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: focus-screenshots-${{ matrix.shard }}
+          path: apps/web/test-results/focus-screenshots/
+          if-no-files-found: ignore
 
   # Required check name stays `stack`. A cancelled or skipped shard is red,
   # except the path-filter skip (mode=skip), where e2e and load are meant to skip.

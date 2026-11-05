@@ -1,4 +1,4 @@
-import { setTheme } from './ui'
+import { mainTable, setTheme } from './ui'
 import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
 
@@ -432,4 +432,95 @@ test('dock overlay matches the pane fraction and the window edge', async ({ page
     await page.screenshot({ path: '/opt/cursor/artifacts/final/multi-split-light.png' })
     await setTheme(page, 'dark')
   }
+})
+
+test('Articles search box stays clear of the toolbar and rings the field itself', async ({ page }) => {
+  test.setTimeout(120_000)
+  await login(page)
+  const listed = await page.request.get('/v1/workspaces')
+  const body = (await listed.json()) as { workspaces: Array<{ id: string; name: string }> }
+  const articles = body.workspaces.find((item) => item.name === 'Articles')
+  if (!articles) throw new Error('missing workspace Articles')
+  await clearPersonal(page, articles.id)
+  await page.locator('nav.tabs').getByRole('button', { name: /^Articles/ }).click()
+  await expect(page.locator('nav.tabs button.tab.active')).toHaveText(/^Articles/)
+  const table = mainTable(page, 'Articles')
+  const filter = table.getByTestId('quick-filter').first()
+  await expect(filter).toBeVisible()
+
+  const checkToolbar = async (label: string) => {
+    const report = await table.evaluate((root) => {
+      const bar = root.querySelector<HTMLElement>('.standard-table-bar')
+      const field = root.querySelector<HTMLElement>('.search-field')
+      if (!bar || !field) return null
+      const box = (element: Element) => {
+        const rect = element.getBoundingClientRect()
+        return { x: rect.x, y: rect.y, right: rect.right, bottom: rect.bottom }
+      }
+      const overlaps = (a: ReturnType<typeof box>, b: ReturnType<typeof box>) =>
+        Math.min(a.right, b.right) - Math.max(a.x, b.x) > 0.5
+        && Math.min(a.bottom, b.bottom) - Math.max(a.y, b.y) > 0.5
+      const search = box(field)
+      const neighbours = [...bar.children]
+        .filter((child) => child !== field)
+        .map((child) => ({ name: child.getAttribute('data-testid') ?? child.className, box: box(child) }))
+      const filters = root.querySelector<HTMLElement>('.standard-table-filters')
+      if (filters) neighbours.push({ name: 'standard-table-filters', box: box(filters) })
+      return {
+        bar: box(bar),
+        search,
+        overlaps: neighbours.filter((item) => overlaps(search, item.box)).map((item) => item.name),
+      }
+    })
+    expect(report, label).not.toBeNull()
+    expect(report!.overlaps, label).toEqual([])
+    expect(report!.search.x, label).toBeGreaterThanOrEqual(report!.bar.x - 1)
+    expect(report!.search.right, label).toBeLessThanOrEqual(report!.bar.right + 1)
+  }
+
+  await checkToolbar('normal pane')
+  const wide = await table.boundingBox()
+  if (!wide) throw new Error('missing Articles table')
+  await page.setViewportSize({ width: 760, height: 800 })
+  await expect.poll(async () => (await table.boundingBox())?.width ?? wide.width).toBeLessThan(wide.width)
+  await checkToolbar('narrow pane')
+
+  await filter.click()
+  const ring = await table.evaluate((root) => {
+    const input = root.querySelector<HTMLElement>('[data-testid="quick-filter"]')
+    const field = input?.closest<HTMLElement>('.search-field')
+    if (!input || !field) return null
+    const paint = (element: HTMLElement) => {
+      const style = getComputedStyle(element)
+      return {
+        outlineStyle: style.outlineStyle,
+        outlineWidth: Number.parseFloat(style.outlineWidth),
+        outlineColor: style.outlineColor,
+      }
+    }
+    return { input: paint(input), field: paint(field), focused: document.activeElement === input }
+  })
+  expect(ring, 'focus ring').not.toBeNull()
+  expect(ring!.focused).toBe(true)
+  expect(ring!.field.outlineStyle).not.toBe('none')
+  expect(ring!.field.outlineWidth).toBeGreaterThan(0)
+  expect(ring!.input.outlineStyle).toBe('none')
+
+  await filter.evaluate((element) => (element as HTMLInputElement).blur())
+  await filter.hover()
+  const hover = await table.evaluate((root) => {
+    const input = root.querySelector<HTMLElement>('[data-testid="quick-filter"]')
+    const field = input?.closest<HTMLElement>('.search-field')
+    if (!field) return null
+    const style = getComputedStyle(field)
+    return {
+      hovered: field.matches(':hover'),
+      outlineStyle: style.outlineStyle,
+      outlineWidth: Number.parseFloat(style.outlineWidth),
+    }
+  })
+  expect(hover, 'hover ring').not.toBeNull()
+  expect(hover!.hovered).toBe(true)
+  expect(hover!.outlineStyle).not.toBe('none')
+  expect(hover!.outlineWidth).toBeGreaterThan(0)
 })
