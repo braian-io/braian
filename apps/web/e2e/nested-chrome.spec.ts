@@ -12,6 +12,8 @@ async function login(page: Page) {
 }
 
 type Paint = {
+  accent: string
+  accentHover: string
   outlineStyle: string
   outlineWidth: string
   boxShadow: string
@@ -24,6 +26,13 @@ async function paint(locator: Locator): Promise<Paint> {
   return locator.evaluate((el) => {
     const style = getComputedStyle(el)
     const after = getComputedStyle(el, '::after')
+    const probe = document.createElement('span')
+    probe.style.color = 'var(--accent)'
+    document.body.appendChild(probe)
+    const accent = getComputedStyle(probe).color
+    probe.style.color = 'var(--accent-hover)'
+    const accentHover = getComputedStyle(probe).color
+    probe.remove()
     const sides = ['top', 'right', 'bottom', 'left'] as const
     const visibleBorder = sides.some((side) => {
       const width = Number.parseFloat(style.getPropertyValue(`border-${side}-width`))
@@ -33,6 +42,8 @@ async function paint(locator: Locator): Promise<Paint> {
       return color !== 'transparent' && !/^rgba?\(\s*0\s*,\s*0\s*,\s*0\s*,\s*0\s*\)$/.test(color)
     })
     return {
+      accent,
+      accentHover,
       outlineStyle: style.outlineStyle,
       outlineWidth: style.outlineWidth,
       boxShadow: style.boxShadow,
@@ -41,6 +52,12 @@ async function paint(locator: Locator): Promise<Paint> {
       afterBoxShadow: after.boxShadow,
     }
   })
+}
+
+/** Split a computed box-shadow list without breaking commas inside rgb()/rgba(). */
+function shadows(value: string): string[] {
+  if (value === 'none') return []
+  return value.split(/,(?![^()]*\))/).map((part) => part.trim())
 }
 
 test.describe('nested chrome', () => {
@@ -59,8 +76,13 @@ test.describe('nested chrome', () => {
 
       const selectedPaint = await paint(selected)
       const otherPaint = await paint(other)
+      // Accent policy: selection is the dim fill plus exactly one 3px accent left edge.
       expect(selectedPaint.outlineStyle).toBe('none')
-      expect(selectedPaint.boxShadow).toBe('none')
+      expect(selectedPaint.visibleBorder).toBe(false)
+      expect(selectedPaint.afterBoxShadow).toBe('none')
+      expect(shadows(selectedPaint.boxShadow)).toEqual([
+        `${selectedPaint.accent} 3px 0px 0px 0px inset`,
+      ])
       expect(selectedPaint.backgroundColor).not.toBe(otherPaint.backgroundColor)
 
       const cell = selected.locator('.cell.active-cell')
@@ -77,7 +99,13 @@ test.describe('nested chrome', () => {
       expect(panePaint.afterBoxShadow).toBe('none')
       const gridPaint = await paint(grid)
       expect(gridPaint.outlineStyle).toBe('none')
-      expect((await paint(cell)).boxShadow).not.toBe('none')
+      // The focused cell adds its own hover-accent ring, not a second left-edge marker.
+      const focusedCellPaint = await paint(cell)
+      const focusedCellShadows = shadows(focusedCellPaint.boxShadow)
+      expect(focusedCellShadows).toHaveLength(1)
+      expect(focusedCellShadows[0]).toContain('inset')
+      expect(focusedCellShadows[0]).toContain(focusedCellPaint.accentHover)
+      expect(focusedCellShadows[0]).not.toContain('3px')
 
       await page.locator('[data-view-type="object_detail"]').first().click()
       const detail = page.getByTestId('object-detail')

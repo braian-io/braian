@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { demoCredentials } from './demo'
-import { mainTable } from './ui'
+import { mainTable, setTheme } from './ui'
 
 const shots = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'test-results', 'focus-screenshots')
 
@@ -109,6 +109,24 @@ async function screenshotElement(page: Page, target: Locator, name: string) {
       height: Math.min(viewport.height - y, box.height + pad * 2),
     },
   })
+}
+
+async function cssToken(page: Page, name: string) {
+  return page.evaluate((token) => {
+    const probe = document.createElement('span')
+    probe.style.backgroundColor = `var(${token})`
+    document.body.appendChild(probe)
+    const value = getComputedStyle(probe).backgroundColor
+    probe.remove()
+    return value
+  }, name)
+}
+
+function alphaOf(color: string) {
+  const match = color.match(/rgba?\(([^)]+)\)/)
+  if (!match) return 1
+  const parts = match[1].split(',').map((part) => Number.parseFloat(part.trim()))
+  return parts.length === 4 ? (parts[3] ?? 1) : 1
 }
 
 async function login(page: Page) {
@@ -281,4 +299,74 @@ test('focus and hover use one indicator aligned to the element', async ({ page }
   expect(searchPaint.outlineOffset).toBeLessThanOrEqual(0)
   expect(searchPaint.visibleBorder).toBe(false)
   await screenshotElement(page, search, 'search-field-hovered')
+})
+
+test('accent policy: selection, hover, menus, chips and light dim', async ({ page }) => {
+  test.setTimeout(120_000)
+  await page.addInitScript(() => localStorage.setItem('braian.theme', JSON.stringify('dark')))
+  await login(page)
+  await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
+
+  const table = mainTable(page)
+  const selectedRow = table.getByTestId('object-row').filter({ hasText: 'PROD-CHEDDAR' }).first()
+  await expect(selectedRow).toBeVisible({ timeout: 60_000 })
+  await selectedRow.click()
+  await expect(selectedRow).toHaveAttribute('aria-selected', 'true')
+  await page.mouse.move(5, 5)
+
+  const selected = await paint(selectedRow)
+  expect(selected.backgroundColor).toBe(selected.accentDim)
+  expect(selected.boxShadow).toContain('inset')
+  expect(selected.boxShadow).toContain('3px')
+  expect(selected.boxShadow).toContain(selected.accent)
+  expect(selected.outlineStyle).toBe('none')
+  await screenshotElement(page, selectedRow, 'accent-selected-row-dark')
+
+  const hoverColor = await cssToken(page, '--hover')
+  const hoverRow = table.getByTestId('object-row').filter({ hasNotText: 'PROD-CHEDDAR' }).first()
+  await expect(hoverRow).toBeVisible()
+  await hoverRow.hover()
+  await expect.poll(async () => (await paint(hoverRow)).backgroundColor).toBe(hoverColor)
+  const hovered = await paint(hoverRow)
+  expect(hovered.backgroundColor).not.toBe(selected.accentDim)
+  expect(hovered.boxShadow).not.toContain('inset')
+  await screenshotElement(page, hoverRow, 'accent-hovered-row-dark')
+
+  await selectedRow.click({ button: 'right' })
+  const menu = page.getByTestId('context-menu')
+  await expect(menu).toBeVisible()
+  const marked = menu.locator('[data-highlighted]')
+  await expect(marked).toHaveCount(1)
+  const markedPaint = await paint(marked.first())
+  expect(markedPaint.backgroundColor).toBe(markedPaint.accentDim)
+  const unmarked = menu.locator('[role="menuitem"]:not([data-highlighted])')
+  const unmarkedCount = await unmarked.count()
+  expect(unmarkedCount).toBeGreaterThan(0)
+  for (let index = 0; index < unmarkedCount; index += 1) {
+    const item = await paint(unmarked.nth(index))
+    expect(item.backgroundColor).toBe('rgba(0, 0, 0, 0)')
+  }
+  const menuButtonShadow = await menu
+    .getByRole('menuitem')
+    .first()
+    .evaluate((element) => getComputedStyle(element).boxShadow)
+  expect(menuButtonShadow).toBe('none')
+  await screenshotElement(page, menu, 'accent-context-menu-dark')
+  await page.keyboard.press('Escape')
+  await expect(menu).toHaveCount(0)
+
+  const chip = table.getByTestId('standard-table-filters').getByRole('button', { name: 'All', exact: true })
+  await expect(chip).toBeVisible()
+  await chip.hover()
+  const chipPaint = await paint(chip)
+  expect(chipPaint.boxShadow).toBe('none')
+  await chip.click()
+  expect(await chip.evaluate((element) => element.matches(':focus-visible'))).toBe(false)
+  expect(await chip.evaluate((element) => getComputedStyle(element).outlineStyle)).toBe('none')
+  await screenshotElement(page, chip, 'accent-chip-mouse-click-dark')
+
+  const darkAlpha = alphaOf(await cssToken(page, '--accent-dim'))
+  await setTheme(page, 'light')
+  const lightAlpha = alphaOf(await cssToken(page, '--accent-dim'))
+  expect(lightAlpha).toBeGreaterThan(darkAlpha)
 })

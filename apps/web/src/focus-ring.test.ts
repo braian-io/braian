@@ -51,6 +51,7 @@ describe('focus ring', () => {
   it('keeps the selected row on its fill and the ring on focus', () => {
     const selected = rule('.row.selected')
     expect(selected).toContain('background: var(--accent-dim)')
+    expect(selected).toContain('box-shadow: inset 3px 0 0 var(--accent)')
     expect(selected).not.toContain('outline')
 
     const focused = rule('.row:focus-visible')

@@ -80,6 +80,10 @@ function cheddarRow(page: Page) {
   return mainTable(page).getByTestId('object-row').filter({ hasText: 'Mature cheddar' }).first()
 }
 
+// The same 200 g article can render in either display unit depending on the
+// unit step chosen or left over from an earlier palette interaction.
+const CHEDDAR_NET_WEIGHT = /200\s*g|0\.2\s*kg/
+
 test.describe('field picker on Products', () => {
   test.setTimeout(180_000)
 
@@ -154,7 +158,7 @@ test.describe('field picker on Products', () => {
     await enterOn(page, 'fields-row-g')
     await page.keyboard.press('Escape')
 
-    await expect(row.locator('[data-testid^="hop-cell-articles>net_weight"]').first()).toContainText(/200\s*g/)
+    await expect(row.locator('[data-testid^="hop-cell-articles>net_weight"]').first()).toContainText(CHEDDAR_NET_WEIGHT)
 
     // Edit field… on the specific column → First
     const specificHeader = mainTable(page).locator('[data-testid^="col-articles>net_weight"]').filter({ hasText: /specific|200|g/i }).first()
@@ -171,7 +175,7 @@ test.describe('field picker on Products', () => {
     await expect(mainTable(page).locator('[data-testid^="col-articles>net_weight"]').first()).toContainText(/first/i)
     await expect(mainTable(page).locator('[data-testid^="col-articles>net_weight"]').first()).not.toContainText(/specific/i)
     // First of ART-CHED-200 / ART-CHED-400 by peer key → 200 g or 0.2 kg depending on unit
-    await expect(row.locator('[data-testid^="hop-cell-articles>net_weight"]').first()).toContainText(/200\s*g|0\.2\s*kg/)
+    await expect(row.locator('[data-testid^="hop-cell-articles>net_weight"]').first()).toContainText(CHEDDAR_NET_WEIGHT)
   })
 
 
@@ -209,7 +213,7 @@ test.describe('field picker on Products', () => {
     await enterOn(page, 'fields-row-g')
     await page.keyboard.press('Escape')
     const row = cheddarRow(page)
-    await expect(row.locator('[data-testid^="hop-cell-articles>net_weight"]').first()).toContainText(/200\s*g/)
+    await expect(row.locator('[data-testid^="hop-cell-articles>net_weight"]').first()).toContainText(CHEDDAR_NET_WEIGHT)
     await expect(mainTable(page).locator('[data-testid^="col-articles>net_weight"]').filter({ hasText: /ART-CHED-200/i })).toBeVisible()
   })
 

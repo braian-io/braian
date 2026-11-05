@@ -236,13 +236,13 @@ function installRowStyles() {
   const end = source.indexOf('.draft-user')
   if (start < 0 || end < start) throw new Error('row selection styles missing')
   const rules = source.slice(start, end)
-  // The selected row is a fill. Hover is a neutral surface, not that fill.
+  // The selected row is a dim fill plus one full-accent left edge marker. Hover is a neutral surface.
   expect(rules).toMatch(/\.row\.selected\s*\{[^}]*background:\s*var\(--accent-dim\)/)
-  expect(rules).not.toMatch(/\.row\.selected\s*\{[^}]*box-shadow/)
+  expect(rules).toMatch(/\.row\.selected\s*\{[^}]*box-shadow:\s*inset 3px 0 0 var\(--accent\)/)
   expect(rules).toMatch(/\.row:hover:not\(\.selected\)\s*\{[^}]*background:\s*var\(--hover\)/)
   expect(rules).not.toMatch(/\.row:hover[^{]*\{[^}]*accent/)
   // jsdom drops a custom property that is unset when the sheet is parsed.
-  document.documentElement.style.setProperty('--accent-dim', 'rgba(154, 77, 255, 0.18)')
+  document.documentElement.style.setProperty('--accent-dim', 'rgba(154, 77, 255, 0.28)')
   document.documentElement.style.setProperty('--hover', 'rgb(38, 50, 71)')
   const style = document.createElement('style')
   style.textContent = rules
@@ -251,15 +251,19 @@ function installRowStyles() {
 
 function selectedLook(row: Element) {
   let fill = false
+  let marker = false
   for (const sheet of document.styleSheets) {
     for (const rule of sheet.cssRules) {
       if (!(rule instanceof CSSStyleRule)) continue
       if (!row.matches(rule.selectorText)) continue
       if (rule.style.backgroundColor.includes('accent-dim') || rule.style.background.includes('accent-dim')) fill = true
-      if (rule.style.boxShadow.includes('inset')) return false
+      if (rule.style.boxShadow.includes('inset')) {
+        if (!rule.style.boxShadow.includes('inset 3px 0 0 var(--accent)')) return false
+        marker = true
+      }
     }
   }
-  return fill && getComputedStyle(row).boxShadow === 'none'
+  return fill && marker
 }
 
 describe('active row', () => {
