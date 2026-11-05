@@ -40,6 +40,33 @@ export function registryPaletteRows({ theme = 'dark', target = {} }: RegistryPal
     })
 }
 
+
+const COLUMN_MOVE_IDS = new Set(['column:move-left', 'column:move-right'])
+
+/** Ctrl+K rows for move-left/right, derived from the shared command registry. */
+export function registryColumnMovePaletteRows(target: CommandTarget = {}): PaletteItem[] {
+  return registryCommands
+    .filter((command) => COLUMN_MOVE_IDS.has(command.id))
+    .filter((command) => !command.when || command.when(target))
+    .map((command) => {
+      const header = typeof target.columnHeader === 'string' ? target.columnHeader : ''
+      const row: PaletteItem = {
+        id: command.id,
+        group: command.group ?? 'views',
+        title: commandTitle(command, target),
+        subtitle: header,
+        keywords: [...(command.keywords ?? []), ...(header ? [header] : [])],
+      }
+      if (command.kbd) {
+        row.kbd = command.kbd
+        row.shortcut = command.kbd
+      }
+      return row
+    })
+}
+
+export const registryColumnMoveCommandIds = COLUMN_MOVE_IDS
+
 export const registryPaletteCommandIds = new Set(
   registryCommands.filter((command) => command.palette === true).map((command) => command.id),
 )

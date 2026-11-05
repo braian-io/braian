@@ -73,7 +73,7 @@ import {
   type UiColumn,
 } from './ui-context'
 import { runCommand } from './command-registry'
-import { registryPaletteCommandIds, registryPaletteRows } from './palette-registry-rows'
+import { registryColumnMovePaletteRows, registryPaletteCommandIds, registryPaletteRows } from './palette-registry-rows'
 import { FieldsMode, type FieldsPaletteOpen } from './fields/fields-mode'
 import { readFieldsHost, subscribeFieldsHost } from './fields-host'
 import { makeViewColumn, parseColumnId } from './fields/columns'
@@ -1615,26 +1615,7 @@ function columnEntries(columns: UiColumn[], activeColumn: string | null): Palett
     : null
   if (active) {
     const header = columns.find((column) => column.id === active)?.header ?? active
-    items.push(
-      {
-        id: 'column:move-left',
-        group: 'views',
-        title: `${copy.moveColumnLeft} · ${header}`,
-        subtitle: header,
-        keywords: ['column', 'move', 'left', 'reorder', header],
-        kbd: chordForCommand('column:move-left'),
-        shortcut: chordForCommand('column:move-left'),
-      },
-      {
-        id: 'column:move-right',
-        group: 'views',
-        title: `${copy.moveColumnRight} · ${header}`,
-        subtitle: header,
-        keywords: ['column', 'move', 'right', 'reorder', header],
-        kbd: chordForCommand('column:move-right'),
-        shortcut: chordForCommand('column:move-right'),
-      },
-    )
+    items.push(...registryColumnMovePaletteRows({ column: active, columnHeader: header }))
   }
   return items
 }
