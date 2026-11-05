@@ -2579,6 +2579,7 @@ button.tab-x:disabled:hover {
 .standard-grid-row:hover:not(.on):not(.draft) { background: var(--hover); }
 .standard-grid-row.on {
   background: var(--accent-dim);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 .standard-grid-row.draft { background: color-mix(in oklab, var(--warn, #c90) 10%, transparent); }
 .standard-grid-row.read-only { color: var(--muted); opacity: 0.7; }
