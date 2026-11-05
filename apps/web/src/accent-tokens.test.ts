@@ -65,7 +65,7 @@ describe('accent tokens', () => {
 
   it('tints only the active palette row and keeps query marks typographic', () => {
     expect(css).toMatch(/\.palette \.hit\.on,\s*\n\.palette \.hit\.on:hover/)
-    expect(css).toMatch(/\.palette \.hit:hover:not\(\.on\)[\s\S]*background:\s*transparent/)
+    expect(css).toMatch(/\.palette \.hit:hover:not\(\.on\):not\(\.ask\)[\s\S]*background:\s*color-mix\(in srgb, var\(--accent-dim\) 55%, transparent\)/)
     expect(css).toMatch(/\.palette \.hit\.on \.mark[\s\S]*background:\s*transparent/)
     expect(css).toMatch(/\.palette \.hit\.on \.mark[\s\S]*text-decoration:\s*underline/)
   })

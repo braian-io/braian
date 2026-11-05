@@ -79,11 +79,30 @@ test.describe('design polish low rows', () => {
       await page.keyboard.press('Tab')
       await expect(page.getByTestId('palette-crumb')).toContainText('Open view ›')
       expect(await crumbColor(page)).toBe(await accentToken(page))
-      const paletteHoverTarget = palette.locator('.hit:not(.on)').first()
+      const paletteHoverTarget = palette.locator('.hit:not(.on):not(.ask)').first()
       await expect(paletteHoverTarget).toBeVisible()
-      await paletteHoverTarget.hover()
-      const paletteHoverBg = await paletteHoverTarget.evaluate((el) => getComputedStyle(el).backgroundColor)
-      expect(paletteHoverBg).toBe('rgba(0, 0, 0, 0)')
+      const weakPurple = await page.evaluate(() => {
+        const probe = document.createElement('div')
+        probe.style.backgroundColor = 'color-mix(in srgb, var(--accent-dim) 55%, transparent)'
+        document.body.appendChild(probe)
+        const value = getComputedStyle(probe).backgroundColor
+        probe.remove()
+        return value
+      })
+      await page.mouse.move(5, 5)
+      const hoverBox = await paletteHoverTarget.boundingBox()
+      if (!hoverBox) throw new Error('palette hover target has no box')
+      await page.mouse.move(hoverBox.x + hoverBox.width / 2, hoverBox.y + hoverBox.height / 2)
+      await expect
+        .poll(async () => {
+          return paletteHoverTarget.evaluate((el) => ({
+            bg: getComputedStyle(el).backgroundColor,
+            hover: el.matches(':hover'),
+            className: el.className,
+            selected: el.getAttribute('data-selected'),
+          }))
+        })
+        .toMatchObject({ bg: weakPurple, hover: true })
       const paletteActiveShadow = await palette.locator('.hit.on').first().evaluate((el) => getComputedStyle(el).boxShadow)
       await saveShot(page, `f6-f8-palette-crumb-${theme}.png`)
       await page.keyboard.press('Escape')
