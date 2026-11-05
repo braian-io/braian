@@ -384,13 +384,14 @@ function Pane({ frame, leaf }: { frame: Frame; leaf: Leaf }) {
           {leaf.views.map((id) => {
             const title = titleOf(frame.viewList, id)
             const prompt = frame.viewList.find((view) => view.id === id)?.prompt
+            const tabTitle = prompt ? `${title} — ${prompt}` : title
             return (
               <Tooltip key={id}>
                 <div
                   data-tab={id}
                   data-view-type={frame.viewList.find((view) => view.id === id)?.type ?? ''}
                   className={id === activeId ? 'pane-tab active' : 'pane-tab'}
-                  title={prompt}
+                  title={tabTitle}
                   onContextMenu={(event) => {
                     if (prefersNativeContextMenu(event.target)) return
                     event.preventDefault()
@@ -401,7 +402,7 @@ function Pane({ frame, leaf }: { frame: Frame; leaf: Leaf }) {
                     <button
                       type="button"
                       className="pane-tab-open"
-                      title={prompt}
+                      title={tabTitle}
                       onClick={() => {
                         if (dragged.current) {
                           dragged.current = false
@@ -462,7 +463,10 @@ function Pane({ frame, leaf }: { frame: Frame; leaf: Leaf }) {
                     <X size={14} aria-hidden="true" />
                   </button>
                 </div>
-                <TooltipContent>{frame.viewList.find((view) => view.id === id)?.prompt ?? (frame.doc.zoom === id ? copy.doubleClickRestore : copy.doubleClickMaximize)}</TooltipContent>
+                <TooltipContent>
+                  <span>{title}</span>
+                  <span>{prompt ?? (frame.doc.zoom === id ? copy.doubleClickRestore : copy.doubleClickMaximize)}</span>
+                </TooltipContent>
               </Tooltip>
             )
           })}

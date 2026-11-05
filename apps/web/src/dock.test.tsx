@@ -40,3 +40,19 @@ it('renders the tab close control as a keyboard-reachable button', () => {
   expect(onChange).toHaveBeenCalledTimes(1)
   expect(views(onChange.mock.calls[0]?.[0].layout)).toEqual(['graph'])
 })
+
+it('keeps the full tab title on the truncated tab button', () => {
+  const title = 'A very long view title that the tab strip truncates'
+  render(
+    <WorkspaceDock
+      doc={{ ...doc, layout: { type: 'tabs', views: ['long'], active: 0 }, focus: 'long' }}
+      views={[{ id: 'long', title, type: 'object_table' }]}
+      onChange={() => undefined}
+      renderView={() => <div />}
+      onAddView={() => undefined}
+    />,
+  )
+
+  const open = screen.getByText(title).closest('button')
+  expect(open?.getAttribute('title')).toBe(title)
+})

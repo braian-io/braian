@@ -390,6 +390,7 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
       id: 'label',
       header: copy.attributeName,
       editable: true,
+      truncate: true,
       read: (row) => row.label,
       write: (row, value) => ({ ...row, label: value }),
       cellTestId: (row) => `attr-label-${row.key || row.id}`,
@@ -398,6 +399,7 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
       id: 'key',
       header: copy.key,
       editable: true,
+      truncate: true,
       read: (row) => row.key,
       write: (row, value) => ({ ...row, key: value }),
       cellTestId: (row) => `attr-key-${row.key || row.id}`,
@@ -469,6 +471,7 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
       id: 'from',
       header: copy.from,
       type: 'readonly',
+      truncate: true,
       read: (row) => (row.fromKey ? `${copy.fromSource} ${structureCaption(row.fromKey, defs)}` : ''),
       display: (row) => row.fromKey
         ? <span data-testid="attribute-from">{copy.fromSource} {structureCaption(row.fromKey, defs)}</span>
