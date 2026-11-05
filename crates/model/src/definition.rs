@@ -92,6 +92,9 @@ pub struct Attribute {
     /// The value must be present when the attribute applies. Absent means optional.
     #[serde(default, skip_serializing_if = "is_false")]
     pub required: bool,
+    /// When true, the field is shown by default in create, Detail, and tables.
+    #[serde(default = "default_true", skip_serializing_if = "is_true")]
+    pub show_by_default: bool,
     pub kind: AttributeKind,
     pub index: IndexFlags,
 }
@@ -195,6 +198,14 @@ impl AttributeKind {
 
 fn is_false(value: &bool) -> bool {
     !*value
+}
+
+pub(crate) fn default_true() -> bool {
+    true
+}
+
+fn is_true(value: &bool) -> bool {
+    *value
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -532,6 +543,25 @@ mod label_tests {
             kind: Default::default(),
             link: None,
         }
+    }
+
+    #[test]
+    fn show_by_default_is_true_when_missing_and_false_when_set() {
+        let base = serde_json::json!({
+            "id": "018f0000-0000-7000-8000-000000000101",
+            "key": "name",
+            "labels": {},
+            "language_dependent": false,
+            "multiple": false,
+            "kind": { "type": "boolean" },
+            "index": { "searchable": false, "filterable": false, "sortable": false }
+        });
+        let shown: super::Attribute = serde_json::from_value(base.clone()).unwrap();
+        assert!(shown.show_by_default);
+        let mut hidden = base;
+        hidden["show_by_default"] = serde_json::json!(false);
+        let hidden: super::Attribute = serde_json::from_value(hidden).unwrap();
+        assert!(!hidden.show_by_default);
     }
 
     #[test]

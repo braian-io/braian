@@ -77,6 +77,20 @@ describe('effective attributes', () => {
     expect(rows.find((row) => row.key === 'weight')).toMatchObject({ inherited: true, fromKey: 'outdoor' })
   })
 
+  it('shows attributes by default unless show_by_default is false', () => {
+    const rows = attributeRows(defs, { kind: 'type', typeKey: 'product' })
+    expect(rows.find((row) => row.key === 'name')).toMatchObject({ showByDefault: true })
+    const hidden = {
+      ...defs,
+      attributes: [
+        ...(defs.attributes as Json[]),
+        { id: 'hidden', key: 'hidden', labels: { en: 'Hidden' }, kind: { type: 'text' }, index: {}, show_by_default: false },
+      ],
+      types: [{ ...(defs.types as Json[])[0], attributes: ['name', 'hidden'] }],
+    }
+    expect(attributeRows(hidden, { kind: 'type', typeKey: 'product' }).find((row) => row.key === 'hidden')).toMatchObject({ showByDefault: false })
+  })
+
   it('blocks a second definition with a different type or unit', () => {
     expect(attributeConflict(defs, 'weight', 'text', '')).toBe(true)
     expect(attributeConflict(defs, 'weight', 'number', 'length')).toBe(true)

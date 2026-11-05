@@ -106,6 +106,7 @@ pub fn definitions_with(tier: Tier, seed: u64, budget: IndexBudget) -> Definitio
             language_dependent,
             multiple,
             required: false,
+            show_by_default: true,
             index: capped(flags(index, &kind, multiple), budget, &mut used),
             kind,
         });
@@ -120,6 +121,7 @@ pub fn definitions_with(tier: Tier, seed: u64, budget: IndexBudget) -> Definitio
         language_dependent: false,
         multiple: false,
         required: false,
+        show_by_default: true,
         kind: AttributeKind::Text {
             max_length: Some(32),
             form: TextForm::Short,

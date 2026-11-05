@@ -155,6 +155,7 @@ fn attribute(
         language_dependent: attribute.language_dependent,
         multiple: attribute.multiple,
         required: attribute.required,
+        show_by_default: attribute.show_by_default,
         kind: match &attribute.kind {
             AttributeKind::Text { max_length, form } => AttributeKindConfig::Text {
                 max_length: *max_length,

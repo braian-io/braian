@@ -210,6 +210,7 @@ mod tests {
                 language_dependent: false,
                 multiple: false,
                 required: true,
+                show_by_default: true,
                 kind: AttributeKind::Text {
                     max_length: None,
                     form: TextForm::Short,

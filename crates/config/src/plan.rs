@@ -1374,6 +1374,7 @@ fn attribute_from_config(
         language_dependent: config.language_dependent,
         multiple: config.multiple,
         required: config.required,
+        show_by_default: config.show_by_default,
         kind: attribute_kind(&config.kind, unit_ids, current)?,
         index: IndexFlags {
             searchable: config.index.searchable,

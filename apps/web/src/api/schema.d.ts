@@ -1940,6 +1940,8 @@ export interface components {
             multiple: boolean;
             /** @description The value must be present when the attribute applies. Absent means optional. */
             required?: boolean;
+            /** @description When true, the field is shown by default in create, Detail, and tables. */
+            show_by_default?: boolean;
         };
         /**
          * Format: uuid

@@ -187,6 +187,7 @@ describe('type attributes table', () => {
       key: 'extra',
       label: 'Extra',
       kind: 'text',
+      show_by_default: true,
     })))
     expect(stageModel).toHaveBeenCalledWith('model.attach_attribute', { attribute: 'extra', type: 'recipe' })
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())

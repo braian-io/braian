@@ -234,6 +234,7 @@ fn ensure_row(
             language_dependent,
             multiple: false,
             required,
+            show_by_default: true,
             kind: AttributeKind::Text {
                 max_length: Some(if key == "number" { 64 } else { 160 }),
                 form: TextForm::Short,
@@ -374,6 +375,7 @@ mod tests {
                 language_dependent: false,
                 multiple: false,
                 required: false,
+                show_by_default: true,
                 kind: AttributeKind::Text {
                     max_length: Some(32),
                     form: TextForm::Short,
@@ -436,6 +438,7 @@ mod tests {
                 clear_unit: false,
                 languages: None,
                 required: None,
+                show_by_default: None,
                 searchable: None,
                 filterable: None,
                 sortable: None,
@@ -480,6 +483,7 @@ mod tests {
             language_dependent: false,
             multiple: false,
             required: false,
+            show_by_default: true,
             kind: AttributeKind::Text {
                 max_length: Some(80),
                 form: TextForm::Short,

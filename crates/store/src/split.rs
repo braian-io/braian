@@ -842,6 +842,7 @@ mod tests {
                 language_dependent: false,
                 multiple: false,
                 required: false,
+                show_by_default: true,
                 kind: braian_model::AttributeKind::Text {
                     max_length: None,
                     form: braian_model::TextForm::Short,

@@ -399,6 +399,7 @@ async fn adding_attributes_does_not_move_existing_values() {
             language_dependent: false,
             multiple: false,
             required: false,
+            show_by_default: true,
             kind: AttributeKind::Text {
                 max_length: None,
                 form: braian_model::TextForm::Short,
