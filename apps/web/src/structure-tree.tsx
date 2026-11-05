@@ -150,7 +150,7 @@ export function StructureSection({
             setCreateOpen(true)
           }}
         >
-          <Plus size={14} />
+          <Plus size={14} aria-hidden="true" />
         </button>
       </div>
       <CreateDialog
@@ -464,7 +464,7 @@ function NodeMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger className="icon-btn" aria-label={copy.moreActions} data-testid={testId}>
-        <MoreHorizontal size={14} />
+        <MoreHorizontal size={14} aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuContent onCloseAutoFocus={onCloseAutoFocus}>
         <DropdownMenuItem onSelect={onAdd} onClick={onAdd}>{copy.addChild}</DropdownMenuItem>
