@@ -825,15 +825,19 @@ select.link-type-line { width: 100%; font-weight: 600; }
   appearance: none;
   opacity: 1;
 }
+/* Chips are flat controls: no raised fill, inset or resting border to box them in. */
+button.filter-chip {
+  border-color: transparent;
+}
 .filter-chip.on {
   background: var(--accent-dim);
-  color: var(--text);
-  border-color: var(--accent);
+  color: var(--accent);
+  border-color: transparent;
   box-shadow: none;
 }
-.filter-chip:hover:not(.on),
-.choice-chip:hover:not(.on) {
-  background: color-mix(in srgb, var(--accent-dim) 55%, transparent);
+button.filter-chip:hover:not(.on),
+button.choice-chip:hover:not(.on) {
+  background: var(--accent-dim);
 }
 .row-count {
   margin-left: auto;
@@ -1160,7 +1164,7 @@ select.link-type-line { width: 100%; font-weight: 600; }
   height: 22px;
   padding: 0 10px;
   border-radius: 999px;
-  background: var(--surface);
+  background: transparent;
   color: var(--text-2);
   box-shadow: none;
   font-size: 12px;
@@ -1174,7 +1178,7 @@ select.link-type-line { width: 100%; font-weight: 600; }
   font-size: 12px;
   height: 30px;
 }
-/* Assortment chips use .filter-chip / .filter-chip.on — do not force accent. */
+/* Assortment chips share the flat .filter-chip rules; only their test hook differs. */
 [data-testid='assortment'] {
   border-radius: 999px;
   box-shadow: none;
@@ -2637,19 +2641,6 @@ button.tab-x:disabled:hover {
   color: #4b5563;
   border-color: #e5e7eb;
   opacity: 1;
-}
-:root[data-theme='light'] button.filter-chip:not(.on) {
-  background: #ffffff;
-  color: #374151;
-  border-color: #d1d5db;
-}
-:root[data-theme='light'] button.filter-chip:hover:not(.on) {
-  background: color-mix(in srgb, var(--accent-dim) 55%, transparent);
-}
-:root[data-theme='light'] button.filter-chip.on {
-  background: var(--accent-dim);
-  color: #111827;
-  border-color: var(--accent);
 }
 :root[data-theme='light'] button.agent-mode {
   background: #ffffff;

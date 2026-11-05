@@ -557,3 +557,57 @@ test('standard grid selected row carries the accent edge', async ({ page }) => {
   await assertTheme('dark')
   await assertTheme('light')
 })
+
+for (const passTheme of ['dark', 'light'] as const) test(`flat icon buttons and chips use an accent hover (${passTheme})`, async ({ page }) => {
+  test.setTimeout(120_000)
+  await page.addInitScript((t) => localStorage.setItem('braian.theme', JSON.stringify(t)), passTheme)
+  await login(page)
+  await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
+
+  const table = mainTable(page)
+  await expect(table.getByTestId('object-row').first()).toBeVisible({ timeout: 60_000 })
+
+  const icon = table.getByTestId('table-add-row')
+  const filters = table.getByTestId('standard-table-filters')
+  const inactive = filters.getByRole('button', { name: 'Type', exact: true })
+  const active = filters.getByRole('button', { name: 'All', exact: true })
+  await expect(icon).toBeVisible()
+  await expect(inactive).toBeVisible()
+  await active.click()
+  await expect(active).toHaveClass(/\bon\b/)
+
+  const accentDim = await cssToken(page, '--accent-dim')
+
+  const expectRest = async (target: Locator, label: string, name: string) => {
+    await page.mouse.move(5, 5)
+    const value = await paint(target)
+    expect(value.backgroundColor, `${label} ${passTheme} rest background`).toBe('rgba(0, 0, 0, 0)')
+    expect(value.boxShadow, `${label} ${passTheme} rest shadow`).toBe('none')
+    await screenshotElement(page, target, `${name}-rest-${passTheme}`)
+  }
+
+  const expectHover = async (target: Locator, label: string, name: string) => {
+    await page.mouse.move(5, 5)
+    await target.hover()
+    // The fill has a short CSS transition; retry until it settles on the accent wash.
+    await expect.poll(async () => (await paint(target)).backgroundColor).toBe(accentDim)
+    const value = await paint(target)
+    expect(value.boxShadow, `${label} ${passTheme} hover shadow`).toBe('none')
+    expect(value.outlineStyle, `${label} ${passTheme} hover outline`).toBe('none')
+    expect(value.visibleBorder, `${label} ${passTheme} hover border`).toBe(false)
+    await screenshotElement(page, target, `${name}-hover-${passTheme}`)
+  }
+
+  await expectRest(icon, 'add icon button', 'icon-button')
+  await expectRest(inactive, 'inactive chip', 'inactive-chip')
+  await expectHover(icon, 'add icon button', 'icon-button')
+  await expectHover(inactive, 'inactive chip', 'inactive-chip')
+
+  await page.mouse.move(5, 5)
+  const activePaint = await paint(active)
+  expect(activePaint.backgroundColor, `active chip ${passTheme} fill`).toBe(accentDim)
+  expect(activePaint.boxShadow, `active chip ${passTheme} shadow`).toBe('none')
+  expect(activePaint.visibleBorder, `active chip ${passTheme} border`).toBe(false)
+  await expect.poll(async () => (await paint(active)).color).toBe(activePaint.accent)
+  await screenshotElement(page, active, `active-chip-${passTheme}`)
+})
