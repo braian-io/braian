@@ -237,6 +237,18 @@ export function AttributeDefinitions() {
           setQuery(value)
           setActiveId(null)
         }}
+        filterOnKeyDown={(event) => {
+          if (event.key !== 'ArrowDown') return
+          const row = rowsRef.current[0]
+          if (!row) return
+          event.preventDefault()
+          setActiveId(row.id)
+          document
+            .querySelector<HTMLElement>(
+              `[data-testid="attribute-definition-row"][data-key="${CSS.escape(row.key || row.id)}"]`,
+            )
+            ?.focus()
+        }}
         activeRowId={activeId}
         onActivateRow={(row) => {
           setActiveId(row.id)
@@ -261,28 +273,6 @@ export function AttributeDefinitions() {
         onEditRequestHandled={() => setEditRequest(null)}
         belowBar={
           <div className="standard-table-filters">
-            <input
-              data-testid="attribute-search"
-              aria-label={copy.search}
-              placeholder={copy.search}
-              value={query}
-              onChange={(event) => {
-                setQuery(event.target.value)
-                setActiveId(null)
-              }}
-              onKeyDown={(event) => {
-                if (event.key !== 'ArrowDown') return
-                const row = rowsRef.current[0]
-                if (!row) return
-                event.preventDefault()
-                setActiveId(row.id)
-                document
-                  .querySelector<HTMLElement>(
-                    `[data-testid="attribute-definition-row"][data-key="${CSS.escape(row.key || row.id)}"]`,
-                  )
-                  ?.focus()
-              }}
-            />
             <select aria-label={copy.kindAll} value={kind} onChange={(event) => setKind(event.target.value)}>
               <option value="">{copy.allKinds}</option>
               {KINDS.map(([value, label]) => (

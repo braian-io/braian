@@ -134,7 +134,9 @@ describe('attribute definitions view', () => {
 
   it('puts add to type in the draft from the keyboard', async () => {
     render(<Host />)
-    const search = await screen.findByTestId('attribute-search')
+    const search = await screen.findByTestId('quick-filter')
+    expect(screen.getAllByTestId('quick-filter')).toHaveLength(1)
+    expect(screen.queryByTestId('attribute-search')).toBeNull()
     fireEvent.change(search, { target: { value: 'weight' } })
     fireEvent.keyDown(search, { key: 'ArrowDown' })
     const row = await screen.findByTestId('attribute-definition-row')
