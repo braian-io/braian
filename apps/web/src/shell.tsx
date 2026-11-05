@@ -171,6 +171,15 @@ function writeStore(key: string, value: unknown) {
   localStorage.setItem(key, JSON.stringify(value))
 }
 
+let layoutStamp = 0
+
+/** Later view switches must beat a layout save that is still in flight. */
+function stampedLayout(document: LayoutDoc) {
+  const now = Date.now()
+  layoutStamp = now > layoutStamp ? now : layoutStamp + 1
+  return freeObject({ ...document, clientSavedAt: layoutStamp })
+}
+
 const layoutCommands = new Set([
   'open_view', 'move_view', 'split', 'resize', 'swap', 'focus',
   'move_view_left', 'move_view_right', 'move_view_up', 'move_view_down',
@@ -859,7 +868,7 @@ export function Shell() {
       if (!current || !ws || ws.id !== workspaceId || saveGen.current !== gen) return
       void api.put('/v1/workspaces/{id}/state', {
         params: { path: { id: workspaceId } },
-        body: { environment: LAYOUT_ENVIRONMENT, document: freeObject(current) },
+        body: { environment: LAYOUT_ENVIRONMENT, document: stampedLayout(current) },
       }).then(() => {
         if (saveGen.current === gen) dirtyRef.current = false
       }).catch((reason: unknown) => {
@@ -890,16 +899,18 @@ export function Shell() {
       if (!dirtyRef.current || !current || !workspaceId) return
       keepaliveJsonPut(`/v1/workspaces/${workspaceId}/state`, {
         environment: LAYOUT_ENVIRONMENT,
-        document: current,
+        document: stampedLayout(current),
       })
     }
     const onHide = () => {
       if (document.visibilityState === 'hidden') flush()
     }
     window.addEventListener('beforeunload', flush)
+    window.addEventListener('pagehide', flush)
     document.addEventListener('visibilitychange', onHide)
     return () => {
       window.removeEventListener('beforeunload', flush)
+      window.removeEventListener('pagehide', flush)
       document.removeEventListener('visibilitychange', onHide)
     }
   }, [workspaceId])
@@ -1216,7 +1227,7 @@ export function Shell() {
             loadedFor.current = `${userId}:${current.id}`
             void api.put('/v1/workspaces/{id}/state', {
               params: { path: { id: current.id } },
-              body: { environment: LAYOUT_ENVIRONMENT, document: freeObject(next) },
+              body: { environment: LAYOUT_ENVIRONMENT, document: stampedLayout(next) },
             }).catch((reason: unknown) => {
               reportWriteError(reason)
             })
