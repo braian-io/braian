@@ -63,3 +63,44 @@ describe('create dialog', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 })
+
+function SelectHost({ onField }: { onField: (id: string, value: string) => void }) {
+  const [from, setFrom] = useState('article')
+  return (
+    <CreateDialog
+      open
+      title="New link type"
+      description="Pick the ends."
+      fields={[
+        { id: 'name', label: 'Name', value: 'Bundled', testId: 'new-name', autoFocus: true },
+        {
+          id: 'from',
+          label: 'From type',
+          value: from,
+          testId: 'new-type',
+          options: [
+            { value: 'article', label: 'article' },
+            { value: 'product', label: 'product' },
+          ],
+        },
+      ]}
+      onField={(id, value) => {
+        if (id === 'from') setFrom(value)
+        onField(id, value)
+      }}
+      onClose={() => undefined}
+      onSubmit={async () => undefined}
+    />
+  )
+}
+
+describe('create dialog select fields', () => {
+  it('uses the themed select trigger for option fields', () => {
+    render(<SelectHost onField={vi.fn()} />)
+    const trigger = screen.getByTestId('new-type')
+    expect(trigger.tagName).toBe('BUTTON')
+    expect(trigger.getAttribute('aria-label')).toBe('From type')
+    expect(trigger.getAttribute('role')).toBe('combobox')
+    expect(trigger.textContent).toContain('article')
+  })
+})
