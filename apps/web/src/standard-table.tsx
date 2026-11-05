@@ -88,7 +88,7 @@ export function StandardTableChrome({
         ) : null}
         {typeof rowCount === 'number' ? (
           <span className="row-count" data-testid="row-count">
-            {formatCount(rowCount)} {copy.rows}
+            {formatCount(rowCount)} {rowCount === 1 ? copy.row : copy.rows}
           </span>
         ) : null}
       </div>

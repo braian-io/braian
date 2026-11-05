@@ -20,6 +20,21 @@ describe('standard table chrome', () => {
     expect(screen.queryByLabelText(copy.addView)).toBeNull()
   })
 
+  it('uses a singular row label for one row', () => {
+    const { rerender } = render(
+      <StandardTableChrome rowCount={1}>
+        <div />
+      </StandardTableChrome>,
+    )
+    expect(screen.getByTestId('row-count').textContent).toBe('1 row')
+    rerender(
+      <StandardTableChrome rowCount={2}>
+        <div />
+      </StandardTableChrome>,
+    )
+    expect(screen.getByTestId('row-count').textContent).toBe('2 rows')
+  })
+
   it('does not render an empty trailing row in the chrome', () => {
     const { container } = render(
       <StandardTableChrome newRowLabel="New row" onNewRow={() => undefined} rowCount={0}>

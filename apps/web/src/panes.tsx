@@ -69,6 +69,7 @@ import {
   singularOf,
   typeNames,
   typeOfView,
+  withIndefinite,
 } from './type-labels'
 import { publishProposal } from './proposal-bus'
 import { acceptPendingLine, pendingLines, pendingRowsForObject, rejectPendingRow } from './proposal-focus'
@@ -2428,7 +2429,7 @@ export function ClassAttributes({ session }: { session: PanesSession }) {
   const listed = session.listType ? types.find((item) => item.key === session.listType) : undefined
   if (!session.objectId || !object.data) {
     const empty = listed
-      ? `Select a ${listed.singular.toLowerCase()} to see the attributes on its groups.`
+      ? `Select ${withIndefinite(listed.singular)} to see the attributes on its groups.`
       : copy.classAttributesEmpty
     return (
       <div className="detail-empty" data-testid="class-empty">

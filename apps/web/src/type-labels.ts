@@ -52,6 +52,17 @@ export function defaultPlural(singular: string) {
   return `${word}s`
 }
 
+/** Vowel-letter rule, same as the data model's inline helper. */
+export function indefiniteArticle(word: string): 'a' | 'an' {
+  return /^[aeiou]/i.test(word.trim()) ? 'an' : 'a'
+}
+
+/** `an article` / `a product`; the word is lowercased. */
+export function withIndefinite(word: string): string {
+  const lower = word.trim().toLowerCase()
+  return `${indefiniteArticle(lower)} ${lower}`
+}
+
 function labelMap(map: unknown) {
   if (!map || typeof map !== 'object' || Array.isArray(map)) return undefined
   return map as Record<string, unknown>
@@ -251,13 +262,13 @@ function namedType(types: TypeName[], listTypeKey?: string | null) {
 
 export function emptyDetail(types: TypeName[], listTypeKey?: string | null) {
   const type = namedType(types, listTypeKey)
-  if (type) return `Select a ${type.singular.toLowerCase()} to see its details.`
+  if (type) return `Select ${withIndefinite(type.singular)} to see its details.`
   return copy.detailEmpty
 }
 
 export function emptyGraph(types: TypeName[], listTypeKey?: string | null) {
   const type = namedType(types, listTypeKey)
-  if (type) return `Select a ${type.singular.toLowerCase()} to see its graph.`
+  if (type) return `Select ${withIndefinite(type.singular)} to see its graph.`
   return copy.graphEmpty
 }
 
