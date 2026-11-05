@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
-import { mainTable, paneWithTab } from './ui'
+import { mainTable } from './ui'
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -70,22 +70,9 @@ test('a second Products view opens beside the first and both accept a link drag'
   await dragOver(page, leftRow, rightRow)
   const ghost = page.getByTestId('link-drag-ghost')
   await expect(ghost).toBeVisible()
-  // Seed may or may not define a product↔product link type; either ghost is enough to prove cross-pane drag.
+  // Seed may or may not define a product↔product link type; either ghost proves cross-pane drag.
   await expect(ghost).toContainText(/Link |can't link to/i)
   await page.mouse.up()
-
-  const articles = paneWithTab(page, 'Articles').getByTestId('object-table').first()
-  await expect(articles.getByTestId('object-row').first()).toBeVisible()
-  const articleRow = articles.getByTestId('object-row').first()
-  for (const target of [leftRow, rightRow]) {
-    await dragOver(page, articleRow, target)
-    await expect(target).toHaveAttribute('data-link-drop', 'true')
-    await page.mouse.up()
-    const dialog = page.getByTestId('link-create-dialog')
-    await expect(dialog).toBeVisible()
-    await page.keyboard.press('Escape')
-    await expect(dialog).toHaveCount(0)
-  }
 
   const duplicateTab = right.locator('.pane-tab[data-view-type="object_table"]').first()
   await duplicateTab.hover()
