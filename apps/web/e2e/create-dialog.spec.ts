@@ -278,6 +278,56 @@ async function modelTab(page: Page, title: string) {
   await tab.click()
 }
 
+test('From type select stays readable in dark theme', async ({ page }) => {
+  test.setTimeout(90_000)
+  await login(page)
+  await setTheme(page, 'dark')
+  await modelTab(page, 'Link types')
+  const table = page.getByTestId('link-types-table')
+  await table.getByTestId('table-add-row').click()
+  const dialog = page.getByTestId('create-dialog')
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByRole('heading', { name: 'New link type' })).toBeVisible()
+  const from = dialog.getByTestId('new-type')
+  await expect(from).toBeVisible()
+  // Themed Select trigger — not a native <select> that paints white.
+  await expect(from).toHaveRole('combobox')
+  const paint = await from.evaluate((el) => {
+    const style = getComputedStyle(el)
+    const probe = document.createElement('span')
+    probe.style.color = 'var(--text)'
+    document.body.append(probe)
+    const text = getComputedStyle(probe).color
+    probe.remove()
+    return {
+      color: style.color,
+      background: style.backgroundColor,
+      text,
+      tag: el.tagName,
+    }
+  })
+  expect(paint.tag).toBe('BUTTON')
+  expect(paint.color).toBe(paint.text)
+  expect(paint.background).not.toBe('rgb(255, 255, 255)')
+  await from.click()
+  const list = page.getByTestId('new-type-list')
+  await expect(list).toBeVisible()
+  const listPaint = await list.evaluate((el) => {
+    const style = getComputedStyle(el)
+    const probe = document.createElement('span')
+    probe.style.color = 'var(--raised)'
+    document.body.append(probe)
+    const raised = getComputedStyle(probe).color
+    probe.remove()
+    return { background: style.backgroundColor, raised }
+  })
+  expect(listPaint.background).toBe(listPaint.raised)
+  expect(listPaint.background).not.toBe('rgb(255, 255, 255)')
+  await page.keyboard.press('Escape')
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+})
+
 test('Object types create dialog', async ({ page }) => {
   test.setTimeout(120_000)
   await login(page)

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select'
 import { copy } from './i18n'
 import { writeErrorMessage } from './write-error'
 
@@ -15,6 +16,8 @@ export type CreateDialogField = {
 /**
  * Modal create form. Uses the shared Dialog primitive (Radix), which traps
  * focus and returns it to the control that was focused when the dialog opened.
+ * Option fields use the themed Select, not a native <select>, so the list stays
+ * readable in dark mode.
  */
 export function CreateDialog({
   open,
@@ -103,17 +106,21 @@ export function CreateDialog({
                 <div className="create-field" key={field.id}>
                   <label htmlFor={inputId}>{field.label}</label>
                   {field.options ? (
-                    <select
-                      id={inputId}
-                      data-testid={field.testId}
-                      autoFocus={focus}
-                      value={field.value}
-                      onChange={(event) => onField(field.id, event.target.value)}
-                    >
-                      {field.options.map((option) => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </select>
+                    <Select value={field.value || undefined} onValueChange={(value) => onField(field.id, value)}>
+                      <SelectTrigger
+                        id={inputId}
+                        data-testid={field.testId}
+                        autoFocus={focus}
+                        aria-label={field.label}
+                      >
+                        <SelectValue placeholder={copy.noValue} />
+                      </SelectTrigger>
+                      <SelectContent data-testid={`${field.testId}-list`}>
+                        {field.options.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   ) : (
                     <input
                       id={inputId}
