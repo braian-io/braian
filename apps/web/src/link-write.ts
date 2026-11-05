@@ -2,7 +2,7 @@ import { ApiError, api, jsonRecord, type Json } from './api'
 import { aiMode } from './ai-mode'
 import { copy } from './i18n'
 import { publishProposal } from './proposal-bus'
-import { writeErrorMessage } from './write-error'
+import { errorCodeFromBody, fieldErrorsFromErrorBody, writeErrorMessage, type WriteFieldError } from './write-error'
 
 export type LinkWrite = {
   type: string
@@ -20,10 +20,45 @@ export type CreatedLink = {
   label: string
 }
 
+export type LinkWriteFailure = {
+  body: LinkWrite
+  message: string
+  status?: number
+  code?: string
+  fieldErrors?: WriteFieldError[]
+}
+
 export type LinkSubmitResult =
   | { outcome: 'created'; created: CreatedLink[] }
   | { outcome: 'proposed'; created: CreatedLink[]; filed: number }
-  | { outcome: 'partial'; created: CreatedLink[]; failed: { body: LinkWrite; message: string } }
+  | { outcome: 'partial'; created: CreatedLink[]; failed: LinkWriteFailure }
+
+export class LinkWriteError extends Error {
+  failure: LinkWriteFailure
+
+  constructor(failure: LinkWriteFailure) {
+    super(failure.message)
+    this.name = 'LinkWriteError'
+    this.failure = failure
+  }
+}
+
+export function linkFailure(error: unknown, body: LinkWrite): LinkWriteFailure {
+  if (error instanceof LinkWriteError) return error.failure
+  const message = writeErrorMessage(error) || copy.validation
+  if (error instanceof ApiError) {
+    const code = errorCodeFromBody(error.body)
+    const fieldErrors = fieldErrorsFromErrorBody(error.body)
+    return {
+      body,
+      message,
+      status: error.status,
+      ...(code ? { code } : {}),
+      ...(fieldErrors.length > 0 ? { fieldErrors } : {}),
+    }
+  }
+  return { body, message }
+}
 
 export type UndoLinksResult = {
   undone: CreatedLink[]
@@ -37,7 +72,7 @@ export type UndoLinksResult = {
  */
 export async function submitLink(body: LinkWrite): Promise<'created' | 'proposed'> {
   const result = await submitLinks([body])
-  if (result.outcome === 'partial') throw new Error(result.failed.message)
+  if (result.outcome === 'partial') throw new LinkWriteError(result.failed)
   return result.outcome === 'proposed' ? 'proposed' : 'created'
 }
 
@@ -62,7 +97,7 @@ export async function submitLinks(bodies: LinkWrite[]): Promise<LinkSubmitResult
       return {
         outcome: 'partial',
         created,
-        failed: { body, message: writeErrorMessage(error) || copy.validation },
+        failed: linkFailure(error, body),
       }
     }
     const record = jsonRecord(result)
@@ -83,6 +118,52 @@ export async function submitLinks(bodies: LinkWrite[]): Promise<LinkSubmitResult
     })
   }
   return { outcome: 'created', created }
+}
+
+export async function replaceConflictingLink(
+  sourceId: string,
+  body: LinkWrite,
+  preferSource = true,
+): Promise<CreatedLink> {
+  const id = await conflictingLinkId(sourceId, body, preferSource)
+  if (!id) throw new Error(copy.linkReplaceMissing)
+  const current = await api.get('/v1/objects/{id}', { params: { path: { id } } })
+  const version = Number(jsonRecord(current)?.version)
+  if (!(version > 0)) throw new Error(copy.linkReplaceMissing)
+  const result = await api.patch('/v1/links/{id}', {
+    params: { path: { id }, header: { 'If-Match': version } },
+    body: { from_id: body.from_id, to_id: body.to_id, values: body.values },
+  })
+  const next = Number(jsonRecord(result)?.version)
+  return { body, id, version: Number.isFinite(next) && next > 0 ? next : version + 1, label: '' }
+}
+
+async function conflictingLinkId(sourceId: string, body: LinkWrite, preferSource: boolean): Promise<string> {
+  const peerId = body.from_id === sourceId ? body.to_id : body.from_id
+  const first = preferSource ? sourceId : peerId
+  const firstPeer = preferSource ? peerId : sourceId
+  if (first) {
+    const sides = await api.get('/v1/links', { params: { query: { object: first } } }) as Json[]
+    const atFirst = differentPeer(sides, body.type, firstPeer)
+    if (atFirst) return atFirst
+  }
+  const second = preferSource ? peerId : sourceId
+  const secondPeer = preferSource ? sourceId : peerId
+  if (!second) return ''
+  const sides = await api.get('/v1/links', { params: { query: { object: second } } }) as Json[]
+  return differentPeer(sides, body.type, secondPeer)
+}
+
+function differentPeer(sides: Json[], linkType: string, keepPeer: string): string {
+  for (const side of sides ?? []) {
+    if (String(side.link_type ?? '') !== linkType) continue
+    for (const link of ((side.links as Json[] | undefined) ?? [])) {
+      const id = String(link.id ?? '')
+      const peer = String(link.peer_id ?? '')
+      if (id && peer && peer !== keepPeer) return id
+    }
+  }
+  return ''
 }
 
 /**

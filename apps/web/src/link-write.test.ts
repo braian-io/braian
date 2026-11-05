@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { api } from './api'
 import { setAiMode } from './ai-mode'
 import { publishProposal } from './proposal-bus'
-import { submitLink, submitLinks, undoCreatedLinks } from './link-write'
+import { replaceConflictingLink, submitLink, submitLinks, undoCreatedLinks } from './link-write'
 import { ApiError } from './api'
 
 vi.mock('./proposal-bus', () => ({ publishProposal: vi.fn() }))
@@ -111,6 +111,36 @@ describe('submitLink', () => {
     expect(publishProposal).toHaveBeenCalledWith('proposal-1')
     expect(publishProposal).toHaveBeenCalledWith('proposal-rest')
     expect(post.mock.calls.filter((call) => call[0] === '/v1/proposals')).toHaveLength(1)
+  })
+})
+
+describe('replaceConflictingLink', () => {
+  it('retargets the existing link instead of creating a second one', async () => {
+    const get = vi.spyOn(api, 'get').mockImplementation(async (path) => {
+      if (path === '/v1/links') {
+        return [{ link_type: 'product_articles', links: [{ id: 'old-link', peer_id: 'old-product' }] }] as never
+      }
+      return { version: 7 } as never
+    })
+    const patch = vi.spyOn(api, 'patch').mockResolvedValue({ version: 8 } as never)
+    const body = {
+      type: 'product_articles',
+      from_id: 'new-product',
+      to_id: 'article-1',
+      values: { sort_order: { value: '2' } },
+    }
+    await expect(replaceConflictingLink('article-1', body)).resolves.toEqual({
+      body,
+      id: 'old-link',
+      version: 8,
+      label: '',
+    })
+    expect(get).toHaveBeenNthCalledWith(1, '/v1/links', { params: { query: { object: 'article-1' } } })
+    expect(get).toHaveBeenNthCalledWith(2, '/v1/objects/{id}', { params: { path: { id: 'old-link' } } })
+    expect(patch).toHaveBeenCalledWith('/v1/links/{id}', {
+      params: { path: { id: 'old-link' }, header: { 'If-Match': 7 } },
+      body: { from_id: 'new-product', to_id: 'article-1', values: { sort_order: { value: '2' } } },
+    })
   })
 })
 

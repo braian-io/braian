@@ -156,6 +156,61 @@ test('a partial multi-drop names the failure and does not create the saved link 
   await expect(dialog).toBeHidden()
 })
 
+test('a non-numeric sort order stops at its field without writing', async ({ page }) => {
+  await openArticles(page)
+  const articles = mainTable(page, 'Articles')
+  await unlink(page, articles, 'ART-OAT-1L', 'product_articles')
+  let posted = 0
+  await page.route('**/v1/links', async (route) => {
+    if (route.request().method() === 'POST') posted += 1
+    await route.continue()
+  })
+  const article = row(articles, 'ART-OAT-1L')
+  const product = row(await allProducts(page), 'PROD-COFFEE')
+  await article.dragTo(product)
+  const dialog = page.getByTestId('link-create-dialog')
+  await expect(dialog).toBeVisible()
+  const field = dialog.getByTestId('link-field-sort_order')
+  await expect(field).toHaveAttribute('inputmode', 'decimal')
+  await expect(field).toHaveAttribute('data-kind', 'number')
+  await field.fill('test')
+  const fieldError = dialog.getByTestId('link-field-error-sort_order')
+  await expect(fieldError).toContainText('Enter a number')
+  await dialog.getByTestId('link-create-confirm').click()
+  await expect(fieldError).toBeVisible()
+  await expect(dialog).toBeVisible()
+  expect(posted).toBe(0)
+})
+
+test('a full cardinality offers replace and retargets the existing link', async ({ page }) => {
+  await openArticles(page)
+  const articles = mainTable(page, 'Articles')
+  const article = row(articles, 'ART-CHED-200')
+  const articleId = await objectId(article)
+  const before = await productLinks(page, articleId)
+  expect(before).toHaveLength(1)
+  const current = before[0]!
+  const products = await allProducts(page)
+  const targetKey = ['PROD-COFFEE', 'PROD-OAT', 'PROD-CHEDDAR'].find((key) => key !== current.peer_key)
+  expect(targetKey).toBeTruthy()
+  const target = row(products, targetKey!)
+  const targetId = await objectId(target)
+  await article.dragTo(target)
+  const dialog = page.getByTestId('link-create-dialog')
+  await expect(dialog).toBeVisible()
+  await dialog.getByTestId('link-create-confirm').click()
+  await expect(dialog.getByTestId('link-cardinality')).toBeVisible()
+  await expect(dialog.getByTestId('link-cardinality')).toContainText(/already has a product link|only one/i)
+  await expect(dialog.getByTestId('link-replace')).toBeVisible()
+  await dialog.getByTestId('link-replace').click()
+  await expect(dialog).toBeHidden()
+  await expect(page.locator('[data-sonner-toast]').filter({ hasText: 'Replaced the existing link' })).toBeVisible()
+  const after = await productLinks(page, articleId)
+  expect(after).toHaveLength(1)
+  expect(after[0]?.peer_id).toBe(targetId)
+  expect(after[0]?.peer_id).not.toBe(current.peer_id)
+})
+
 test('undo keeps a link that changed after it was created', async ({ page }) => {
   await openArticles(page)
   await unlink(page, mainTable(page, 'Articles'), 'ART-OAT-1L', 'product_articles')
@@ -304,6 +359,25 @@ async function allProducts(page: Page) {
 
 function row(table: Locator, key: string) {
   return table.getByTestId('object-row').filter({ hasText: key }).first()
+}
+
+async function objectId(locator: Locator) {
+  const id = ((await locator.getAttribute('id')) ?? '').replace(/^object-row-/, '')
+  expect(id).not.toBe('')
+  return id
+}
+
+type ProductLink = { id?: string; peer_id?: string; peer_key?: string }
+
+async function productLinks(page: Page, articleId: string): Promise<ProductLink[]> {
+  const response = await page.request.get(`/v1/objects/${articleId}`)
+  expect(response.ok()).toBeTruthy()
+  const body = (await response.json()) as {
+    links?: Array<{ link_type?: string; links?: ProductLink[] }>
+  }
+  return (body.links ?? [])
+    .filter((side) => side.link_type === 'product_articles')
+    .flatMap((side) => side.links ?? [])
 }
 
 async function unlink(page: Page, table: Locator, key: string, linkType: string) {

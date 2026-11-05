@@ -347,6 +347,7 @@ export function LinkSections({
             })
             if (outcome === 'created') refresh()
           }}
+          onReplaced={() => refresh()}
         />
       ) : null}
       {confirm ? (

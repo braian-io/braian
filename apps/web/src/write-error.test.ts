@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { toast } from 'sonner'
 import { ApiError } from './api'
-import { messageFromErrorBody, reportWriteError, writeErrorMessage } from './write-error'
+import { copy } from './i18n'
+import { errorCodeFromBody, fieldErrorsFromErrorBody, messageFromErrorBody, reportWriteError, writeErrorMessage } from './write-error'
 
 vi.mock('sonner', () => ({
   toast: { error: vi.fn() },
@@ -22,6 +23,24 @@ describe('messageFromErrorBody', () => {
 
   it('uses the first validation message when detail is missing', () => {
     expect(messageFromErrorBody({ errors: [{ code: 'required', message: 'name is required' }] })).toBe('name is required')
+  })
+
+  it('prefers the field reason over the generic validation detail', () => {
+    expect(messageFromErrorBody({
+      detail: 'the write failed validation',
+      errors: [{ attribute: 'sort-attr', code: 'not_integer', message: 'sort order must be a whole number' }],
+    })).toBe('sort order must be a whole number')
+  })
+
+  it('explains a cardinality conflict in plain language', () => {
+    expect(errorCodeFromBody({ code: 'link_cardinality', detail: 'technical text' })).toBe('link_cardinality')
+    expect(messageFromErrorBody({ code: 'link_cardinality', detail: 'technical text' })).toBe(copy.linkCardinalityFailed)
+  })
+
+  it('keeps the attribute so a caller can place the error at its field', () => {
+    expect(fieldErrorsFromErrorBody({
+      errors: [{ attribute: 'sort-attr', code: 'not_integer', message: 'Enter a number.' }],
+    })).toEqual([{ attribute: 'sort-attr', code: 'not_integer', message: 'Enter a number.' }])
   })
 })
 

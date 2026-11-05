@@ -4,8 +4,11 @@ import { copy } from './i18n'
 import {
   choiceLabel,
   choiceValue,
+  linkCardinalityMessage,
+  linkConstrainedType,
   linkEndLabel,
   linkEndsSummary,
+  linkFieldErrors,
   linkFieldValues,
   linkPairExplanation,
   linksForEnds,
@@ -13,9 +16,8 @@ import {
   type LinkChoice,
   type LinkDirection,
 } from './link-choices'
-import type { LinkSubmitResult } from './link-write'
+import { linkFailure, replaceConflictingLink, type LinkSubmitResult, type LinkWrite, type LinkWriteFailure } from './link-write'
 import { pushLinkUi } from './link-ui'
-import { writeErrorMessage } from './write-error'
 import type { Json } from './api'
 
 export type LinkEndpoint = {
@@ -47,6 +49,7 @@ export function LinkCreateDialog({
   onClose,
   onConfirm,
   onConfirmMany,
+  onReplaced,
 }: {
   source: LinkEndpoint
   target: LinkEndpoint
@@ -59,6 +62,7 @@ export function LinkCreateDialog({
   onConfirm: (request: LinkCreateRequest) => Promise<void>
   /** Several dragged objects. A partial result keeps the dialog open for the rest. */
   onConfirmMany?: (requests: LinkCreateRequest[]) => Promise<LinkSubmitResult>
+  onReplaced?: (request: LinkCreateRequest) => void
 }) {
   const peers = targets && targets.length > 0 ? targets : [target]
   const peerTypes = peers.map((item) => item.typeKey).join('|')
@@ -86,10 +90,12 @@ export function LinkCreateDialog({
       source={source}
       peers={peers}
       choices={choices}
+      defs={defs}
       preferred={preferred}
       onClose={onClose}
       onConfirm={onConfirm}
       onConfirmMany={onConfirmMany}
+      onReplaced={onReplaced}
     />
   )
 }
@@ -98,34 +104,101 @@ function LinkFields({
   source,
   peers,
   choices,
+  defs,
   preferred,
   onClose,
   onConfirm,
   onConfirmMany,
+  onReplaced,
 }: {
   source: LinkEndpoint
   peers: LinkEndpoint[]
   choices: LinkChoice[]
+  defs?: Json
   preferred?: { linkType: string; direction: LinkDirection }
   onClose: () => void
   onConfirm: (request: LinkCreateRequest) => Promise<void>
   onConfirmMany?: (requests: LinkCreateRequest[]) => Promise<LinkSubmitResult>
+  onReplaced?: (request: LinkCreateRequest) => void
 }) {
   const initial = preferredChoice(choices, preferred) ?? choices[0]
   const [selected, setSelected] = useState(initial ? choiceValue(initial) : '')
   const [pending, setPending] = useState(peers)
   const [draft, setDraft] = useState<Record<string, string>>({})
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+  const [conflict, setConflict] = useState<{ message: string; request: LinkCreateRequest } | null>(null)
   const [saving, setSaving] = useState(false)
+  const [replacing, setReplacing] = useState(false)
   const [error, setError] = useState('')
   const choice = choices.find((item) => choiceValue(item) === selected) ?? choices[0]
   useEffect(() => {
     setDraft({})
+    setFieldErrors({})
+    setConflict(null)
     setError('')
   }, [selected])
   if (!choice) return null
   const summary = linkEndsSummary(source, pending)
+  const updateField = (key: string, value: string, invalid = false) => {
+    setDraft((state) => ({ ...state, [key]: value }))
+    setFieldErrors((state) => {
+      if (!invalid && !(key in state)) return state
+      const next = { ...state }
+      if (invalid) next[key] = copy.linkFieldNumber
+      else delete next[key]
+      return next
+    })
+  }
+  const applyFieldErrors = (failure: LinkWriteFailure) => {
+    const byAttribute = new Map(
+      choice.fields.filter((field) => field.attributeId).map((field) => [String(field.attributeId), field.key]),
+    )
+    const mapped: Record<string, string> = {}
+    const rest: string[] = []
+    for (const item of failure.fieldErrors ?? []) {
+      const key = item.attribute ? byAttribute.get(item.attribute) : undefined
+      if (key) mapped[key] = item.message
+      else rest.push(item.message)
+    }
+    if (Object.keys(mapped).length === 0) return false
+    setFieldErrors(mapped)
+    setConflict(null)
+    setError(rest.join(' '))
+    return true
+  }
+  const requestFor = (body: LinkWrite): LinkCreateRequest => {
+    const match = pending.find((peer) =>
+      body.type === choice.linkType
+      && body.from_id === (choice.direction === 'out' ? source.id : peer.id)
+      && body.to_id === (choice.direction === 'out' ? peer.id : source.id),
+    )
+    return match
+      ? { type: choice.linkType, direction: choice.direction, fromId: body.from_id, toId: body.to_id, values: body.values }
+      : { type: body.type, direction: choice.direction, fromId: body.from_id, toId: body.to_id, values: body.values }
+  }
+  const showConflict = (failure: LinkWriteFailure, request: LinkCreateRequest) => {
+    const peerId = request.fromId === source.id ? request.toId : request.fromId
+    const peer = pending.find((item) => item.id === peerId)
+    setConflict({
+      message: linkCardinalityMessage(defs, choice, source.typeKey, peer?.typeKey ?? ''),
+      request,
+    })
+    setError('')
+  }
+  const isCardinality = (failure: LinkWriteFailure) => {
+    if (failure.code === 'link_cardinality') return true
+    const text = failure.message.toLowerCase()
+    const talksAboutOne = text.includes('allows one link') || text.includes('only one link')
+    return talksAboutOne && (failure.status === 409 || failure.status === 422 || failure.code === 'link_rejected')
+  }
   const submit = () => {
-    if (saving || pending.length === 0) return
+    if (saving || replacing || conflict || pending.length === 0) return
+    const errors = linkFieldErrors(choice.fields, draft)
+    if (Object.keys(fieldErrors).length > 0 || Object.keys(errors).length > 0) {
+      setFieldErrors((state) => ({ ...state, ...errors }))
+      setError('')
+      return
+    }
     const outgoing = choice.direction === 'out'
     const values = linkFieldValues(choice.fields, draft)
     const requests = pending.map((peer) => ({
@@ -137,12 +210,24 @@ function LinkFields({
     }))
     setSaving(true)
     setError('')
+    setFieldErrors({})
+    setConflict(null)
     const write = onConfirmMany
       ? onConfirmMany(requests)
       : requests.reduce<Promise<LinkSubmitResult | void>>((chain, request) => chain.then(() => onConfirm(request)), Promise.resolve())
     void write
       .then((result) => {
         if (result && result.outcome === 'partial') {
+          const failure = result.failed
+          if (applyFieldErrors(failure)) {
+            setSaving(false)
+            return
+          }
+          if (isCardinality(failure) && result.created.length === 0) {
+            showConflict(failure, requestFor(failure.body))
+            setSaving(false)
+            return
+          }
           const done = new Set(result.created.map((item) => peerId(source.id, item.body)))
           const rest = pending.filter((item) => !done.has(item.id))
           setPending(rest.length > 0 ? rest : pending)
@@ -154,7 +239,52 @@ function LinkFields({
       })
       .catch((reason: unknown) => {
         setSaving(false)
-        setError(writeErrorMessage(reason) || copy.validation)
+        const failure = linkFailure(reason, {
+          type: choice.linkType,
+          from_id: requests[0]?.fromId ?? source.id,
+          to_id: requests[0]?.toId ?? source.id,
+          values: requests[0]?.values ?? {},
+        })
+        if (applyFieldErrors(failure)) return
+        if (isCardinality(failure)) {
+          showConflict(failure, requests[0] ?? requestFor(failure.body))
+          return
+        }
+        setError(failure.message || copy.validation)
+      })
+  }
+  const replace = () => {
+    if (!conflict || replacing) return
+    const request = conflict.request
+    const body: LinkWrite = {
+      type: request.type,
+      from_id: request.fromId,
+      to_id: request.toId,
+      values: request.values,
+    }
+    const peerId = request.fromId === source.id ? request.toId : request.fromId
+    const peer = pending.find((item) => item.id === peerId)
+    const constrained = linkConstrainedType(choice, source.typeKey, peer?.typeKey ?? '')
+    const preferSource = !constrained || constrained.type === source.typeKey
+    setReplacing(true)
+    setError('')
+    void replaceConflictingLink(source.id, body, preferSource)
+      .then(() => {
+        setReplacing(false)
+        onReplaced?.(request)
+        const rest = pending.filter((item) => item.id !== peerId)
+        if (rest.length > 0) {
+          setPending(rest)
+          setConflict(null)
+          return
+        }
+        onClose()
+      })
+      .catch((reason: unknown) => {
+        setReplacing(false)
+        const failure = linkFailure(reason, body)
+        if (applyFieldErrors(failure)) return
+        setError(failure.message || copy.validation)
       })
   }
   return (
@@ -212,7 +342,7 @@ function LinkFields({
                   data-testid={`link-field-${field.key}`}
                   autoFocus={choices.length === 1 && index === 0}
                   value={draft[field.key] ?? ''}
-                  onChange={(event) => setDraft((state) => ({ ...state, [field.key]: event.target.value }))}
+                  onChange={(event) => updateField(field.key, event.target.value)}
                 >
                   <option value="">{copy.noValue}</option>
                   <option value="true">{copy.yes}</option>
@@ -224,7 +354,7 @@ function LinkFields({
                   data-testid={`link-field-${field.key}`}
                   autoFocus={choices.length === 1 && index === 0}
                   value={draft[field.key] ?? ''}
-                  onChange={(event) => setDraft((state) => ({ ...state, [field.key]: event.target.value }))}
+                  onChange={(event) => updateField(field.key, event.target.value)}
                 >
                   <option value="">{copy.noValue}</option>
                   {field.options.map((option) => (
@@ -236,19 +366,40 @@ function LinkFields({
                   id={`link-field-${field.key}`}
                   data-testid={`link-field-${field.key}`}
                   autoFocus={choices.length === 1 && index === 0}
+                  type={field.kind === 'date' ? 'date' : 'text'}
+                  inputMode={field.kind === 'number' || field.kind === 'range' ? 'decimal' : undefined}
+                  data-kind={field.kind === 'number' || field.kind === 'range' ? 'number' : undefined}
                   value={draft[field.key] ?? ''}
-                  placeholder={field.kind === 'date' ? 'YYYY-MM-DD' : undefined}
-                  inputMode={field.kind === 'number' ? 'decimal' : undefined}
-                  onChange={(event) => setDraft((state) => ({ ...state, [field.key]: event.target.value }))}
+                  placeholder={field.kind === 'date' ? 'YYYY-MM-DD' : field.kind === 'number' || field.kind === 'range' ? '0' : undefined}
+                  aria-invalid={fieldErrors[field.key] ? true : undefined}
+                  onChange={(event) => {
+                    const value = event.target.value
+                    const invalid = (field.kind === 'number' || field.kind === 'range')
+                      && value.trim() !== ''
+                      && !Number.isFinite(Number(value.trim()))
+                    updateField(field.key, value, invalid)
+                  }}
                 />
               )}
+              {fieldErrors[field.key] ? (
+                <p className="error" role="alert" data-testid={`link-field-error-${field.key}`}>{fieldErrors[field.key]}</p>
+              ) : null}
             </div>
           ))}
         </div>
+        {conflict ? (
+          <p className="error" role="alert" data-testid="link-cardinality">{conflict.message}</p>
+        ) : null}
         {error ? <p className="error" role="alert" data-testid="link-create-error">{error}</p> : null}
         <div className="dialog-actions">
           <button type="button" onClick={onClose}>{copy.cancel}</button>
-          <button type="submit" className="primary" data-testid="link-create-confirm" disabled={saving}>{copy.confirm}</button>
+          {conflict ? (
+            <button type="button" className="primary" data-testid="link-replace" disabled={replacing} onClick={replace}>
+              {replacing ? copy.linkReplacing : copy.linkReplace}
+            </button>
+          ) : (
+            <button type="submit" className="primary" data-testid="link-create-confirm" disabled={saving}>{copy.confirm}</button>
+          )}
         </div>
       </form>
     </LinkDialog>

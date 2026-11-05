@@ -11,6 +11,7 @@ export type LinkDirection = 'out' | 'in'
 
 export type LinkField = {
   key: string
+  attributeId?: string
   label: string
   kind: string
   form: string
@@ -24,6 +25,8 @@ export type LinkChoice = {
   direction: LinkDirection
   label: string
   fields: LinkField[]
+  fromCardinality?: string
+  toCardinality?: string
 }
 
 export type LinkHit = {
@@ -61,6 +64,8 @@ export function allowedLinks(defs: Json | undefined, sourceType: string, targetT
         direction: 'out',
         label: labelOf(spec?.to_label, key),
         fields,
+        fromCardinality: String(spec?.from_cardinality ?? 'many'),
+        toCardinality: String(spec?.to_cardinality ?? 'many'),
       })
     }
     if (to.includes(sourceType) && from.includes(targetType)) {
@@ -69,6 +74,8 @@ export function allowedLinks(defs: Json | undefined, sourceType: string, targetT
         direction: 'in',
         label: labelOf(spec?.from_label, key),
         fields,
+        fromCardinality: String(spec?.from_cardinality ?? 'many'),
+        toCardinality: String(spec?.to_cardinality ?? 'many'),
       })
     }
   }
@@ -200,6 +207,47 @@ export function linkPickerRows(input: {
     .map((entry) => entry.item)
 }
 
+export function linkFieldErrors(fields: LinkField[], draft: Record<string, string>): Record<string, string> {
+  const errors: Record<string, string> = {}
+  for (const field of fields) {
+    if (field.kind !== 'number' && field.kind !== 'range') continue
+    const raw = (draft[field.key] ?? '').trim()
+    if (!raw) continue
+    if (!Number.isFinite(Number(raw))) errors[field.key] = copy.linkFieldNumber
+  }
+  return errors
+}
+
+export function linkConstrainedType(
+  choice: LinkChoice,
+  sourceType: string,
+  peerType: string,
+): { type: string; other: string } | null {
+  const sourceIsFrom = choice.direction === 'out'
+  const sourceOne = sourceIsFrom ? choice.fromCardinality === 'one' : choice.toCardinality === 'one'
+  const peerOne = sourceIsFrom ? choice.toCardinality === 'one' : choice.fromCardinality === 'one'
+  if (sourceOne) return { type: sourceType, other: peerType }
+  if (peerOne) return { type: peerType, other: sourceType }
+  return null
+}
+
+export function linkCardinalityMessage(
+  defs: Json | undefined,
+  choice: LinkChoice,
+  sourceType: string,
+  peerType: string,
+): string {
+  const end = linkConstrainedType(choice, sourceType, peerType)
+  if (!end) return copy.linkCardinalityGeneric
+  return copy.linkCardinalityConflict
+    .replace('{type}', linkTypeName(defs, end.type))
+    .replace('{other}', linkTypeName(defs, end.other))
+}
+
+export function linkTypeName(defs: Json | undefined, typeKey: string) {
+  return (typeLabel(defs, typeKey, uiLanguage) || typeKey).toLowerCase()
+}
+
 /** Wire values for the link attributes the person filled in. Empty fields are omitted. */
 export function linkFieldValues(fields: LinkField[], draft: Record<string, string>): Json {
   const values: Json = {}
@@ -239,6 +287,7 @@ function fieldsFor(defs: Json | undefined, linkType: Json): LinkField[] {
     const familyId = String(kind.unit_family ?? '')
     fields.push({
       key,
+      attributeId: String(attribute.id ?? ''),
       label: textValue(attribute.labels as Json, uiLanguage) || key,
       kind: type,
       form: String(kind.form ?? ''),
