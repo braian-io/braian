@@ -11,6 +11,12 @@ const subtitles: Record<string, string> = {
   'layout:focus:right': 'Focus the neighbour on the right',
   'layout:focus:up': 'Focus the neighbour above',
   'layout:focus:down': 'Focus the neighbour below',
+  'layout:move_view_left': 'Move the focused view left',
+  'layout:move_view_right': 'Move the focused view right',
+  'layout:move_view_up': 'Move the focused view up',
+  'layout:move_view_down': 'Move the focused view down',
+  'layout:zoom': 'Show only the focused pane',
+  'layout:close_view': 'Close the focused view',
 }
 
 const titleOverrides: Record<string, (target: CommandTarget) => string> = {
@@ -34,8 +40,8 @@ export function registryPaletteRows({ theme = 'dark', target = {} }: RegistryPal
         group: command.group ?? 'views',
         title: titleOverrides[command.id]?.(paletteTarget) ?? commandTitle(command, paletteTarget),
         subtitle: subtitles[command.id] ?? '',
-        keywords: command.keywords,
       }
+      if (command.keywords?.length) row.keywords = command.keywords
       if (command.kbd) {
         row.kbd = command.kbd
         row.shortcut = command.kbd
