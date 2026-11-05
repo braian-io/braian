@@ -185,9 +185,12 @@ function LinkFields({
     })
     setError('')
   }
-  const isCardinality = (failure: LinkWriteFailure) =>
-    failure.code === 'link_cardinality'
-    || (failure.status === 409 && failure.message.includes('allows one link'))
+  const isCardinality = (failure: LinkWriteFailure) => {
+    if (failure.code === 'link_cardinality') return true
+    const text = failure.message.toLowerCase()
+    const talksAboutOne = text.includes('allows one link') || text.includes('only one link')
+    return talksAboutOne && (failure.status === 409 || failure.status === 422 || failure.code === 'link_rejected')
+  }
   const submit = () => {
     if (saving || replacing || conflict || pending.length === 0) return
     const errors = linkFieldErrors(choice.fields, draft)

@@ -69,8 +69,12 @@ export function fieldErrorsFromErrorBody(body: unknown): WriteFieldError[] {
 export function messageFromErrorBody(body: unknown): string {
   if (!body || typeof body !== 'object') return ''
   const record = body as Record<string, unknown>
-  if (textOf(record.code) === 'link_cardinality') return copy.linkCardinalityFailed
+  const code = textOf(record.code)
   const detail = textOf(record.detail)
+  if (code === 'link_cardinality') return copy.linkCardinalityFailed
+  if (code === 'link_rejected' && /allows one link|only one link/i.test(detail)) {
+    return copy.linkCardinalityFailed
+  }
   const lines = validationLines(record.errors)
   const firstLine = lines[0] ?? ''
   // A generic validation detail hides the actual field or cardinality reason.
