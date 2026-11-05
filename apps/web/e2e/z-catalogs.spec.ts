@@ -35,6 +35,45 @@ async function pickCatalog(page: Page, name: RegExp) {
 }
 
 const MASTER_CATALOG_ID = '018f1000-0000-7000-8000-000000000001'
+const SOURCES_WORKSPACE_ID = '018f2000-0000-7000-8000-000000000008'
+
+async function ensureSourcesWorkspaceSap(page: Page) {
+  const result = await page.evaluate(async ({ workspaceId }) => {
+    const catalogs = (await fetch('/v1/catalogs', { credentials: 'include' }).then((res) => res.json())) as {
+      id?: string
+      key?: string
+    }[]
+    const sap = catalogs.find((row) => row.key === 'sap')
+    if (!sap?.id) return { ok: false, step: 'sap' }
+    const get = await fetch(`/v1/workspaces/${workspaceId}`, { credentials: 'include' })
+    if (!get.ok) return { ok: false, step: 'get', status: get.status }
+    const ws = await get.json() as {
+      name?: string
+      locked?: boolean
+      share_token?: string | null
+      layout?: unknown
+      catalog?: { catalogId?: string }
+    }
+    if (ws.catalog?.catalogId === sap.id) return { ok: true, skipped: true }
+    const post = await fetch('/v1/workspaces', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        id: workspaceId,
+        name: ws.name ?? 'Sources',
+        locked: ws.locked ?? false,
+        share_token: ws.share_token ?? undefined,
+        layout: ws.layout ?? {},
+        catalog: { catalogId: sap.id },
+      }),
+    })
+    if (!post.ok) return { ok: false, step: 'post', status: post.status }
+    return { ok: true }
+  }, { workspaceId: SOURCES_WORKSPACE_ID })
+  if (!result.ok) throw new Error(`ensureSourcesWorkspaceSap failed: ${JSON.stringify(result)}`)
+}
+
 const PRODUCTS_WORKSPACE_ID = '018f2000-0000-7000-8000-000000000003'
 const PRODUCTS_VIEW_ID = '018f2000-0000-7000-8000-000000000302'
 
@@ -192,8 +231,11 @@ test('Ctrl+K Switch catalog opens straight into the catalog list', async ({ page
 test('pane-source differs label; override survives a global switch', async ({ page }) => {
   await login(page)
   await waitForCatalogs(page)
+  await ensureSourcesWorkspaceSap(page)
   await page.locator('nav.tabs').getByRole('button', { name: 'Sources' }).click()
-  await expect(page.getByTestId('catalog-selector')).toContainText(/SAP/i)
+  await expect
+    .poll(async () => page.getByTestId('catalog-selector').innerText(), { timeout: 30_000 })
+    .toMatch(/SAP/i)
   // Object table seed title is "SAP" but the dock labels it by type plural "Products".
   await page.locator('.pane-tab-list').getByRole('button', { name: 'Products', exact: true }).click()
   const label = page.locator('.pane.focused').getByTestId('view-source-label')
