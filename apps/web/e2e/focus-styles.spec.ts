@@ -443,9 +443,9 @@ test('context menu keeps focus and highlight on one item', async ({ page }) => {
   })
 })
 
-test('pointer selection accents the column header; keyboard adds the underline', async ({ page }) => {
+for (const passTheme of ['dark', 'light'] as const) test(`pointer selection accents the column header; keyboard adds the underline (${passTheme})`, async ({ page }) => {
   test.setTimeout(120_000)
-  await page.addInitScript(() => localStorage.setItem('braian.theme', JSON.stringify('dark')))
+  await page.addInitScript((t) => localStorage.setItem('braian.theme', JSON.stringify(t)), passTheme)
   await login(page)
   await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
 
@@ -455,8 +455,6 @@ test('pointer selection accents the column header; keyboard adds the underline',
   const grid = table.locator('.grid').first()
 
   const assertTheme = async (theme: 'dark' | 'light') => {
-    // A fresh page resets the browser focus modality left in keyboard mode by the previous pass.
-    if (theme === 'light') { await page.reload(); await expect(row).toBeVisible({ timeout: 60_000 }) }
     await setTheme(page, theme)
     await page.mouse.move(5, 5)
     const cell = row.locator('.cell').nth(1)
@@ -513,8 +511,8 @@ test('pointer selection accents the column header; keyboard adds the underline',
     await screenshotElement(page, keyboardCell, `grid-keyboard-cell-${theme}`)
   }
 
-  await assertTheme('dark')
-  await assertTheme('light')
+  // One theme per test: a fresh page keeps the browser focus modality in pointer mode.
+  await assertTheme(passTheme)
 })
 
 test('standard grid selected row carries the accent edge', async ({ page }) => {
