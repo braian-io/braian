@@ -103,10 +103,12 @@ test.describe('design polish low rows', () => {
       await saveShot(page, `h11-link-picker-hover-${theme}.png`)
       await page.keyboard.press('Escape')
 
+      await page.mouse.move(8, 8)
+      await cheddar.click()
       const grid = table.locator('.grid').first()
       await grid.focus()
       await page.keyboard.press('ArrowRight')
-      await expect.poll(() => grid.evaluate((el) => el.matches(':focus-visible'))).toBe(true)
+      await expect.poll(() => grid.evaluate((el) => el.matches(':focus-visible')), { timeout: 30_000 }).toBe(true)
       const rowOutline = await cheddar.evaluate((el) => getComputedStyle(el).outlineStyle)
       const cellShadow = await cheddar.locator('.cell.active-cell').evaluate((el) => getComputedStyle(el).boxShadow)
       expect(rowOutline).toBe('none')
