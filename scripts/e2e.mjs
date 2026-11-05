@@ -56,6 +56,7 @@ const specs = [
   'e2e/agent-tab.spec.ts',
   'e2e/agent-presence.spec.ts',
   'e2e/agent-session.spec.ts',
+  'e2e/agent-rename.spec.ts',
   'e2e/open-type-view-ready.spec.ts',
   'e2e/legacy-model-workspace.spec.ts',
   'e2e/dangling-model-workspace.spec.ts',
@@ -173,6 +174,7 @@ const measuredSeconds = {
   'e2e/shortcut-registry.spec.ts': 20,
   'e2e/agent-presence.spec.ts': 120,
   'e2e/agent-session.spec.ts': 150,
+  'e2e/agent-rename.spec.ts': 24,
 }
 
 const reseedSeconds = 4

@@ -278,10 +278,11 @@ test('pane-source differs label; override survives a global switch', async ({ pa
 test('sources workspace, merge profile and a locked brand', async ({ page }) => {
   await login(page)
   await page.locator('nav.tabs').getByRole('button', { name: 'Sources' }).click()
+  // The pane-source spec above activates the center "Products" (SAP) tab and that
+  // active tab persists in the shared e2e DB. Open Catalogs, then Merge profiles.
+  await page.locator('.pane-tab-list').getByRole('button', { name: 'Catalogs', exact: true }).click()
   await expect(page.getByTestId('catalogs-view')).toContainText('SAP ERP')
   await expect(page.getByTestId('catalogs-view')).toContainText('Supplier Nordic')
-  // The pane-source spec above activates the center "Products" (SAP) tab and that
-  // active tab persists in the shared e2e DB. Re-select Merge profiles explicitly.
   await page.locator('.pane-tab-list').getByRole('button', { name: 'Merge profiles', exact: true }).click()
   await expect(page.getByTestId('merge-profiles-view')).toContainText('SAP brand')
   await expect(page.getByTestId('ownership-view')).toBeVisible()

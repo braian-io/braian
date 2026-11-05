@@ -409,8 +409,15 @@ async fn execute_run(state: &AppState, identity: &Identity, run_id: Uuid) -> Res
             .map_err(|error| error.to_string())?;
         return Ok(());
     }
-    if model_unavailable() && prompt.to_lowercase().contains("propose a new name") {
-        propose_mock_name(state, identity, run_id, &run.context)
+    let rename = if model_unavailable() {
+        rename_target(&prompt)
+    } else {
+        None
+    };
+    if model_unavailable()
+        && (prompt.to_lowercase().contains("propose a new name") || rename.is_some())
+    {
+        propose_mock_name(state, identity, run_id, &run.context, rename.as_deref())
             .await
             .map_err(|problem| problem.detail)?;
     } else {
@@ -541,11 +548,48 @@ async fn decision_pending(state: &AppState, run_id: Uuid) -> Result<bool, String
         .any(|message| message.kind == "question"))
 }
 
+// english-check: allow
+/// The new name in a direct rename, such as "byt namn ... till Test 1" or
+/// "rename ... to Test 1". Used by the offline mock, which must act like a
+/// clear task: propose the change instead of asking for confirmation.
+fn rename_target(prompt: &str) -> Option<String> {
+    let lower = prompt.to_lowercase();
+    let asks = lower.contains("byt namn")
+        || lower.contains("rename")
+        || lower.contains("change the name")
+        || lower.contains("change name")
+        || lower.contains("set the name");
+    if !asks {
+        return None;
+    }
+    for marker in [" till ", " to "] {
+        let Some(at) = lower.rfind(marker) else {
+            continue;
+        };
+        let target = prompt[at + marker.len()..].trim();
+        let target = target
+            .trim_matches(|character: char| {
+                character.is_whitespace()
+                    || matches!(
+                        character,
+                        '"' | '\'' | '“' | '”' | '‘' | '’' | '.' | '!' | '?'
+                    )
+            })
+            .trim();
+        if !target.is_empty() {
+            return Some(target.to_owned());
+        }
+    }
+    None
+}
+// english-check: end
+
 async fn propose_mock_name(
     state: &AppState,
     identity: &Identity,
     run_id: Uuid,
     context: &Value,
+    requested: Option<&str>,
 ) -> Result<(), Problem> {
     let Some((object_id, type_key, base_version)) = selection_target(context) else {
         state
@@ -564,10 +608,11 @@ async fn propose_mock_name(
         .and_then(Value::as_str)
         .filter(|value| !value.is_empty())
         .unwrap_or("en");
+    let name = requested.unwrap_or("Agent draft");
     let mut args = json!({
         "id": object_id,
         "type": type_key,
-        "values": { "name": { language: "Agent draft" } },
+        "values": { "name": { language: name } },
     });
     if let Some(version) = base_version {
         args["base_version"] = json!(version);
@@ -972,8 +1017,26 @@ fn display_value(value: &Value) -> String {
 
 #[cfg(test)]
 mod session_tests {
-    use super::{session_choice, session_document};
+    use super::{rename_target, session_choice, session_document};
     use serde_json::json;
+
+    #[test]
+    fn a_direct_rename_names_the_new_value_without_a_question() {
+        // english-check: allow
+        assert_eq!(
+            rename_target("byt namn på den här produkten till Test 1").as_deref(),
+            Some("Test 1")
+        );
+        assert_eq!(
+            rename_target("rename this product to Test 2").as_deref(),
+            Some("Test 2")
+        );
+        assert_eq!(
+            rename_target("change the name to \"Test 3\".").as_deref(),
+            Some("Test 3")
+        );
+        assert_eq!(rename_target("how many products are there"), None);
+    }
 
     #[test]
     fn the_agent_keeps_its_own_hidden_session_unless_the_task_needs_the_screen() {

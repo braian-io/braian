@@ -1184,6 +1184,13 @@ fn tool_name(operation: &str) -> String {
 }
 
 fn operation_for_tool(tool: &str) -> Option<&'static str> {
+    // A clear friendly name for the one tool the agent needs for every edit.
+    // It lands on patch_object, which already turns an agent write into a
+    // proposal. Keeping the alias here also makes a model that knows
+    // "propose_change" work in every session.
+    if tool == "propose_change" {
+        return Some("patch_object");
+    }
     find_op(tool).map(|op| op.name)
 }
 
@@ -1399,13 +1406,21 @@ async fn mcp(
             "capabilities": { "tools": {} },
             "serverInfo": { "name": "braian", "version": "0.0.0" }
         }),
-        "tools/list" => json!({
-            "tools": registry().iter().filter(|op| exposed_to_agent(op)).map(|op| json!({
-                "name": tool_name(op.name),
-                "description": braian_model::operation_title(op.title, &types, "en"),
-                "inputSchema": tool_parameters(op)
-            })).collect::<Vec<_>>()
-        }),
+        "tools/list" => {
+            let mut tools = registry()
+                .iter()
+                .filter(|op| exposed_to_agent(op))
+                .map(|op| {
+                    json!({
+                        "name": tool_name(op.name),
+                        "description": braian_model::operation_title(op.title, &types, "en"),
+                        "inputSchema": tool_parameters(op)
+                    })
+                })
+                .collect::<Vec<_>>();
+            tools.push(propose_change_tool());
+            json!({ "tools": tools })
+        }
         "tools/call" => {
             let params = body.get("params").cloned().unwrap_or(Value::Null);
             let name = params.get("name").and_then(Value::as_str).unwrap_or("");
@@ -1582,7 +1597,11 @@ pub(crate) async fn drive_agent(
             "args": args,
             "state": "run"
         }));
-        let call_args = selection_args(operation, &args, &context);
+        let call_args = if call.name == "propose_change" {
+            proposal_target_args(selection_args(operation, &args, &context), &context)
+        } else {
+            selection_args(operation, &args, &context)
+        };
         let result = if let Some(value) = context_tool_result(operation, &call_args, Some(&context))
         {
             value
@@ -1620,6 +1639,10 @@ pub(crate) async fn drive_agent(
             "model": model,
             "previous_response_id": id,
             "input": outputs,
+            // A follow-up after a tool call must offer the same proposal
+            // tools. Without them the model can only say the action is
+            // unavailable, even though the first request had it.
+            "tools": agent_tools(&types),
             "reasoning": { "effort": "none" },
         });
         match post_openai(&client, &url, &key, &follow_up).await {
@@ -1656,7 +1679,17 @@ fn openai_responses_url() -> String {
 }
 
 fn responses_body(model: &str, messages: &[Value], types: &[braian_model::ObjectType]) -> Value {
-    let tools = registry()
+    json!({
+        "model": model,
+        "input": messages,
+        "tools": agent_tools(types),
+        "reasoning": { "effort": "none" }
+    })
+}
+
+/// Every tool the agent may call, in the first request and every follow-up.
+fn agent_tools(types: &[braian_model::ObjectType]) -> Vec<Value> {
+    let mut tools = registry()
         .iter()
         .filter(|op| exposed_to_agent(op))
         .map(|op| {
@@ -1668,13 +1701,40 @@ fn responses_body(model: &str, messages: &[Value], types: &[braian_model::Object
             })
         })
         .collect::<Vec<_>>();
-    let mut tools = tools;
+    tools.push(propose_change_tool());
     tools.push(ask_person_tool());
+    tools
+}
+
+/// The one explicit proposal action. A clear edit must land here directly.
+fn propose_change_tool() -> Value {
     json!({
-        "model": model,
-        "input": messages,
-        "tools": tools,
-        "reasoning": { "effort": "none" }
+        "type": "function",
+        "name": "propose_change",
+        "description": "Propose a change to an existing object's fields, including its name. Call this directly for a clear request. The person approves the proposal in the UI, so never ask for permission or confirmation first.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "description": "Object id from the selection or get_object. Defaults to the selected object."
+                },
+                "type": {
+                    "type": "string",
+                    "description": "Object type key, such as product or article"
+                },
+                "values": {
+                    "type": "object",
+                    "description": "Fields to change, for example {\"name\": {\"en\": \"Test 1\"}}"
+                },
+                "base_version": {
+                    "type": "integer",
+                    "description": "Version from the snapshot. Optional; the server fills it from the object head."
+                }
+            },
+            "required": ["values"],
+            "additionalProperties": false
+        }
     })
 }
 
@@ -1683,7 +1743,7 @@ fn ask_person_tool() -> Value {
     json!({
         "type": "function",
         "name": "ask_person",
-        "description": "Stop and ask the person one question when you need a decision. Do not guess or continue until they answer.",
+        "description": "Stop and ask the person one question only when needed information is genuinely missing. Never ask for permission to propose a clear change; proposals are already approved in the UI.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -1991,8 +2051,9 @@ fn agent_system_prompt(context: &Value, _latest: &str) -> String {
         serde_json::to_string(&compact_ui_context(context)).unwrap_or_else(|_| "{}".to_owned());
     format!(
         "You are the Braian agent. You always act for the signed-in person. Write changes must become proposals, not direct writes. \
-Answer in English. \
-When you need a decision, call ask_person with the question and stop. Do not guess. \
+Answer in the same language as the person's latest message, whatever it is. Never refuse or stall because of language. \
+For a clear edit, such as renaming the selected object, call propose_change immediately with the fields to change. Put a name value in the data language from the snapshot unless the person names another language. Proposals are already approved in the UI, so never ask whether you should create one or wait for permission. \
+Call ask_person only when a real decision is missing, such as which of several ambiguous fields to use. Do not guess and do not use it to confirm an obvious action. \
 The UI snapshot is the current screen: workspace, open panes with their types, focused pane, selected objects (id, key, name, type, version), active filter and sort, the open table's columns (id, header, hidden), and the data language. \
 To hide or show a column, call ui_hide_column or ui_show_column with {{\"column\": id}}. \
 Answer questions about the selection, the open views, or the workspace from that snapshot. Do not call search or list_objects for those questions, and do not ask for a screenshot. \
@@ -2994,6 +3055,42 @@ fn selection_args(operation: &str, args: &Value, context: &Value) -> Value {
     let mut call = args.clone();
     if let Some(object) = call.as_object_mut() {
         object.insert("workspace_type".into(), json!(token));
+    }
+    call
+}
+
+/// A proposal about "this product" can omit the target. Fill it from the
+/// snapshot so a clear rename never stalls on a missing id.
+fn proposal_target_args(args: Value, context: &Value) -> Value {
+    let Some(item) = selection_items(context).first().cloned() else {
+        return args;
+    };
+    let mut call = args;
+    let Some(object) = call.as_object_mut() else {
+        return call;
+    };
+    let missing = |key: &str, object: &Map<String, Value>| {
+        object
+            .get(key)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+            .is_none()
+    };
+    if missing("id", object)
+        && let Some(id) = item.get("id").and_then(Value::as_str)
+    {
+        object.insert("id".into(), json!(id));
+    }
+    if missing("type", object)
+        && let Some(kind) = item.get("type").and_then(Value::as_str)
+    {
+        object.insert("type".into(), json!(kind));
+    }
+    if !object.contains_key("base_version")
+        && let Some(version) = item.get("version")
+    {
+        object.insert("base_version".into(), version.clone());
     }
     call
 }
@@ -7922,9 +8019,14 @@ mod tests {
                 );
                 continue;
             }
+            if name == "propose_change" {
+                assert_eq!(operation_for_tool(name), Some("patch_object"));
+                continue;
+            }
             assert!(operation_for_tool(name).is_some(), "{name}");
         }
         assert!(tools.iter().any(|tool| tool["name"] == "create_object"));
+        assert!(tools.iter().any(|tool| tool["name"] == "propose_change"));
         assert!(tools.iter().any(|tool| tool["name"] == "ui_filter"));
         let open_view = tools
             .iter()
@@ -8029,7 +8131,12 @@ mod tests {
         // english-check: end
         assert!(prompt.contains("SYN-000001"), "{prompt}");
         assert!(prompt.contains("Insulation 2"), "{prompt}");
-        assert!(prompt.contains("Answer in English"), "{prompt}");
+        assert!(prompt.contains("Answer in the same language"), "{prompt}");
+        assert!(prompt.contains("propose_change"), "{prompt}");
+        assert!(
+            prompt.contains("never ask whether you should create one"),
+            "{prompt}"
+        );
         assert!(prompt.contains("object_detail"), "{prompt}");
         assert!(prompt.contains("get_object"), "{prompt}");
 
@@ -8057,6 +8164,19 @@ mod tests {
     }
 
     #[test]
+    fn proposal_change_fills_the_selected_target_and_maps_to_patch_object() {
+        let context = marked_product();
+        let args = proposal_target_args(
+            json!({ "values": { "name": { "en": "Test 1" } } }),
+            &context,
+        );
+        assert_eq!(args["id"], "018f1000-0000-7000-8000-000000000011");
+        assert_eq!(args["type"], "article");
+        assert_eq!(args["base_version"], 3);
+        assert_eq!(operation_for_tool("propose_change"), Some("patch_object"));
+    }
+
+    #[test]
     fn every_registered_ui_operation_is_exposed_to_the_agent_or_excluded() {
         let body = responses_body("gpt-6-luna", &[], &[]);
         let tools = body["tools"]
@@ -8065,14 +8185,19 @@ mod tests {
             .iter()
             .map(|tool| tool["name"].as_str().expect("name").to_owned())
             .collect::<BTreeSet<_>>();
-        let mcp = registry()
+        let mut mcp = registry()
             .iter()
             .filter(|op| exposed_to_agent(op))
             .map(|op| tool_name(op.name))
             .collect::<BTreeSet<_>>();
+        mcp.insert("propose_change".to_owned());
         assert!(
             tools.contains("ask_person"),
             "ask_person stops the run until a person decides"
+        );
+        assert!(
+            tools.contains("propose_change"),
+            "a clear edit must be able to become a proposal in every session"
         );
         let mut registered_tools = tools.clone();
         registered_tools.remove("ask_person");
