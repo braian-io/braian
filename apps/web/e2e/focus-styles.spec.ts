@@ -361,7 +361,9 @@ test('accent policy: selection, hover, menus, chips and light dim', async ({ pag
   await expect(chip).toBeVisible()
   await chip.hover()
   const chipPaint = await paint(chip)
-  expect(chipPaint.boxShadow).toBe('none')
+  // Active chip ('All') uses a 1px accent border as its selected marker.
+  expect(chipPaint.boxShadow).toContain('inset')
+  expect(chipPaint.boxShadow).toContain('1px')
   await chip.click()
   expect(await chip.evaluate((element) => element.matches(':focus-visible'))).toBe(false)
   expect(await chip.evaluate((element) => getComputedStyle(element).outlineStyle)).toBe('none')
