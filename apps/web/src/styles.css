@@ -75,7 +75,7 @@
   --muted: #6b7280;
   --accent: #7c3aed;
   --accent-hover: #6d28d9;
-  --accent-dim: #7c3aed52;
+  --accent-dim: #7c3aed80;
   --info: #0277b5;
   --ok: #13804f;
   --warn: #a66a00;
@@ -205,6 +205,10 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
 }
 /* The grid is the tab stop. When the active cell can show the keyboard mark, the grid does not add a second ring. */
 .grid:focus-visible:has(.active-cell) {
+  outline: none;
+}
+.grid:focus-visible:has(.active-cell) .row:focus-visible,
+.grid:focus-visible:has(.active-cell) .row.selected:focus-visible {
   outline: none;
 }
 ::selection { background: var(--accent-dim); }
@@ -453,13 +457,15 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
   display: flex;
   align-items: center;
   gap: 2px;
-  flex: 0 1 auto;
+  flex: 1 1 0;
   min-width: 0;
   height: 100%;
   overflow-x: auto;
   overflow-y: hidden;
   overflow-anchor: none;
   scrollbar-width: none;
+  position: relative;
+  z-index: 1;
 }
 .pane-tab-list::-webkit-scrollbar { display: none; }
 .pane-tab-pad { flex: none; width: 0; }
@@ -523,7 +529,14 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
 }
 .tab-x:hover { background: var(--accent-dim); color: var(--text); }
 .pane-tab:hover .tab-x, .pane-tab.active .tab-x, .tab-x:focus-visible { opacity: 1; }
-.pane-chrome { margin-left: auto; display: flex; flex: none; gap: 2px; opacity: 0; }
+.pane-chrome {
+  margin-left: auto;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 2px;
+  min-width: 0;
+  opacity: 0;
+}
 .pane:hover .pane-chrome, .pane.focused .pane-chrome, .pane-chrome:focus-within { opacity: 1; }
 .pane-chrome .icon-btn { width: 22px; padding: 0; justify-content: center; }
 .catalog-admin { display: flex; flex-direction: column; gap: 8px; padding: 12px; overflow: auto; }
@@ -532,7 +545,7 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
 .field.locked .control { opacity: 0.75; }
 .pane-source {
   flex: 0 1 auto;
-  max-width: 220px;
+  max-width: min(160px, 32%);
   margin-left: 8px;
   margin-right: 4px;
   overflow: hidden;
@@ -865,9 +878,12 @@ select.link-type-line { width: 100%; font-weight: 600; }
   border-color: var(--accent);
   box-shadow: none;
 }
-.filter-chip:hover:not(.on),
-.choice-chip:hover:not(.on) {
+.filter-chip:hover:not(.on) {
   background: color-mix(in srgb, var(--accent-dim) 55%, transparent);
+}
+.choice-chip:hover:not(.on) {
+  background: var(--accent-dim);
+  color: var(--accent);
 }
 .row-count {
   margin-left: auto;
@@ -1600,11 +1616,29 @@ canvas.graph.panning { cursor: grabbing; }
 }
 /* Radix positions the wrapper; the reused menu/import-menu classes must not add a second offset. */
 .popover-content.menu,
-.popover-content.import-menu {
+.popover-content.import-menu,
+.popover-content.field-picker,
+.popover-content.path-picker-menu {
   position: static;
   top: auto;
   right: auto;
   left: auto;
+  z-index: auto;
+  gap: 6px;
+  display: grid;
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-md), var(--inset);
+}
+.popover-content .menu {
+  position: static;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 .menu {
   position: fixed;
@@ -1780,10 +1814,13 @@ canvas.graph.panning { cursor: grabbing; }
   color: var(--text);
 }
 .hit:hover, .hit.on, .hit[data-selected='true'] { background: var(--accent-dim); }
+.palette .hit { background: transparent; }
 .palette .hit:hover:not(.on),
 .palette .hit[data-selected='true']:not(.on) { background: color-mix(in srgb, var(--accent-dim) 55%, transparent); }
 /* Solid accent on the raised palette is 3.75:1 (dark) and 5.41:1 (light). The dim wash alone is about 1.2:1. */
-.palette .hit.on { background: var(--accent-dim); box-shadow: inset 3px 0 0 var(--accent); }
+.palette .hit.on,
+.palette .hit.on:hover,
+.palette .hit.on[data-selected='true'] { background: var(--accent-dim); box-shadow: inset 3px 0 0 var(--accent); }
 .hit.disabled, .hit[data-disabled='true'] { opacity: 0.5; }
 .hit.disabled:hover, .hit[data-disabled='true']:hover { background: transparent; }
 .hit.ask { z-index: 1; background: var(--raised); border-top: 1px solid var(--border); flex: none; }
@@ -1989,8 +2026,8 @@ kbd {
   padding: 0 8px;
   border-radius: 999px;
   background: var(--accent-dim);
-  /* accent on this wash is 3.40:1 in the dark theme. accent-hover is 4.95:1 dark and 6.03:1 light. */
-  color: var(--accent-hover);
+  /* Light --accent-dim is strong enough for accent text at >=4.5:1 on the wash. */
+  color: var(--accent);
   font-size: 12px;
   white-space: nowrap;
   overflow: hidden;

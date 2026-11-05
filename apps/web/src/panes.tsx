@@ -1455,8 +1455,11 @@ export function ObjectTable({
     if (id === 'type') return <MetaChip>{typeLabel(defs.data, row.type, uiLanguage)}</MetaChip>
     if (id === 'status') {
       const label = optionLabel(defs.data, 'status', row.status, uiLanguage).trim()
-      if (!label) return <span className="muted">{EMPTY_CELL}</span>
-      return <MetaChip tone={statusTone(row.status)}>{label}</MetaChip>
+      return (
+        <MetaChip tone={label ? statusTone(row.status) : 'neutral'}>
+          {label || EMPTY_CELL}
+        </MetaChip>
+      )
     }
     if (id === 'version') return <MetaChip>{row.version}</MetaChip>
     if (columnNeedsPathValues(id)) {
@@ -2746,7 +2749,9 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
           />
           <div className="field-chips">
             <MetaChip>{typeLabel(defs.data, String(object.data.type), uiLanguage)}</MetaChip>
-            {status ? <MetaChip tone={statusTone(status)}>{optionLabel(defs.data, 'status', status, uiLanguage)}</MetaChip> : null}
+            <MetaChip tone={status ? statusTone(status) : 'neutral'}>
+              {status ? optionLabel(defs.data, 'status', status, uiLanguage) : EMPTY_CELL}
+            </MetaChip>
             <MetaChip>{String(object.data.version ?? '')}</MetaChip>
             {suggestionCount > 0 ? <span className="suggestion-count" data-testid="suggestion-count">{formatCount(suggestionCount)} {copy.suggested}</span> : null}
           </div>
@@ -2908,7 +2913,7 @@ function Editor({
     return (
       <Select value={current || undefined} onValueChange={onChange}>
         <SelectTrigger data-field="true">
-          <SelectValue />
+          <SelectValue placeholder={EMPTY_CELL} />
         </SelectTrigger>
         <SelectContent>
           {options.map((option) => (
