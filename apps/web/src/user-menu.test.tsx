@@ -14,6 +14,7 @@ afterEach(cleanup)
 
 function mount(overrides: Partial<Parameters<typeof UserMenu>[0]> = {}) {
   const onToggleTheme = vi.fn()
+  const onOpenTrash = vi.fn()
   const onSignOut = vi.fn()
   render(
     <UserMenu
@@ -22,11 +23,12 @@ function mount(overrides: Partial<Parameters<typeof UserMenu>[0]> = {}) {
       connection="online"
       theme="dark"
       onToggleTheme={onToggleTheme}
+      onOpenTrash={onOpenTrash}
       onSignOut={onSignOut}
       {...overrides}
     />,
   )
-  return { onToggleTheme, onSignOut, trigger: screen.getByTestId('user-menu') }
+  return { onToggleTheme, onOpenTrash, onSignOut, trigger: screen.getByTestId('user-menu') }
 }
 
 describe('UserMenu', () => {
@@ -41,11 +43,14 @@ describe('UserMenu', () => {
   })
 
   it('offers the opposite theme and signs out', () => {
-    const { trigger, onToggleTheme, onSignOut } = mount()
+    const { trigger, onToggleTheme, onOpenTrash, onSignOut } = mount()
     fireEvent.keyDown(trigger, { key: 'Enter' })
     expect(screen.getByTestId('user-menu-theme').textContent).toBe('Light mode')
     fireEvent.click(screen.getByTestId('user-menu-theme'))
     expect(onToggleTheme).toHaveBeenCalledTimes(1)
+    fireEvent.keyDown(trigger, { key: 'Enter' })
+    fireEvent.click(screen.getByTestId('user-menu-trash'))
+    expect(onOpenTrash).toHaveBeenCalledTimes(1)
     fireEvent.keyDown(trigger, { key: 'Enter' })
     fireEvent.click(screen.getByTestId('user-menu-sign-out'))
     expect(onSignOut).toHaveBeenCalledTimes(1)

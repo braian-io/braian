@@ -32,6 +32,7 @@ mod platform;
 mod problem;
 mod state;
 mod structures;
+mod trash;
 mod wire;
 mod workspace_templates;
 
@@ -186,6 +187,8 @@ fn build_router(state: AppState) -> axum::Router {
                 .delete(objects::delete_object),
         )
         .route("/v1/objects/{id}/changes", get(objects::object_changes))
+        .route("/v1/trash", get(trash::list_trash))
+        .route("/v1/trash/{kind}/{id}/undelete", post(trash::undelete))
         .merge(model_draft::routes())
         .merge(feedback::routes())
         .merge(platform::routes())

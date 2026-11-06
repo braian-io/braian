@@ -1432,6 +1432,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/trash": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_trash"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/trash/{kind}/{id}/undelete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["undelete"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/types": {
         parameters: {
             query?: never;
@@ -3122,6 +3154,16 @@ export interface components {
         TokenBody: {
             kind?: string;
             name: string;
+        };
+        TrashItem: {
+            deleted_at: string;
+            /** Format: uuid */
+            id: string;
+            kind: string;
+            label: string;
+        };
+        TrashList: {
+            items: components["schemas"]["TrashItem"][];
         };
         TypeCount: {
             /** Format: int64 */
@@ -7151,6 +7193,67 @@ export interface operations {
                 };
                 content: {
                     "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_trash: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Soft-deleted items the caller can restore */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrashList"];
+                };
+            };
+        };
+    };
+    undelete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description object, workspace, view, assortment, import_mapping, catalog, merge_profile, or merge_link */
+                kind: string;
+                /** @description Item id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Restored */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not in the trash */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description A live row already uses this key */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
                 };
             };
         };

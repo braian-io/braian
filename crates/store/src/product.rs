@@ -324,9 +324,16 @@ impl Store {
         let mut client = self.checkout().await?;
         let transaction = client.transaction().await?;
         if let Some(token) = share_token {
+            // A soft-deleted workspace keeps its token until it is restored.
+            // Only a live target may take that token from other live rows.
             transaction
                 .execute(
-                    "UPDATE workspaces SET share_token = NULL WHERE share_token = $1 AND id <> $2",
+                    "UPDATE workspaces SET share_token = NULL
+                     WHERE share_token = $1 AND id <> $2 AND deleted_at IS NULL
+                       AND NOT EXISTS (
+                         SELECT 1 FROM workspaces target
+                         WHERE target.id = $2 AND target.deleted_at IS NOT NULL
+                       )",
                     &[&token, &id],
                 )
                 .await?;
@@ -336,7 +343,8 @@ impl Store {
                 "INSERT INTO workspaces (id, owner_id, name, locked, share_token, layout)
                  VALUES ($1, $2, $3, $4, $5, $6)
                  ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, locked = EXCLUDED.locked,
-                   share_token = EXCLUDED.share_token, layout = EXCLUDED.layout",
+                   share_token = EXCLUDED.share_token, layout = EXCLUDED.layout
+                 WHERE workspaces.deleted_at IS NULL",
                 &[&id, &owner_id, &name, &locked, &share_token, layout],
             )
             .await?;
@@ -368,7 +376,12 @@ impl Store {
         if let Some(token) = share_token {
             transaction
                 .execute(
-                    "UPDATE workspaces SET share_token = NULL WHERE share_token = $1 AND id <> $2",
+                    "UPDATE workspaces SET share_token = NULL
+                     WHERE share_token = $1 AND id <> $2 AND deleted_at IS NULL
+                       AND NOT EXISTS (
+                         SELECT 1 FROM workspaces target
+                         WHERE target.id = $2 AND target.deleted_at IS NOT NULL
+                       )",
                     &[&token, &id],
                 )
                 .await?;
@@ -378,7 +391,8 @@ impl Store {
                 "INSERT INTO workspaces (id, owner_id, name, locked, share_token, layout)
                  VALUES ($1, $2, $3, $4, $5, $6)
                  ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, locked = EXCLUDED.locked,
-                   share_token = EXCLUDED.share_token",
+                   share_token = EXCLUDED.share_token
+                 WHERE workspaces.deleted_at IS NULL",
                 &[&id, &owner_id, &name, &locked, &share_token, layout],
             )
             .await?;
@@ -439,11 +453,31 @@ impl Store {
         Ok(row.is_some())
     }
 
+    /// Hides the workspace and the views it owned. Object data is not touched.
+    ///
+    /// Views deleted in the same statement share `deleted_at`, so restoring the
+    /// workspace brings those views back and leaves an older deleted view deleted.
     pub async fn delete_workspace(&self, id: Uuid) -> Result<(), Error> {
-        let client = self.checkout().await?;
-        client
-            .execute("DELETE FROM workspaces WHERE id = $1", &[&id])
+        let mut client = self.checkout().await?;
+        let tx = client.transaction().await?;
+        let row = tx
+            .query_opt(
+                "UPDATE workspaces SET deleted_at = now()
+                 WHERE id = $1 AND deleted_at IS NULL
+                 RETURNING deleted_at",
+                &[&id],
+            )
             .await?;
+        if let Some(row) = row {
+            let deleted_at: chrono::DateTime<chrono::Utc> = row.get(0);
+            tx.execute(
+                "UPDATE views SET deleted_at = $2
+                 WHERE workspace_id = $1 AND deleted_at IS NULL",
+                &[&id, &deleted_at],
+            )
+            .await?;
+        }
+        tx.commit().await?;
         Ok(())
     }
 
@@ -452,8 +486,9 @@ impl Store {
         let row = client
             .query_one(
                 "SELECT COUNT(*)::bigint AS n
-                 FROM workspace_members
-                 WHERE user_id = $1",
+                 FROM workspace_members m
+                 JOIN workspaces w ON w.id = m.workspace_id
+                 WHERE m.user_id = $1 AND w.deleted_at IS NULL",
                 &[&user_id],
             )
             .await?;
@@ -467,7 +502,7 @@ impl Store {
                 "SELECT w.id, w.name, w.locked, w.share_token, w.layout, w.owner_id, w.catalog_id
                  FROM workspaces w
                  JOIN workspace_members m ON m.workspace_id = w.id
-                 WHERE m.user_id = $1
+                 WHERE m.user_id = $1 AND w.deleted_at IS NULL
                  ORDER BY w.created_at",
                 &[&user_id],
             )
@@ -479,7 +514,8 @@ impl Store {
         let client = self.checkout().await?;
         let rows = client
             .query(
-                "SELECT id, name, locked, share_token, layout, owner_id, catalog_id FROM workspaces ORDER BY created_at",
+                "SELECT id, name, locked, share_token, layout, owner_id, catalog_id
+                 FROM workspaces WHERE deleted_at IS NULL ORDER BY created_at",
                 &[],
             )
             .await?;
@@ -490,7 +526,8 @@ impl Store {
         let client = self.checkout().await?;
         let Some(row) = client
             .query_opt(
-                "SELECT id, name, locked, share_token, layout, owner_id, catalog_id FROM workspaces WHERE id = $1",
+                "SELECT id, name, locked, share_token, layout, owner_id, catalog_id
+                 FROM workspaces WHERE id = $1 AND deleted_at IS NULL",
                 &[&id],
             )
             .await?
@@ -500,7 +537,8 @@ impl Store {
         let mut body = workspace_json(&row);
         let views = client
             .query(
-                "SELECT id, type_key, title, pane, position, state FROM views WHERE workspace_id = $1 ORDER BY pane, position",
+                "SELECT id, type_key, title, pane, position, state FROM views
+                 WHERE workspace_id = $1 AND deleted_at IS NULL ORDER BY pane, position",
                 &[&id],
             )
             .await?;
@@ -527,7 +565,7 @@ impl Store {
         let client = self.checkout().await?;
         let Some(row) = client
             .query_opt(
-                "SELECT id FROM workspaces WHERE share_token = $1",
+                "SELECT id FROM workspaces WHERE share_token = $1 AND deleted_at IS NULL",
                 &[&token],
             )
             .await?
@@ -616,8 +654,8 @@ impl Store {
         Ok(())
     }
 
-    /// View type key and state document, when the view exists.
-    pub async fn view_workspace_id(&self, id: Uuid) -> Result<Option<Uuid>, Error> {
+    /// Workspace of a view, including one that is soft-deleted.
+    pub async fn view_workspace_any(&self, id: Uuid) -> Result<Option<Uuid>, Error> {
         let client = self.checkout().await?;
         let row = client
             .query_opt("SELECT workspace_id FROM views WHERE id = $1", &[&id])
@@ -625,10 +663,25 @@ impl Store {
         Ok(row.map(|row| row.get(0)))
     }
 
+    pub async fn view_workspace_id(&self, id: Uuid) -> Result<Option<Uuid>, Error> {
+        let client = self.checkout().await?;
+        let row = client
+            .query_opt(
+                "SELECT workspace_id FROM views WHERE id = $1 AND deleted_at IS NULL",
+                &[&id],
+            )
+            .await?;
+        Ok(row.map(|row| row.get(0)))
+    }
+
+    /// View type key and state document, when the live view exists.
     pub async fn view_row(&self, id: Uuid) -> Result<Option<(String, Value)>, Error> {
         let client = self.checkout().await?;
         let row = client
-            .query_opt("SELECT type_key, state FROM views WHERE id = $1", &[&id])
+            .query_opt(
+                "SELECT type_key, state FROM views WHERE id = $1 AND deleted_at IS NULL",
+                &[&id],
+            )
             .await?;
         Ok(row.map(|row| (row.get(0), row.get(1))))
     }
@@ -737,7 +790,10 @@ impl Store {
     pub async fn view_state(&self, id: Uuid) -> Result<Option<Value>, Error> {
         let client = self.checkout().await?;
         let row = client
-            .query_opt("SELECT state FROM views WHERE id = $1", &[&id])
+            .query_opt(
+                "SELECT state FROM views WHERE id = $1 AND deleted_at IS NULL",
+                &[&id],
+            )
             .await?;
         Ok(row.map(|row| row.get(0)))
     }
@@ -746,7 +802,10 @@ impl Store {
     pub async fn update_view_state(&self, id: Uuid, state: &Value) -> Result<(), Error> {
         let client = self.checkout().await?;
         client
-            .execute("UPDATE views SET state = $2 WHERE id = $1", &[&id, state])
+            .execute(
+                "UPDATE views SET state = $2 WHERE id = $1 AND deleted_at IS NULL",
+                &[&id, state],
+            )
             .await?;
         Ok(())
     }
@@ -840,7 +899,7 @@ impl Store {
         let client = self.checkout().await?;
         client
             .execute(
-                "UPDATE assortments SET name = $2, query = $3 WHERE id = $1",
+                "UPDATE assortments SET name = $2, query = $3 WHERE id = $1 AND deleted_at IS NULL",
                 &[&id, &name, query],
             )
             .await?;
@@ -852,7 +911,7 @@ impl Store {
         let client = self.checkout().await?;
         client
             .execute(
-                "UPDATE assortments SET query = $2 WHERE id = $1",
+                "UPDATE assortments SET query = $2 WHERE id = $1 AND deleted_at IS NULL",
                 &[&id, query],
             )
             .await?;
@@ -864,7 +923,7 @@ impl Store {
         let rows = client
             .query(
                 "SELECT id, name, type_id, kind, query FROM assortments
-                 WHERE $1::uuid IS NULL OR type_id = $1
+                 WHERE deleted_at IS NULL AND ($1::uuid IS NULL OR type_id = $1)
                  ORDER BY name",
                 &[&type_id],
             )
@@ -876,7 +935,8 @@ impl Store {
         let client = self.checkout().await?;
         let Some(row) = client
             .query_opt(
-                "SELECT id, name, type_id, kind, query FROM assortments WHERE id = $1",
+                "SELECT id, name, type_id, kind, query FROM assortments
+                 WHERE id = $1 AND deleted_at IS NULL",
                 &[&id],
             )
             .await?
@@ -892,7 +952,7 @@ impl Store {
         let views = client
             .query(
                 "SELECT id, title, workspace_id FROM views
-                 WHERE state->>'selection_id' = $1
+                 WHERE deleted_at IS NULL AND state->>'selection_id' = $1
                  ORDER BY title, id",
                 &[&id.to_string()],
             )
@@ -972,7 +1032,10 @@ impl Store {
             )
             .await?;
         client
-            .execute("DELETE FROM assortments WHERE id = $1", &[&id])
+            .execute(
+                "UPDATE assortments SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL",
+                &[&id],
+            )
             .await?;
         Ok(usage)
     }
@@ -1831,7 +1894,7 @@ impl Store {
             .query(
                 "SELECT id FROM objects
                  WHERE catalog_id = braian_catalog() AND deleted_at IS NULL
-                   AND NOT EXISTS (SELECT 1 FROM links WHERE links.object_id = objects.id)
+                   AND NOT EXISTS (SELECT 1 FROM links WHERE links.object_id = objects.id AND links.deleted_at IS NULL)
                    AND ($1::uuid IS NULL OR id > $1)
                  ORDER BY id
                  LIMIT $2",
@@ -1986,7 +2049,7 @@ impl Store {
             .query(
                 "SELECT id, key, type_id, version FROM objects
                  WHERE catalog_id = braian_catalog() AND deleted_at IS NULL AND key IS NOT NULL
-                   AND NOT EXISTS (SELECT 1 FROM links WHERE links.object_id = objects.id)
+                   AND NOT EXISTS (SELECT 1 FROM links WHERE links.object_id = objects.id AND links.deleted_at IS NULL)
                  ORDER BY key
                  LIMIT $1",
                 &[&limit],
@@ -2013,7 +2076,7 @@ impl Store {
         let client = self.checkout_interactive().await?;
         let pattern = key_contains.map(like_contains);
         let mut sql = String::from(
-            "SELECT id, key, type_id, version FROM objects WHERE catalog_id = braian_catalog() AND deleted_at IS NULL AND key IS NOT NULL AND NOT EXISTS (SELECT 1 FROM links WHERE links.object_id = objects.id)",
+            "SELECT id, key, type_id, version FROM objects WHERE catalog_id = braian_catalog() AND deleted_at IS NULL AND key IS NOT NULL AND NOT EXISTS (SELECT 1 FROM links WHERE links.object_id = objects.id AND links.deleted_at IS NULL)",
         );
         let mut params: Vec<&(dyn ToSql + Sync)> = Vec::new();
         if let Some(type_id) = type_id.as_ref() {

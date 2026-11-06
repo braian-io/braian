@@ -1009,8 +1009,11 @@ impl Store {
                     &[&id],
                 )
                 .await?;
-                tx.execute("DELETE FROM assortments WHERE id = $1", &[&id])
-                    .await?;
+                tx.execute(
+                    "UPDATE assortments SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL",
+                    &[&id],
+                )
+                .await?;
                 WriteReceipt {
                     batch_id: BatchId::from_uuid(Uuid::nil()),
                     last_seq: 0,
@@ -1075,64 +1078,20 @@ impl Store {
                         detail: usage.detail(),
                     });
                 }
+                // History stays until the retention cleanup. Merge profiles of
+                // this source disappear with the catalog and come back with it
+                // when their deleted_at matches.
                 tx.execute(
-                    "DELETE FROM merge_links WHERE profile_id IN (SELECT id FROM merge_profiles WHERE source_catalog_id = $1)",
+                    "UPDATE merge_profiles SET deleted_at = now()
+                     WHERE source_catalog_id = $1 AND deleted_at IS NULL",
                     &[&id],
                 )
                 .await?;
                 tx.execute(
-                    "DELETE FROM merge_run_rows WHERE profile_id IN (SELECT id FROM merge_profiles WHERE source_catalog_id = $1)",
+                    "UPDATE catalogs SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL",
                     &[&id],
                 )
                 .await?;
-                tx.execute(
-                    "DELETE FROM merge_profile_revisions WHERE profile_id IN (SELECT id FROM merge_profiles WHERE source_catalog_id = $1)",
-                    &[&id],
-                )
-                .await?;
-                tx.execute(
-                    "DELETE FROM merge_profiles WHERE source_catalog_id = $1",
-                    &[&id],
-                )
-                .await?;
-                // History is part of the catalog. Proposals and sessions that
-                // are still live blocked the delete above, so only finished
-                // rows are left to remove. Delete children before parents.
-                tx.execute("DELETE FROM changes WHERE catalog_id = $1", &[&id])
-                    .await?;
-                tx.execute(
-                    "DELETE FROM import_rows WHERE session_id IN (
-                        SELECT id FROM import_sessions
-                        WHERE catalog_id = $1 AND status IN ('saved', 'cancelled', 'failed')
-                    )",
-                    &[&id],
-                )
-                .await?;
-                tx.execute(
-                    "DELETE FROM import_sessions
-                     WHERE catalog_id = $1 AND status IN ('saved', 'cancelled', 'failed')",
-                    &[&id],
-                )
-                .await?;
-                tx.execute(
-                    "DELETE FROM proposals
-                     WHERE catalog_id = $1 AND status <> 'open' AND id <> $2",
-                    &[&id, &accepting],
-                )
-                .await?;
-                tx.execute("DELETE FROM indexer_progress WHERE catalog_id = $1", &[&id])
-                    .await?;
-                tx.execute(
-                    "DELETE FROM definition_revisions WHERE catalog_id = $1",
-                    &[&id],
-                )
-                .await?;
-                tx.execute("DELETE FROM batches WHERE catalog_id = $1", &[&id])
-                    .await?;
-                tx.execute("DELETE FROM attribute_parts WHERE catalog_id = $1", &[&id])
-                    .await?;
-                tx.execute("DELETE FROM catalogs WHERE id = $1", &[&id])
-                    .await?;
                 WriteReceipt {
                     batch_id: BatchId::from_uuid(Uuid::nil()),
                     last_seq: 0,
@@ -1180,17 +1139,11 @@ impl Store {
                 }
             }
             ProposalWrite::MergeProfileDelete { id } => {
-                tx.execute("DELETE FROM merge_links WHERE profile_id = $1", &[&id])
-                    .await?;
-                tx.execute("DELETE FROM merge_run_rows WHERE profile_id = $1", &[&id])
-                    .await?;
                 tx.execute(
-                    "DELETE FROM merge_profile_revisions WHERE profile_id = $1",
+                    "UPDATE merge_profiles SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL",
                     &[&id],
                 )
                 .await?;
-                tx.execute("DELETE FROM merge_profiles WHERE id = $1", &[&id])
-                    .await?;
                 WriteReceipt {
                     batch_id: BatchId::from_uuid(Uuid::nil()),
                     last_seq: 0,
@@ -1376,6 +1329,106 @@ impl Store {
         let receipt = apply_ops(&tx, self.form(), &defs, batch, actor, &ops).await?;
         tx.commit().await?;
         Ok(receipt)
+    }
+
+    /// Clears `deleted_at` and writes an update so the indexer puts the object back.
+    ///
+    /// A live object with the same key, or a live link on the same side, blocks
+    /// the restore. The transaction rolls back and the deleted row stays deleted.
+    pub async fn restore_object(&self, actor: &Actor, id: ObjectId) -> Result<WriteReceipt, Error> {
+        let mut client = self.checkout().await?;
+        let tx = client.transaction().await?;
+        self.ensure_actor(&tx, actor).await?;
+        let batch = insert_batch(&tx, actor).await?;
+        let row = tx
+            .query_opt(
+                "SELECT version, deleted_at, key, type_id FROM objects WHERE id = $1 FOR UPDATE",
+                &[&id.as_uuid()],
+            )
+            .await?;
+        let Some(row) = row else {
+            return Err(Error::NotFound(id));
+        };
+        let deleted_at: Option<chrono::DateTime<chrono::Utc>> = row.get("deleted_at");
+        if deleted_at.is_none() {
+            return Err(Error::RestoreBlocked("This object is not deleted.".into()));
+        }
+        let type_id = TypeId::from_uuid(row.get("type_id"));
+        let key: String = row.get::<_, Option<String>>("key").unwrap_or_default();
+        if let Some(link) = tx
+            .query_opt(
+                "SELECT from_id, to_id FROM links WHERE object_id = $1",
+                &[&id.as_uuid()],
+            )
+            .await?
+        {
+            let from_id: Uuid = link.get(0);
+            let to_id: Uuid = link.get(1);
+            let ends = vec![from_id, to_id];
+            let live: i64 = tx
+                .query_one(
+                    "SELECT count(*)::bigint FROM objects WHERE id = ANY($1) AND deleted_at IS NULL",
+                    &[&ends],
+                )
+                .await?
+                .get(0);
+            if live != 2 {
+                return Err(Error::RestoreBlocked(
+                    "Cannot restore this link while an end is deleted.".into(),
+                ));
+            }
+        }
+        let version_row = match tx
+            .query_one(
+                "UPDATE objects
+                 SET version = version + 1, updated_at = now(), deleted_at = NULL, updated_by = $2
+                 WHERE id = $1
+                 RETURNING version",
+                &[&id.as_uuid(), &actor.actor.as_uuid()],
+            )
+            .await
+        {
+            Ok(row) => row,
+            Err(error) => {
+                return Err(match map_unique(error, type_id, &key) {
+                    Error::DuplicateKey { key, .. } => {
+                        Error::RestoreBlocked(format!("A live object already uses the key {key}."))
+                    }
+                    other => other,
+                });
+            }
+        };
+        if let Err(error) = tx
+            .execute(
+                "UPDATE links SET deleted_at = NULL WHERE object_id = $1",
+                &[&id.as_uuid()],
+            )
+            .await
+        {
+            return Err(match crate::links::map_cardinality(error, "link") {
+                Error::LinkCardinality(_) => {
+                    Error::RestoreBlocked("A live link already uses that side.".into())
+                }
+                other => other,
+            });
+        }
+        let version = u64_from_i64(version_row.get(0))?;
+        let seq = insert_change(
+            &tx,
+            batch,
+            Some(id),
+            Some(as_i64(version)?),
+            ChangeOp::Update,
+            actor,
+            &serde_json::json!({ "undeleted": true }),
+        )
+        .await?;
+        tx.commit().await?;
+        Ok(WriteReceipt {
+            batch_id: batch,
+            last_seq: seq,
+            versions: vec![(id, version)],
+        })
     }
 
     /// Writes `ops` into a batch opened with [`Store::open_batch`].

@@ -46,11 +46,13 @@ pub fn spawn_janitor(state: AppState) {
         let mut tick = tokio::time::interval(Duration::from_secs(60 * 60));
         loop {
             tick.tick().await;
-            let Ok(ids) = state.store.purge_import_sessions().await else {
-                continue;
-            };
-            for id in ids {
-                let _ = std::fs::remove_dir_all(session_dir(id));
+            if let Ok(ids) = state.store.purge_import_sessions().await {
+                for id in ids {
+                    let _ = std::fs::remove_dir_all(session_dir(id));
+                }
+            }
+            if let Err(error) = state.store.purge_expired_soft_deletes().await {
+                tracing::warn!(%error, "soft-delete cleanup failed");
             }
         }
     });

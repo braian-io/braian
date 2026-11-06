@@ -5668,6 +5668,90 @@
         ]
       }
     },
+    "/v1/trash": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "operationId": "list_trash",
+        "responses": {
+          "200": {
+            "description": "Soft-deleted items the caller can restore",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrashList"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/trash/{kind}/{id}/undelete": {
+      "post": {
+        "tags": [
+          "platform"
+        ],
+        "operationId": "undelete",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "description": "object, workspace, view, assortment, import_mapping, catalog, merge_profile, or merge_link",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Item id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Restored"
+          },
+          "404": {
+            "description": "Not in the trash",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A live row already uses this key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/v1/types": {
       "post": {
         "tags": [
@@ -12320,6 +12404,44 @@
           },
           "name": {
             "type": "string"
+          }
+        }
+      },
+      "TrashItem": {
+        "type": "object",
+        "required": [
+          "kind",
+          "id",
+          "label",
+          "deleted_at"
+        ],
+        "properties": {
+          "deleted_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        }
+      },
+      "TrashList": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrashItem"
+            }
           }
         }
       },

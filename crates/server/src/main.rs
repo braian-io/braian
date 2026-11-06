@@ -36,6 +36,8 @@ enum Command {
     All,
     /// Reconciles continuous merge profiles onto the master catalog.
     Merger,
+    /// Permanently remove soft-deleted rows older than 30 days.
+    PurgeDeleted,
     /// Print the OpenAPI document as JSON.
     Openapi {
         #[arg(long)]
@@ -92,6 +94,22 @@ async fn main() -> anyhow::Result<()> {
             seed::run(&store, typesense().as_ref()).await
         }
         Command::Merger => merger().await,
+        Command::PurgeDeleted => {
+            let store = connect().await?;
+            let counts = store.purge_expired_soft_deletes().await?;
+            println!(
+                "purged objects={objects} views={views} workspaces={workspaces} assortments={assortments} import_mappings={import_mappings} merge_links={merge_links} merge_profiles={merge_profiles} catalogs={catalogs}",
+                objects = counts.objects,
+                views = counts.views,
+                workspaces = counts.workspaces,
+                assortments = counts.assortments,
+                import_mappings = counts.import_mappings,
+                merge_links = counts.merge_links,
+                merge_profiles = counts.merge_profiles,
+                catalogs = counts.catalogs,
+            );
+            Ok(())
+        }
         Command::Config { command } => {
             let code = config_cli::run(command).await?;
             if code != 0 {

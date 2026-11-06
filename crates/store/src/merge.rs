@@ -28,6 +28,7 @@ impl Store {
                 "SELECT p.id, p.key, p.name, p.source_catalog_id, p.spec, p.mode,
                         COALESCE((SELECT MAX(revision) FROM merge_profile_revisions r WHERE r.profile_id = p.id), 1)
                  FROM merge_profiles p
+                 WHERE p.deleted_at IS NULL
                  ORDER BY p.key",
                 &[],
             )
@@ -70,13 +71,16 @@ impl Store {
             .execute(
                 "INSERT INTO merge_profiles (id, key, name, source_catalog_id, spec, mode)
                  VALUES ($1, $2, $3, $4, $5, $6)
-                 ON CONFLICT (key) DO UPDATE
+                 ON CONFLICT (key) WHERE deleted_at IS NULL DO UPDATE
                    SET name = EXCLUDED.name, spec = EXCLUDED.spec, mode = EXCLUDED.mode",
                 &[&id, &key, &name, &source, spec, &mode],
             )
             .await?;
         let stored_id: Uuid = client
-            .query_one("SELECT id FROM merge_profiles WHERE key = $1", &[&key])
+            .query_one(
+                "SELECT id FROM merge_profiles WHERE key = $1 AND deleted_at IS NULL",
+                &[&key],
+            )
             .await?
             .get(0);
         let revision: i64 = client
@@ -161,7 +165,8 @@ impl Store {
         let client = self.checkout().await?;
         client
             .execute(
-                "UPDATE merge_profiles SET schedule = $2, next_run_at = CASE WHEN $2 IS NULL THEN NULL ELSE now() END WHERE key = $1",
+                "UPDATE merge_profiles SET schedule = $2, next_run_at = CASE WHEN $2 IS NULL THEN NULL ELSE now() END
+                 WHERE key = $1 AND deleted_at IS NULL",
                 &[&key, &schedule],
             )
             .await?;
@@ -173,7 +178,8 @@ impl Store {
         let rows = client
             .query(
                 "SELECT key FROM merge_profiles
-                 WHERE schedule IS NOT NULL AND schedule <> ''
+                 WHERE deleted_at IS NULL
+                   AND schedule IS NOT NULL AND schedule <> ''
                    AND (next_run_at IS NULL OR next_run_at <= now())
                  ORDER BY key",
                 &[],
@@ -186,7 +192,8 @@ impl Store {
         let client = self.checkout().await?;
         client
             .execute(
-                "UPDATE merge_profiles SET next_run_at = now() + interval '1 minute' WHERE key = $1",
+                "UPDATE merge_profiles SET next_run_at = now() + interval '1 minute'
+                 WHERE key = $1 AND deleted_at IS NULL",
                 &[&key],
             )
             .await?;
@@ -205,7 +212,7 @@ impl Store {
             .execute(
                 "INSERT INTO merge_links (id, profile_id, source_object_id, master_object_id)
                  VALUES ($1, $2, $3, $4)
-                 ON CONFLICT (profile_id, source_object_id)
+                 ON CONFLICT (profile_id, source_object_id) WHERE deleted_at IS NULL
                  DO UPDATE SET master_object_id = EXCLUDED.master_object_id",
                 &[&id, &profile_id, &source_object_id, &master_object_id],
             )
@@ -225,7 +232,7 @@ impl Store {
             .execute(
                 "INSERT INTO merge_links (id, profile_id, source_object_id, master_object_id, manual)
                  VALUES ($1, $2, $3, $4, true)
-                 ON CONFLICT (profile_id, source_object_id)
+                 ON CONFLICT (profile_id, source_object_id) WHERE deleted_at IS NULL
                  DO UPDATE SET master_object_id = EXCLUDED.master_object_id, manual = true",
                 &[&id, &profile_id, &source_object_id, &master_object_id],
             )
@@ -241,7 +248,8 @@ impl Store {
         let client = self.checkout().await?;
         let removed = client
             .execute(
-                "DELETE FROM merge_links WHERE profile_id = $1 AND source_object_id = $2",
+                "UPDATE merge_links SET deleted_at = now()
+                 WHERE profile_id = $1 AND source_object_id = $2 AND deleted_at IS NULL",
                 &[&profile_id, &source_object_id],
             )
             .await?;
@@ -281,8 +289,8 @@ impl Store {
         let rows = client
             .query(
                 "SELECT p.key FROM merge_links l
-                 JOIN merge_profiles p ON p.id = l.profile_id
-                 WHERE l.master_object_id = $1",
+                 JOIN merge_profiles p ON p.id = l.profile_id AND p.deleted_at IS NULL
+                 WHERE l.master_object_id = $1 AND l.deleted_at IS NULL",
                 &[&master_object_id],
             )
             .await?;

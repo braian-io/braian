@@ -120,6 +120,12 @@ pub fn store_status(error: StoreError) -> Problem {
             Problem::new(StatusCode::NOT_FOUND, "not_found", id.to_string())
         }
         StoreError::Deleted(id) => Problem::new(StatusCode::GONE, "deleted", id.to_string()),
+        StoreError::RestoreBlocked(message) => {
+            Problem::new(StatusCode::CONFLICT, "restore_blocked", message)
+        }
+        StoreError::UnknownEntity(message) => {
+            Problem::new(StatusCode::NOT_FOUND, "not_found", message)
+        }
         StoreError::LinkRejected(message) => {
             Problem::new(StatusCode::UNPROCESSABLE_ENTITY, "link_rejected", message)
         }

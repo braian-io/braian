@@ -135,7 +135,10 @@ fn orphan_views_to_delete(
 /// Delete views that their own workspace's layout no longer references.
 async fn remove_orphan_views(client: &mut Client) -> Result<(), Error> {
     let workspace_rows = client
-        .query("SELECT id, layout FROM workspaces", &[])
+        .query(
+            "SELECT id, layout FROM workspaces WHERE deleted_at IS NULL",
+            &[],
+        )
         .await?;
     let mut workspace_layouts = HashMap::with_capacity(workspace_rows.len());
     for row in &workspace_rows {
@@ -166,7 +169,8 @@ async fn remove_orphan_views(client: &mut Client) -> Result<(), Error> {
 
     let views = client
         .query(
-            "SELECT id, workspace_id FROM views WHERE workspace_id IS NOT NULL",
+            "SELECT id, workspace_id FROM views
+             WHERE workspace_id IS NOT NULL AND deleted_at IS NULL",
             &[],
         )
         .await?;
@@ -197,7 +201,9 @@ pub(crate) async fn repair_link_and_catalog_views(client: &mut Client) -> Result
         let defs: DefinitionSet = serde_json::from_value(document)
             .map_err(|error| Error::Definitions(error.to_string()))?;
 
-        let catalog_rows = client.query("SELECT id, key FROM catalogs", &[]).await?;
+        let catalog_rows = client
+            .query("SELECT id, key FROM catalogs WHERE deleted_at IS NULL", &[])
+            .await?;
         let mut catalog_id_by_key = HashMap::with_capacity(catalog_rows.len());
         for catalog in catalog_rows {
             let id: Uuid = catalog.get("id");
@@ -207,7 +213,8 @@ pub(crate) async fn repair_link_and_catalog_views(client: &mut Client) -> Result
 
         let views = client
             .query(
-                "SELECT id, state FROM views WHERE type_key = 'object_table'",
+                "SELECT id, state FROM views
+                 WHERE type_key = 'object_table' AND deleted_at IS NULL",
                 &[],
             )
             .await?;
