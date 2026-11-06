@@ -15,6 +15,15 @@ function withMaster(rows: CatalogListRow[]): CatalogListRow[] {
   return [{ id: MASTER_CATALOG_ID, key: 'master', name: copy.masterCatalog, kind: 'master' }, ...rows]
 }
 
+/** The header label must never guess another catalog while names are loading. */
+export function catalogSelectorLabel(rows: CatalogListRow[], catalogId: string): string {
+  const options = rows.length > 0 ? withMaster(rows) : [{ id: MASTER_CATALOG_ID, key: 'master', name: copy.masterCatalog, kind: 'master' }]
+  const current = options.find((row) => row.id === catalogId)
+  if (current?.name) return current.name
+  if (current?.key) return current.key
+  return catalogId === MASTER_CATALOG_ID ? copy.masterCatalog : copy.catalog
+}
+
 /** Discreet workspace catalog switcher for the app header (Notion 117 follow-up). */
 export function CatalogSelector({
   catalogId,
@@ -27,13 +36,12 @@ export function CatalogSelector({
 }) {
   const catalogs = useCatalogsQuery()
   const rows = Array.isArray(catalogs.data) ? catalogs.data : []
-  // While loading, still show the current workspace catalog label; menu fills in when ready.
   const options = rows.length > 0
     ? withMaster(rows)
     : [{ id: MASTER_CATALOG_ID, key: 'master', name: copy.masterCatalog, kind: 'master' }]
-  const current = options.find((row) => row.id === catalogId) ?? options.find((row) => row.key === 'master') ?? options[0]
-  const label = current?.name || current?.key || copy.masterCatalog
-  const currentId = current?.id || MASTER_CATALOG_ID
+  const current = options.find((row) => row.id === catalogId)
+  const label = catalogSelectorLabel(rows, catalogId)
+  const currentId = current?.id ?? catalogId
   const trigger = useRef<HTMLButtonElement>(null)
   return (
     <DropdownMenu>

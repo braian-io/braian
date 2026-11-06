@@ -204,8 +204,8 @@ export function viewSourceLabel(
   const peer = peerLabel ? ` · ${peerLabel}` : ''
   const override = viewCatalogOverrideRef(view.state)
   if (!catalogOverrideDiffers(override, workspaceCatalog ?? null) || !override) return `${base}${peer}`
-  const name = catalogNamesById?.[override.catalogId] || override.catalogId
-  return `${base}${peer} · ${name}`
+  const name = catalogNamesById?.[override.catalogId]
+  return name ? `${base}${peer} · ${name}` : `${base}${peer}`
 }
 
 export function isObjectTableView(view: { type: string }) {

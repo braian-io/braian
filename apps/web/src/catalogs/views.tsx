@@ -1,8 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCatalogsQuery } from '../catalog-list'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
+import { Sparkles, Trash2 } from 'lucide-react'
 import { copy, uiLanguage } from '../i18n'
 import { ApiError, api, type Json } from '../api'
+import { Button } from '../components/ui/button'
+import { Dialog, DialogContent, DialogTitle } from '../components/ui/dialog'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip'
 import { linkHitFromDocument, type LinkHit } from '../link-choices'
 import { messageFromErrorBody, writeErrorMessage } from '../write-error'
 
@@ -57,6 +61,54 @@ function failedWrite(reason: unknown, fallback: string) {
   return writeErrorMessage(reason) ?? fallback
 }
 
+function CatalogField({
+  id,
+  label,
+  help,
+  children,
+}: {
+  id: string
+  label: string
+  help?: string
+  children: ReactNode
+}) {
+  return (
+    <div className="catalog-field">
+      <label htmlFor={id}>{label}</label>
+      {children}
+      {help ? <p className="catalog-field-help" id={`${id}-help`}>{help}</p> : null}
+    </div>
+  )
+}
+
+type OwnershipRule = { attribute: string; profiles: string[]; language?: string }
+type OwnershipRow = { id: string; attribute: string; profiles: string; language?: string }
+
+export function ownershipRowsFromRules(rules: OwnershipRule[]): OwnershipRow[] {
+  return rules.map((rule, index) => ({
+    id: `ownership-${index}`,
+    attribute: rule.attribute,
+    profiles: rule.profiles.join(', '),
+    ...(rule.language ? { language: rule.language } : {}),
+  }))
+}
+
+export function ownershipRulesFromRows(rows: OwnershipRow[]): OwnershipRule[] {
+  return rows
+    .map((row) => ({
+      attribute: row.attribute.trim(),
+      ...(row.language ? { language: row.language } : {}),
+      profiles: row.profiles.split(',').map((profile) => profile.trim()).filter(Boolean),
+    }))
+    .filter((rule) => rule.attribute.length > 0)
+}
+
+function mergeModeLabel(mode: string) {
+  if (mode === 'continuous') return copy.modeContinuous
+  if (mode === 'manual') return copy.modeManual
+  return mode
+}
+
 export function CatalogsView() {
   const queryClient = useQueryClient()
   const catalogs = useCatalogsQuery()
@@ -92,10 +144,40 @@ export function CatalogsView() {
           <li key={catalogKey}>
             <strong>{row.name}</strong> <span>{row.key}</span> <span>{row.kind}</span>
             {row.kind === 'source' && catalogKey ? (
-              <>
-                <button type="button" onClick={() => infer.mutate(catalogKey)}>{copy.inferModel}</button>
-                <button type="button" onClick={() => cleanup.mutate(catalogKey)}>{copy.cleanupCatalog}</button>
-              </>
+              <span className="catalog-list-actions">
+                <TooltipProvider delayDuration={400} disableHoverableContent>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="icon"
+                        size="icon"
+                        aria-label={copy.inferModel}
+                        data-testid={`infer-${catalogKey}`}
+                        onClick={() => infer.mutate(catalogKey)}
+                      >
+                        <Sparkles aria-hidden="true" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>{copy.inferModelHelp}</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="icon"
+                        size="icon"
+                        aria-label={copy.cleanupCatalog}
+                        data-testid={`cleanup-${catalogKey}`}
+                        onClick={() => cleanup.mutate(catalogKey)}
+                      >
+                        <Trash2 aria-hidden="true" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>{copy.cleanupCatalogHelp}</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </span>
             ) : null}
           </li>
           )
@@ -108,11 +190,24 @@ export function CatalogsView() {
         }}
       >
         <h3>{copy.newCatalog}</h3>
-        <input aria-label="Catalog key" value={key} onChange={(event) => setKey(event.target.value)} placeholder="sap" />
-        <input aria-label="Catalog name" value={name} onChange={(event) => setName(event.target.value)} placeholder="SAP ERP" />
-        <label>
-          <input type="checkbox" checked={editable} onChange={(event) => setEditable(event.target.checked)} /> editable
-        </label>
+        <CatalogField id="catalog-key" label={copy.catalogKey} help={copy.catalogKeyHint}>
+          <input id="catalog-key" data-testid="catalog-key" value={key} onChange={(event) => setKey(event.target.value)} placeholder="sap" />
+        </CatalogField>
+        <CatalogField id="catalog-name" label={copy.catalogName} help={copy.catalogNameHint}>
+          <input id="catalog-name" data-testid="catalog-name" value={name} onChange={(event) => setName(event.target.value)} placeholder="SAP ERP" />
+        </CatalogField>
+        <div className="catalog-field">
+          <label className="catalog-check" htmlFor="catalog-editable">
+            <input
+              id="catalog-editable"
+              type="checkbox"
+              checked={editable}
+              onChange={(event) => setEditable(event.target.checked)}
+            />
+            {copy.catalogEditable}
+          </label>
+          <p className="catalog-field-help">{copy.catalogEditableHint}</p>
+        </div>
         <button type="submit" className="primary">{copy.save}</button>
       </form>
       {error ? <p className="error">{error}</p> : null}
@@ -190,7 +285,7 @@ export function MergeProfilesView() {
             >
               {row.name}
             </button>
-            <span>{row.mode}</span>
+            <span>{mergeModeLabel(row.mode)}</span>
           </li>
         ))}
       </ul>
@@ -200,78 +295,136 @@ export function MergeProfilesView() {
           save.mutate()
         }}
       >
-        <input aria-label="Profile key" value={draft.key} onChange={(event) => setDraft({ ...draft, key: event.target.value })} placeholder="sap-brand" />
-        <input aria-label="Profile name" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="SAP brand" />
-        <select aria-label="Source catalog" value={draft.source_catalog} onChange={(event) => setDraft({ ...draft, source_catalog: event.target.value })}>
-          {(catalogs.data ?? []).filter((row) => row.kind === 'source').map((row) => (
-            <option key={row.key} value={row.key}>{row.name}</option>
-          ))}
-        </select>
-        <select aria-label="Mode" value={draft.mode} onChange={(event) => setDraft({ ...draft, mode: event.target.value })}>
-          <option value="manual">manual</option>
-          <option value="continuous">continuous</option>
-        </select>
-        <input aria-label="Schedule" value={draft.schedule} placeholder="* * * * *" onChange={(event) => setDraft({ ...draft, schedule: event.target.value })} />
-        <input
-          aria-label="Match attribute"
-          value={draft.spec.match_attributes?.[0] ?? ''}
-          onChange={(event) => setDraft({ ...draft, spec: { ...draft.spec, match_attributes: [event.target.value] } })}
-        />
-        <input
-          aria-label="Master key"
-          value={draft.spec.master_key ?? ''}
-          onChange={(event) => setDraft({ ...draft, spec: { ...draft.spec, master_key: event.target.value } })}
-        />
-        <textarea
-          aria-label="Attribute map"
-          value={maps}
-          onChange={(event) =>
-            setDraft({
-              ...draft,
-              spec: {
-                ...draft.spec,
-                attributes: event.target.value
-                  .split('\n')
-                  .map((line) => line.split('='))
-                  .filter((pair) => pair[0] && pair[1])
-                  .map(([source, target]) => ({ source: source.trim(), target: target.trim() })),
-              },
-            })
-          }
-        />
-        <select
-          aria-label="When nothing matches"
-          value={draft.spec.on_no_match ?? 'skip'}
-          onChange={(event) => setDraft({ ...draft, spec: { ...draft.spec, on_no_match: event.target.value } })}
-        >
-          <option value="skip">skip</option>
-          <option value="create">create</option>
-        </select>
-        <select
-          aria-label="When the source deletes"
-          value={draft.spec.on_delete ?? 'ignore'}
-          onChange={(event) => setDraft({ ...draft, spec: { ...draft.spec, on_delete: event.target.value } })}
-        >
-          <option value="ignore">ignore</option>
-          <option value="propagate">propagate</option>
-        </select>
-        <input
-          aria-label="Owns existence"
-          placeholder="article"
-          value={(draft.spec.owns_existence_for ?? []).join(',')}
-          onChange={(event) =>
-            setDraft({
-              ...draft,
-              spec: {
-                ...draft.spec,
-                owns_existence_for: event.target.value.split(',').map((item) => item.trim()).filter(Boolean),
-              },
-            })
-          }
-        />
-        <button type="submit" className="primary">{copy.saveProfile}</button>
-        <button type="button" onClick={() => run.mutate(true)}>{copy.dryRun}</button>
-        <button type="button" onClick={() => run.mutate(false)}>{copy.runMerge}</button>
+        <CatalogField id="profile-key" label={copy.profileKey}>
+          <input
+            id="profile-key"
+            data-testid="profile-key"
+            value={draft.key}
+            onChange={(event) => setDraft({ ...draft, key: event.target.value })}
+            placeholder="sap-brand"
+          />
+        </CatalogField>
+        <CatalogField id="profile-name" label={copy.profileName}>
+          <input
+            id="profile-name"
+            data-testid="profile-name"
+            value={draft.name}
+            onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+            placeholder="SAP brand"
+          />
+        </CatalogField>
+        <CatalogField id="profile-source-catalog" label={copy.sourceCatalog}>
+          <select
+            id="profile-source-catalog"
+            data-testid="profile-source-catalog"
+            value={draft.source_catalog}
+            onChange={(event) => setDraft({ ...draft, source_catalog: event.target.value })}
+          >
+            {(catalogs.data ?? []).filter((row) => row.kind === 'source').map((row) => (
+              <option key={row.key} value={row.key}>{row.name}</option>
+            ))}
+          </select>
+        </CatalogField>
+        <CatalogField id="profile-mode" label={copy.mergeMode} help={copy.mergeModeHint}>
+          <select
+            id="profile-mode"
+            data-testid="profile-mode"
+            value={draft.mode}
+            onChange={(event) => setDraft({ ...draft, mode: event.target.value })}
+          >
+            <option value="manual">{copy.modeManual}</option>
+            <option value="continuous">{copy.modeContinuous}</option>
+          </select>
+        </CatalogField>
+        <CatalogField id="profile-schedule" label={copy.schedule} help={copy.scheduleHint}>
+          <input
+            id="profile-schedule"
+            data-testid="profile-schedule"
+            value={draft.schedule}
+            placeholder="* * * * *"
+            onChange={(event) => setDraft({ ...draft, schedule: event.target.value })}
+          />
+        </CatalogField>
+        <CatalogField id="profile-match-attribute" label={copy.matchAttribute} help={copy.matchAttributeHint}>
+          <input
+            id="profile-match-attribute"
+            data-testid="profile-match-attribute"
+            value={draft.spec.match_attributes?.[0] ?? ''}
+            onChange={(event) => setDraft({ ...draft, spec: { ...draft.spec, match_attributes: [event.target.value] } })}
+          />
+        </CatalogField>
+        <CatalogField id="profile-master-key" label={copy.masterKey} help={copy.masterKeyHint}>
+          <input
+            id="profile-master-key"
+            data-testid="profile-master-key"
+            value={draft.spec.master_key ?? ''}
+            onChange={(event) => setDraft({ ...draft, spec: { ...draft.spec, master_key: event.target.value } })}
+          />
+        </CatalogField>
+        <CatalogField id="profile-attribute-map" label={copy.attributeMap} help={copy.attributeMapHint}>
+          <textarea
+            id="profile-attribute-map"
+            data-testid="profile-attribute-map"
+            value={maps}
+            onChange={(event) =>
+              setDraft({
+                ...draft,
+                spec: {
+                  ...draft.spec,
+                  attributes: event.target.value
+                    .split('\n')
+                    .map((line) => line.split('='))
+                    .filter((pair) => pair[0] && pair[1])
+                    .map(([source, target]) => ({ source: source.trim(), target: target.trim() })),
+                },
+              })
+            }
+          />
+        </CatalogField>
+        <CatalogField id="profile-on-no-match" label={copy.onNoMatch} help={copy.onNoMatchHint}>
+          <select
+            id="profile-on-no-match"
+            data-testid="profile-on-no-match"
+            value={draft.spec.on_no_match ?? 'skip'}
+            onChange={(event) => setDraft({ ...draft, spec: { ...draft.spec, on_no_match: event.target.value } })}
+          >
+            <option value="skip">{copy.onNoMatchSkip}</option>
+            <option value="create">{copy.onNoMatchCreate}</option>
+          </select>
+        </CatalogField>
+        <CatalogField id="profile-on-delete" label={copy.onDelete} help={copy.onDeleteHint}>
+          <select
+            id="profile-on-delete"
+            data-testid="profile-on-delete"
+            value={draft.spec.on_delete ?? 'ignore'}
+            onChange={(event) => setDraft({ ...draft, spec: { ...draft.spec, on_delete: event.target.value } })}
+          >
+            <option value="ignore">{copy.onDeleteIgnore}</option>
+            <option value="propagate">{copy.onDeletePropagate}</option>
+          </select>
+        </CatalogField>
+        <CatalogField id="profile-owns-existence" label={copy.ownsExistence} help={copy.ownsExistenceHint}>
+          <input
+            id="profile-owns-existence"
+            data-testid="profile-owns-existence"
+            placeholder="article"
+            value={(draft.spec.owns_existence_for ?? []).join(',')}
+            onChange={(event) =>
+              setDraft({
+                ...draft,
+                spec: {
+                  ...draft.spec,
+                  owns_existence_for: event.target.value.split(',').map((item) => item.trim()).filter(Boolean),
+                },
+              })
+            }
+          />
+        </CatalogField>
+        <div className="catalog-form-actions">
+          <button type="submit" className="primary">{copy.saveProfile}</button>
+          <button type="button" onClick={() => run.mutate(true)}>{copy.dryRun}</button>
+          <button type="button" onClick={() => run.mutate(false)}>{copy.runMerge}</button>
+        </div>
       </form>
       {error ? <p className="error">{error}</p> : null}
       <DiffTable rows={rows} />
@@ -280,39 +433,115 @@ export function MergeProfilesView() {
 }
 
 export function OwnershipView() {
-  const rules = useQuery({ queryKey: ['ownership'], queryFn: () => getJson<Array<{ attribute: string; profiles: string[] }>>('/v1/merge/ownership') })
-  const [text, setText] = useState('')
+  const queryClient = useQueryClient()
+  const rules = useQuery({ queryKey: ['ownership'], queryFn: () => getJson<OwnershipRule[]>('/v1/merge/ownership') })
+  const [rows, setRows] = useState<OwnershipRow[] | null>(null)
+  const [nextRow, setNextRow] = useState(0)
+  const [confirmOpen, setConfirmOpen] = useState(false)
   const [error, setError] = useState('')
-  const shown = text || JSON.stringify(rules.data ?? [], null, 2)
+  const draftRows = rows ?? ownershipRowsFromRules(rules.data ?? [])
+  const confirmedRules = ownershipRulesFromRows(draftRows)
   const save = useMutation({
-    mutationFn: () => sendJson('/v1/merge/ownership', JSON.parse(shown)),
-    onSuccess: () => setError(''),
+    mutationFn: () => sendJson('/v1/merge/ownership', confirmedRules),
+    onSuccess: () => {
+      setRows(null)
+      setError('')
+      void queryClient.invalidateQueries({ queryKey: ['ownership'] })
+    },
     onError: (reason: unknown) => setError(failedWrite(reason, 'Could not save the rules')),
   })
+  const updateRow = (id: string, patch: Partial<OwnershipRow>) => {
+    setRows(draftRows.map((row) => row.id === id ? { ...row, ...patch } : row))
+  }
+  const addRow = () => {
+    const id = `ownership-new-${nextRow}`
+    setNextRow((value) => value + 1)
+    setRows([...draftRows, { id, attribute: '', profiles: '' }])
+  }
   return (
     <div className="catalog-admin" data-testid="ownership-view">
       <h2>{copy.ownership}</h2>
-      <textarea aria-label="Ownership rules" value={shown} onChange={(event) => setText(event.target.value)} rows={12} />
       <p>{copy.ownershipHint}</p>
-      <button
-        type="button"
-        className="primary"
-        onClick={() => {
-          let count = 0
-          try {
-            const parsed = JSON.parse(shown) as unknown
-            count = Array.isArray(parsed) ? parsed.length : 0
-          } catch {
-            setError('Ownership rules must be a JSON list')
-            return
-          }
-          if (!window.confirm(copy.ownershipConfirm.replace('{count}', String(count)))) return
-          save.mutate()
-        }}
-      >
-        {copy.saveRules}
-      </button>
+      <div className="ownership-editor" data-testid="ownership-editor">
+        {draftRows.length === 0 ? <p className="catalog-field-help">{copy.ownershipEmpty}</p> : null}
+        {draftRows.map((row, index) => (
+          <div key={row.id} className="ownership-row" data-testid="ownership-row">
+            <CatalogField id={`ownership-attribute-${row.id}`} label={copy.ownershipAttribute}>
+              <input
+                id={`ownership-attribute-${row.id}`}
+                data-testid={`ownership-attribute-${index}`}
+                value={row.attribute}
+                onChange={(event) => updateRow(row.id, { attribute: event.target.value })}
+              />
+            </CatalogField>
+            <CatalogField
+              id={`ownership-profiles-${row.id}`}
+              label={copy.ownershipProfiles}
+              help={copy.ownershipProfilesHint}
+            >
+              <input
+                id={`ownership-profiles-${row.id}`}
+                data-testid={`ownership-profiles-${index}`}
+                value={row.profiles}
+                placeholder="sap-brand"
+                onChange={(event) => updateRow(row.id, { profiles: event.target.value })}
+              />
+            </CatalogField>
+            <Button
+              type="button"
+              variant="icon"
+              size="icon"
+              className="ownership-remove"
+              aria-label={copy.ownershipRemoveRule}
+              data-testid={`ownership-remove-${index}`}
+              onClick={() => setRows(draftRows.filter((item) => item.id !== row.id))}
+            >
+              <Trash2 aria-hidden="true" />
+            </Button>
+          </div>
+        ))}
+        <div>
+          <Button type="button" variant="ghost" data-testid="ownership-add-rule" onClick={addRow}>
+            {copy.ownershipAddRule}
+          </Button>
+        </div>
+      </div>
+      <div className="catalog-form-actions">
+        <Button
+          type="button"
+          variant="primary"
+          data-testid="ownership-save"
+          onClick={() => setConfirmOpen(true)}
+        >
+          {copy.saveRules}
+        </Button>
+      </div>
       {error ? <p className="error">{error}</p> : null}
+      <Dialog open={confirmOpen} onOpenChange={(next) => { if (!next) setConfirmOpen(false) }}>
+        <DialogContent
+          data-testid="ownership-confirm"
+          aria-label={copy.saveRules}
+          onEscapeKeyDown={(event) => event.stopPropagation()}
+        >
+          <DialogTitle asChild>
+            <p>{copy.ownershipConfirm.replace('{count}', String(confirmedRules.length))}</p>
+          </DialogTitle>
+          <div className="dialog-actions">
+            <Button type="button" variant="ghost" onClick={() => setConfirmOpen(false)}>{copy.cancel}</Button>
+            <Button
+              type="button"
+              variant="primary"
+              data-testid="ownership-confirm-save"
+              onClick={() => {
+                setConfirmOpen(false)
+                save.mutate()
+              }}
+            >
+              {copy.saveRules}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
