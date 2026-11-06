@@ -7,6 +7,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from './components/ui/dropdown-menu'
+import { Button } from './components/ui/button'
 import { copy } from './i18n'
 
 export type Connection = 'online' | 'offline'
@@ -40,9 +41,9 @@ export function UserMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button type="button" className="avatar-btn" data-testid="user-menu" aria-label={copy.account}>
+        <Button type="button" variant="icon" className="avatar-btn" data-testid="user-menu" aria-label={copy.account}>
           {userInitial({ name, email, handle })}
-        </button>
+        </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="user-menu-content" collisionPadding={8} data-testid="user-menu-content">
         <DropdownMenuLabel className="user-menu-head">

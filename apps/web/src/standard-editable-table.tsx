@@ -21,6 +21,7 @@ import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } 
 import { CSS as DndCSS } from '@dnd-kit/utilities'
 import type { CommandTarget, MenuContext } from './command-registry'
 import { openSharedContextMenu, prefersNativeContextMenu } from './shared-context-menu'
+import { Button } from './components/ui/button'
 import { StandardTableChrome } from './standard-table'
 import { copy } from './i18n'
 import { reportWriteError } from './write-error'
@@ -153,8 +154,9 @@ function SortableGridRow({
       }}
     >
       <div className="standard-grid-cell standard-grid-reorder">
-        <button
+        <Button
           type="button"
+          variant="icon"
           className="standard-grid-reorder-btn"
           aria-label="Move row up"
           title="Move row up"
@@ -165,9 +167,10 @@ function SortableGridRow({
           }}
         >
           ↑
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
+          variant="icon"
           className="standard-grid-reorder-btn"
           aria-label="Move row down"
           title="Move row down"
@@ -178,9 +181,10 @@ function SortableGridRow({
           }}
         >
           ↓
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
+          variant="icon"
           className="standard-grid-reorder-btn standard-grid-drag-handle"
           aria-label="Drag to reorder"
           title="Drag to reorder"
@@ -190,7 +194,7 @@ function SortableGridRow({
           onClick={(event) => event.stopPropagation()}
         >
           ⠿
-        </button>
+        </Button>
       </div>
       {children}
     </div>

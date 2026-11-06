@@ -208,7 +208,7 @@ export function CatalogsView() {
           </label>
           <p className="catalog-field-help">{copy.catalogEditableHint}</p>
         </div>
-        <button type="submit" className="primary">{copy.save}</button>
+        <Button type="submit" variant="primary">{copy.save}</Button>
       </form>
       {error ? <p className="error">{error}</p> : null}
       {infer.data ? <p data-testid="infer-result">{JSON.stringify(infer.data)}</p> : null}
@@ -270,8 +270,9 @@ export function MergeProfilesView() {
       <ul>
         {(profiles.data ?? []).map((row) => (
           <li key={row.key}>
-            <button
+            <Button
               type="button"
+              variant="default"
               onClick={() =>
                 setDraft({
                   key: row.key,
@@ -284,7 +285,7 @@ export function MergeProfilesView() {
               }
             >
               {row.name}
-            </button>
+            </Button>
             <span>{mergeModeLabel(row.mode)}</span>
           </li>
         ))}
@@ -421,9 +422,9 @@ export function MergeProfilesView() {
           />
         </CatalogField>
         <div className="catalog-form-actions">
-          <button type="submit" className="primary">{copy.saveProfile}</button>
-          <button type="button" onClick={() => run.mutate(true)}>{copy.dryRun}</button>
-          <button type="button" onClick={() => run.mutate(false)}>{copy.runMerge}</button>
+          <Button type="submit" variant="primary">{copy.saveProfile}</Button>
+          <Button type="button" variant="default" onClick={() => run.mutate(true)}>{copy.dryRun}</Button>
+          <Button type="button" variant="default" onClick={() => run.mutate(false)}>{copy.runMerge}</Button>
         </div>
       </form>
       {error ? <p className="error">{error}</p> : null}
@@ -667,8 +668,8 @@ export function MergeRunsView() {
       <div className="merge-link-form">
         <MergeObjectPicker label={copy.sourceObject} testId="merge-source-picker" choice={source} onChoose={setSource} />
         <MergeObjectPicker label={copy.masterObject} testId="merge-master-picker" choice={master} onChoose={setMaster} />
-        <button type="button" className="btn-ghost" onClick={() => link.mutate(false)}>{copy.linkObjects}</button>
-        <button type="button" className="btn-ghost" onClick={() => link.mutate(true)}>{copy.unlinkObjects}</button>
+        <Button type="button" variant="ghost" onClick={() => link.mutate(false)}>{copy.linkObjects}</Button>
+        <Button type="button" variant="ghost" onClick={() => link.mutate(true)}>{copy.unlinkObjects}</Button>
       </div>
       {error ? <p className="error">{error}</p> : null}
     </div>

@@ -1322,7 +1322,7 @@ export function CommandPalette({
       return (
         <div className="palette" role="dialog" data-testid="command-palette">
           <p className="muted">Open an object table to select fields.</p>
-          <button type="button" onClick={onClose}>Close</button>
+          <Button type="button" variant="default" onClick={onClose}>Close</Button>
         </div>
       )
     }
@@ -1386,16 +1386,16 @@ export function CommandPalette({
             }}
           />
           {mode === 'ai' ? (
-            <button type="button" className="icon-btn palette-close" onClick={onClose}>{copy.close}</button>
+            <Button type="button" variant="icon" className="palette-close" onClick={onClose}>{copy.close}</Button>
           ) : null}
         </div>
         <div className="sr-only" aria-live="polite" data-testid="palette-results">{resultAnnouncement(resultCount, query)}</div>
         {mode === 'ai' ? (
           <div className="ai-log" data-testid="ai-log">
             {userTurns.slice(0, -1).map((turn, index) => (
-              <button key={`earlier-${index}`} type="button" className="ai-earlier" onClick={() => { setQuery(turn.text); setEditing(index) }}>
+              <Button key={`earlier-${index}`} type="button" variant="ghost" className="ai-earlier" onClick={() => { setQuery(turn.text); setEditing(index) }}>
                 {turn.text}
-              </button>
+              </Button>
             ))}
             {question ? <h2 className="ai-question" data-testid="ai-question">{question}</h2> : null}
             {running ? <div className="progress" data-testid="ai-progress"><div className="progress-bar" /></div> : null}
@@ -1428,7 +1428,7 @@ export function CommandPalette({
                 {proposal.error ? <p className="error">{proposal.error}</p> : null}
                 <div className="toolbar">
                   <Button type="button" variant="danger" onClick={() => void api.post('/v1/proposals/{id}/discard', { params: { path: { id: proposal.id } } }).then(() => setProposal(null))}>{copy.discardAll}</Button>
-                  <button type="button" className="primary" onClick={() => void api.post('/v1/proposals/{id}/accept', { params: { path: { id: proposal.id } }, body: {} }).then(() => { session.setProposalId(proposal.id); setProposal(null); session.push(copy.saved) })}>{copy.saveAll}</button>
+                  <Button type="button" variant="primary" onClick={() => void api.post('/v1/proposals/{id}/accept', { params: { path: { id: proposal.id } }, body: {} }).then(() => { session.setProposalId(proposal.id); setProposal(null); session.push(copy.saved) })}>{copy.saveAll}</Button>
                 </div>
               </div>
             ) : null}

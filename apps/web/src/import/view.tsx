@@ -3,6 +3,7 @@ import { useQueries, useQuery } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { toast } from 'sonner'
 import { api, jsonRecord } from '../api'
+import { Button } from '../components/ui/button'
 import { Dialog, DialogContent, DialogTitle } from '../components/ui/dialog'
 import { copy } from '../i18n'
 import {
@@ -165,7 +166,7 @@ export function ImportScreen() {
               <strong>{snap.fileName || copy.importFile}</strong>
             </div>
             <Steps phase={snap.phase} />
-            <button type="button" className="btn-ghost" onClick={requestCloseImport}>{copy.close}</button>
+            <Button type="button" variant="ghost" onClick={requestCloseImport}>{copy.close}</Button>
           </header>
           {snap.notice ? <p className="import-notice">{snap.notice}</p> : null}
           {snap.phase === 'empty' || snap.phase === 'error' ? <Empty snap={snap} /> : null}
@@ -188,8 +189,8 @@ export function ImportScreen() {
                 <DialogTitle asChild>
                   <p>{snap.confirm === 'replace' ? copy.importReplace : copy.importCloseConfirm}</p>
                 </DialogTitle>
-                <button type="button" className="primary" onClick={confirmImport}>{copy.importYes}</button>
-                <button type="button" onClick={dismissConfirm}>{copy.importNo}</button>
+                <Button type="button" variant="primary" onClick={confirmImport}>{copy.importYes}</Button>
+                <Button type="button" variant="default" onClick={dismissConfirm}>{copy.importNo}</Button>
               </DialogContent>
             </Dialog>
           ) : null}
@@ -417,9 +418,9 @@ function Mapping() {
                 {alts.length > 0 ? (
                   <div className="import-alts">
                     {alts.map((alt) => (
-                      <button key={alt.id} type="button" onClick={() => assignImportTarget(header.index, alt.id)}>
+                      <Button key={alt.id} type="button" variant="default" onClick={() => assignImportTarget(header.index, alt.id)}>
                         {alt.label}
-                      </button>
+                      </Button>
                     ))}
                   </div>
                 ) : null}
@@ -435,8 +436,9 @@ function Mapping() {
         })}
       </ul>
       <footer className="import-actions">
-        <button
+        <Button
           type="button"
+          variant="default"
           data-testid="import-save-mapping"
           disabled={mappedLines(snap.columns).length === 0 || !snap.typeKey}
           onClick={() => {
@@ -446,16 +448,16 @@ function Mapping() {
           }}
         >
           {copy.importSaveMappingAs}
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
-          className="primary"
+          variant="primary"
           data-testid="import-approve"
           disabled={waiting && !session.proposal || mappedLines(snap.columns).length === 0 || !snap.typeKey}
           onClick={() => void approveImport().catch((error: unknown) => toast(error instanceof Error ? error.message : copy.importApproveFailed))}
         >
           {copy.importNext}
-        </button>
+        </Button>
       </footer>
     </div>
   )
@@ -561,7 +563,7 @@ function Preview() {
       )}
       <footer className="import-actions">
         <div className="import-actions-start">
-          <button type="button" className="btn-ghost" onClick={backToMapping}>{copy.importBack}</button>
+          <Button type="button" variant="ghost" onClick={backToMapping}>{copy.importBack}</Button>
           {failed > 0 ? (
             <a className="import-link" href={fixture ? undefined : `/v1/imports/${session.id}/failed.xlsx`}>{copy.importFailedDownload}</a>
           ) : null}
@@ -576,10 +578,10 @@ function Preview() {
         ) : (
           <div className="import-actions-end">
             {failed > 0 ? <span className="import-note">{copy.importFailedSkipped.replace('{failed}', String(failed))}</span> : null}
-            <button type="button" data-testid="import-discard" onClick={discardImport}>{copy.discard}</button>
-            <button
+            <Button type="button" variant="default" data-testid="import-discard" onClick={discardImport}>{copy.discard}</Button>
+            <Button
               type="button"
-              className="primary"
+              variant="primary"
               data-testid="import-save"
               disabled={fixture || session.status !== 'previewed'}
               onClick={() => {
@@ -587,7 +589,7 @@ function Preview() {
               }}
             >
               {saveLabel(failed, changes)}
-            </button>
+            </Button>
           </div>
         )}
       </footer>

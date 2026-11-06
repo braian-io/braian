@@ -48,9 +48,10 @@ function AgentIconButton({
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <button
+        <Button
           type={type}
-          className="icon-btn agent-action"
+          variant="icon"
+          className="agent-action"
           data-testid={testId}
           aria-label={label}
           title={label}
@@ -58,7 +59,7 @@ function AgentIconButton({
           onClick={onClick}
         >
           {children}
-        </button>
+        </Button>
       </TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
     </Tooltip>

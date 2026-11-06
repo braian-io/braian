@@ -11,7 +11,7 @@ const buttonVariants = cva(
         default: 'btn-raised',
         primary: 'btn-accent',
         ghost: 'btn-ghost',
-        icon: 'btn-ghost',
+        icon: 'btn-ghost icon-btn',
         danger: 'btn-danger',
       },
       size: {

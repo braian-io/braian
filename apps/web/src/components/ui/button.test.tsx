@@ -11,6 +11,7 @@ describe('button variants', () => {
     expect(buttonVariants({ variant: 'primary' })).toContain('btn-accent')
     expect(buttonVariants({ variant: 'ghost' })).toContain('btn-ghost')
     expect(buttonVariants({ variant: 'icon' })).toContain('btn-ghost')
+    expect(buttonVariants({ variant: 'icon' })).toContain('icon-btn')
     expect(buttonVariants({ variant: 'danger' })).toContain('btn-danger')
   })
 

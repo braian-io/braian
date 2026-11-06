@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Button } from './components/ui/button'
 import { copy } from './i18n'
 import { setNewVersionGate } from './new-version-gate'
 import { statusMessage, type LiveState } from './status-message'
@@ -77,14 +78,15 @@ export function StatusBar({ online, live, locked, inert = false }: { online: boo
     >
       {message?.text ?? ''}
       {message?.action ? (
-        <button
+        <Button
           type="button"
+          variant="ghost"
           className="status-bar-action"
           data-testid="status-bar-action"
           onClick={message.action.onClick}
         >
           {message.action.label}
-        </button>
+        </Button>
       ) : null}
     </span>
   )

@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { ChevronRight } from 'lucide-react'
+import { Button } from './components/ui/button'
 import { copy } from './i18n'
 import {
   commandTitle,
@@ -378,7 +379,7 @@ export function SharedContextMenuHost({
     const hasKids = commandHasChildren(command)
     const isMarked = opts.markedId === command.id
     return (
-      <button
+      <Button
         key={command.id}
         type="button"
         role="menuitem"
@@ -407,7 +408,7 @@ export function SharedContextMenuHost({
         <span className="menu-label">{commandTitle(command, request.target ?? {})}</span>
         {hasKids ? <ChevronRight size={14} aria-hidden="true" className="menu-chevron" /> : null}
         {command.kbd ? <>{' '}<kbd>{command.kbd}</kbd></> : null}
-      </button>
+      </Button>
     )
   }
 

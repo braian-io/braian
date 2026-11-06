@@ -13,6 +13,7 @@ import {
 import { ChevronDown, Link2, List, PinOff, X } from 'lucide-react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import { api, catalogName, searchQuery, textValue, type Json } from './api'
+import { Button } from './components/ui/button'
 import { MetaChip, typeLabel } from './chips'
 import {
   buildScene,
@@ -969,15 +970,15 @@ export function GraphMap({
   return (
     <div className={full ? 'graph-wrap graph-full' : 'graph-wrap'} data-testid={full ? 'graph-full' : undefined}>
       <div className="toolbar">
-        <button type="button" data-testid="graph-fit" onClick={() => apiRef.current.fit()}>
+        <Button type="button" variant="default" data-testid="graph-fit" onClick={() => apiRef.current.fit()}>
           {copy.fitGraph}
-        </button>
-        <button type="button" data-testid="graph-relayout" onClick={() => apiRef.current.relayout()}>
+        </Button>
+        <Button type="button" variant="default" data-testid="graph-relayout" onClick={() => apiRef.current.relayout()}>
           {copy.relayout}
-        </button>
-        <button type="button" onClick={() => setFull((value) => !value)}>
+        </Button>
+        <Button type="button" variant="default" onClick={() => setFull((value) => !value)}>
           {full ? copy.closeFull : copy.openFull}
-        </button>
+        </Button>
         {model.capped ? <span className="hint">{copy.graphCapped}</span> : null}
       </div>
       <div
@@ -1222,12 +1223,12 @@ function GraphInspector({
               <i className={`dot ${node.kind}`} />
               <span className="graph-kicker-text">{summary.type}</span>
             </p>
-            <button type="button" className="icon-btn" data-testid="graph-collapse" aria-label={copy.collapse} onClick={onCollapse}>
+            <Button type="button" variant="icon" data-testid="graph-collapse" aria-label={copy.collapse} onClick={onCollapse}>
               <ChevronDown size={14} aria-hidden="true" />
-            </button>
-            <button type="button" className="icon-btn" data-testid="graph-dismiss" aria-label={copy.graphDismiss} onClick={onDismiss}>
+            </Button>
+            <Button type="button" variant="icon" data-testid="graph-dismiss" aria-label={copy.graphDismiss} onClick={onDismiss}>
               <X size={14} aria-hidden="true" />
-            </button>
+            </Button>
           </div>
         </div>
       ) : (
@@ -1243,24 +1244,26 @@ function GraphInspector({
         <p className="hint">{node.subtitle}</p>
       )}
       {placement === 'sheet' && node.objectId ? (
-        <button type="button" className="primary graph-action" onClick={() => onOpen(node.objectId!)}>
+        <Button type="button" variant="primary" className="graph-action" onClick={() => onOpen(node.objectId!)}>
           {openObjectLabel(node.typeName)}
-        </button>
+        </Button>
       ) : null}
       {node.kind === 'object' && node.typeKey ? (
-        <button
+        <Button
           type="button"
+          variant="ghost"
           className="graph-action"
           data-testid="graph-add-link"
           onClick={() => window.dispatchEvent(new CustomEvent('braian-add-link', { detail: {} }))}
         >
           <Link2 size={14} aria-hidden="true" />
           {copy.addLink}
-        </button>
+        </Button>
       ) : null}
       {placement === 'sheet' && node.properties.length > 0 ? (
-        <button
+        <Button
           type="button"
+          variant="ghost"
           className="graph-action"
           data-testid="graph-properties-toggle"
           aria-expanded={showProperties}
@@ -1268,7 +1271,7 @@ function GraphInspector({
         >
           <List size={14} aria-hidden="true" />
           {copy.graphProperties}
-        </button>
+        </Button>
       ) : null}
       {showProperties ? (
         <>
@@ -1284,15 +1287,15 @@ function GraphInspector({
         </>
       ) : null}
       {placement === 'side' && node.objectId ? (
-        <button type="button" className="primary graph-action" onClick={() => onOpen(node.objectId!)}>
+        <Button type="button" variant="primary" className="graph-action" onClick={() => onOpen(node.objectId!)}>
           {openObjectLabel(node.typeName)}
-        </button>
+        </Button>
       ) : null}
       {pinned && !readOnly ? (
-        <button type="button" className="graph-action" data-testid="graph-unpin" onClick={onUnpin}>
+        <Button type="button" variant="ghost" className="graph-action" data-testid="graph-unpin" onClick={onUnpin}>
           <PinOff size={14} aria-hidden="true" />
           {copy.unpin}
-        </button>
+        </Button>
       ) : null}
       {busy ? <p className="hint">{copy.loading}</p> : null}
     </aside>

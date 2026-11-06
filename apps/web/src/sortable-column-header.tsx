@@ -5,6 +5,7 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
+import { Button } from './components/ui/button'
 import { copy } from './i18n'
 
 export type HeaderSortState = 'asc' | 'desc' | false
@@ -66,9 +67,10 @@ export function SortableColumnHeader({
       onClick={onActivate}
       onContextMenu={onContextMenu}
     >
-      <button
+      <Button
         type="button"
-        className={`icon-btn column-header-btn${sortable ? '' : ' column-header-btn-static'}`}
+        variant="icon"
+        className={`column-header-btn${sortable ? '' : ' column-header-btn-static'}`}
         title={title}
         aria-label={sortable ? header : `${header} (${copy.columnNotSortable})`}
         {...attributes}
@@ -87,7 +89,7 @@ export function SortableColumnHeader({
             {indicator}
           </span>
         ) : null}
-      </button>
+      </Button>
       <span
         className="column-resize-handle"
         data-testid={`resize-${id}`}

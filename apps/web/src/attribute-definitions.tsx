@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, jsonRecord, type Json } from './api'
 import { onAttributeAction, type AttributeAction } from './attribute-actions'
 import { rowsFromCatalog, rowsFromDefinitions, type AttributeDefinitionRow, type AttributeFlags } from './attribute-rows'
+import { Button } from './components/ui/button'
 import { Dialog, DialogContent, DialogTitle } from './components/ui/dialog'
 import { formatCount } from './format'
 import { copy } from './i18n'
@@ -455,7 +456,7 @@ function PlacePicker({
           ))}
         </div>
         {error ? <p className="error">{error}</p> : null}
-        <button type="button" onClick={onClose}>{copy.cancel}</button>
+        <Button type="button" variant="default" onClick={onClose}>{copy.cancel}</Button>
       </DialogContent>
     </Dialog>
   )

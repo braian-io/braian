@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Button } from './components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select'
 import { copy } from './i18n'
@@ -150,15 +151,16 @@ export function CreateDialog({
           <div className="create-fields">
             {fields.map((field, index) => renderField(field, index, fields))}
             {moreFields.length > 0 ? (
-              <button
+              <Button
                 type="button"
-                className="btn-ghost create-more"
+                variant="ghost"
+                className="create-more"
                 data-testid="show-more-fields"
                 aria-expanded={showMore}
                 onClick={() => setShowMore((shown) => !shown)}
               >
                 {showMore ? copy.showFewerFields : copy.showMoreFields}
-              </button>
+              </Button>
             ) : null}
             {showMore ? moreFields.map((field, index) => renderField(field, index, moreFields)) : null}
           </div>
@@ -166,8 +168,8 @@ export function CreateDialog({
             <p className="error" role="alert" data-testid="validation-error">{error}</p>
           ) : null}
           <div className="dialog-actions">
-            <button type="button" data-testid="create-cancel" onClick={close}>{copy.cancel}</button>
-            <button type="submit" className="primary" data-testid={submitTestId} disabled={saving}>{copy.save}</button>
+            <Button type="button" variant="default" data-testid="create-cancel" onClick={close}>{copy.cancel}</Button>
+            <Button type="submit" variant="primary" data-testid={submitTestId} disabled={saving}>{copy.save}</Button>
           </div>
         </form>
       </DialogContent>

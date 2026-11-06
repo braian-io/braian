@@ -302,8 +302,9 @@ export function LinkSections({
               <span>{link.peer_key}</span>
             </div>
           ))}
-          <button
+          <Button
             type="button"
+            variant="default"
             data-testid="add-link"
             onClick={(event) => {
               opener.current = event.currentTarget
@@ -312,7 +313,7 @@ export function LinkSections({
             }}
           >
             {copy.addLink}
-          </button>
+          </Button>
         </section>
         )
       })}

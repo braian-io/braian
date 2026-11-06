@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { Button } from './components/ui/button'
 import {
   agentNoticeText,
   agentNotices,
@@ -58,8 +59,9 @@ export function AgentPresence({ enabled, onReview }: AgentPresenceProps) {
   if (!enabled || count < 1) return null
   const label = backgroundWorkingLabel(count)
   return (
-    <button
+    <Button
       type="button"
+      variant="default"
       className="agent-bg-indicator"
       data-testid="agent-background-indicator"
       data-count={count}
@@ -69,6 +71,6 @@ export function AgentPresence({ enabled, onReview }: AgentPresenceProps) {
     >
       <strong data-testid="agent-background-count">{count}</strong>
       <span>working</span>
-    </button>
+    </Button>
   )
 }

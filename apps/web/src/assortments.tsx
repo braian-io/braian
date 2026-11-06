@@ -386,9 +386,10 @@ export function AssortmentList({ session }: { session: SelectionSession }) {
                 menu(item, event.clientX, event.clientY)
               }}
             >
-              <button
+              <Button
                 type="button"
-                className={selected ? 'btn-ghost on' : 'btn-ghost'}
+                variant="ghost"
+                className={selected ? 'on' : undefined}
                 onClick={() => {
                   setOpenId(id)
                   const next = (item.query as Json) ?? {}
@@ -396,10 +397,10 @@ export function AssortmentList({ session }: { session: SelectionSession }) {
                 }}
               >
                 {assortmentDisplayName(String(item.name ?? ''))}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
-                className="icon-btn"
+                variant="icon"
                 data-testid="selection-menu"
                 aria-label={copy.moreActions}
                 onClick={(event) => {
@@ -408,7 +409,7 @@ export function AssortmentList({ session }: { session: SelectionSession }) {
                 }}
               >
                 <MoreHorizontal size={14} aria-hidden="true" />
-              </button>
+              </Button>
             </div>
           )
         })}

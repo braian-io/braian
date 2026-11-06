@@ -76,8 +76,9 @@ export function ModelDraftHost() {
           {draft.data?.updated_at ? <time dateTime={String(draft.data.updated_at)}>{formatTimestamp(draft.data.updated_at)}</time> : null}
           {conflict ? <span>{copy.draftConflict} {draft.data?.updated_at ? formatTimestamp(draft.data.updated_at) : ''}</span> : null}
           {conflict ? (
-            <button
+            <Button
               type="button"
+              variant="default"
               onClick={() => {
                 void api.post('/v1/model/draft/rebase').then(() => {
                   setError('')
@@ -89,9 +90,9 @@ export function ModelDraftHost() {
               }}
             >
               {copy.rebaseDraft}
-            </button>
+            </Button>
           ) : (
-            <button type="button" data-testid="review-save" onClick={() => { rememberOpener(); setReview(true) }}>{copy.reviewAndSave}</button>
+            <Button type="button" variant="default" data-testid="review-save" onClick={() => { rememberOpener(); setReview(true) }}>{copy.reviewAndSave}</Button>
           )}
           <Button type="button" variant="danger" onClick={() => requestDiscardDraft()}>{copy.discardDraft}</Button>
           {error ? <span className="error">{error}</span> : null}
@@ -269,8 +270,8 @@ function CreateDialog({ kind, onClose }: { kind: DialogKind; onClose: () => void
           ) : null}
           {error ? <p className="error">{error}</p> : null}
           <div className="toolbar">
-            <button type="button" onClick={onClose}>{copy.cancel}</button>
-            <button type="submit" className="primary" data-testid="model-dialog-save">{copy.save}</button>
+            <Button type="button" variant="default" onClick={onClose}>{copy.cancel}</Button>
+            <Button type="submit" variant="primary" data-testid="model-dialog-save">{copy.save}</Button>
           </div>
         </form>
       </DialogContent>

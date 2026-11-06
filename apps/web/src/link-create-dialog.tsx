@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Button } from './components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
 import { copy } from './i18n'
 import {
@@ -79,7 +80,7 @@ export function LinkCreateDialog({
             {copy.linkInvalid}{explanation ? ` ${explanation}` : ''}
           </DialogDescription>
           <div className="dialog-actions">
-            <button type="button" autoFocus onClick={onClose}>{copy.close}</button>
+            <Button type="button" variant="default" autoFocus onClick={onClose}>{copy.close}</Button>
           </div>
         </div>
       </LinkDialog>
@@ -392,13 +393,13 @@ function LinkFields({
         ) : null}
         {error ? <p className="error" role="alert" data-testid="link-create-error">{error}</p> : null}
         <div className="dialog-actions">
-          <button type="button" onClick={onClose}>{copy.cancel}</button>
+          <Button type="button" variant="default" onClick={onClose}>{copy.cancel}</Button>
           {conflict ? (
-            <button type="button" className="primary" data-testid="link-replace" disabled={replacing} onClick={replace}>
+            <Button type="button" variant="primary" data-testid="link-replace" disabled={replacing} onClick={replace}>
               {replacing ? copy.linkReplacing : copy.linkReplace}
-            </button>
+            </Button>
           ) : (
-            <button type="submit" className="primary" data-testid="link-create-confirm" disabled={saving}>{copy.confirm}</button>
+            <Button type="submit" variant="primary" data-testid="link-create-confirm" disabled={saving}>{copy.confirm}</Button>
           )}
         </div>
       </form>
