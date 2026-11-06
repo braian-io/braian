@@ -53,6 +53,7 @@ import {
   type SheetMode,
 } from './graph-chrome'
 import { buildModelScene, expandModelType, mergeModelScene } from './graph-model-scene'
+import { curvePoint, placeEdgeLabel, type EdgeLabelBox } from './graph-edge-label'
 import { chooseModelSelection } from './model-selection'
 import { openObjectLabel } from './type-labels'
 import { copy, uiLanguage } from './i18n'
@@ -448,6 +449,13 @@ export function GraphMap({
         }
       }
       const showEdgeLabels = modelMode || (degree > 0 && degree <= 5)
+      const labelNodes = nodes
+        .filter((node) => !isLegendHidden(hiddenNow, node) && node.x != null && node.y != null)
+        .map((node) => {
+          const point = screenOf(node.x!, node.y!)
+          return { x: point.x, y: point.y, radius: nodeRadius(node.kind, node.degree ?? 0) * transform.k }
+        })
+      const placedEdgeLabels: EdgeLabelBox[] = []
 
       context.setTransform(dpr, 0, 0, dpr, 0, 0)
       context.clearRect(0, 0, width, height)
@@ -485,11 +493,12 @@ export function GraphMap({
         arrow(context, tip.point.x, tip.point.y, Math.atan2(tangent.y, tangent.x))
         const showLabel = modelMode || (showEdgeLabels && captionIds.has(source.id) && captionIds.has(target.id))
         if (showLabel && (modelMode || transform.k >= 0.55)) {
-          const mid = curvePoint(from, control, to, 0.68)
           context.font = '11px "Inter Variable", Inter, sans-serif'
           const widthText = context.measureText(link.label).width
           const boxW = widthText + 12
           const boxH = 16
+          const mid = placeEdgeLabel(from, control, to, { width: boxW, height: boxH }, labelNodes, placedEdgeLabels)
+          placedEdgeLabels.push({ x: mid.x - boxW / 2, y: mid.y - boxH / 2, width: boxW, height: boxH })
           context.globalAlpha = !hover || emphasized ? 1 : 0.16
           context.fillStyle = colors.raised
           context.strokeStyle = colors.border
@@ -583,7 +592,7 @@ export function GraphMap({
       const nodes = sim.nodes().filter((node) => !isLegendHidden(hiddenRef.current, node) && node.x != null && node.y != null)
       const width = canvas.clientWidth
       const height = canvas.clientHeight
-      if (!nodes.length || width < 20 || height < 20) return
+      if (!nodes.length || width < 20 || height < 20) return false
       let minX = Infinity
       let minY = Infinity
       let maxX = -Infinity
@@ -603,6 +612,7 @@ export function GraphMap({
       transform.x = camera.x
       transform.y = camera.y
       draw(true)
+      return true
     }
 
     const relayout = () => {
@@ -638,8 +648,10 @@ export function GraphMap({
     })
     sim.on('end', () => {
       if (!alive || sim.nodes().length === 0) return
-      if (fitAfterRef.current) fit()
+      sim.alphaTarget(0)
+      if (fitAfterRef.current && fit()) fitAfterRef.current = false
       else draw(true)
+      sim.stop()
       canvas.dataset.settled = 'true'
     })
 
@@ -1452,14 +1464,6 @@ function bendOf(id: string, len: number) {
   for (let index = 0; index < id.length; index += 1) hash = (hash * 33 + id.charCodeAt(index)) >>> 0
   const sign = hash % 2 === 0 ? 1 : -1
   return sign * Math.min(72, Math.max(18, len * 0.18))
-}
-
-function curvePoint(from: { x: number; y: number }, control: { x: number; y: number }, to: { x: number; y: number }, t: number) {
-  const u = 1 - t
-  return {
-    x: u * u * from.x + 2 * u * t * control.x + t * t * to.x,
-    y: u * u * from.y + 2 * u * t * control.y + t * t * to.y,
-  }
 }
 
 function curveTangent(
