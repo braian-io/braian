@@ -37,7 +37,7 @@ test('palette flows for the local screenshot pass', async ({ page }) => {
 
   await page.getByTestId('palette-input').fill('open v')
   await expect(root.locator('.hit.on')).toContainText('Open view')
-  await expect(page.getByTestId('palette-tab-hint')).toHaveText(/Tab\s*open/)
+  await expect(page.getByTestId('palette-tab-hint')).toHaveText(/Tab\s*Open/)
   await shot(root, '02-ranking-open-v.png')
   await shot(page.getByTestId('palette-foot'), '10-footer-hints.png')
 

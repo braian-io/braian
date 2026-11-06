@@ -272,7 +272,7 @@ test('Ctrl+K lists agents and Enter opens the tab', async ({ page }) => {
   await expect(palette).toBeVisible()
   await page.getByTestId('palette-input').fill('Agents')
   await expect(palette.locator('.hit.on')).toContainText('Agents')
-  await expect(page.getByTestId('palette-tab-hint')).toHaveText(/Tab\s*open/)
+  await expect(page.getByTestId('palette-tab-hint')).toHaveText(/Tab\s*Open/)
   await page.keyboard.press('Enter')
   await expect(page.getByTestId('palette-crumb')).toContainText('Agents ›')
   await expect(page.getByTestId('palette-input')).toHaveAttribute('placeholder', 'Search agents…')
