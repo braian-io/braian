@@ -1118,6 +1118,30 @@ async fn a_rename_keeps_the_other_language_and_a_selected_key_is_explicit() {
 }
 
 #[tokio::test]
+async fn a_missing_name_is_refused_when_no_model_is_connected() {
+    let (_db, app) = app().await;
+    let cheddar = create_named(&app, "SKU-CHED", "Cheddar").await;
+    let prompts = [
+        "rename Price to Cost",
+        "rename the Price column to Cost",
+        "byt namn på Ost-gruppen till Mejeri",
+        "rename the Products view to Items",
+    ];
+    for prompt in prompts {
+        let finished = finish_prompt(&app, prompt, json!({ "language": "sv" })).await;
+        did_not_claim_a_proposal(&finished);
+        assert!(
+            assistant_text(&finished).contains("could not find"),
+            "{prompt}: {finished}"
+        );
+    }
+    let (status, object) = call(&app, "GET", &format!("/v1/objects/{cheddar}"), None, &[]).await;
+    assert_eq!(status, StatusCode::OK, "{object}");
+    assert_eq!(object["values"]["name"]["sv"], "Cheddar", "{object}");
+    assert_eq!(object["values"]["sku"], "SKU-CHED", "{object}");
+}
+
+#[tokio::test]
 async fn a_shared_name_does_not_rename_a_different_type() {
     let (db, app) = app().await;
     add_note_type(&db).await;

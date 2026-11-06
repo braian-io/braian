@@ -410,17 +410,23 @@ async fn execute_run(state: &AppState, identity: &Identity, run_id: Uuid) -> Res
         return Ok(());
     }
     // An unambiguous catalog rename is resolved here, with or without a model.
-    // The same patch_object proposal path files it. Anything else reaches the
-    // model, so a question or a column rename is not turned into an object patch.
-    if let Some(request) = parse_rename(&prompt) {
+    // The same patch_object proposal path files it. A name that matches no
+    // object is conclusive only when no model is connected; otherwise the
+    // model still sees the sentence (a column or view rename, for example).
+    let ask_model = if let Some(request) = parse_rename(&prompt) {
         propose_parsed_rename(state, identity, run_id, &run.context, &request)
             .await
-            .map_err(|problem| problem.detail)?;
+            .map_err(|problem| problem.detail)?
+            == RenameHandled::AskModel
     } else if model_unavailable() && prompt.to_lowercase().contains("propose a new name") {
         propose_mock_name(state, identity, run_id, &run.context, None)
             .await
             .map_err(|problem| problem.detail)?;
+        false
     } else {
+        true
+    };
+    if ask_model {
         let messages = model_messages(&stored);
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let persist_state = state.clone();
@@ -1000,6 +1006,21 @@ async fn propose_mock_name(
     .await
 }
 
+/// Whether the deterministic rename finished the turn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RenameHandled {
+    Done,
+    /// The sentence parsed as a rename but named no stored object. The model
+    /// may still read it as a column, view, group, or other schema change.
+    AskModel,
+}
+
+/// A missing named object is reported here only when no model is connected.
+/// Ambiguous matches and a missing selection stay here either way.
+fn unmatched_name_reaches_the_model(model_available: bool, named_subject: bool) -> bool {
+    model_available && named_subject
+}
+
 /// Finds the product the person named and files one display-name proposal.
 /// An explicit key, id, or number request is the only path that patches the
 /// identifier. Everything else leaves the key alone.
@@ -1009,20 +1030,24 @@ async fn propose_parsed_rename(
     run_id: Uuid,
     context: &Value,
     request: &ParsedRename,
-) -> Result<(), Problem> {
+) -> Result<RenameHandled, Problem> {
     if !identity.role.allows(Role::Editor) {
-        return say(
+        say(
             state,
             run_id,
             "You have read-only access, so I did not file a proposal.",
         )
-        .await;
+        .await?;
+        return Ok(RenameHandled::Done);
     }
     let cached = state.models.get(&state.store).await?;
     let resolved = resolve_rename_target(state, &cached, context, request).await?;
     let target = match resolved {
         RenameTarget::One(target) => target,
         RenameTarget::Missing { named, type_word } => {
+            if unmatched_name_reaches_the_model(!model_unavailable(), named) {
+                return Ok(RenameHandled::AskModel);
+            }
             let text = if named {
                 match type_word {
                     Some(word) => format!(
@@ -1037,7 +1062,8 @@ async fn propose_parsed_rename(
             } else {
                 "Select one object, then ask me to rename it. I did not file a proposal.".to_owned()
             };
-            return say(state, run_id, &text).await;
+            say(state, run_id, &text).await?;
+            return Ok(RenameHandled::Done);
         }
         RenameTarget::Many(labels) => {
             let listed = if labels.is_empty() {
@@ -1045,7 +1071,7 @@ async fn propose_parsed_rename(
             } else {
                 labels.join(", ")
             };
-            return say(
+            say(
                 state,
                 run_id,
                 &format!(
@@ -1053,17 +1079,19 @@ async fn propose_parsed_rename(
                     request.subject
                 ),
             )
-            .await;
+            .await?;
+            return Ok(RenameHandled::Done);
         }
     };
     let (values, told) = if request.identifier {
         let Some(field) = key_attribute_key(&cached, target.type_id) else {
-            return say(
+            say(
                 state,
                 run_id,
                 "I could not file a proposal because this object has no identifier field.",
             )
-            .await;
+            .await?;
+            return Ok(RenameHandled::Done);
         };
         (
             json!({ field: request.value }),
@@ -1092,7 +1120,7 @@ async fn propose_parsed_rename(
     let result = match result {
         Ok(result) => result,
         Err(problem) => {
-            return say(
+            say(
                 state,
                 run_id,
                 &format!(
@@ -1100,7 +1128,8 @@ async fn propose_parsed_rename(
                     problem.detail
                 ),
             )
-            .await;
+            .await?;
+            return Ok(RenameHandled::Done);
         }
     };
     let Some(proposal_id) = result
@@ -1108,12 +1137,13 @@ async fn propose_parsed_rename(
         .and_then(Value::as_str)
         .and_then(|text| Uuid::parse_str(text).ok())
     else {
-        return say(
+        say(
             state,
             run_id,
             "I could not file the proposal. I did not change the product.",
         )
-        .await;
+        .await?;
+        return Ok(RenameHandled::Done);
     };
     state
         .store
@@ -1129,7 +1159,8 @@ async fn propose_parsed_rename(
         )
         .await
         .map_err(store_status)?;
-    say(state, run_id, &told).await
+    say(state, run_id, &told).await?;
+    Ok(RenameHandled::Done)
 }
 
 async fn say(state: &AppState, run_id: Uuid, text: &str) -> Result<(), Problem> {
@@ -1797,7 +1828,10 @@ fn display_value(value: &Value) -> String {
 
 #[cfg(test)]
 mod session_tests {
-    use super::{parse_rename, rename_target, session_choice, session_document};
+    use super::{
+        parse_rename, rename_target, session_choice, session_document,
+        unmatched_name_reaches_the_model,
+    };
     use serde_json::json;
 
     #[test]
@@ -1873,6 +1907,36 @@ mod session_tests {
         assert!(parse_rename("rename the view Products to Items").is_none());
         assert!(parse_rename("rename the type item to product").is_none());
         assert!(parse_rename("change the number of Cheddar to 5").is_none());
+    }
+
+    #[test]
+    fn a_parsed_name_with_no_object_reaches_the_model_when_one_is_connected() {
+        // These are not caught as schema commands (the kind word is not first),
+        // so lookup runs. A miss must not end the turn when a model can still
+        // read them as a column, view, or group rename.
+        // english-check: allow
+        let prompts = [
+            "rename Price to Cost",
+            "rename the Price column to Cost",
+            "byt namn på Ost-gruppen till Mejeri",
+            "rename the Products view to Items",
+        ];
+        // english-check: end
+        for prompt in prompts {
+            let parsed = parse_rename(prompt).unwrap_or_else(|| panic!("parsed: {prompt}"));
+            let named = !parsed.subject.is_empty();
+            assert!(named, "{prompt}");
+            assert!(
+                unmatched_name_reaches_the_model(true, named),
+                "connected model must see an unmatched name: {prompt}"
+            );
+            assert!(
+                !unmatched_name_reaches_the_model(false, named),
+                "without a model the miss stays a refusal: {prompt}"
+            );
+        }
+        assert!(!unmatched_name_reaches_the_model(true, false));
+        assert!(!unmatched_name_reaches_the_model(false, false));
     }
 
     #[test]
