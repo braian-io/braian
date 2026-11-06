@@ -136,7 +136,7 @@ test('show opens the hidden session and edits there become proposals', async ({ 
   await shot(page, 'agent-session')
 
   const row = mainTable(page).getByTestId('object-row').first()
-  const name = row.locator('[data-column="name"]').first()
+  const name = row.locator('[data-column="name"] .cell-name').first()
   const original = ((await name.innerText()) ?? '').trim()
   expect(original.length).toBeGreaterThan(0)
   await name.dblclick()

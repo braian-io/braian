@@ -1435,12 +1435,14 @@ export function ObjectTable({
     if (id === 'key' || id === 'number') return row.key
     if (id === 'name') {
       const count = suggestionCounts.get(row.id) ?? 0
-      return count > 0 ? (
+      return (
         <span>
-          {row.name}
-          <span className="suggestion-count" data-testid="suggestion-count">{formatCount(count)} {copy.suggested}</span>
+          <span className="cell-name">{row.name}</span>
+          {count > 0 ? (
+            <span className="suggestion-count" data-testid="suggestion-count" aria-hidden="true">{formatCount(count)} {copy.suggested}</span>
+          ) : null}
         </span>
-      ) : row.name
+      )
     }
     if (id === 'type') return <MetaChip>{typeLabel(defs.data, row.type, uiLanguage)}</MetaChip>
     if (id === 'status') {
@@ -2093,7 +2095,7 @@ function columnOf(target: EventTarget) {
 }
 
 /** Plain-text summary of a cell's React content, for the native title tooltip. */
-function cellTitle(node: ReactNode): string | undefined {
+export function cellTitle(node: ReactNode): string | undefined {
   if (typeof node === 'string' || typeof node === 'number') {
     const text = String(node).trim()
     return text || undefined
@@ -2106,8 +2108,9 @@ function cellTitle(node: ReactNode): string | undefined {
       .trim()
     return text || undefined
   }
-  if (isValidElement<{ children?: ReactNode; title?: string; className?: string }>(node)) {
-    if (typeof node.props.className === 'string' && node.props.className.includes('cell-editor')) return undefined
+  if (isValidElement<{ children?: ReactNode; title?: string; className?: string; 'aria-hidden'?: boolean | 'true' | 'false' }>(node)) {
+    if (node.props['aria-hidden'] === true || node.props['aria-hidden'] === 'true') return undefined
+    if (typeof node.props.className === 'string' && (node.props.className.includes('cell-editor') || node.props.className.includes('suggestion-count'))) return undefined
     if (typeof node.props.title === 'string' && node.props.title) return node.props.title
     return cellTitle(node.props.children)
   }
