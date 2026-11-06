@@ -52,6 +52,10 @@ import {
   stepIndex,
 } from './model'
 
+function columnLabel(raw: string | undefined, index: number) {
+  return raw || copy.importColumn.replace('{number}', String(index + 1))
+}
+
 type PreviewRow = {
   row_no: number
   status: string
@@ -220,7 +224,7 @@ export function ImportWorkspace({ sessionId, onChanged, onGone }: { sessionId: s
   }, [snap.embedded, snap.phase, onChanged])
 
   if (snap.open && !snap.embedded) {
-    return <p className="muted" data-testid="import-workspace-busy">Another import is open. Finish or close it first.</p>
+    return <p className="muted" data-testid="import-workspace-busy">{copy.importBusy}</p>
   }
   return (
     <section className="import-screen import-embedded" data-testid="import-workspace" aria-label={copy.importFile}>
@@ -232,7 +236,7 @@ export function ImportWorkspace({ sessionId, onChanged, onGone }: { sessionId: s
         <span />
       </header>
       {snap.notice ? <p className="import-notice">{snap.notice}</p> : null}
-      {snap.phase === 'error' ? <p className="error" role="alert">{snap.error || 'That import could not be opened.'}</p> : null}
+      {snap.phase === 'error' ? <p className="error" role="alert">{snap.error || copy.importOpenFailed}</p> : null}
       {snap.phase === 'mapping' && snap.session ? <Mapping /> : null}
       {(snap.phase === 'preview' || snap.phase === 'saving' || snap.phase === 'done') && snap.session ? <Preview /> : null}
       {!snap.session && snap.phase !== 'error' ? (
@@ -343,9 +347,9 @@ function Mapping() {
         <label>
           {copy.importMatchedBy}
           <select value={snap.idColumn} onChange={(event) => setImportIdColumn(event.target.value)} data-testid="import-id-column">
-            <option value="none">none</option>
+            <option value="none">{copy.importNone}</option>
             {(session.headers ?? []).map((header) => (
-              <option key={header.index} value={`col:${header.index}`}>{header.raw || `Column ${header.index + 1}`}</option>
+              <option key={header.index} value={`col:${header.index}`}>{columnLabel(header.raw, header.index)}</option>
             ))}
           </select>
         </label>
@@ -379,7 +383,7 @@ function Mapping() {
               onMouseLeave={() => hoverColumn(null)}
             >
               <div className="import-map-file">
-                <strong>{header.raw || `Column ${header.index + 1}`}</strong>
+                <strong>{columnLabel(header.raw, header.index)}</strong>
                 <small>{empty ? copy.importEmpty : sampleOf(session, header.index)}</small>
               </div>
               <span className={`import-confidence ${tone}`}>
@@ -424,10 +428,10 @@ function Mapping() {
           )
         })}
       </div>
-      <ul className="import-aria" aria-label="Column mapping">
+      <ul className="import-aria" aria-label={copy.importColumnMapping}>
         {lines.map((line) => {
           const header = (session.headers ?? []).find((item) => item.index === line.col)
-          return <li key={line.col}>{ariaMap(header?.raw || `Column ${line.col + 1}`, labelOf(line.target), line.confidence)}</li>
+          return <li key={line.col}>{ariaMap(columnLabel(header?.raw, line.col), labelOf(line.target), line.confidence)}</li>
         })}
       </ul>
       <footer className="import-actions">
@@ -438,7 +442,7 @@ function Mapping() {
           onClick={() => {
             const name = window.prompt(copy.importSaveMappingAs, session.file_name.replace(/\.[^.]+$/, ''))
             if (!name?.trim()) return
-            void saveImportMapping(name.trim()).then(() => toast(copy.importMappingSaved)).catch((error: unknown) => toast(error instanceof Error ? error.message : 'Save failed'))
+            void saveImportMapping(name.trim()).then(() => toast(copy.importMappingSaved)).catch((error: unknown) => toast(error instanceof Error ? error.message : copy.saveFailed))
           }}
         >
           {copy.importSaveMappingAs}
@@ -448,7 +452,7 @@ function Mapping() {
           className="primary"
           data-testid="import-approve"
           disabled={waiting && !session.proposal || mappedLines(snap.columns).length === 0 || !snap.typeKey}
-          onClick={() => void approveImport().catch((error: unknown) => toast(error instanceof Error ? error.message : 'Approve failed'))}
+          onClick={() => void approveImport().catch((error: unknown) => toast(error instanceof Error ? error.message : copy.importApproveFailed))}
         >
           {copy.importNext}
         </button>
@@ -564,11 +568,14 @@ function Preview() {
         </div>
         {snap.phase === 'done' ? (
           <p className="import-note">
-            Imported {counters.new ?? 0} · Updated {counters.changed ?? 0} · Skipped {failed}
+            {copy.importSummary
+              .replace('{created}', String(counters.new ?? 0))
+              .replace('{updated}', String(counters.changed ?? 0))
+              .replace('{skipped}', String(failed))}
           </p>
         ) : (
           <div className="import-actions-end">
-            {failed > 0 ? <span className="import-note">{failed} with errors will be skipped</span> : null}
+            {failed > 0 ? <span className="import-note">{copy.importFailedSkipped.replace('{failed}', String(failed))}</span> : null}
             <button type="button" data-testid="import-discard" onClick={discardImport}>{copy.discard}</button>
             <button
               type="button"
@@ -576,7 +583,7 @@ function Preview() {
               data-testid="import-save"
               disabled={fixture || session.status !== 'previewed'}
               onClick={() => {
-                void saveImport(excluded).catch((error: unknown) => toast(error instanceof Error ? error.message : 'Save failed'))
+                void saveImport(excluded).catch((error: unknown) => toast(error instanceof Error ? error.message : copy.saveFailed))
               }}
             >
               {saveLabel(failed, changes)}
@@ -600,7 +607,7 @@ function cellTitle(cell: { before?: unknown; state?: string; error?: { message?:
   if (!cell) return undefined
   const parts: string[] = []
   if (cell.before != null && cell.before !== '' && cell.state !== 'same' && cell.state !== 'new') {
-    parts.push(`was: ${importCellText(cell.before)}`)
+    parts.push(copy.importWas.replace('{value}', importCellText(cell.before)))
   }
   if (cell.error?.message) parts.push(cell.error.message)
   return parts.join(' · ') || undefined

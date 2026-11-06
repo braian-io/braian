@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it } from 'vitest'
+import { copy } from '../i18n'
 import type { ImportTarget } from './controller'
 import { TargetPicker } from './target-picker'
 
@@ -30,5 +31,5 @@ it('chooses Net weight (value) from the keyboard in single mode', () => {
 it('shows the current target as checked and offers Do not import first', () => {
   render(<TargetPicker targets={targets} current="product>brand" onPick={() => undefined} onClose={() => undefined} />)
   expect(screen.getByTestId('import-field-row-unmapped')).toBeTruthy()
-  expect(screen.getByTestId('import-field-check-product>brand').getAttribute('aria-label')).toBe('Current')
+  expect(screen.getByTestId('import-field-check-product>brand').getAttribute('aria-label')).toBe(copy.current)
 })

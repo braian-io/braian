@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboa
 import { Check } from 'lucide-react'
 import { Command, CommandInput, CommandList } from '../../components/ui/command'
 import { Kbd } from '../../components/ui/kbd'
+import { copy as uiCopy } from '../../i18n'
 import {
   cardinalityCrumbLabel,
   cardinalityStepForLink,
@@ -880,16 +881,16 @@ export function FieldsPalette({
         </CommandList>
         <div className="palette-foot" data-testid="fields-palette-foot">
           <span>
-            <Kbd>Enter</Kbd> toggle / open
+            <Kbd>Enter</Kbd> {uiCopy.toggleOpen}
           </span>
           <span>
-            <Kbd>→</Kbd> drill
+            <Kbd>→</Kbd> {uiCopy.drill}
           </span>
           <span>
-            <Kbd>←</Kbd> back
+            <Kbd>←</Kbd> {uiCopy.back}
           </span>
           <span>
-            <Kbd>Esc</Kbd> close
+            <Kbd>Esc</Kbd> {uiCopy.close}
           </span>
         </div>
       </Command>

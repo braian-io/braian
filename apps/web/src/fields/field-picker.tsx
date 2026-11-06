@@ -2,6 +2,7 @@ import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent
 import { Command, CommandInput, CommandList } from '../components/ui/command'
 import { Checkbox } from '../components/ui/checkbox'
 import { Kbd } from '../components/ui/kbd'
+import { copy } from '../i18n'
 
 export type PickerRow = {
   id: string
@@ -42,7 +43,7 @@ export function FieldPicker({
   crumbs,
   query,
   onQuery,
-  placeholder = 'Filter fields…',
+  placeholder = copy.filterFields,
   rows,
   active,
   onActive,
@@ -122,7 +123,7 @@ export function FieldPicker({
                   checked={Boolean(row.checked)}
                   tabIndex={-1}
                   data-testid={`${testPrefix}-check-${row.id}`}
-                  aria-label={row.checked ? (mode === 'single' ? 'Current' : 'Shown') : mode === 'single' ? 'Not selected' : 'Hidden'}
+                  aria-label={row.checked ? (mode === 'single' ? copy.current : copy.shown) : mode === 'single' ? copy.notSelected : copy.hidden}
                   onCheckedChange={() => {}}
                 />
                 {row.drill ? <span aria-hidden="true">›</span> : null}
@@ -134,16 +135,16 @@ export function FieldPicker({
           {footer ?? (
             <>
               <span>
-                <Kbd>Enter</Kbd> {mode === 'single' ? 'pick' : 'toggle / open'}
+                <Kbd>Enter</Kbd> {mode === 'single' ? copy.pick : copy.toggleOpen}
               </span>
               <span>
-                <Kbd>→</Kbd> drill
+                <Kbd>→</Kbd> {copy.drill}
               </span>
               <span>
-                <Kbd>←</Kbd> back
+                <Kbd>←</Kbd> {copy.back}
               </span>
               <span>
-                <Kbd>Esc</Kbd> close
+                <Kbd>Esc</Kbd> {copy.close}
               </span>
             </>
           )}

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { api } from './api'
+import { copy } from './i18n'
 import { writeErrorMessage } from './write-error'
 import { Checkbox } from './components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
@@ -75,10 +76,10 @@ export function FeedbackDialog({
             log: includeLog ? logSnapshot : null,
             screenshot: includeScreenshot ? capture?.screenshot ?? null : null,
           } })
-        toast.success('Feedback sent')
+        toast.success(copy.feedbackSent)
         onClose()
       } catch (reason: unknown) {
-        const detail = writeErrorMessage(reason) ?? 'Could not send feedback'
+        const detail = writeErrorMessage(reason) ?? copy.feedbackSendFailed
         setError(detail)
       } finally {
         setBusy(false)
@@ -89,27 +90,27 @@ export function FeedbackDialog({
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) onClose() }}>
       <DialogContent data-testid="feedback-dialog" data-feedback-exclude>
-        <DialogTitle>Send feedback</DialogTitle>
-        <DialogDescription>Share a bug report or idea with the team. Context is attached automatically.</DialogDescription>
+        <DialogTitle>{copy.sendFeedback}</DialogTitle>
+        <DialogDescription>{copy.feedbackIntro}</DialogDescription>
         <label className="field">
-          <span>Message</span>
+          <span>{copy.feedbackMessage}</span>
           <textarea
             data-testid="feedback-message"
             rows={5}
             value={message}
             onChange={(event) => setMessage(event.target.value)}
-            placeholder="What happened? What did you expect?"
+            placeholder={copy.feedbackMessagePlaceholder}
             autoFocus
           />
         </label>
         {thumb ? (
           <div className="feedback-shot" data-testid="feedback-screenshot">
-            <span className="muted">Screenshot preview</span>
-            <img src={thumb} alt="App screenshot preview" />
+            <span className="muted">{copy.feedbackScreenshotPreview}</span>
+            <img src={thumb} alt={copy.feedbackScreenshotAlt} />
           </div>
         ) : null}
         <label className="field">
-          <span>Context preview</span>
+          <span>{copy.feedbackContextPreview}</span>
           <pre className="feedback-preview" data-testid="feedback-preview">{preview}</pre>
         </label>
         <label className="check-row">
@@ -117,20 +118,20 @@ export function FeedbackDialog({
             checked={includeScreenshot}
             onCheckedChange={(value) => setIncludeScreenshot(value === true)}
           />
-          <span>Include screenshot</span>
+          <span>{copy.feedbackIncludeScreenshot}</span>
         </label>
         <label className="check-row">
           <Checkbox
             checked={includeLog}
             onCheckedChange={(value) => setIncludeLog(value === true)}
           />
-          <span>Include recent log</span>
+          <span>{copy.feedbackIncludeLog}</span>
         </label>
         {error ? <p className="error" role="alert">{error}</p> : null}
         <div className="dialog-actions">
-          <button type="button" className="ghost" onClick={onClose} disabled={busy}>Cancel</button>
+          <button type="button" className="ghost" onClick={onClose} disabled={busy}>{copy.cancel}</button>
           <button type="button" onClick={submit} disabled={busy || !message.trim()}>
-            {busy ? 'Sending…' : 'Send'}
+            {busy ? copy.feedbackSending : copy.send}
           </button>
         </div>
       </DialogContent>

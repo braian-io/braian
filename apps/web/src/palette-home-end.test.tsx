@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, createEvent, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useMemo, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { copy } from './i18n'
 import { CommandPalette } from './palette'
 
 function json(body: unknown) {
@@ -92,5 +93,14 @@ describe('palette Home/End in the query field', () => {
     fireEvent(input, shiftHome)
     expect(shiftHome.defaultPrevented).toBe(false)
     expect(highlighted()).toBe(mid)
+  })
+
+  it('renders the palette foot hints from copy', async () => {
+    render(<PaletteHarness />)
+    const foot = await screen.findByTestId('palette-foot')
+    expect(foot.textContent).toContain(copy.run)
+    expect(foot.textContent).toContain(copy.askAi)
+    expect(foot.textContent).toContain(copy.close)
+    expect(foot.textContent).not.toContain('ask AI')
   })
 })
