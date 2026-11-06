@@ -2065,15 +2065,19 @@ impl Store {
     ///
     /// Matching is exact and case-insensitive. A language map matches when any
     /// language equals `label`. `attribute_ids` are the attribute uuid keys
-    /// stored in `object_values`. Link rows are left out. At most `limit` rows.
+    /// stored in `object_values`. `type_ids` limits the match to those types;
+    /// `None` keeps every non-link type. Link rows are left out. At most `limit` rows.
     pub async fn objects_matching_label(
         &self,
         label: &str,
         attribute_ids: &[String],
+        type_ids: Option<&[Uuid]>,
         limit: i64,
     ) -> Result<Vec<(Uuid, String, Uuid, i64)>, Error> {
         let client = self.checkout_interactive().await?;
         let ids: Vec<String> = attribute_ids.to_vec();
+        let filter_types = type_ids.is_some();
+        let types: Vec<Uuid> = type_ids.unwrap_or(&[]).to_vec();
         let rows = client
             .query(
                 "SELECT DISTINCT o.id, o.key, o.type_id, o.version
@@ -2086,6 +2090,7 @@ impl Store {
                      SELECT 1 FROM links
                      WHERE links.object_id = o.id AND links.deleted_at IS NULL
                    )
+                   AND ($4::bool IS FALSE OR o.type_id = ANY($5::uuid[]))
                    AND (
                      lower(btrim(o.key)) = lower(btrim($1))
                      OR EXISTS (
@@ -2110,7 +2115,7 @@ impl Store {
                    )
                  ORDER BY o.key
                  LIMIT $3",
-                &[&label, &ids, &limit],
+                &[&label, &ids, &limit, &filter_types, &types],
             )
             .await?;
         Ok(rows

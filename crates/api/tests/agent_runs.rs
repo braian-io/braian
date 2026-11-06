@@ -663,8 +663,7 @@ async fn finish_prompt(app: &axum::Router, prompt: &str, context: Value) -> Valu
         "messages": [{ "role": "user", "content": prompt }],
         "context": context,
     });
-    let (status, created) =
-        call(app, "POST", "/v1/agent/runs", Some(&body.to_string()), &[]).await;
+    let (status, created) = call(app, "POST", "/v1/agent/runs", Some(&body.to_string()), &[]).await;
     assert_eq!(status, StatusCode::OK, "{created}");
     let id = created["id"].as_str().unwrap();
     until_done(app, id).await
@@ -918,6 +917,278 @@ async fn call_as(
         serde_json::from_slice(&bytes).unwrap_or(Value::Null)
     };
     (status, json)
+}
+
+fn filed_nothing(run: &Value) {
+    assert!(
+        !assistant_text(run).contains("I proposed"),
+        "must not claim a proposal was filed: {run}"
+    );
+    assert_eq!(run["proposals"].as_array().unwrap().len(), 0, "{run}");
+}
+
+#[tokio::test]
+async fn uncertain_wording_does_not_file_a_rename_proposal() {
+    let (_db, app) = app().await;
+    let cheddar = create_named(&app, "SKU-CHED", "Cheddar").await;
+    let price = create_named(&app, "SKU-PRICE", "Price").await;
+    let prompts = [
+        "how do I rename Cheddar to Blue?",
+        "don't rename Cheddar to Blue",
+        "do not rename Cheddar to Blue",
+        "rename Cheddar to Blue and set price to 5",
+        "rename Cheddar to Back to Basics",
+        "rename the column Price to Cost",
+        "byt namn på gruppen Ost till Mejeri",
+        "rename the attribute Color to Colour",
+        "rename the view Products to Items",
+        "rename the type item to product",
+        "change the number of Cheddar to 5",
+    ];
+    for prompt in prompts {
+        let finished = finish_prompt(&app, prompt, json!({ "language": "sv" })).await;
+        filed_nothing(&finished);
+    }
+    let (status, object) = call(&app, "GET", &format!("/v1/objects/{cheddar}"), None, &[]).await;
+    assert_eq!(status, StatusCode::OK, "{object}");
+    assert_eq!(object["values"]["name"]["sv"], "Cheddar", "{object}");
+    assert_eq!(object["values"]["sku"], "SKU-CHED", "{object}");
+    let (status, priced) = call(&app, "GET", &format!("/v1/objects/{price}"), None, &[]).await;
+    assert_eq!(status, StatusCode::OK, "{priced}");
+    assert_eq!(priced["values"]["name"]["sv"], "Price", "{priced}");
+
+    let quoted = finish_prompt(
+        &app,
+        "rename Cheddar to \"A to B\"",
+        json!({ "language": "sv" }),
+    )
+    .await;
+    assert_eq!(quoted["proposals"].as_array().unwrap().len(), 1, "{quoted}");
+    assert_eq!(
+        quoted["proposals"][0]["object_id"],
+        json!(cheddar),
+        "{quoted}"
+    );
+    assert_eq!(
+        quoted["proposals"][0]["patch"]["values"]["name"]["sv"], "A to B",
+        "{quoted}"
+    );
+    assert!(
+        quoted["proposals"][0]["patch"]["values"]
+            .get("sku")
+            .is_none(),
+        "{quoted}"
+    );
+    let proposal_id = quoted["proposals"][0]["id"].as_str().unwrap();
+    let (status, accepted) = call(
+        &app,
+        "POST",
+        &format!("/v1/proposals/{proposal_id}/accept"),
+        Some("{}"),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{accepted}");
+    let (status, renamed) = call(&app, "GET", &format!("/v1/objects/{cheddar}"), None, &[]).await;
+    assert_eq!(status, StatusCode::OK, "{renamed}");
+    assert_eq!(renamed["values"]["name"]["sv"], "A to B", "{renamed}");
+    assert_eq!(renamed["values"]["sku"], "SKU-CHED", "{renamed}");
+}
+
+#[tokio::test]
+async fn a_rename_keeps_the_other_language_and_a_selected_key_is_explicit() {
+    let (_db, app) = app().await;
+    let body = json!({
+        "type": "item",
+        "groups": {"assortment": "root", "webshop": "flat"},
+        "values": {"sku": "SKU-LANG", "name": {"sv": "Cheddar", "en-GB": "Cheese"}, "active": true}
+    });
+    let (status, created) = call(&app, "POST", "/v1/objects", Some(&body.to_string()), &[]).await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    let id = created["id"].as_str().unwrap();
+    let finished = finish_prompt(&app, "rename Cheddar to Blue", json!({ "language": "sv" })).await;
+    assert_eq!(
+        finished["proposals"].as_array().unwrap().len(),
+        1,
+        "{finished}"
+    );
+    let patch = &finished["proposals"][0]["patch"]["values"]["name"];
+    assert_eq!(patch["sv"], "Blue", "{finished}");
+    assert!(patch.get("en-GB").is_none(), "{finished}");
+    let proposal_id = finished["proposals"][0]["id"].as_str().unwrap();
+    let (status, accepted) = call(
+        &app,
+        "POST",
+        &format!("/v1/proposals/{proposal_id}/accept"),
+        Some("{}"),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{accepted}");
+    let (status, object) = call(&app, "GET", &format!("/v1/objects/{id}"), None, &[]).await;
+    assert_eq!(status, StatusCode::OK, "{object}");
+    assert_eq!(object["values"]["name"]["sv"], "Blue", "{object}");
+    assert_eq!(object["values"]["name"]["en-GB"], "Cheese", "{object}");
+    assert_eq!(object["values"]["sku"], "SKU-LANG", "{object}");
+
+    let gouda = create_named(&app, "SKU-GOUDA", "Gouda").await;
+    let key_change = finish_prompt(
+        &app,
+        "rename the key of this product to SKU-NEW",
+        json!({
+            "language": "sv",
+            "selection": [{
+                "id": gouda,
+                "type": "item",
+                "key": "SKU-GOUDA",
+                "name": "Gouda",
+                "version": 1
+            }]
+        }),
+    )
+    .await;
+    assert_eq!(
+        key_change["proposals"].as_array().unwrap().len(),
+        1,
+        "{key_change}"
+    );
+    assert_eq!(
+        key_change["proposals"][0]["object_id"],
+        json!(gouda),
+        "{key_change}"
+    );
+    assert_eq!(
+        key_change["proposals"][0]["patch"]["values"]["sku"], "SKU-NEW",
+        "{key_change}"
+    );
+    assert!(
+        key_change["proposals"][0]["patch"]["values"]
+            .get("name")
+            .is_none(),
+        "{key_change}"
+    );
+    let proposal_id = key_change["proposals"][0]["id"].as_str().unwrap();
+    let (status, accepted) = call(
+        &app,
+        "POST",
+        &format!("/v1/proposals/{proposal_id}/accept"),
+        Some("{}"),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{accepted}");
+    let (status, renamed_key) = call(&app, "GET", &format!("/v1/objects/{gouda}"), None, &[]).await;
+    assert_eq!(status, StatusCode::OK, "{renamed_key}");
+    assert_eq!(renamed_key["values"]["sku"], "SKU-NEW", "{renamed_key}");
+    assert_eq!(
+        renamed_key["values"]["name"]["sv"], "Gouda",
+        "{renamed_key}"
+    );
+
+    let swedish = finish_prompt(
+        &app,
+        "byt nyckel på Gouda till SKU-SV",
+        json!({ "language": "sv" }),
+    )
+    .await;
+    assert_eq!(
+        swedish["proposals"].as_array().unwrap().len(),
+        1,
+        "{swedish}"
+    );
+    assert_eq!(
+        swedish["proposals"][0]["object_id"],
+        json!(gouda),
+        "{swedish}"
+    );
+    assert_eq!(
+        swedish["proposals"][0]["patch"]["values"]["sku"], "SKU-SV",
+        "{swedish}"
+    );
+    assert!(
+        swedish["proposals"][0]["patch"]["values"]
+            .get("name")
+            .is_none(),
+        "{swedish}"
+    );
+    let (status, still) = call(&app, "GET", &format!("/v1/objects/{gouda}"), None, &[]).await;
+    assert_eq!(status, StatusCode::OK, "{still}");
+    assert_eq!(still["values"]["sku"], "SKU-NEW", "{still}");
+    assert_eq!(still["values"]["name"]["sv"], "Gouda", "{still}");
+}
+
+#[tokio::test]
+async fn a_shared_name_does_not_rename_a_different_type() {
+    let (db, app) = app().await;
+    add_note_type(&db).await;
+    let item = create_named(&app, "SKU-ITEM", "Cheddar").await;
+    let note = create_typed(&app, "note", "SKU-NOTE", "Cheddar").await;
+
+    let ambiguous =
+        finish_prompt(&app, "rename Cheddar to Blue", json!({ "language": "sv" })).await;
+    filed_nothing(&ambiguous);
+    let text = assistant_text(&ambiguous);
+    assert!(text.contains("item"), "{ambiguous}");
+    assert!(text.contains("note"), "{ambiguous}");
+
+    let typed = finish_prompt(
+        &app,
+        "rename the item Cheddar to Blue",
+        json!({ "language": "sv" }),
+    )
+    .await;
+    assert_eq!(typed["proposals"].as_array().unwrap().len(), 1, "{typed}");
+    assert_eq!(typed["proposals"][0]["object_id"], json!(item), "{typed}");
+    assert_ne!(typed["proposals"][0]["object_id"], json!(note), "{typed}");
+    assert_eq!(
+        typed["proposals"][0]["patch"]["values"]["name"]["sv"], "Blue",
+        "{typed}"
+    );
+
+    let (status, item_object) = call(&app, "GET", &format!("/v1/objects/{item}"), None, &[]).await;
+    assert_eq!(status, StatusCode::OK, "{item_object}");
+    assert_eq!(
+        item_object["values"]["name"]["sv"], "Cheddar",
+        "{item_object}"
+    );
+    let (status, note_object) = call(&app, "GET", &format!("/v1/objects/{note}"), None, &[]).await;
+    assert_eq!(status, StatusCode::OK, "{note_object}");
+    assert_eq!(
+        note_object["values"]["name"]["sv"], "Cheddar",
+        "{note_object}"
+    );
+    assert_eq!(note_object["values"]["sku"], "SKU-NOTE", "{note_object}");
+}
+
+async fn create_typed(app: &axum::Router, type_key: &str, sku: &str, name: &str) -> String {
+    let body = json!({
+        "type": type_key,
+        "groups": {"assortment": "root", "webshop": "flat"},
+        "values": {"sku": sku, "name": {"sv": name}, "active": true}
+    });
+    let (status, created) = call(app, "POST", "/v1/objects", Some(&body.to_string()), &[]).await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    created["id"].as_str().unwrap().to_owned()
+}
+
+async fn add_note_type(db: &TestDb) {
+    let identities = braian_api::identities(db.store(), TOKENS).await.unwrap();
+    let actor = identities
+        .iter()
+        .find(|item| item.handle == "ada")
+        .expect("ada")
+        .actor
+        .clone();
+    let mut raw: Value =
+        serde_json::from_str(include_str!("../../../testdata/rules/definitions.json")).unwrap();
+    raw["model_revision"] = json!(2);
+    let mut note = raw["types"][0].clone();
+    note["id"] = json!("018f0000-0000-7000-8000-000000000201");
+    note["key"] = json!("note");
+    note["labels"] = json!({ "sv": "Anteckning", "en-GB": "Note" });
+    raw["types"].as_array_mut().unwrap().push(note);
+    let defs: braian_model::DefinitionSet = serde_json::from_value(raw).unwrap();
+    db.store().put_definitions(&actor, &defs).await.unwrap();
 }
 
 async fn until_done_as(app: &axum::Router, id: &str, cookie: &str) -> Value {

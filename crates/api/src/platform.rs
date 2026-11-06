@@ -1598,7 +1598,11 @@ pub(crate) async fn drive_agent(
             "state": "run"
         }));
         let call_args = if call.name == "propose_change" {
-            proposal_target_args(selection_args(operation, &args, &context), &context)
+            proposal_target_args(
+                selection_args(operation, &args, &context),
+                &context,
+                &defined_languages(state).await,
+            )
         } else {
             selection_args(operation, &args, &context)
         };
@@ -3061,8 +3065,8 @@ fn selection_args(operation: &str, args: &Value, context: &Value) -> Value {
 
 /// A proposal about "this product" can omit the target. Fill it from the
 /// snapshot so a clear rename never stalls on a missing id.
-fn proposal_target_args(mut args: Value, context: &Value) -> Value {
-    coerce_display_name(&mut args, context);
+fn proposal_target_args(mut args: Value, context: &Value, languages: &[String]) -> Value {
+    coerce_display_name(&mut args, context, languages);
     let Some(item) = selection_items(context).first().cloned() else {
         return args;
     };
@@ -3097,22 +3101,46 @@ fn proposal_target_args(mut args: Value, context: &Value) -> Value {
 }
 
 /// A model often sends a display name as plain text. The name attribute is a
-/// language map, so wrap that text in the snapshot language before the
-/// proposal is stored.
-fn coerce_display_name(args: &mut Value, context: &Value) {
+/// language map, so wrap that text in a language the catalog actually defines.
+/// A snapshot language that is not in the catalog is not written.
+fn coerce_display_name(args: &mut Value, context: &Value, languages: &[String]) {
     let Some(values) = args.get_mut("values").and_then(Value::as_object_mut) else {
         return;
     };
     let Some(Value::String(text)) = values.get("name").cloned() else {
         return;
     };
-    let language = context
+    let Some(language) = defined_name_language(context, languages) else {
+        return;
+    };
+    values.insert("name".into(), json!({ language: text }));
+}
+
+fn defined_name_language(context: &Value, languages: &[String]) -> Option<String> {
+    if languages.is_empty() {
+        return None;
+    }
+    let requested = context
         .get("language")
         .and_then(Value::as_str)
         .map(str::trim)
-        .filter(|text| !text.is_empty())
-        .unwrap_or("en");
-    values.insert("name".into(), json!({ language: text }));
+        .unwrap_or("");
+    if languages.iter().any(|tag| tag == requested) {
+        return Some(requested.to_owned());
+    }
+    languages.first().cloned()
+}
+
+async fn defined_languages(state: &AppState) -> Vec<String> {
+    match state.models.get(&state.store).await {
+        Ok(cached) => cached
+            .defs
+            .languages
+            .iter()
+            .map(|tag| tag.as_str().to_owned())
+            .collect(),
+        Err(_) => Vec::new(),
+    }
 }
 
 fn wrong_type() -> Problem {
@@ -8186,9 +8214,11 @@ mod tests {
     #[test]
     fn proposal_change_fills_the_selected_target_and_maps_to_patch_object() {
         let context = marked_product();
+        let languages = vec!["sv".to_owned(), "en-GB".to_owned()];
         let args = proposal_target_args(
             json!({ "values": { "name": { "en": "Test 1" } } }),
             &context,
+            &languages,
         );
         assert_eq!(args["id"], "018f1000-0000-7000-8000-000000000011");
         assert_eq!(args["type"], "article");
@@ -8198,9 +8228,23 @@ mod tests {
         let wrapped = proposal_target_args(
             json!({ "values": { "name": "Blue" } }),
             &json!({ "language": "sv" }),
+            &languages,
         );
         assert_eq!(wrapped["values"]["name"]["sv"], "Blue");
         assert!(wrapped.get("id").is_none(), "{wrapped}");
+        let unknown = proposal_target_args(
+            json!({ "values": { "name": "Blue" } }),
+            &json!({ "language": "fr" }),
+            &languages,
+        );
+        assert!(unknown["values"]["name"].get("fr").is_none(), "{unknown}");
+        assert_eq!(unknown["values"]["name"]["sv"], "Blue", "{unknown}");
+        let bare = proposal_target_args(
+            json!({ "values": { "name": "Blue" } }),
+            &json!({ "language": "sv" }),
+            &[],
+        );
+        assert_eq!(bare["values"]["name"], "Blue", "{bare}");
     }
 
     #[test]

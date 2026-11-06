@@ -409,9 +409,9 @@ async fn execute_run(state: &AppState, identity: &Identity, run_id: Uuid) -> Res
             .map_err(|error| error.to_string())?;
         return Ok(());
     }
-    // A clear rename is resolved here, with or without a model. The same
-    // patch_object proposal path files it. The model is not asked to invent
-    // a second write.
+    // An unambiguous catalog rename is resolved here, with or without a model.
+    // The same patch_object proposal path files it. Anything else reaches the
+    // model, so a question or a column rename is not turned into an object patch.
     if let Some(request) = parse_rename(&prompt) {
         propose_parsed_rename(state, identity, run_id, &run.context, &request)
             .await
@@ -549,155 +549,329 @@ async fn decision_pending(state: &AppState, run_id: Uuid) -> Result<bool, String
 }
 
 // english-check: allow
-/// A clear request to rename one product. `subject` is empty when the person
-/// means the selected object. `identifier` is set only when they asked to
-/// change the key, id, or number — a display-name request leaves those alone.
+/// One explicit catalog-object rename. `subject` is empty when the person
+/// means the selected object. `identifier` is set only for a command that
+/// renames the key, id, or number. `type_word` is the type the person named,
+/// resolved against the model later. A display-name request leaves the key alone.
 struct ParsedRename {
     subject: String,
     value: String,
     identifier: bool,
+    type_word: Option<String>,
 }
 
 /// The new name in a direct rename, such as "byt namn ... till Test 1" or
-/// "rename ... to Test 1". A clear task proposes the change instead of asking.
+/// "rename ... to Test 1". Only an unambiguous command returns a value.
+#[cfg(test)]
 fn rename_target(prompt: &str) -> Option<String> {
-    let lower = prompt.to_lowercase();
-    if !asks_for_rename(&lower) {
-        return None;
-    }
-    for marker in [" till ", " to "] {
-        let Some(at) = lower.rfind(marker) else {
-            continue;
-        };
-        let target = trim_name(&prompt[at + marker.len()..]);
-        if !target.is_empty() {
-            return Some(target);
-        }
-    }
-    None
+    parse_rename(prompt).map(|parsed| parsed.value)
 }
 
-fn asks_for_rename(lower: &str) -> bool {
-    lower.contains("byt namn")
-        || lower.contains("ändra namnet")
-        || lower.contains("rename")
-        || lower.contains("change the name")
-        || lower.contains("change name")
-        || lower.contains("set the name")
-        || explicit_identifier(lower)
-}
-
-fn explicit_identifier(lower: &str) -> bool {
-    const PHRASES: &[&str] = &[
-        "rename the key",
-        "rename key",
-        "change the key",
-        "change key",
-        "rename the id",
-        "change the id",
-        "rename the number",
-        "change the number",
-        "byt nyckel",
-        "ändra nyckeln",
-        "byt id",
-        "ändra id",
-        "byt nummer",
-        "ändra numret",
-    ];
-    PHRASES.iter().any(|phrase| lower.contains(phrase))
+/// `(prefix, identifier, value_only)`. Longest prefix wins. `value_only`
+/// means the prefix already consumed the marker, so the rest is the new name
+/// of the selected object.
+fn command_prefixes() -> &'static [(&'static str, bool, bool)] {
+    &[
+        ("rename the number of ", true, false),
+        ("rename the key of ", true, false),
+        ("rename the id of ", true, false),
+        ("byt namn på ", false, false),
+        ("ändra namnet på ", false, false),
+        ("ändra namnet till ", false, true),
+        ("byt namn till ", false, true),
+        ("change the name of ", false, false),
+        ("set the name of ", false, false),
+        ("change the name to ", false, true),
+        ("set the name to ", false, true),
+        ("byt nyckeln på ", true, false),
+        ("byt nyckel på ", true, false),
+        ("ändra nyckeln på ", true, false),
+        ("ändra nyckel på ", true, false),
+        ("byt numret på ", true, false),
+        ("byt nummer på ", true, false),
+        ("ändra numret på ", true, false),
+        ("ändra nummer på ", true, false),
+        ("byt id på ", true, false),
+        ("ändra id på ", true, false),
+        ("rename ", false, false),
+    ]
 }
 
 fn parse_rename(prompt: &str) -> Option<ParsedRename> {
-    let value = rename_target(prompt)?;
-    let lower = prompt.to_lowercase();
-    let subject = rename_subject(prompt);
+    let text = normalize_command(prompt);
+    if text.is_empty() || !is_bare_command(&text) {
+        return None;
+    }
+    let (identifier, value_only, rest) = strip_command_prefix(&text)?;
+    let (subject_raw, value) = if value_only {
+        let value = trim_name(rest);
+        if value.is_empty() {
+            return None;
+        }
+        (String::new(), value)
+    } else {
+        split_rename_marker(rest)?
+    };
+    if subject_is_schema(&subject_raw) {
+        return None;
+    }
+    if subject_is_deictic(&subject_raw) {
+        return Some(ParsedRename {
+            subject: String::new(),
+            value,
+            identifier,
+            type_word: None,
+        });
+    }
+    let (type_word, subject) = peel_type_word(&subject_raw);
+    if subject.is_empty() {
+        return None;
+    }
     Some(ParsedRename {
         subject,
         value,
-        identifier: explicit_identifier(&lower),
+        identifier,
+        type_word,
     })
 }
 
-fn rename_subject(prompt: &str) -> String {
-    let lower = prompt.to_lowercase();
-    let mut cut = prompt.len();
-    for marker in [" till ", " to "] {
-        if let Some(at) = lower.rfind(marker) {
-            cut = cut.min(at);
+fn normalize_command(prompt: &str) -> String {
+    let trimmed = prompt.trim().trim_end_matches(['.', '!']);
+    let mut out = String::new();
+    let mut pending_space = false;
+    for character in trimmed.chars() {
+        if character.is_whitespace() {
+            pending_space = !out.is_empty();
+            continue;
         }
+        if pending_space {
+            out.push(' ');
+            pending_space = false;
+        }
+        out.push(character);
     }
-    let mut subject = strip_rename_prefix(prompt[..cut].trim()).trim().to_owned();
-    subject = trim_name(&subject);
-    if subject_is_deictic(&subject) {
-        return String::new();
-    }
-    if let Some(rest) = strip_type_prefix(&subject)
-        && !rest.is_empty()
-        && !subject_is_deictic(rest)
-    {
-        subject = trim_name(rest);
-    }
-    if subject_is_deictic(&subject) {
-        String::new()
-    } else {
-        subject
-    }
+    out
 }
 
-fn strip_rename_prefix(text: &str) -> &str {
-    const PREFIXES: &[&str] = &[
-        "rename the key of ",
-        "rename the id of ",
-        "rename the number of ",
-        "change the key of ",
-        "change the id of ",
-        "change the number of ",
-        "byt namn på ",
-        "ändra namnet på ",
-        "change the name of ",
-        "set the name of ",
-        "change name of ",
-        "set name of ",
-        "rename ",
-        "change the name ",
-        "change name ",
-        "set the name ",
-        "set name ",
-    ];
-    let mut rest = text;
-    let mut changed = true;
-    while changed {
-        changed = false;
-        for prefix in PREFIXES {
-            if let Some(next) = strip_prefix_ci(rest, prefix) {
-                rest = next;
-                changed = true;
-                break;
+/// Questions, negation, and a second clause are not a rename command.
+fn is_bare_command(text: &str) -> bool {
+    if text.contains('?') {
+        return false;
+    }
+    let lower = text.to_lowercase();
+    let outside = strip_quoted_spans(&lower);
+    if outside.split_whitespace().next().is_some_and(|word| {
+        matches!(
+            word.trim_matches(|character: char| !character.is_alphabetic()),
+            "how"
+                | "what"
+                | "why"
+                | "when"
+                | "where"
+                | "who"
+                | "which"
+                | "can"
+                | "could"
+                | "should"
+                | "would"
+                | "hur"
+                | "vad"
+                | "varför"
+                | "vilken"
+                | "vilket"
+                | "kan"
+        )
+    }) {
+        return false;
+    }
+    if outside.contains("don't") || outside.contains("do not") || outside.contains("dont") {
+        return false;
+    }
+    if outside.split_whitespace().any(|word| {
+        matches!(
+            word.trim_matches(|character: char| !character.is_alphabetic()),
+            "never" | "inte" | "aldrig" | "not"
+        )
+    }) {
+        return false;
+    }
+    ![" and ", " och ", " then ", " sedan ", " also ", " samt "]
+        .iter()
+        .any(|marker| outside.contains(marker))
+}
+
+fn strip_quoted_spans(text: &str) -> String {
+    let mut out = String::new();
+    let mut quoted = false;
+    let mut quote = '"';
+    for character in text.chars() {
+        if quoted {
+            if character == quote {
+                quoted = false;
             }
+            continue;
         }
+        if character == '"' || character == '\'' {
+            quoted = true;
+            quote = character;
+            out.push(' ');
+            continue;
+        }
+        out.push(character);
     }
-    rest
+    out
 }
 
-fn strip_type_prefix(text: &str) -> Option<&str> {
-    const PREFIXES: &[&str] = &[
-        "the product ",
-        "the article ",
-        "the item ",
-        "produkten ",
-        "artikeln ",
-        "product ",
-        "article ",
-        "item ",
-    ];
-    for prefix in PREFIXES {
-        if let Some(rest) = strip_prefix_ci(text, prefix)
-            && !rest.is_empty()
-        {
-            return Some(rest);
+fn strip_command_prefix(text: &str) -> Option<(bool, bool, &str)> {
+    let mut prefixes = command_prefixes().to_vec();
+    prefixes.sort_by_key(|(prefix, _, _)| std::cmp::Reverse(prefix.len()));
+    for (prefix, identifier, value_only) in prefixes {
+        if let Some(rest) = strip_prefix_ci(text, prefix) {
+            return Some((identifier, value_only, rest));
         }
     }
     None
+}
+
+fn split_rename_marker(rest: &str) -> Option<(String, String)> {
+    if let Some(split) = split_quoted_value(rest) {
+        return Some(split);
+    }
+    let lower = rest.to_lowercase();
+    let to_count = marker_count(&lower, " to ");
+    let till_count = marker_count(&lower, " till ");
+    if to_count + till_count != 1 {
+        return None;
+    }
+    let marker = if to_count == 1 { " to " } else { " till " };
+    let at = lower.find(marker)?;
+    let subject = trim_name(&rest[..at]);
+    let value = trim_name(&rest[at + marker.len()..]);
+    if subject.is_empty() || value.is_empty() {
+        return None;
+    }
+    Some((subject, value))
+}
+
+fn split_quoted_value(rest: &str) -> Option<(String, String)> {
+    let lower = rest.to_lowercase();
+    for marker in [" to \"", " to '", " till \"", " till '"] {
+        let Some(at) = lower.find(marker) else {
+            continue;
+        };
+        let quote = marker.chars().last()?;
+        let subject = trim_name(&rest[..at]);
+        let after = &rest[at + marker.len()..];
+        let end = after.find(quote)?;
+        let value = after[..end].trim().to_owned();
+        let tail = trim_name(&after[end + quote.len_utf8()..]);
+        if subject.is_empty() || value.is_empty() || !tail.is_empty() {
+            return None;
+        }
+        return Some((subject, value));
+    }
+    None
+}
+
+fn marker_count(text: &str, marker: &str) -> usize {
+    text.match_indices(marker).count()
+}
+
+fn subject_is_schema(subject: &str) -> bool {
+    const WORDS: &[&str] = &[
+        "column",
+        "columns",
+        "kolumn",
+        "kolumnen",
+        "kolumner",
+        "attribute",
+        "attributes",
+        "attribut",
+        "attributet",
+        "view",
+        "views",
+        "vy",
+        "vyn",
+        "vyer",
+        "type",
+        "types",
+        "typ",
+        "typen",
+        "typer",
+        "group",
+        "groups",
+        "grupp",
+        "gruppen",
+        "grupper",
+        "class",
+        "classes",
+        "klass",
+        "klassen",
+        "klasser",
+        "structure",
+        "structures",
+        "struktur",
+        "strukturen",
+        "field",
+        "fields",
+        "fält",
+        "fältet",
+        "workspace",
+        "tab",
+        "tabs",
+        "flik",
+        "fliken",
+    ];
+    let mut words = subject.split_whitespace();
+    let Some(first) = words.next() else {
+        return false;
+    };
+    let word = if word_eq(first, "the") || word_eq(first, "den") || word_eq(first, "det") {
+        words.next().unwrap_or(first)
+    } else {
+        first
+    };
+    WORDS.iter().any(|known| word_eq(word, known))
+}
+
+/// "the product Cheddar" keeps Cheddar and remembers product. A word that is
+/// not a generic kind stays in the name until the model says it is a type.
+fn peel_type_word(subject: &str) -> (Option<String>, String) {
+    const GENERICS: &[&str] = &[
+        "product",
+        "products",
+        "article",
+        "articles",
+        "item",
+        "items",
+        "object",
+        "objects",
+        "produkt",
+        "produkten",
+        "artikeln",
+        "artikel",
+        "objektet",
+        "objekt",
+    ];
+    let words: Vec<&str> = subject.split_whitespace().collect();
+    let (word, rest_at) = if words.len() >= 3
+        && (word_eq(words[0], "the") || word_eq(words[0], "den") || word_eq(words[0], "det"))
+    {
+        (words[1], 2)
+    } else if words.len() >= 2 {
+        (words[0], 1)
+    } else {
+        return (None, subject.to_owned());
+    };
+    if !GENERICS.iter().any(|generic| word_eq(word, generic)) {
+        return (None, subject.to_owned());
+    }
+    (Some(word.to_owned()), words[rest_at..].join(" "))
+}
+
+fn word_eq(left: &str, right: &str) -> bool {
+    left.trim_matches(|character: char| !character.is_alphanumeric())
+        .eq_ignore_ascii_case(right)
 }
 
 fn subject_is_deictic(subject: &str) -> bool {
@@ -848,15 +1022,20 @@ async fn propose_parsed_rename(
     let resolved = resolve_rename_target(state, &cached, context, request).await?;
     let target = match resolved {
         RenameTarget::One(target) => target,
-        RenameTarget::Missing { named } => {
+        RenameTarget::Missing { named, type_word } => {
             let text = if named {
-                format!(
-                    "I could not find a product named {}. I did not file a proposal.",
-                    request.subject
-                )
+                match type_word {
+                    Some(word) => format!(
+                        "I could not find a {word} named {}. I did not file a proposal.",
+                        request.subject
+                    ),
+                    None => format!(
+                        "I could not find an object named {}. I did not file a proposal.",
+                        request.subject
+                    ),
+                }
             } else {
-                "Select one product, then ask me to rename it. I did not file a proposal."
-                    .to_owned()
+                "Select one object, then ask me to rename it. I did not file a proposal.".to_owned()
             };
             return say(state, run_id, &text).await;
         }
@@ -870,7 +1049,7 @@ async fn propose_parsed_rename(
                 state,
                 run_id,
                 &format!(
-                    "Several products match {}. I did not file a proposal. Name the number, or select one product: {listed}.",
+                    "Several objects match {}. I did not file a proposal. Name the type and the number, or select one: {listed}.",
                     request.subject
                 ),
             )
@@ -882,7 +1061,7 @@ async fn propose_parsed_rename(
             return say(
                 state,
                 run_id,
-                "I could not file a proposal because this product has no identifier field.",
+                "I could not file a proposal because this object has no identifier field.",
             )
             .await;
         };
@@ -978,7 +1157,10 @@ struct ResolvedObject {
 enum RenameTarget {
     One(ResolvedObject),
     Many(Vec<String>),
-    Missing { named: bool },
+    Missing {
+        named: bool,
+        type_word: Option<String>,
+    },
 }
 
 async fn resolve_rename_target(
@@ -1007,7 +1189,8 @@ async fn resolve_rename_target(
                 .map(|item| {
                     let key = item.get("key").and_then(Value::as_str).unwrap_or("");
                     let name = item.get("name").and_then(Value::as_str).unwrap_or("");
-                    match (key.is_empty(), name.is_empty()) {
+                    let kind = item.get("type").and_then(Value::as_str).unwrap_or("");
+                    let label = match (key.is_empty(), name.is_empty()) {
                         (false, false) => format!("{key} ({name})"),
                         (false, true) => key.to_owned(),
                         (true, false) => name.to_owned(),
@@ -1016,6 +1199,11 @@ async fn resolve_rename_target(
                             .and_then(Value::as_str)
                             .unwrap_or("object")
                             .to_owned(),
+                    };
+                    if kind.is_empty() {
+                        label
+                    } else {
+                        format!("{label} [{kind}]")
                     }
                 })
                 .take(8)
@@ -1023,29 +1211,44 @@ async fn resolve_rename_target(
             return Ok(RenameTarget::Many(labels));
         }
         let Some(id) = ids.first().copied() else {
-            return Ok(RenameTarget::Missing { named: false });
+            return Ok(RenameTarget::Missing {
+                named: false,
+                type_word: None,
+            });
         };
         return load_rename_target(state, cached, id)
             .await
             .map(|target| match target {
                 Some(target) => RenameTarget::One(target),
-                None => RenameTarget::Missing { named: false },
+                None => RenameTarget::Missing {
+                    named: false,
+                    type_word: None,
+                },
             });
     }
+    let (type_ids, subject, type_word) = lookup_scope(&cached.defs, request);
     let ids = name_attribute_ids(&cached.defs);
     let rows = state
         .store
-        .objects_matching_label(&request.subject, &ids, 9)
+        .objects_matching_label(&subject, &ids, type_ids.as_deref(), 9)
         .await
         .map_err(store_status)?;
     if rows.is_empty() {
-        return Ok(RenameTarget::Missing { named: true });
+        return Ok(RenameTarget::Missing {
+            named: true,
+            type_word,
+        });
     }
-    if rows.len() > 1 {
+    let type_count = rows
+        .iter()
+        .map(|(_, _, type_id, _)| *type_id)
+        .collect::<std::collections::BTreeSet<_>>()
+        .len();
+    if rows.len() > 1 || type_count > 1 {
         let labels = rows
             .iter()
             .take(8)
-            .map(|(_, key, _, _)| key.clone())
+            .map(|(_, key, type_id, _)| format!("{key} ({})", type_label(&cached.defs, *type_id)))
             .collect();
         return Ok(RenameTarget::Many(labels));
     }
@@ -1054,8 +1257,80 @@ async fn resolve_rename_target(
         .await
         .map(|target| match target {
             Some(target) => RenameTarget::One(target),
-            None => RenameTarget::Missing { named: true },
+            None => RenameTarget::Missing {
+                named: true,
+                type_word,
+            },
         })
+}
+
+/// A named type limits the lookup. A generic word such as "product" limits it
+/// only when a type actually has that key or label. Otherwise every matching
+/// type is reported instead of picking one.
+fn lookup_scope(
+    defs: &braian_model::DefinitionSet,
+    request: &ParsedRename,
+) -> (Option<Vec<Uuid>>, String, Option<String>) {
+    if let Some(word) = &request.type_word {
+        let matched = types_named(defs, word);
+        if matched.is_empty() {
+            return (None, request.subject.clone(), None);
+        }
+        return (Some(matched), request.subject.clone(), Some(word.clone()));
+    }
+    if let Some((word, rest, matched)) = peel_defined_type(defs, &request.subject) {
+        return (Some(matched), rest, Some(word));
+    }
+    (None, request.subject.clone(), None)
+}
+
+fn peel_defined_type(
+    defs: &braian_model::DefinitionSet,
+    subject: &str,
+) -> Option<(String, String, Vec<Uuid>)> {
+    let words: Vec<&str> = subject.split_whitespace().collect();
+    let (word, rest_at) = if words.len() >= 3 && word_eq(words[0], "the") {
+        (words[1], 2)
+    } else if words.len() >= 2 {
+        (words[0], 1)
+    } else {
+        return None;
+    };
+    let matched = types_named(defs, word);
+    if matched.is_empty() {
+        return None;
+    }
+    let rest = words[rest_at..].join(" ");
+    if rest.is_empty() {
+        return None;
+    }
+    Some((word.to_owned(), rest, matched))
+}
+
+fn types_named(defs: &braian_model::DefinitionSet, word: &str) -> Vec<Uuid> {
+    defs.types
+        .iter()
+        .filter(|object_type| {
+            word_eq(&object_type.key, word)
+                || object_type
+                    .labels
+                    .values()
+                    .any(|label| word_eq(label, word))
+                || object_type
+                    .singular
+                    .values()
+                    .any(|label| word_eq(label, word))
+        })
+        .map(|object_type| object_type.id.as_uuid())
+        .collect()
+}
+
+fn type_label(defs: &braian_model::DefinitionSet, type_id: Uuid) -> String {
+    defs.types
+        .iter()
+        .find(|object_type| object_type.id.as_uuid() == type_id)
+        .map(|object_type| object_type.key.clone())
+        .unwrap_or_else(|| "object".to_owned())
 }
 
 fn name_attribute_ids(defs: &braian_model::DefinitionSet) -> Vec<String> {
@@ -1552,7 +1827,21 @@ mod session_tests {
 
         let typed = parse_rename("rename the product Mature cheddar to Blue").expect("typed");
         assert_eq!(typed.subject, "Mature cheddar");
+        assert_eq!(typed.type_word.as_deref(), Some("product"));
         assert!(!typed.identifier);
+
+        let quoted = parse_rename("rename Cheddar to \"Back to Basics\"").expect("quoted");
+        assert_eq!(quoted.subject, "Cheddar");
+        assert_eq!(quoted.value, "Back to Basics");
+
+        let key = parse_rename("rename the key of Cheddar to SKU-2").expect("key");
+        assert_eq!(key.subject, "Cheddar");
+        assert_eq!(key.value, "SKU-2");
+        assert!(key.identifier);
+        let selected_key =
+            parse_rename("rename the key of this product to SKU-2").expect("selected key");
+        assert_eq!(selected_key.subject, "");
+        assert!(selected_key.identifier);
 
         // english-check: allow
         let selected = parse_rename("byt namn på den här produkten till Test 1").expect("selected");
@@ -1563,14 +1852,27 @@ mod session_tests {
         assert_eq!(swedish.subject, "Cheddar");
         assert_eq!(swedish.value, "Blå");
         assert!(!swedish.identifier);
+        let swedish_key = parse_rename("byt nyckel på Cheddar till SKU-2").expect("swedish key");
+        assert_eq!(swedish_key.subject, "Cheddar");
+        assert!(swedish_key.identifier);
+        let swedish_number = parse_rename("ändra numret på Cheddar till SKU-2").expect("number");
+        assert!(swedish_number.identifier);
+        assert_eq!(swedish_number.subject, "Cheddar");
+        assert!(parse_rename("byt namn på gruppen Ost till Mejeri").is_none());
+        assert!(parse_rename("hur ändrar jag numret på Cheddar till SKU-2").is_none());
         // english-check: end
 
-        let key = parse_rename("rename the key of Cheddar to SKU-2").expect("key");
-        assert_eq!(key.subject, "Cheddar");
-        assert_eq!(key.value, "SKU-2");
-        assert!(key.identifier);
-
         assert!(parse_rename("how many products are there").is_none());
+        assert!(parse_rename("how do I rename Cheddar to Blue?").is_none());
+        assert!(parse_rename("don't rename Cheddar to Blue").is_none());
+        assert!(parse_rename("do not rename Cheddar to Blue").is_none());
+        assert!(parse_rename("rename Cheddar to Blue and set price to 5").is_none());
+        assert!(parse_rename("rename Cheddar to Back to Basics").is_none());
+        assert!(parse_rename("rename the column Price to Cost").is_none());
+        assert!(parse_rename("rename the attribute Color to Colour").is_none());
+        assert!(parse_rename("rename the view Products to Items").is_none());
+        assert!(parse_rename("rename the type item to product").is_none());
+        assert!(parse_rename("change the number of Cheddar to 5").is_none());
     }
 
     #[test]
