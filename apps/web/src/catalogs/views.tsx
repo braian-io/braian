@@ -124,15 +124,15 @@ export function CatalogsView() {
       setError('')
       void queryClient.invalidateQueries({ queryKey: ['catalogs'] })
     },
-    onError: (reason: unknown) => setError(failedWrite(reason, 'Could not create the catalog')),
+    onError: (reason: unknown) => setError(failedWrite(reason, copy.catalogCreateFailed)),
   })
   const infer = useMutation({
     mutationFn: (catalog: string) => sendJson(`/v1/catalogs/${catalog}/infer`, { headers: [] }),
-    onError: (reason: unknown) => setError(failedWrite(reason, 'Could not infer the model')),
+    onError: (reason: unknown) => setError(failedWrite(reason, copy.inferModelFailed)),
   })
   const cleanup = useMutation({
     mutationFn: (catalog: string) => sendJson(`/v1/catalogs/${catalog}/cleanup`, {}),
-    onError: (reason: unknown) => setError(failedWrite(reason, 'Could not clean up the catalog')),
+    onError: (reason: unknown) => setError(failedWrite(reason, copy.cleanupCatalogFailed)),
   })
   return (
     <div className="catalog-admin" data-testid="catalogs-view">
@@ -253,7 +253,7 @@ export function MergeProfilesView() {
       setError('')
       void queryClient.invalidateQueries({ queryKey: ['merge-profiles'] })
     },
-    onError: (reason: unknown) => setError(failedWrite(reason, 'Could not save the profile')),
+    onError: (reason: unknown) => setError(failedWrite(reason, copy.saveProfileFailed)),
   })
   const run = useMutation({
     mutationFn: (dry: boolean) => sendJson(`/v1/merge/profiles/${draft.key}/run`, { dry_run: dry }),
@@ -261,7 +261,7 @@ export function MergeProfilesView() {
       setRows(body.rows ?? [])
       setError('')
     },
-    onError: (reason: unknown) => setError(failedWrite(reason, 'Could not run the profile')),
+    onError: (reason: unknown) => setError(failedWrite(reason, copy.runProfileFailed)),
   })
   const maps = (draft.spec.attributes ?? []).map((row) => `${row.source}=${row.target}`).join('\n')
   return (
@@ -448,7 +448,7 @@ export function OwnershipView() {
       setError('')
       void queryClient.invalidateQueries({ queryKey: ['ownership'] })
     },
-    onError: (reason: unknown) => setError(failedWrite(reason, 'Could not save the rules')),
+    onError: (reason: unknown) => setError(failedWrite(reason, copy.saveRulesFailed)),
   })
   const updateRow = (id: string, patch: Partial<OwnershipRow>) => {
     setRows(draftRows.map((row) => row.id === id ? { ...row, ...patch } : row))
@@ -653,12 +653,12 @@ export function MergeRunsView() {
         ? sendJson('/v1/merge/links/remove', { profile: key, source_object_id: sourceId })
         : sendJson('/v1/merge/links', { profile: key, source_object_id: sourceId, master_object_id: masterId }),
     onSuccess: () => setError(''),
-    onError: (reason: unknown) => setError(failedWrite(reason, 'Could not update the link')),
+    onError: (reason: unknown) => setError(failedWrite(reason, copy.updateLinkFailed)),
   })
   return (
     <div className="catalog-admin" data-testid="merge-runs-view">
       <h2>{copy.mergeRuns}</h2>
-      <select aria-label="Profile" value={key} onChange={(event) => setKey(event.target.value)}>
+      <select aria-label={copy.profile} value={key} onChange={(event) => setKey(event.target.value)}>
         {(profiles.data ?? []).map((row) => (
           <option key={row.key} value={row.key}>{row.name}</option>
         ))}

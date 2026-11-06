@@ -26,7 +26,7 @@ test.describe('palette drill-in, recent order, and global commands', () => {
     await page.getByTestId('palette-input').fill('Open view')
     const command = palette.locator('.hit.on')
     await expect(command).toContainText('Open view')
-    await expect(page.getByTestId('palette-tab-hint')).toHaveText(/Tab\s*open/)
+    await expect(page.getByTestId('palette-tab-hint')).toHaveText(/Tab\s*Open/)
     await expect(palette.locator('.palette-heading', { hasText: 'Best match' })).toHaveCount(0)
     await expect(palette.getByRole('option', { name: /^Articles view/ })).toHaveCount(0)
     await expect(palette.locator('.hit.on')).toHaveCount(1)
@@ -34,7 +34,7 @@ test.describe('palette drill-in, recent order, and global commands', () => {
     await page.keyboard.press('Tab')
     await expect(page.locator('.palette-query').getByTestId('palette-crumb')).toContainText('Open view ›')
     await expect(page.getByTestId('palette-input')).toHaveAttribute('placeholder', 'Search views…')
-    await expect(page.getByTestId('palette-back-hint')).toHaveText('⌫ back')
+    await expect(page.getByTestId('palette-back-hint')).toHaveText('⌫ Back')
     const articles = palette.getByRole('option', { name: /^Articles\b/ }).first()
     await articles.scrollIntoViewIfNeeded()
     await expect(articles).toBeVisible()
@@ -53,7 +53,7 @@ test.describe('palette drill-in, recent order, and global commands', () => {
 
     await page.getByTestId('palette-input').fill('Open view')
     await expect(palette.locator('.hit.on')).toContainText('Open view')
-    await expect(page.getByTestId('palette-tab-hint')).toHaveText(/Tab\s*open/)
+    await expect(page.getByTestId('palette-tab-hint')).toHaveText(/Tab\s*Open/)
     await page.keyboard.press('Enter')
 
     await expect(page.locator('.palette-query').getByTestId('palette-crumb')).toContainText('Open view ›')
@@ -145,7 +145,7 @@ test.describe('palette drill-in, recent order, and global commands', () => {
 
     await input.fill('open v')
     await expect(palette.locator('.hit.on')).toContainText('Open view')
-    await expect(page.getByTestId('palette-tab-hint')).toHaveText(/Tab\s*open/)
+    await expect(page.getByTestId('palette-tab-hint')).toHaveText(/Tab\s*Open/)
     await expect(page.getByTestId('ai-badge')).toHaveCount(0)
   })
 
@@ -159,7 +159,7 @@ test.describe('palette drill-in, recent order, and global commands', () => {
     await expect(page.getByTestId('palette-crumb')).toContainText('Open view ›')
     await expect(page.getByTestId('palette-crumb')).toHaveAttribute('aria-label', 'Open view, press Backspace to go back')
     await expect(page.getByTestId('palette-back-hint')).toBeVisible()
-    await expect(page.getByTestId('palette-foot')).toContainText(/Esc\s*close/)
+    await expect(page.getByTestId('palette-foot')).toContainText(/Esc\s*Close/)
     await page.keyboard.press('Backspace')
     await expect(page.getByTestId('palette-crumb')).toBeEmpty()
     await expect(palette).toBeVisible()

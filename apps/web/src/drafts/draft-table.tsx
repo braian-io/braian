@@ -3,6 +3,7 @@ import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import * as api from '../api/client'
 import { StandardTableChrome } from '../standard-table'
+import { copy } from '../i18n'
 import { cellClass, importCellText, rowClass } from '../import/model'
 import { setSkipInvalid } from '../import/controller'
 
@@ -29,12 +30,12 @@ type Page = {
 }
 
 const FILTERS: Array<{ id: string; label: string; tone: string }> = [
-  { id: 'all', label: 'All', tone: 'neutral' },
-  { id: 'new', label: 'New', tone: 'ok' },
-  { id: 'changed', label: 'Changed', tone: 'warn' },
-  { id: 'failed', label: 'Errors', tone: 'danger' },
-  { id: 'unchanged', label: 'Unchanged', tone: 'neutral' },
-  { id: 'excluded', label: 'Excluded', tone: 'neutral' },
+  { id: 'all', label: copy.all, tone: 'neutral' },
+  { id: 'new', label: copy.importNew, tone: 'ok' },
+  { id: 'changed', label: copy.importChanged, tone: 'warn' },
+  { id: 'failed', label: copy.importErrors, tone: 'danger' },
+  { id: 'unchanged', label: copy.importUnchanged, tone: 'neutral' },
+  { id: 'excluded', label: copy.importExcluded, tone: 'neutral' },
 ]
 
 export type DraftTableProps = {
@@ -148,7 +149,7 @@ export function DraftTable({ proposalId, version = '', excluded, onExcludedChang
       filterValue={text}
       onFilterChange={setText}
     >
-      <div className="import-counters" role="group" aria-label="Filter rows">
+      <div className="import-counters" role="group" aria-label={copy.filterRowsLabel}>
         {FILTERS.map((item) => (
           <button
             key={item.id}
@@ -161,9 +162,9 @@ export function DraftTable({ proposalId, version = '', excluded, onExcludedChang
             {item.label} {count(item.id)}
           </button>
         ))}
-        {excluded.length > 0 ? <span className="meta-chip neutral">{excluded.length} left out</span> : null}
+        {excluded.length > 0 ? <span className="meta-chip neutral">{copy.leftOut.replace('{count}', String(excluded.length))}</span> : null}
         {editable && sessionId ? (
-          <label className="import-empty-clears" title="Rows with an invalid cell are imported without that cell instead of being skipped.">
+          <label className="import-empty-clears" title={copy.leaveOutInvalidHint}>
             <input
               type="checkbox"
               data-testid="draft-skip-invalid"
@@ -171,7 +172,7 @@ export function DraftTable({ proposalId, version = '', excluded, onExcludedChang
               disabled={busy}
               onChange={(event) => void changeSkipInvalid(event.target.checked)}
             />
-            {' '}Leave out invalid cells instead of skipping the row
+            {' '}{copy.leaveOutInvalid}
           </label>
         ) : null}
         {error ? <span className="error" role="alert" data-testid="draft-error">{error}</span> : null}
@@ -210,7 +211,7 @@ export function DraftTable({ proposalId, version = '', excluded, onExcludedChang
                     {row.status === 'new' || row.status === 'changed' || row.status === 'excluded' ? (
                       <input
                         type="checkbox"
-                        aria-label={`Include row ${row.row_no}`}
+                        aria-label={copy.includeRow.replace('{row}', String(row.row_no))}
                         checked={!skipped}
                         onChange={() => toggle(row.row_no)}
                       />
@@ -240,7 +241,7 @@ export function DraftTable({ proposalId, version = '', excluded, onExcludedChang
                       {active && column.options ? (
                         <select
                           autoFocus
-                          aria-label={`Edit ${column.label ?? column.header}`}
+                          aria-label={copy.editField.replace('{field}', column.label ?? column.header)}
                           data-testid={`draft-select-${row.row_no}-${column.col}`}
                           value={editing.text}
                           onChange={(event) => setEditing({ ...editing, text: event.target.value })}
@@ -256,7 +257,7 @@ export function DraftTable({ proposalId, version = '', excluded, onExcludedChang
                       ) : active ? (
                         <input
                           autoFocus
-                          aria-label={`Edit ${column.label ?? column.header}`}
+                          aria-label={copy.editField.replace('{field}', column.label ?? column.header)}
                           value={editing.text}
                           onChange={(event) => setEditing({ ...editing, text: event.target.value })}
                           onKeyDown={onEditKey}

@@ -1299,7 +1299,7 @@ export function CommandPalette({
   const resultCount = rows.filter((row) => row.group !== 'ask' && row.id !== 'ask').length
   const showEmpty = mode === 'list' && query.trim().length > 0 && resultCount === 0
   const placeholder = mode === 'ai'
-    ? 'Ask AI'
+    ? copy.askAi
     : topFrame
       ? sublistPlaceholder(topFrame, types.map((type) => type.plural))
       : commandPlaceholder(types)
@@ -1496,16 +1496,16 @@ export function CommandPalette({
         ) : null}
         {mode === 'ai' ? (
           <div className="palette-foot" data-testid="palette-ai-foot">
-            <span><Kbd>Enter</Kbd> send</span>
-            <span><Kbd>Esc</Kbd> close</span>
+            <span><Kbd>Enter</Kbd> {copy.send}</span>
+            <span><Kbd>Esc</Kbd> {copy.close}</span>
           </div>
         ) : (
           <div className="palette-foot" data-testid="palette-foot">
-            <span><Kbd>Enter</Kbd> run</span>
-            {tab === 'open' ? <span data-testid="palette-tab-hint"><Kbd>Tab</Kbd> open</span> : null}
-            {stack.length > 0 ? <span data-testid="palette-back-hint">⌫ back</span> : null}
-            <span><Kbd>Ctrl</Kbd>+<Kbd>J</Kbd> ask AI</span>
-            <span><Kbd>Esc</Kbd> close</span>
+            <span><Kbd>Enter</Kbd> {copy.run}</span>
+            {tab === 'open' ? <span data-testid="palette-tab-hint"><Kbd>Tab</Kbd> {copy.open}</span> : null}
+            {stack.length > 0 ? <span data-testid="palette-back-hint">⌫ {copy.back}</span> : null}
+            <span><Kbd>Ctrl</Kbd>+<Kbd>J</Kbd> {copy.askAi}</span>
+            <span><Kbd>Esc</Kbd> {copy.close}</span>
           </div>
         )}
       </Command>
@@ -1582,7 +1582,7 @@ function buildCatalog(
     items.push({
       id: 'feedback:send',
       group: 'views',
-      title: 'Send feedback',
+      title: copy.sendFeedback,
       subtitle: 'Report a bug or share an idea',
       kbd: chordForCommand('feedback:send'),
       shortcut: chordForCommand('feedback:send'),
