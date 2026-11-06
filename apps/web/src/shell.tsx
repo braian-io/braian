@@ -8,6 +8,7 @@ import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight, File, Folder, FolderOpen } from 'lucide-react'
 import { StatusBar, useOnline } from './status-bar'
 import { isConnected, type LiveState } from './status-message'
+import { TrashDialog } from './trash-dialog'
 import { UserMenu } from './user-menu'
 import { CatalogSelector } from './catalog-selector'
 import { api, freeObject, jsonRecord, keepaliveJsonPut, operationId, recordTitle, textValue, type Json } from './api'
@@ -256,6 +257,7 @@ export function Shell() {
   const [help, setHelp] = useState(false)
   const [tabMenu, setTabMenu] = useState<{ x: number; y: number; id: string } | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string } | null>(null)
+  const [trashOpen, setTrashOpen] = useState(false)
   const [deleteError, setDeleteError] = useState('')
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [doc, setDoc] = useState<LayoutDoc | null>(null)
@@ -1872,6 +1874,7 @@ export function Shell() {
           connection={isConnected(online, liveState) ? 'online' : 'offline'}
           theme={theme}
           onToggleTheme={() => { void runCommand('theme:toggle') }}
+          onOpenTrash={() => setTrashOpen(true)}
           onSignOut={() => { void runCommand('session:sign-out') }}
         />
       </header>
@@ -2064,6 +2067,7 @@ export function Shell() {
           </DialogContent>
         </Dialog>
       ) : null}
+      <TrashDialog open={trashOpen} onClose={() => setTrashOpen(false)} />
       <ImportScreen />
       {help ? <HelpDialog onClose={() => setHelp(false)} placeholder={commandPlaceholder(typeCatalog)} /> : null}
       <Toaster theme={theme} />

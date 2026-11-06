@@ -943,7 +943,7 @@ impl Store {
         let rows = client
             .query(
                 "SELECT id, name, type_key, header_signature, headers, mapping, created_by
-                 FROM import_mappings ORDER BY name",
+                 FROM import_mappings WHERE deleted_at IS NULL ORDER BY name",
                 &[],
             )
             .await?;
@@ -958,7 +958,9 @@ impl Store {
         let rows = client
             .query(
                 "SELECT id, name, type_key, header_signature, headers, mapping, created_by
-                 FROM import_mappings WHERE header_signature = $1 ORDER BY updated_at DESC",
+                 FROM import_mappings
+                 WHERE header_signature = $1 AND deleted_at IS NULL
+                 ORDER BY updated_at DESC",
                 &[&signature],
             )
             .await?;
@@ -989,7 +991,8 @@ impl Store {
         let client = self.pool().get().await?;
         let n = client
             .execute(
-                "UPDATE import_mappings SET name = $2, updated_at = now() WHERE id = $1",
+                "UPDATE import_mappings SET name = $2, updated_at = now()
+                 WHERE id = $1 AND deleted_at IS NULL",
                 &[&id, &name],
             )
             .await?;
@@ -999,7 +1002,11 @@ impl Store {
     pub async fn delete_import_mapping(&self, id: Uuid) -> Result<bool, Error> {
         let client = self.pool().get().await?;
         let n = client
-            .execute("DELETE FROM import_mappings WHERE id = $1", &[&id])
+            .execute(
+                "UPDATE import_mappings SET deleted_at = now()
+                 WHERE id = $1 AND deleted_at IS NULL",
+                &[&id],
+            )
             .await?;
         Ok(n > 0)
     }

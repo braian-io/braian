@@ -24,7 +24,7 @@ pub async fn links_for(
              JOIN objects self ON self.id = l.object_id AND self.deleted_at IS NULL
              JOIN objects peer ON peer.id = CASE WHEN l.from_id = $1 THEN l.to_id ELSE l.from_id END
                AND peer.deleted_at IS NULL
-             WHERE l.from_id = $1 OR l.to_id = $1
+             WHERE l.deleted_at IS NULL AND (l.from_id = $1 OR l.to_id = $1)
              ORDER BY l.link_type_id, outgoing DESC, peer.key",
             &[&id.as_uuid()],
         )
@@ -59,7 +59,7 @@ pub async fn delete_counts(
                     count(*) FILTER (WHERE l.object_id <> $1)::bigint
              FROM links l
              JOIN objects self ON self.id = l.object_id AND self.deleted_at IS NULL
-             WHERE l.object_id = $1 OR l.from_id = $1 OR l.to_id = $1",
+             WHERE l.deleted_at IS NULL AND (l.object_id = $1 OR l.from_id = $1 OR l.to_id = $1)",
             &[&id.as_uuid()],
         )
         .await?;
@@ -74,7 +74,7 @@ pub async fn count_touching(
         .query_one(
             "SELECT count(*)::bigint FROM links l
              JOIN objects self ON self.id = l.object_id AND self.deleted_at IS NULL
-             WHERE l.object_id = $1 OR l.from_id = $1 OR l.to_id = $1",
+             WHERE l.deleted_at IS NULL AND (l.object_id = $1 OR l.from_id = $1 OR l.to_id = $1)",
             &[&id.as_uuid()],
         )
         .await?
@@ -106,7 +106,8 @@ pub async fn sync_cardinality(tx: &Transaction<'_>, defs: &DefinitionSet) -> Res
 pub async fn touching_ids(tx: &Transaction<'_>, id: ObjectId) -> Result<Vec<Uuid>, Error> {
     let rows = tx
         .query(
-            "SELECT object_id FROM links WHERE object_id = $1 OR from_id = $1 OR to_id = $1",
+            "SELECT object_id FROM links
+             WHERE deleted_at IS NULL AND (object_id = $1 OR from_id = $1 OR to_id = $1)",
             &[&id.as_uuid()],
         )
         .await?;
@@ -117,8 +118,11 @@ pub async fn delete_rows(tx: &Transaction<'_>, ids: &[Uuid]) -> Result<(), Error
     if ids.is_empty() {
         return Ok(());
     }
-    tx.execute("DELETE FROM links WHERE object_id = ANY($1)", &[&ids])
-        .await?;
+    tx.execute(
+        "UPDATE links SET deleted_at = now() WHERE object_id = ANY($1) AND deleted_at IS NULL",
+        &[&ids],
+    )
+    .await?;
     Ok(())
 }
 
@@ -150,7 +154,7 @@ pub async fn existing_counts(
     let from_count: i64 = tx
         .query_one(
             "SELECT count(*)::bigint FROM links
-             WHERE link_type_id = $1 AND from_id = $2
+             WHERE deleted_at IS NULL AND link_type_id = $1 AND from_id = $2
                AND ($3::uuid IS NULL OR object_id <> $3)",
             &[&link_type.as_uuid(), &from_id.as_uuid(), &except],
         )
@@ -159,7 +163,7 @@ pub async fn existing_counts(
     let to_count: i64 = tx
         .query_one(
             "SELECT count(*)::bigint FROM links
-             WHERE link_type_id = $1 AND to_id = $2
+             WHERE deleted_at IS NULL AND link_type_id = $1 AND to_id = $2
                AND ($3::uuid IS NULL OR object_id <> $3)",
             &[&link_type.as_uuid(), &to_id.as_uuid(), &except],
         )

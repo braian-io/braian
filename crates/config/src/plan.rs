@@ -78,7 +78,7 @@ pub struct PlanAffected {
     pub workspaces: i64,
     #[serde(default)]
     pub model_drafts: i64,
-    /// Catalog delete only: finished history removed with the catalog.
+    /// Catalog delete only: finished history the retention cleanup will remove.
     #[serde(default)]
     pub closed_proposals: i64,
     #[serde(default)]

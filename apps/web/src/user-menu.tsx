@@ -1,4 +1,4 @@
-import { LogOut, Moon, Sun } from 'lucide-react'
+import { LogOut, Moon, Sun, Trash2 } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,6 +26,7 @@ export function UserMenu({
   connection,
   theme,
   onToggleTheme,
+  onOpenTrash,
   onSignOut,
 }: {
   name?: string
@@ -35,6 +36,7 @@ export function UserMenu({
   connection: Connection
   theme: 'dark' | 'light'
   onToggleTheme: () => void
+  onOpenTrash: () => void
   onSignOut: () => void
 }) {
   const identity = email || handle || name || ''
@@ -59,6 +61,10 @@ export function UserMenu({
             ? <Sun className="menu-icon" aria-hidden="true" size={14} />
             : <Moon className="menu-icon" aria-hidden="true" size={14} />}
           {theme === 'dark' ? copy.lightMode : copy.darkMode}
+        </DropdownMenuItem>
+        <DropdownMenuItem data-testid="user-menu-trash" onSelect={onOpenTrash}>
+          <Trash2 className="menu-icon" aria-hidden="true" size={14} />
+          {copy.trash}
         </DropdownMenuItem>
         <DropdownMenuItem data-testid="user-menu-sign-out" onSelect={onSignOut}>
           <LogOut className="menu-icon" aria-hidden="true" size={14} />

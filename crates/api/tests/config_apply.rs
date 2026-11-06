@@ -1096,6 +1096,14 @@ async fn apply_delete_catalog_removes_finished_history() {
         "{accepted}"
     );
 
+    assert!(catalog_count(&client, "changes", id).await > 0);
+    assert!(catalog_count(&client, "batches", id).await > 0);
+    assert!(catalog_count(&client, "import_sessions", id).await > 0);
+    assert!(catalog_count(&client, "proposals", id).await > 0);
+    db.store()
+        .purge_soft_deleted_before(chrono::Utc::now() + chrono::Duration::seconds(1))
+        .await
+        .unwrap();
     assert_eq!(catalog_count(&client, "changes", id).await, 0);
     assert_eq!(catalog_count(&client, "batches", id).await, 0);
     assert_eq!(catalog_count(&client, "import_sessions", id).await, 0);

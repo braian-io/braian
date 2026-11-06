@@ -1035,7 +1035,7 @@ async fn a_taken_relation_key_becomes_a_link_that_can_be_removed() {
         let conn = db.connect().await;
         let count: i64 = conn
             .client
-            .query_one("SELECT count(*) FROM links", &[])
+            .query_one("SELECT count(*) FROM links WHERE deleted_at IS NULL", &[])
             .await
             .unwrap()
             .get(0);

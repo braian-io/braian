@@ -71,7 +71,8 @@ const USAGE_SQL: &str = "SELECT
        (SELECT count(*)::bigint FROM proposals
          WHERE catalog_id = $1 AND status = 'open'
            AND ($2::uuid IS NULL OR id <> $2)) AS proposals,
-       (SELECT count(*)::bigint FROM workspaces WHERE catalog_id = $1) AS workspaces,
+       (SELECT count(*)::bigint FROM workspaces
+         WHERE catalog_id = $1 AND deleted_at IS NULL) AS workspaces,
        (SELECT count(*)::bigint FROM model_drafts WHERE catalog_id = $1) AS model_drafts,
        (SELECT count(*)::bigint FROM proposals
          WHERE catalog_id = $1 AND status <> 'open'
@@ -202,7 +203,8 @@ impl Store {
         let client = self.checkout().await?;
         let rows = client
             .query(
-                "SELECT id, key, name, kind, editable FROM catalogs ORDER BY kind DESC, key",
+                "SELECT id, key, name, kind, editable FROM catalogs
+                 WHERE deleted_at IS NULL ORDER BY kind DESC, key",
                 &[],
             )
             .await?;
@@ -213,7 +215,8 @@ impl Store {
         let client = self.checkout().await?;
         let row = client
             .query_opt(
-                "SELECT id, key, name, kind, editable FROM catalogs WHERE key = $1",
+                "SELECT id, key, name, kind, editable FROM catalogs
+                 WHERE key = $1 AND deleted_at IS NULL",
                 &[&key],
             )
             .await?;
@@ -225,7 +228,8 @@ impl Store {
         let uuid = id.as_uuid();
         let row = client
             .query_opt(
-                "SELECT id, key, name, kind, editable FROM catalogs WHERE id = $1",
+                "SELECT id, key, name, kind, editable FROM catalogs
+                 WHERE id = $1 AND deleted_at IS NULL",
                 &[&uuid],
             )
             .await?;

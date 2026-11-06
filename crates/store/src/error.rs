@@ -43,6 +43,11 @@ pub enum Error {
     NotFound(ObjectId),
     #[error("object {0} is deleted")]
     Deleted(ObjectId),
+    /// Restoring the row would collide with a live unique key, or it is not deleted.
+    #[error("{0}")]
+    RestoreBlocked(String),
+    #[error("{0}")]
+    UnknownEntity(String),
     #[error("conflict at version {current_version}")]
     Conflict {
         current_version: u64,

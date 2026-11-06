@@ -305,3 +305,60 @@ async fn delete_workspace_foreign_member_is_not_found() {
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
 }
+
+#[tokio::test]
+async fn deleted_workspace_is_in_the_trash_and_can_be_restored() {
+    let (db, app) = app().await;
+    let (user, cookie) = login(&app, &db, "trash@braian.local", "secret-del").await;
+    let keep = save_ws(&db, user, "Keep", false).await;
+    let remove = save_ws(&db, user, "Remove", false).await;
+    let _ = keep;
+
+    let (status, body) = call(
+        &app,
+        "DELETE",
+        &format!("/v1/workspaces/{remove}"),
+        Some(&cookie),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+
+    let (status, listed) = call(&app, "GET", "/v1/workspaces", Some(&cookie), None).await;
+    assert_eq!(status, StatusCode::OK, "{listed}");
+    assert!(
+        !listed.to_string().contains(&remove.to_string()),
+        "{listed}"
+    );
+
+    let (status, trash) = call(&app, "GET", "/v1/trash", Some(&cookie), None).await;
+    assert_eq!(status, StatusCode::OK, "{trash}");
+    let items = trash["items"].as_array().unwrap();
+    assert!(
+        items
+            .iter()
+            .any(|item| item["kind"] == "workspace" && item["id"] == remove.to_string()),
+        "{trash}"
+    );
+
+    let (status, body) = call(
+        &app,
+        "POST",
+        &format!("/v1/trash/workspace/{remove}/undelete"),
+        Some(&cookie),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+
+    let (status, body) = call(
+        &app,
+        "GET",
+        &format!("/v1/workspaces/{remove}"),
+        Some(&cookie),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["name"], "Remove");
+}
