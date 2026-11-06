@@ -1711,7 +1711,7 @@ fn propose_change_tool() -> Value {
     json!({
         "type": "function",
         "name": "propose_change",
-        "description": "Propose a change to an existing object's fields, including its name. Call this directly for a clear request. The person approves the proposal in the UI, so never ask for permission or confirmation first.",
+        "description": "Propose a change to an existing object's fields, including its display name. Call this directly for a clear request. Put a display name in values.name as a language map, for example {\"name\": {\"en\": \"Test 1\"}}. Do not change number, key, or id unless the person asked to change that identifier. The person approves the proposal in the UI, so never ask for permission or confirmation first.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -2052,7 +2052,7 @@ fn agent_system_prompt(context: &Value, _latest: &str) -> String {
     format!(
         "You are the Braian agent. You always act for the signed-in person. Write changes must become proposals, not direct writes. \
 Answer in the same language as the person's latest message, whatever it is. Never refuse or stall because of language. \
-For a clear edit, such as renaming the selected object, call propose_change immediately with the fields to change. Put a name value in the data language from the snapshot unless the person names another language. Proposals are already approved in the UI, so never ask whether you should create one or wait for permission. \
+For a clear edit, such as renaming the selected object, call propose_change immediately with the fields to change. Put a display name in values.name as a language map in the data language from the snapshot, unless the person names another language. Do not change number, key, or id unless the person asked to change that identifier. Proposals are already approved in the UI, so never ask whether you should create one or wait for permission. \
 Call ask_person only when a real decision is missing, such as which of several ambiguous fields to use. Do not guess and do not use it to confirm an obvious action. \
 The UI snapshot is the current screen: workspace, open panes with their types, focused pane, selected objects (id, key, name, type, version), active filter and sort, the open table's columns (id, header, hidden), and the data language. \
 To hide or show a column, call ui_hide_column or ui_show_column with {{\"column\": id}}. \
@@ -3061,7 +3061,8 @@ fn selection_args(operation: &str, args: &Value, context: &Value) -> Value {
 
 /// A proposal about "this product" can omit the target. Fill it from the
 /// snapshot so a clear rename never stalls on a missing id.
-fn proposal_target_args(args: Value, context: &Value) -> Value {
+fn proposal_target_args(mut args: Value, context: &Value) -> Value {
+    coerce_display_name(&mut args, context);
     let Some(item) = selection_items(context).first().cloned() else {
         return args;
     };
@@ -3093,6 +3094,25 @@ fn proposal_target_args(args: Value, context: &Value) -> Value {
         object.insert("base_version".into(), version.clone());
     }
     call
+}
+
+/// A model often sends a display name as plain text. The name attribute is a
+/// language map, so wrap that text in the snapshot language before the
+/// proposal is stored.
+fn coerce_display_name(args: &mut Value, context: &Value) {
+    let Some(values) = args.get_mut("values").and_then(Value::as_object_mut) else {
+        return;
+    };
+    let Some(Value::String(text)) = values.get("name").cloned() else {
+        return;
+    };
+    let language = context
+        .get("language")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .unwrap_or("en");
+    values.insert("name".into(), json!({ language: text }));
 }
 
 fn wrong_type() -> Problem {
@@ -8174,6 +8194,13 @@ mod tests {
         assert_eq!(args["type"], "article");
         assert_eq!(args["base_version"], 3);
         assert_eq!(operation_for_tool("propose_change"), Some("patch_object"));
+
+        let wrapped = proposal_target_args(
+            json!({ "values": { "name": "Blue" } }),
+            &json!({ "language": "sv" }),
+        );
+        assert_eq!(wrapped["values"]["name"]["sv"], "Blue");
+        assert!(wrapped.get("id").is_none(), "{wrapped}");
     }
 
     #[test]

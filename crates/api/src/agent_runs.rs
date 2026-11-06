@@ -409,15 +409,15 @@ async fn execute_run(state: &AppState, identity: &Identity, run_id: Uuid) -> Res
             .map_err(|error| error.to_string())?;
         return Ok(());
     }
-    let rename = if model_unavailable() {
-        rename_target(&prompt)
-    } else {
-        None
-    };
-    if model_unavailable()
-        && (prompt.to_lowercase().contains("propose a new name") || rename.is_some())
-    {
-        propose_mock_name(state, identity, run_id, &run.context, rename.as_deref())
+    // A clear rename is resolved here, with or without a model. The same
+    // patch_object proposal path files it. The model is not asked to invent
+    // a second write.
+    if let Some(request) = parse_rename(&prompt) {
+        propose_parsed_rename(state, identity, run_id, &run.context, &request)
+            .await
+            .map_err(|problem| problem.detail)?;
+    } else if model_unavailable() && prompt.to_lowercase().contains("propose a new name") {
+        propose_mock_name(state, identity, run_id, &run.context, None)
             .await
             .map_err(|problem| problem.detail)?;
     } else {
@@ -549,38 +549,212 @@ async fn decision_pending(state: &AppState, run_id: Uuid) -> Result<bool, String
 }
 
 // english-check: allow
+/// A clear request to rename one product. `subject` is empty when the person
+/// means the selected object. `identifier` is set only when they asked to
+/// change the key, id, or number — a display-name request leaves those alone.
+struct ParsedRename {
+    subject: String,
+    value: String,
+    identifier: bool,
+}
+
 /// The new name in a direct rename, such as "byt namn ... till Test 1" or
-/// "rename ... to Test 1". Used by the offline mock, which must act like a
-/// clear task: propose the change instead of asking for confirmation.
+/// "rename ... to Test 1". A clear task proposes the change instead of asking.
 fn rename_target(prompt: &str) -> Option<String> {
     let lower = prompt.to_lowercase();
-    let asks = lower.contains("byt namn")
-        || lower.contains("rename")
-        || lower.contains("change the name")
-        || lower.contains("change name")
-        || lower.contains("set the name");
-    if !asks {
+    if !asks_for_rename(&lower) {
         return None;
     }
     for marker in [" till ", " to "] {
         let Some(at) = lower.rfind(marker) else {
             continue;
         };
-        let target = prompt[at + marker.len()..].trim();
-        let target = target
-            .trim_matches(|character: char| {
-                character.is_whitespace()
-                    || matches!(
-                        character,
-                        '"' | '\'' | '“' | '”' | '‘' | '’' | '.' | '!' | '?'
-                    )
-            })
-            .trim();
+        let target = trim_name(&prompt[at + marker.len()..]);
         if !target.is_empty() {
-            return Some(target.to_owned());
+            return Some(target);
         }
     }
     None
+}
+
+fn asks_for_rename(lower: &str) -> bool {
+    lower.contains("byt namn")
+        || lower.contains("ändra namnet")
+        || lower.contains("rename")
+        || lower.contains("change the name")
+        || lower.contains("change name")
+        || lower.contains("set the name")
+        || explicit_identifier(lower)
+}
+
+fn explicit_identifier(lower: &str) -> bool {
+    const PHRASES: &[&str] = &[
+        "rename the key",
+        "rename key",
+        "change the key",
+        "change key",
+        "rename the id",
+        "change the id",
+        "rename the number",
+        "change the number",
+        "byt nyckel",
+        "ändra nyckeln",
+        "byt id",
+        "ändra id",
+        "byt nummer",
+        "ändra numret",
+    ];
+    PHRASES.iter().any(|phrase| lower.contains(phrase))
+}
+
+fn parse_rename(prompt: &str) -> Option<ParsedRename> {
+    let value = rename_target(prompt)?;
+    let lower = prompt.to_lowercase();
+    let subject = rename_subject(prompt);
+    Some(ParsedRename {
+        subject,
+        value,
+        identifier: explicit_identifier(&lower),
+    })
+}
+
+fn rename_subject(prompt: &str) -> String {
+    let lower = prompt.to_lowercase();
+    let mut cut = prompt.len();
+    for marker in [" till ", " to "] {
+        if let Some(at) = lower.rfind(marker) {
+            cut = cut.min(at);
+        }
+    }
+    let mut subject = strip_rename_prefix(prompt[..cut].trim()).trim().to_owned();
+    subject = trim_name(&subject);
+    if subject_is_deictic(&subject) {
+        return String::new();
+    }
+    if let Some(rest) = strip_type_prefix(&subject)
+        && !rest.is_empty()
+        && !subject_is_deictic(rest)
+    {
+        subject = trim_name(rest);
+    }
+    if subject_is_deictic(&subject) {
+        String::new()
+    } else {
+        subject
+    }
+}
+
+fn strip_rename_prefix(text: &str) -> &str {
+    const PREFIXES: &[&str] = &[
+        "rename the key of ",
+        "rename the id of ",
+        "rename the number of ",
+        "change the key of ",
+        "change the id of ",
+        "change the number of ",
+        "byt namn på ",
+        "ändra namnet på ",
+        "change the name of ",
+        "set the name of ",
+        "change name of ",
+        "set name of ",
+        "rename ",
+        "change the name ",
+        "change name ",
+        "set the name ",
+        "set name ",
+    ];
+    let mut rest = text;
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for prefix in PREFIXES {
+            if let Some(next) = strip_prefix_ci(rest, prefix) {
+                rest = next;
+                changed = true;
+                break;
+            }
+        }
+    }
+    rest
+}
+
+fn strip_type_prefix(text: &str) -> Option<&str> {
+    const PREFIXES: &[&str] = &[
+        "the product ",
+        "the article ",
+        "the item ",
+        "produkten ",
+        "artikeln ",
+        "product ",
+        "article ",
+        "item ",
+    ];
+    for prefix in PREFIXES {
+        if let Some(rest) = strip_prefix_ci(text, prefix)
+            && !rest.is_empty()
+        {
+            return Some(rest);
+        }
+    }
+    None
+}
+
+fn subject_is_deictic(subject: &str) -> bool {
+    const PHRASES: &[&str] = &[
+        "",
+        "this",
+        "it",
+        "this product",
+        "this object",
+        "this item",
+        "this article",
+        "the product",
+        "the object",
+        "the item",
+        "the article",
+        "selected",
+        "the selected",
+        "the selected product",
+        "selected product",
+        "den här",
+        "den här produkten",
+        "det här",
+        "det här objektet",
+        "denna",
+        "denna produkt",
+        "produkten",
+        "markerade",
+        "den markerade",
+        "den markerade produkten",
+    ];
+    let folded = subject.split_whitespace().collect::<Vec<_>>().join(" ");
+    PHRASES
+        .iter()
+        .any(|phrase| folded.eq_ignore_ascii_case(phrase) || folded == *phrase)
+}
+
+fn strip_prefix_ci<'a>(text: &'a str, prefix: &str) -> Option<&'a str> {
+    let mut rest = text.chars();
+    for expected in prefix.chars() {
+        let next = rest.next()?;
+        if next.to_lowercase().to_string() != expected.to_lowercase().to_string() {
+            return None;
+        }
+    }
+    Some(rest.as_str().trim())
+}
+
+fn trim_name(text: &str) -> String {
+    text.trim_matches(|character: char| {
+        character.is_whitespace()
+            || matches!(
+                character,
+                '"' | '\'' | '“' | '”' | '‘' | '’' | '.' | '!' | '?'
+            )
+    })
+    .trim()
+    .to_owned()
 }
 // english-check: end
 
@@ -618,39 +792,370 @@ async fn propose_mock_name(
         args["base_version"] = json!(version);
     }
     let result = run_operation(state, identity, "patch_object", &args, true).await?;
-    if let Some(proposal_id) = result
+    let Some(proposal_id) = result
         .get("proposal_id")
         .and_then(Value::as_str)
         .and_then(|text| Uuid::parse_str(text).ok())
-    {
-        state
-            .store
-            .attach_proposal_to_run(proposal_id, run_id)
-            .await
-            .map_err(store_status)?;
-        state
-            .store
-            .append_agent_message(
-                run_id,
-                "proposal",
-                &json!({ "proposal_id": proposal_id, "text": "Proposed a new name." }),
-            )
-            .await
-            .map_err(store_status)?;
+    else {
+        return say(
+            state,
+            run_id,
+            "I could not file the proposal. I did not change the product.",
+        )
+        .await;
+    };
+    state
+        .store
+        .attach_proposal_to_run(proposal_id, run_id)
+        .await
+        .map_err(store_status)?;
+    state
+        .store
+        .append_agent_message(
+            run_id,
+            "proposal",
+            &json!({ "proposal_id": proposal_id, "text": "Proposed a new name." }),
+        )
+        .await
+        .map_err(store_status)?;
+    say(
+        state,
+        run_id,
+        "I proposed a new name. Approve or reject it here. I will not apply it myself.",
+    )
+    .await
+}
+
+/// Finds the product the person named and files one display-name proposal.
+/// An explicit key, id, or number request is the only path that patches the
+/// identifier. Everything else leaves the key alone.
+async fn propose_parsed_rename(
+    state: &AppState,
+    identity: &Identity,
+    run_id: Uuid,
+    context: &Value,
+    request: &ParsedRename,
+) -> Result<(), Problem> {
+    if !identity.role.allows(Role::Editor) {
+        return say(
+            state,
+            run_id,
+            "You have read-only access, so I did not file a proposal.",
+        )
+        .await;
     }
+    let cached = state.models.get(&state.store).await?;
+    let resolved = resolve_rename_target(state, &cached, context, request).await?;
+    let target = match resolved {
+        RenameTarget::One(target) => target,
+        RenameTarget::Missing { named } => {
+            let text = if named {
+                format!(
+                    "I could not find a product named {}. I did not file a proposal.",
+                    request.subject
+                )
+            } else {
+                "Select one product, then ask me to rename it. I did not file a proposal."
+                    .to_owned()
+            };
+            return say(state, run_id, &text).await;
+        }
+        RenameTarget::Many(labels) => {
+            let listed = if labels.is_empty() {
+                request.subject.clone()
+            } else {
+                labels.join(", ")
+            };
+            return say(
+                state,
+                run_id,
+                &format!(
+                    "Several products match {}. I did not file a proposal. Name the number, or select one product: {listed}.",
+                    request.subject
+                ),
+            )
+            .await;
+        }
+    };
+    let (values, told) = if request.identifier {
+        let Some(field) = key_attribute_key(&cached, target.type_id) else {
+            return say(
+                state,
+                run_id,
+                "I could not file a proposal because this product has no identifier field.",
+            )
+            .await;
+        };
+        (
+            json!({ field: request.value }),
+            format!(
+                "I proposed a new identifier for {}. Approve or reject it here. I will not apply it myself.",
+                target.key
+            ),
+        )
+    } else {
+        let language = name_language(&cached, context, &target.name);
+        (
+            json!({ "name": { language: request.value } }),
+            format!(
+                "I proposed a new name for {}. Approve or reject it here. I will not apply it myself.",
+                target.key
+            ),
+        )
+    };
+    let args = json!({
+        "id": target.id,
+        "type": target.type_key,
+        "values": values,
+        "base_version": target.version,
+    });
+    let result = run_operation(state, identity, "patch_object", &args, true).await;
+    let result = match result {
+        Ok(result) => result,
+        Err(problem) => {
+            return say(
+                state,
+                run_id,
+                &format!(
+                    "I could not file the proposal. {} I did not change the product.",
+                    problem.detail
+                ),
+            )
+            .await;
+        }
+    };
+    let Some(proposal_id) = result
+        .get("proposal_id")
+        .and_then(Value::as_str)
+        .and_then(|text| Uuid::parse_str(text).ok())
+    else {
+        return say(
+            state,
+            run_id,
+            "I could not file the proposal. I did not change the product.",
+        )
+        .await;
+    };
+    state
+        .store
+        .attach_proposal_to_run(proposal_id, run_id)
+        .await
+        .map_err(store_status)?;
+    state
+        .store
+        .append_agent_message(
+            run_id,
+            "proposal",
+            &json!({ "proposal_id": proposal_id, "text": "Proposed a new name." }),
+        )
+        .await
+        .map_err(store_status)?;
+    say(state, run_id, &told).await
+}
+
+async fn say(state: &AppState, run_id: Uuid, text: &str) -> Result<(), Problem> {
     state
         .store
         .append_agent_message(
             run_id,
             "assistant",
-            &json!({
-                "text": "I proposed a new name. Approve or reject it here. I will not apply it myself.",
-                "available": true
-            }),
+            &json!({ "text": text, "available": true }),
         )
         .await
         .map_err(store_status)?;
     Ok(())
+}
+
+struct ResolvedObject {
+    id: Uuid,
+    key: String,
+    type_id: braian_model::TypeId,
+    type_key: String,
+    version: i64,
+    name: Value,
+}
+
+enum RenameTarget {
+    One(ResolvedObject),
+    Many(Vec<String>),
+    Missing { named: bool },
+}
+
+async fn resolve_rename_target(
+    state: &AppState,
+    cached: &crate::state::CachedModel,
+    context: &Value,
+    request: &ParsedRename,
+) -> Result<RenameTarget, Problem> {
+    if request.subject.is_empty() {
+        let items = context
+            .get("selection")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let ids: Vec<Uuid> = items
+            .iter()
+            .filter_map(|item| {
+                item.get("id")
+                    .and_then(Value::as_str)
+                    .and_then(|text| Uuid::parse_str(text).ok())
+            })
+            .collect();
+        if ids.len() > 1 {
+            let labels = items
+                .iter()
+                .map(|item| {
+                    let key = item.get("key").and_then(Value::as_str).unwrap_or("");
+                    let name = item.get("name").and_then(Value::as_str).unwrap_or("");
+                    match (key.is_empty(), name.is_empty()) {
+                        (false, false) => format!("{key} ({name})"),
+                        (false, true) => key.to_owned(),
+                        (true, false) => name.to_owned(),
+                        (true, true) => item
+                            .get("id")
+                            .and_then(Value::as_str)
+                            .unwrap_or("object")
+                            .to_owned(),
+                    }
+                })
+                .take(8)
+                .collect();
+            return Ok(RenameTarget::Many(labels));
+        }
+        let Some(id) = ids.first().copied() else {
+            return Ok(RenameTarget::Missing { named: false });
+        };
+        return load_rename_target(state, cached, id)
+            .await
+            .map(|target| match target {
+                Some(target) => RenameTarget::One(target),
+                None => RenameTarget::Missing { named: false },
+            });
+    }
+    let ids = name_attribute_ids(&cached.defs);
+    let rows = state
+        .store
+        .objects_matching_label(&request.subject, &ids, 9)
+        .await
+        .map_err(store_status)?;
+    if rows.is_empty() {
+        return Ok(RenameTarget::Missing { named: true });
+    }
+    if rows.len() > 1 {
+        let labels = rows
+            .iter()
+            .take(8)
+            .map(|(_, key, _, _)| key.clone())
+            .collect();
+        return Ok(RenameTarget::Many(labels));
+    }
+    let id = rows[0].0;
+    load_rename_target(state, cached, id)
+        .await
+        .map(|target| match target {
+            Some(target) => RenameTarget::One(target),
+            None => RenameTarget::Missing { named: true },
+        })
+}
+
+fn name_attribute_ids(defs: &braian_model::DefinitionSet) -> Vec<String> {
+    let mut ids = Vec::new();
+    let standard = braian_model::name_id();
+    if defs
+        .attributes
+        .iter()
+        .any(|attribute| attribute.id == standard)
+    {
+        ids.push(standard.as_uuid().to_string());
+    }
+    for attribute in &defs.attributes {
+        if attribute.key == "name" {
+            let text = attribute.id.as_uuid().to_string();
+            if !ids.contains(&text) {
+                ids.push(text);
+            }
+        }
+    }
+    ids
+}
+
+async fn load_rename_target(
+    state: &AppState,
+    cached: &crate::state::CachedModel,
+    id: Uuid,
+) -> Result<Option<ResolvedObject>, Problem> {
+    let Some(stored) = state
+        .store
+        .get_object(ObjectId::from_uuid(id))
+        .await
+        .map_err(store_status)?
+    else {
+        return Ok(None);
+    };
+    if stored.deleted_at.is_some() {
+        return Ok(None);
+    }
+    let name_id = cached
+        .model
+        .attribute_by_key("name")
+        .map(|attribute| attribute.id)
+        .unwrap_or_else(braian_model::name_id);
+    let name = stored
+        .object
+        .values
+        .get(&name_id)
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    Ok(Some(ResolvedObject {
+        id,
+        key: stored.key,
+        type_id: stored.object.type_id,
+        type_key: crate::wire::type_key(&cached.defs, stored.object.type_id),
+        version: i64::try_from(stored.version).unwrap_or(i64::MAX),
+        name,
+    }))
+}
+
+fn key_attribute_key(
+    cached: &crate::state::CachedModel,
+    type_id: braian_model::TypeId,
+) -> Option<String> {
+    let id = cached.model.key_attribute(type_id)?;
+    cached
+        .model
+        .attribute(id)
+        .map(|attribute| attribute.key.clone())
+}
+
+fn name_language(cached: &crate::state::CachedModel, context: &Value, current: &Value) -> String {
+    let known: Vec<String> = cached
+        .defs
+        .languages
+        .iter()
+        .map(|tag| tag.as_str().to_owned())
+        .collect();
+    let requested = context
+        .get("language")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or("");
+    if known.iter().any(|tag| tag == requested) {
+        return requested.to_owned();
+    }
+    if let Some(map) = current.as_object() {
+        for tag in ["en", "sv", "de"] {
+            if map.contains_key(tag) && known.iter().any(|known| known == tag) {
+                return tag.to_owned();
+            }
+        }
+        if let Some(tag) = map
+            .keys()
+            .find(|tag| known.iter().any(|known| known == *tag))
+        {
+            return tag.clone();
+        }
+    }
+    known.first().cloned().unwrap_or_else(|| "en".to_owned())
 }
 
 async fn persist_event(
@@ -1017,7 +1522,7 @@ fn display_value(value: &Value) -> String {
 
 #[cfg(test)]
 mod session_tests {
-    use super::{rename_target, session_choice, session_document};
+    use super::{parse_rename, rename_target, session_choice, session_document};
     use serde_json::json;
 
     #[test]
@@ -1036,6 +1541,36 @@ mod session_tests {
             Some("Test 3")
         );
         assert_eq!(rename_target("how many products are there"), None);
+    }
+
+    #[test]
+    fn a_named_product_is_the_subject_and_a_key_request_is_separate() {
+        let named = parse_rename("rename Cheddar to Blue").expect("rename");
+        assert_eq!(named.subject, "Cheddar");
+        assert_eq!(named.value, "Blue");
+        assert!(!named.identifier);
+
+        let typed = parse_rename("rename the product Mature cheddar to Blue").expect("typed");
+        assert_eq!(typed.subject, "Mature cheddar");
+        assert!(!typed.identifier);
+
+        // english-check: allow
+        let selected = parse_rename("byt namn på den här produkten till Test 1").expect("selected");
+        assert_eq!(selected.subject, "");
+        assert_eq!(selected.value, "Test 1");
+        assert!(!selected.identifier);
+        let swedish = parse_rename("byt namn på Cheddar till Blå").expect("swedish");
+        assert_eq!(swedish.subject, "Cheddar");
+        assert_eq!(swedish.value, "Blå");
+        assert!(!swedish.identifier);
+        // english-check: end
+
+        let key = parse_rename("rename the key of Cheddar to SKU-2").expect("key");
+        assert_eq!(key.subject, "Cheddar");
+        assert_eq!(key.value, "SKU-2");
+        assert!(key.identifier);
+
+        assert!(parse_rename("how many products are there").is_none());
     }
 
     #[test]

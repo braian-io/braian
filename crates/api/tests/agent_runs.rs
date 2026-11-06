@@ -635,3 +635,300 @@ async fn an_edit_while_viewing_the_agent_session_is_a_proposal() {
     assert_eq!(status, StatusCode::OK, "{object}");
     assert_eq!(object["values"]["name"]["sv"], "Stol", "{object}");
 }
+
+async fn create_named(app: &axum::Router, sku: &str, name: &str) -> String {
+    let body = json!({
+        "type": "item",
+        "groups": {"assortment": "root", "webshop": "flat"},
+        "values": {"sku": sku, "name": {"sv": name}, "active": true}
+    });
+    let (status, created) = call(app, "POST", "/v1/objects", Some(&body.to_string()), &[]).await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    created["id"].as_str().unwrap().to_owned()
+}
+
+fn assistant_text(run: &Value) -> String {
+    run["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|message| message["kind"] == "assistant" || message["kind"] == "error")
+        .filter_map(|message| message["body"]["text"].as_str())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+async fn finish_prompt(app: &axum::Router, prompt: &str, context: Value) -> Value {
+    let body = json!({
+        "messages": [{ "role": "user", "content": prompt }],
+        "context": context,
+    });
+    let (status, created) =
+        call(app, "POST", "/v1/agent/runs", Some(&body.to_string()), &[]).await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    let id = created["id"].as_str().unwrap();
+    until_done(app, id).await
+}
+
+fn did_not_claim_a_proposal(run: &Value) {
+    let text = assistant_text(run);
+    assert!(
+        !text.contains("I proposed"),
+        "must not claim a proposal was filed: {run}"
+    );
+    assert!(
+        text.contains("did not"),
+        "must say the proposal was not filed: {text}"
+    );
+    assert_eq!(run["proposals"].as_array().unwrap().len(), 0, "{run}");
+}
+
+#[tokio::test]
+async fn named_product_rename_proposes_the_display_name_and_leaves_the_key() {
+    let (_db, app) = app().await;
+    let cheddar = create_named(&app, "SKU-CHED", "Cheddar").await;
+    let gouda = create_named(&app, "SKU-GOUDA", "Gouda").await;
+    // The selected product is Gouda. The request names Cheddar, so Gouda stays.
+    let finished = finish_prompt(
+        &app,
+        "rename Cheddar to Blue",
+        json!({
+            "language": "sv",
+            "selection": [{
+                "id": gouda,
+                "type": "item",
+                "key": "SKU-GOUDA",
+                "name": "Gouda",
+                "version": 1
+            }]
+        }),
+    )
+    .await;
+    assert_eq!(finished["status"], "done", "{finished}");
+    assert_eq!(
+        finished["proposals"].as_array().unwrap().len(),
+        1,
+        "{finished}"
+    );
+    let proposal = &finished["proposals"][0];
+    assert_eq!(proposal["object_id"], json!(cheddar), "{proposal}");
+    assert_eq!(proposal["object_key"], "SKU-CHED", "{proposal}");
+    assert_eq!(
+        proposal["patch"]["values"]["name"]["sv"], "Blue",
+        "{proposal}"
+    );
+    assert!(
+        proposal["patch"]["values"].get("sku").is_none(),
+        "{proposal}"
+    );
+    assert!(
+        assistant_text(&finished).contains("I proposed"),
+        "{finished}"
+    );
+    let (status, before) = call(&app, "GET", &format!("/v1/objects/{cheddar}"), None, &[]).await;
+    assert_eq!(status, StatusCode::OK, "{before}");
+    assert_eq!(before["values"]["name"]["sv"], "Cheddar");
+    assert_eq!(before["values"]["sku"], "SKU-CHED");
+
+    let proposal_id = proposal["id"].as_str().unwrap();
+    let (status, accepted) = call(
+        &app,
+        "POST",
+        &format!("/v1/proposals/{proposal_id}/accept"),
+        Some("{}"),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{accepted}");
+    let (status, after) = call(&app, "GET", &format!("/v1/objects/{cheddar}"), None, &[]).await;
+    assert_eq!(status, StatusCode::OK, "{after}");
+    assert_eq!(after["values"]["name"]["sv"], "Blue", "{after}");
+    assert_eq!(after["values"]["sku"], "SKU-CHED", "{after}");
+
+    let rejected = finish_prompt(&app, "rename Gouda to Edam", json!({ "language": "sv" })).await;
+    assert_eq!(
+        rejected["proposals"].as_array().unwrap().len(),
+        1,
+        "{rejected}"
+    );
+    let rejected_id = rejected["proposals"][0]["id"].as_str().unwrap();
+    assert_eq!(
+        rejected["proposals"][0]["object_id"],
+        json!(gouda),
+        "{rejected}"
+    );
+    let (status, discarded) = call(
+        &app,
+        "POST",
+        &format!("/v1/proposals/{rejected_id}/discard"),
+        None,
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{discarded}");
+    let (status, gouda_object) =
+        call(&app, "GET", &format!("/v1/objects/{gouda}"), None, &[]).await;
+    assert_eq!(status, StatusCode::OK, "{gouda_object}");
+    assert_eq!(
+        gouda_object["values"]["name"]["sv"], "Gouda",
+        "{gouda_object}"
+    );
+    assert_eq!(gouda_object["values"]["sku"], "SKU-GOUDA", "{gouda_object}");
+}
+
+#[tokio::test]
+async fn rename_fails_safely_when_the_product_is_ambiguous_missing_or_read_only() {
+    let (db, app) = app().await;
+    let first = create_named(&app, "SKU-A", "Cheddar").await;
+    let _second = create_named(&app, "SKU-B", "Cheddar").await;
+    let gouda = create_named(&app, "SKU-G", "Gouda").await;
+
+    let ambiguous =
+        finish_prompt(&app, "rename Cheddar to Blue", json!({ "language": "sv" })).await;
+    did_not_claim_a_proposal(&ambiguous);
+    assert!(assistant_text(&ambiguous).contains("SKU-A"), "{ambiguous}");
+    assert!(assistant_text(&ambiguous).contains("SKU-B"), "{ambiguous}");
+    let (status, still) = call(&app, "GET", &format!("/v1/objects/{first}"), None, &[]).await;
+    assert_eq!(status, StatusCode::OK, "{still}");
+    assert_eq!(still["values"]["name"]["sv"], "Cheddar");
+
+    let missing = finish_prompt(&app, "rename Nobody to Blue", json!({ "language": "sv" })).await;
+    did_not_claim_a_proposal(&missing);
+    assert!(assistant_text(&missing).contains("Nobody"), "{missing}");
+
+    let unselected = finish_prompt(
+        &app,
+        "rename this product to Blue",
+        json!({ "language": "sv" }),
+    )
+    .await;
+    did_not_claim_a_proposal(&unselected);
+
+    let hash = braian_api::hash_password("viewer-secret").unwrap();
+    db.store()
+        .create_user("viewer-rename@braian.local", &hash, "viewer", "Viewer")
+        .await
+        .unwrap();
+    let cookie = login_cookie(&app, "viewer-rename@braian.local", "viewer-secret").await;
+    let prompt = json!({
+        "messages": [{ "role": "user", "content": "rename Gouda to Blue" }],
+        "context": { "language": "sv" }
+    });
+    let (status, created) = call_as(
+        &app,
+        "POST",
+        "/v1/agent/runs",
+        Some(&prompt.to_string()),
+        &cookie,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    let id = created["id"].as_str().unwrap();
+    let readonly = until_done_as(&app, id, &cookie).await;
+    did_not_claim_a_proposal(&readonly);
+    assert!(
+        assistant_text(&readonly).contains("read-only"),
+        "{readonly}"
+    );
+    let (status, gouda_object) =
+        call(&app, "GET", &format!("/v1/objects/{gouda}"), None, &[]).await;
+    assert_eq!(status, StatusCode::OK, "{gouda_object}");
+    assert_eq!(gouda_object["values"]["name"]["sv"], "Gouda");
+    assert_eq!(gouda_object["values"]["sku"], "SKU-G");
+
+    let key_change = finish_prompt(
+        &app,
+        "rename the key of Gouda to SKU-NEW",
+        json!({ "language": "sv" }),
+    )
+    .await;
+    assert_eq!(
+        key_change["proposals"].as_array().unwrap().len(),
+        1,
+        "{key_change}"
+    );
+    let patch = &key_change["proposals"][0]["patch"]["values"];
+    assert_eq!(patch["sku"], "SKU-NEW", "{key_change}");
+    assert!(patch.get("name").is_none(), "{key_change}");
+    let proposal_id = key_change["proposals"][0]["id"].as_str().unwrap();
+    let (status, accepted) = call(
+        &app,
+        "POST",
+        &format!("/v1/proposals/{proposal_id}/accept"),
+        Some("{}"),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{accepted}");
+    let (status, renamed_key) = call(&app, "GET", &format!("/v1/objects/{gouda}"), None, &[]).await;
+    assert_eq!(status, StatusCode::OK, "{renamed_key}");
+    assert_eq!(renamed_key["values"]["sku"], "SKU-NEW", "{renamed_key}");
+    assert_eq!(
+        renamed_key["values"]["name"]["sv"], "Gouda",
+        "{renamed_key}"
+    );
+}
+
+async fn login_cookie(app: &axum::Router, email: &str, password: &str) -> String {
+    let request = Request::builder()
+        .method("POST")
+        .uri("/v1/login")
+        .header("content-type", "application/json")
+        .body(Body::from(format!(
+            r#"{{"email":"{email}","password":"{password}"}}"#
+        )))
+        .unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    response
+        .headers()
+        .get("set-cookie")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(';').next())
+        .expect("session cookie")
+        .to_owned()
+}
+
+async fn call_as(
+    app: &axum::Router,
+    method: &str,
+    path: &str,
+    body: Option<&str>,
+    cookie: &str,
+) -> (StatusCode, Value) {
+    let mut builder = Request::builder()
+        .method(method)
+        .uri(path)
+        .header("cookie", cookie);
+    if body.is_some() {
+        builder = builder.header("content-type", "application/json");
+    }
+    let request = builder
+        .body(match body {
+            Some(body) => Body::from(body.to_owned()),
+            None => Body::empty(),
+        })
+        .unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    let status = response.status();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let json = if bytes.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null)
+    };
+    (status, json)
+}
+
+async fn until_done_as(app: &axum::Router, id: &str, cookie: &str) -> Value {
+    for _ in 0..200 {
+        let (status, body) =
+            call_as(app, "GET", &format!("/v1/agent/runs/{id}"), None, cookie).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        if body["status"] != "working" {
+            return body;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    panic!("agent run {id} stayed working");
+}

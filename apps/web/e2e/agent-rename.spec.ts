@@ -1,3 +1,9 @@
+// Row 171. This spec covers a selected product: the agent files a reviewable
+// name proposal, Accept writes the display name, and the products table shows it.
+// Finding a product by name, an ambiguous or missing name, read-only access,
+// and leaving the key unchanged are covered by
+// crates/api/tests/agent_runs.rs (`named_product_rename_proposes_the_display_name_and_leaves_the_key`
+// and `rename_fails_safely_when_the_product_is_ambiguous_missing_or_read_only`).
 import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
 import { mainTable } from './ui'
@@ -60,6 +66,9 @@ test('a clear rename becomes a proposal without asking, and Accept changes the n
 
   const after = await page.request.get(`/v1/objects/${objectId}`)
   expect(after.ok()).toBeTruthy()
-  const saved = (await after.json()) as { values?: { name?: Record<string, string> } }
+  const saved = (await after.json()) as { values?: { name?: Record<string, string>; number?: string; sku?: string } }
   expect(Object.values(saved.values?.name ?? {})).toContain(target)
+  const identifier = saved.values?.number ?? saved.values?.sku
+  if (identifier) expect(identifier).not.toBe(target)
+  await expect(row.locator('[data-column="name"]')).toContainText(target, { timeout: 15_000 })
 })
