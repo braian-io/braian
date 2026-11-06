@@ -4,6 +4,7 @@ import { ChevronDown, ChevronRight, MoreHorizontal, Plus } from 'lucide-react'
 import { api, operationId, type Json } from './api'
 import { reportWriteError, writeErrorMessage } from './write-error'
 import { formatCount } from './format'
+import { Button } from './components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './components/ui/dropdown-menu'
 import { CreateDialog, requireText } from './create-dialog'
@@ -140,9 +141,9 @@ export function StructureSection({
     <section>
       <div className="model-head">
         <h2>{copy.structures}</h2>
-        <button
+        <Button
           type="button"
-          className="icon-btn"
+          variant="icon"
           data-testid="new-structure"
           aria-label={copy.newStructure}
           onClick={() => {
@@ -151,7 +152,7 @@ export function StructureSection({
           }}
         >
           <Plus size={14} aria-hidden="true" />
-        </button>
+        </Button>
       </div>
       <CreateDialog
         open={createOpen}
@@ -533,12 +534,12 @@ function NameField({
         }}
       />
       <span className="inline-create-actions">
-        <button type="button" data-testid="inline-create-cancel" onClick={onCancel}>
+        <Button type="button" variant="default" data-testid="inline-create-cancel" onClick={onCancel}>
           {copy.cancel}
-        </button>
-        <button type="button" className="primary" data-testid="inline-create-save" onClick={() => onCommit(value)}>
+        </Button>
+        <Button type="button" variant="primary" data-testid="inline-create-save" onClick={() => onCommit(value)}>
           {copy.save}
-        </button>
+        </Button>
       </span>
       {warning && value.trim() && value.trim() !== initial ? (
         <p className="warn" data-testid="key-rename-warning">{warning.replace('{key}', initial)}</p>
@@ -603,8 +604,8 @@ function StructureDialog({
         {dialog && dialog.kind !== 'move' && dialog.error ? <p role="alert">{dialog.error}</p> : null}
         {dialog?.kind === 'move' && dialog.error ? <p role="alert">{dialog.error}</p> : null}
         <div className="dialog-actions">
-          <button type="button" onClick={onClose}>{copy.cancel}</button>
-          <button type="button" data-testid="structure-confirm" disabled={confirmDisabled} onClick={onConfirm}>{copy.confirm}</button>
+          <Button type="button" variant="default" onClick={onClose}>{copy.cancel}</Button>
+          <Button type="button" variant="default" data-testid="structure-confirm" disabled={confirmDisabled} onClick={onConfirm}>{copy.confirm}</Button>
         </div>
       </DialogContent>
     </Dialog>

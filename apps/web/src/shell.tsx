@@ -2009,9 +2009,10 @@ export function Shell() {
             const deleteTitle = locked ? copy.deleteWorkspaceLocked : last ? copy.deleteWorkspaceLast : copy.deleteWorkspace
             return (
             <div key={item.id}>
-              <button type="button" onClick={() => toggleLock(item)}>{item.locked ? copy.unlockWorkspace : copy.lockWorkspace}</button>
-              <button
+              <Button type="button" variant="default" onClick={() => toggleLock(item)}>{item.locked ? copy.unlockWorkspace : copy.lockWorkspace}</Button>
+              <Button
                 type="button"
+                variant="default"
                 onClick={() => {
                   const link = item.share_token ? `${window.location.origin}/share/${item.share_token}` : item.id
                   void navigator.clipboard?.writeText(link)
@@ -2020,9 +2021,10 @@ export function Shell() {
                 }}
               >
                 {copy.copyShare}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant="default"
                 data-testid="workspace-delete"
                 disabled={locked || last}
                 title={deleteTitle}
@@ -2033,7 +2035,7 @@ export function Shell() {
                 }}
               >
                 {copy.deleteWorkspace}
-              </button>
+              </Button>
             </div>
             )
           })}
@@ -2047,7 +2049,7 @@ export function Shell() {
             <p>{workspaceDisplayName(deleteConfirm.name, workspaces.data?.workspaces.find((w) => w.id === deleteConfirm.id)?.share_token)}</p>
             {deleteError ? <p className="error" data-testid="workspace-delete-error">{deleteError}</p> : null}
             <div className="dialog-actions">
-              <button type="button" disabled={deleteBusy} onClick={() => setDeleteConfirm(null)}>{copy.cancel}</button>
+              <Button type="button" variant="default" disabled={deleteBusy} onClick={() => setDeleteConfirm(null)}>{copy.cancel}</Button>
               <Button
                 type="button"
                 variant="danger"
@@ -2522,13 +2524,14 @@ export function StructureTree({ session, view }: { session: Session; view: View 
           style={{ left: menu.x, top: menu.y }}
           onPointerDown={(event) => event.stopPropagation()}
         >
-          <button type="button" onClick={() => { session.setGroup(`${menu.row.structureKey}:${menu.row.key}`); setMenu(null) }}>{copy.open}</button>
-          <button type="button" onClick={() => startEdit(menu.row, 'rename')}>{copy.rename}<kbd>F2</kbd></button>
-          <button type="button" onClick={() => startEdit(menu.row, 'key')}>{copy.renameKey}</button>
-          <button type="button" onClick={() => startEdit(menu.row, 'child')}>{copy.addChild}<kbd>Ins</kbd></button>
-          <button type="button" onClick={() => startEdit(menu.row, 'sibling')}>{copy.addSibling}</button>
-          <button
+          <Button type="button" variant="default" onClick={() => { session.setGroup(`${menu.row.structureKey}:${menu.row.key}`); setMenu(null) }}>{copy.open}</Button>
+          <Button type="button" variant="default" onClick={() => startEdit(menu.row, 'rename')}>{copy.rename}<kbd>F2</kbd></Button>
+          <Button type="button" variant="default" onClick={() => startEdit(menu.row, 'key')}>{copy.renameKey}</Button>
+          <Button type="button" variant="default" onClick={() => startEdit(menu.row, 'child')}>{copy.addChild}<kbd>Ins</kbd></Button>
+          <Button type="button" variant="default" onClick={() => startEdit(menu.row, 'sibling')}>{copy.addSibling}</Button>
+          <Button
             type="button"
+            variant="default"
             onClick={() => void propose('model.duplicate_group', {
               structure: menu.row.structureKey,
               group: menu.row.key,
@@ -2536,8 +2539,8 @@ export function StructureTree({ session, view }: { session: Session; view: View 
             })}
           >
             {copy.duplicate}
-          </button>
-          <button type="button" className="danger" onClick={() => void propose('model.delete_group', { structure: menu.row.structureKey, group: menu.row.key })}>{copy.deleteMenu}<kbd>Del</kbd></button>
+          </Button>
+          <Button type="button" variant="default" className="danger" onClick={() => void propose('model.delete_group', { structure: menu.row.structureKey, group: menu.row.key })}>{copy.deleteMenu}<kbd>Del</kbd></Button>
         </div>
       ) : null}
     </div>

@@ -4,6 +4,7 @@ import { api } from './api'
 import { copy } from './i18n'
 import { writeErrorMessage } from './write-error'
 import { Checkbox } from './components/ui/checkbox'
+import { Button } from './components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
 import {
   buildFeedbackContext,
@@ -129,10 +130,10 @@ export function FeedbackDialog({
         </label>
         {error ? <p className="error" role="alert">{error}</p> : null}
         <div className="dialog-actions">
-          <button type="button" className="ghost" onClick={onClose} disabled={busy}>{copy.cancel}</button>
-          <button type="button" onClick={submit} disabled={busy || !message.trim()}>
+          <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>{copy.cancel}</Button>
+          <Button type="button" variant="default" onClick={submit} disabled={busy || !message.trim()}>
             {busy ? copy.feedbackSending : copy.send}
-          </button>
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

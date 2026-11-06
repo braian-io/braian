@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import * as api from '../api/client'
+import { Button } from '../components/ui/button'
 import { StandardTableChrome } from '../standard-table'
 import { copy } from '../i18n'
 import { cellClass, importCellText, rowClass } from '../import/model'
@@ -151,16 +152,17 @@ export function DraftTable({ proposalId, version = '', excluded, onExcludedChang
     >
       <div className="import-counters" role="group" aria-label={copy.filterRowsLabel}>
         {FILTERS.map((item) => (
-          <button
+          <Button
             key={item.id}
             type="button"
+            variant="ghost"
             className={`meta-chip ${item.tone}${filter === item.id ? ' on' : ''}`}
             aria-pressed={filter === item.id}
             data-testid={`draft-filter-${item.id}`}
             onClick={() => setFilter(item.id)}
           >
             {item.label} {count(item.id)}
-          </button>
+          </Button>
         ))}
         {excluded.length > 0 ? <span className="meta-chip neutral">{copy.leftOut.replace('{count}', String(excluded.length))}</span> : null}
         {editable && sessionId ? (

@@ -2,6 +2,7 @@ import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react'
 import { Columns3, Plus, Search } from 'lucide-react'
 import { copy } from './i18n'
 import { formatCount } from './format'
+import { Button } from './components/ui/button'
 import { Kbd } from './components/ui/kbd'
 
 export type StandardTableChromeProps = {
@@ -60,31 +61,31 @@ export function StandardTableChrome({
           </label>
         ) : null}
         {onNewRow ? (
-          <button
+          <Button
             type="button"
-            className="icon-btn"
+            variant="icon"
             data-testid="table-add-row"
             aria-label={newRowLabel ?? copy.newRow}
             onClick={onNewRow}
           >
             <Plus size={14} aria-hidden="true" />
-          </button>
+          </Button>
         ) : null}
         {onSelectFields ? (
-          <button
+          <Button
             type="button"
-            className="icon-btn"
+            variant="icon"
             data-testid="table-select-fields"
             aria-label={selectFieldsLabel ?? copy.selectFields}
             onClick={onSelectFields}
           >
             <Columns3 size={14} aria-hidden="true" />
-          </button>
+          </Button>
         ) : null}
         {reviewVisible && onReview ? (
-          <button type="button" className="primary" data-testid="review-and-save" onClick={onReview}>
+          <Button type="button" variant="primary" data-testid="review-and-save" onClick={onReview}>
             {copy.reviewAndSave}
-          </button>
+          </Button>
         ) : null}
         {typeof rowCount === 'number' ? (
           <span className="row-count" data-testid="row-count">

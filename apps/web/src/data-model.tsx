@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Lock, MoreHorizontal } from 'lucide-react'
 import { ApiError, api, textValue, type Json } from './api'
 import { formatCount } from './format'
+import { Button } from './components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './components/ui/dropdown-menu'
 import { copy, uiLanguage } from './i18n'
 import {
@@ -785,7 +786,7 @@ function ImpactNote() {
         }}
       >
         <input data-testid="impact-attribute" value={attribute} onChange={(event) => setAttribute(event.target.value)} />
-        <button type="submit" data-testid="impact-run">{copy.calculate}</button>
+        <Button type="submit" variant="default" data-testid="impact-run">{copy.calculate}</Button>
       </form>
       {error ? <p className="error" data-testid="impact-error">{error}</p> : null}
       {result ? (

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as Reac
 import { createPortal } from 'react-dom'
 import { Maximize2, Minimize2, MoreHorizontal, X } from 'lucide-react'
 import { ViewGlyph } from './chips'
+import { Button } from './components/ui/button'
 import { Kbd } from './components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './components/ui/tooltip'
 import { viewDisplayTitle } from './demo-labels'
@@ -449,8 +450,9 @@ function Pane({ frame, leaf }: { frame: Frame; leaf: Leaf }) {
                       <span>{title}</span>
                     </button>
                   </TooltipTrigger>
-                  <button
+                  <Button
                     type="button"
+                    variant="icon"
                     className="tab-x"
                     aria-label="Close tab"
                     title={`Close ${title}`}
@@ -461,7 +463,7 @@ function Pane({ frame, leaf }: { frame: Frame; leaf: Leaf }) {
                     }}
                   >
                     <X size={14} aria-hidden="true" />
-                  </button>
+                  </Button>
                 </div>
                 <TooltipContent>
                   <span>{title}</span>
@@ -482,27 +484,27 @@ function Pane({ frame, leaf }: { frame: Frame; leaf: Leaf }) {
           )
         })()}
         <div className="pane-chrome">
-          <button
+          <Button
             type="button"
-            className="icon-btn"
+            variant="icon"
             aria-label={copy.viewMenu}
             data-testid="view-menu"
             onClick={(event) => activeId && frame.onMenu({ x: event.clientX, y: event.clientY + 8, view: activeId })}
           >
             <MoreHorizontal size={14} aria-hidden="true" />
-          </button>
+          </Button>
           <Tooltip>
             <TooltipTrigger asChild>
-              <button
+              <Button
                 type="button"
-                className="icon-btn"
+                variant="icon"
                 data-testid="pane-maximize"
                 aria-label={frame.doc.zoom ? copy.restore : copy.maximize}
                 aria-keyshortcuts="Control+Alt+Z"
                 onClick={() => activeId && frame.run('zoom', { view: activeId })}
               >
                 {frame.doc.zoom ? <Minimize2 size={14} aria-hidden="true" /> : <Maximize2 size={14} aria-hidden="true" />}
-              </button>
+              </Button>
             </TooltipTrigger>
             <TooltipContent>
               <span>{frame.doc.zoom ? copy.restore : copy.maximize}</span>

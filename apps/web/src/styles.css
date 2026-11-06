@@ -1637,7 +1637,7 @@ canvas.graph.panning { cursor: grabbing; }
 .graph-inspector dt { color: var(--muted); }
 .graph-inspector dd { margin: 0; overflow-wrap: anywhere; }
 .graph-inspector .graph-action { width: 100%; flex: none; }
-.graph-inspector .graph-action:not(.primary) {
+.graph-inspector .graph-action:not(.primary):not(.btn-accent) {
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -1647,8 +1647,8 @@ canvas.graph.panning { cursor: grabbing; }
   box-shadow: none;
   color: var(--text-2);
 }
-.graph-inspector .graph-action:not(.primary):hover { background: var(--hover); color: var(--text); }
-.graph-inspector .graph-action:not(.primary) svg { flex: none; color: var(--muted); }
+.graph-inspector .graph-action:not(.primary):not(.btn-accent):hover { background: var(--hover); color: var(--text); }
+.graph-inspector .graph-action:not(.primary):not(.btn-accent) svg { flex: none; color: var(--muted); }
 .graph-inspector .icon-btn { width: 28px; height: 28px; padding: 0; flex: none; justify-content: center; }
 .graph-kicker { display: flex; align-items: center; gap: 6px; margin: 0; min-width: 0; color: var(--text-2); font-size: 12px; }
 .graph-kicker-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -2479,7 +2479,8 @@ html[data-theme-switching] *::after {
   cursor: not-allowed;
 }
 .create-dialog .dialog-actions button:disabled:hover { background: var(--raised); }
-.create-dialog .dialog-actions button.primary:disabled:hover {
+.create-dialog .dialog-actions button.primary:disabled:hover,
+.create-dialog .dialog-actions button.btn-accent:disabled:hover {
   background: var(--accent);
   color: white;
 }

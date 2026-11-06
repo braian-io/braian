@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { Button } from './components/ui/button'
 import { Dialog, DialogContent, DialogTitle } from './components/ui/dialog'
 import { Kbd } from './components/ui/kbd'
 import { copy } from './i18n'
@@ -30,7 +31,7 @@ export function HelpDialog({ onClose, placeholder }: { onClose: () => void; plac
             <Kbd>{item.chord}</Kbd> {item.description}
           </p>
         ))}
-        <button type="button" onClick={onClose}>{copy.close}</button>
+        <Button type="button" variant="default" onClick={onClose}>{copy.close}</Button>
       </DialogContent>
     </Dialog>
   )

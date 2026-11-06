@@ -1746,9 +1746,9 @@ export function ObjectTable({
             const [path, value = ''] = clause.split(':=')
             const shown = path?.endsWith('.unit') ? value : formatMeasure(value, path?.endsWith('.value') ? undefined : undefined)
             return (
-              <button key={clause} type="button" className="filter-chip on" onClick={() => setPathFilters((current) => current.filter((item) => item !== clause))}>
+              <Button key={clause} type="button" variant="ghost" className="filter-chip on" onClick={() => setPathFilters((current) => current.filter((item) => item !== clause))}>
                 {path} {shown}
-              </button>
+              </Button>
             )
           })}
         </div>
@@ -1834,13 +1834,14 @@ export function ObjectTable({
           <div className="table-status" data-testid="peer-empty" role="status">
             <p data-testid="peer-empty-text">{peerEmpty.text}</p>
             {bound ? (
-              <button
+              <Button
                 type="button"
+                variant="default"
                 data-testid="peer-show-all"
                 onClick={() => { void runCommand('view:select-source', { typeId: bound.id, viewId: view.id }) }}
               >
                 {peerEmpty.showAll}
-              </button>
+              </Button>
             ) : null}
           </div>
         ) : groupBy ? (
@@ -1944,9 +1945,9 @@ export function ObjectTable({
             title={emptyTitle}
             detail={hasActiveFilter ? copy.noMatchesHint : undefined}
             action={hasActiveFilter ? (
-              <button type="button" className="btn-ghost" data-testid="clear-search" onClick={clearTableFilters}>
+              <Button type="button" variant="ghost" data-testid="clear-search" onClick={clearTableFilters}>
                 {copy.clearSearch}
-              </button>
+              </Button>
             ) : undefined}
             testId="object-table-empty"
           />
@@ -1991,8 +1992,8 @@ export function ObjectTable({
             {picker.label}
             <input autoFocus aria-label={copy.pathValue} value={pathValue} onChange={(event) => setPathValue(event.target.value)} />
           </label>
-          <button type="button" data-testid="inline-create-cancel" onClick={() => setPicker(null)}>{copy.cancel}</button>
-          <button className="primary" type="submit">{copy.filter}</button>
+          <Button type="button" variant="default" data-testid="inline-create-cancel" onClick={() => setPicker(null)}>{copy.cancel}</Button>
+          <Button variant="primary" type="submit">{copy.filter}</Button>
         </form>
       ) : null}
       {moving ? (
@@ -2082,7 +2083,7 @@ function MoveToGroup({
             </select>
           </label>
           {error ? <p className="error" data-testid="move-to-group-error">{error}</p> : null}
-          <button type="submit">{copy.save}</button>
+          <Button type="submit">{copy.save}</Button>
         </form>
       </DialogContent>
     </Dialog>
@@ -2327,20 +2328,21 @@ function TableFilters({
   const selectionOn = Boolean(activeGroup || activeLabelFilter || activeSelectionFilter)
   return (
     <>
-      <button type="button" className={!selectionOn && groupBy === '' ? 'filter-chip on' : 'filter-chip'} onClick={clear}>{copy.all}</button>
-      <button type="button" className={groupBy === 'type_key' ? 'filter-chip on' : 'filter-chip'} onClick={() => setGroupBy(groupBy === 'type_key' ? '' : 'type_key')}>{copy.type}</button>
-      <button type="button" className={groupBy === 'a_status' ? 'filter-chip on' : 'filter-chip'} onClick={() => setGroupBy(groupBy === 'a_status' ? '' : 'a_status')}>{copy.status}</button>
+      <Button type="button" variant="ghost" className={!selectionOn && groupBy === '' ? 'filter-chip on' : 'filter-chip'} onClick={clear}>{copy.all}</Button>
+      <Button type="button" variant="ghost" className={groupBy === 'type_key' ? 'filter-chip on' : 'filter-chip'} onClick={() => setGroupBy(groupBy === 'type_key' ? '' : 'type_key')}>{copy.type}</Button>
+      <Button type="button" variant="ghost" className={groupBy === 'a_status' ? 'filter-chip on' : 'filter-chip'} onClick={() => setGroupBy(groupBy === 'a_status' ? '' : 'a_status')}>{copy.status}</Button>
       {assortments.map((item) => (
-        <button
+        <Button
           key={String(item.id)}
           type="button"
+          variant="ghost"
           className={assortmentActive(item) ? 'filter-chip on' : 'filter-chip'}
           data-testid="assortment"
           aria-pressed={assortmentActive(item)}
           onClick={() => applyAssortment(item)}
         >
           {assortmentDisplayName(String(item.name))}
-        </button>
+        </Button>
       ))}
     </>
   )
@@ -2696,24 +2698,26 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
         <span className="pending-value" data-testid="pending-value">
           {line.language ? `${line.language}: ` : ''}{line.after}
         </span>
-        <button
+        <Button
           type="button"
+          variant="default"
           data-testid="accept-pending"
           data-line={line.id}
           disabled={acceptPending.isPending || stale}
           onClick={() => acceptPending.mutate({ proposalId, body: acceptPendingLine(line, row, lines, values) })}
         >
           {copy.acceptField}
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
+          variant="default"
           data-testid="reject-pending"
           data-line={line.id}
           disabled={acceptPending.isPending}
           onClick={() => acceptPending.mutate({ proposalId, body: rejectPendingRow(row) })}
         >
           {copy.rejectField}
-        </button>
+        </Button>
       </div>
     ))
   }
@@ -2816,15 +2820,16 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
           </section>
         ))}
         {moreKeys.length > 0 ? (
-          <button
+          <Button
             type="button"
-            className="btn-ghost detail-more"
+            variant="ghost"
+            className="detail-more"
             data-testid="detail-show-more-fields"
             aria-expanded={showMoreFields}
             onClick={() => setShowMoreFields((shown) => !shown)}
           >
             {showMoreFields ? copy.showFewerFields : copy.showMoreFields}
-          </button>
+          </Button>
         ) : null}
         {pendingError ? <p className="error" data-testid="pending-error">{pendingError}</p> : null}
         {error ? <p className="error" data-testid="detail-error">{error}</p> : null}
@@ -2832,7 +2837,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       {dirty ? (
         <div className="save-bar">
           <Button type="button" variant="danger" onClick={() => setDraft({})}>{copy.discard}</Button>
-          <button className="primary" type="submit" data-testid="review-and-save">{viewingAgentRunId() ? copy.agentPropose : copy.reviewAndSave}</button>
+          <Button variant="primary" type="submit" data-testid="review-and-save">{viewingAgentRunId() ? copy.agentPropose : copy.reviewAndSave}</Button>
         </div>
       ) : null}
     </form>
@@ -2948,15 +2953,16 @@ function Editor({
         {options.map((option) => {
           const on = picked.includes(option.code)
           return (
-            <button
+            <Button
               key={option.code}
               type="button"
+              variant="ghost"
               className={on ? 'choice-chip on' : 'choice-chip'}
               aria-pressed={on}
               onClick={() => onChange(on ? picked.filter((code) => code !== option.code) : [...picked, option.code])}
             >
               {option.label}
-            </button>
+            </Button>
           )
         })}
       </div>
@@ -3047,19 +3053,20 @@ function FileField({ value, onChange }: { value: unknown; onChange: (value: unkn
       ) : (
         <span className="hint" data-testid="file-chip">{copy.noFile}</span>
       )}
-      <button type="button" data-field="true" onClick={() => input.current?.click()}>
+      <Button type="button" variant="default" data-field="true" onClick={() => input.current?.click()}>
         {id ? copy.replaceFile : copy.chooseFile}
-      </button>
+      </Button>
       {id ? (
-        <button
+        <Button
           type="button"
+          variant="default"
           onClick={() => {
             setName('')
             onChange(null)
           }}
         >
           {copy.clearFile}
-        </button>
+        </Button>
       ) : null}
     </div>
   )
@@ -3104,8 +3111,9 @@ function ObjectRefField({ value, onChange }: { value: unknown; onChange: (value:
           {((found.data?.hits as Json[]) ?? []).map((hit) => {
             const doc = (hit.document as Json) ?? hit
             return (
-              <button
+              <Button
                 type="button"
+                variant="default"
                 key={String(doc.id)}
                 onMouseDown={(event) => {
                   event.preventDefault()
@@ -3114,7 +3122,7 @@ function ObjectRefField({ value, onChange }: { value: unknown; onChange: (value:
                 }}
               >
                 {String(doc.key)} · {catalogName(doc)}
-              </button>
+              </Button>
             )
           })}
         </div>
@@ -3204,10 +3212,10 @@ export function HistoryView({ session }: { session: PanesSession }) {
             ? copy.loading
             : `${formatCount(rows.length)} ${rows.length === 1 ? copy.oneChange : copy.manyChanges}`}
         </span>
-        <button type="button" data-testid="time-travel" aria-pressed={travel} onClick={() => setTravel((value) => !value)}>
+        <Button type="button" variant="default" data-testid="time-travel" aria-pressed={travel} onClick={() => setTravel((value) => !value)}>
           <HistoryIcon size={14} aria-hidden="true" />
           {copy.timeTravel}
-        </button>
+        </Button>
       </div>
       {travel ? (
         <div className="history-asof">
@@ -3272,9 +3280,9 @@ export function HistoryView({ session }: { session: PanesSession }) {
               )}
               {expanded ? (
                 <div className="history-actions" onClick={(event) => event.stopPropagation()}>
-                  <button
+                  <Button
                     type="button"
-                    className="btn-ghost"
+                    variant="ghost"
                     data-testid="view-as-of"
                     onClick={() => {
                       setSeq(at)
@@ -3282,15 +3290,15 @@ export function HistoryView({ session }: { session: PanesSession }) {
                     }}
                   >
                     {copy.viewAsItWas}
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
-                    className="btn-ghost"
+                    variant="ghost"
                     data-testid="rollback"
                     onClick={() => rollback.mutate(rollbackTargetSeq(seqs, at))}
                   >
                     {copy.rollback}
-                  </button>
+                  </Button>
                 </div>
               ) : null}
             </article>
@@ -3409,9 +3417,9 @@ export function JobHistory({ view }: { view: PanesView }) {
     <div data-testid="jobs">
       <div className="toolbar">
         {(types.data?.job_types ?? []).map((item) => (
-          <button key={String(item.key)} className={item.key === key ? 'primary' : ''} onClick={() => setKey(String(item.key))}>
+          <Button key={String(item.key)} variant={item.key === key ? 'primary' : 'default'} onClick={() => setKey(String(item.key))}>
             {jobTypeDisplayTitle(String(item.title))}
-          </button>
+          </Button>
         ))}
       </div>
       {runs.isError ? (
@@ -3543,11 +3551,11 @@ export function ProposalView({ session }: { session: PanesSession }) {
         {proposal.data ? <span className="meta-chip neutral" data-testid="source-badge">{sourceLabel(proposal.data)}</span> : null}
         {proposal.data?.status ? <MetaChip tone={statusTone(String(proposal.data.status))}>{String(proposal.data.status)}</MetaChip> : null}
         {proposalStale ? <span className="meta-chip" data-testid="proposal-stale">{copy.proposalStale}</span> : null}
-        <button type="button" data-testid="save-all" disabled={loadingObjects || accept.isPending || discard.isPending || proposalStale} onClick={saveAll}>{copy.saveAll}</button>
+        <Button type="button" variant="default" data-testid="save-all" disabled={loadingObjects || accept.isPending || discard.isPending || proposalStale} onClick={saveAll}>{copy.saveAll}</Button>
         <Button type="button" variant="danger" data-testid="discard-all" disabled={accept.isPending || discard.isPending} onClick={() => discard.mutate()}>{copy.discardAll}</Button>
         {error ? <p className="error" data-testid="proposal-error">{error}</p> : null}
         {consequence.length > 0 && session.proposalId ? (
-          <button type="button" onClick={() => publishProposal(session.proposalId ?? '')}>{copy.reviewChange}</button>
+          <Button type="button" variant="default" onClick={() => publishProposal(session.proposalId ?? '')}>{copy.reviewChange}</Button>
         ) : null}
       </div>
       {consequence.length > 0 ? (
@@ -3670,8 +3678,8 @@ function SuggestionCard({
             <FieldDiff lines={[line]} />
             {pending ? (
               <>
-                <button type="button" data-testid="accept-field" aria-pressed={!rejected} onClick={() => (rejected ? onToggle(id) : undefined)}>{copy.acceptField}</button>
-                <button type="button" data-testid="reject-field" aria-pressed={rejected} onClick={() => (rejected ? undefined : onToggle(id))}>{copy.rejectField}</button>
+                <Button type="button" variant="default" data-testid="accept-field" aria-pressed={!rejected} onClick={() => (rejected ? onToggle(id) : undefined)}>{copy.acceptField}</Button>
+                <Button type="button" variant="default" data-testid="reject-field" aria-pressed={rejected} onClick={() => (rejected ? undefined : onToggle(id))}>{copy.rejectField}</Button>
               </>
             ) : null}
           </div>

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import * as api from '../api/client'
+import { Button } from '../components/ui/button'
 import { StandardEditableTable, type StandardColumn } from '../standard-editable-table'
 
 type Saved = { id: string; name: string; type: string; headers: unknown; columns: unknown; empty_clears: boolean }
@@ -63,8 +64,9 @@ export function ImportMappingsView() {
       width: 90,
       read: () => '',
       display: (row) => (
-        <button
+        <Button
           type="button"
+          variant="danger"
           aria-label={`Delete ${row.name}`}
           onClick={(event) => {
             event.stopPropagation()
@@ -72,7 +74,7 @@ export function ImportMappingsView() {
           }}
         >
           Delete
-        </button>
+        </Button>
       ),
     },
   ]
