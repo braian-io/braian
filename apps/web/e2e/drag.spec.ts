@@ -180,11 +180,14 @@ test('type attributes reorder and checkbox persist after reload', async ({ page 
   const expected = !(await checkbox.isChecked())
   await checkbox.click()
 
-  await table.getByTestId('review-and-save').click()
-  const review = page.getByTestId('review-dialog')
-  await expect(review).toBeVisible()
-  await review.getByTestId('confirm-review').click()
-  await expect(review).toHaveCount(0)
+  const save = table.getByTestId('review-and-save')
+  await expect(save).toHaveText('Save')
+  const saved = page.waitForResponse((response) =>
+    response.url().includes('/v1/model/draft/save') && response.request().method() === 'POST')
+  await save.click()
+  expect((await saved).ok()).toBeTruthy()
+  await expect(page.getByTestId('review-dialog')).toHaveCount(0)
+  await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
 
   await page.reload()
   await openAttributes()
@@ -198,7 +201,7 @@ test('type attributes reorder and checkbox persist after reload', async ({ page 
   else await expect(persisted).not.toBeChecked()
 })
 
-test('allowed trees are staged for Review and save', async ({ page }) => {
+test('allowed trees save directly without a confirmation dialog', async ({ page }) => {
   test.setTimeout(180_000)
   await login(page)
   const definitions = (await (await page.request.get('/v1/definitions')).json()) as {
@@ -246,12 +249,7 @@ test('allowed trees are staged for Review and save', async ({ page }) => {
   else await expect(checkbox).not.toBeChecked()
 
   await checkbox.click()
-  const review = page.getByTestId('review-dialog')
-  await expect(review).toBeVisible()
-  expect(await persisted(), 'nothing persisted before Review and save').toBe(initiallyAllowed)
-
-  await review.getByTestId('confirm-review').click()
-  await expect(review).toHaveCount(0)
+  await expect(page.getByTestId('review-dialog')).toHaveCount(0)
   await expect.poll(persisted).toBe(expected)
 
   await page.reload()

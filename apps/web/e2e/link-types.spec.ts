@@ -46,7 +46,7 @@ test('pairs with links two cheeses from the keyboard and the link type can be de
   await page.getByTestId('model-dialog-save').click()
   await expect(page.getByTestId('unsaved-changes')).toBeVisible()
   await page.keyboard.press('Control+S')
-  await page.getByTestId('confirm-review').click()
+  await expect(page.getByTestId('review-dialog')).toHaveCount(0)
   await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
   const linkTypeRow = page.getByTestId('link-types-table').locator('[data-row-id="pairs_with"]')
   await page.locator('.pane-tab', { hasText: 'Link types' }).first().click()

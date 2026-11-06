@@ -18,7 +18,7 @@ export type StandardTableChromeProps = {
   onFilterChange?: (value: string) => void
   filterOnKeyDown?: (event: ReactKeyboardEvent<HTMLInputElement>) => void
   filterPlaceholder?: string
-  /** When true, show Review and save (same action as Ctrl+S). */
+  /** When true, show Save (same action as Ctrl+S). */
   reviewVisible?: boolean
   onReview?: () => void
   children: ReactNode
@@ -27,7 +27,7 @@ export type StandardTableChromeProps = {
 
 /**
  * Shared chrome for every app table: optional filter, plus creates a row,
- * optional Review and save, row count. View placement stays on Ctrl+K.
+ * optional Save, row count. View placement stays on Ctrl+K.
  */
 export function StandardTableChrome({
   newRowLabel,
