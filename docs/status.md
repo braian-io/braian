@@ -1,15 +1,48 @@
-# Status 2026-11-01
+# Status 2026-11-06
 
-Bas: `origin/main` tip `8300319` (merge av #145). Senaste migrering i repot: `V32__review_proposal_view_title.sql`.
+Bas: `origin/main` tip `2d78daf` (squash-merge av #253, rad 149 — hardcoded UI-strängar → `copy`; inkluderar #252 / `fa304b3`, Sources M2). Senaste migrering i repot: `V42__agent_session.sql`.
 
-Braian går att starta lokalt och att klicka igenom. Postgres är källan och ändringsloggen. Indexer, sök, auth, förslag och webbgränssnittet sitter på samma kedja. Flödet står i `docs/events.md`. Demokatalogen som `just dev` visar är bara seed: hjälteobjekt plus 240 syntetiska livsmedel (leverantörer, produkter och artiklar). Etiketter finns på sv/en/de och objektdata är engelska. Strukturen heter Food, leverantörer står utanför trädet och pekas ut med länkar. Tester skriver i databasen `braian_e2e` och sökaliaset `braian_e2e`, inte i demon.
+Braian går att starta lokalt och att klicka igenom på [demo.braian.io](https://demo.braian.io). Postgres är källan och ändringsloggen. Indexer, sök, auth, förslag och webbgränssnittet sitter på samma kedja. Flödet står i `docs/events.md`. Demokatalogen som `just dev` visar är bara seed: hjälteobjekt plus 240 syntetiska livsmedel (leverantörer, produkter och artiklar). Etiketter finns på sv/en/de och objektdata är engelska. Strukturen heter Food, leverantörer står utanför trädet och pekas ut med länkar. Tester skriver i databasen `braian_e2e` och sökaliaset `braian_e2e`, inte i demon.
 
 Skalprovet (5 000 skrivningar i sekunden, 1 miljon och 10 miljoner objekt) är inte gjort. En virtuell tabell mot 100 013 objekt är mätt, se `docs/measurements/2026-10-25-table-100k.md`.
 
 
+## Levererat sedan 2026-11-01 (verifierat via `git log` på main)
+
+Sedan statusen 2026-11-01 (`8300319` / #145) har ungefär #146–#253 landat (~108 commits på main). Inga öppna PR:er mot main vid skrivtillfället. Många leveranser står på Att testa i Notion och väntar på Glenns genomgång.
+
+### Seed, kataloger och config
+- #146: status.md 2026-11-01.
+- #147 (+ följdcommits): källkataloger, mergeprofiler och huvudkatalog (Notion 117) + config apply för Catalog/MergeProfile/Ownership.
+- #185–#186: mer realistisk grocery-demo; seed som tål befintlig demo-DB i stället för att krascha.
+
+### Felhantering, dialoger och designpolish
+- #188, #190–#194, #196–#199, #203–#206 m.fl.: synliga skrivfel (toast/inline), danger-confirm utan type-to-confirm, fokusring, en kantnivå, accentpolicy, delade Dialog/Popover, F-/H-fynd (rader omkring 134–183, 152, 158, 160–166).
+
+### Länkar
+- #207–#208, #195/#224–#227: sökbart länk-mål, drag-för-länk, kardinalitet/replace, två vyer sida vid sida, Link to-undermeny, demolänktyp produkt→leverantör via config apply.
+
+### Agent
+- #202, #209, #212, #217, #222, #235–#237: agentredigering i Detail, egen flik/vy, bakgrundskörningar och agents-lista, rename utan fråga, disabled Send, vänsterkant/marker, proposal-diff-tooltips.
+
+### Ctrl+K / command-registry (rad 107)
+- #187, #195, #231–#234: Raycast-lik palett, registry-styrda kolumnflytt- och layout-rader (`palette:true`).
+
+### Show by default och prototyproute
+- #247–#249 (rad 192): `show_by_default` på attribut; create-popup och Detail/tabell-defaultkolumner respekterar flaggan.
+- #250: field-picker-prototypen ute ur produktionsbygget (rad 167).
+
+### Sources / Merge
+- #251 (rad 148): Merge runs — tabellrubriker, JSON expand, objektväljare.
+- #252 (rad 147): Sources merge profiles / ownership — etiketter, hjälptexter, strukturerad ownership-editor, Dialog i stället för `window.confirm`, ingen header-flash.
+
+### Copy / i18n
+- #253 (rad 149): hardcoded UI-strängar flyttade till `apps/web/src/i18n.ts` `copy`, sentence case på palette/field-picker-fot (t.ex. Run, Ask AI, Toggle / open).
+
+
 ## Levererat sedan 2026-10-25 (verifierat via `git log` på main)
 
-Endast mergade PR:er i intervallet #104–#145. #103, #121, #122, #127, #129 och #131 stängdes utan merge och räknas inte som levererade. Inga öppna PR:er mot main vid skrivtillfället.
+Endast mergade PR:er i intervallet #104–#145 (läget vid status 2026-11-01). #103, #121, #122, #127, #129 och #131 stängdes utan merge och räknas inte som levererade.
 
 ### Tabell, fältväljare och kolumnpreferenser
 - #104–#105: Fields ›-prototyp och riktig fältväljare med hop-kolumner och prefs v2.
