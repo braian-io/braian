@@ -203,7 +203,7 @@ function SortableGridRow({
 
 /**
  * Generic editable grid on top of StandardTableChrome.
- * Plus adds an inline draft row; dirty drafts show Review and save.
+ * Plus adds an inline draft row; dirty drafts show Save.
  * Keyboard: Enter/F2 edit, Esc cancel, Tab next cell.
  * With reorderable: Alt+ArrowUp/Down, Move row controls and drag to reorder.
  * Right-click / Shift+F10 / ContextMenu open the shared command menu when configured.

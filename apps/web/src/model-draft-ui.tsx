@@ -9,6 +9,39 @@ import { copy } from './i18n'
 import { attributeKey } from './model-view'
 import { onDraftChange, requestDiscardDraft, setModelFocus, stageModel } from './model-stage'
 
+export type DraftSaveGate = 'idle' | 'direct' | 'confirm' | 'blocked'
+
+function asRecord(value: unknown): Json | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  return value as Json
+}
+
+/** Uses the draft's preview error and `consequence.destructive`. Nothing else. */
+export function draftSaveGate(body: Json | null | undefined): DraftSaveGate {
+  if (!body) return 'idle'
+  if (Number(body.count ?? 0) <= 0 || body.conflict === true) return 'idle'
+  if (body.error) return 'blocked'
+  if (asRecord(body.consequence)?.destructive === true) return 'confirm'
+  return 'direct'
+}
+
+/** Name the server already requires. Never collected from a typed field. */
+export function draftSaveBody(body: Json): Json {
+  const consequence = asRecord(body.consequence)
+  const name = String(consequence?.confirm_name ?? '')
+  if (consequence?.destructive === true && name) return { confirm_name: name }
+  return {}
+}
+
+function confirmLead(body: Json): string {
+  if (body.error) return String(body.error)
+  const consequence = asRecord(body.consequence)
+  const sentence = String(consequence?.sentence ?? '')
+  if (sentence) return sentence
+  const lines = (body.lines as string[] | undefined) ?? (consequence?.lines as string[] | undefined) ?? []
+  return lines[0] || copy.destructiveSave
+}
+
 type DialogKind = 'type' | 'list' | 'family' | 'tree' | 'link'
 
 export function ModelDraftHost() {
@@ -17,7 +50,10 @@ export function ModelDraftHost() {
   const [review, setReview] = useState(false)
   const [dialog, setDialog] = useState<DialogKind | null>(null)
   const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
   const opener = useRef<HTMLElement | null>(null)
+  const saving = useRef(false)
+  const again = useRef(false)
   const rememberOpener = () => {
     opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
   }
@@ -30,18 +66,54 @@ export function ModelDraftHost() {
   useEffect(() => onDraftChange(() => {
     void queryClient.invalidateQueries({ queryKey: ['model-draft'] })
   }), [queryClient])
-  useEffect(() => {
-    const open = () => {
-      setError('')
-      // Steps can be staged right before the request, so the cached count may
-      // still be zero. Read the draft again before deciding whether to open.
-      void draft.refetch().then((result) => {
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: ['model-draft'] })
+    void queryClient.invalidateQueries({ queryKey: ['definitions'] })
+  }
+  const decide = async () => {
+    if (saving.current) {
+      again.current = true
+      return
+    }
+    saving.current = true
+    setBusy(true)
+    setError('')
+    let posted = ''
+    try {
+      do {
+        again.current = false
+        // Steps can be staged right before the request, so the cached count may
+        // still be zero. Read the draft again before saving or confirming.
+        const result = await draft.refetch()
         const body = result.data
-        if (Number(body?.count ?? 0) > 0 && body?.conflict !== true) {
+        const gate = draftSaveGate(body)
+        if ((gate === 'confirm' || gate === 'blocked') && body) {
           rememberOpener()
           setReview(true)
+          if (!again.current) return
+          continue
         }
-      })
+        if (gate !== 'direct' || !body) continue
+        const token = JSON.stringify(body.steps ?? body.updated_at ?? body.count)
+        if (token === posted) break
+        await api.post('/v1/model/draft/save', { body: draftSaveBody(body) })
+        posted = token
+        setReview(false)
+        refresh()
+      } while (again.current)
+    } catch (reason: unknown) {
+      const message = writeErrorMessage(reason)
+      if (message) setError(message)
+    } finally {
+      saving.current = false
+      setBusy(false)
+    }
+  }
+  const decideRef = useRef(decide)
+  decideRef.current = decide
+  useEffect(() => {
+    const open = () => {
+      void decideRef.current()
     }
     const discard = () => {
       void api.delete('/v1/model/draft').then(() => {
@@ -61,13 +133,9 @@ export function ModelDraftHost() {
       window.removeEventListener('braian-discard-draft', discard)
       window.removeEventListener('braian-model-dialog', ask)
     }
-  }, [draft.refetch, queryClient])
+  }, [queryClient])
   const count = Number(draft.data?.count ?? 0)
   const conflict = draft.data?.conflict === true
-  const refresh = () => {
-    void queryClient.invalidateQueries({ queryKey: ['model-draft'] })
-    void queryClient.invalidateQueries({ queryKey: ['definitions'] })
-  }
   return (
     <>
       {count > 0 ? (
@@ -92,7 +160,7 @@ export function ModelDraftHost() {
               {copy.rebaseDraft}
             </Button>
           ) : (
-            <Button type="button" variant="default" data-testid="review-save" onClick={() => { rememberOpener(); setReview(true) }}>{copy.reviewAndSave}</Button>
+            <Button type="button" variant="primary" data-testid="review-save" disabled={busy} onClick={() => { void decide() }}>{copy.reviewAndSave}</Button>
           )}
           <Button type="button" variant="danger" onClick={() => requestDiscardDraft()}>{copy.discardDraft}</Button>
           {error ? <span className="error">{error}</span> : null}
@@ -114,22 +182,26 @@ export function ModelDraftHost() {
 }
 
 function ReviewDialog({ body, onClose, onSaved }: { body: Json; onClose: () => void; onSaved: () => void }) {
-  const consequence = (body.consequence as Json | undefined) ?? {}
-  const lines = (body.lines as string[] | undefined) ?? ((consequence.lines as string[] | undefined) ?? [])
+  const blocked = draftSaveGate(body) === 'blocked'
   const warnings = (body.warnings as string[] | undefined) ?? []
-  const destructive = consequence.destructive === true
-  const confirmName = String(consequence.confirm_name ?? '')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const saving = useRef(false)
   const save = () => {
+    if (saving.current || blocked) return
+    saving.current = true
     setBusy(true)
-    void api.post('/v1/model/draft/save', { body: destructive ? { confirm_name: confirmName } : {} })
+    setError('')
+    void api.post('/v1/model/draft/save', { body: draftSaveBody(body) })
       .then(() => onSaved())
       .catch((reason: unknown) => {
         const message = writeErrorMessage(reason)
         if (message) setError(message)
       })
-      .finally(() => setBusy(false))
+      .finally(() => {
+        saving.current = false
+        setBusy(false)
+      })
   }
   return (
     <Dialog open onOpenChange={(next) => { if (!next) onClose() }}>
@@ -139,18 +211,17 @@ function ReviewDialog({ body, onClose, onSaved }: { body: Json; onClose: () => v
         onEscapeKeyDown={(event) => event.stopPropagation()}
       >
         <div className="toolbar">
-          <DialogTitle asChild><strong>{copy.reviewAndSave}</strong></DialogTitle>
+          <DialogTitle asChild><strong>{copy.save}</strong></DialogTitle>
         </div>
-        <DialogDescription asChild><p className="hint">{copy.reviewChange}</p></DialogDescription>
-        {body.error ? <p className="error">{String(body.error)}</p> : null}
-        <ul className="proposal-tree" data-testid="review-lines">
-          {lines.map((line) => <li key={line}>{line}</li>)}
-        </ul>
+        <DialogDescription asChild><p className="hint">{confirmLead(body)}</p></DialogDescription>
+        {blocked ? <p className="error" role="alert">{String(body.error)}</p> : null}
         {warnings.map((warning) => <p key={warning} className="error">{warning}</p>)}
-        {error ? <p className="error">{error}</p> : null}
+        {error ? <p className="error" role="alert">{error}</p> : null}
         <div className="toolbar">
           <Button type="button" variant="ghost" onClick={onClose}>{copy.cancel}</Button>
-          <Button type="button" variant={destructive ? 'danger' : 'primary'} data-testid="confirm-review" disabled={busy} onClick={save}>{copy.confirm}</Button>
+          {blocked ? null : (
+            <Button type="button" variant="danger" data-testid="confirm-review" disabled={busy} onClick={save}>{copy.delete}</Button>
+          )}
         </div>
       </DialogContent>
     </Dialog>
