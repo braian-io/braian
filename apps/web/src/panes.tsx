@@ -205,7 +205,8 @@ export function ObjectTable({
   const [hidden, setHidden] = useState<string[]>([])
   const [prefsReady, setPrefsReady] = useState(false)
   const [prefsLoadFailed, setPrefsLoadFailed] = useState(false)
-  // Single current row. Click and arrows both write this; the detail object follows it.
+  // Single focused row. Click and arrows move it; only Enter/Space/click commit
+  // it as a selection, and Detail follows the selection, not this index.
   const [active, setActive] = useState(-1)
   const [createOpen, setCreateOpen] = useState(false)
   const [pendingSelectId, setPendingSelectId] = useState<string | null>(null)
@@ -267,7 +268,6 @@ export function ObjectTable({
   const virtualizerRef = useRef<{ scrollToIndex: (index: number) => void }>({ scrollToIndex: () => {} })
   const locateRef = useRef<(id: string) => number>(() => -1)
   const selectTries = useRef(0)
-  const selectMode = useRef<{ extend: boolean; anchor: number } | null>(null)
   useEffect(() => onFlash(setFlashId), [])
 
   useEffect(() => {
@@ -637,7 +637,6 @@ export function ObjectTable({
   const listCount = groupBy ? groupedRows.length : found
   const rowAt = (index: number) => (groupBy ? groupedRows[index] : byIndex.get(index))
   const activeRow = active >= 0 ? rowAt(active) : undefined
-  const activeRowId = activeRow?.id
   virtualizerRef.current = virtualizer
   locateRef.current = (id: string) => {
     if (groupBy) return groupedRows.findIndex((row) => row.id === id)
@@ -656,7 +655,6 @@ export function ObjectTable({
     }
     const index = locateRef.current(pendingSelectId)
     if (index >= 0) {
-      selectMode.current = null
       setActive(index)
       setSelected([pendingSelectId])
       session.setObjectId(pendingSelectId)
@@ -672,7 +670,6 @@ export function ObjectTable({
     }, 500)
     return () => clearTimeout(timer)
   }, [pendingSelectId, knownStamp, selectTick, session, queryClient])
-  const activeStamp = activeRow ? `${activeRow.id}:${activeRow.key}:${activeRow.name}:${activeRow.type}` : ''
   // Rows picked under an old peer filter are out of scope once the source
   // changes. Do not publish them, and drop the local pick so the table cannot
   // keep an invisible selection.
@@ -684,7 +681,6 @@ export function ObjectTable({
     const scopeChanged = peerScopeRef.current !== peerScope
     peerScopeRef.current = peerScope
     if (scopeChanged) {
-      selectMode.current = null
       setSelected([])
       setActive(-1)
     }
@@ -695,17 +691,12 @@ export function ObjectTable({
         ? { id: row.id, key: row.key, name: row.name, type: row.type, version: row.version }
         : { id, key: '', name: '', type: '', version: '' }
     }
-    // One active row (arrow or click). Checkbox ranges stay local; the agent sees the active row.
-    // A table only publishes a row the user picked in this view. The global
-    // detail object may belong to another pane and must not become our selection.
-    const marked = scopeChanged
-      ? []
-      : activeRow
-        ? [{ id: activeRow.id, key: activeRow.key, name: activeRow.name, type: activeRow.type, version: activeRow.version }]
-        : selected.map(described)
+    // Publish the rows the user actually selected. Keyboard focus alone is not
+    // a selection; Detail and peer panes follow `selected`, never `activeRow`.
+    const marked = scopeChanged ? [] : selected.map(described)
     publishTable(view.id, [queryText, filterBy].filter(Boolean).join(' '), sort, filterBy)
     publishSelection(view.id, marked)
-  }, [activeStamp, peerScope, selected, queryText, filterBy, sort, view.id, knownStamp])
+  }, [peerScope, selected, queryText, filterBy, sort, view.id, knownStamp])
 
   const pathList = attributePaths.data?.paths ?? []
   const columnFor = (id: string) => {
@@ -803,7 +794,6 @@ export function ObjectTable({
     if (event.name === 'ui.sort' && args.sort) setSort(String(args.sort))
     if (event.name === 'ui.select' && args.id) {
       const id = String(args.id)
-      selectMode.current = null
       session.setObjectId(id)
       setSelected([id])
       const index = locateRef.current(id)
@@ -888,7 +878,8 @@ export function ObjectTable({
     setSelected(ids.length > 0 ? ids : [row.id])
   }
 
-  // Arrows and clicks share `active`. A virtualized row may mount a frame later; the detail follows once it is known.
+  // Keep the focused row in view. A virtualized row may mount a frame later;
+  // scrolling active is independent of committing a selection.
   useEffect(() => {
     if (active < 0) return
     if (groupBy) {
@@ -899,26 +890,15 @@ export function ObjectTable({
     }
   }, [active, groupBy])
 
-  useEffect(() => {
-    if (!activeRow || activeRow.id !== activeRowId) return
-    const mode = selectMode.current
-    if (mode) {
-      selectMode.current = null
-      applySelection(activeRow, active, mode.anchor, mode.extend)
-      return
-    }
-    if (session.objectId !== activeRow.id) session.setObjectId(activeRow.id)
-  }, [active, activeRowId])
-
   const moveActive = (next: number, extend: boolean) => {
     if (listCount <= 0) return
     const clamped = Math.max(0, Math.min(listCount - 1, next))
-    selectMode.current = { extend, anchor: active }
     setActive(clamped)
     const row = rowAt(clamped)
     if (!row) return
-    selectMode.current = null
-    applySelection(row, clamped, active, extend)
+    // Shift+Arrow is an explicit range extension, so it also commits a selection.
+    // Plain navigation only moves focus and must not touch Detail or peer panes.
+    if (extend) applySelection(row, clamped, active, extend)
   }
 
   const focusGrid = () => {
@@ -980,7 +960,6 @@ export function ObjectTable({
 
   const onRowClick = (index: number, event: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean }) => {
     focusGrid()
-    selectMode.current = null
     setActive(index)
     const row = rowAt(index)
     if (!row) return
@@ -997,6 +976,7 @@ export function ObjectTable({
     const row = rowAt(index)
     if (!row) return
     session.setObjectId(row.id)
+    setSelected((current) => (current.includes(row.id) ? current : [row.id]))
     const context = column ? 'cell' : 'row'
     const hiddenColumns = all
       .filter((id) => hidden.includes(id))
@@ -1090,9 +1070,13 @@ export function ObjectTable({
     const stops = [
       registerCommandRunner('object:open', (target) => {
         if (!target.objectId) return
-        const index = locateRef.current(String(target.objectId))
-        if (index >= 0) setActive(index)
-        session.setObjectId(String(target.objectId))
+        const id = String(target.objectId)
+        const index = locateRef.current(id)
+        if (index >= 0) {
+          setActive(index)
+          setSelected([id])
+        }
+        session.setObjectId(id)
       }),
       registerCommandRunner('object:right', () => {
         dispatchUi('ui.place', { title: 'Detail', zone: 'right' })
@@ -1160,14 +1144,16 @@ export function ObjectTable({
       if (next) setActiveColumn(next)
       return
     }
-    if (!['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End', 'Enter', 'Escape'].includes(event.key)) return
+    if (!['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End', 'Enter', ' ', 'Escape'].includes(event.key)) return
     if (event.key === 'Escape') {
       return
     }
     event.preventDefault()
-    if (event.key === 'Enter') {
+    if (event.key === 'Enter' || event.key === ' ') {
+      // Enter and Space commit the focused row as the selection. Focus alone
+      // (arrows, Home/End, Tab) never selects.
       const row = rowAt(active)
-      if (row) session.setObjectId(row.id)
+      if (row) applySelection(row, active, active, false)
       return
     }
     const next = event.key === 'ArrowDown'
@@ -2171,14 +2157,16 @@ function Row({
   onLinkDrop?: (row: ObjRow, event: ReactDragEvent<HTMLDivElement>) => void
   style?: CSSProperties
 }) {
-  // Background and border share this class. Range picks stay quieter so only the active row looks selected.
-  const tone = linkDrop ? '' : active ? 'selected' : selected.includes(row.id) ? 'picked' : ''
+  // Background and border share this class. Focus and selection are separate:
+  // only selected rows carry the fill; the focused row gets the active-cell mark.
+  const isSelected = selected.includes(row.id)
+  const tone = linkDrop ? '' : active && isSelected ? 'selected' : active ? 'active' : isSelected ? 'picked' : ''
   const className = ['row', tone, flash ? 'flash' : '', linkDrop ? 'link-drop' : ''].filter(Boolean).join(' ')
   return (
     <div
       id={objectRowId(row.id)}
       role="row"
-      aria-selected={active}
+      aria-selected={isSelected}
       data-testid="object-row"
       data-link-drop={linkDrop ? 'true' : undefined}
       data-index={index}

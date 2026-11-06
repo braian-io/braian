@@ -1812,7 +1812,8 @@ canvas.graph.panning { cursor: grabbing; }
 .grid:focus-within .head .cell.column-active .column-header-btn {
   color: var(--accent);
 }
-.grid:focus-visible .row.selected .cell.active-cell {
+.grid:focus-visible .row.selected .cell.active-cell,
+.grid:focus-visible .row.active .cell.active-cell {
   box-shadow: inset 0 0 0 1px var(--accent-hover);
 }
 .grid:focus-visible .head .cell.column-active {
