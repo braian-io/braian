@@ -544,6 +544,21 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: 6px 8px; resize
 .catalog-admin { display: flex; flex-direction: column; gap: 8px; padding: 12px; overflow: auto; }
 .catalog-admin input, .catalog-admin select, .catalog-admin textarea { font: inherit; }
 .catalog-admin ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.catalog-admin form { display: flex; flex-direction: column; gap: 10px; max-width: 680px; }
+.catalog-field { display: flex; flex-direction: column; gap: 4px; }
+.catalog-field > label { color: var(--text-2); font-size: 12px; font-weight: 500; }
+.catalog-field-help { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.4; }
+.catalog-check { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); font-size: 12px; }
+.catalog-list-actions { display: inline-flex; align-items: center; gap: 2px; margin-left: 4px; vertical-align: middle; }
+.catalog-form-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ownership-editor { display: flex; flex-direction: column; gap: 10px; max-width: 760px; }
+.ownership-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(200px, 2fr) auto;
+  align-items: start;
+  gap: 8px;
+}
+.ownership-row .ownership-remove { margin-top: 20px; }
 .merge-row {
   display: grid;
   grid-template-columns: 90px minmax(110px, 1fr) minmax(110px, 1fr) minmax(200px, 2fr) minmax(150px, 1.5fr);

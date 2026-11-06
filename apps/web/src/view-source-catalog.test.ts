@@ -38,4 +38,13 @@ describe('viewSourceLabel with catalog override', () => {
       names,
     )).toBe('All Products')
   })
+
+  it('does not leak an id or another catalog name while names are loading', () => {
+    expect(viewSourceLabel(
+      { type: 'object_table', state: { type_key: 'product', object_type: 't1', catalogOverride: { catalogId: SAP_CATALOG_ID } } },
+      types,
+      { catalogId: MASTER_CATALOG_ID },
+      {},
+    )).toBe('All Products')
+  })
 })
