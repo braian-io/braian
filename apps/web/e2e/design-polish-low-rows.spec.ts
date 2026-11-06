@@ -122,7 +122,7 @@ test.describe('design polish low rows', () => {
 
       const allergen = detail.locator('.choice-chip').first()
       await expect(allergen).toBeVisible()
-      await expect(allergen).not.toHaveClass(/on/)
+      await expect(allergen).not.toHaveClass(/\bon\b/)
       await allergen.hover()
       const hoverPaint = await allergen.evaluate((el) => {
         const style = getComputedStyle(el)

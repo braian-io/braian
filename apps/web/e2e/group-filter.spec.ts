@@ -27,7 +27,7 @@ async function login(page: Page) {
 async function captureFilterChips(page: Page) {
   const table = mainTable(page)
   const filters = table.getByTestId('standard-table-filters')
-  await expect(filters.getByRole('button', { name: 'All', exact: true })).toHaveClass(/on/)
+  await expect(filters.getByRole('button', { name: 'All', exact: true })).toHaveClass(/\bon\b/)
   await filters.screenshot({ path: `${chipShots}/filter-chips-dark.png` })
   await setTheme(page, 'light')
   await filters.screenshot({ path: `${chipShots}/filter-chips-light.png` })
