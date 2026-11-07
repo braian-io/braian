@@ -70,5 +70,11 @@ test('a clear rename becomes a proposal without asking, and Accept changes the n
   expect(Object.values(saved.values?.name ?? {})).toContain(target)
   const identifier = saved.values?.number ?? saved.values?.sku
   if (identifier) expect(identifier).not.toBe(target)
-  await expect(row.locator('[data-column="name"]')).toContainText(target, { timeout: 15_000 })
+
+  // The agent opens as the active tab in this pane, so the products table
+  // unmounts. Show it again and read the renamed object's name cell.
+  await page.locator('.pane-tab[data-view-type="object_table"]').filter({ hasText: /^Products/ }).first().click()
+  const shown = mainTable(page, 'Products').locator(`[id="object-row-${objectId}"]`)
+  await expect(shown).toBeVisible({ timeout: 15_000 })
+  await expect(shown.locator('[data-column="name"]')).toContainText(target, { timeout: 15_000 })
 })
