@@ -82,6 +82,9 @@ export function useReadableUrl(input: {
   const listByIdRef = useRef(input.listObjectsByIdPrefix)
   listByIdRef.current = input.listObjectsByIdPrefix
   const lookupSeq = useRef(0)
+  // True while the lookup for the current pin is in flight. A table that
+  // auto-selects a row before the URL object resolves must not drop the pin.
+  const resolving = useRef(false)
   const hookObject = pinned ?? (input.objectId ? (emitted ?? heldToken) : null)
   // A token change for the same object comes from resolution (rename or a
   // collision suffix), not from a new navigation step.
@@ -141,12 +144,16 @@ export function useReadableUrl(input: {
   })
 
   useEffect(() => {
-    if (!pinned || !input.ready || !catalogs.isSuccess || !contextSettled || !catalogKey) return
+    if (!pinned || !input.ready || !catalogs.isSuccess || !contextSettled || !catalogKey) {
+      resolving.current = false
+      return
+    }
     const token = pinned
     const typeKey = input.objectTypeKey
     const scope = catalogKey
     const seq = lookupSeq.current + 1
     lookupSeq.current = seq
+    resolving.current = true
     let cancel = false
     void lookupObjectToken(
       listRef.current ?? listObjectsWithKey,
@@ -155,7 +162,9 @@ export function useReadableUrl(input: {
       token,
       typeKey,
     ).then((found) => {
-      if (cancel || seq !== lookupSeq.current || !found.definitive) return
+      if (cancel || seq !== lookupSeq.current) return
+      resolving.current = false
+      if (!found.definitive) return
       if (!found.id) {
         failed.current.add(failureKey(scope, typeKey, token))
         setPinned((current) => current === token ? null : current)
@@ -164,6 +173,7 @@ export function useReadableUrl(input: {
       appliedObject.current = found.id
       applyObjectRef.current(found.id)
     }).catch(() => {
+      if (seq === lookupSeq.current) resolving.current = false
       // Leave the pin. A later catalog, type, or token change runs the lookup again.
     })
     return () => { cancel = true }
@@ -175,6 +185,7 @@ export function useReadableUrl(input: {
       appliedObject.current = null
       return
     }
+    if (resolving.current) return
     setPinned(null)
   }, [input.objectId])
 

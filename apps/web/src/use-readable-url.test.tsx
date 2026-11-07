@@ -203,6 +203,73 @@ describe('readable URL sync', () => {
     await waitFor(() => expect(hook.applyObject).toHaveBeenCalledWith(next))
   })
 
+  it('resolves a direct link after workspace/view/type settle and a row auto-selects', async () => {
+    catalogs()
+    let resolveList!: (value: ObjectKeyPage) => void
+    const list = vi.fn(() => new Promise<ObjectKeyPage>((resolve) => {
+      resolveList = resolve
+    }))
+    const navigate = vi.fn()
+    const applyObject = vi.fn()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    )
+    type Props = {
+      ready: boolean
+      workspaceId: string | null
+      viewId: string | null
+      objectTypeKey: string | null
+      objectId: string | null
+    }
+    const search = { ws: 'products', view: 'products', catalog: 'master_catalog', object: key }
+    const hook = renderHook(
+      (props: Props) => useReadableUrl({
+        search,
+        ready: props.ready,
+        catalogsEnabled: true,
+        workspaceId: props.workspaceId,
+        workspaces: [{ id: workspace, label: 'Products' }],
+        viewId: props.viewId,
+        views: [{ id: view, label: 'Products' }],
+        openViewIds: props.viewId ? [props.viewId] : [],
+        catalogId: MASTER_CATALOG_ID,
+        objectTypeKey: props.objectTypeKey,
+        objectId: props.objectId,
+        objectKey: null,
+        objectLoaded: false,
+        navigate,
+        applyWorkspace: () => undefined,
+        applyView: () => undefined,
+        applyCatalog: () => undefined,
+        applyObject,
+        listObjects: list,
+        listObjectsByIdPrefix: async () => page([]),
+      }),
+      {
+        wrapper,
+        initialProps: {
+          ready: false,
+          workspaceId: null as string | null,
+          viewId: null as string | null,
+          objectTypeKey: null as string | null,
+          objectId: null as string | null,
+        },
+      },
+    )
+
+    hook.rerender({ ready: true, workspaceId: null, viewId: null, objectTypeKey: null, objectId: null })
+    hook.rerender({ ready: true, workspaceId: workspace, viewId: null, objectTypeKey: null, objectId: null })
+    hook.rerender({ ready: true, workspaceId: workspace, viewId: view, objectTypeKey: 'product', objectId: null })
+    await waitFor(() => expect(list).toHaveBeenCalledWith('master', key, 'product'))
+
+    const other = '018f0000-0000-7000-8000-0000000000ff'
+    hook.rerender({ ready: true, workspaceId: workspace, viewId: view, objectTypeKey: 'product', objectId: other })
+
+    resolveList(page([{ id: product, key }]))
+    await waitFor(() => expect(applyObject).toHaveBeenCalledWith(product))
+  })
+
   it('replaces history when a rename changes the token for the same object', async () => {
     const list = vi.fn(async () => page([]))
     const hook = setup({
