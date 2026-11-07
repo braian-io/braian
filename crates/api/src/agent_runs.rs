@@ -409,18 +409,24 @@ async fn execute_run(state: &AppState, identity: &Identity, run_id: Uuid) -> Res
             .map_err(|error| error.to_string())?;
         return Ok(());
     }
-    let rename = if model_unavailable() {
-        rename_target(&prompt)
-    } else {
-        None
-    };
-    if model_unavailable()
-        && (prompt.to_lowercase().contains("propose a new name") || rename.is_some())
-    {
-        propose_mock_name(state, identity, run_id, &run.context, rename.as_deref())
+    // An unambiguous catalog rename is resolved here, with or without a model.
+    // The same patch_object proposal path files it. A name that matches no
+    // object is conclusive only when no model is connected; otherwise the
+    // model still sees the sentence (a column or view rename, for example).
+    let ask_model = if let Some(request) = parse_rename(&prompt) {
+        propose_parsed_rename(state, identity, run_id, &run.context, &request)
+            .await
+            .map_err(|problem| problem.detail)?
+            == RenameHandled::AskModel
+    } else if model_unavailable() && prompt.to_lowercase().contains("propose a new name") {
+        propose_mock_name(state, identity, run_id, &run.context, None)
             .await
             .map_err(|problem| problem.detail)?;
+        false
     } else {
+        true
+    };
+    if ask_model {
         let messages = model_messages(&stored);
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let persist_state = state.clone();
@@ -549,38 +555,386 @@ async fn decision_pending(state: &AppState, run_id: Uuid) -> Result<bool, String
 }
 
 // english-check: allow
+/// One explicit catalog-object rename. `subject` is empty when the person
+/// means the selected object. `identifier` is set only for a command that
+/// renames the key, id, or number. `type_word` is the type the person named,
+/// resolved against the model later. A display-name request leaves the key alone.
+struct ParsedRename {
+    subject: String,
+    value: String,
+    identifier: bool,
+    type_word: Option<String>,
+}
+
 /// The new name in a direct rename, such as "byt namn ... till Test 1" or
-/// "rename ... to Test 1". Used by the offline mock, which must act like a
-/// clear task: propose the change instead of asking for confirmation.
+/// "rename ... to Test 1". Only an unambiguous command returns a value.
+#[cfg(test)]
 fn rename_target(prompt: &str) -> Option<String> {
-    let lower = prompt.to_lowercase();
-    let asks = lower.contains("byt namn")
-        || lower.contains("rename")
-        || lower.contains("change the name")
-        || lower.contains("change name")
-        || lower.contains("set the name");
-    if !asks {
+    parse_rename(prompt).map(|parsed| parsed.value)
+}
+
+/// `(prefix, identifier, value_only)`. Longest prefix wins. `value_only`
+/// means the prefix already consumed the marker, so the rest is the new name
+/// of the selected object.
+fn command_prefixes() -> &'static [(&'static str, bool, bool)] {
+    &[
+        ("rename the number of ", true, false),
+        ("rename the key of ", true, false),
+        ("rename the id of ", true, false),
+        ("byt namn på ", false, false),
+        ("ändra namnet på ", false, false),
+        ("ändra namnet till ", false, true),
+        ("byt namn till ", false, true),
+        ("change the name of ", false, false),
+        ("set the name of ", false, false),
+        ("change the name to ", false, true),
+        ("set the name to ", false, true),
+        ("byt nyckeln på ", true, false),
+        ("byt nyckel på ", true, false),
+        ("ändra nyckeln på ", true, false),
+        ("ändra nyckel på ", true, false),
+        ("byt numret på ", true, false),
+        ("byt nummer på ", true, false),
+        ("ändra numret på ", true, false),
+        ("ändra nummer på ", true, false),
+        ("byt id på ", true, false),
+        ("ändra id på ", true, false),
+        ("rename ", false, false),
+    ]
+}
+
+fn parse_rename(prompt: &str) -> Option<ParsedRename> {
+    let text = normalize_command(prompt);
+    if text.is_empty() || !is_bare_command(&text) {
         return None;
     }
-    for marker in [" till ", " to "] {
-        let Some(at) = lower.rfind(marker) else {
+    let (identifier, value_only, rest) = strip_command_prefix(&text)?;
+    let (subject_raw, value) = if value_only {
+        let value = trim_name(rest);
+        if value.is_empty() {
+            return None;
+        }
+        (String::new(), value)
+    } else {
+        split_rename_marker(rest)?
+    };
+    if subject_is_schema(&subject_raw) {
+        return None;
+    }
+    if subject_is_deictic(&subject_raw) {
+        return Some(ParsedRename {
+            subject: String::new(),
+            value,
+            identifier,
+            type_word: None,
+        });
+    }
+    let (type_word, subject) = peel_type_word(&subject_raw);
+    if subject.is_empty() {
+        return None;
+    }
+    Some(ParsedRename {
+        subject,
+        value,
+        identifier,
+        type_word,
+    })
+}
+
+fn normalize_command(prompt: &str) -> String {
+    let trimmed = prompt.trim().trim_end_matches(['.', '!']);
+    let mut out = String::new();
+    let mut pending_space = false;
+    for character in trimmed.chars() {
+        if character.is_whitespace() {
+            pending_space = !out.is_empty();
             continue;
-        };
-        let target = prompt[at + marker.len()..].trim();
-        let target = target
-            .trim_matches(|character: char| {
-                character.is_whitespace()
-                    || matches!(
-                        character,
-                        '"' | '\'' | '“' | '”' | '‘' | '’' | '.' | '!' | '?'
-                    )
-            })
-            .trim();
-        if !target.is_empty() {
-            return Some(target.to_owned());
+        }
+        if pending_space {
+            out.push(' ');
+            pending_space = false;
+        }
+        out.push(character);
+    }
+    out
+}
+
+/// Questions, negation, and a second clause are not a rename command.
+fn is_bare_command(text: &str) -> bool {
+    if text.contains('?') {
+        return false;
+    }
+    let lower = text.to_lowercase();
+    let outside = strip_quoted_spans(&lower);
+    if outside.split_whitespace().next().is_some_and(|word| {
+        matches!(
+            word.trim_matches(|character: char| !character.is_alphabetic()),
+            "how"
+                | "what"
+                | "why"
+                | "when"
+                | "where"
+                | "who"
+                | "which"
+                | "can"
+                | "could"
+                | "should"
+                | "would"
+                | "hur"
+                | "vad"
+                | "varför"
+                | "vilken"
+                | "vilket"
+                | "kan"
+        )
+    }) {
+        return false;
+    }
+    if outside.contains("don't") || outside.contains("do not") || outside.contains("dont") {
+        return false;
+    }
+    if outside.split_whitespace().any(|word| {
+        matches!(
+            word.trim_matches(|character: char| !character.is_alphabetic()),
+            "never" | "inte" | "aldrig" | "not"
+        )
+    }) {
+        return false;
+    }
+    ![" and ", " och ", " then ", " sedan ", " also ", " samt "]
+        .iter()
+        .any(|marker| outside.contains(marker))
+}
+
+fn strip_quoted_spans(text: &str) -> String {
+    let mut out = String::new();
+    let mut quoted = false;
+    let mut quote = '"';
+    for character in text.chars() {
+        if quoted {
+            if character == quote {
+                quoted = false;
+            }
+            continue;
+        }
+        if character == '"' || character == '\'' {
+            quoted = true;
+            quote = character;
+            out.push(' ');
+            continue;
+        }
+        out.push(character);
+    }
+    out
+}
+
+fn strip_command_prefix(text: &str) -> Option<(bool, bool, &str)> {
+    let mut prefixes = command_prefixes().to_vec();
+    prefixes.sort_by_key(|(prefix, _, _)| std::cmp::Reverse(prefix.len()));
+    for (prefix, identifier, value_only) in prefixes {
+        if let Some(rest) = strip_prefix_ci(text, prefix) {
+            return Some((identifier, value_only, rest));
         }
     }
     None
+}
+
+fn split_rename_marker(rest: &str) -> Option<(String, String)> {
+    if let Some(split) = split_quoted_value(rest) {
+        return Some(split);
+    }
+    let lower = rest.to_lowercase();
+    let to_count = marker_count(&lower, " to ");
+    let till_count = marker_count(&lower, " till ");
+    if to_count + till_count != 1 {
+        return None;
+    }
+    let marker = if to_count == 1 { " to " } else { " till " };
+    let at = lower.find(marker)?;
+    let subject = trim_name(&rest[..at]);
+    let value = trim_name(&rest[at + marker.len()..]);
+    if subject.is_empty() || value.is_empty() {
+        return None;
+    }
+    Some((subject, value))
+}
+
+fn split_quoted_value(rest: &str) -> Option<(String, String)> {
+    let lower = rest.to_lowercase();
+    for marker in [" to \"", " to '", " till \"", " till '"] {
+        let Some(at) = lower.find(marker) else {
+            continue;
+        };
+        let quote = marker.chars().last()?;
+        let subject = trim_name(&rest[..at]);
+        let after = &rest[at + marker.len()..];
+        let end = after.find(quote)?;
+        let value = after[..end].trim().to_owned();
+        let tail = trim_name(&after[end + quote.len_utf8()..]);
+        if subject.is_empty() || value.is_empty() || !tail.is_empty() {
+            return None;
+        }
+        return Some((subject, value));
+    }
+    None
+}
+
+fn marker_count(text: &str, marker: &str) -> usize {
+    text.match_indices(marker).count()
+}
+
+fn subject_is_schema(subject: &str) -> bool {
+    const WORDS: &[&str] = &[
+        "column",
+        "columns",
+        "kolumn",
+        "kolumnen",
+        "kolumner",
+        "attribute",
+        "attributes",
+        "attribut",
+        "attributet",
+        "view",
+        "views",
+        "vy",
+        "vyn",
+        "vyer",
+        "type",
+        "types",
+        "typ",
+        "typen",
+        "typer",
+        "group",
+        "groups",
+        "grupp",
+        "gruppen",
+        "grupper",
+        "class",
+        "classes",
+        "klass",
+        "klassen",
+        "klasser",
+        "structure",
+        "structures",
+        "struktur",
+        "strukturen",
+        "field",
+        "fields",
+        "fält",
+        "fältet",
+        "workspace",
+        "tab",
+        "tabs",
+        "flik",
+        "fliken",
+    ];
+    let mut words = subject.split_whitespace();
+    let Some(first) = words.next() else {
+        return false;
+    };
+    let word = if word_eq(first, "the") || word_eq(first, "den") || word_eq(first, "det") {
+        words.next().unwrap_or(first)
+    } else {
+        first
+    };
+    WORDS.iter().any(|known| word_eq(word, known))
+}
+
+/// "the product Cheddar" keeps Cheddar and remembers product. A word that is
+/// not a generic kind stays in the name until the model says it is a type.
+fn peel_type_word(subject: &str) -> (Option<String>, String) {
+    const GENERICS: &[&str] = &[
+        "product",
+        "products",
+        "article",
+        "articles",
+        "item",
+        "items",
+        "object",
+        "objects",
+        "produkt",
+        "produkten",
+        "artikeln",
+        "artikel",
+        "objektet",
+        "objekt",
+    ];
+    let words: Vec<&str> = subject.split_whitespace().collect();
+    let (word, rest_at) = if words.len() >= 3
+        && (word_eq(words[0], "the") || word_eq(words[0], "den") || word_eq(words[0], "det"))
+    {
+        (words[1], 2)
+    } else if words.len() >= 2 {
+        (words[0], 1)
+    } else {
+        return (None, subject.to_owned());
+    };
+    if !GENERICS.iter().any(|generic| word_eq(word, generic)) {
+        return (None, subject.to_owned());
+    }
+    (Some(word.to_owned()), words[rest_at..].join(" "))
+}
+
+fn word_eq(left: &str, right: &str) -> bool {
+    left.trim_matches(|character: char| !character.is_alphanumeric())
+        .eq_ignore_ascii_case(right)
+}
+
+fn subject_is_deictic(subject: &str) -> bool {
+    const PHRASES: &[&str] = &[
+        "",
+        "this",
+        "it",
+        "this product",
+        "this object",
+        "this item",
+        "this article",
+        "the product",
+        "the object",
+        "the item",
+        "the article",
+        "selected",
+        "the selected",
+        "the selected product",
+        "selected product",
+        "den här",
+        "den här produkten",
+        "det här",
+        "det här objektet",
+        "denna",
+        "denna produkt",
+        "produkten",
+        "markerade",
+        "den markerade",
+        "den markerade produkten",
+    ];
+    let folded = subject.split_whitespace().collect::<Vec<_>>().join(" ");
+    PHRASES
+        .iter()
+        .any(|phrase| folded.eq_ignore_ascii_case(phrase) || folded == *phrase)
+}
+
+fn strip_prefix_ci<'a>(text: &'a str, prefix: &str) -> Option<&'a str> {
+    let mut rest = text.chars();
+    for expected in prefix.chars() {
+        let next = rest.next()?;
+        if next.to_lowercase().to_string() != expected.to_lowercase().to_string() {
+            return None;
+        }
+    }
+    Some(rest.as_str().trim())
+}
+
+fn trim_name(text: &str) -> String {
+    text.trim_matches(|character: char| {
+        character.is_whitespace()
+            || matches!(
+                character,
+                '"' | '\'' | '“' | '”' | '‘' | '’' | '.' | '!' | '?'
+            )
+    })
+    .trim()
+    .to_owned()
 }
 // english-check: end
 
@@ -618,39 +972,496 @@ async fn propose_mock_name(
         args["base_version"] = json!(version);
     }
     let result = run_operation(state, identity, "patch_object", &args, true).await?;
-    if let Some(proposal_id) = result
+    let Some(proposal_id) = result
         .get("proposal_id")
         .and_then(Value::as_str)
         .and_then(|text| Uuid::parse_str(text).ok())
-    {
-        state
-            .store
-            .attach_proposal_to_run(proposal_id, run_id)
-            .await
-            .map_err(store_status)?;
-        state
-            .store
-            .append_agent_message(
-                run_id,
-                "proposal",
-                &json!({ "proposal_id": proposal_id, "text": "Proposed a new name." }),
-            )
-            .await
-            .map_err(store_status)?;
+    else {
+        return say(
+            state,
+            run_id,
+            "I could not file the proposal. I did not change the product.",
+        )
+        .await;
+    };
+    state
+        .store
+        .attach_proposal_to_run(proposal_id, run_id)
+        .await
+        .map_err(store_status)?;
+    state
+        .store
+        .append_agent_message(
+            run_id,
+            "proposal",
+            &json!({ "proposal_id": proposal_id, "text": "Proposed a new name." }),
+        )
+        .await
+        .map_err(store_status)?;
+    say(
+        state,
+        run_id,
+        "I proposed a new name. Approve or reject it here. I will not apply it myself.",
+    )
+    .await
+}
+
+/// Whether the deterministic rename finished the turn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RenameHandled {
+    Done,
+    /// The sentence parsed as a rename but named no stored object. The model
+    /// may still read it as a column, view, group, or other schema change.
+    AskModel,
+}
+
+/// A missing named object is reported here only when no model is connected.
+/// Ambiguous matches and a missing selection stay here either way.
+fn unmatched_name_reaches_the_model(model_available: bool, named_subject: bool) -> bool {
+    model_available && named_subject
+}
+
+/// Finds the product the person named and files one display-name proposal.
+/// An explicit key, id, or number request is the only path that patches the
+/// identifier. Everything else leaves the key alone.
+async fn propose_parsed_rename(
+    state: &AppState,
+    identity: &Identity,
+    run_id: Uuid,
+    context: &Value,
+    request: &ParsedRename,
+) -> Result<RenameHandled, Problem> {
+    if !identity.role.allows(Role::Editor) {
+        say(
+            state,
+            run_id,
+            "You have read-only access, so I did not file a proposal.",
+        )
+        .await?;
+        return Ok(RenameHandled::Done);
     }
+    let cached = state.models.get(&state.store).await?;
+    let resolved = resolve_rename_target(state, &cached, context, request).await?;
+    let target = match resolved {
+        RenameTarget::One(target) => target,
+        RenameTarget::Missing { named, type_word } => {
+            if unmatched_name_reaches_the_model(!model_unavailable(), named) {
+                return Ok(RenameHandled::AskModel);
+            }
+            let text = if named {
+                match type_word {
+                    Some(word) => format!(
+                        "I could not find a {word} named {}. I did not file a proposal.",
+                        request.subject
+                    ),
+                    None => format!(
+                        "I could not find an object named {}. I did not file a proposal.",
+                        request.subject
+                    ),
+                }
+            } else {
+                "Select one object, then ask me to rename it. I did not file a proposal.".to_owned()
+            };
+            say(state, run_id, &text).await?;
+            return Ok(RenameHandled::Done);
+        }
+        RenameTarget::Many(labels) => {
+            let listed = if labels.is_empty() {
+                request.subject.clone()
+            } else {
+                labels.join(", ")
+            };
+            say(
+                state,
+                run_id,
+                &format!(
+                    "Several objects match {}. I did not file a proposal. Name the type and the number, or select one: {listed}.",
+                    request.subject
+                ),
+            )
+            .await?;
+            return Ok(RenameHandled::Done);
+        }
+    };
+    let (values, told) = if request.identifier {
+        let Some(field) = key_attribute_key(&cached, target.type_id) else {
+            say(
+                state,
+                run_id,
+                "I could not file a proposal because this object has no identifier field.",
+            )
+            .await?;
+            return Ok(RenameHandled::Done);
+        };
+        (
+            json!({ field: request.value }),
+            format!(
+                "I proposed a new identifier for {}. Approve or reject it here. I will not apply it myself.",
+                target.key
+            ),
+        )
+    } else {
+        let language = name_language(&cached, context, &target.name);
+        (
+            json!({ "name": { language: request.value } }),
+            format!(
+                "I proposed a new name for {}. Approve or reject it here. I will not apply it myself.",
+                target.key
+            ),
+        )
+    };
+    let args = json!({
+        "id": target.id,
+        "type": target.type_key,
+        "values": values,
+        "base_version": target.version,
+    });
+    let result = run_operation(state, identity, "patch_object", &args, true).await;
+    let result = match result {
+        Ok(result) => result,
+        Err(problem) => {
+            say(
+                state,
+                run_id,
+                &format!(
+                    "I could not file the proposal. {} I did not change the product.",
+                    problem.detail
+                ),
+            )
+            .await?;
+            return Ok(RenameHandled::Done);
+        }
+    };
+    let Some(proposal_id) = result
+        .get("proposal_id")
+        .and_then(Value::as_str)
+        .and_then(|text| Uuid::parse_str(text).ok())
+    else {
+        say(
+            state,
+            run_id,
+            "I could not file the proposal. I did not change the product.",
+        )
+        .await?;
+        return Ok(RenameHandled::Done);
+    };
+    state
+        .store
+        .attach_proposal_to_run(proposal_id, run_id)
+        .await
+        .map_err(store_status)?;
+    state
+        .store
+        .append_agent_message(
+            run_id,
+            "proposal",
+            &json!({ "proposal_id": proposal_id, "text": "Proposed a new name." }),
+        )
+        .await
+        .map_err(store_status)?;
+    say(state, run_id, &told).await?;
+    Ok(RenameHandled::Done)
+}
+
+async fn say(state: &AppState, run_id: Uuid, text: &str) -> Result<(), Problem> {
     state
         .store
         .append_agent_message(
             run_id,
             "assistant",
-            &json!({
-                "text": "I proposed a new name. Approve or reject it here. I will not apply it myself.",
-                "available": true
-            }),
+            &json!({ "text": text, "available": true }),
         )
         .await
         .map_err(store_status)?;
     Ok(())
+}
+
+struct ResolvedObject {
+    id: Uuid,
+    key: String,
+    type_id: braian_model::TypeId,
+    type_key: String,
+    version: i64,
+    name: Value,
+}
+
+enum RenameTarget {
+    One(ResolvedObject),
+    Many(Vec<String>),
+    Missing {
+        named: bool,
+        type_word: Option<String>,
+    },
+}
+
+async fn resolve_rename_target(
+    state: &AppState,
+    cached: &crate::state::CachedModel,
+    context: &Value,
+    request: &ParsedRename,
+) -> Result<RenameTarget, Problem> {
+    if request.subject.is_empty() {
+        let items = context
+            .get("selection")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let ids: Vec<Uuid> = items
+            .iter()
+            .filter_map(|item| {
+                item.get("id")
+                    .and_then(Value::as_str)
+                    .and_then(|text| Uuid::parse_str(text).ok())
+            })
+            .collect();
+        if ids.len() > 1 {
+            let labels = items
+                .iter()
+                .map(|item| {
+                    let key = item.get("key").and_then(Value::as_str).unwrap_or("");
+                    let name = item.get("name").and_then(Value::as_str).unwrap_or("");
+                    let kind = item.get("type").and_then(Value::as_str).unwrap_or("");
+                    let label = match (key.is_empty(), name.is_empty()) {
+                        (false, false) => format!("{key} ({name})"),
+                        (false, true) => key.to_owned(),
+                        (true, false) => name.to_owned(),
+                        (true, true) => item
+                            .get("id")
+                            .and_then(Value::as_str)
+                            .unwrap_or("object")
+                            .to_owned(),
+                    };
+                    if kind.is_empty() {
+                        label
+                    } else {
+                        format!("{label} [{kind}]")
+                    }
+                })
+                .take(8)
+                .collect();
+            return Ok(RenameTarget::Many(labels));
+        }
+        let Some(id) = ids.first().copied() else {
+            return Ok(RenameTarget::Missing {
+                named: false,
+                type_word: None,
+            });
+        };
+        return load_rename_target(state, cached, id)
+            .await
+            .map(|target| match target {
+                Some(target) => RenameTarget::One(target),
+                None => RenameTarget::Missing {
+                    named: false,
+                    type_word: None,
+                },
+            });
+    }
+    let (type_ids, subject, type_word) = lookup_scope(&cached.defs, request);
+    let ids = name_attribute_ids(&cached.defs);
+    let rows = state
+        .store
+        .objects_matching_label(&subject, &ids, type_ids.as_deref(), 9)
+        .await
+        .map_err(store_status)?;
+    if rows.is_empty() {
+        return Ok(RenameTarget::Missing {
+            named: true,
+            type_word,
+        });
+    }
+    let type_count = rows
+        .iter()
+        .map(|(_, _, type_id, _)| *type_id)
+        .collect::<std::collections::BTreeSet<_>>()
+        .len();
+    if rows.len() > 1 || type_count > 1 {
+        let labels = rows
+            .iter()
+            .take(8)
+            .map(|(_, key, type_id, _)| format!("{key} ({})", type_label(&cached.defs, *type_id)))
+            .collect();
+        return Ok(RenameTarget::Many(labels));
+    }
+    let id = rows[0].0;
+    load_rename_target(state, cached, id)
+        .await
+        .map(|target| match target {
+            Some(target) => RenameTarget::One(target),
+            None => RenameTarget::Missing {
+                named: true,
+                type_word,
+            },
+        })
+}
+
+/// A named type limits the lookup. A generic word such as "product" limits it
+/// only when a type actually has that key or label. Otherwise every matching
+/// type is reported instead of picking one.
+fn lookup_scope(
+    defs: &braian_model::DefinitionSet,
+    request: &ParsedRename,
+) -> (Option<Vec<Uuid>>, String, Option<String>) {
+    if let Some(word) = &request.type_word {
+        let matched = types_named(defs, word);
+        if matched.is_empty() {
+            return (None, request.subject.clone(), None);
+        }
+        return (Some(matched), request.subject.clone(), Some(word.clone()));
+    }
+    if let Some((word, rest, matched)) = peel_defined_type(defs, &request.subject) {
+        return (Some(matched), rest, Some(word));
+    }
+    (None, request.subject.clone(), None)
+}
+
+fn peel_defined_type(
+    defs: &braian_model::DefinitionSet,
+    subject: &str,
+) -> Option<(String, String, Vec<Uuid>)> {
+    let words: Vec<&str> = subject.split_whitespace().collect();
+    let (word, rest_at) = if words.len() >= 3 && word_eq(words[0], "the") {
+        (words[1], 2)
+    } else if words.len() >= 2 {
+        (words[0], 1)
+    } else {
+        return None;
+    };
+    let matched = types_named(defs, word);
+    if matched.is_empty() {
+        return None;
+    }
+    let rest = words[rest_at..].join(" ");
+    if rest.is_empty() {
+        return None;
+    }
+    Some((word.to_owned(), rest, matched))
+}
+
+fn types_named(defs: &braian_model::DefinitionSet, word: &str) -> Vec<Uuid> {
+    defs.types
+        .iter()
+        .filter(|object_type| {
+            word_eq(&object_type.key, word)
+                || object_type
+                    .labels
+                    .values()
+                    .any(|label| word_eq(label, word))
+                || object_type
+                    .singular
+                    .values()
+                    .any(|label| word_eq(label, word))
+        })
+        .map(|object_type| object_type.id.as_uuid())
+        .collect()
+}
+
+fn type_label(defs: &braian_model::DefinitionSet, type_id: Uuid) -> String {
+    defs.types
+        .iter()
+        .find(|object_type| object_type.id.as_uuid() == type_id)
+        .map(|object_type| object_type.key.clone())
+        .unwrap_or_else(|| "object".to_owned())
+}
+
+fn name_attribute_ids(defs: &braian_model::DefinitionSet) -> Vec<String> {
+    let mut ids = Vec::new();
+    let standard = braian_model::name_id();
+    if defs
+        .attributes
+        .iter()
+        .any(|attribute| attribute.id == standard)
+    {
+        ids.push(standard.as_uuid().to_string());
+    }
+    for attribute in &defs.attributes {
+        if attribute.key == "name" {
+            let text = attribute.id.as_uuid().to_string();
+            if !ids.contains(&text) {
+                ids.push(text);
+            }
+        }
+    }
+    ids
+}
+
+async fn load_rename_target(
+    state: &AppState,
+    cached: &crate::state::CachedModel,
+    id: Uuid,
+) -> Result<Option<ResolvedObject>, Problem> {
+    let Some(stored) = state
+        .store
+        .get_object(ObjectId::from_uuid(id))
+        .await
+        .map_err(store_status)?
+    else {
+        return Ok(None);
+    };
+    if stored.deleted_at.is_some() {
+        return Ok(None);
+    }
+    let name_id = cached
+        .model
+        .attribute_by_key("name")
+        .map(|attribute| attribute.id)
+        .unwrap_or_else(braian_model::name_id);
+    let name = stored
+        .object
+        .values
+        .get(&name_id)
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    Ok(Some(ResolvedObject {
+        id,
+        key: stored.key,
+        type_id: stored.object.type_id,
+        type_key: crate::wire::type_key(&cached.defs, stored.object.type_id),
+        version: i64::try_from(stored.version).unwrap_or(i64::MAX),
+        name,
+    }))
+}
+
+fn key_attribute_key(
+    cached: &crate::state::CachedModel,
+    type_id: braian_model::TypeId,
+) -> Option<String> {
+    let id = cached.model.key_attribute(type_id)?;
+    cached
+        .model
+        .attribute(id)
+        .map(|attribute| attribute.key.clone())
+}
+
+fn name_language(cached: &crate::state::CachedModel, context: &Value, current: &Value) -> String {
+    let known: Vec<String> = cached
+        .defs
+        .languages
+        .iter()
+        .map(|tag| tag.as_str().to_owned())
+        .collect();
+    let requested = context
+        .get("language")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or("");
+    if known.iter().any(|tag| tag == requested) {
+        return requested.to_owned();
+    }
+    if let Some(map) = current.as_object() {
+        for tag in ["en", "sv", "de"] {
+            if map.contains_key(tag) && known.iter().any(|known| known == tag) {
+                return tag.to_owned();
+            }
+        }
+        if let Some(tag) = map
+            .keys()
+            .find(|tag| known.iter().any(|known| known == *tag))
+        {
+            return tag.clone();
+        }
+    }
+    known.first().cloned().unwrap_or_else(|| "en".to_owned())
 }
 
 async fn persist_event(
@@ -1017,7 +1828,10 @@ fn display_value(value: &Value) -> String {
 
 #[cfg(test)]
 mod session_tests {
-    use super::{rename_target, session_choice, session_document};
+    use super::{
+        parse_rename, rename_target, session_choice, session_document,
+        unmatched_name_reaches_the_model,
+    };
     use serde_json::json;
 
     #[test]
@@ -1036,6 +1850,93 @@ mod session_tests {
             Some("Test 3")
         );
         assert_eq!(rename_target("how many products are there"), None);
+    }
+
+    #[test]
+    fn a_named_product_is_the_subject_and_a_key_request_is_separate() {
+        let named = parse_rename("rename Cheddar to Blue").expect("rename");
+        assert_eq!(named.subject, "Cheddar");
+        assert_eq!(named.value, "Blue");
+        assert!(!named.identifier);
+
+        let typed = parse_rename("rename the product Mature cheddar to Blue").expect("typed");
+        assert_eq!(typed.subject, "Mature cheddar");
+        assert_eq!(typed.type_word.as_deref(), Some("product"));
+        assert!(!typed.identifier);
+
+        let quoted = parse_rename("rename Cheddar to \"Back to Basics\"").expect("quoted");
+        assert_eq!(quoted.subject, "Cheddar");
+        assert_eq!(quoted.value, "Back to Basics");
+
+        let key = parse_rename("rename the key of Cheddar to SKU-2").expect("key");
+        assert_eq!(key.subject, "Cheddar");
+        assert_eq!(key.value, "SKU-2");
+        assert!(key.identifier);
+        let selected_key =
+            parse_rename("rename the key of this product to SKU-2").expect("selected key");
+        assert_eq!(selected_key.subject, "");
+        assert!(selected_key.identifier);
+
+        // english-check: allow
+        let selected = parse_rename("byt namn på den här produkten till Test 1").expect("selected");
+        assert_eq!(selected.subject, "");
+        assert_eq!(selected.value, "Test 1");
+        assert!(!selected.identifier);
+        let swedish = parse_rename("byt namn på Cheddar till Blå").expect("swedish");
+        assert_eq!(swedish.subject, "Cheddar");
+        assert_eq!(swedish.value, "Blå");
+        assert!(!swedish.identifier);
+        let swedish_key = parse_rename("byt nyckel på Cheddar till SKU-2").expect("swedish key");
+        assert_eq!(swedish_key.subject, "Cheddar");
+        assert!(swedish_key.identifier);
+        let swedish_number = parse_rename("ändra numret på Cheddar till SKU-2").expect("number");
+        assert!(swedish_number.identifier);
+        assert_eq!(swedish_number.subject, "Cheddar");
+        assert!(parse_rename("byt namn på gruppen Ost till Mejeri").is_none());
+        assert!(parse_rename("hur ändrar jag numret på Cheddar till SKU-2").is_none());
+        // english-check: end
+
+        assert!(parse_rename("how many products are there").is_none());
+        assert!(parse_rename("how do I rename Cheddar to Blue?").is_none());
+        assert!(parse_rename("don't rename Cheddar to Blue").is_none());
+        assert!(parse_rename("do not rename Cheddar to Blue").is_none());
+        assert!(parse_rename("rename Cheddar to Blue and set price to 5").is_none());
+        assert!(parse_rename("rename Cheddar to Back to Basics").is_none());
+        assert!(parse_rename("rename the column Price to Cost").is_none());
+        assert!(parse_rename("rename the attribute Color to Colour").is_none());
+        assert!(parse_rename("rename the view Products to Items").is_none());
+        assert!(parse_rename("rename the type item to product").is_none());
+        assert!(parse_rename("change the number of Cheddar to 5").is_none());
+    }
+
+    #[test]
+    fn a_parsed_name_with_no_object_reaches_the_model_when_one_is_connected() {
+        // These are not caught as schema commands (the kind word is not first),
+        // so lookup runs. A miss must not end the turn when a model can still
+        // read them as a column, view, or group rename.
+        // english-check: allow
+        let prompts = [
+            "rename Price to Cost",
+            "rename the Price column to Cost",
+            "byt namn på Ost-gruppen till Mejeri",
+            "rename the Products view to Items",
+        ];
+        // english-check: end
+        for prompt in prompts {
+            let parsed = parse_rename(prompt).unwrap_or_else(|| panic!("parsed: {prompt}"));
+            let named = !parsed.subject.is_empty();
+            assert!(named, "{prompt}");
+            assert!(
+                unmatched_name_reaches_the_model(true, named),
+                "connected model must see an unmatched name: {prompt}"
+            );
+            assert!(
+                !unmatched_name_reaches_the_model(false, named),
+                "without a model the miss stays a refusal: {prompt}"
+            );
+        }
+        assert!(!unmatched_name_reaches_the_model(true, false));
+        assert!(!unmatched_name_reaches_the_model(false, false));
     }
 
     #[test]

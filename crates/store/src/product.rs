@@ -2061,6 +2061,69 @@ impl Store {
             .collect())
     }
 
+    /// Active objects whose key or named attribute equals `label`.
+    ///
+    /// Matching is exact and case-insensitive. A language map matches when any
+    /// language equals `label`. `attribute_ids` are the attribute uuid keys
+    /// stored in `object_values`. `type_ids` limits the match to those types;
+    /// `None` keeps every non-link type. Link rows are left out. At most `limit` rows.
+    pub async fn objects_matching_label(
+        &self,
+        label: &str,
+        attribute_ids: &[String],
+        type_ids: Option<&[Uuid]>,
+        limit: i64,
+    ) -> Result<Vec<(Uuid, String, Uuid, i64)>, Error> {
+        let client = self.checkout_interactive().await?;
+        let ids: Vec<String> = attribute_ids.to_vec();
+        let filter_types = type_ids.is_some();
+        let types: Vec<Uuid> = type_ids.unwrap_or(&[]).to_vec();
+        let rows = client
+            .query(
+                "SELECT DISTINCT o.id, o.key, o.type_id, o.version
+                 FROM objects o
+                 JOIN object_values v ON v.object_id = o.id AND v.is_latest
+                 WHERE o.catalog_id = braian_catalog()
+                   AND o.deleted_at IS NULL
+                   AND o.key IS NOT NULL
+                   AND NOT EXISTS (
+                     SELECT 1 FROM links
+                     WHERE links.object_id = o.id AND links.deleted_at IS NULL
+                   )
+                   AND ($4::bool IS FALSE OR o.type_id = ANY($5::uuid[]))
+                   AND (
+                     lower(btrim(o.key)) = lower(btrim($1))
+                     OR EXISTS (
+                       SELECT 1
+                       FROM jsonb_each(v.\"values\") AS entry(key, value)
+                       WHERE entry.key = ANY($2::text[])
+                         AND (
+                           (
+                             jsonb_typeof(entry.value) = 'string'
+                             AND lower(btrim(entry.value #>> '{}')) = lower(btrim($1))
+                           )
+                           OR (
+                             jsonb_typeof(entry.value) = 'object'
+                             AND EXISTS (
+                               SELECT 1
+                               FROM jsonb_each_text(entry.value) AS lang(key, value)
+                               WHERE lower(btrim(lang.value)) = lower(btrim($1))
+                             )
+                           )
+                         )
+                     )
+                   )
+                 ORDER BY o.key
+                 LIMIT $3",
+                &[&label, &ids, &limit, &filter_types, &types],
+            )
+            .await?;
+        Ok(rows
+            .iter()
+            .map(|row| (row.get(0), row.get(1), row.get(2), row.get::<_, i64>(3)))
+            .collect())
+    }
+
     /// One page of active object heads, filtered before `limit`.
     ///
     /// `key_contains` is a literal substring, matched case-insensitively.
