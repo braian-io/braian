@@ -9,14 +9,17 @@
  *
  * Products (`object`) use the stored object key (SKU). A literal `~` in a key
  * is escaped as `~~`, so a trailing `~` plus hex can only be a collision
- * suffix. Keyless rows (for example link objects) get `~` plus their short id.
- * The query serializer percent-encodes the token. The key is not slugified.
+ * suffix. Keyless rows (for example link objects) get `~` plus the shortest
+ * unique hex suffix of their id in the catalog-wide keyless scope. The query
+ * serializer percent-encodes the token. The key is not slugified.
  *
  * The current name or key is the only address. A rename changes the token.
  * A previous token is not accepted. When several rows share a slug or a key
  * in the same scope, the lowest id keeps the bare token. Each other row adds
  * `~` plus the shortest unique hex suffix of its id (8, 12, 16, then 32).
- * That suffix is only part of the current token, not a permanent alias.
+ * Keyless rows always carry a suffix, extended the same way when peers share
+ * the short tail. That suffix is only part of the current token, not a
+ * permanent alias.
  */
 
 export type NamedId = { id: string; label: string }
@@ -24,14 +27,23 @@ export type KeyedId = { id: string; key: string | null }
 
 const SHORT_LENGTHS = [8, 12, 16, 32] as const
 const SLUG_CHAR = /[\p{L}\p{N}\p{M}]/u
+const SLUG_WORD = /[\p{L}\p{N}]/u
 
 export function slugify(text: string): string {
   let slug = ''
+  let word = false
   const normalized = text.normalize('NFKC').toLowerCase().normalize('NFKC')
   for (const ch of normalized) {
-    slug += SLUG_CHAR.test(ch) ? ch : '_'
+    if (SLUG_CHAR.test(ch)) {
+      slug += ch
+      if (SLUG_WORD.test(ch)) word = true
+    } else {
+      slug += '_'
+    }
   }
-  return slug.replace(/^_+|_+$/g, '')
+  // A mark-only name (for example a lone combining accent) is not readable.
+  // Keep marks inside a word, but fall back when no letter or digit remains.
+  return word ? slug.replace(/^_+|_+$/g, '') : ''
 }
 
 export function idHex(id: string): string {
@@ -162,7 +174,14 @@ export function splitObjectToken(token: string): { key: string; short?: string }
 
 /** Token for one object among rows that share its resolution scope. */
 export function objectTokenFor(item: KeyedId, peers: readonly KeyedId[]): string | null {
-  if (!item.key) return `~${idPrefix(item.id)}`
+  if (!item.key) {
+    // UUIDv7 starts with a millisecond timestamp, so the first hex digits are
+    // shared by every row created in the same minute. The random suffix is the
+    // disambiguator, extended when keyless peers share their short tail.
+    const keyless = peers.filter((peer) => !peer.key)
+    const group = keyless.some((peer) => peer.id === item.id) ? keyless : [...keyless, item]
+    return `~${uniqueSuffix(item.id, group)}`
+  }
   const same = peers.filter((peer) => peer.key === item.key)
   const group = same.some((peer) => peer.id === item.id) ? same : [...same, item]
   const sorted = [...group].sort(byId)
@@ -173,15 +192,20 @@ export function objectTokenFor(item: KeyedId, peers: readonly KeyedId[]): string
 
 /**
  * Resolve `token` against the rows in this catalog/type scope.
- * Keyed tokens are accepted only when they are exactly what we would emit now.
- * A keyless `~suffix` token resolves by id prefix; several matches fail closed.
+ * Every token is accepted only when it is exactly what we would emit now.
+ * A keyless `~suffix` token must equal the canonical extended suffix for its
+ * row; several matches fail closed, and a shorter, longer or stale suffix is
+ * not an alias.
  */
 export function resolveObjectToken(peers: readonly KeyedId[], token: string): string | null {
   const split = splitObjectToken(token)
   if (!split) return null
   if (!split.key) {
     if (!split.short) return null
-    const matches = peers.filter((peer) => !peer.key && idHex(peer.id).startsWith(split.short!))
+    // Accept only the exact token we would emit now. The lookup is scoped by
+    // the tail shared by every possible candidate, so `peers` holds the whole
+    // collision group and the extended suffix can be recomputed.
+    const matches = peers.filter((peer) => !peer.key && objectTokenFor(peer, peers) === token)
     return matches.length === 1 ? matches[0].id : null
   }
   const matches = peers.filter((peer) => peer.key === split.key && objectTokenFor(peer, peers) === token)

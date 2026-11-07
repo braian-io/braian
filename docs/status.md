@@ -2,16 +2,16 @@
 
 Bas: `origin/main` tip `da6cf75` (docs-uppdatering ovanpå `fc09d6c`, #264). Senaste migrering i repot: `V43__soft_delete.sql` (#260).
 
-## Rad 170 i den här PR:en — levererat i kod, inte deployat
+## Rad 170 i den här PR:en — byggt på branchen, inte deployat
 
 Läsbara URL:er (Notion 170) är byggda på den här branchen. De ligger **inte** på demo eller prod förrän PR:en mergas och en deploy körs. Avsnitten under beskriver `main` vid `da6cf75` plus den här ändringen.
 
 - `ws`, `view` och `catalog` är slug av visningsnamn. Unicode-bokstäver och siffror behålls (NFKC, gemener); ett namn utan bokstav eller siffra får ett `~`-suffix av id:t. `object` är objektets nyckel, inte ett uuid.
 - Nuvarande namn eller nyckel är adressen. Ett byte byter URL:en. Gamla länkar och uuid-adresser öppnas inte. Inga redirectar.
 - `~` och ett kort hex-suffix används när sluggen eller nyckeln krockar i samma omfång. Lägsta id behåller den nakna token. Ett `~` i en nyckel escapas som `~~`.
-- Nyckellösa objekt (länkrader) får `~` plus id-prefix, så en omladdning behåller valet.
-- Länkobjekt har `objects.key` null och får en `~`-token av id-prefix, inte ett uuid. Se `docs/urls.md`.
-- Vitest täcker Unicode-slug, fallback, krock, escapad `~`, nyckellös token, kodning, uuid-avvisning och att en delad nyckel slås upp i produkttypen. `e2e/readable-urls.spec.ts` är registrerad i `scripts/e2e.mjs`: direktlänk och omladdning, nyckel i stället för uuid, navigationsslug, byte av nyckel, dubbletter, kodning, bakåt/framåt, trasig eller saknad måltavla.
+- Nyckellösa objekt (länkrader) får `~` plus det slumpmässiga id-suffixet, inte tidsstämpel-prefixet som UUIDv7 delar. Delar flera nyckellösa rader samma 8 tecken förlängs suffixet (12, 16, sedan 32) tills det är unikt. De slås upp med `GET /v1/objects?id_suffix=...` i katalogen; typen utelämnas eftersom en länkrad har länktypen.
+- `GET /v1/objects` accepterar både typnyckel och typ-id i `type`. Sparade vyer lagrar typ-id (V18), så en direktlänk annars fick tom träff.
+- Vitest täcker Unicode-slug (även namn som bara är kombinerande tecken), fallback, krock, escapad `~` i typad SKU, nyckellöst suffix som förlängs vid delad svans, kodning, uuid-avvisning, att en delad nyckel slås upp i produkttypen och att ett URL-objekt inte tappas när en annan rad redan är vald. `e2e/readable-urls.spec.ts` är registrerad i `scripts/e2e.mjs`: direktlänk och omladdning, nyckel i stället för uuid, navigationsslug, byte av nyckel, dubbletter, kodning, typad SKU med `~`, bakåt/framåt, trasig eller saknad måltavla, nyckellös länkrad efter omladdning och två kolliderande nyckellösa länkar vars utskrivna förlängda tokens laddas om. Körningen är gjord i isolerade `--rm`-containrar mot syntetisk Postgres/Typesense; den är inte deployad.
 
 Braian går att starta lokalt och att klicka igenom på [demo.braian.io](https://demo.braian.io). Postgres är källan och ändringsloggen. Indexer, sök, auth, förslag och webbgränssnittet sitter på samma kedja. Flödet står i `docs/events.md`. Demokatalogen som `just dev` visar är bara seed: hjälteobjekt plus 240 syntetiska livsmedel (leverantörer, produkter och artiklar). Etiketter finns på sv/en/de och objektdata är engelska. Strukturen heter Food, leverantörer står utanför trädet och pekas ut med länkar. Tester skriver i databasen `braian_e2e` och sökaliaset `braian_e2e`, inte i demon.
 

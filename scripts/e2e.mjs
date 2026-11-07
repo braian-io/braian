@@ -11,6 +11,8 @@
 // worker) drops the database and starts a new API, seed and search alias
 // before every spec file. A shared database lets an earlier file's saved view
 // columns make a later file edit the wrong row.
+// BRAIAN_E2E_PSQL_MODE=direct administers the database with psql and
+// DATABASE_URL instead of `docker compose exec`, for runners without a socket.
 
 import { execFileSync, spawn } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
@@ -95,6 +97,43 @@ const specs = [
   'e2e/z-catalogs.spec.ts',
   'e2e/readable-urls.spec.ts',
 ]
+
+// Explicit compose targeting. The default keeps `just up` and CI on the
+// repository project, braian. Set BRAIAN_E2E_COMPOSE_PROJECT (for example
+// braian-e2e-170) to keep containers, network and named volumes separate.
+const composeProject =
+  process.env.BRAIAN_E2E_COMPOSE_PROJECT || process.env.COMPOSE_PROJECT_NAME || 'braian'
+// When set, compose uses this env file instead of the implicit .env in the
+// project directory. Isolated runs point it at a throwaway file with synthetic
+// credentials.
+const composeEnvFile = process.env.BRAIAN_E2E_COMPOSE_ENV_FILE
+
+function composeArgs(args) {
+  const prefix = ['compose', '--project-name', composeProject]
+  if (composeEnvFile) prefix.push('--env-file', composeEnvFile)
+  return [...prefix, ...args]
+}
+
+// BRAIAN_E2E_SPEC narrows the suite, for example readable-urls.spec.ts or
+// e2e/readable-urls.spec.ts. Comma-separated values are accepted. Unset keeps
+// every spec.
+function selectedSpecs() {
+  const raw = process.env.BRAIAN_E2E_SPEC
+  if (!raw) return specs
+  const wanted = raw.split(',').map((value) => value.trim()).filter(Boolean)
+  if (wanted.length === 0) return specs
+  const matches = (file, value) =>
+    file === value || file === `e2e/${value}` || file.endsWith(`/${value}`)
+  const matched = specs.filter((file) => wanted.some((value) => matches(file, value)))
+  const unmatched = wanted.filter((value) => !specs.some((file) => matches(file, value)))
+  if (unmatched.length > 0) {
+    console.error(`BRAIAN_E2E_SPEC matched no spec: ${unmatched.join(', ')}`)
+    process.exit(1)
+  }
+  return matched
+}
+
+const runSpecs = selectedSpecs()
 
 function positiveInt(name, fallback) {
   const raw = process.env[name] || fallback
@@ -181,7 +220,7 @@ const measuredSeconds = {
   'e2e/switch-catalog-view.spec.ts': 25,
   'e2e/source-all-explicit.spec.ts': 40,
   'e2e/z-catalogs.spec.ts': 45,
-  'e2e/readable-urls.spec.ts': 70,
+  'e2e/readable-urls.spec.ts': 90,
   'e2e/delete-workspace.spec.ts': 28,
   'e2e/open-type-view-ready.spec.ts': 25,
   'e2e/duplicate-type-views.spec.ts': 30,
@@ -233,11 +272,29 @@ function withDatabase(url, name) {
   return `${base.slice(0, slash + 1)}${name}${query}`
 }
 
+// BRAIAN_E2E_PSQL_MODE=direct runs psql against DATABASE_URL instead of
+// `docker compose exec`. That lets a containerized runner administer its own
+// database without the Docker socket. The URL always targets the maintenance
+// database, so the API's database is never assumed to exist yet. Unset keeps
+// the existing project-scoped compose path.
 function psql(sql) {
+  if (process.env.BRAIAN_E2E_PSQL_MODE === 'direct') {
+    const url = process.env.DATABASE_URL
+    if (!url) {
+      console.error('BRAIAN_E2E_PSQL_MODE=direct needs DATABASE_URL')
+      process.exit(1)
+    }
+    execFileSync(
+      'psql',
+      ['-X', '-v', 'ON_ERROR_STOP=1', '-c', sql, withDatabase(url, 'postgres')],
+      { cwd: root, stdio: 'pipe', env: { ...process.env, PGCONNECT_TIMEOUT: process.env.PGCONNECT_TIMEOUT || '10' } },
+    )
+    return
+  }
   const user = process.env.POSTGRES_USER || 'braian'
   execFileSync(
     'docker',
-    ['compose', 'exec', '-T', 'postgres', 'psql', '-U', user, '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', sql],
+    composeArgs(['exec', '-T', 'postgres', 'psql', '-U', user, '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', sql]),
     { cwd: root, stdio: 'pipe' },
   )
 }
@@ -302,20 +359,23 @@ if (!source) {
 const binary = resolveBinary()
 const shardCount = positiveInt('BRAIAN_E2E_SHARDS', '1')
 const shard = shardIndex(shardCount)
-const shardFiles = assign(specs, shardCount)[shard]
+const shardFiles = assign(runSpecs, shardCount)[shard]
 const workers = positiveInt('BRAIAN_E2E_WORKERS', '1')
 // More than one shard or worker means this process must not keep mutations
 // another file will read. CI sets BRAIAN_E2E_ISOLATE=1 as well.
 const isolate =
   process.env.BRAIAN_E2E_ISOLATE === '1' || shardCount > 1 || workers > 1
 const groups = partition(shardFiles, workers)
-console.log(`e2e shard ${shard}/${shardCount} isolate=${isolate ? 1 : 0} workers=${groups.length}`)
+console.log(
+  `e2e compose=${composeProject} env_file=${composeEnvFile ?? '(default)'} ` +
+    `specs=${runSpecs.length} shard ${shard}/${shardCount} isolate=${isolate ? 1 : 0} workers=${groups.length}`,
+)
 for (const [index, files] of groups.entries()) {
   const weight = files.reduce((sum, file) => sum + fileWeight(file), 0)
   console.log(`e2e slot ${index} weight=${weight}s files=${files.join(' ')}`)
 }
 if (process.env.BRAIAN_E2E_PLAN === '1') {
-  for (const [index, files] of assign(specs, shardCount).entries()) {
+  for (const [index, files] of assign(runSpecs, shardCount).entries()) {
     const weight = files.reduce((sum, file) => sum + fileWeight(file), 0)
     console.log(`e2e plan shard ${index} weight=${weight}s files=${files.join(' ')}`)
   }

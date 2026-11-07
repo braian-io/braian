@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
-import { objectTokenFor, publicToken, slugify } from '../src/url-public'
+import { encodeObjectKey, objectTokenFor, publicToken, slugify } from '../src/url-public'
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -64,6 +64,33 @@ test('direct object link reloads on the key, and navigation slugs are not uuids'
   await expect(page.getByTestId('dock')).toBeVisible({ timeout: 60_000 })
   await expect(page.locator('.detail-id')).toHaveText(key, { timeout: 30_000 })
   await expect.poll(() => param(page, 'object')).toBe(key)
+})
+
+test('a typed SKU with a literal tilde roundtrips through the URL', async ({ page }) => {
+  test.setTimeout(120_000)
+  await login(page)
+  const key = `TILDE~${Date.now().toString().slice(-6)}`
+  const token = encodeObjectKey(key)
+  expect(token).toBe(key.replace(/~/g, '~~'))
+  const created = await createObject(page, 'product', key)
+  const url = `/?${new URLSearchParams({
+    ws: 'products',
+    view: 'products',
+    catalog: 'master_catalog',
+    object: token,
+  })}`
+
+  await page.goto(url)
+  await expect(page.getByTestId('dock')).toBeVisible({ timeout: 60_000 })
+  await expect(page.locator('.detail-id')).toHaveText(key, { timeout: 30_000 })
+  // The hook must keep the escaped token, not rewrite it to the raw key.
+  await expect.poll(() => param(page, 'object')).toBe(token)
+  expect(page.url()).not.toContain(created.id)
+
+  await page.reload()
+  await expect(page.getByTestId('dock')).toBeVisible({ timeout: 60_000 })
+  await expect(page.locator('.detail-id')).toHaveText(key, { timeout: 30_000 })
+  await expect.poll(() => param(page, 'object')).toBe(token)
 })
 
 test('renaming the key changes the URL and the old link does not open it', async ({ page }) => {
@@ -300,3 +327,107 @@ async function singleViewWorkspace(
   }
   return { ws: slugify(label), view: slugify(title) }
 }
+
+test('keyless relationship deep link survives a reload', async ({ page }) => {
+  test.setTimeout(120_000)
+  await login(page)
+  const listed = await page.request.get('/v1/objects?limit=100')
+  expect(listed.ok()).toBeTruthy()
+  const objects = ((await listed.json()) as { objects?: Array<{ id: string }> }).objects ?? []
+  let linkId = ''
+  for (const object of objects) {
+    const response = await page.request.get(`/v1/links?object=${object.id}`)
+    if (!response.ok()) continue
+    const sides = await response.json() as Array<{ links?: Array<{ id: string }> }>
+    const link = sides.flatMap((side) => side.links ?? [])[0]
+    if (link?.id) {
+      linkId = link.id
+      break
+    }
+  }
+  expect(linkId).not.toBe('')
+  const base = (linkId.replace(/-/g, '')).slice(-8).toLowerCase()
+  const peersResponse = await page.request.get(`/v1/objects?id_suffix=${base}`)
+  expect(peersResponse.ok()).toBeTruthy()
+  const keyless = ((await peersResponse.json()) as { objects?: Array<{ id: string; key?: string }> }).objects ?? []
+  const peers = keyless.filter((row) => !row.key).map((row) => ({ id: row.id, key: null }))
+  const token = objectTokenFor({ id: linkId, key: null }, peers)!
+  expect(token.slice(1)).toContain(base)
+  const url = `/?${new URLSearchParams({
+    ws: 'products',
+    view: 'products',
+    catalog: 'master_catalog',
+    object: token,
+  })}`
+
+  await page.goto(url)
+  await expect(page.getByTestId('object-detail')).toBeVisible({ timeout: 30_000 })
+  await expect.poll(() => param(page, 'object')).toBe(token)
+
+  await page.reload()
+  await expect(page.getByTestId('object-detail')).toBeVisible({ timeout: 30_000 })
+  await expect.poll(() => param(page, 'object')).toBe(token)
+})
+
+test('keyless links with a shared short suffix get distinct, reloadable tokens', async ({ page }) => {
+  test.setTimeout(180_000)
+  await login(page)
+  const stampKey = Date.now().toString().slice(-6)
+  const productA = await createObject(page, 'product', `KL-A-${stampKey}`)
+  const articleA = await createObject(page, 'article', `KL-AA-${stampKey}`)
+  const productB = await createObject(page, 'product', `KL-B-${stampKey}`)
+  const articleB = await createObject(page, 'article', `KL-BB-${stampKey}`)
+
+  // Two valid UUIDv7 link ids whose final eight hex digits are identical. The
+  // API accepts a client id, so this exercises a real keyless collision.
+  const sharedTail = crypto.randomUUID().replace(/-/g, '').slice(-8)
+  const stamp = Date.now().toString(16).padStart(12, '0').slice(-12)
+  const rand = crypto.randomUUID().replace(/-/g, '').slice(0, 6)
+  const prefix = `${stamp.slice(0, 8)}-${stamp.slice(8, 12)}-7${rand.slice(0, 3)}-8${rand.slice(3, 6)}-`
+  const idA = `${prefix}a001${sharedTail}`
+  const idB = `${prefix}b002${sharedTail}`
+  for (const [id, product, article] of [
+    [idA, productA, articleA],
+    [idB, productB, articleB],
+  ] as const) {
+    const response = await page.request.post('/v1/links', {
+      data: { id, type: 'product_articles', from_id: product.id, to_id: article.id },
+    })
+    expect(response.ok(), `link ${response.status()} ${await response.text()}`).toBeTruthy()
+  }
+
+  const peers = [{ id: idA, key: null }, { id: idB, key: null }]
+  const tokenA = objectTokenFor(peers[0], peers)!
+  const tokenB = objectTokenFor(peers[1], peers)!
+  expect(tokenA).not.toBe(tokenB)
+  expect(tokenA.slice(1)).toHaveLength(12)
+  expect(tokenB.slice(1)).toHaveLength(12)
+  expect(tokenA.slice(-8)).toBe(sharedTail)
+  expect(tokenB.slice(-8)).toBe(sharedTail)
+
+  for (const token of [tokenA, tokenB]) {
+    const url = `/?${new URLSearchParams({
+      ws: 'products',
+      view: 'products',
+      catalog: 'master_catalog',
+      object: token,
+    })}`
+    await page.goto(url)
+    await expect(page.getByTestId('object-detail')).toBeVisible({ timeout: 30_000 })
+    await expect.poll(() => param(page, 'object')).toBe(token)
+    await page.reload()
+    await expect(page.getByTestId('object-detail')).toBeVisible({ timeout: 30_000 })
+    await expect.poll(() => param(page, 'object')).toBe(token)
+  }
+
+  // The old shared eight-digit token is not emitted and must fail closed.
+  const shared = `~${sharedTail}`
+  await page.goto(`/?${new URLSearchParams({
+    ws: 'products',
+    view: 'products',
+    catalog: 'master_catalog',
+    object: shared,
+  })}`)
+  await expect(page.getByTestId('dock')).toBeVisible({ timeout: 60_000 })
+  await expect.poll(() => param(page, 'object'), { timeout: 20_000 }).not.toBe(shared)
+})

@@ -44,22 +44,23 @@ export async function listObjectsWithKey(
 }
 
 /**
- * Keyless rows (link objects) in one catalog (and type) whose id starts with
- * `prefix`. `q` is a contains filter in SQL; callers keep the id prefix match.
+ * Keyless rows (link objects) in one catalog (and type) whose id ends with
+ * `suffix`. `GET /v1/objects?id_suffix=` reads Postgres, includes keyless
+ * rows that the normal list hides, and is scoped to the catalog and type.
  */
-export async function listObjectsByIdPrefix(
+export async function listObjectsByIdSuffix(
   catalogKey: string,
-  prefix: string,
+  suffix: string,
   typeKey?: string | null,
 ): Promise<ObjectKeyPage> {
   const rows: KeyedId[] = []
-  const wanted = prefix.toLowerCase()
+  const wanted = suffix.toLowerCase()
   let cursor: string | undefined
   for (let page = 0; page < MAX_PAGES; page += 1) {
     const body = await inCatalog(catalogKey || 'master', () => api.get('/v1/objects', {
       params: {
         query: {
-          q: prefix,
+          id_suffix: wanted,
           limit: PAGE,
           ...(typeKey ? { type: typeKey } : {}),
           ...(cursor ? { cursor } : {}),
@@ -67,10 +68,13 @@ export async function listObjectsByIdPrefix(
       },
     }))
     for (const row of body.objects ?? []) {
-      if (row.id && idHex(row.id).startsWith(wanted)) rows.push({ id: row.id, key: row.key ?? null })
+      if (row.id && idHex(row.id).endsWith(wanted)) rows.push({ id: row.id, key: row.key ?? null })
     }
     if (!body.next_cursor) return { rows, complete: true }
     cursor = body.next_cursor
   }
   return { rows, complete: false }
 }
+
+/** Former name; the lookup moved from an id prefix to the short id suffix. */
+export const listObjectsByIdPrefix = listObjectsByIdSuffix

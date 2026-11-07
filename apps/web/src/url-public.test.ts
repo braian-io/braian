@@ -6,7 +6,6 @@ import {
   publicToken,
   resolveObjectToken,
   resolvePublicToken,
-  idPrefix,
   shortId,
   slugify,
   splitObjectToken,
@@ -29,6 +28,8 @@ describe('slugify', () => {
     expect(slugify('Ελληνικά')).toBe('ελληνικά')
     expect(slugify('商品 目录')).toBe('商品_目录')
     expect(slugify('---')).toBe('')
+    expect(slugify('\u0301\u0302')).toBe('')
+    expect(slugify('e\u0301')).toBe('é')
   })
 })
 
@@ -107,6 +108,20 @@ describe('object tokens', () => {
     expect(resolveObjectToken(renamed, 'NEXT')).toBe(low)
   })
 
+  it('escapes a literal tilde even when the type scope needs no peer suffix', () => {
+    const single = { id: low, key: 'A~deadbeef' }
+    expect(objectTokenFor(single, [single])).toBe('A~~deadbeef')
+    expect(splitObjectToken('A~~deadbeef')).toEqual({ key: 'A~deadbeef' })
+    expect(resolveObjectToken([single], 'A~~deadbeef')).toBe(low)
+    expect(resolveObjectToken([single], 'A~deadbeef')).toBeNull()
+
+    const double = { id: high, key: 'A~~B' }
+    expect(objectTokenFor(double, [double])).toBe('A~~~~B')
+    expect(splitObjectToken('A~~~~B')).toEqual({ key: 'A~~B' })
+    expect(resolveObjectToken([double], 'A~~~~B')).toBe(high)
+    expect(resolveObjectToken([double], 'A~~B')).toBeNull()
+  })
+
   it('escapes a literal tilde so it cannot be read as a collision suffix', () => {
     const winner = '018f0000-0000-7000-8000-000000000001'
     const suffix = high.replace(/-/g, '').slice(-8)
@@ -125,14 +140,54 @@ describe('object tokens', () => {
     expect(resolveObjectToken(rows, 'SKU')).toBe(winner)
   })
 
-  it('gives a keyless row a short id token resolved by id prefix', () => {
+  it('gives a keyless row a random short id suffix token', () => {
     const link = '018f0000-0000-7000-8000-00000000abcd'
     const rows = [{ id: link, key: null }]
     const token = objectTokenFor(rows[0], rows)!
-    expect(token).toBe(`~${idPrefix(link)}`)
-    expect(splitObjectToken(token)).toEqual({ key: '', short: idPrefix(link) })
+    expect(token).toBe(`~${shortId(link)}`)
+    expect(splitObjectToken(token)).toEqual({ key: '', short: shortId(link) })
     expect(resolveObjectToken(rows, token)).toBe(link)
-    expect(resolveObjectToken(rows, `~${idPrefix('ffffffff-0000-7000-8000-000000000000')}`)).toBeNull()
+    expect(resolveObjectToken(rows, `~${shortId('ffffffff-0000-7000-8000-000000000000')}`)).toBeNull()
+  })
+
+  it('keeps keyless rows created in the same UUIDv7 window distinct', () => {
+    const first = '018f0000-0000-7000-8000-00000000aaaa'
+    const second = '018f0000-0000-7000-8000-00000000bbbb'
+    const rows = [{ id: first, key: null }, { id: second, key: null }]
+    const one = objectTokenFor(rows[0], rows)!
+    const two = objectTokenFor(rows[1], rows)!
+    expect(one).not.toBe(two)
+    expect(resolveObjectToken(rows, one)).toBe(first)
+    expect(resolveObjectToken(rows, two)).toBe(second)
+  })
+
+  it('does not accept a longer or stale keyless suffix', () => {
+    const link = '018f0000-0000-7000-8000-00000000abcd'
+    const rows = [{ id: link, key: null }]
+    const long = `~${shortId(link, 12)}`
+    expect(resolveObjectToken(rows, long)).toBeNull()
+    expect(resolveObjectToken(rows, `~${shortId(link).replace(/.$/, '0')}`)).toBeNull()
+  })
+
+  it('extends the keyless suffix when peers share the short tail and roundtrips emitted tokens', () => {
+    const first = '018f0000-0000-7000-8000-0000aaaa12345678'
+    const second = '018f0000-0000-7000-8000-0000bbbb12345678'
+    const rows = [{ id: first, key: null }, { id: second, key: null }]
+    const one = objectTokenFor(rows[0], rows)!
+    const two = objectTokenFor(rows[1], rows)!
+    expect(one).not.toBe(two)
+    expect(one.slice(1)).toHaveLength(12)
+    expect(two.slice(1)).toHaveLength(12)
+    expect(resolveObjectToken(rows, one)).toBe(first)
+    expect(resolveObjectToken(rows, two)).toBe(second)
+    // The shared 8-char tail is not an emitted token and stays unusable.
+    expect(resolveObjectToken(rows, `~${shortId(first)}`)).toBeNull()
+  })
+
+  it('leaves a unique keyless tail at the short length', () => {
+    const link = '018f0000-0000-7000-8000-00000000abcd'
+    const rows = [{ id: link, key: null }]
+    expect(objectTokenFor(rows[0], rows)).toBe(`~${shortId(link)}`)
   })
 
   it('reads the key attribute and ignores a missing key', () => {
@@ -151,11 +206,13 @@ describe('url object type context', () => {
     { id: 'table', type: 'object_table', state: { type_key: 'product' } },
     { id: 'detail', type: 'object_detail', state: {} },
     { id: 'other', type: 'object_table', state: { type_key: 'article' } },
+    { id: 'id-only', type: 'object_table', state: { object_type: '018f0000-0000-7000-8000-000000000200' } },
   ]
 
   it('prefers the focused table, else the detail list', () => {
     expect(urlObjectTypeKey('table', 'other', views)).toBe('product')
     expect(urlObjectTypeKey('detail', 'other', views)).toBe('article')
     expect(urlObjectTypeKey('detail', 'detail', views)).toBeNull()
+    expect(urlObjectTypeKey('id-only', null, views)).toBe('018f0000-0000-7000-8000-000000000200')
   })
 })

@@ -479,6 +479,7 @@ export function Shell() {
     openViewIds: doc ? layoutViews(doc.layout) : [],
     catalogId: urlCatalogId,
     objectTypeKey: urlObjectTypeKey(doc?.focus ?? null, detailListId, urlViews),
+    viewTypeKey: (id) => urlObjectTypeKey(id, null, urlViews),
     objectId,
     objectKey,
     objectLoaded: Boolean(objectId && opened.isSuccess && opened.data?.id === objectId),

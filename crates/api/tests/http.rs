@@ -1475,6 +1475,109 @@ async fn list_filters_before_limit_and_pages_with_a_cursor() {
 }
 
 #[tokio::test]
+async fn list_resolves_keyless_link_objects_by_id_suffix() {
+    let (_db, app) = app().await;
+    let mut ids = Vec::new();
+    for sku in ["LINK-ONE", "LINK-TWO"] {
+        let (status, _, created) = call(
+            &app,
+            "POST",
+            "/v1/objects",
+            Some(HUMAN),
+            &[("content-type", "application/json")],
+            Some(&format!(r#"{{"type":"item","values":{{"sku":"{sku}"}}}}"#)),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{created}");
+        ids.push(created["id"].as_str().unwrap().to_owned());
+    }
+    let (status, _, link_type) = call(
+        &app,
+        "POST",
+        "/v1/link-types",
+        Some(HUMAN),
+        &[("content-type", "application/json")],
+        Some(
+            r#"{"key":"related","label":"Related","from_types":["item"],"to_types":["item"],"from_key":"related_by","from_label":"Related by","to_key":"related","to_label":"Related","from_cardinality":"many","to_cardinality":"many"}"#,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{link_type}");
+    let (status, _, linked) = call(
+        &app,
+        "POST",
+        "/v1/links",
+        Some(HUMAN),
+        &[("content-type", "application/json")],
+        Some(&format!(
+            r#"{{"type":"related","from_id":"{}","to_id":"{}"}}"#,
+            ids[0], ids[1]
+        )),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{linked}");
+    let link_id = linked["id"].as_str().unwrap();
+    let hex = link_id.replace('-', "").to_lowercase();
+    let suffix = &hex[hex.len() - 8..];
+
+    let (status, _, page) = call(
+        &app,
+        "GET",
+        &format!("/v1/objects?id_suffix={suffix}"),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{page}");
+    let rows = page["objects"].as_array().unwrap();
+    assert!(
+        rows.iter()
+            .any(|row| row["id"] == link_id && row["key"] == ""),
+        "{page}"
+    );
+
+    let all = pages(&app, "/v1/objects?limit=100").await;
+    assert!(
+        all.iter().all(|row| row["id"] != link_id),
+        "the normal list leaves link objects out"
+    );
+
+    let (status, _, defs) = call(&app, "GET", "/v1/definitions", Some(HUMAN), &[], None).await;
+    assert_eq!(status, StatusCode::OK, "{defs}");
+    let item_id = defs["types"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["key"] == "item")
+        .and_then(|item| item["id"].as_str())
+        .unwrap();
+    let (status, _, by_id) = call(
+        &app,
+        "GET",
+        &format!("/v1/objects?type={item_id}&limit=100"),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{by_id}");
+    assert_eq!(by_id["objects"].as_array().unwrap().len(), 2, "{by_id}");
+
+    let (status, _, invalid) = call(
+        &app,
+        "GET",
+        "/v1/objects?id_suffix=not-hex",
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{invalid}");
+    assert!(invalid["objects"].as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
 async fn graph_marks_an_attribute_inherited_from_an_ancestor_group() {
     let (_db, app) = app().await;
     let (status, _, child) = call(
