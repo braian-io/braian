@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { StandardEditableTable, type StandardColumn } from './standard-editable-table'
 import { copy } from './i18n'
@@ -362,13 +362,117 @@ describe('standard editable table opt-in abilities', () => {
         getRowTestId={(row) => `row-${row.id}`}
       />,
     )
-    const checkbox = screen.getByRole('checkbox') as HTMLInputElement
-    expect(checkbox.checked).toBe(true)
+    const checkbox = screen.getByRole('checkbox')
+    expect(checkbox.getAttribute('aria-checked')).toBe('true')
+    expect(checkbox.classList.contains('check')).toBe(true)
     fireEvent.click(checkbox)
     expect(onDraft).toHaveBeenCalledTimes(1)
     const next = onDraft.mock.calls[0][0] as Record<string, FeatureRow>
     expect(next.a.active).toBe(false)
     expect(screen.queryByTestId('standard-cell-editor')).toBeNull()
+  })
+
+  it('Tab from an enum editor focuses the next checkbox and Shift+Tab returns to the editor', async () => {
+    render(
+      <StandardEditableTable
+        columns={[
+          {
+            id: 'kind',
+            header: 'Type',
+            type: 'enum',
+            editable: true,
+            options: [
+              { value: 'text', label: 'Text' },
+              { value: 'number', label: 'Number' },
+            ],
+            read: (row: { id: string; kind: string; required: boolean }) => row.kind,
+            write: (row, value) => ({ ...row, kind: value }),
+          },
+          {
+            id: 'required',
+            header: 'Required',
+            type: 'boolean',
+            editable: true,
+            display: 'checkbox',
+            read: (row: { id: string; kind: string; required: boolean }) => row.required,
+            write: (row, value) => ({ ...row, required: value === 'true' }),
+          },
+        ]}
+        rows={[{ id: 'a', kind: 'text', required: false }]}
+        draftRows={{}}
+        onDraftRowsChange={() => undefined}
+      />,
+    )
+    fireEvent.doubleClick(document.querySelector('[data-row-id="a"] [data-column="kind"]')!)
+    fireEvent.keyDown(screen.getByTestId('standard-cell-editor'), { key: 'Tab' })
+    const required = screen.getByRole('checkbox', { name: 'Required' })
+    await waitFor(() => expect(document.activeElement).toBe(required))
+    fireEvent.keyDown(required, { key: 'Tab', shiftKey: true })
+    await waitFor(() => {
+      const editor = screen.getByTestId('standard-cell-editor')
+      expect(editor.tagName).toBe('SELECT')
+      expect(document.activeElement).toBe(editor)
+    })
+  })
+
+  it('Tab skips a disabled checkbox and keeps focus on the next eligible one', async () => {
+    type FlagRow = { id: string; unit: string; required: boolean; languages: boolean; searchable: boolean }
+    const flagColumns: Array<StandardColumn<FlagRow>> = [
+      {
+        id: 'unit',
+        header: 'Unit',
+        editable: true,
+        read: (row) => row.unit,
+        write: (row, value) => ({ ...row, unit: value }),
+      },
+      {
+        id: 'required',
+        header: 'Required',
+        type: 'boolean',
+        editable: true,
+        display: 'checkbox',
+        read: (row) => row.required,
+        write: (row, value) => ({ ...row, required: value === 'true' }),
+      },
+      {
+        id: 'languages',
+        header: 'Languages',
+        type: 'boolean',
+        editable: true,
+        display: 'checkbox',
+        read: (row) => row.languages,
+        write: (row, value) => ({ ...row, languages: value === 'true' }),
+      },
+      {
+        id: 'searchable',
+        header: 'Searchable',
+        type: 'boolean',
+        editable: true,
+        display: 'checkbox',
+        read: (row) => row.searchable,
+        write: (row, value) => ({ ...row, searchable: value === 'true' }),
+      },
+    ]
+    render(
+      <StandardEditableTable
+        columns={flagColumns}
+        rows={[{ id: 'n', unit: 'mass', required: true, languages: false, searchable: false }]}
+        draftRows={{}}
+        onDraftRowsChange={() => undefined}
+        canEdit={(_row, column) => column.id !== 'languages'}
+      />,
+    )
+    fireEvent.doubleClick(document.querySelector('[data-row-id="n"] [data-column="unit"]')!)
+    fireEvent.keyDown(screen.getByTestId('standard-cell-editor'), { key: 'Tab' })
+    const required = screen.getByRole('checkbox', { name: 'Required' })
+    await waitFor(() => expect(document.activeElement).toBe(required))
+    expect(screen.getByRole('checkbox', { name: 'Languages' })).toHaveProperty('disabled', true)
+    fireEvent.keyDown(required, { key: 'Tab' })
+    const searchable = screen.getByRole('checkbox', { name: 'Searchable' })
+    await waitFor(() => expect(document.activeElement).toBe(searchable))
+    expect(document.activeElement).not.toBe(screen.getByRole('checkbox', { name: 'Languages' }))
+    fireEvent.keyDown(searchable, { key: 'Tab', shiftKey: true })
+    await waitFor(() => expect(document.activeElement).toBe(required))
   })
 
   it('dims read-only rows and blocks edits, reordering and checkbox toggles', () => {
@@ -386,8 +490,8 @@ describe('standard editable table opt-in abilities', () => {
     )
     const row = screen.getByTestId('row-a')
     expect(row.classList.contains('read-only')).toBe(true)
-    const checkbox = screen.getByRole('checkbox') as HTMLInputElement
-    expect(checkbox.disabled).toBe(true)
+    const checkbox = screen.getByRole('checkbox')
+    expect(checkbox).toHaveProperty('disabled', true)
     expect((screen.getByLabelText('Drag to reorder') as HTMLButtonElement).disabled).toBe(true)
     expect((screen.getByLabelText('Move row up') as HTMLButtonElement).disabled).toBe(true)
     fireEvent.keyDown(row, { key: 'Enter' })
