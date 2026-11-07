@@ -239,6 +239,7 @@ export const copy = {
   deleteGroup: 'Delete',
   deleteMenu: 'Delete…',
   unsavedChanges: 'unsaved changes',
+  openDraftInTable: 'Open in the table',
   reviewAndSave: 'Save',
   discardDraft: 'Discard draft',
   rebaseDraft: 'Rebase draft',

@@ -47,6 +47,23 @@ import { columnPrefsMutationKey, columnPrefsQueryKey, useSaveColumnPrefs } from 
 import { readPathFromDoc, summarizePathValues } from './path-cell'
 import { cellPathValues, fetchPathValues } from './path-values'
 import { applyObjectWrite, currentSearchWaitSeq, reconcileObjectWrite } from './object-write'
+import {
+  discardObjectDraft,
+  displayOf,
+  draftBaseVersion,
+  editBaseVersion,
+  getObjectDraftSnapshot,
+  objectDraftCells,
+  overlayValues,
+  paintObjectCell,
+  reviewCapabilities,
+  roleCanWrite,
+  stageObjectCell,
+  subscribeObjectDrafts,
+} from './object-draft'
+import { CellDiff, ObjectDraftBar } from './object-draft-bar'
+import { draftSavePlan, runDraftDiscard, runDraftSave } from './object-draft-save'
+import { useOpenObjectProposals } from './use-open-proposals'
 import { shouldHoldTablePaint, shouldRefreshTableSnapshot } from './table-live-paint'
 import { searchPeerArticles, type PeerPickOption } from './peer-search'
 import { linkedPeerIds } from './peer-source'
@@ -219,6 +236,8 @@ export function ObjectTable({
   const [editingDraft, setEditingDraft] = useState('')
   const editingOriginalRef = useRef('')
   const skipBlurCommitRef = useRef(false)
+  const drafts = useSyncExternalStore(subscribeObjectDrafts, getObjectDraftSnapshot, getObjectDraftSnapshot)
+  const openProposals = useOpenObjectProposals()
   const queryClient = useQueryClient()
   const parent = useRef<HTMLDivElement>(null)
   const prefsApplied = useRef(false)
@@ -1267,41 +1286,30 @@ export function ObjectTable({
     const attrKey = (langMatch ? langMatch[0]! : path).split('.')[0] ?? path
     const language = langMatch?.[1]
     const attr = attributeByKey(defs.data, attrKey)
+    const languageDependent = Boolean(attr?.language_dependent)
+    const cellLanguage = language ?? (languageDependent ? uiLanguage : undefined)
     const bodyValues: Json = cellEditValuesBody({
       attrKey,
       nextText,
-      columnLanguage: language,
-      languageDependent: Boolean(attr?.language_dependent),
+      columnLanguage: cellLanguage,
+      languageDependent,
       uiLanguage,
     })
-    const agentSession = viewingAgentRunId()
-    if (agentSession) {
-      void proposeInAgentSession(agentSession, {
-        objectId: row.id,
-        objectKey: row.key,
-        typeKey: row.type,
-        baseVersion: Number(row.version ?? 0),
-        values: bodyValues,
-      }).then(() => {
-        session.push(copy.agentSessionProposed)
-        void queryClient.invalidateQueries({ queryKey: ['agent-run'] })
-        void queryClient.invalidateQueries({ queryKey: ['agent-runs'] })
-        void queryClient.invalidateQueries({ queryKey: ['proposals'] })
-      }).catch((reason: unknown) => {
-        reportWriteError(reason)
-      })
-      return
-    }
-    void api.patch('/v1/objects/{id}', { params: { path: { id: row.id }, header: { 'If-Match': Number(row.version ?? 0) } }, body: { values: freeObject(bodyValues) } })
-      .then(async (saved) => {
-        session.push(copy.saved)
-        await applyObjectWrite(queryClient, saved as Json)
-        void queryClient.invalidateQueries({ queryKey: ['proposal'] })
-        void queryClient.invalidateQueries({ queryKey: ['agent-run'] })
-      })
-      .catch((reason: unknown) => {
-        reportWriteError(reason)
-      })
+    const fragment = bodyValues[attrKey]
+    const value = cellLanguage && fragment && typeof fragment === 'object'
+      ? (fragment as Json)[cellLanguage]
+      : fragment
+    // Enter stages the shared draft. Save writes it. A refetch must not be the write.
+    stageObjectCell({
+      objectId: row.id,
+      attribute: attrKey,
+      columnId,
+      language: cellLanguage,
+      baseVersion: editBaseVersion(row.id, Number(row.version ?? 0)),
+      originalText: original,
+      proposedText: nextText,
+      value,
+    })
   }
 
   const cancelCellEdit = () => {
@@ -1346,6 +1354,39 @@ export function ObjectTable({
     skipBlurCommitRef.current = false
     setEditingDraft(initial.text)
     setEditingCell({ rowId: row.id, columnId: column })
+  }
+
+  const paintColumn = (row: ObjRow, id: string, serverText: string) => {
+    void drafts
+    const attribute = columnBaseKey(id)
+    const path = parseColumnId(id).path
+    const explicit = path.includes('@') ? path.split('@')[1] : undefined
+    const dependent = Boolean(attributeByKey(defs.data, attribute)?.language_dependent)
+    const language = explicit ?? (dependent ? uiLanguage : undefined)
+    const local = paintObjectCell({
+      objectId: row.id,
+      columnId: id,
+      attribute,
+      language,
+      serverText,
+      serverVersion: Number(row.version ?? 0),
+    })
+    if (local.drafted || local.held) return local
+    const proposal = (openProposals.byObject.get(row.id) ?? []).find(
+      (item) => item.attribute === attribute && (item.language ?? '') === (language ?? ''),
+    )
+    if (!proposal) return local
+    return {
+      text: proposal.proposedText,
+      drafted: true,
+      held: false,
+      originalText: proposal.originalKnown ? proposal.originalText : undefined,
+    }
+  }
+  const draftText = (row: ObjRow, id: string, serverText: string) => {
+    const painted = paintColumn(row, id, serverText)
+    if (!painted.drafted && !painted.held) return null
+    return <CellDiff original={painted.originalText} proposed={painted.text} />
   }
 
   const cell = (row: ObjRow, id: string) => {
@@ -1435,9 +1476,10 @@ export function ObjectTable({
     if (id === 'key' || id === 'number') return row.key
     if (id === 'name') {
       const count = suggestionCounts.get(row.id) ?? 0
+      const drafted = draftText(row, id, row.name)
       return (
         <span>
-          <span className="cell-name">{row.name}</span>
+          {drafted ?? <span className="cell-name">{row.name}</span>}
           {count > 0 ? (
             <span className="suggestion-count" data-testid="suggestion-count" aria-hidden="true">{formatCount(count)} {copy.suggested}</span>
           ) : null}
@@ -1446,6 +1488,8 @@ export function ObjectTable({
     }
     if (id === 'type') return <MetaChip>{typeLabel(defs.data, row.type, uiLanguage)}</MetaChip>
     if (id === 'status') {
+      const drafted = draftText(row, id, row.status)
+      if (drafted) return drafted
       const label = optionLabel(defs.data, 'status', row.status, uiLanguage).trim()
       return (
         <MetaChip tone={label ? statusTone(row.status) : 'neutral'}>
@@ -1455,6 +1499,8 @@ export function ObjectTable({
     }
     if (id === 'version') return <MetaChip>{row.version}</MetaChip>
     if (columnNeedsPathValues(id)) {
+      const drafted = draftText(row, id, cellDisplayText(row, id))
+      if (drafted) return drafted
       const values = cellPathValues(paintPathValues?.values?.[row.id], id)
       const summary = summarizePathValues(values)
       const testId = isHopPath(id) ? `hop-cell-${id}` : `path-cell-${id}`
@@ -1492,7 +1538,8 @@ export function ObjectTable({
         </span>
       )
     }
-    return readPathFromDoc(row.doc, defs.data, parseColumnId(id).path)
+    const server = readPathFromDoc(row.doc, defs.data, parseColumnId(id).path)
+    return draftText(row, id, server) ?? server
   }
   /** Same path + cardinality (and Specific peer) with a different unit are one logical column. */
   const isUnitSibling = (existingId: string, nextId: string) => {
@@ -1676,6 +1723,30 @@ export function ObjectTable({
     setLabelFilter('')
     setPathFilters([])
   }
+  const tableObjectIds = [...new Set(drafts.cells.map((cell) => cell.objectId))]
+  const tableVersions: Record<string, number> = {}
+  const tableMeta: Record<string, { key: string; type: string }> = {}
+  for (const row of byIndex.values()) {
+    tableVersions[row.id] = Number(row.version ?? 0)
+    tableMeta[row.id] = { key: row.key, type: row.type }
+  }
+  const visibleIds = new Set([...byIndex.values()].map((row) => row.id))
+  const proposalCells = [...openProposals.byObject.entries()]
+    .filter(([objectId]) => visibleIds.has(objectId))
+    .flatMap(([, cells]) => cells)
+  const tableReview = reviewCapabilities({
+    principal: me.data?.kind === 'agent' ? 'agent' : 'human',
+    viaAgent: false,
+    open: true,
+    stale: tableObjectIds.some((id) => {
+      const base = draftBaseVersion(id)
+      return base != null && tableVersions[id] != null && tableVersions[id] !== base
+    }) || proposalCells.some((cell) => cell.stale),
+    conflict: tableObjectIds.some((id) => openProposals.byObject.has(id)) || proposalCells.some((cell) => cell.conflict),
+    validationErrors: [],
+    roleCanWrite: me.data ? roleCanWrite(me.data.role) : true,
+  })
+  const draftCount = tableObjectIds.length + [...openProposals.byObject.values()].filter((cells) => cells.length > 0).length
   return (
     <StandardTableChrome
       testId="object-table"
@@ -1687,6 +1758,43 @@ export function ObjectTable({
       filterValue={filter}
       onFilterChange={setFilter}
     >
+      <ObjectDraftBar
+        count={draftCount}
+        canSave={tableReview.canSave}
+        canDiscard={tableReview.canDiscard}
+        saveReason={tableReview.saveReason}
+        discardReason={tableReview.discardReason}
+        onSave={() => {
+          const plan = draftSavePlan({
+            objectIds: [...new Set(drafts.cells.map((cell) => cell.objectId))],
+            serverVersions: tableVersions,
+            principal: me.data?.kind === 'agent' ? 'agent' : 'human',
+            fileAsProposal: Boolean(viewingAgentRunId()),
+            roleCanWrite: roleCanWrite(me.data?.role),
+            proposals: [...openProposals.byObject.values()].flat(),
+            meta: tableMeta,
+          })
+          void runDraftSave(plan, queryClient, viewingAgentRunId() ?? '').then((reason) => {
+            if (reason) reportWriteError(new Error(reason))
+            else {
+              session.push(copy.saved)
+              void queryClient.invalidateQueries({ queryKey: ['proposals'] })
+              void queryClient.invalidateQueries({ queryKey: ['proposal'] })
+            }
+          })
+        }}
+        onDiscard={() => {
+          void runDraftDiscard({
+            objectIds: [...new Set(drafts.cells.map((cell) => cell.objectId))],
+            proposals: [...openProposals.byObject.values()].flat(),
+            principal: me.data?.kind === 'agent' ? 'agent' : 'human',
+            viaAgent: false,
+          }).then(() => {
+            void queryClient.invalidateQueries({ queryKey: ['proposals'] })
+            void queryClient.invalidateQueries({ queryKey: ['proposal'] })
+          })
+        }}
+      />
       {peerSource && peerSourceView ? (
         <p className="table-source" data-testid="peer-linked-to">
           {copy.linkedTo.replace('{source}', displayViewTitle(peerSourceView, names))}
@@ -2537,54 +2645,17 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
     queryFn: () => api.get('/v1/proposals', { params: { query: { status: 'open', limit: 200 } } }),
     enabled: Boolean(session.objectId),
   })
-  const pendingProposalIds = [
-    ...(session.proposalId ? [session.proposalId] : []),
-    ...(((suggestions.data?.proposals as Json[] | undefined) ?? [])
-      .filter((item) => String(item.status ?? '') === 'open' && !item.session_id)
-      .map((item) => String(item.id))),
-  ].filter((id, index, all) => Boolean(id) && all.indexOf(id) === index)
-  const pendingProposals = useQueries({
-    queries: pendingProposalIds.map((id) => ({
-      queryKey: ['proposal', id],
-      queryFn: () => api.get('/v1/proposals/{id}', { params: { path: { id } } }),
-    })),
-  })
-  const [draft, setDraft] = useState<Json>({})
+  const drafts = useSyncExternalStore(subscribeObjectDrafts, getObjectDraftSnapshot, getObjectDraftSnapshot)
+  const openProposals = useOpenObjectProposals()
+  const me = useQuery({ queryKey: ['me'], queryFn: () => api.get('/v1/me'), retry: false })
   const [error, setError] = useState('')
-  const [pendingError, setPendingError] = useState('')
   const [flashId, setFlashId] = useState('')
   const [showMoreFields, setShowMoreFields] = useState(false)
   useEffect(() => onFlash(setFlashId), [])
   useEffect(() => {
-    setDraft({})
     setError('')
-    setPendingError('')
     setShowMoreFields(false)
-  }, [session.objectId, session.proposalId])
-  const acceptPending = useMutation({
-    mutationFn: ({ proposalId, body }: { proposalId: string; body: { rows: string[]; patches: Record<string, Json> } }) =>
-      api.post('/v1/proposals/{id}/accept', { params: { path: { id: proposalId } }, body }),
-    onSuccess: (result, variables) => {
-      const failed = failureLines(result)
-      if (failed.length > 0) {
-        const message = messageFromErrorBody(failed[0]) || copy.validation
-        setPendingError(message)
-        reportWriteError(new Error(message))
-        return
-      }
-      setPendingError('')
-      session.push(copy.saved)
-      void queryClient.invalidateQueries({ queryKey: ['proposal', variables.proposalId] })
-      void queryClient.invalidateQueries({ queryKey: ['proposals'] })
-      void queryClient.invalidateQueries({ queryKey: ['object', session.objectId] })
-      void queryClient.invalidateQueries({ queryKey: ['objects'] })
-      void queryClient.invalidateQueries({ queryKey: ['path-values'] })
-      void queryClient.invalidateQueries({ queryKey: ['history'] })
-    },
-    onError: (reason: unknown) => {
-      setPendingError(reportWriteError(reason) ?? copy.validation)
-    },
-  })
+  }, [session.objectId])
   useEffect(() => {
     if (!session.objectId || !object.data) return
     const stored = (object.data.values as Json) ?? {}
@@ -2610,54 +2681,54 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
     )
   }
   if (object.isError) return <StateNote tone="error" title={copy.graphError} detail={copy.validation} testId="detail-error" />
-  if (!object.data) return <StateNote tone="loading" title={copy.loading} />
-  const values = { ...((object.data.values as Json) ?? {}), ...draft }
+  if (!object.data || !session.objectId) return <StateNote tone="loading" title={copy.loading} />
+  const objectId = session.objectId
+  const serverValues = (object.data.values as Json) ?? {}
+  const serverVersion = Number(object.data.version ?? 0)
+  const values = overlayValues(objectId, serverValues, serverVersion)
   const attributes = (defs.data?.attributes as Json[] | undefined) ?? []
   const lists = (defs.data?.value_lists as Json[] | undefined) ?? []
   const families = (defs.data?.unit_families as Json[] | undefined) ?? []
-  const label = recordNumber(object.data.values as Json) || String(object.data.id ?? '')
-  const suggestionCount = suggestionIndex(suggestions.data).get(session.objectId) ?? 0
+  const label = recordNumber(serverValues) || String(object.data.id ?? '')
+  const suggestionCount = suggestionIndex(suggestions.data).get(objectId) ?? 0
+  const localCells = drafts.cells.filter((cell) => cell.objectId === objectId)
+  const proposalCells = openProposals.byObject.get(objectId) ?? []
+  const detailReview = reviewCapabilities({
+    principal: me.data?.kind === 'agent' ? 'agent' : 'human',
+    viaAgent: false,
+    open: true,
+    stale: (draftBaseVersion(objectId) != null && draftBaseVersion(objectId) !== serverVersion)
+      || proposalCells.some((cell) => cell.stale),
+    conflict: (localCells.length > 0 && proposalCells.length > 0) || proposalCells.some((cell) => cell.conflict),
+    validationErrors: error ? [error] : [],
+    roleCanWrite: me.data ? roleCanWrite(me.data.role) : true,
+  })
   const save = () => {
-    if (Object.keys(draft).length === 0) return
-    const agentSession = viewingAgentRunId()
-    if (agentSession) {
-      void proposeInAgentSession(agentSession, {
-        objectId: session.objectId ?? '',
-        objectKey: label,
-        typeKey: String(object.data?.type ?? ''),
-        baseVersion: Number(object.data?.version ?? 0),
-        values: draft,
-      }).then(() => {
-        setDraft({})
-        setError('')
-        session.push(copy.agentSessionProposed)
-        void queryClient.invalidateQueries({ queryKey: ['agent-run'] })
-        void queryClient.invalidateQueries({ queryKey: ['agent-runs'] })
-        void queryClient.invalidateQueries({ queryKey: ['proposals'] })
-      }).catch((reason: unknown) => {
-        const message = writeErrorMessage(reason)
-        if (message) setError(message)
-      })
-      return
-    }
-    void api.patch('/v1/objects/{id}', { params: { path: { id: session.objectId ?? '' }, header: { 'If-Match': Number(object.data?.version ?? 0) } }, body: { values: freeObject(draft) } })
-      .then(async (saved) => {
-        await applyObjectWrite(queryClient, saved as Json)
-        setDraft({})
+    const plan = draftSavePlan({
+      objectIds: [objectId],
+      serverVersions: { [objectId]: serverVersion },
+      principal: me.data?.kind === 'agent' ? 'agent' : 'human',
+      fileAsProposal: Boolean(viewingAgentRunId()),
+      roleCanWrite: me.data ? roleCanWrite(me.data.role) : true,
+      validationErrors: error ? [error] : [],
+      proposals: proposalCells,
+      meta: { [objectId]: { key: label, type: String(object.data?.type ?? '') } },
+    })
+    void runDraftSave(plan, queryClient, viewingAgentRunId() ?? '').then((reason) => {
+      if (reason) setError(reason)
+      else {
         setError('')
         session.push(`${copy.saved} ${label}`)
+        void queryClient.invalidateQueries({ queryKey: ['proposals'] })
         void queryClient.invalidateQueries({ queryKey: ['proposal'] })
         void queryClient.invalidateQueries({ queryKey: ['agent-run'] })
-      })
-      .catch((reason: unknown) => {
-        const message = writeErrorMessage(reason)
-        if (message) setError(message)
-      })
+      }
+    })
   }
   const status = textValue(values.status)
   const number = recordNumber(values)
   const name = recordTitle(values, uiLanguage)
-  const dirty = Object.keys(draft).length > 0
+  const dirty = localCells.length > 0 || proposalCells.length > 0
   const typeDef = ((defs.data?.types as Json[]) ?? []).find((item) => item.key === object.data?.type)
   const typeIds = new Set(((typeDef?.attributes as unknown[]) ?? []).map(String))
   const fileKeys = attributes
@@ -2668,59 +2739,6 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   const visibleKeys = showMoreFields ? [...primaryKeys, ...moreKeys] : primaryKeys
   const owners = provenance.data?.owners ?? {}
   const origin = provenance.data?.origin
-  const pendingByField = new Map<string, Array<{ proposalId: string; row: Json; line: DiffLine; lines: DiffLine[]; stale: boolean }>>()
-  for (const [index, proposalId] of pendingProposalIds.entries()) {
-    const proposalBody = pendingProposals[index]?.data as Json | undefined
-    const stale = Boolean(proposalBody?.stale)
-    for (const row of pendingRowsForObject(proposalBody, session.objectId)) {
-      const lines = pendingLines(row, values, defs.data)
-      for (const line of lines) {
-        if (!line.field) continue
-        const entries = pendingByField.get(line.field) ?? []
-        entries.push({ proposalId, row, line, lines, stale })
-        pendingByField.set(line.field, entries)
-      }
-    }
-  }
-  const renderPending = (key: string) => {
-    const entries = pendingByField.get(key)
-    if (!entries || entries.length === 0) return null
-    return entries.map(({ proposalId, row, line, lines, stale }) => (
-      <div
-        key={`${String(row.id)}:${line.id}`}
-        className="pending-field"
-        data-testid="pending-field"
-        data-field={key}
-        data-line={line.id}
-        data-stale={stale ? 'true' : 'false'}
-      >
-        <span className="pending-chip" data-testid={stale ? 'pending-stale' : 'pending-chip'}>{stale ? copy.proposalStale : copy.pending}</span>
-        <span className="pending-value" data-testid="pending-value">
-          {line.language ? `${line.language}: ` : ''}{line.after}
-        </span>
-        <Button
-          type="button"
-          variant="default"
-          data-testid="accept-pending"
-          data-line={line.id}
-          disabled={acceptPending.isPending || stale}
-          onClick={() => acceptPending.mutate({ proposalId, body: acceptPendingLine(line, row, lines, values) })}
-        >
-          {copy.acceptField}
-        </Button>
-        <Button
-          type="button"
-          variant="default"
-          data-testid="reject-pending"
-          data-line={line.id}
-          disabled={acceptPending.isPending}
-          onClick={() => acceptPending.mutate({ proposalId, body: rejectPendingRow(row) })}
-        >
-          {copy.rejectField}
-        </Button>
-      </div>
-    ))
-  }
   const renderField = (key: string) => {
     const attribute = attributes.find((item) => item.key === key)
     const kind = (attribute?.kind as Json) ?? {}
@@ -2729,7 +2747,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
     return (
       <div key={key} className={owner ? 'field locked' : 'field'} data-testid={owner ? 'locked-field' : undefined}>
         <label>{fieldLabel}{owner ? ` · ${copy.ownedBy} ${owner}` : ''}</label>
-        <div className={key in draft ? 'control draft-user' : 'control'}>
+        <div className={localCells.some((cell) => cell.attribute === key) ? 'control draft-user' : proposalCells.some((cell) => cell.attribute === key) ? 'control draft-agent' : 'control'}>
           <Editor
             kind={String(kind.type ?? 'text')}
             form={String(kind.form ?? '')}
@@ -2740,10 +2758,27 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
             options={optionsFor(lists, String(kind.list ?? ''))}
             units={unitsFor(families, String(kind.unit_family ?? ''))}
             readOnly={Boolean(owner)}
-            onChange={(next) => setDraft((state) => ({ ...state, [key]: next }))}
+            onChange={(next) => {
+              const server = serverValues[key]
+              stageObjectCell({
+                objectId: session.objectId ?? '',
+                attribute: key,
+                columnId: key,
+                baseVersion: editBaseVersion(session.objectId ?? '', serverVersion),
+                originalText: displayOf(server),
+                proposedText: displayOf(next),
+                value: next,
+              })
+            }}
           />
         </div>
-        {renderPending(key)}
+        {proposalCells.filter((cell) => cell.attribute === key).map((cell) => (
+          <div key={cell.id} className="pending-field" data-testid="pending-field" data-field={key} data-stale={cell.stale ? 'true' : 'false'}>
+            <span className="pending-chip" data-testid={cell.stale ? 'pending-stale' : 'pending-chip'}>{cell.stale ? copy.proposalStale : copy.pending}</span>
+            <CellDiff original={cell.originalKnown ? cell.originalText : undefined} proposed={cell.proposedText} />
+            {cell.stale && cell.staleReason ? <span data-testid="agent-stale-reason">{cell.staleReason}</span> : null}
+          </div>
+        ))}
         {owner && origin && typeof origin === 'object' ? (
           <p className="hint" data-testid="field-origin">
             {copy.sourceObject} {String((origin as Json).source_key ?? '')}
@@ -2774,7 +2809,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
         const index = fields.indexOf(target)
         if (event.key === 'Escape') {
           if (target.closest('[role="listbox"]')) return
-          setDraft({})
+          discardObjectDraft(session.objectId ?? '')
           return
         }
         if (index < 0) return
@@ -2831,14 +2866,29 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
             {showMoreFields ? copy.showFewerFields : copy.showMoreFields}
           </Button>
         ) : null}
-        {pendingError ? <p className="error" data-testid="pending-error">{pendingError}</p> : null}
         {error ? <p className="error" data-testid="detail-error">{error}</p> : null}
       </div>
       {dirty ? (
-        <div className="save-bar">
-          <Button type="button" variant="danger" onClick={() => setDraft({})}>{copy.discard}</Button>
-          <Button variant="primary" type="submit" data-testid="review-and-save">{viewingAgentRunId() ? copy.agentPropose : copy.reviewAndSave}</Button>
-        </div>
+        <ObjectDraftBar
+          count={localCells.length + (proposalCells.length > 0 ? 1 : 0)}
+          canSave={detailReview.canSave}
+          canDiscard={detailReview.canDiscard}
+          saveReason={detailReview.saveReason}
+          discardReason={detailReview.discardReason}
+          onSave={save}
+          onDiscard={() => {
+            void runDraftDiscard({
+              objectIds: [objectId],
+              proposals: proposalCells,
+              principal: me.data?.kind === 'agent' ? 'agent' : 'human',
+              viaAgent: false,
+            }).then((reason) => {
+              if (reason) setError(reason)
+              void queryClient.invalidateQueries({ queryKey: ['proposals'] })
+              void queryClient.invalidateQueries({ queryKey: ['proposal'] })
+            })
+          }}
+        />
       ) : null}
     </form>
   )

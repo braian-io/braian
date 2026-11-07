@@ -47,9 +47,19 @@ pub enum ReviewKind {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ReviewRowId {
-    Proposal { id: Uuid },
-    Import { session_id: Uuid, row_no: i32 },
-    ModelStep { user_id: Uuid, index: i32 },
+    Proposal {
+        id: Uuid,
+    },
+    Import {
+        session_id: Uuid,
+        row_no: i32,
+    },
+    /// `key` is the step's content, so a reorder or a removal does not rename it.
+    /// `position` on the row is the current order.
+    ModelStep {
+        user_id: Uuid,
+        key: String,
+    },
 }
 
 /// What the row would change. The patch is the stored write payload.
@@ -94,6 +104,9 @@ pub struct ReviewRow {
     pub stored_status: String,
     pub decision: RowDecision,
     pub conflict: bool,
+    /// Import validation messages. Empty for proposal and model rows.
+    #[serde(default)]
+    pub errors: Vec<String>,
 }
 
 /// A draft a person can save or discard, from any source.
@@ -223,6 +236,76 @@ pub fn draft_status(stored: &str) -> Result<DraftStatus, String> {
     }
 }
 
+/// Stable identity for one model step. The same step keeps this key when the
+/// list is reordered or a different step is removed. An identical copy gets
+/// `#2`, `#3`, … in the current list order.
+pub fn model_step_key(step: &Value) -> String {
+    match step {
+        Value::Object(map) => {
+            let mut keys: Vec<&String> = map.keys().collect();
+            keys.sort();
+            let mut out = String::new();
+            for key in keys {
+                out.push_str(key);
+                out.push('=');
+                out.push_str(&map[key].to_string());
+                out.push('\u{1}');
+            }
+            out
+        }
+        other => other.to_string(),
+    }
+}
+
+pub fn model_step_keys(steps: &[Value]) -> Vec<String> {
+    let mut seen: std::collections::BTreeMap<String, i32> = std::collections::BTreeMap::new();
+    let mut keys = Vec::with_capacity(steps.len());
+    for step in steps {
+        let base = model_step_key(step);
+        let count = seen.entry(base.clone()).or_insert(0);
+        *count += 1;
+        if *count == 1 {
+            keys.push(base);
+        } else {
+            keys.push(format!("{base}#{count}"));
+        }
+    }
+    keys
+}
+
+/// Messages from an import row or its cells. Objects contribute `message`.
+pub fn review_error_messages(value: &Value) -> Vec<String> {
+    let mut out = Vec::new();
+    push_error_messages(value, &mut out);
+    out
+}
+
+fn push_error_messages(value: &Value, out: &mut Vec<String>) {
+    match value {
+        Value::String(text) if !text.is_empty() => out.push(text.clone()),
+        Value::Array(items) => {
+            for item in items {
+                push_error_messages(item, out);
+            }
+        }
+        Value::Object(map) => {
+            if let Some(message) = map.get("message").and_then(Value::as_str) {
+                if !message.is_empty() {
+                    out.push(message.to_owned());
+                }
+                return;
+            }
+            for (key, child) in map {
+                if key == "before" || key == "value" || key == "after" || key == "state" {
+                    continue;
+                }
+                push_error_messages(child, out);
+            }
+        }
+        _ => {}
+    }
+}
+
 pub fn row_decision(stored_status: &str) -> RowDecision {
     match stored_status {
         "pending" | "new" | "changed" => RowDecision::Pending,
@@ -235,6 +318,7 @@ pub fn row_decision(stored_status: &str) -> RowDecision {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     fn human() -> ReviewActor {
         ReviewActor {
@@ -362,5 +446,32 @@ mod tests {
         assert!(!base_version_differs(3, 3));
         assert!(base_version_differs(3, 4));
         assert!(base_version_differs(5, 4));
+    }
+
+    #[test]
+    fn a_model_step_keeps_its_key_when_another_step_moves() {
+        let weight = json!({ "op": "add_attribute", "attribute": "weight" });
+        let name = json!({ "attribute": "name", "op": "add_attribute" });
+        let copy = weight.clone();
+        let ordered = model_step_keys(&[weight.clone(), name.clone(), copy.clone()]);
+        assert_eq!(ordered[0], model_step_key(&weight));
+        assert_eq!(ordered[1], model_step_key(&name));
+        assert_eq!(ordered[2], format!("{}#2", model_step_key(&weight)));
+        let removed = model_step_keys(&[name.clone(), weight.clone()]);
+        assert_eq!(removed[0], ordered[1]);
+        assert_eq!(removed[1], ordered[0]);
+        assert_ne!(model_step_key(&weight), model_step_key(&name));
+    }
+
+    #[test]
+    fn import_errors_keep_row_and_cell_messages() {
+        let messages = review_error_messages(&json!({
+            "errors": [{ "message": "Row is missing a number" }],
+            "cells": {
+                "name": { "before": "Old", "value": "", "error": { "message": "Name is required" } }
+            }
+        }));
+        assert!(messages.contains(&"Row is missing a number".to_owned()));
+        assert!(messages.contains(&"Name is required".to_owned()));
     }
 }

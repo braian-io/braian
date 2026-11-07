@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Eye, Play, Send, SendToBack } from 'lucide-react'
-import { toast } from 'sonner'
-import { ApiError, api, textValue, type Json } from './api'
+import { Eye, SendToBack } from 'lucide-react'
+import { api, type Json } from './api'
 import {
   AgentRunError,
   agentDisplayText,
@@ -12,17 +11,13 @@ import {
   followAgentRun,
   patchAgentRun,
   requestShowAgentSession,
-  type AgentProposal,
   type AgentRunDetail,
 } from './agent-runs'
 import { subscribeViewingAgent, viewingAgentRunId } from './agent-session'
 import { Button } from './components/ui/button'
-import { Input } from './components/ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from './components/ui/tooltip'
-import { proposedValues, suggestionLines, type DiffLine } from './field-diff'
-import { FieldDiff } from './field-diff-view'
 import { formatTimestamp } from './format'
-import { copy, uiLanguage } from './i18n'
+import { copy } from './i18n'
 
 type AgentViewProps = {
   runId: string
@@ -73,52 +68,13 @@ function statusLabel(status: string): string {
   return agentStatusLabel(status, 'tab')
 }
 
-function decisionText(accept: boolean, lines: DiffLine[]): string {
-  const verb = accept ? 'Applied' : 'Rejected'
-  if (lines.length === 0) return verb
-  const changes = lines
-    .map((line) => `${line.label}${line.language ? ` (${line.language})` : ''} → ${line.after || line.before}`)
-    .join('; ')
-  return `${verb}: ${changes}`
-}
-
-function acceptedVersion(result: unknown): number | undefined {
-  if (!result || typeof result !== 'object' || !('accepted' in result)) return undefined
-  const accepted = (result as { accepted?: unknown }).accepted
-  if (!Array.isArray(accepted)) return undefined
-  for (const row of accepted) {
-    if (!row || typeof row !== 'object' || !('version' in row)) continue
-    const version = Number((row as { version?: unknown }).version)
-    if (Number.isFinite(version)) return version
-  }
-  return undefined
-}
-
-function restoreValues(current: Json, patch: unknown): Json {
-  const proposed = proposedValues(patch)
-  const values: Json = {}
-  for (const [key, after] of Object.entries(proposed)) {
-    const before = current[key]
-    if (after && typeof after === 'object' && !Array.isArray(after) && before && typeof before === 'object' && !Array.isArray(before)) {
-      const map: Json = {}
-      for (const language of Object.keys(after as Json)) map[language] = (before as Json)[language] ?? null
-      values[key] = map
-      continue
-    }
-    values[key] = before ?? null
-  }
-  return values
-}
-
 export function AgentView({ runId, push }: AgentViewProps) {
   const queryClient = useQueryClient()
   const viewingId = useSyncExternalStore(subscribeViewingAgent, viewingAgentRunId, viewingAgentRunId)
   const rootRef = useRef<HTMLDivElement>(null)
-  const followRef = useRef<HTMLInputElement>(null)
   const opened = useRef(false)
   const focusAfter = useRef(false)
   const focusedWaiting = useRef(false)
-  const [draft, setDraft] = useState('')
   const [error, setError] = useState('')
   const [announced, setAnnounced] = useState('')
   const previousStatus = useRef('')
@@ -131,7 +87,6 @@ export function AgentView({ runId, push }: AgentViewProps) {
       return query.state.data?.status === 'working' ? 400 : 1000
     },
   })
-  const defs = useQuery({ queryKey: ['definitions'], queryFn: () => api.get('/v1/definitions') })
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ['agent-run', runId] })
     void queryClient.invalidateQueries({ queryKey: ['proposal'] })
@@ -139,60 +94,6 @@ export function AgentView({ runId, push }: AgentViewProps) {
     void queryClient.invalidateQueries({ queryKey: ['objects'] })
     void queryClient.invalidateQueries({ queryKey: ['object'] })
   }
-  const decide = useMutation({
-    mutationFn: async (input: { id: string; accept: boolean; lines: DiffLine[]; objectId?: string; restore?: Json }) => {
-      if (!input.accept) {
-        await api.post('/v1/proposals/{id}/discard', { params: { path: { id: input.id } } })
-        return { ...input, version: undefined as number | undefined }
-      }
-      const result = await api.post('/v1/proposals/{id}/accept', { params: { path: { id: input.id } }, body: {} })
-      return { ...input, version: acceptedVersion(result) }
-    },
-    onSuccess: (input) => {
-      setError('')
-      const message = decisionText(input.accept, input.lines)
-      push(message)
-      const version = input.version
-      if (input.accept && input.objectId && input.restore && version != null) {
-        const objectId = input.objectId
-        const restore = input.restore
-        toast(message, {
-          duration: 5000,
-          action: {
-            label: copy.undo,
-            onClick: () => {
-              void api.patch('/v1/objects/{id}', {
-                params: { path: { id: objectId }, header: { 'If-Match': version } },
-                body: { values: restore },
-              }).then(async () => {
-                await api.post('/v1/proposals/{id}/revert-accept', { params: { path: { id: input.id } } })
-                refresh()
-              }).catch((reason: unknown) => {
-                if (reason instanceof ApiError && reason.status === 412) {
-                  toast(copy.agentUndoConflict)
-                  push(copy.agentUndoConflict)
-                  return
-                }
-                const detail = reason instanceof Error ? reason.message : copy.validation
-                setError(detail)
-                push(detail)
-              })
-            },
-          },
-        })
-      } else {
-        toast(message, { duration: 5000 })
-      }
-      focusAfter.current = true
-      void queryClient.invalidateQueries({ queryKey: ['agent-run', runId] })
-    },
-    onError: (reason: unknown) => {
-      const message = reason instanceof Error ? reason.message : copy.validation
-      setError(message)
-      push(message)
-      refresh()
-    },
-  })
   const modeChange = useMutation({
     mutationFn: (mode: 'foreground' | 'background') => patchAgentRun(runId, { mode }),
     onSuccess: (detail) => {
@@ -208,7 +109,6 @@ export function AgentView({ runId, push }: AgentViewProps) {
     mutationFn: (content: string) => followAgentRun(runId, content),
     onSuccess: (detail) => {
       queryClient.setQueryData(['agent-run', runId], detail)
-      setDraft('')
       setError('')
       refresh()
     },
@@ -239,13 +139,11 @@ export function AgentView({ runId, push }: AgentViewProps) {
         focusAfter.current = false
         if (waiting) {
           focusedWaiting.current = true
-          root.querySelector<HTMLInputElement>('[data-testid="agent-follow-up"]')?.focus()
+          root.querySelector<HTMLButtonElement>('[data-testid="agent-open-draft"]')?.focus()
           return
         }
         focusedWaiting.current = false
-        const next = root.querySelector<HTMLButtonElement>('[data-testid="approve-proposal"]:not([disabled])')
-        const reply = root.querySelector<HTMLInputElement>('[data-testid="agent-follow-up"]')
-        ;(next ?? reply)?.focus()
+        root.querySelector<HTMLButtonElement>('[data-testid="agent-open-draft"]')?.focus()
       })
     })
     return () => {
@@ -356,26 +254,25 @@ export function AgentView({ runId, push }: AgentViewProps) {
         })}
         {data.messages.length === 0 ? <p className="muted">{copy.agentEmptyRun}</p> : null}
       </div>
-      {data.proposals.map((proposal) => (
-        <ProposalCard
-          key={proposal.id}
-          proposal={proposal}
-          defs={defs.data}
-          pending={decide.isPending}
-          reverted={Boolean(proposal.reverted_at)}
-          onDecide={(accept, lines, restore) => decide.mutate({
-            id: proposal.id,
-            accept,
-            lines,
-            objectId: proposal.object_id ?? undefined,
-            restore,
-          })}
-          onRedo={() => {
-            setDraft(copy.agentRedoDraft)
-            followRef.current?.focus()
+      {data.proposals.some((proposal) => proposal.stale) ? (
+        <p data-testid="agent-stale-reason">
+          {data.proposals.find((proposal) => proposal.stale)?.stale_reason || copy.agentProposalStale}
+        </p>
+      ) : null}
+      <div className="toolbar">
+        <Button
+          type="button"
+          data-testid="agent-open-draft"
+          onClick={() => {
+            const objectId = data.proposals.find((proposal) => proposal.object_id)?.object_id ?? null
+            window.dispatchEvent(new CustomEvent('braian-open-draft', {
+              detail: { objectId, viewType: objectId ? 'object_table' : 'data_model' },
+            }))
           }}
-        />
-      ))}
+        >
+          {copy.openDraftInTable}
+        </Button>
+      </div>
       {failure ? (
         <div className="agent-failed" role="alert" data-testid="agent-run-error">
           <p>{/no model is connected|openai_api_key/i.test(data.error || '') || failure === copy.agentUnavailable ? copy.agentUnavailableHint : failure}</p>
@@ -390,112 +287,7 @@ export function AgentView({ runId, push }: AgentViewProps) {
         </div>
       ) : null}
       {error ? <p className="error" role="alert" data-testid="agent-error">{error}</p> : null}
-      <form
-        className="agent-follow"
-        data-agent-busy={working || follow.isPending ? 'true' : undefined}
-        onSubmit={(event) => {
-          event.preventDefault()
-          const content = draft.trim()
-          if (!content || working) return
-          follow.mutate(content)
-        }}
-      >
-        <Input
-          ref={followRef}
-          data-testid="agent-follow-up"
-          value={draft}
-          placeholder={working ? copy.agentWorkingPlaceholder : copy.agentFollowUp}
-          disabled={working || follow.isPending}
-          onChange={(event) => setDraft(event.target.value)}
-        />
-        <AgentIconButton
-          type="submit"
-          label={waiting ? copy.agentResume : copy.agentSend}
-          testId={waiting ? 'agent-resume' : 'agent-send'}
-          disabled={working || follow.isPending || draft.trim() === ''}
-        >
-          {waiting ? <Play size={14} aria-hidden="true" /> : <Send size={14} aria-hidden="true" />}
-        </AgentIconButton>
-      </form>
     </div>
-  )
-}
-
-function ProposalCard({
-  proposal,
-  defs,
-  pending,
-  reverted,
-  onDecide,
-  onRedo,
-}: {
-  proposal: AgentProposal
-  defs: Json | undefined
-  pending: boolean
-  reverted: boolean
-  onDecide: (accept: boolean, lines: DiffLine[], restore?: Json) => void
-  onRedo: () => void
-}) {
-  const object = useQuery({
-    queryKey: ['object', proposal.object_id],
-    queryFn: () => api.get('/v1/objects/{id}', { params: { path: { id: proposal.object_id ?? '' } } }),
-    enabled: Boolean(proposal.object_id),
-  })
-  const current = (object.data?.values as Json | undefined) ?? {}
-  const lines = suggestionLines(current, proposal.patch, defs)
-  const name = textValue(current.name, uiLanguage) || proposal.object_key || ''
-  const open = proposal.status === 'open' && !reverted
-  const resolved = reverted
-    ? copy.agentReverted
-    : proposal.status !== 'open'
-      ? `${proposal.status === 'accepted' ? copy.agentApproved : copy.agentRejectedByYou}${proposal.resolved_at ? ` · ${formatTimestamp(proposal.resolved_at)}` : ''}`
-      : ''
-  return (
-    <article
-      className="agent-proposal"
-      data-testid="agent-proposal"
-      data-stale={proposal.stale ? 'true' : 'false'}
-      data-status={proposal.status}
-    >
-      <header>
-        {name ? <strong data-testid="agent-proposal-object">{name}</strong> : null}
-        {proposal.object_key ? <span className="muted" data-testid="agent-proposal-key">{proposal.object_key}</span> : null}
-        <span className="meta-chip">{reverted ? copy.agentReverted : statusLabel(proposal.status)}</span>
-        {proposal.stale ? <span className="meta-chip" data-testid="agent-proposal-stale">{copy.proposalStale}</span> : null}
-      </header>
-      <FieldDiff lines={lines} />
-      {proposal.stale ? <p data-testid="agent-stale-reason">{proposal.stale_reason || copy.agentProposalStale}</p> : null}
-      {resolved ? <p data-testid="agent-resolved">{resolved}</p> : null}
-      {open ? (
-        <div className="toolbar">
-          <Button
-            type="button"
-            variant="primary"
-            className="agent-approve"
-            data-testid="approve-proposal"
-            disabled={proposal.stale || pending}
-            title={proposal.stale ? copy.agentStaleApprove : undefined}
-            onClick={() => onDecide(true, lines, proposal.object_id ? restoreValues(current, proposal.patch) : undefined)}
-          >
-            {copy.agentApprove}
-          </Button>
-          <Button
-            type="button"
-            variant="default"
-            data-testid="reject-proposal"
-            disabled={pending}
-            onClick={() => onDecide(false, lines)}
-          >
-            {copy.agentReject}
-          </Button>
-          {proposal.stale ? (
-            <Button type="button" variant="ghost" data-testid="agent-redo" onClick={onRedo}>
-              {copy.agentRedo}
-            </Button>
-          ) : null}
-        </div>
-      ) : null}
-    </article>
   )
 }
 

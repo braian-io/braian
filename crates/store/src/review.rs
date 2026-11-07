@@ -6,7 +6,7 @@
 
 use braian_model::{
     DraftOrigin, DraftStatus, ReviewDraft, ReviewKind, ReviewRow, ReviewRowId, ReviewTarget,
-    draft_origin, draft_status, row_decision,
+    draft_origin, draft_status, model_step_keys, review_error_messages, row_decision,
 };
 use serde_json::Value;
 use uuid::Uuid;
@@ -70,16 +70,15 @@ impl Store {
         let steps = steps
             .as_array()
             .ok_or_else(|| Error::Data("model draft steps are not a list".into()))?;
+        let keys = model_step_keys(steps);
         let rows = steps
             .iter()
+            .zip(keys)
             .enumerate()
-            .map(|(index, step)| {
+            .map(|(index, (step, key))| {
                 let position = i32::try_from(index).unwrap_or(i32::MAX);
                 ReviewRow {
-                    id: ReviewRowId::ModelStep {
-                        user_id,
-                        index: position,
-                    },
+                    id: ReviewRowId::ModelStep { user_id, key },
                     position,
                     target: ReviewTarget::Model,
                     base_version: Some(base_revision),
@@ -88,6 +87,7 @@ impl Store {
                     stored_status: "pending".into(),
                     decision: row_decision("pending"),
                     conflict: false,
+                    errors: Vec::new(),
                 }
             })
             .collect();
@@ -186,6 +186,7 @@ fn proposal_review_row(row: &Value) -> Result<ReviewRow, Error> {
             .get("conflict")
             .and_then(Value::as_bool)
             .unwrap_or(false),
+        errors: Vec::new(),
     })
 }
 
@@ -205,10 +206,15 @@ fn import_review_row(session_id: Uuid, row: ImportRowOut) -> ReviewRow {
         },
         base_version: row.base_version,
         patch: row.patch.unwrap_or(Value::Null),
-        cells: Some(row.cells),
+        cells: Some(row.cells.clone()),
         decision: row_decision(&row.status),
         stored_status: row.status,
         conflict,
+        errors: {
+            let mut errors = review_error_messages(&row.errors);
+            errors.extend(review_error_messages(&row.cells));
+            errors
+        },
     }
 }
 

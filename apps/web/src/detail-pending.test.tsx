@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Json } from './api'
+import { resetObjectDrafts } from './object-draft'
 import { resetObjectWriteState } from './object-write'
 import { ObjectDetail, type PanesSession } from './panes'
 
@@ -105,6 +106,7 @@ function acceptCall() {
 }
 
 beforeEach(() => {
+  resetObjectDrafts()
   resetObjectWriteState()
   mock.use(proposalApi)
   vi.stubGlobal('fetch', vi.fn(async () => Response.json({ owners: {}, origin: null })))
@@ -124,12 +126,12 @@ describe('pending proposal values in Detail', () => {
     expect(pending.textContent).toContain('New')
     expect(pending.getAttribute('data-field')).toBe('name')
 
-    fireEvent.click(screen.getByTestId('accept-pending'))
+    fireEvent.click(screen.getByTestId('review-and-save'))
 
     await waitFor(() => expect(acceptCall()).toBeTruthy())
     expect(acceptCall()?.[1]).toMatchObject({
       params: { path: { id: 'p1' } },
-      body: { rows: ['r1'], patches: { r1: { values: { name: { en: 'New' } } } } },
+      body: { rows: ['r1'] },
     })
   })
 
@@ -139,26 +141,23 @@ describe('pending proposal values in Detail', () => {
     const pending = await screen.findByTestId('pending-field')
     expect(pending.textContent).toContain('New')
 
-    fireEvent.click(screen.getByTestId('accept-pending'))
+    fireEvent.click(screen.getByTestId('review-and-save'))
 
     await waitFor(() => expect(acceptCall()).toBeTruthy())
     expect(acceptCall()?.[1]).toMatchObject({
       params: { path: { id: 'p1' } },
-      body: { rows: ['r1'], patches: { r1: { values: { name: { en: 'New' } } } } },
+      body: { rows: ['r1'] },
     })
   })
 
-  it('rejects the pending row through the accept endpoint', async () => {
+  it('discards the pending row instead of rejecting it from the panel', async () => {
     render(<Host />)
 
     await screen.findByTestId('pending-field')
-    fireEvent.click(screen.getByTestId('reject-pending'))
+    fireEvent.click(screen.getByTestId('discard-draft'))
 
-    await waitFor(() => expect(acceptCall()).toBeTruthy())
-    expect(acceptCall()?.[1]).toMatchObject({
-      params: { path: { id: 'p1' } },
-      body: { rows: ['r1'], patches: { r1: { values: {} } } },
-    })
+    await waitFor(() => expect(mock.methods.post.mock.calls.some((call) => call[0] === '/v1/proposals/{id}/discard')).toBe(true))
+    expect(acceptCall()).toBeUndefined()
   })
 })
 

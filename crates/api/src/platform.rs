@@ -4351,7 +4351,45 @@ async fn get_proposal(
         .map_err(store_status)?
         .ok_or_else(|| Problem::new(StatusCode::NOT_FOUND, "not_found", "proposal"))?;
     crate::model_proposal::attach(&state, &mut body).await?;
+    attach_base_values(&state, &mut body).await?;
     Ok(Json(body))
+}
+
+/// Original values at `base_version`. A later read of the object is not the
+/// original the draft was filed against.
+async fn attach_base_values(state: &AppState, body: &mut Value) -> Result<(), Problem> {
+    let Some(rows) = body.get_mut("rows").and_then(Value::as_array_mut) else {
+        return Ok(());
+    };
+    let cached = state.models.get(&state.store).await?;
+    for row in rows.iter_mut() {
+        let Some(object_id) = row.get("object_id").and_then(Value::as_str) else {
+            continue;
+        };
+        let Some(base) = row
+            .get("base_version")
+            .and_then(Value::as_i64)
+            .filter(|base| *base >= 0)
+        else {
+            continue;
+        };
+        let id = ObjectId::from_uuid(Uuid::parse_str(object_id).map_err(|error| {
+            Problem::new(StatusCode::BAD_REQUEST, "invalid_id", error.to_string())
+        })?);
+        let values = state
+            .store
+            .values_at_version(id, base as u64)
+            .await
+            .map_err(store_status)?;
+        let wire = values_to_wire(&cached.model, &[], &values, true);
+        if let Some(object) = row.as_object_mut() {
+            object.insert(
+                "base_values".into(),
+                serde_json::to_value(wire).unwrap_or(json!({})),
+            );
+        }
+    }
+    Ok(())
 }
 
 async fn accept_proposal(

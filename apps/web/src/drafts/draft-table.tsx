@@ -6,6 +6,7 @@ import { Button } from '../components/ui/button'
 import { StandardTableChrome } from '../standard-table'
 import { copy } from '../i18n'
 import { cellClass, importCellText, rowClass } from '../import/model'
+import { importErrorLines } from '../review-cells'
 import { setSkipInvalid } from '../import/controller'
 
 const PAGE = 100
@@ -221,7 +222,12 @@ export function DraftTable({ proposalId, version = '', excluded, onExcludedChang
                   </span>
                 ) : null}
                 <span>{row.row_no}</span>
-                <span title={row.status}>{row.status === 'failed' ? '⛔' : row.status === 'new' ? '＋' : row.status === 'changed' ? '•' : ''}</span>
+                <span title={[row.status, ...importErrorLines(row.errors)].filter(Boolean).join(' · ')}>
+                  {row.status === 'failed' ? '⛔' : row.status === 'new' ? '＋' : row.status === 'changed' ? '•' : ''}
+                  {importErrorLines(row.errors).length > 0 ? (
+                    <span className="error" data-testid={`import-row-error-${row.row_no}`}>{importErrorLines(row.errors).join(' ')}</span>
+                  ) : null}
+                </span>
                 {columns.map((column) => {
                   const cell = row.cells[String(column.col)]
                   const active = editing?.row === row.row_no && editing.col === column.col
