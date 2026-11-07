@@ -1,6 +1,6 @@
-# Status 2026-11-06
+# Status 2026-11-07
 
-Bas: `origin/main` tip `2d78daf` (squash-merge av #253, rad 149 — hardcoded UI-strängar → `copy`; inkluderar #252 / `fa304b3`, Sources M2). Senaste migrering i repot: `V42__agent_session.sql`.
+Bas: `origin/main` tip `fc09d6c` (squash-merge av #263, rad 205 — attributtabellens bool-kolumner med Braian-checkboxar). Senaste migrering i repot: `V43__soft_delete.sql` (#260).
 
 Braian går att starta lokalt och att klicka igenom på [demo.braian.io](https://demo.braian.io). Postgres är källan och ändringsloggen. Indexer, sök, auth, förslag och webbgränssnittet sitter på samma kedja. Flödet står i `docs/events.md`. Demokatalogen som `just dev` visar är bara seed: hjälteobjekt plus 240 syntetiska livsmedel (leverantörer, produkter och artiklar). Etiketter finns på sv/en/de och objektdata är engelska. Strukturen heter Food, leverantörer står utanför trädet och pekas ut med länkar. Tester skriver i databasen `braian_e2e` och sökaliaset `braian_e2e`, inte i demon.
 
@@ -9,7 +9,7 @@ Skalprovet (5 000 skrivningar i sekunden, 1 miljon och 10 miljoner objekt) är i
 
 ## Levererat sedan 2026-11-01 (verifierat via `git log` på main)
 
-Sedan statusen 2026-11-01 (`8300319` / #145) har ungefär #146–#253 landat (~108 commits på main). Inga öppna PR:er mot main vid skrivtillfället. Många leveranser står på Att testa i Notion och väntar på Glenns genomgång.
+Sedan statusen 2026-11-01 (`8300319` / #145) har ungefär #146–#263 landat (~118 commits på main). Inga öppna PR:er mot main vid skrivtillfället. Många leveranser står på Att testa i Notion och väntar på Glenns genomgång.
 
 ### Seed, kataloger och config
 - #146: status.md 2026-11-01.
@@ -18,12 +18,15 @@ Sedan statusen 2026-11-01 (`8300319` / #145) har ungefär #146–#253 landat (~1
 
 ### Felhantering, dialoger och designpolish
 - #188, #190–#194, #196–#199, #203–#206 m.fl.: synliga skrivfel (toast/inline), danger-confirm utan type-to-confirm, fokusring, en kantnivå, accentpolicy, delade Dialog/Popover, F-/H-fynd (rader omkring 134–183, 152, 158, 160–166).
+- #257 (rad 154): knappar standardiserade på `Button`-varianter (design M11).
+- #259 (rad 159 / L1): typ- och spacing-tokens i stället för hårdkodade px i CSS och komponenter.
 
 ### Länkar
 - #207–#208, #195/#224–#227: sökbart länk-mål, drag-för-länk, kardinalitet/replace, två vyer sida vid sida, Link to-undermeny, demolänktyp produkt→leverantör via config apply.
 
 ### Agent
 - #202, #209, #212, #217, #222, #235–#237: agentredigering i Detail, egen flik/vy, bakgrundskörningar och agents-lista, rename utan fråga, disabled Send, vänsterkant/marker, proposal-diff-tooltips.
+- #262 (rad 171): agent föreslår visningsnamnsändring för en namngiven produkt.
 
 ### Ctrl+K / command-registry (rad 107)
 - #187, #195, #231–#234: Raycast-lik palett, registry-styrda kolumnflytt- och layout-rader (`palette:true`).
@@ -38,6 +41,18 @@ Sedan statusen 2026-11-01 (`8300319` / #145) har ungefär #146–#253 landat (~1
 
 ### Copy / i18n
 - #253 (rad 149): hardcoded UI-strängar flyttade till `apps/web/src/i18n.ts` `copy`, sentence case på palette/field-picker-fot (t.ex. Run, Ask AI, Toggle / open).
+
+### Tabell, fokus och celler
+- #255 (rad 153): objekttabell med `role=grid` — fokus ≠ urval; Tab/pilar flyttar aktiv cell; Enter/Space (och befintligt klick) markerar rad; Detalj följer urval, inte bara fokus (design M9).
+- #256 (uppföljning rad 153): förslagsbadge utanför namncellens `title` och synliga text (`cell-name`, badge `aria-hidden`).
+
+### Datamodell
+- #258 (rad 157 / M14): synliga kantetiketter i modellgrafen och layout som stabiliseras efter render.
+- #261 (rad 206): säkra modelländringar sparas direkt; bekräftelse endast vid destruktiva ändringar.
+- #263 (rad 205): bool-kolumner i attributtabellen använder delad Radix-checkbox och pekare; Tab/Shift+Tab hoppar över inaktiverade checkboxar.
+
+### Soft delete och papperskorg
+- #260: användarriktade rader får `deleted_at` i stället för hård radering; `GET /v1/trash`, återställning och 30-dagars rensning (`braian purge-deleted`, API-janitor). Omfattar bland annat objekt, länkar, arbetsytor/vyer, sortiment, importmappningar samt katalog- och merge-rader. Definitionsdokument (versionsrevisioner), `view_types`/`job_types` som PK, `workspace_templates.key` och ephemeral-rader (sessioner, utkast, frecency m.m.) följer fortfarande hårdradering eller status — inte allt är soft delete.
 
 
 ## Levererat sedan 2026-10-25 (verifierat via `git log` på main)
