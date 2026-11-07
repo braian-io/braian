@@ -5,12 +5,14 @@ import type { ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MASTER_CATALOG_ID } from './catalog-ref'
 import type { ObjectKeyPage } from './url-object'
+import { idPrefix } from './url-public'
 import { useReadableUrl } from './use-readable-url'
 
 const product = '018f0000-0000-7000-8000-0000000000aa'
 const article = '018f0000-0000-7000-8000-0000000000bb'
 const workspace = '018f2000-0000-7000-8000-000000000003'
 const view = '018f2000-0000-7000-8000-000000000010'
+const key = 'ART/Æ& +'
 
 afterEach(() => {
   cleanup()
@@ -28,13 +30,15 @@ function catalogs() {
   }))
 }
 
-function page(rows: Array<{ id: string; key: string }>): ObjectKeyPage {
+function page(rows: Array<{ id: string; key: string | null }>): ObjectKeyPage {
   return { rows, complete: true }
 }
 
 function setup(
   search: Record<string, string>,
   list: (catalog: string, key: string, typeKey?: string | null) => Promise<ObjectKeyPage>,
+  listById: (catalog: string, prefix: string, typeKey?: string | null) => Promise<ObjectKeyPage> =
+    async () => page([]),
 ) {
   catalogs()
   const navigate = vi.fn()
@@ -65,6 +69,7 @@ function setup(
         applyCatalog: () => undefined,
         applyObject,
         listObjects: list,
+        listObjectsByIdPrefix: listById,
       })
     },
     {
@@ -97,12 +102,12 @@ describe('readable URL sync', () => {
     hook.rerender({
       search: { ws: 'products', view: 'products', catalog: 'master_catalog' },
       objectId: product,
-      objectKey: 'ART/Å& +',
+      objectKey: key,
       objectLoaded: true,
     })
     await waitFor(() => {
       const last = hook.navigate.mock.calls.at(-1)?.[0] as { search: { object?: string } }
-      expect(last.search.object).toBe('ART/Å& +')
+      expect(last.search.object).toBe(key)
     })
   })
 
@@ -149,5 +154,81 @@ describe('readable URL sync', () => {
     }, list)
     await waitFor(() => expect(hook.applyObject).toHaveBeenCalledWith(product))
     expect(hook.applyObject).not.toHaveBeenCalledWith(article)
+  })
+
+  it('opens a keyless row through its short id fallback', async () => {
+    const link = '018f0000-0000-7000-8000-00000000abcd'
+    const token = `~${idPrefix(link)}`
+    const list = vi.fn(async () => page([]))
+    const listById = vi.fn(async () => page([{ id: link, key: null }]))
+    const hook = setup({
+      ws: 'products',
+      view: 'products',
+      catalog: 'master_catalog',
+      object: token,
+    }, list, listById)
+    await waitFor(() => expect(hook.applyObject).toHaveBeenCalledWith(link))
+    expect(listById).toHaveBeenCalledWith('master', idPrefix(link), 'product')
+    expect(list).not.toHaveBeenCalled()
+  })
+
+  it('ignores an async lookup that finishes after the selection moved on', async () => {
+    const pending: Record<string, (value: ObjectKeyPage) => void> = {}
+    const list = vi.fn((_catalog: string, key: string) => new Promise<ObjectKeyPage>((resolve) => {
+      pending[key] = resolve
+    }))
+    const hook = setup({
+      ws: 'products',
+      view: 'products',
+      catalog: 'master_catalog',
+      object: 'OLD',
+    }, list)
+    await waitFor(() => expect(pending.OLD).toBeTruthy())
+
+    hook.rerender({
+      search: { ws: 'products', view: 'products', catalog: 'master_catalog', object: 'NEW' },
+      objectId: null,
+      objectKey: null,
+      objectLoaded: false,
+    })
+    await waitFor(() => expect(pending.NEW).toBeTruthy())
+    hook.applyObject.mockClear()
+
+    pending.OLD(page([{ id: product, key: 'OLD' }]))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(hook.applyObject).not.toHaveBeenCalledWith(product)
+
+    const next = '018f0000-0000-7000-8000-0000000000cc'
+    pending.NEW(page([{ id: next, key: 'NEW' }]))
+    await waitFor(() => expect(hook.applyObject).toHaveBeenCalledWith(next))
+  })
+
+  it('replaces history when a rename changes the token for the same object', async () => {
+    const list = vi.fn(async () => page([]))
+    const hook = setup({
+      ws: 'products',
+      view: 'products',
+      catalog: 'master_catalog',
+      object: 'OLD',
+    }, list)
+    hook.rerender({
+      search: { ws: 'products', view: 'products', catalog: 'master_catalog', object: 'OLD' },
+      objectId: product,
+      objectKey: 'OLD',
+      objectLoaded: true,
+    })
+    hook.navigate.mockClear()
+
+    hook.rerender({
+      search: { ws: 'products', view: 'products', catalog: 'master_catalog', object: 'OLD' },
+      objectId: product,
+      objectKey: 'NEW',
+      objectLoaded: true,
+    })
+    await waitFor(() => {
+      const last = hook.navigate.mock.calls.at(-1)?.[0] as { search: { object?: string }; replace: boolean }
+      expect(last.search.object).toBe('NEW')
+      expect(last.replace).toBe(true)
+    })
   })
 })

@@ -6,6 +6,8 @@ import {
   publicToken,
   resolveObjectToken,
   resolvePublicToken,
+  idPrefix,
+  shortId,
   slugify,
   splitObjectToken,
 } from './url-public'
@@ -13,16 +15,20 @@ import { urlObjectTypeKey } from './use-readable-url'
 
 const low = '018f0000-0000-7000-8000-0000000000aa'
 const high = '018f0000-0000-7000-8000-0000000000bb'
+const empty = '018f0000-0000-7000-8000-0000000000dd'
+const key = 'ART/Æ& +'
 
 describe('slugify', () => {
-  it('follows the repo slug: lower ASCII, everything else becomes underscore', () => {
+  it('keeps Unicode letters and digits, lowercased and normalized', () => {
     expect(slugify('Products')).toBe('products')
     expect(slugify('Data model')).toBe('data_model')
     expect(slugify('SAP ERP')).toBe('sap_erp')
     expect(slugify('A  B')).toBe('a__b')
-    expect(slugify('Öl & Möbler')).toBe('l___m_bler')
+    expect(slugify('Café au lait')).toBe('café_au_lait')
+    expect(slugify('Cafe\u0301')).toBe('café')
+    expect(slugify('Ελληνικά')).toBe('ελληνικά')
+    expect(slugify('商品 目录')).toBe('商品_目录')
     expect(slugify('---')).toBe('')
-    expect(slugify('Å')).toBe('')
   })
 })
 
@@ -31,7 +37,7 @@ describe('navigation tokens', () => {
     { id: low, label: 'Products' },
     { id: high, label: 'Products' },
     { id: '018f0000-0000-7000-8000-0000000000cc', label: 'Data model' },
-    { id: '018f0000-0000-7000-8000-0000000000dd', label: '!!!' },
+    { id: empty, label: '!!!' },
   ]
 
   it('uses the name slug, and a short id only for the higher id', () => {
@@ -39,7 +45,7 @@ describe('navigation tokens', () => {
     expect(tokens.get(low)).toBe('products')
     expect(tokens.get(high)).toBe(`products~${high.replace(/-/g, '').slice(-8)}`)
     expect(tokens.get('018f0000-0000-7000-8000-0000000000cc')).toBe('data_model')
-    expect(tokens.has('018f0000-0000-7000-8000-0000000000dd')).toBe(false)
+    expect(tokens.get(empty)).toBe(`~${shortId(empty)}`)
     expect(publicToken(rows, low)).toBe('products')
   })
 
@@ -50,6 +56,7 @@ describe('navigation tokens', () => {
     expect(resolvePublicToken(rows, low)).toBeNull()
     expect(resolvePublicToken(rows, 'missing')).toBeNull()
     expect(resolvePublicToken(rows, '!!!')).toBeNull()
+    expect(resolvePublicToken(rows, `~${shortId(empty)}`)).toBe(empty)
   })
 
   it('does not keep the old slug after a rename', () => {
@@ -58,22 +65,33 @@ describe('navigation tokens', () => {
     expect(resolvePublicToken(renamed, 'products')).toBe(high)
     expect(resolvePublicToken(renamed, 'summer_range')).toBe(low)
   })
+
+  it('keeps non-ASCII names addressable', () => {
+    const unicode = [
+      { id: low, label: 'Ελληνικά' },
+      { id: high, label: '商品' },
+    ]
+    expect(publicToken(unicode, low)).toBe('ελληνικά')
+    expect(publicToken(unicode, high)).toBe('商品')
+    expect(resolvePublicToken(unicode, 'ελληνικά')).toBe(low)
+    expect(resolvePublicToken(unicode, '商品')).toBe(high)
+  })
 })
 
 describe('object tokens', () => {
   const peers = [
-    { id: low, key: 'ART/Å& +' },
-    { id: high, key: 'ART/Å& +' },
+    { id: low, key },
+    { id: high, key },
     { id: '018f0000-0000-7000-8000-0000000000cc', key: 'PLAIN' },
   ]
 
   it('keeps the key verbatim and suffixes only the collision loser', () => {
     expect(objectTokenFor(peers[2], peers)).toBe('PLAIN')
-    expect(objectTokenFor(peers[0], peers)).toBe('ART/Å& +')
+    expect(objectTokenFor(peers[0], peers)).toBe(key)
     const suffix = high.replace(/-/g, '').slice(-8)
-    expect(objectTokenFor(peers[1], peers)).toBe(`ART/Å& +~${suffix}`)
-    expect(splitObjectToken('ART/Å& +')).toEqual({ key: 'ART/Å& +' })
-    expect(splitObjectToken(`ART/Å& +~${suffix}`)).toEqual({ key: 'ART/Å& +', short: suffix })
+    expect(objectTokenFor(peers[1], peers)).toBe(`${key}~${suffix}`)
+    expect(splitObjectToken(key)).toEqual({ key })
+    expect(splitObjectToken(`${key}~${suffix}`)).toEqual({ key, short: suffix })
   })
 
   it('roundtrips in scope and refuses the wrong row, a uuid, and a stale key', () => {
@@ -85,22 +103,36 @@ describe('object tokens', () => {
     expect(resolveObjectToken(peers, 'PLAIN')).toBe(peers[2].id)
     const renamed = peers.map((row) => row.id === low ? { ...row, key: 'NEXT' } : row)
     expect(objectTokenFor(renamed[0], renamed)).toBe('NEXT')
-    expect(resolveObjectToken(renamed, 'ART/Å& +')).toBe(high)
+    expect(resolveObjectToken(renamed, key)).toBe(high)
     expect(resolveObjectToken(renamed, 'NEXT')).toBe(low)
   })
 
-  it('fails closed when the whole key and a suffix split name different rows', () => {
+  it('escapes a literal tilde so it cannot be read as a collision suffix', () => {
     const winner = '018f0000-0000-7000-8000-000000000001'
     const suffix = high.replace(/-/g, '').slice(-8)
-    const awkward = [
+    const tildeKey = `SKU~${suffix}`
+    const rows = [
       { id: winner, key: 'SKU' },
       { id: high, key: 'SKU' },
-      { id: low, key: `SKU~${suffix}` },
+      { id: low, key: tildeKey },
     ]
-    expect(objectTokenFor(awkward[1], awkward)).toBe(`SKU~${suffix}`)
-    expect(objectTokenFor(awkward[2], awkward)).toBe(`SKU~${suffix}`)
-    expect(resolveObjectToken(awkward, `SKU~${suffix}`)).toBeNull()
-    expect(resolveObjectToken(awkward, 'SKU')).toBe(winner)
+    expect(objectTokenFor(rows[1], rows)).toBe(`SKU~${suffix}`)
+    expect(objectTokenFor(rows[2], rows)).toBe(`SKU~~${suffix}`)
+    expect(splitObjectToken(`SKU~~${suffix}`)).toEqual({ key: tildeKey })
+    expect(resolveObjectToken(rows, `SKU~${suffix}`)).toBe(high)
+    expect(resolveObjectToken(rows, `SKU~~${suffix}`)).toBe(low)
+    expect(resolveObjectToken(rows, tildeKey)).toBe(high)
+    expect(resolveObjectToken(rows, 'SKU')).toBe(winner)
+  })
+
+  it('gives a keyless row a short id token resolved by id prefix', () => {
+    const link = '018f0000-0000-7000-8000-00000000abcd'
+    const rows = [{ id: link, key: null }]
+    const token = objectTokenFor(rows[0], rows)!
+    expect(token).toBe(`~${idPrefix(link)}`)
+    expect(splitObjectToken(token)).toEqual({ key: '', short: idPrefix(link) })
+    expect(resolveObjectToken(rows, token)).toBe(link)
+    expect(resolveObjectToken(rows, `~${idPrefix('ffffffff-0000-7000-8000-000000000000')}`)).toBeNull()
   })
 
   it('reads the key attribute and ignores a missing key', () => {

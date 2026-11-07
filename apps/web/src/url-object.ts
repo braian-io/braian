@@ -1,6 +1,6 @@
 import { api } from './api'
 import { inCatalog } from './catalog-scope'
-import type { KeyedId } from './url-public'
+import { idHex, type KeyedId } from './url-public'
 
 const PAGE = 500
 /** Contains-matches, not exact keys. A full SKU stays on the first page. */
@@ -36,6 +36,38 @@ export async function listObjectsWithKey(
     }))
     for (const row of body.objects ?? []) {
       if (row.key === key && row.id) rows.push({ id: row.id, key: row.key })
+    }
+    if (!body.next_cursor) return { rows, complete: true }
+    cursor = body.next_cursor
+  }
+  return { rows, complete: false }
+}
+
+/**
+ * Keyless rows (link objects) in one catalog (and type) whose id starts with
+ * `prefix`. `q` is a contains filter in SQL; callers keep the id prefix match.
+ */
+export async function listObjectsByIdPrefix(
+  catalogKey: string,
+  prefix: string,
+  typeKey?: string | null,
+): Promise<ObjectKeyPage> {
+  const rows: KeyedId[] = []
+  const wanted = prefix.toLowerCase()
+  let cursor: string | undefined
+  for (let page = 0; page < MAX_PAGES; page += 1) {
+    const body = await inCatalog(catalogKey || 'master', () => api.get('/v1/objects', {
+      params: {
+        query: {
+          q: prefix,
+          limit: PAGE,
+          ...(typeKey ? { type: typeKey } : {}),
+          ...(cursor ? { cursor } : {}),
+        },
+      },
+    }))
+    for (const row of body.objects ?? []) {
+      if (row.id && idHex(row.id).startsWith(wanted)) rows.push({ id: row.id, key: row.key ?? null })
     }
     if (!body.next_cursor) return { rows, complete: true }
     cursor = body.next_cursor

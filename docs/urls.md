@@ -2,6 +2,8 @@
 
 Indexrutten (`/`) speglar arbetsyta, vy, katalog och valt objekt i sökparametrar. Samma synk som rad 136 (PR #200) ligger kvar: arbetsyta, vy och objekt ger ett steg i historiken, katalog byts med replace, omladdning och bakåt/framåt läser parametrarna, och en vy som redan är öppen öppnas inte om. Filter, sortering och markering i en tabell ligger kvar i vyn, inte i URL:en. Objektet i URL:en är raden Detail visar.
 
+Skrivningar till URL:en utgår alltid från det senaste tillståndet. Om två ändringar hinner före att adressen uppdaterats ersätts den väntande posten i stället för att en ny historikpost läggs på. En ändring som kommer av att en nyckel eller kollisionssuffix lösts upp ersätts också, inte pushas. Ett asynkront uppslag som blir klart efter att valet bytts ignoreras.
+
 Interna id:n i API och databas är oförändrade. Parametrarna är bara den adress webbläsaren visar.
 
 ## Grammatik
@@ -11,11 +13,15 @@ Interna id:n i API och databas är oförändrade. Parametrarna är bara den adre
 | `ws` | arbetsyta | slug av visningsnamnet |
 | `view` | fokuserad vy | slug av vyns titel |
 | `catalog` | arbetsytans katalog | slug av katalogens namn |
-| `object` | valt objekt | objektets nyckel (SKU), oförändrad |
+| `object` | valt objekt | objektets nyckel (SKU), eller `~` plus kort id när nyckeln saknas |
 
-Slugregeln är densamma som `slug_key` i `crates/model/src/link.rs`: ASCII-bokstäver och siffror blir gemener, varje annat tecken (mellanslag, skiljetecken, icke-ASCII) blir `_`, och `_` i ändarna tas bort. `Data model` blir `data_model`. `A  B` blir `a__b`. `Öl` blir `l`.
+Slugregeln behåller Unicode-bokstäver och siffror. Texten NFKC-normaliseras och blir gemener; varje annat tecken (mellanslag, skiljetecken, symbol) blir `_`, och `_` i ändarna tas bort. `Data model` blir `data_model`. `A  B` blir `a__b`. `Café` blir `café`, `Ελληνικά` blir `ελληνικά` och `商品 目录` blir `商品_目录`.
 
-Objektnyckeln slugifieras inte. Den läggs i söksträngen och kodas av routern (`ART/Å& +` blir percent-encoding). Nyckeln läses från typens nyckelattribut, samma sträng som `objects.key`.
+Ett namn som inte har någon bokstav eller siffra får ingen tom slug. Det får `~` plus det kortaste unika hex-suffixet av id:t, samma suffix som vid en krock. Parametern utelämnas alltså inte längre.
+
+Objektnyckeln slugifieras inte. Den läggs i söksträngen och kodas av routern (`ART/Å& +` blir percent-encoding). Nyckeln läses från typens nyckelattribut, samma sträng som `objects.key`. Ett `~` som finns i själva nyckeln skrivs som `~~`, så att ett ensamt `~` följt av hex bara kan vara vårt kollisionssuffix. En nyckel `SKU~000000bb` blir alltså `SKU~~000000bb` i URL:en.
+
+Objekt utan nyckel (till exempel länkrader) får `~` plus det korta id:t, till exempel `~000000cc`. Adressen slås upp som ett id-prefix i katalogens och typens omfång, så en omladdning behåller valet.
 
 Exempel:
 
@@ -23,6 +29,7 @@ Exempel:
 /?ws=products&view=products&catalog=master_catalog&object=ART-REGEL-45
 /?ws=data_model&view=structure&catalog=master_catalog
 /?ws=url_twin~000000bb&view=detail&catalog=master_catalog&object=SAME~000000cc
+/?ws=products&view=detail&catalog=master_catalog&object=~000000dd
 ```
 
 ## Krockar
@@ -31,14 +38,14 @@ Inom en katalog och en typ är nyckeln unik. Där räcker den nakna nyckeln, och
 
 När flera rader i samma omfång får samma slug eller samma nyckel får det lägsta id:t den nakna token. Övriga får `~` och det kortaste unika hex-suffixet av id:t (8, 12, 16, sedan 32 tecken). Suffixet är bara med när det behövs för den aktuella raden. En gammal suffix-adress, eller adressen före ett byte av namn eller nyckel, öppnas inte.
 
-En token som kan läsas både som en hel nyckel och som nyckel plus suffix, och de två läsningarna pekar på olika rader, öppnas inte.
+Ett `~` i en nyckel escapas som `~~`. Därför kan en nyckel som själv ser ut som `nyckel~<hex>` inte förväxlas med en annan rads kollisionssuffix. Den osträckade formen `nyckel~<hex>` läses som nyckeln `nyckel` plus suffix och öppnar bara den raden, om den finns. En gammal adress med oescapad nyckel öppnas inte.
 
 ## Vad som inte får en adress
 
 - Ett uuid i `ws`, `view`, `catalog` eller `object` slås inte upp. Det är en okänd adress och ignoreras.
-- Ett namn utan ASCII-bokstav eller siffra får ingen slug. Parametern utelämnas.
-- Ett länkobjekt har `objects.key` null och inget nyckelattribut. Det får ingen `object`-parameter. Att välja det i gränssnittet fungerar; en omladdning återställer inte just den länkraden via URL.
+- Ett namn utan bokstav eller siffra får ett `~`-suffix av id:t i stället för en tom slug.
+- Ett länkobjekt har `objects.key` null och inget nyckelattribut. Det får `~` plus sitt korta id, så att en omladdning återställer samma rad.
 
-Uppslag av nyckel går mot `GET /v1/objects` (Postgres, exakt träff efter en contains-fråga), i katalogens och typens omfång. Listan kapas efter 8 sidor à 500 träffar. Om svaret fortfarande är avklippt gissar vi inte. Saknad, borttagen eller osedd rad öppnas inte. Namnet är ingen behörighet; listan är den katalog och de arbetsytor sessionen redan får se.
+Uppslag av nyckel går mot `GET /v1/objects` (Postgres, exakt träff efter en contains-fråga), i katalogens och typens omfång. Ett nyckellöst objekt slås upp på id-prefix i samma omfång. Listan kapas efter 8 sidor à 500 träffar. Om svaret fortfarande är avklippt gissar vi inte. Saknad, borttagen eller osedd rad öppnas inte. Namnet är ingen behörighet; listan är den katalog och de arbetsytor sessionen redan får se.
 
 Byter man namn eller nyckel byts URL:en till den nya token när skalet har läst om raden. Ingen aliaslista sparas.

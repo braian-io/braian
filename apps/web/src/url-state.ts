@@ -89,10 +89,12 @@ export function useUrlStateSync(input: {
   valid: UrlStateValidity
   /** Views already in the layout. On first load these are not opened again. */
   viewOpen?: (id: string) => boolean
+  /** A resolution-driven write (for example a renamed key) replaces. */
+  forceReplace?: boolean
   navigate: (next: UrlStateNavigation) => void
   apply: (next: UrlStateApply) => void
 }) {
-  const { search, state, ready, valid, viewOpen, navigate, apply } = input
+  const { search, state, ready, valid, viewOpen, forceReplace, navigate, apply } = input
   const parsed = parseUrlState(search)
   const key = urlStateKey(parsed)
   const validRef = useRef(valid)
@@ -108,6 +110,10 @@ export function useUrlStateSync(input: {
   // A URL-derived change may need several renders (workspace data, then view)
   // before app state matches the URL. Never turn that settling into history.
   const settling = useRef(true)
+  // The last state we sent to the router, and whether the location has caught
+  // up. Two quick updates must not both push a Back entry.
+  const lastWritten = useRef<string | null>(null)
+  const navigationInFlight = useRef(false)
 
   useEffect(() => {
     if (!ready) return
@@ -115,6 +121,8 @@ export function useUrlStateSync(input: {
       lastKey.current = key
       pending.current = new Set(URL_STATE_PARAMS.filter((param) => parsed[param] !== undefined))
       settling.current = true
+      lastWritten.current = null
+      navigationInFlight.current = false
     }
     if (pending.current.size === 0) return
 
@@ -161,19 +169,33 @@ export function useUrlStateSync(input: {
       return
     }
     const next = serializeUrlState(state)
+    const nextKey = urlStateKey(next)
     if (sameUrlState(parsed, next)) {
       settling.current = false
       synced.current = true
+      if (lastWritten.current === nextKey) {
+        lastWritten.current = null
+        navigationInFlight.current = false
+      }
       return
     }
+    // The router has not applied our previous write yet. Never push the same
+    // state twice; a newer state replaces the pending entry instead.
+    if (lastWritten.current === nextKey) return
     // Catalog is a durable preference, not a navigation step. Workspace, view
     // and object changes are worth a Back entry once the initial URL is set.
-    // While a URL-derived change settles, replace instead of pushing.
+    // While a URL-derived change settles, or a write is still in flight,
+    // replace instead of pushing.
     const backWorthy =
       parsed.ws !== next.ws || parsed.view !== next.view || parsed.object !== next.object
-    navigate({ search: next, replace: !synced.current || !backWorthy || settling.current })
+    navigate({
+      search: next,
+      replace: Boolean(forceReplace) || !synced.current || !backWorthy || settling.current || navigationInFlight.current,
+    })
+    lastWritten.current = nextKey
+    navigationInFlight.current = true
     synced.current = true
-  }, [ready, key, state.workspaceId, state.viewId, state.catalogId, state.objectId, parsed.ws, parsed.view, parsed.catalog, parsed.object])
+  }, [ready, key, state.workspaceId, state.viewId, state.catalogId, state.objectId, parsed.ws, parsed.view, parsed.catalog, parsed.object, forceReplace])
 }
 
 function isValid(param: Param, value: string, valid: UrlStateValidity): boolean {

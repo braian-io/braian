@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { MASTER_CATALOG_ID } from './catalog-ref'
 import { useCatalogsQuery, type CatalogListRow } from './catalog-list'
-import { listObjectsWithKey } from './url-object'
+import { listObjectsByIdPrefix, listObjectsWithKey } from './url-object'
 import {
   objectTokenFor,
   publicToken,
@@ -15,6 +15,7 @@ import {
 import { parseUrlState, useUrlStateSync, type UrlStateNavigation } from './url-state'
 
 type ListObjects = typeof listObjectsWithKey
+type ListObjectsByIdPrefix = typeof listObjectsByIdPrefix
 
 export function useReadableUrl(input: {
   search: unknown
@@ -41,6 +42,7 @@ export function useReadableUrl(input: {
   applyCatalog: (id: string) => void
   applyObject: (id: string) => void
   listObjects?: ListObjects
+  listObjectsByIdPrefix?: ListObjectsByIdPrefix
 }) {
   const catalogs = useCatalogsQuery(input.catalogsEnabled)
   const catalogRows = catalogNames(catalogs.data)
@@ -58,10 +60,17 @@ export function useReadableUrl(input: {
     queryFn: () => (input.listObjects ?? listObjectsWithKey)(catalogKey, input.objectKey ?? ''),
     staleTime: 5_000,
   })
-  const emitted = emittedObjectToken(input.objectKey, input.objectId, input.objectTypeKey, peers.data)
-  const held = useRef<string | null>(null)
+  const emitted = emittedObjectToken(
+    input.objectKey,
+    input.objectId,
+    input.objectLoaded,
+    input.objectTypeKey,
+    peers.data,
+  )
+  const held = useRef<{ objectId: string; token: string } | null>(null)
   if (!input.objectId || (input.objectLoaded && !input.objectKey)) held.current = null
-  else if (emitted) held.current = emitted
+  else if (emitted) held.current = { objectId: input.objectId, token: emitted }
+  const heldToken = held.current && held.current.objectId === input.objectId ? held.current.token : null
 
   const [pinned, setPinned] = useState<string | null>(null)
   const failed = useRef(new Set<string>())
@@ -70,7 +79,21 @@ export function useReadableUrl(input: {
   applyObjectRef.current = input.applyObject
   const listRef = useRef(input.listObjects)
   listRef.current = input.listObjects
-  const hookObject = pinned ?? (input.objectId ? (emitted ?? held.current) : null)
+  const listByIdRef = useRef(input.listObjectsByIdPrefix)
+  listByIdRef.current = input.listObjectsByIdPrefix
+  const lookupSeq = useRef(0)
+  const hookObject = pinned ?? (input.objectId ? (emitted ?? heldToken) : null)
+  // A token change for the same object comes from resolution (rename or a
+  // collision suffix), not from a new navigation step.
+  const previous = useRef<{ objectId: string | null; token: string | null }>({ objectId: null, token: null })
+  const resolutionReplace = Boolean(
+    input.objectId
+    && previous.current.objectId === input.objectId
+    && previous.current.token
+    && hookObject
+    && previous.current.token !== hookObject,
+  )
+  previous.current = { objectId: input.objectId, token: hookObject }
 
   const contextSettled = contextsMatch(parsed, {
     ws: wsToken,
@@ -98,6 +121,7 @@ export function useReadableUrl(input: {
       const id = resolvePublicToken(input.views, token)
       return Boolean(id && input.openViewIds.includes(id))
     },
+    forceReplace: resolutionReplace,
     navigate: input.navigate,
     apply: (next) => {
       if (next.workspaceId) {
@@ -121,9 +145,17 @@ export function useReadableUrl(input: {
     const token = pinned
     const typeKey = input.objectTypeKey
     const scope = catalogKey
+    const seq = lookupSeq.current + 1
+    lookupSeq.current = seq
     let cancel = false
-    void lookupObjectToken(listRef.current ?? listObjectsWithKey, scope, token, typeKey).then((found) => {
-      if (cancel || !found.definitive) return
+    void lookupObjectToken(
+      listRef.current ?? listObjectsWithKey,
+      listByIdRef.current ?? listObjectsByIdPrefix,
+      scope,
+      token,
+      typeKey,
+    ).then((found) => {
+      if (cancel || seq !== lookupSeq.current || !found.definitive) return
       if (!found.id) {
         failed.current.add(failureKey(scope, typeKey, token))
         setPinned((current) => current === token ? null : current)
@@ -157,37 +189,39 @@ export function useReadableUrl(input: {
 
 async function lookupObjectToken(
   list: ListObjects,
+  listById: ListObjectsByIdPrefix,
   catalogKey: string,
   token: string,
   typeKey: string | null,
 ): Promise<{ id: string | null; definitive: boolean }> {
-  const keys = new Set<string>([token])
   const split = splitObjectToken(token)
-  if (split?.key) keys.add(split.key)
-  const pages = await Promise.all([...keys].map((key) => list(catalogKey, key, typeKey)))
-  if (pages.some((page) => !page.complete)) return { id: null, definitive: false }
-  const seen = new Set<string>()
-  const rows: KeyedId[] = []
-  for (const page of pages) {
-    for (const row of page.rows) {
-      if (seen.has(row.id)) continue
-      seen.add(row.id)
-      rows.push(row)
-    }
+  if (!split) return { id: null, definitive: true }
+  if (!split.key) {
+    if (!split.short) return { id: null, definitive: true }
+    const page = await listById(catalogKey, split.short, typeKey)
+    if (!page.complete) return { id: null, definitive: false }
+    return { id: resolveObjectToken(page.rows, token), definitive: true }
   }
-  return { id: resolveObjectToken(rows, token), definitive: true }
+  const page = await list(catalogKey, split.key, typeKey)
+  if (!page.complete) return { id: null, definitive: false }
+  return { id: resolveObjectToken(page.rows, token), definitive: true }
 }
 
 function emittedObjectToken(
   objectKey: string | null,
   objectId: string | null,
+  objectLoaded: boolean,
   typeKey: string | null,
-  peers: { rows: Array<{ id: string; key: string }>; complete: boolean } | undefined,
+  peers: { rows: KeyedId[]; complete: boolean } | undefined,
 ): string | null {
-  if (!objectKey || !objectId) return null
-  if (typeKey) return objectKey
-  if (!peers?.complete) return null
-  return objectTokenFor({ id: objectId, key: objectKey }, peers.rows)
+  if (!objectId) return null
+  if (objectKey) {
+    if (typeKey) return objectKey
+    if (!peers?.complete) return null
+    return objectTokenFor({ id: objectId, key: objectKey }, peers.rows)
+  }
+  if (!objectLoaded) return null
+  return objectTokenFor({ id: objectId, key: null }, [])
 }
 
 function contextsMatch(

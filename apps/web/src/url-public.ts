@@ -1,15 +1,16 @@
 /**
  * Public URL tokens for the index route.
  *
- * Navigation (`ws`, `view`, `catalog`) uses the same slug rules as
- * `slug_key` in `crates/model/src/link.rs`: ASCII letters and digits stay,
- * lowercased; every other character, including spaces and non-ASCII, becomes
- * `_`; underscores at the ends are trimmed. Consecutive underscores are kept.
- * A name that slugs to nothing has no token — the param is omitted. A UUID is
- * not a fallback.
+ * Navigation (`ws`, `view`, `catalog`) uses Unicode letters and digits,
+ * NFKC-normalized and lowercased; every other character, including spaces and
+ * punctuation, becomes `_`; underscores at the ends are trimmed. Consecutive
+ * underscores are kept. A name that slugs to nothing gets a short id fallback
+ * token (`~` plus the id suffix). A UUID is not a fallback.
  *
- * Products (`object`) use the stored object key (SKU) as-is. The query
- * serializer percent-encodes it. The key is not slugified.
+ * Products (`object`) use the stored object key (SKU). A literal `~` in a key
+ * is escaped as `~~`, so a trailing `~` plus hex can only be a collision
+ * suffix. Keyless rows (for example link objects) get `~` plus their short id.
+ * The query serializer percent-encodes the token. The key is not slugified.
  *
  * The current name or key is the only address. A rename changes the token.
  * A previous token is not accepted. When several rows share a slug or a key
@@ -19,14 +20,16 @@
  */
 
 export type NamedId = { id: string; label: string }
-export type KeyedId = { id: string; key: string }
+export type KeyedId = { id: string; key: string | null }
 
 const SHORT_LENGTHS = [8, 12, 16, 32] as const
+const SLUG_CHAR = /[\p{L}\p{N}\p{M}]/u
 
 export function slugify(text: string): string {
   let slug = ''
-  for (const ch of text) {
-    slug += /[A-Za-z0-9]/.test(ch) ? ch.toLowerCase() : '_'
+  const normalized = text.normalize('NFKC').toLowerCase().normalize('NFKC')
+  for (const ch of normalized) {
+    slug += SLUG_CHAR.test(ch) ? ch : '_'
   }
   return slug.replace(/^_+|_+$/g, '')
 }
@@ -40,6 +43,11 @@ export function shortId(id: string, length = 8): string {
   const hex = idHex(id)
   if (length >= hex.length) return hex
   return hex.slice(-length)
+}
+
+/** Hex prefix of `id`. Length is clamped to the hex form. */
+export function idPrefix(id: string, length = 8): string {
+  return idHex(id).slice(0, length)
 }
 
 function byId(left: { id: string }, right: { id: string }): number {
@@ -62,12 +70,16 @@ function uniqueSuffix(id: string, group: readonly { id: string }[]): string {
   return hex
 }
 
-/** Id -> token. Rows with an empty slug are absent. */
+/** Id -> token. A name with no letters or digits gets a short id fallback. */
 export function assignPublicTokens(items: readonly NamedId[]): Map<string, string> {
   const groups = new Map<string, NamedId[]>()
+  const empty: NamedId[] = []
   for (const item of items) {
     const slug = slugify(item.label)
-    if (!slug) continue
+    if (!slug) {
+      empty.push(item)
+      continue
+    }
     const list = groups.get(slug) ?? []
     list.push(item)
     groups.set(slug, list)
@@ -78,6 +90,9 @@ export function assignPublicTokens(items: readonly NamedId[]): Map<string, strin
     sorted.forEach((item, index) => {
       tokens.set(item.id, index === 0 ? slug : `${slug}~${uniqueSuffix(item.id, sorted)}`)
     })
+  }
+  for (const item of empty) {
+    tokens.set(item.id, `~${uniqueSuffix(item.id, empty)}`)
   }
   return tokens
 }
@@ -93,71 +108,84 @@ export function splitNavigationToken(token: string): { slug: string; short?: str
   const trimmed = token.trim()
   if (!trimmed) return null
   const match = NAV_SUFFIX.exec(trimmed)
-  if (!match || match.index === 0) return { slug: trimmed }
+  if (!match) return { slug: trimmed }
+  if (match.index === 0) return { slug: '', short: match[1].toLowerCase() }
   const slug = trimmed.slice(0, match.index)
   if (!slug) return null
   return { slug, short: match[1].toLowerCase() }
 }
 
 /**
- * Resolve a navigation token. The bare slug is the lowest id in the slug
- * group. A `~suffix` token resolves only when that suffix is what we would
- * emit for that row now.
+ * Resolve a navigation token against the current names. Only the token we
+ * would emit now is accepted; a stale slug or suffix is not.
  */
 export function resolvePublicToken(items: readonly NamedId[], token: string): string | null {
-  const parsed = splitNavigationToken(token)
-  if (!parsed || !parsed.slug) return null
-  const matches = items.filter((item) => slugify(item.label) === parsed.slug)
-  if (matches.length === 0) return null
-  const sorted = [...matches].sort(byId)
-  const tokens = assignPublicTokens(sorted)
-  if (!parsed.short) return tokens.get(sorted[0].id) === parsed.slug ? sorted[0].id : null
-  const found = sorted.filter((item) => tokens.get(item.id) === `${parsed.slug}~${parsed.short}`)
-  return found.length === 1 ? found[0].id : null
+  const trimmed = token.trim()
+  if (!trimmed) return null
+  const tokens = assignPublicTokens(items)
+  let found: string | null = null
+  for (const [id, value] of tokens) {
+    if (value !== trimmed) continue
+    if (found !== null) return null
+    found = id
+  }
+  return found
 }
 
-const OBJECT_SUFFIX = /~([0-9a-f]{8,32})$/i
+const OBJECT_SUFFIX = /^[0-9a-f]{8,32}$/i
+
+/** Escape a literal `~` so a suffix can only be the separator we emitted. */
+export function encodeObjectKey(key: string): string {
+  return key.replace(/~/g, '~~')
+}
 
 export function splitObjectToken(token: string): { key: string; short?: string } | null {
   if (token.length === 0 || token.trim().length === 0) return null
-  const match = OBJECT_SUFFIX.exec(token)
-  if (!match || match.index === 0) return { key: token }
-  const key = token.slice(0, match.index)
-  if (!key) return null
-  return { key, short: match[1].toLowerCase() }
+  let key = ''
+  for (let index = 0; index < token.length; index += 1) {
+    const ch = token[index]
+    if (ch !== '~') {
+      key += ch
+      continue
+    }
+    if (token[index + 1] === '~') {
+      key += '~'
+      index += 1
+      continue
+    }
+    const short = token.slice(index + 1)
+    if (!OBJECT_SUFFIX.test(short)) return null
+    return { key, short: short.toLowerCase() }
+  }
+  return { key }
 }
 
 /** Token for one object among rows that share its resolution scope. */
 export function objectTokenFor(item: KeyedId, peers: readonly KeyedId[]): string | null {
-  if (!item.key) return null
+  if (!item.key) return `~${idPrefix(item.id)}`
   const same = peers.filter((peer) => peer.key === item.key)
   const group = same.some((peer) => peer.id === item.id) ? same : [...same, item]
   const sorted = [...group].sort(byId)
-  if (sorted[0]?.id === item.id) return item.key
-  return `${item.key}~${uniqueSuffix(item.id, sorted)}`
+  const base = encodeObjectKey(item.key)
+  if (sorted[0]?.id === item.id) return base
+  return `${base}~${uniqueSuffix(item.id, sorted)}`
 }
 
 /**
  * Resolve `token` against the rows in this catalog/type scope.
- * Returns an id only when `token` is exactly the token we would emit now.
- * Several interpretations (the whole string is a key, and a `~suffix` split
- * is also a key) that point at different rows resolve to nothing.
+ * Keyed tokens are accepted only when they are exactly what we would emit now.
+ * A keyless `~suffix` token resolves by id prefix; several matches fail closed.
  */
 export function resolveObjectToken(peers: readonly KeyedId[], token: string): string | null {
-  const interpretations = new Set<string>()
-  for (const peer of peers) {
-    if (peer.key !== token) continue
-    if (objectTokenFor(peer, peers) === token) interpretations.add(peer.id)
-  }
   const split = splitObjectToken(token)
-  if (split?.short) {
-    for (const peer of peers) {
-      if (peer.key !== split.key) continue
-      if (objectTokenFor(peer, peers) === token) interpretations.add(peer.id)
-    }
+  if (!split) return null
+  if (!split.key) {
+    if (!split.short) return null
+    const matches = peers.filter((peer) => !peer.key && idHex(peer.id).startsWith(split.short!))
+    return matches.length === 1 ? matches[0].id : null
   }
-  if (interpretations.size !== 1) return null
-  return [...interpretations][0]
+  const matches = peers.filter((peer) => peer.key === split.key && objectTokenFor(peer, peers) === token)
+  return matches.length === 1 ? matches[0].id : null
 }
 
 type DefsLike = {

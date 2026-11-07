@@ -49,7 +49,7 @@ test('direct object link reloads on the key, and navigation slugs are not uuids'
 
   await page.goto(url)
   await expect(page.getByTestId('dock')).toBeVisible({ timeout: 60_000 })
-  await expect(page.locator('nav.tabs button.tab.active')).toHaveText(/^Products/)
+  await expect(page.locator('nav.tabs button.tab.active')).toContainText('Products')
   await expect(page.locator('.detail-id')).toHaveText(key, { timeout: 30_000 })
   await expect.poll(() => param(page, 'object')).toBe(key)
   await expect.poll(() => param(page, 'ws')).toBe('products')
@@ -197,12 +197,12 @@ test('back and forward restore the object, and bad targets do not open a row', a
   await expect(rows.nth(1)).toBeVisible({ timeout: 60_000 })
   await rows.nth(0).click()
   await expect(rows.nth(0)).toHaveAttribute('aria-selected', 'true')
-  const first = await rows.nth(0).locator('[data-column="key"]').innerText()
+  const first = await rows.nth(0).locator('[data-column="number"], [data-column="key"]').first().innerText()
   await expect.poll(() => param(page, 'object')).toBe(first.trim())
   const firstUrl = page.url()
   await rows.nth(1).click()
   await expect(rows.nth(1)).toHaveAttribute('aria-selected', 'true')
-  const second = (await rows.nth(1).locator('[data-column="key"]').innerText()).trim()
+  const second = (await rows.nth(1).locator('[data-column="number"], [data-column="key"]').first().innerText()).trim()
   await expect.poll(() => param(page, 'object')).toBe(second)
   expect(second).not.toBe(first.trim())
 
