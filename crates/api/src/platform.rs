@@ -4361,13 +4361,7 @@ async fn accept_proposal(
     Json(body): Json<AcceptBody>,
 ) -> Result<AcceptReply, Problem> {
     require(&identity, Role::Editor)?;
-    if !identity.may_commit() {
-        return Err(Problem::new(
-            StatusCode::FORBIDDEN,
-            "agent_cannot_accept",
-            "an agent or import proposes; a person accepts",
-        ));
-    }
+    crate::review::require_review(&identity, false, braian_model::ReviewAction::Save, None)?;
     // An import draft keeps its rows in the import session, not in proposal_rows.
     if let Some(session_id) = state
         .store
@@ -4387,10 +4381,9 @@ async fn accept_proposal(
                     .map(str::to_owned)
             });
         if open.as_deref() != Some("open") {
-            return Err(Problem::new(
-                StatusCode::CONFLICT,
-                "conflict",
-                "this proposal is no longer pending",
+            return Err(crate::review::refuse_review(
+                braian_model::ReviewAction::Save,
+                braian_model::ReviewRefusal::NotOpen,
             ));
         }
         let value = crate::import::accept_import(&state, &identity, session_id, &body).await?;
@@ -4402,16 +4395,7 @@ async fn accept_proposal(
         .await
         .map_err(store_status)?
         .ok_or_else(|| Problem::new(StatusCode::NOT_FOUND, "not_found", "proposal"))?;
-    if proposal.get("stale").and_then(Value::as_bool) == Some(true) {
-        return Err(Problem::new(
-            StatusCode::CONFLICT,
-            "stale",
-            proposal
-                .get("stale_reason")
-                .and_then(Value::as_str)
-                .unwrap_or("the object changed after this proposal was filed"),
-        ));
-    }
+    crate::review::reject_stale_save(&identity, &proposal)?;
     let rows = proposal
         .get("rows")
         .and_then(Value::as_array)
@@ -5289,14 +5273,6 @@ async fn apply_link_row(
     Ok(Some(receipt.last_seq))
 }
 
-fn agent_cannot_discard() -> Problem {
-    Problem::new(
-        StatusCode::FORBIDDEN,
-        "agent_cannot_discard",
-        "an agent or import proposes; a person discards",
-    )
-}
-
 fn proposal_write_error(error: braian_store::Error) -> Problem {
     match error {
         braian_store::Error::Conflict {
@@ -5333,9 +5309,7 @@ async fn discard_proposal(
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, Problem> {
     require(&identity, Role::Editor)?;
-    if !identity.may_commit() {
-        return Err(agent_cannot_discard());
-    }
+    crate::review::require_review(&identity, false, braian_model::ReviewAction::Discard, None)?;
     if let Some(session_id) = state
         .store
         .proposal_session(id)
@@ -6303,16 +6277,14 @@ pub(crate) async fn run_operation(
         ));
     }
     // The in-app agent calls this with the person's identity (`from_agent`).
-    // Hiding the tool is not enough: a call still has to stay a proposal.
-    if op.name == "accept_proposal" && (from_agent || !identity.may_commit()) {
-        return Err(Problem::new(
-            StatusCode::FORBIDDEN,
-            "agent_cannot_accept",
-            "an agent or import proposes; a person accepts",
-        ));
-    }
-    if op.name == "discard_proposal" && (from_agent || !identity.may_commit()) {
-        return Err(agent_cannot_discard());
+    // Hiding the tool is not enough: Save and Discard stay a person's act.
+    if op.name == "accept_proposal" || op.name == "discard_proposal" {
+        let action = if op.name == "accept_proposal" {
+            braian_model::ReviewAction::Save
+        } else {
+            braian_model::ReviewAction::Discard
+        };
+        crate::review::require_review(identity, from_agent, action, None)?;
     }
     if op.name == "model.undo" && (from_agent || !identity.may_commit()) {
         return Err(crate::auth::delete_forbidden());

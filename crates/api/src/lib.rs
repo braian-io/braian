@@ -30,6 +30,7 @@ mod openapi_paths;
 mod path_values;
 mod platform;
 mod problem;
+mod review;
 mod state;
 mod structures;
 mod trash;
