@@ -90,6 +90,7 @@ const specs = [
   'e2e/link-source-repair.spec.ts',
   'e2e/link-types.spec.ts',
   'e2e/save-confirm.spec.ts',
+  'e2e/attribute-table-bool-columns.spec.ts',
   'e2e/switch-catalog-view.spec.ts',
   'e2e/z-catalogs.spec.ts',
 ]
@@ -175,6 +176,7 @@ const measuredSeconds = {
   'e2e/peer-source-empty.spec.ts': 50,
   'e2e/link-types.spec.ts': 90,
   'e2e/save-confirm.spec.ts': 70,
+  'e2e/attribute-table-bool-columns.spec.ts': 55,
   'e2e/switch-catalog-view.spec.ts': 25,
   'e2e/source-all-explicit.spec.ts': 40,
   'e2e/z-catalogs.spec.ts': 45,

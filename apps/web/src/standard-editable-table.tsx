@@ -22,6 +22,7 @@ import { CSS as DndCSS } from '@dnd-kit/utilities'
 import type { CommandTarget, MenuContext } from './command-registry'
 import { openSharedContextMenu, prefersNativeContextMenu } from './shared-context-menu'
 import { Button } from './components/ui/button'
+import { Checkbox } from './components/ui/checkbox'
 import { StandardTableChrome } from './standard-table'
 import { copy } from './i18n'
 import { reportWriteError } from './write-error'
@@ -376,6 +377,7 @@ export function StandardEditableTable<T extends { id: string }>({
 
   const beginEdit = (row: T, column: StandardColumn<T>) => {
     if (!columnEditable(row, column)) return
+    if (column.display === 'checkbox') return
     setEditing({ rowId: row.id, columnId: column.id })
     const raw = column.read(row)
     setEditValue(raw === null || raw === undefined ? '' : String(raw))
@@ -385,7 +387,10 @@ export function StandardEditableTable<T extends { id: string }>({
     if (!editRequest) return
     const row = merged.find((item) => item.id === editRequest.rowId)
     const column = columns.find((item) => item.id === editRequest.columnId)
-    if (row && column) beginEdit(row, column)
+    if (row && column) {
+      if (column.display === 'checkbox') queueMicrotask(() => placeColumnFocus(row, column))
+      else beginEdit(row, column)
+    }
     onEditRequestHandled?.()
     // intentionally only when editRequest identity changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -405,21 +410,51 @@ export function StandardEditableTable<T extends { id: string }>({
 
   const editableColumnsFor = (row: T) => columns.filter((column) => columnEditable(row, column))
 
+  const focusCheckbox = (rowId: string, columnId: string) => {
+    const control = gridRef.current?.querySelector<HTMLElement>(
+      `[data-row-id="${CSS.escape(rowId)}"] [data-column="${CSS.escape(columnId)}"] [role="checkbox"]`,
+    )
+    if (control && !control.hasAttribute('disabled')) {
+      control.focus()
+      return true
+    }
+    return false
+  }
+
+  const focusRow = (rowId: string) => {
+    gridRef.current?.querySelector<HTMLElement>(`[data-row-id="${CSS.escape(rowId)}"]`)?.focus()
+  }
+
+  /** Checkbox columns stay out of the text editor. Tab focuses an enabled control or skips a disabled one. */
+  const placeColumnFocus = (row: T, column: StandardColumn<T>) => {
+    if (column.display === 'checkbox') {
+      if (!focusCheckbox(row.id, column.id)) focusRow(row.id)
+      return
+    }
+    beginEdit(row, column)
+  }
+
   const moveEdit = (row: T, column: StandardColumn<T>, delta: number) => {
     commitEdit()
     const editableColumns = editableColumnsFor(row)
     const index = editableColumns.findIndex((item) => item.id === column.id)
     const nextCol = editableColumns[index + delta]
     if (nextCol) {
-      queueMicrotask(() => beginEdit(row, nextCol))
+      queueMicrotask(() => placeColumnFocus(row, nextCol))
       return
     }
     const rowIndex = filtered.findIndex((item) => item.id === row.id)
     const nextRow = filtered[rowIndex + (delta > 0 ? 1 : -1)]
-    if (!nextRow) return
+    if (!nextRow) {
+      queueMicrotask(() => focusRow(row.id))
+      return
+    }
     const wrapCols = editableColumnsFor(nextRow)
     const wrapCol = delta > 0 ? wrapCols[0] : wrapCols.at(-1)
-    if (wrapCol) queueMicrotask(() => beginEdit(nextRow, wrapCol))
+    queueMicrotask(() => {
+      if (wrapCol) placeColumnFocus(nextRow, wrapCol)
+      else focusRow(row.id)
+    })
   }
 
   const onReview = () => {
@@ -503,7 +538,8 @@ export function StandardEditableTable<T extends { id: string }>({
         return
       }
       event.preventDefault()
-      beginEdit(row, column)
+      if (column.display === 'checkbox') queueMicrotask(() => placeColumnFocus(row, column))
+      else beginEdit(row, column)
     }
   }
 
@@ -538,12 +574,22 @@ export function StandardEditableTable<T extends { id: string }>({
       const readText = raw === null || raw === undefined ? '' : String(raw)
       const cellTitle = column.title?.(row) || readText
       const cellTestId = column.cellTestId?.(row)
+      const boolCell = column.display === 'checkbox'
+      const editableBool = boolCell && columnEditable(row, column)
+      const cellClass = [
+        'standard-grid-cell',
+        column.truncate ? 'truncate' : '',
+        boolCell ? 'standard-grid-cell-bool' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')
       return (
         <div
           key={column.id}
-          className={column.truncate ? 'standard-grid-cell truncate' : 'standard-grid-cell'}
+          className={cellClass}
           role="gridcell"
           data-column={column.id}
+          data-disabled={boolCell && !editableBool ? 'true' : undefined}
           style={column.width ? { width: column.width, flex: 'none', minWidth: column.width } : undefined}
           title={isEditing ? undefined : cellTitle || undefined}
           onDoubleClick={() => beginEdit(row, column)}
@@ -627,17 +673,21 @@ export function StandardEditableTable<T extends { id: string }>({
               />
             )
           ) : column.display === 'checkbox' ? (
-            <input
-              type="checkbox"
+            <Checkbox
               data-testid={cellTestId}
               aria-label={column.header}
               checked={raw === true}
-              disabled={!columnEditable(row, column)}
+              disabled={!editableBool}
               onClick={(event) => event.stopPropagation()}
               onDoubleClick={(event) => event.stopPropagation()}
-              onChange={(event) => {
-                if (!column.write || !columnEditable(row, column)) return
-                patchRow(row.id, column.write(row, event.target.checked ? 'true' : 'false'))
+              onKeyDown={(event) => {
+                if (event.key !== 'Tab' || !editableBool) return
+                event.preventDefault()
+                moveEdit(row, column, event.shiftKey ? -1 : 1)
+              }}
+              onCheckedChange={(value) => {
+                if (!column.write || !editableBool) return
+                patchRow(row.id, column.write(row, value === true ? 'true' : 'false'))
               }}
             />
           ) : column.display ? (
