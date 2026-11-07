@@ -17,6 +17,7 @@ mod object;
 mod patch;
 pub mod path;
 pub mod refs;
+mod review;
 pub mod standard;
 pub mod structure;
 pub mod system_view_columns;
@@ -58,6 +59,11 @@ pub use path::{
 pub use refs::{
     RefKind, ResolvedRef, attribute_index_field, key_rename_warning, resolve,
     translate_assortment_query, translate_import_mapping, translate_view_state,
+};
+pub use review::{
+    DraftOrigin, DraftStatus, ReviewAction, ReviewActor, ReviewDraft, ReviewGate, ReviewKind,
+    ReviewPrincipal, ReviewRefusal, ReviewRow, ReviewRowId, ReviewTarget, RowDecision,
+    authorize_review, base_version_differs, draft_origin, draft_status, row_decision,
 };
 pub use standard::{
     StandardIds, apply_defaults, detach_name_aliases, install_standard_attributes,
