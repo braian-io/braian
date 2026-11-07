@@ -12,12 +12,17 @@ async function login(page: Page) {
   await expect(page.getByTestId('workspace')).toBeVisible()
 }
 
-async function openProductAttributes(page: Page) {
+async function openDataModel(page: Page) {
   await page.locator('nav.tabs').getByRole('button', { name: /^Data model/ }).click()
+  await expect(page.locator('.pane-tab').filter({ hasText: 'Structures' }).first()).toBeVisible({ timeout: 30_000 })
+}
+
+/** Type attributes for a seeded object type. Row id is the type key. */
+async function openTypeAttributes(page: Page, typeKey: string) {
+  await openDataModel(page)
   const objectTypes = page.locator('.pane-tab', { hasText: 'Object types' }).first()
-  await expect(objectTypes).toBeVisible({ timeout: 30_000 })
   await objectTypes.click()
-  const typeRow = page.getByTestId('object-types-table').locator('[data-row-id="product"]')
+  const typeRow = page.getByTestId('object-types-table').locator(`[data-row-id="${typeKey}"]`)
   await expect(async () => {
     await typeRow.click({ timeout: 2_000 })
   }).toPass({ timeout: 30_000 })
@@ -27,17 +32,28 @@ async function openProductAttributes(page: Page) {
   return table
 }
 
+/**
+ * Seed food tree: Dairy & eggs owns Fat content; Yoghurt inherits it.
+ * Scope the Structures pane (several panes use data-testid=data-model).
+ */
 async function openInheritedAttributes(page: Page) {
-  await page.getByRole('button', { name: 'Data model' }).click()
-  await expect(page.locator('.pane-tab').filter({ hasText: 'Structures' })).toBeVisible({ timeout: 30_000 })
-  const tree = page.getByTestId('data-model').first()
-  await expect(tree.getByTestId('group-dairy')).toBeVisible()
-  await tree.getByTestId('group-dairy').locator('.twist').click()
+  await openDataModel(page)
+  await page.locator('.pane-tab').filter({ hasText: 'Structures' }).first().click()
+  const tree = () => page.getByTestId('data-model').filter({ has: page.getByTestId('group-dairy') }).first()
+  await expect(tree().getByTestId('group-dairy')).toBeVisible()
   await expect(async () => {
-    await page.getByTestId('data-model').first().getByTestId('group-yoghurt').locator('.model-node').click({ timeout: 3_000 })
+    const dairy = tree().getByTestId('group-dairy')
+    const button = dairy.getByRole('button', { name: 'Dairy & eggs' })
+    if ((await button.getAttribute('aria-expanded')) !== 'true') {
+      await dairy.locator('.twist').click({ timeout: 3_000 })
+    }
+    await expect(tree().getByTestId('group-yoghurt')).toBeVisible({ timeout: 3_000 })
+  }).toPass({ timeout: 30_000 })
+  await expect(async () => {
+    await tree().getByTestId('group-yoghurt').locator('.model-node').click({ timeout: 3_000 })
   }).toPass({ timeout: 30_000 })
   const table = page.getByTestId('attribute-table')
-  await expect(table).toBeVisible()
+  await expect(table.getByTestId('attribute-row-inherited').first()).toBeVisible()
   return table
 }
 
@@ -48,7 +64,7 @@ async function cellCursor(cell: Locator) {
 test('attribute table bool columns use Braian checkboxes with pointer on enabled cells', async ({ page }) => {
   test.setTimeout(120_000)
   await login(page)
-  const table = await openProductAttributes(page)
+  const table = await openTypeAttributes(page, 'product')
   await table.getByTestId('quick-filter').fill('description')
   const row = table.locator('[data-key="description"]')
   await expect(row).toBeVisible()
@@ -71,8 +87,9 @@ test('attribute table bool columns use Braian checkboxes with pointer on enabled
     else await expect(checkbox).not.toBeChecked()
   }
 
-  await table.getByTestId('quick-filter').fill('net weight')
-  const numberRow = table.locator('[data-key="net_weight"]')
+  const articleTable = await openTypeAttributes(page, 'article')
+  await articleTable.getByTestId('quick-filter').fill('net weight')
+  const numberRow = articleTable.locator('[data-key="net_weight"]')
   await expect(numberRow).toBeVisible()
   const languagesCell = numberRow.locator('.standard-grid-cell-bool[data-column="languages"]')
   await expect(languagesCell).toHaveAttribute('data-disabled', 'true')
@@ -99,7 +116,7 @@ test('inherited attribute rows keep disabled bool cells non-interactive', async 
 test('Tab from Kind focuses Required and Shift+Tab returns to the editor', async ({ page }) => {
   test.setTimeout(120_000)
   await login(page)
-  const table = await openProductAttributes(page)
+  const table = await openTypeAttributes(page, 'product')
   await table.getByTestId('quick-filter').fill('description')
   const row = table.locator('[data-key="description"]')
   await row.locator('[data-column="kind"]').dblclick()
@@ -115,7 +132,7 @@ test('Tab from Kind focuses Required and Shift+Tab returns to the editor', async
 test('Tab from Unit on a number attribute focuses Required and skips disabled Languages', async ({ page }) => {
   test.setTimeout(120_000)
   await login(page)
-  const table = await openProductAttributes(page)
+  const table = await openTypeAttributes(page, 'article')
   await table.getByTestId('quick-filter').fill('net weight')
   const row = table.locator('[data-key="net_weight"]')
   await row.locator('[data-column="unit"]').dblclick()
