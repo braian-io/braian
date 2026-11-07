@@ -1,6 +1,6 @@
-# Status 2026-11-06
+# Status 2026-11-07
 
-Bas: `origin/main` tip `2d78daf` (squash-merge av #253, rad 149 — hardcoded UI-strängar → `copy`; inkluderar #252 / `fa304b3`, Sources M2). Senaste migrering i repot: `V42__agent_session.sql`.
+Bas: `origin/main` tip `fc09d6c` (squash-merge av #263, rad 205 — attributtabellens bool-kolumner med Braian-checkboxar). Senaste migrering i repot: `V43__soft_delete.sql` (#260).
 
 Braian går att starta lokalt och att klicka igenom på [demo.braian.io](https://demo.braian.io). Postgres är källan och ändringsloggen. Indexer, sök, auth, förslag och webbgränssnittet sitter på samma kedja. Flödet står i `docs/events.md`. Demokatalogen som `just dev` visar är bara seed: hjälteobjekt plus 240 syntetiska livsmedel (leverantörer, produkter och artiklar). Etiketter finns på sv/en/de och objektdata är engelska. Strukturen heter Food, leverantörer står utanför trädet och pekas ut med länkar. Tester skriver i databasen `braian_e2e` och sökaliaset `braian_e2e`, inte i demon.
 
@@ -9,7 +9,20 @@ Skalprovet (5 000 skrivningar i sekunden, 1 miljon och 10 miljoner objekt) är i
 
 ## Levererat sedan 2026-11-01 (verifierat via `git log` på main)
 
-Sedan statusen 2026-11-01 (`8300319` / #145) har ungefär #146–#253 landat (~108 commits på main). Inga öppna PR:er mot main vid skrivtillfället. Många leveranser står på Att testa i Notion och väntar på Glenns genomgång.
+Sedan statusen 2026-11-01 (`8300319` / #145) har ungefär #146–#263 landat (~118 commits på main, `git rev-list --count 8300319..fc09d6c`). Vid bas-snapshotet `fc09d6c` fanns inga öppna PR:er mot main. Många leveranser står på Att testa i Notion och väntar på Glenns genomgång.
+
+### Kartläggning #253–#263 (squash på main, `git log` + `gh pr view`)
+- #253 `2d78daf` · rad 149 · fix(web): move hardcoded UI strings into copy (row 149)
+- #254 `434697a` · docs-only, ingen Notion-rad · docs: refresh status.md for 2026-11-06
+- #255 `4583c56` · rad 153 · fix(web): grid focus without select; Enter/Space select (row 153)
+- #256 `bb024d8` · uppföljning rad 153 · fix(web): keep suggestion badge out of name cell title/text
+- #257 `97e7fbb` · rad 154 · feat(web): standardize UI buttons on Button variants (row 154)
+- #258 `aacc665` · rad 157 · fix(web): model graph edge labels + settle (M14 / row 157)
+- #259 `9ac66f4` · rad 159 · refactor(web): type and space tokens (L1 / row 159)
+- #260 `e0e1834` · rad 142 · Soft-delete user-facing rows, with trash and a 30-day cleanup
+- #261 `85fe6d4` · rad 206 · Save safe model edits directly; confirm only destructive changes (row 206)
+- #262 `1d179b1` · rad 171 · fix(agent): propose a display-name change for a named product (row 171)
+- #263 `fc09d6c` · rad 205 · fix(web): attribute table bool columns use Braian checkboxes and pointer cursor
 
 ### Seed, kataloger och config
 - #146: status.md 2026-11-01.
@@ -18,12 +31,15 @@ Sedan statusen 2026-11-01 (`8300319` / #145) har ungefär #146–#253 landat (~1
 
 ### Felhantering, dialoger och designpolish
 - #188, #190–#194, #196–#199, #203–#206 m.fl.: synliga skrivfel (toast/inline), danger-confirm utan type-to-confirm, fokusring, en kantnivå, accentpolicy, delade Dialog/Popover, F-/H-fynd (rader omkring 134–183, 152, 158, 160–166).
+- #257 `97e7fbb` (rad 154): feat(web): standardize UI buttons on Button variants (row 154) — knappar på `Button`-varianter (design M11).
+- #259 `9ac66f4` (rad 159 / L1): refactor(web): type and space tokens (L1 / row 159) — typ- och spacing-tokens i stället för hårdkodade px.
 
 ### Länkar
 - #207–#208, #195/#224–#227: sökbart länk-mål, drag-för-länk, kardinalitet/replace, två vyer sida vid sida, Link to-undermeny, demolänktyp produkt→leverantör via config apply.
 
 ### Agent
 - #202, #209, #212, #217, #222, #235–#237: agentredigering i Detail, egen flik/vy, bakgrundskörningar och agents-lista, rename utan fråga, disabled Send, vänsterkant/marker, proposal-diff-tooltips.
+- #262 `1d179b1` (rad 171): fix(agent): propose a display-name change for a named product (row 171) — visningsnamnsförslag för namngiven produkt.
 
 ### Ctrl+K / command-registry (rad 107)
 - #187, #195, #231–#234: Raycast-lik palett, registry-styrda kolumnflytt- och layout-rader (`palette:true`).
@@ -37,7 +53,19 @@ Sedan statusen 2026-11-01 (`8300319` / #145) har ungefär #146–#253 landat (~1
 - #252 (rad 147): Sources merge profiles / ownership — etiketter, hjälptexter, strukturerad ownership-editor, Dialog i stället för `window.confirm`, ingen header-flash.
 
 ### Copy / i18n
-- #253 (rad 149): hardcoded UI-strängar flyttade till `apps/web/src/i18n.ts` `copy`, sentence case på palette/field-picker-fot (t.ex. Run, Ask AI, Toggle / open).
+- #253 `2d78daf` (rad 149): fix(web): move hardcoded UI strings into copy (row 149) — strängar i `apps/web/src/i18n.ts` `copy`, sentence case på palette/field-picker-fot (t.ex. Run, Ask AI, Toggle / open).
+
+### Tabell, fokus och celler
+- #255 `4583c56` (rad 153): fix(web): grid focus without select; Enter/Space select (row 153) — `role=grid`, fokus ≠ urval; Enter/Space markerar rad; Detalj följer urval (design M9).
+- #256 `bb024d8` (uppföljning rad 153): fix(web): keep suggestion badge out of name cell title/text — badge utanför namncellens `title` och textContent (`cell-name`).
+
+### Datamodell
+- #258 `aacc665` (rad 157 / M14): fix(web): model graph edge labels + settle (M14 / row 157) — synliga kantetiketter och stabiliserad layout.
+- #261 `85fe6d4` (rad 206): Save safe model edits directly; confirm only destructive changes (row 206) — säkra ändringar sparas direkt.
+- #263 `fc09d6c` (rad 205): fix(web): attribute table bool columns use Braian checkboxes and pointer cursor — bool-kolumner med delad Radix-checkbox; Tab hoppar över inaktiverade.
+
+### Soft delete och papperskorg
+- #260 `e0e1834` (rad 142): Soft-delete user-facing rows, with trash and a 30-day cleanup — `deleted_at`, `GET /v1/trash`, återställning och 30-dagars rensning (`V43__soft_delete.sql`, `braian purge-deleted`, API-janitor). Slice: objekt, länkar, arbetsytor/vyer, sortiment, importmappningar, katalog/merge. Utanför slice: definitionsrevisioner, `view_types`/`job_types`-PK, `workspace_templates.key`, ephemeral-rader och förslag via status — inte allt är soft delete.
 
 
 ## Levererat sedan 2026-10-25 (verifierat via `git log` på main)
