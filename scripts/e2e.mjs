@@ -93,6 +93,7 @@ const specs = [
   'e2e/attribute-table-bool-columns.spec.ts',
   'e2e/switch-catalog-view.spec.ts',
   'e2e/z-catalogs.spec.ts',
+  'e2e/readable-urls.spec.ts',
 ]
 
 function positiveInt(name, fallback) {
@@ -180,6 +181,7 @@ const measuredSeconds = {
   'e2e/switch-catalog-view.spec.ts': 25,
   'e2e/source-all-explicit.spec.ts': 40,
   'e2e/z-catalogs.spec.ts': 45,
+  'e2e/readable-urls.spec.ts': 70,
   'e2e/delete-workspace.spec.ts': 28,
   'e2e/open-type-view-ready.spec.ts': 25,
   'e2e/duplicate-type-views.spec.ts': 30,
