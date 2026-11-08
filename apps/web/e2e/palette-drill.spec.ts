@@ -197,7 +197,7 @@ test.describe('palette drill-in, recent order, and global commands', () => {
     await expect(agentTab).toBeVisible({ timeout: 30_000 })
     await agentTab.click()
     await expect(page.getByTestId('agent-view').filter({ hasText: 'how many products' })).toContainText('how many products')
-    await expect(page.getByTestId('agent-answer')).toContainText("AI isn't set up for this workspace", { timeout: 30_000 })
+    await expect(page.getByTestId('agent-answer')).toHaveCount(0, { timeout: 30_000 })
     await page.locator('.pane-tab[data-view-type="object_table"]').first().click()
     await expect(page.getByTestId('object-row').first()).toBeVisible()
   })

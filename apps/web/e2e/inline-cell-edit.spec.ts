@@ -28,6 +28,7 @@ async function setNameCell(page: Page, row: ReturnType<Page['locator']>, text: s
   await editor.fill(text)
   await editor.press('Enter')
   await expect(page.getByTestId('cell-editor-name')).toHaveCount(0)
+  await mainTable(page).getByTestId('review-and-save').click()
   await expect
     .poll(async () => (await rowByName(page, text).locator('[data-column="name"]').textContent())?.trim() ?? '', {
       timeout: 30_000,
@@ -80,6 +81,7 @@ test('inline Name cell edit keeps caret and persists after Enter', async ({ page
 
     await editor.press('Enter')
     await expect(page.getByTestId('cell-editor-name')).toHaveCount(0)
+    await mainTable(page).getByTestId('review-and-save').click()
     await expect
       .poll(async () => (await rowByName(page, edited).locator('[data-column="name"]').textContent())?.trim() ?? '', {
         timeout: 30_000,

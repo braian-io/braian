@@ -47,22 +47,19 @@ test('a clear rename becomes a proposal without asking, and Accept changes the n
   await ask(page, title)
   const view = agentView(page, title)
 
-  const proposal = view.getByTestId('agent-proposal')
-  await expect(proposal).toBeVisible({ timeout: 30_000 })
-  await expect(proposal).toContainText(target)
+  await expect(view.getByTestId('agent-proposal')).toHaveCount(0)
+  await expect(view.getByTestId('agent-follow-up')).toHaveCount(0)
   await expect(view.getByTestId('agent-status')).toHaveAttribute('data-status', 'done', { timeout: 30_000 })
   await expect(view.getByTestId('agent-status')).not.toHaveText('Waiting for you')
   await expect(view.getByTestId('agent-question')).toHaveCount(0)
-
-  // Icon actions: aria-label must stay discoverable (Show session only when a
-  // hidden own session exists — covered in agent-session.spec).
   await expect(view.getByRole('button', { name: 'Run in background' })).toBeVisible()
-  await expect(view.getByRole('button', { name: 'Send' })).toBeVisible()
   await expect(view.getByTestId('agent-mode')).toHaveAttribute('aria-label', 'Run in background')
-  await expect(view.getByTestId('agent-send')).toHaveAttribute('aria-label', 'Send')
-
-  await view.getByTestId('approve-proposal').click()
-  await expect(page.locator('[data-sonner-toast]').filter({ hasText: 'Applied' })).toBeVisible({ timeout: 15_000 })
+  await view.getByTestId('agent-open-draft').click()
+  const renamed = mainTable(page, 'Products').locator(`[id="object-row-${objectId}"] [data-column="name"]`)
+  await expect(renamed).toContainText(target, { timeout: 30_000 })
+  await page.getByTestId('review-and-save').first().click()
+  // Accept is an async write. Wait for the proposal diff to clear before the GET.
+  await expect(renamed).not.toContainText('→', { timeout: 30_000 })
 
   const after = await page.request.get(`/v1/objects/${objectId}`)
   expect(after.ok()).toBeTruthy()

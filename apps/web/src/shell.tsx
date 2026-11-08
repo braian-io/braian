@@ -40,7 +40,7 @@ import {
   takeQueuedOpenTypeView,
 } from './open-type-view-queue'
 import { copy } from './i18n'
-import { applyLayoutCommand, migrateLayout, views as layoutViews, type LayoutDoc, type Place } from './layout'
+import { applyLayoutCommand, focusView, migrateLayout, views as layoutViews, type LayoutDoc, type Place } from './layout'
 import { cloneObjectTableView, objectTableViewForType } from './open-type-view'
 import { ConsequenceHost } from './consequence'
 import { ModelDraftHost } from './model-draft-ui'
@@ -802,6 +802,35 @@ export function Shell() {
     window.addEventListener('braian-set-catalog', onSet)
     return () => window.removeEventListener('braian-set-catalog', onSet)
   }, [queryClient])
+
+  useEffect(() => {
+    const onOpen = (event: Event) => {
+      const detail = (event as CustomEvent<{ objectId?: string | null; viewType?: string }>).detail
+      if (detail?.objectId) setObjectId(detail.objectId)
+      const surface = workspace.data
+      const current = docRef.current
+      if (!surface || !current) return
+      const wanted = detail?.viewType || 'object_table'
+      const rows = viewRows(surface.views)
+      const view = rows.find((item) => item.type === wanted) ?? rows.find((item) => item.type === 'object_table')
+      if (!view) return
+      setDoc(focusView(current, view.id))
+    }
+    window.addEventListener('braian-open-draft', onOpen)
+    return () => window.removeEventListener('braian-open-draft', onOpen)
+  }, [workspace.data])
+
+  useEffect(() => {
+    const onOpen = (event: Event) => {
+      const proposalId = (event as CustomEvent<{ proposalId?: string }>).detail?.proposalId
+      if (!proposalId) return
+      setProposalId(proposalId)
+      const review = orderedWorkspaces.find((workspace) => workspace.share_token === 'braian-review')
+      if (review) setWorkspaceId(review.id)
+    }
+    window.addEventListener('braian-open-proposal', onOpen)
+    return () => window.removeEventListener('braian-open-proposal', onOpen)
+  }, [orderedWorkspaces])
 
   useEffect(() => {
     if (workspace.data && workspace.data.id === workspaceId) {

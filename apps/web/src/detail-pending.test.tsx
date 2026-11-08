@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Json } from './api'
+import { getObjectDraftSnapshot, resetObjectDrafts } from './object-draft'
 import { resetObjectWriteState } from './object-write'
 import { ObjectDetail, type PanesSession } from './panes'
 
@@ -105,6 +106,7 @@ function acceptCall() {
 }
 
 beforeEach(() => {
+  resetObjectDrafts()
   resetObjectWriteState()
   mock.use(proposalApi)
   vi.stubGlobal('fetch', vi.fn(async () => Response.json({ owners: {}, origin: null })))
@@ -124,12 +126,12 @@ describe('pending proposal values in Detail', () => {
     expect(pending.textContent).toContain('New')
     expect(pending.getAttribute('data-field')).toBe('name')
 
-    fireEvent.click(screen.getByTestId('accept-pending'))
+    fireEvent.click(screen.getByTestId('review-and-save'))
 
     await waitFor(() => expect(acceptCall()).toBeTruthy())
     expect(acceptCall()?.[1]).toMatchObject({
       params: { path: { id: 'p1' } },
-      body: { rows: ['r1'], patches: { r1: { values: { name: { en: 'New' } } } } },
+      body: { rows: ['r1'] },
     })
   })
 
@@ -139,26 +141,109 @@ describe('pending proposal values in Detail', () => {
     const pending = await screen.findByTestId('pending-field')
     expect(pending.textContent).toContain('New')
 
-    fireEvent.click(screen.getByTestId('accept-pending'))
+    fireEvent.click(screen.getByTestId('review-and-save'))
 
     await waitFor(() => expect(acceptCall()).toBeTruthy())
     expect(acceptCall()?.[1]).toMatchObject({
       params: { path: { id: 'p1' } },
-      body: { rows: ['r1'], patches: { r1: { values: { name: { en: 'New' } } } } },
+      body: { rows: ['r1'] },
     })
   })
 
-  it('rejects the pending row through the accept endpoint', async () => {
+  it('discards the pending row instead of rejecting it from the panel', async () => {
     render(<Host />)
 
     await screen.findByTestId('pending-field')
-    fireEvent.click(screen.getByTestId('reject-pending'))
+    fireEvent.click(screen.getByTestId('discard-draft'))
 
-    await waitFor(() => expect(acceptCall()).toBeTruthy())
-    expect(acceptCall()?.[1]).toMatchObject({
-      params: { path: { id: 'p1' } },
-      body: { rows: ['r1'], patches: { r1: { values: {} } } },
-    })
+    await waitFor(() => expect(mock.methods.post.mock.calls.some((call) => call[0] === '/v1/proposals/{id}/discard')).toBe(true))
+    expect(acceptCall()).toBeUndefined()
+  })
+})
+
+describe('Detail discard scope', () => {
+  function proposalApiWith(body: Json) {
+    return (path: string) => {
+      if (path === '/v1/objects/{id}') return Promise.resolve(object)
+      if (path === '/v1/definitions') return Promise.resolve(definitions)
+      if (path === '/v1/proposals') return Promise.resolve({
+        pending: { total: (body.rows as Json[]).length, objects: [] },
+        proposals: [{ id: 'p1', title: 'Agent proposal', status: 'open' }],
+      })
+      if (path === '/v1/proposals/{id}') return Promise.resolve(body)
+      return Promise.resolve({})
+    }
+  }
+
+  function rowsProposal(rows: Json[]): Json {
+    return { ...proposal, rows }
+  }
+
+  function discardCall() {
+    return mock.methods.post.mock.calls.find((call) => call[0] === '/v1/proposals/{id}/discard')
+  }
+
+  async function discardFromDetail(body: Json) {
+    mock.use(proposalApiWith(body))
+    render(<Host proposalId="p1" />)
+    await screen.findByTestId('pending-field')
+    fireEvent.click(screen.getByTestId('discard-draft'))
+    // Let the async discard settle before asserting it did not close the proposal.
+    await new Promise((done) => setTimeout(done, 0))
+  }
+
+  const updateRow = (id: string, objectId: string, name: string, rowId: string): Json => ({
+    id: rowId,
+    object_id: objectId,
+    object_key: objectId.toUpperCase(),
+    type_key: 'article',
+    base_version: 3,
+    status: 'pending',
+    conflict: false,
+    patch: { values: { name: { en: name } } },
+  })
+
+  it('keeps a proposal that also changes an object outside Detail', async () => {
+    await discardFromDetail(rowsProposal([
+      updateRow('r1', 'obj-1', 'New', 'r1'),
+      updateRow('r2', 'obj-2', 'Hidden', 'r2'),
+    ]))
+    expect(discardCall()).toBeUndefined()
+  })
+
+  it('keeps a proposal with a visible update and a create row', async () => {
+    await discardFromDetail(rowsProposal([
+      updateRow('r1', 'obj-1', 'New', 'r1'),
+      {
+        id: 'r2',
+        type_key: 'article',
+        status: 'pending',
+        patch: { values: { name: { en: 'Created elsewhere' } } },
+      },
+    ]))
+    expect(discardCall()).toBeUndefined()
+  })
+
+  it('keeps a proposal with a visible update and a delete row', async () => {
+    await discardFromDetail(rowsProposal([
+      updateRow('r1', 'obj-1', 'New', 'r1'),
+      {
+        id: 'r2',
+        object_id: 'obj-1',
+        type_key: 'article',
+        status: 'pending',
+        patch: { op: 'delete' },
+      },
+    ]))
+    expect(discardCall()).toBeUndefined()
+  })
+
+  it('keeps a proposal with a visible update and a model row', async () => {
+    await discardFromDetail(rowsProposal([
+      updateRow('r1', 'obj-1', 'New', 'r1'),
+      { id: 'r2', type_key: 'model', status: 'pending', patch: { op: 'add_attribute' } },
+    ]))
+    expect(discardCall()).toBeUndefined()
   })
 })
 
@@ -223,5 +308,95 @@ describe('Detail header', () => {
 
     await screen.findByTestId('object-detail')
     expect(document.querySelector('.detail-kicker')).toBeNull()
+  })
+})
+
+describe('Detail drafting', () => {
+  it('renders an AI pending value through the same Editor control as a human draft', async () => {
+    render(<Host />)
+    const pending = await screen.findByTestId('pending-field')
+    const control = pending.closest('.control') as HTMLElement
+    expect(control.className).toContain('draft-agent')
+    expect(within(control).getByDisplayValue('New')).toBeTruthy()
+  })
+
+  it('renders a human draft through the same Editor control', async () => {
+    mock.methods.get.mockImplementation((path: string) => {
+      if (path === '/v1/objects/{id}') return Promise.resolve(object)
+      if (path === '/v1/definitions') return Promise.resolve(definitions)
+      if (path === '/v1/proposals') return Promise.resolve({ proposals: [] })
+      return Promise.resolve({})
+    })
+    render(<Host proposalId={null} />)
+    const editor = (await screen.findAllByDisplayValue('Old'))
+      .find((node) => !(node as HTMLInputElement).readOnly) as HTMLInputElement
+    fireEvent.change(editor, { target: { value: 'Human draft' } })
+    const control = editor.closest('.control') as HTMLElement
+    expect(control.className).toContain('draft-user')
+    expect(within(control).getByDisplayValue('Human draft')).toBeTruthy()
+  })
+
+  it('stages one language and leaves the other languages intact', async () => {
+    const swedishDefinitions: Json = { ...definitions, languages: ['en', 'sv'] }
+    const swedishObject: Json = { ...object, values: { number: 'ART-1', name: { en: 'Old', sv: 'Gammalt' } } }
+    mock.methods.get.mockImplementation((path: string) => {
+      if (path === '/v1/objects/{id}') return Promise.resolve(swedishObject)
+      if (path === '/v1/definitions') return Promise.resolve(swedishDefinitions)
+      if (path === '/v1/proposals') return Promise.resolve({ proposals: [] })
+      return Promise.resolve({})
+    })
+    render(<Host proposalId={null} />)
+    const editor = (await screen.findAllByDisplayValue('Gammalt'))
+      .find((node) => !(node as HTMLInputElement).readOnly) as HTMLInputElement
+    fireEvent.change(editor, { target: { value: 'Nytt' } })
+    const cells = getObjectDraftSnapshot().cells
+    expect(cells).toHaveLength(1)
+    expect(cells[0]).toMatchObject({ attribute: 'name', language: 'sv', proposedText: 'Nytt' })
+    expect(cells[0]?.value).toBe('Nytt')
+  })
+
+  it('does not stage an untouched AI pending language when a person edits another language', async () => {
+    const swedishDefinitions: Json = { ...definitions, languages: ['en', 'sv'] }
+    const swedishObject: Json = { ...object, values: { number: 'ART-1', name: { en: 'Old', sv: 'Gammalt' } } }
+    const swedishProposal: Json = {
+      ...proposal,
+      rows: [{
+        ...((proposal.rows as Json[])[0] ?? {}),
+        patch: { values: { name: { en: 'New' } } },
+      }],
+    }
+    mock.methods.get.mockImplementation((path: string) => {
+      if (path === '/v1/objects/{id}') return Promise.resolve(swedishObject)
+      if (path === '/v1/definitions') return Promise.resolve(swedishDefinitions)
+      if (path === '/v1/proposals') return Promise.resolve({
+        pending: { total: 1, objects: [{ object_id: 'obj-1', count: 1 }] },
+        proposals: [{ id: 'p1', title: 'Agent proposal', status: 'open' }],
+      })
+      if (path === '/v1/proposals/{id}') return Promise.resolve(swedishProposal)
+      return Promise.resolve({})
+    })
+    render(<Host />)
+    const editor = (await screen.findAllByDisplayValue('Gammalt'))
+      .find((node) => !(node as HTMLInputElement).readOnly) as HTMLInputElement
+    fireEvent.change(editor, { target: { value: 'Nytt' } })
+    const cells = getObjectDraftSnapshot().cells
+    expect(cells).toHaveLength(1)
+    expect(cells[0]).toMatchObject({ attribute: 'name', language: 'sv', proposedText: 'Nytt' })
+  })
+
+  it('does not save when Enter submits the Detail form', async () => {
+    mock.methods.get.mockImplementation((path: string) => {
+      if (path === '/v1/objects/{id}') return Promise.resolve(object)
+      if (path === '/v1/definitions') return Promise.resolve(definitions)
+      if (path === '/v1/proposals') return Promise.resolve({ proposals: [] })
+      return Promise.resolve({})
+    })
+    render(<Host proposalId={null} />)
+    const form = await screen.findByTestId('object-detail')
+    const editor = (await screen.findAllByDisplayValue('Old'))
+      .find((node) => !(node as HTMLInputElement).readOnly) as HTMLInputElement
+    fireEvent.keyDown(editor, { key: 'Enter' })
+    fireEvent.submit(form)
+    expect(mock.methods.patch).not.toHaveBeenCalled()
   })
 })

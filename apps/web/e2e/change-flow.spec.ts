@@ -57,7 +57,7 @@ test('a person saves directly and reviews an agent draft field by field', async 
   await expect(numberField).toHaveValue(shown)
   const original = await numberField.inputValue()
   await numberField.fill(`${original}-s`)
-  await page.getByTestId('review-and-save').click()
+  await page.getByTestId('object-detail').getByTestId('review-and-save').click()
   await expect(page.getByTestId('confirm-proposal')).toHaveCount(0)
   await expect(page.getByTestId('activity-log')).toContainText('Saved')
 
@@ -213,7 +213,7 @@ test('a pending one-object proposal shows inline in Detail and accepts there', a
   const pending = page.getByTestId('pending-field').filter({ hasText: pendingName }).first()
   await expect(pending).toContainText('Pending')
   await expect(pending).toContainText(pendingName)
-  await pending.getByTestId('accept-pending').click()
+  await page.getByTestId('object-detail').getByTestId('review-and-save').click()
   await expect(page.getByTestId('activity-log')).toContainText('Saved')
 
   const accepted = await page.request.get(`/v1/objects/${objectId}`)

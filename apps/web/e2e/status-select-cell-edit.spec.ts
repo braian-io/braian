@@ -60,6 +60,8 @@ test('Status cell uses Select and persists; Type/Version stay read-only', async 
   await option.click()
 
   await expect(page.getByTestId('cell-editor-status')).toHaveCount(0)
+  // Enter or a Select pick stages the cell. Save writes it.
+  await mainTable(page).getByTestId('review-and-save').click()
   await expect
     .poll(async () => (await stableRow.locator('[data-column="status"]').innerText()).trim(), {
       timeout: 30_000,
@@ -81,6 +83,7 @@ test('Status cell uses Select and persists; Type/Version stay read-only', async 
       await page.getByTestId('cell-editor-status-trigger').click()
     }
     await restore.click()
+    await mainTable(page).getByTestId('review-and-save').click()
     await expect
       .poll(async () => (await rowByName(page, 'Mature cheddar').locator('[data-column="status"]').innerText()).trim(), {
         timeout: 30_000,

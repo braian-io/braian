@@ -49,8 +49,11 @@ test('a failed cell edit toasts the server message and keeps the previous value'
   await expect(editor).toBeVisible()
   await editor.fill('Renamed cheddar')
   await editor.press('Enter')
-
-  await expect(page.locator('[data-sonner-toast]')).toContainText('the write failed validation')
   await expect(page.getByTestId('cell-editor-name')).toHaveCount(0)
+
+  // Enter stages the cell; the failed Save keeps the draft and reports the server message.
+  await table.getByTestId('review-and-save').click()
+  await expect(page.locator('[data-sonner-toast]')).toContainText('the write failed validation')
   await expect(nameCell).toContainText(original)
+  await expect(nameCell.getByTestId('cell-diff')).toContainText('Renamed cheddar')
 })

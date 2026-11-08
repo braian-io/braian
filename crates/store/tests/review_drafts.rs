@@ -353,9 +353,9 @@ async fn import_rows_use_the_same_draft_and_survive_a_restart() {
                     object_id: Some(object_id),
                     object_key: Some("SKU-1".into()),
                     base_version: Some(6),
-                    cells: json!({ "name": { "before": "Old", "after": "Imported" } }),
+                    cells: json!({ "name": { "before": "Old", "value": "Imported", "error": { "message": "Name is too long" } } }),
                     patch: Some(patch.clone()),
-                    errors: json!([]),
+                    errors: json!([{ "message": "Row failed a check" }]),
                 },
                 ImportRowIn {
                     session_id,
@@ -415,7 +415,13 @@ async fn import_rows_use_the_same_draft_and_survive_a_restart() {
     assert_eq!(draft.rows[0].patch, patch);
     assert_eq!(
         draft.rows[0].cells,
-        Some(json!({ "name": { "before": "Old", "after": "Imported" } }))
+        Some(
+            json!({ "name": { "before": "Old", "value": "Imported", "error": { "message": "Name is too long" } } })
+        )
+    );
+    assert_eq!(
+        draft.rows[0].errors,
+        ["Row failed a check", "Name is too long"]
     );
     let ReviewTarget::Import {
         object_id: found, ..
@@ -473,7 +479,7 @@ async fn a_persons_model_draft_conflicts_when_the_revision_moves() {
         aligned.rows[0].id,
         ReviewRowId::ModelStep {
             user_id: user.id,
-            index: 0
+            key: braian_model::model_step_key(&step),
         }
     );
     assert_eq!(aligned.rows[0].patch, step);

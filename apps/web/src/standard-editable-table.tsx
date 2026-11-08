@@ -307,12 +307,30 @@ export function StandardEditableTable<T extends { id: string }>({
     return next
   }
 
+  const sameCellValue = (value: string | number | boolean | null | undefined) =>
+    value === null || value === undefined ? '' : String(value)
+  // Semantic equality across the columns this table edits. Opening a cell and
+  // confirming the same value (or toggling a checkbox back) is not a draft.
+  const sameRow = (left: T, right: T) =>
+    left.id === right.id
+    && columns.every((column) => sameCellValue(column.read(left)) === sameCellValue(column.read(right)))
+
   const patchRow = useCallback(
     (rowId: string, next: T) => {
       if (!onDraftRowsChange) return
+      const base = rows.find((row) => row.id === rowId)
+      if (base && sameRow(next, base)) {
+        if (!(rowId in draftRows)) return
+        const without = { ...draftRows }
+        delete without[rowId]
+        onDraftRowsChange(keepRowOrder(without))
+        return
+      }
       onDraftRowsChange(keepRowOrder({ ...draftRows, [rowId]: next }))
     },
-    [draftRows, onDraftRowsChange],
+    // sameRow reads the current columns/rows; both change with the data.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [draftRows, onDraftRowsChange, rows, columns],
   )
 
   const rowReadOnly = (row: T) => Boolean(rowFlags?.(row)?.readOnly)

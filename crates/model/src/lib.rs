@@ -63,7 +63,8 @@ pub use refs::{
 pub use review::{
     DraftOrigin, DraftStatus, ReviewAction, ReviewActor, ReviewDraft, ReviewGate, ReviewKind,
     ReviewPrincipal, ReviewRefusal, ReviewRow, ReviewRowId, ReviewTarget, RowDecision,
-    authorize_review, base_version_differs, draft_origin, draft_status, row_decision,
+    authorize_review, base_version_differs, draft_origin, draft_status, model_step_key,
+    model_step_keys, review_error_messages, row_decision,
 };
 pub use standard::{
     StandardIds, apply_defaults, detach_name_aliases, install_standard_attributes,
