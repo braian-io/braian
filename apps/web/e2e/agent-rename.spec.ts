@@ -55,8 +55,11 @@ test('a clear rename becomes a proposal without asking, and Accept changes the n
   await expect(view.getByRole('button', { name: 'Run in background' })).toBeVisible()
   await expect(view.getByTestId('agent-mode')).toHaveAttribute('aria-label', 'Run in background')
   await view.getByTestId('agent-open-draft').click()
-  await expect(mainTable(page, 'Products').locator(`[id="object-row-${objectId}"] [data-column="name"]`)).toContainText(target, { timeout: 30_000 })
+  const renamed = mainTable(page, 'Products').locator(`[id="object-row-${objectId}"] [data-column="name"]`)
+  await expect(renamed).toContainText(target, { timeout: 30_000 })
   await page.getByTestId('review-and-save').first().click()
+  // Accept is an async write. Wait for the proposal diff to clear before the GET.
+  await expect(renamed).not.toContainText('→', { timeout: 30_000 })
 
   const after = await page.request.get(`/v1/objects/${objectId}`)
   expect(after.ok()).toBeTruthy()

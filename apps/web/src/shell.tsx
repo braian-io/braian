@@ -815,6 +815,18 @@ export function Shell() {
   }, [workspace.data])
 
   useEffect(() => {
+    const onOpen = (event: Event) => {
+      const proposalId = (event as CustomEvent<{ proposalId?: string }>).detail?.proposalId
+      if (!proposalId) return
+      setProposalId(proposalId)
+      const review = orderedWorkspaces.find((workspace) => workspace.share_token === 'braian-review')
+      if (review) setWorkspaceId(review.id)
+    }
+    window.addEventListener('braian-open-proposal', onOpen)
+    return () => window.removeEventListener('braian-open-proposal', onOpen)
+  }, [orderedWorkspaces])
+
+  useEffect(() => {
     if (workspace.data && workspace.data.id === workspaceId) {
       canonicalRef.current = migrateLayout(workspace.data.layout)
     }

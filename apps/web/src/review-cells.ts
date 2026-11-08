@@ -170,6 +170,98 @@ export function indexProposalCells(proposals: Json[]): Map<string, IndexedPropos
   return byObject
 }
 
+export type ProposalMembership = {
+  proposalId: string
+  /** Every object id of a pending ordinary update row, including objects outside the current view. */
+  objectIds: string[]
+  /**
+   * True when a pending row cannot be reviewed as an ordinary object cell:
+   * create (no object), delete, model, or assortment. Discarding the whole
+   * proposal would destroy that unreviewed row, so callers must preserve it.
+   */
+  unmapped: boolean
+}
+
+/**
+ * Complete pending membership for every open object proposal.
+ *
+ * `indexProposalCells` intentionally drops rows that cannot be painted as a
+ * cell. Discard needs the opposite: every pending row, including objects
+ * outside the caller's visible scope and unmapped create/delete/model rows.
+ * A missing or partial membership must never authorize a whole-proposal
+ * discard, because the backend closes the entire proposal.
+ */
+export function proposalMemberships(proposals: Json[]): Map<string, ProposalMembership> {
+  const out = new Map<string, ProposalMembership>()
+  for (const proposal of proposals) {
+    if (String(proposal.status ?? '') !== 'open') continue
+    if (proposal.session_id) continue
+    const proposalId = String(proposal.id ?? '')
+    if (!proposalId) continue
+    const objects = new Set<string>()
+    let unmapped = false
+    const rows = (proposal.rows as Json[] | undefined) ?? []
+    for (const row of rows) {
+      if (String(row.status ?? '') !== 'pending') continue
+      const typeKey = String(row.type_key ?? '')
+      const objectId = String(row.object_id ?? '')
+      if (typeKey === 'model' || typeKey === 'assortment') {
+        unmapped = true
+        if (objectId) objects.add(objectId)
+        continue
+      }
+      if (!objectId) {
+        unmapped = true
+        continue
+      }
+      objects.add(objectId)
+      if (reviewOperation(row) === 'delete') unmapped = true
+    }
+    out.set(proposalId, { proposalId, objectIds: [...objects], unmapped })
+  }
+  return out
+}
+
+export type UnmappedProposal = {
+  proposalId: string
+  title: string
+  /** `create` and `delete` have no safe inline object cell; `model` stays on its own surface. */
+  reason: 'create' | 'delete' | 'model'
+}
+
+/**
+ * Open proposals that cannot be painted as an ordinary object cell: a create
+ * row has no object, a delete row has no value column, and a model row belongs
+ * to the model review. Callers must still show a review path for them.
+ */
+export function unmappedProposals(proposals: Json[]): UnmappedProposal[] {
+  const out = new Map<string, UnmappedProposal>()
+  for (const proposal of proposals) {
+    if (String(proposal.status ?? '') !== 'open') continue
+    if (proposal.session_id) continue
+    const proposalId = String(proposal.id ?? '')
+    if (!proposalId) continue
+    const title = String(proposal.title ?? '')
+    const rows = (proposal.rows as Json[] | undefined) ?? []
+    for (const row of rows) {
+      if (String(row.status ?? '') !== 'pending') continue
+      const typeKey = String(row.type_key ?? '')
+      if (typeKey === 'model' || typeKey === 'assortment') {
+        out.set(proposalId, { proposalId, title, reason: 'model' })
+        continue
+      }
+      if (!row.object_id) {
+        out.set(proposalId, { proposalId, title, reason: 'create' })
+        continue
+      }
+      if (reviewOperation(row) === 'delete') {
+        out.set(proposalId, { proposalId, title, reason: 'delete' })
+      }
+    }
+  }
+  return [...out.values()]
+}
+
 export function importErrorLines(errors: unknown): string[] {
   if (!Array.isArray(errors)) return []
   return errors.flatMap((item) => {

@@ -204,7 +204,7 @@ test('background runs show a count and Review results opens the tab', async ({ p
   await expect(page.getByTestId('agent-view')).toHaveAttribute('data-mode', 'foreground')
 })
 
-test('waiting stops for a decision, survives reload, and resume continues', async ({ page }) => {
+test('waiting survives reload and the agent area stays status and navigation only', async ({ page }) => {
   test.setTimeout(120_000)
   await login(page)
   const title = 'ask me before you continue'
@@ -212,7 +212,7 @@ test('waiting stops for a decision, survives reload, and resume continues', asyn
   const view = agentView(page, title)
   await expect(view.getByTestId('agent-status')).toHaveAttribute('data-status', 'waiting', { timeout: 30_000 })
   await expect(view.getByTestId('agent-status')).toHaveText('Waiting for you')
-  await expect(view.getByTestId('agent-question')).toHaveText('Which value should I use? I will not guess.')
+  await expect(view.getByTestId('agent-question')).toHaveCount(0)
   await view.getByTestId('agent-mode').click()
   await expect(view).toHaveAttribute('data-mode', 'background')
   const waitingToast = page.locator('[data-sonner-toast]').filter({ hasText: 'waiting for you' })
@@ -225,7 +225,7 @@ test('waiting stops for a decision, survives reload, and resume continues', asyn
   await agentTab(page, title).click()
   const restored = agentView(page, title)
   await expect(restored.getByTestId('agent-status')).toHaveText('Waiting for you')
-  await expect(restored.getByTestId('agent-question')).toContainText('I will not guess')
+  await expect(restored.getByTestId('agent-question')).toHaveCount(0)
   await expect(restored).toHaveAttribute('data-mode', 'background')
   await expect(restored.getByRole('button', { name: 'Bring to front' })).toHaveCount(0)
   const runId = await restored.getAttribute('data-run')
@@ -241,7 +241,7 @@ test('waiting stops for a decision, survives reload, and resume continues', asyn
   await closeAgentTab(page, title)
   await answer.click()
   await expect(agentTab(page, title)).toBeVisible()
-  await expect(agentView(page, title).getByTestId('agent-question')).toBeVisible()
+  await expect(agentView(page, title).getByTestId('agent-question')).toHaveCount(0)
   await expect(agentView(page, title)).toHaveAttribute('data-mode', 'foreground')
   await expect(agentView(page, title).getByTestId('agent-follow-up')).toHaveCount(0)
   await expect(agentView(page, title).getByTestId('agent-open-draft')).toBeVisible()
@@ -251,8 +251,8 @@ test('waiting stops for a decision, survives reload, and resume continues', asyn
   await page.reload()
   await showProducts(page)
   await agentTab(page, title).click()
-  await expect(agentView(page, title).getByTestId('agent-status')).toHaveAttribute('data-status', 'done')
-  await expect(agentView(page, title).getByTestId('agent-question')).toContainText('I will not guess')
+  await expect(agentView(page, title).getByTestId('agent-status')).toHaveAttribute('data-status', 'waiting')
+  await expect(agentView(page, title).getByTestId('agent-question')).toHaveCount(0)
 })
 
 test('Ctrl+K lists agents and Enter opens the tab', async ({ page }) => {
@@ -290,7 +290,7 @@ test('Ctrl+K lists agents and Enter opens the tab', async ({ page }) => {
   await page.keyboard.press('Enter')
   await expect(palette).toHaveCount(0)
   await expect(agentTab(page, title)).toBeVisible()
-  await expect(agentView(page, title).getByTestId('agent-question')).toBeVisible()
+  await expect(agentView(page, title).getByTestId('agent-question')).toHaveCount(0)
 })
 
 test('a long active tab keeps its start visible in a crowded strip', async ({ page }) => {

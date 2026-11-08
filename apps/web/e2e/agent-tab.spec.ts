@@ -74,6 +74,7 @@ test('the agent tab opens and the rest of the app stays usable', async ({ page }
   await expect(view.getByTestId('agent-status')).toHaveAttribute('data-status', 'working')
   await page.keyboard.press('Control+k')
   await expect(page.getByTestId('command-palette')).toBeVisible()
+  await expect(page.getByTestId('palette-input')).toBeFocused()
   await page.keyboard.press('Escape')
   await expect(page.getByTestId('command-palette')).toHaveCount(0)
   await page.locator('.pane-tab[data-view-type="object_table"]').first().click()
@@ -81,24 +82,24 @@ test('the agent tab opens and the rest of the app stays usable', async ({ page }
   await expect(page.getByTestId('object-detail')).toBeVisible()
   await tab.click()
   await expect(view.getByTestId('agent-status')).toHaveAttribute('data-status', 'done', { timeout: 30_000 })
-  await expect(view.getByTestId('agent-answer').first()).toBeVisible()
+  await expect(view.getByTestId('agent-answer')).toHaveCount(0)
 })
 
-test('the agent tab and its reply survive a reload', async ({ page }) => {
+test('the agent tab and its status survive a reload without chat history', async ({ page }) => {
   test.setTimeout(120_000)
   await login(page)
   const title = 'how many products are in this workspace'
   await ask(page, title)
   const view = agentView(page, title)
   await expect(view).toContainText(title)
-  await expect(view.getByTestId('agent-answer')).toContainText("AI isn't set up for this workspace", { timeout: 30_000 })
+  await expect(view.getByTestId('agent-answer')).toHaveCount(0, { timeout: 30_000 })
   await page.reload()
   await showProducts(page)
   const tab = agentTab(page, title)
   await expect(tab).toBeVisible()
   await tab.click()
   await expect(agentView(page, title)).toContainText(title)
-  await expect(agentView(page, title).getByTestId('agent-answer')).toContainText("AI isn't set up for this workspace")
+  await expect(agentView(page, title).getByTestId('agent-answer')).toHaveCount(0)
 })
 
 test('a user edit marks the agent proposal stale', async ({ page }) => {
@@ -137,6 +138,12 @@ test('a user edit marks the agent proposal stale', async ({ page }) => {
   await page.getByTestId('cell-editor-name').press('Enter')
   await page.getByTestId('review-and-save').first().click()
   await expect(page.getByTestId('cell-editor-name')).toHaveCount(0)
+  // Let the revert save land, then remove the stale proposal so the rest of
+  // this file starts from the seed name again.
+  await expect(page.getByTestId('review-and-save').first()).toBeDisabled({ timeout: 30_000 })
+  await page.getByTestId('discard-draft').first().click()
+  await expect(nameCell.getByTestId('cell-diff')).toHaveCount(0, { timeout: 30_000 })
+  await expect(nameCell).toContainText(original)
 })
 
 test('the proposal card shows the object and the field diff', async ({ page }) => {

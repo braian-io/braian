@@ -4,7 +4,6 @@ import { Eye, SendToBack } from 'lucide-react'
 import { api, type Json } from './api'
 import {
   AgentRunError,
-  agentDisplayText,
   agentStatusLabel,
   cleanAgentError,
   fetchAgentRun,
@@ -18,6 +17,7 @@ import { Button } from './components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from './components/ui/tooltip'
 import { formatTimestamp } from './format'
 import { copy } from './i18n'
+import { reviewOperation } from './review-cells'
 
 type AgentViewProps = {
   runId: string
@@ -177,8 +177,10 @@ export function AgentView({ runId, push }: AgentViewProps) {
   const waiting = data.status === 'waiting'
   const failed = data.status === 'failed'
   const failure = failed ? cleanAgentError(data.error || '') : ''
-  const lastPrompt = [...data.messages].reverse().find((message) => message.kind === 'user')
-  const retryPrompt = String(lastPrompt?.body.text ?? data.title)
+  const retryPrompt = data.title
+  const objectProposal = data.proposals.find((proposal) =>
+    proposal.object_id && reviewOperation({ object_id: proposal.object_id, patch: proposal.patch }) === 'update')
+  const reviewProposal = objectProposal ?? data.proposals.find((proposal) => proposal.id)
   return (
     <div
       className="agent-view"
@@ -228,32 +230,6 @@ export function AgentView({ runId, push }: AgentViewProps) {
         </div>
         <time dateTime={data.created_at}>{formatTimestamp(data.created_at)}</time>
       </header>
-      <div className="agent-log" data-testid="agent-log" aria-live="polite" aria-busy={working}>
-        {data.messages.map((message) => {
-          if (message.kind === 'question') {
-            const text = agentDisplayText(String(message.body.text ?? ''))
-            if (!text) return null
-            return (
-              <p key={message.id} className="agent-question" data-testid="agent-question">
-                {text}
-              </p>
-            )
-          }
-          if (message.kind === 'user' || message.kind === 'proposal' || message.kind === 'notice') return null
-          const raw = String(message.body.text ?? '')
-          const unavailable = /no model is connected|openai_api_key/i.test(raw)
-          const setupOnly = data.proposals.length === 0 && !data.messages.some((item) => item.kind === 'question')
-          if (unavailable && !setupOnly) return null
-          const text = unavailable ? copy.agentUnavailableHint : agentDisplayText(raw)
-          if (!text) return null
-          return (
-            <p key={message.id} className={`agent-line agent-line-${message.kind}`} data-testid={message.kind === 'assistant' ? 'agent-answer' : message.kind === 'notice' ? 'agent-notice' : 'agent-line'} data-kind={message.kind}>
-              {text}
-            </p>
-          )
-        })}
-        {data.messages.length === 0 ? <p className="muted">{copy.agentEmptyRun}</p> : null}
-      </div>
       {data.proposals.some((proposal) => proposal.stale) ? (
         <p data-testid="agent-stale-reason">
           {data.proposals.find((proposal) => proposal.stale)?.stale_reason || copy.agentProposalStale}
@@ -264,13 +240,26 @@ export function AgentView({ runId, push }: AgentViewProps) {
           type="button"
           data-testid="agent-open-draft"
           onClick={() => {
-            const objectId = data.proposals.find((proposal) => proposal.object_id)?.object_id ?? null
+            if (objectProposal?.object_id) {
+              window.dispatchEvent(new CustomEvent('braian-open-draft', {
+                detail: { objectId: objectProposal.object_id, viewType: 'object_table' },
+              }))
+              return
+            }
+            if (reviewProposal) {
+              window.dispatchEvent(new CustomEvent('braian-open-proposal', {
+                detail: { proposalId: reviewProposal.id },
+              }))
+              return
+            }
+            // A waiting run can end without a proposal. Keep the control a real
+            // navigation instead of a button that does nothing.
             window.dispatchEvent(new CustomEvent('braian-open-draft', {
-              detail: { objectId, viewType: objectId ? 'object_table' : 'data_model' },
+              detail: { objectId: null, viewType: 'data_model' },
             }))
           }}
         >
-          {copy.openDraftInTable}
+          {objectProposal ? copy.openDraftInTable : reviewProposal ? copy.reviewDraft : copy.dataModel}
         </Button>
       </div>
       {failure ? (

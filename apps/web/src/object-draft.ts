@@ -53,7 +53,8 @@ function emit(next: Snapshot) {
   for (const listener of listeners) listener()
 }
 
-function cellKey(cell: { objectId: string; attribute: string; language?: string }): string {
+/** Shared table/Detail identity: one cell per object, attribute and language. */
+export function draftCellKey(cell: { objectId: string; attribute: string; language?: string }): string {
   return `${cell.objectId}\n${cell.attribute}\n${cell.language ?? ''}`
 }
 
@@ -62,25 +63,13 @@ export function objectDraftCells(objectId?: string): ObjectDraftCell[] {
 }
 
 export function stageObjectCell(cell: ObjectDraftCell): void {
-  const id = cellKey(cell)
-  const previous = state.cells.find((item) => cellKey(item) === id)
+  const id = draftCellKey(cell)
+  const previous = state.cells.find((item) => draftCellKey(item) === id)
   const originalText = previous?.originalText ?? cell.originalText
   const baseVersion = previous?.baseVersion ?? cell.baseVersion
-  const rest = state.cells.filter((item) => cellKey(item) !== id)
-  if (!cell.language) {
-    const withoutAttribute = rest.filter(
-      (item) => !(item.objectId === cell.objectId && item.attribute === cell.attribute),
-    )
-    if (cell.proposedText === originalText) {
-      emit({ ...state, cells: withoutAttribute })
-      return
-    }
-    emit({
-      ...state,
-      cells: [...withoutAttribute, { ...cell, originalText, baseVersion }],
-    })
-    return
-  }
+  // Only the same language slot is replaced. Another language and every other
+  // attribute stay untouched, so table and Detail can merge without loss.
+  const rest = state.cells.filter((item) => draftCellKey(item) !== id)
   if (cell.proposedText === originalText) {
     emit({ ...state, cells: rest })
     return
@@ -90,6 +79,18 @@ export function stageObjectCell(cell: ObjectDraftCell): void {
 
 export function discardObjectDraft(objectId: string): void {
   emit({ ...state, cells: state.cells.filter((cell) => cell.objectId !== objectId) })
+}
+
+/** Drop only the cells in an exact snapshot, leaving edits made during an await. */
+export function discardSubmittedCells(submitted: ObjectDraftCell[]): void {
+  if (submitted.length === 0) return
+  emit({
+    ...state,
+    cells: state.cells.filter((cell) => !submitted.some((saved) =>
+      draftCellKey(saved) === draftCellKey(cell)
+      && saved.proposedText === cell.proposedText
+      && sameValue(saved.value, cell.value))),
+  })
 }
 
 export function draftBaseVersion(objectId: string): number | null {
@@ -107,20 +108,45 @@ export function editBaseVersion(objectId: string, serverVersion: number): number
   return serverVersion
 }
 
+/**
+ * Lossless merge: a language map keeps every language it does not touch and a
+ * nested value keeps fields the draft did not mention. Arrays and primitives
+ * replace as a whole.
+ */
 function mergeAttribute(current: unknown, next: unknown): unknown {
   if (
     current && next
     && typeof current === 'object' && typeof next === 'object'
     && !Array.isArray(current) && !Array.isArray(next)
   ) {
-    return { ...(current as Json), ...(next as Json) }
+    const out: Json = { ...(current as Json) }
+    for (const [key, value] of Object.entries(next as Json)) {
+      out[key] = mergeAttribute(out[key], value) as Json[string]
+    }
+    return out
   }
   return next
 }
 
-export function draftValues(objectId: string): Json {
+function sameValue(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return a.length === b.length && a.every((item, index) => sameValue(item, b[index]))
+  }
+  if (a && b && typeof a === 'object' && typeof b === 'object') {
+    const left = a as Json
+    const right = b as Json
+    const leftKeys = Object.keys(left)
+    const rightKeys = Object.keys(right)
+    return leftKeys.length === rightKeys.length
+      && leftKeys.every((key) => Object.hasOwn(right, key) && sameValue(left[key], right[key]))
+  }
+  return false
+}
+
+function valuesFromCells(cells: ObjectDraftCell[]): Json {
   const values: Json = {}
-  for (const cell of objectDraftCells(objectId)) {
+  for (const cell of cells) {
     if (cell.language) {
       const map = values[cell.attribute]
       const base = map && typeof map === 'object' && !Array.isArray(map) ? { ...(map as Json) } : {}
@@ -133,22 +159,72 @@ export function draftValues(objectId: string): Json {
   return values
 }
 
-export function noteObjectDraftSaved(objectId: string, version: number): void {
-  const cells = objectDraftCells(objectId)
+export function draftValues(objectId: string): Json {
+  return valuesFromCells(objectDraftCells(objectId))
+}
+
+/** The exact cells a Save is about to submit. Edits made during the await stay out. */
+export function objectDraftSnapshot(objectIds: string[]): ObjectDraftCell[] {
+  const scope = new Set(objectIds)
+  return state.cells
+    .filter((cell) => scope.has(cell.objectId))
+    .map((cell) => ({ ...cell }))
+}
+
+/**
+ * Remember the submitted version and clear only the submitted cells.
+ *
+ * A person can keep editing while the request is in flight. Those edits have a
+ * different proposed value, so they survive; only the exact snapshot is cleared.
+ * Committed values merge with an earlier save instead of dropping a newer hold.
+ */
+export function noteObjectDraftSaved(
+  objectId: string,
+  version: number,
+  submitted: ObjectDraftCell[] = objectDraftCells(objectId),
+): void {
+  const cells = submitted.filter((cell) => cell.objectId === objectId)
   const texts: Record<string, string> = {}
   for (const cell of cells) {
+    if (cell.language) {
+      // A language cell must not claim the bare attribute key: the table can
+      // show another language through a column without an explicit `@lang`.
+      texts[`${cell.attribute}@${cell.language}`] = cell.proposedText
+      continue
+    }
     texts[cell.columnId] = cell.proposedText
     texts[cell.attribute] = cell.proposedText
-    if (cell.language) texts[`${cell.attribute}@${cell.language}`] = cell.proposedText
   }
+  const previous = state.committed[objectId]
+  const committedVersion = previous ? Math.max(previous.version, version) : version
+  const committedValues = previous
+    ? (mergeAttribute(previous.values, valuesFromCells(cells)) as Json)
+    : valuesFromCells(cells)
   const committed = {
     ...state.committed,
-    [objectId]: { version, texts, values: draftValues(objectId) },
+    [objectId]: {
+      version: committedVersion,
+      texts: { ...(previous?.texts ?? {}), ...texts },
+      values: committedValues,
+    },
   }
-  emit({
-    cells: state.cells.filter((cell) => cell.objectId !== objectId),
-    committed,
+  const submittedByKey = new Map(cells.map((cell) => [draftCellKey(cell), cell]))
+  const keep = state.cells.flatMap((cell) => {
+    if (cell.objectId !== objectId) return [cell]
+    const saved = submittedByKey.get(draftCellKey(cell))
+    if (saved && saved.proposedText === cell.proposedText && sameValue(saved.value, cell.value)) {
+      return []
+    }
+    // An edit made while the request was in flight was based on the revision
+    // before the save. Rebase it onto the acknowledged revision (and onto the
+    // value that just landed) so the next Save is not rejected as stale.
+    return [{
+      ...cell,
+      baseVersion: Math.max(cell.baseVersion, committedVersion),
+      originalText: saved ? saved.proposedText : cell.originalText,
+    }]
   })
+  emit({ cells: keep, committed })
 }
 
 export type CellPaint = {
@@ -185,12 +261,34 @@ export function paintObjectCell(input: {
   }
   const committed = state.committed[input.objectId]
   if (committed && input.serverVersion < committed.version) {
-    const text = committed.texts[input.columnId]
-      ?? (input.language ? committed.texts[`${input.attribute}@${input.language}`] : undefined)
-      ?? committed.texts[input.attribute]
+    // Never fall back to the bare attribute for a language cell: another
+    // language saved earlier could otherwise appear in this column.
+    const text = input.language
+      ? committed.texts[`${input.attribute}@${input.language}`] ?? committed.texts[input.columnId]
+      : committed.texts[input.columnId] ?? committed.texts[input.attribute]
     if (text !== undefined) return { text, drafted: false, held: true }
   }
   return { text: input.serverText, drafted: false, held: false }
+}
+
+/**
+ * What reopening a cell editor starts from: the current draft (or a committed
+ * value a stale read has not caught up to), not the server text behind it.
+ */
+export function draftEditorSeed(input: {
+  objectId: string
+  columnId: string
+  attribute: string
+  language?: string
+  serverText: string
+  serverVersion: number
+}): { text: string; originalText: string } | null {
+  const painted = paintObjectCell(input)
+  if (!painted.drafted && !painted.held) return null
+  return {
+    text: painted.text,
+    originalText: painted.drafted ? (painted.originalText ?? painted.text) : painted.text,
+  }
 }
 
 export function overlayValues(objectId: string, serverValues: Json, serverVersion: number): Json {

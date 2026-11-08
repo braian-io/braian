@@ -572,3 +572,81 @@ describe('standard editable table loading state', () => {
     expect(screen.getByText('No saved mappings yet.')).toBeTruthy()
   })
 })
+
+describe('semantic no-op drafts', () => {
+  it('does not stage a draft when a text edit confirms the same value', () => {
+    const onDraft = vi.fn()
+    render(
+      <StandardEditableTable
+        columns={columns}
+        rows={[{ id: '1', name: 'Colour', kind: 'value_list' }]}
+        draftRows={{}}
+        onDraftRowsChange={onDraft}
+        editable
+      />,
+    )
+    const row = screen.getByTestId('standard-grid-row')
+    fireEvent.keyDown(row, { key: 'Enter' })
+    const editor = screen.getByTestId('standard-cell-editor') as HTMLInputElement
+    fireEvent.blur(editor)
+    expect(onDraft).not.toHaveBeenCalled()
+  })
+
+  it('removes a draft when the edit is reverted to the base value', () => {
+    const onDraft = vi.fn()
+    render(
+      <StandardEditableTable
+        columns={columns}
+        rows={[{ id: '1', name: 'Colour', kind: 'value_list' }]}
+        draftRows={{ '1': { id: '1', name: 'Shade', kind: 'value_list' } }}
+        onDraftRowsChange={onDraft}
+        editable
+      />,
+    )
+    const row = screen.getByTestId('standard-grid-row')
+    fireEvent.keyDown(row, { key: 'Enter' })
+    const editor = screen.getByTestId('standard-cell-editor') as HTMLInputElement
+    fireEvent.change(editor, { target: { value: 'Colour' } })
+    fireEvent.blur(editor)
+    expect(onDraft).toHaveBeenCalled()
+    expect(onDraft.mock.calls.at(-1)?.[0]).toEqual({})
+  })
+
+  it('removes a checkbox draft when it toggles back to the base value', () => {
+    type BoolRow = { id: string; active: boolean }
+    const boolColumns: Array<StandardColumn<BoolRow>> = [{
+      id: 'active',
+      header: 'Active',
+      type: 'boolean',
+      display: 'checkbox',
+      cellTestId: () => 'active-checkbox',
+      read: (row) => row.active,
+      write: (row, value) => ({ ...row, active: value === 'true' }),
+    }]
+    const onDraft = vi.fn()
+    const base = { id: '1', active: false }
+    const { rerender } = render(
+      <StandardEditableTable
+        columns={boolColumns}
+        rows={[base]}
+        draftRows={{}}
+        onDraftRowsChange={onDraft}
+        editable
+      />,
+    )
+    fireEvent.click(screen.getByTestId('active-checkbox'))
+    const first = onDraft.mock.calls.at(-1)?.[0] as Record<string, BoolRow>
+    expect(first['1']?.active).toBe(true)
+    rerender(
+      <StandardEditableTable
+        columns={boolColumns}
+        rows={[base]}
+        draftRows={first}
+        onDraftRowsChange={onDraft}
+        editable
+      />,
+    )
+    fireEvent.click(screen.getByTestId('active-checkbox'))
+    expect(onDraft.mock.calls.at(-1)?.[0]).toEqual({})
+  })
+})

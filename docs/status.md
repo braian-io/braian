@@ -116,6 +116,80 @@ Endast mergade PR:er i intervallet #104–#145 (läget vid status 2026-11-01). #
 - #124: store byggs om när inbäddade migreringar ändras.
 - #133: CI återanvänder release-binären och kortar stack-jobbet.
 
+## Pågående arbete (inte mergat, inte deployat)
+
+- **Rad 212 / PR 267 (PR2): en delad objekt-draft i tabell och Detail.**
+  Grenen `junior/212-ai-drafts` bygger på `ca7a786` (#266). Den är öppen och
+  inte mergad eller deployad. Enter stagar en cell i en modulstore som både
+  tabellen och Detail läser. Save/Discard gäller exakt de granskade raderna.
+  Språkberoende celler har identitet per objekt, attribut och språk, och en
+  sammanslagning tappar inte andra språk. En sen eller äldre läsning kan inte
+  ersätta en öppen draft eller ett värde som sparats på en nyare version.
+  Endast den exakta snapshoten som skickades rensas vid Save; ändringar som
+  skrivs medan anropet väntar ligger kvar. Misslyckade rader i en delvis
+  accept eller ett transportfel behåller sin draft.
+- Agentytan visar status och navigering. `data.messages`-chatten
+  (agent-question/agent-answer) renderas inte längre där. Create utan
+  `object_id`, `$delete` och modelldrafts har en synlig väg till
+  förslagsgranskningen i stället för att gömmas bakom borttagna panelkort.
+- `apps/web/src/data-model.tsx` är inte ändrad. Modellstegens stabila nycklar
+  finns i den delade granskningsprojektionen och som klienthjälpare, men är
+  inte inkopplade i data-modelltabellen än.
+- Kvar till PR3: import/config-flöden som inte är en vanlig objektcell,
+  per-fält-delaccept, samt inkoppling av modellstegsnycklar i
+  `data-model.tsx` när row170-ändringarna är inkopplade i den här grenen. Importdrafts ligger kvar i
+  importtabellen; modelldrafts har egen yta.
+- En lokal draft vinner över en väntande proposal på samma objekt: Save
+  skriver draften och proposalen blir stale i stället för att blockera.
+  Stale/konfliktande proposals hoppas över vid Save men ligger kvar för
+  Discard. Save-scope är de synliga raderna; Discard följer
+  medlemskapsregeln nedan, så proposals på andra objekt rörs inte. Efter Save
+  rensas exakt den skickade snapshoten och förslags-cacharna uppdateras. En
+  proposal som ett agentkörning skapar medan
+  en tabell eller Detail är öppen syns inom några sekunder.
+- Discard stänger hela proposalen på servern. En whole-proposal-discard kräver
+  därför fullständig medlemskap: alla pending-rader, inklusive objekt utanför
+  vyn och create/delete/model/assortment. Callers skickar hela medlemskapet i
+  stället för bara de synliga update-cellerna. En proposal med minst en
+  ogranskad rad bevaras och ligger kvar i granskningsvägen; ingen partiell
+  discard hittas på. Regressionstester renderar de faktiska `ObjectTable`- och
+  `ObjectDetail`-anroparna med visibleA/hiddenB, update+create/delete och
+  model/unmapped.
+- Verifierat i den här grenen, allt i throwaway-containrar:
+  `./node_modules/.bin/tsc --noEmit` (exit 0), targeted-regressionerna
+  (`object-draft-save`, `object-draft`, `detail-pending`,
+  `object-draft-discard-table`) 4 filer / 60 tester och hela vitest-sviten i
+  `apps/web` (147 filer, 777 tester) i `node:22-bookworm`.
+  `cargo test -p braian-store --test review_drafts` (4 tester mot en
+  isolerad throwaway-Postgres) passerade i `rust:1.93-bookworm` i stage 3.
+  Playwright mot isolerad Postgres/Typesense/API (eget nät, tmpfs, ingen
+  hostnetwork): smoke (1), change-flow (2), write-error (1),
+  status-select-cell-edit (1), cell-editor-unloaded-value (1) och agent-tab
+  (11 + 1 skärmbild skippad) passerade i en batch. inline-cell-edit (1) och
+  detail-name-edit-flicker (1) passerade i separata, isolerade körningar; i den
+  delade batchen färgades de av kvarvarande agent-proposals mellan spec-filer
+  (registrerad runner isolerar per fil). Nya regressionstester täcker
+  språkidentitet, återöppnad editor, semantiska no-op-drafts, samtidiga
+  ändringar, scope, fullständig proposal-medlemskap, partiella fel, sena
+  läsningar och stabila modellstegsnycklar. Inget påstående om acceptans eller
+  deploy.
+- `model-draft.spec.ts` är nu anpassad till nuvarande datamodellsyta:
+  Object types-tabellen, Type attributes-tabellen, create-dialogen för
+  attribut och attributmenyns Min/Max. Den använder inte längre de borttagna
+  `type-recipe`-, `attr-add`-, `attr-min`-, `attr-max`- eller
+  `review-lines`-kontrollerna. Det isolerade hela browserflödet (skapa typ och
+  värdelista, skapa/redigera Number-attribut med enhet och Min/Max, spara,
+  avbryta en create-dialog, öppna och avbryta delete, samt radera typen)
+  passerar: 1 test, 0 skippade. `data-model.tsx` är fortfarande orörd.
+- Historisk korrigering: stage 3:s första targeted-körning var 59 godkända och
+  1 underkänd innan Table-testet rättades. Den senare fulla sviten (777)
+  innehöll den rättade testen. Siffran 60 påstås först efter stage 4:s nya
+  riktiga körning ovan.
+- Separat baseline, ingen fix blandad i den här grenen:
+  `group-filter.spec.ts` passerade i den isolerade körningen; den kända
+  avvikelsen på main (`expected 4, got 1`) återupprepades inte här.
+  `model-draft.spec.ts` är inte längre en känd avvikelse i den här grenen.
+
 ## Öppet
 
 - **Kataloger (Notion 117)** och **usage (Notion 45)** — Glenn bygger själv.

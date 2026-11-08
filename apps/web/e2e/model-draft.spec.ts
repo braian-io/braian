@@ -18,11 +18,43 @@ async function command(page: Page, title: string) {
   await page.keyboard.press('Enter')
 }
 
+async function openObjectTypes(page: Page) {
+  const tab = page.locator('.pane-tab', { hasText: 'Object types' }).first()
+  await expect(tab).toBeVisible({ timeout: 30_000 })
+  await tab.click()
+  const table = page.getByTestId('object-types-table')
+  await expect(table).toBeVisible()
+  return table
+}
+
+async function openTypeAttributes(page: Page, typeKey: string) {
+  const table = await openObjectTypes(page)
+  const row = table.locator(`[data-row-id="${typeKey}"]`)
+  await expect(async () => {
+    await row.click({ timeout: 2_000 })
+  }).toPass({ timeout: 30_000 })
+  const tab = page.locator('.pane-tab', { hasText: 'Type attributes' }).first()
+  await expect(tab).toBeVisible({ timeout: 30_000 })
+  await tab.click()
+  const attributes = page.getByTestId('attribute-table')
+  await expect(attributes).toBeVisible()
+  return { table, row, attributes }
+}
+
 test('a type is built in a draft, saved, and deleted from the keyboard', async ({ page }) => {
   test.setTimeout(180_000)
   await login(page)
   await command(page, 'Data model')
   await expect(page.getByTestId('data-model').first()).toBeVisible()
+
+  // Cancel a create dialog without staging anything.
+  await command(page, 'New type')
+  const cancelled = page.getByTestId('model-dialog')
+  await expect(cancelled).toBeVisible()
+  await page.getByTestId('model-dialog-name').fill('Discarded')
+  await cancelled.getByRole('button', { name: 'Cancel' }).click()
+  await expect(cancelled).toHaveCount(0)
+  await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
 
   await command(page, 'New type')
   await page.getByTestId('model-dialog-name').fill('Recipe')
@@ -34,30 +66,54 @@ test('a type is built in a draft, saved, and deleted from the keyboard', async (
   await page.getByTestId('model-dialog-options').fill('Easy, Hard')
   await page.getByTestId('model-dialog-save').click()
 
-  await page.getByTestId('type-recipe').click()
-  const add = page.getByTestId('attr-add')
-  await add.fill('Servings')
-  await page.getByRole('combobox', { name: 'Type' }).last().click()
+  const { attributes } = await openTypeAttributes(page, 'recipe')
+
+  await attributes.getByTestId('table-add-row').click()
+  const create = page.getByTestId('create-dialog')
+  await expect(create).toBeVisible()
+  await create.getByTestId('new-name').fill('Servings')
+  await create.getByTestId('new-type').click()
   await page.getByRole('option', { name: 'Number' }).click()
-  await page.getByRole('combobox', { name: 'Unit' }).last().click()
-  await page.getByRole('option').nth(1).click()
-  await page.getByTestId('attr-min').fill('1')
-  await page.getByTestId('attr-max').fill('12')
-  await add.press('Enter')
+  await create.getByTestId('create-object').click()
+  await expect(create).toHaveCount(0)
+
+  const servings = attributes.locator('[data-key="servings"]')
+  await expect(servings).toBeVisible()
+  await servings.locator('[data-column="unit"]').dblclick()
+  const unit = servings.getByTestId('standard-cell-editor')
+  await expect(unit).toBeFocused()
+  await unit.selectOption('mass')
+  await unit.press('Enter')
+  await expect(servings.locator('[data-column="unit"]')).toContainText('mass')
+
+  await servings.getByTestId('attr-menu-servings').click()
+  const min = page.getByLabel('Min', { exact: true })
+  await min.fill('1')
+  await expect(min).toHaveValue('1')
+  const max = page.getByLabel('Max', { exact: true })
+  await max.fill('12')
+  await expect(max).toHaveValue('12')
+  await page.keyboard.press('Escape')
 
   await expect(page.getByTestId('unsaved-changes')).toContainText('unsaved')
-  await page.keyboard.press('Control+S')
-  const review = page.getByTestId('review-dialog')
-  await expect(review).toBeVisible()
-  await expect(review.getByTestId('review-lines')).toContainText('Recipe')
-  await page.keyboard.press('Escape')
-  await expect(review).toBeHidden()
-  await expect(page.getByTestId('type-recipe')).toBeVisible()
-  await page.keyboard.press('Control+S')
-  await expect(review).toBeVisible()
-  await page.getByTestId('confirm-review').click()
+  const saved = page.waitForResponse((response) =>
+    response.url().includes('/v1/model/draft/save') && response.request().method() === 'POST')
+  await attributes.getByTestId('review-and-save').click()
+  expect((await saved).ok()).toBeTruthy()
+  await expect(page.getByTestId('review-dialog')).toHaveCount(0)
   await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
-  await expect(page.getByTestId('type-recipe')).toBeVisible()
+
+  const types = await openObjectTypes(page)
+  const typeRow = types.locator('[data-row-id="recipe"]')
+  await expect(typeRow).toBeVisible()
+
+  const persistedKind = async () => {
+    const body = (await (await page.request.get('/v1/definitions')).json()) as {
+      attributes?: Array<{ key?: string; kind?: Record<string, unknown> }>
+    }
+    return body.attributes?.find((item) => item.key === 'servings')?.kind
+  }
+  await expect.poll(persistedKind).toMatchObject({ type: 'number', unit_family: expect.any(String), min: '1', max: '12' })
 
   const created = await page.request.post('/v1/operations/model.create_attribute', {
     data: { key: 'recipe_note', label: 'Recipe note', kind: 'text' },
@@ -66,18 +122,18 @@ test('a type is built in a draft, saved, and deleted from the keyboard', async (
   const proposal = await created.json()
   expect(proposal.needs_approval).toBe(true)
 
-  await page.getByTestId('type-recipe').click({ button: 'right' })
-  await page.getByTestId('context-menu').getByRole('button', { name: 'Delete…' }).click()
+  await typeRow.click({ button: 'right' })
+  await page.getByTestId('context-menu').getByRole('menuitem', { name: 'Delete…' }).click()
   const dialog = page.getByTestId('consequence')
   await expect(dialog).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(dialog).toBeHidden()
-  await expect(page.getByTestId('type-recipe')).toBeVisible()
+  await expect(typeRow).toBeVisible()
 
   await command(page, 'Delete type')
   await expect(dialog).toBeVisible()
-  await expect(dialog.getByTestId('confirm-name')).toHaveCount(0)
+  await expect(dialog.locator('input')).toHaveCount(0)
   await page.getByTestId('confirm-delete').click()
   await expect(dialog).toBeHidden()
-  await expect(page.getByTestId('type-recipe')).toHaveCount(0)
+  await expect(types.locator('[data-row-id="recipe"]')).toHaveCount(0)
 })

@@ -51,6 +51,7 @@ import {
   discardObjectDraft,
   displayOf,
   draftBaseVersion,
+  draftEditorSeed,
   editBaseVersion,
   getObjectDraftSnapshot,
   objectDraftCells,
@@ -61,7 +62,7 @@ import {
   stageObjectCell,
   subscribeObjectDrafts,
 } from './object-draft'
-import { CellDiff, ObjectDraftBar } from './object-draft-bar'
+import { CellDiff, ObjectDraftBar, UnmappedDraftLinks } from './object-draft-bar'
 import { draftSavePlan, runDraftDiscard, runDraftSave } from './object-draft-save'
 import { useOpenObjectProposals } from './use-open-proposals'
 import { shouldHoldTablePaint, shouldRefreshTableSnapshot } from './table-live-paint'
@@ -1322,6 +1323,28 @@ export function ObjectTable({
   const beginCellEdit = (row: ObjRow, column: string) => {
     const owned = row.id === session.objectId ? new Set(Object.keys(ownersForRow)) : undefined
     if (!isEditableColumn(column, owned)) return
+    // Reopen from the draft that is on screen, not from a read that has not
+    // caught up with it. Held committed values win the same way.
+    const attribute = columnBaseKey(column)
+    const path = parseColumnId(column).path
+    const explicit = path.includes('@') ? path.split('@')[1] : undefined
+    const dependent = Boolean(attributeByKey(defs.data, attribute)?.language_dependent)
+    const language = explicit ?? (dependent ? uiLanguage : undefined)
+    const seed = draftEditorSeed({
+      objectId: row.id,
+      columnId: column,
+      attribute,
+      language,
+      serverText: cellDisplayText(row, column),
+      serverVersion: Number(row.version ?? 0),
+    })
+    if (seed) {
+      editingOriginalRef.current = seed.originalText
+      skipBlurCommitRef.current = false
+      setEditingDraft(seed.text)
+      setEditingCell({ rowId: row.id, columnId: column })
+      return
+    }
     const listKey = valueListKeyForColumn(column, defs.data)
     if (listKey) {
       const current = columnBaseKey(column) === 'status'
@@ -1723,17 +1746,21 @@ export function ObjectTable({
     setLabelFilter('')
     setPathFilters([])
   }
+  const visibleRows = groupBy ? groupedRows : [...byIndex.values()]
+  const visibleIds = new Set(visibleRows.map((row) => row.id))
   const tableObjectIds = [...new Set(drafts.cells.map((cell) => cell.objectId))]
+    .filter((id) => visibleIds.has(id))
   const tableVersions: Record<string, number> = {}
   const tableMeta: Record<string, { key: string; type: string }> = {}
-  for (const row of byIndex.values()) {
+  for (const row of visibleRows) {
     tableVersions[row.id] = Number(row.version ?? 0)
     tableMeta[row.id] = { key: row.key, type: row.type }
   }
-  const visibleIds = new Set([...byIndex.values()].map((row) => row.id))
-  const proposalCells = [...openProposals.byObject.entries()]
+  const visibleProposalCells = [...openProposals.byObject.entries()]
     .filter(([objectId]) => visibleIds.has(objectId))
     .flatMap(([, cells]) => cells)
+    .filter((cell) => cell.op === 'update')
+  const proposalObjectIds = [...new Set(visibleProposalCells.map((cell) => cell.objectId))]
   const tableReview = reviewCapabilities({
     principal: me.data?.kind === 'agent' ? 'agent' : 'human',
     viaAgent: false,
@@ -1741,12 +1768,12 @@ export function ObjectTable({
     stale: tableObjectIds.some((id) => {
       const base = draftBaseVersion(id)
       return base != null && tableVersions[id] != null && tableVersions[id] !== base
-    }) || proposalCells.some((cell) => cell.stale),
-    conflict: tableObjectIds.some((id) => openProposals.byObject.has(id)) || proposalCells.some((cell) => cell.conflict),
+    }) || (tableObjectIds.length === 0 && visibleProposalCells.some((cell) => cell.stale)),
+    conflict: tableObjectIds.length === 0 && visibleProposalCells.some((cell) => cell.conflict),
     validationErrors: [],
     roleCanWrite: me.data ? roleCanWrite(me.data.role) : true,
   })
-  const draftCount = tableObjectIds.length + [...openProposals.byObject.values()].filter((cells) => cells.length > 0).length
+  const draftCount = [...new Set([...tableObjectIds, ...proposalObjectIds])].length
   return (
     <StandardTableChrome
       testId="object-table"
@@ -1766,35 +1793,35 @@ export function ObjectTable({
         discardReason={tableReview.discardReason}
         onSave={() => {
           const plan = draftSavePlan({
-            objectIds: [...new Set(drafts.cells.map((cell) => cell.objectId))],
+            objectIds: tableObjectIds,
             serverVersions: tableVersions,
             principal: me.data?.kind === 'agent' ? 'agent' : 'human',
             fileAsProposal: Boolean(viewingAgentRunId()),
             roleCanWrite: roleCanWrite(me.data?.role),
-            proposals: [...openProposals.byObject.values()].flat(),
+            proposals: visibleProposalCells,
             meta: tableMeta,
+            scope: [...visibleIds],
           })
           void runDraftSave(plan, queryClient, viewingAgentRunId() ?? '').then((reason) => {
             if (reason) reportWriteError(new Error(reason))
-            else {
-              session.push(copy.saved)
-              void queryClient.invalidateQueries({ queryKey: ['proposals'] })
-              void queryClient.invalidateQueries({ queryKey: ['proposal'] })
-            }
+            else session.push(copy.saved)
           })
         }}
         onDiscard={() => {
           void runDraftDiscard({
-            objectIds: [...new Set(drafts.cells.map((cell) => cell.objectId))],
-            proposals: [...openProposals.byObject.values()].flat(),
+            objectIds: [...visibleIds],
+            proposals: visibleProposalCells,
+            membership: openProposals.membership,
             principal: me.data?.kind === 'agent' ? 'agent' : 'human',
             viaAgent: false,
-          }).then(() => {
+          }).then((reason) => {
+            if (reason) reportWriteError(new Error(reason))
             void queryClient.invalidateQueries({ queryKey: ['proposals'] })
             void queryClient.invalidateQueries({ queryKey: ['proposal'] })
           })
         }}
       />
+      <UnmappedDraftLinks proposals={openProposals.unmapped} />
       {peerSource && peerSourceView ? (
         <p className="table-source" data-testid="peer-linked-to">
           {copy.linkedTo.replace('{source}', displayViewTitle(peerSourceView, names))}
@@ -2692,14 +2719,78 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   const label = recordNumber(serverValues) || String(object.data.id ?? '')
   const suggestionCount = suggestionIndex(suggestions.data).get(objectId) ?? 0
   const localCells = drafts.cells.filter((cell) => cell.objectId === objectId)
-  const proposalCells = openProposals.byObject.get(objectId) ?? []
+  // Delete/create/model rows have no ordinary value cell. They stay visible in
+  // the proposal review link instead of being accepted from a hidden diff.
+  const proposalCells = (openProposals.byObject.get(objectId) ?? []).filter((cell) => cell.op === 'update')
+  const languageRecord = (value: unknown): Json =>
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? { ...(value as Json) }
+      : { en: value as Json[string] }
+  const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
+  const fieldDisplayValue = (key: string): unknown => {
+    let value = values[key]
+    for (const cell of proposalCells.filter((item) => item.attribute === key)) {
+      if (localCells.some((item) =>
+        item.attribute === key && (item.language ?? '') === (cell.language ?? ''))) continue
+      if (cell.language) {
+        const record = languageRecord(value)
+        record[cell.language] = cell.proposed as Json[string]
+        value = record
+      } else {
+        value = cell.proposed
+      }
+    }
+    return value
+  }
+  const stageField = (key: string, next: unknown) => {
+    const attribute = attributes.find((item) => item.key === key)
+    const baseVersion = editBaseVersion(objectId, serverVersion)
+    const before = values[key]
+    const shown = fieldDisplayValue(key)
+    if (attribute?.language_dependent) {
+      const beforeRecord = languageRecord(before)
+      const shownRecord = languageRecord(shown)
+      const afterRecord = languageRecord(next)
+      const languages = new Set([
+        ...Object.keys(beforeRecord),
+        ...Object.keys(shownRecord),
+        ...Object.keys(afterRecord),
+      ])
+      for (const language of languages) {
+        // Compare with what the person sees. An untouched AI pending value is
+        // not a human edit and must not turn into a conflicting draft.
+        if (sameJson(shownRecord[language], afterRecord[language])) continue
+        stageObjectCell({
+          objectId,
+          attribute: key,
+          columnId: `${key}@${language}`,
+          language,
+          baseVersion,
+          originalText: displayOf(beforeRecord[language]),
+          proposedText: displayOf(afterRecord[language]),
+          value: afterRecord[language],
+        })
+      }
+      return
+    }
+    if (sameJson(shown, next)) return
+    stageObjectCell({
+      objectId,
+      attribute: key,
+      columnId: key,
+      baseVersion,
+      originalText: displayOf(before),
+      proposedText: displayOf(next),
+      value: next,
+    })
+  }
   const detailReview = reviewCapabilities({
     principal: me.data?.kind === 'agent' ? 'agent' : 'human',
     viaAgent: false,
     open: true,
     stale: (draftBaseVersion(objectId) != null && draftBaseVersion(objectId) !== serverVersion)
-      || proposalCells.some((cell) => cell.stale),
-    conflict: (localCells.length > 0 && proposalCells.length > 0) || proposalCells.some((cell) => cell.conflict),
+      || (localCells.length === 0 && proposalCells.some((cell) => cell.stale)),
+    conflict: localCells.length === 0 && proposalCells.some((cell) => cell.conflict),
     validationErrors: error ? [error] : [],
     roleCanWrite: me.data ? roleCanWrite(me.data.role) : true,
   })
@@ -2713,6 +2804,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       validationErrors: error ? [error] : [],
       proposals: proposalCells,
       meta: { [objectId]: { key: label, type: String(object.data?.type ?? '') } },
+      scope: [objectId],
     })
     void runDraftSave(plan, queryClient, viewingAgentRunId() ?? '').then((reason) => {
       if (reason) setError(reason)
@@ -2734,7 +2826,10 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   const fileKeys = attributes
     .filter((item) => typeIds.has(String(item.id)) && String((item.kind as Json)?.type) === 'file_ref')
     .map((item) => String(item.key))
-  const valueKeys = [...new Set([...Object.keys(values), ...fileKeys])]
+  const proposalKeys = proposalCells
+    .map((cell) => cell.attribute)
+    .filter((attribute) => attribute !== '$delete')
+  const valueKeys = [...new Set([...Object.keys(values), ...proposalKeys, ...fileKeys])]
   const { primaryKeys, moreKeys } = splitDetailKeys(defs.data, valueKeys)
   const visibleKeys = showMoreFields ? [...primaryKeys, ...moreKeys] : primaryKeys
   const owners = provenance.data?.owners ?? {}
@@ -2744,41 +2839,37 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
     const kind = (attribute?.kind as Json) ?? {}
     const fieldLabel = textValue((attribute?.labels as Json) ?? key, uiLanguage) || key
     const owner = owners[key]
+    const localKeyCells = localCells.filter((cell) => cell.attribute === key)
+    const proposalKeyCells = proposalCells.filter((cell) => cell.attribute === key)
+    const controlClass = localKeyCells.length > 0
+      ? 'control draft-user'
+      : proposalKeyCells.length > 0
+        ? 'control draft-agent'
+        : 'control'
     return (
       <div key={key} className={owner ? 'field locked' : 'field'} data-testid={owner ? 'locked-field' : undefined}>
         <label>{fieldLabel}{owner ? ` · ${copy.ownedBy} ${owner}` : ''}</label>
-        <div className={localCells.some((cell) => cell.attribute === key) ? 'control draft-user' : proposalCells.some((cell) => cell.attribute === key) ? 'control draft-agent' : 'control'}>
+        <div className={controlClass}>
           <Editor
             kind={String(kind.type ?? 'text')}
             form={String(kind.form ?? '')}
             multiple={Boolean(attribute?.multiple)}
             languageDependent={Boolean(attribute?.language_dependent)}
             languages={modelLanguages(defs.data)}
-            value={values[key]}
+            value={fieldDisplayValue(key)}
             options={optionsFor(lists, String(kind.list ?? ''))}
             units={unitsFor(families, String(kind.unit_family ?? ''))}
             readOnly={Boolean(owner)}
-            onChange={(next) => {
-              const server = serverValues[key]
-              stageObjectCell({
-                objectId: session.objectId ?? '',
-                attribute: key,
-                columnId: key,
-                baseVersion: editBaseVersion(session.objectId ?? '', serverVersion),
-                originalText: displayOf(server),
-                proposedText: displayOf(next),
-                value: next,
-              })
-            }}
+            onChange={(next) => stageField(key, next)}
           />
+          {proposalKeyCells.map((cell) => (
+            <div key={cell.id} className="pending-field" data-testid="pending-field" data-field={key} data-stale={cell.stale ? 'true' : 'false'}>
+              <span className="pending-chip" data-testid={cell.stale ? 'pending-stale' : 'pending-chip'}>{cell.stale ? copy.proposalStale : copy.pending}</span>
+              <CellDiff original={cell.originalKnown ? cell.originalText : undefined} proposed={cell.proposedText} />
+              {cell.stale && cell.staleReason ? <span data-testid="agent-stale-reason">{cell.staleReason}</span> : null}
+            </div>
+          ))}
         </div>
-        {proposalCells.filter((cell) => cell.attribute === key).map((cell) => (
-          <div key={cell.id} className="pending-field" data-testid="pending-field" data-field={key} data-stale={cell.stale ? 'true' : 'false'}>
-            <span className="pending-chip" data-testid={cell.stale ? 'pending-stale' : 'pending-chip'}>{cell.stale ? copy.proposalStale : copy.pending}</span>
-            <CellDiff original={cell.originalKnown ? cell.originalText : undefined} proposed={cell.proposedText} />
-            {cell.stale && cell.staleReason ? <span data-testid="agent-stale-reason">{cell.staleReason}</span> : null}
-          </div>
-        ))}
         {owner && origin && typeof origin === 'object' ? (
           <p className="hint" data-testid="field-origin">
             {copy.sourceObject} {String((origin as Json).source_key ?? '')}
@@ -2792,8 +2883,8 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       className={flashId === session.objectId ? 'detail-form form flash' : 'detail-form form'}
       data-testid="object-detail"
       onSubmit={(event) => {
+        // Enter in a Detail field stages nothing and never saves.
         event.preventDefault()
-        save()
       }}
       onKeyDown={(event) => {
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
@@ -2868,6 +2959,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
         ) : null}
         {error ? <p className="error" data-testid="detail-error">{error}</p> : null}
       </div>
+      <UnmappedDraftLinks proposals={openProposals.unmapped} />
       {dirty ? (
         <ObjectDraftBar
           count={localCells.length + (proposalCells.length > 0 ? 1 : 0)}
@@ -2880,6 +2972,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
             void runDraftDiscard({
               objectIds: [objectId],
               proposals: proposalCells,
+              membership: openProposals.membership,
               principal: me.data?.kind === 'agent' ? 'agent' : 'human',
               viaAgent: false,
             }).then((reason) => {
