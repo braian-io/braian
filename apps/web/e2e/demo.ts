@@ -28,10 +28,19 @@ function fromFile(name: string) {
 }
 
 export function demoCredentials() {
-  const email = process.env.BRAIAN_DEMO_EMAIL || fromFile('BRAIAN_DEMO_EMAIL')
-  const password = process.env.BRAIAN_DEMO_PASSWORD || fromFile('BRAIAN_DEMO_PASSWORD')
+  // Isolated runs set this so a missing variable fails loudly instead of
+  // silently reading the repository's .env.
+  const envOnly = process.env.BRAIAN_E2E_ENV_ONLY === '1'
+  const email =
+    process.env.BRAIAN_DEMO_EMAIL || (envOnly ? '' : fromFile('BRAIAN_DEMO_EMAIL'))
+  const password =
+    process.env.BRAIAN_DEMO_PASSWORD || (envOnly ? '' : fromFile('BRAIAN_DEMO_PASSWORD'))
   if (!email || !password) {
-    throw new Error('Set BRAIAN_DEMO_EMAIL and BRAIAN_DEMO_PASSWORD in the environment or .env')
+    throw new Error(
+      envOnly
+        ? 'Set BRAIAN_DEMO_EMAIL and BRAIAN_DEMO_PASSWORD in the environment; BRAIAN_E2E_ENV_ONLY=1 disables .env'
+        : 'Set BRAIAN_DEMO_EMAIL and BRAIAN_DEMO_PASSWORD in the environment or .env',
+    )
   }
   return { email, password }
 }

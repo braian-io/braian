@@ -1,12 +1,22 @@
 import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
 
+const baseURL = process.env.BRAIAN_WEB_URL ?? 'http://127.0.0.1:3000'
+
 async function login(page: Page) {
   const demo = demoCredentials()
   await page.goto('/')
   await page.getByTestId('email').fill(demo.email)
   await page.getByTestId('password').fill(demo.password)
   await page.getByRole('button', { name: 'Sign in' }).click()
+  await expect(page.getByTestId('workspace')).toBeVisible({ timeout: 60_000 })
+  // The layout is restored from the server and shared by every test in this
+  // file. An earlier test can leave an agent tab focused, which hides the
+  // object table even though the workspace still has it open. Activate a
+  // table instead of assuming the saved focus.
+  const tableTab = page.locator('.pane-tab[data-view-type="object_table"]').first()
+  await expect(tableTab).toBeVisible({ timeout: 60_000 })
+  if ((await page.getByTestId('object-row').count()) === 0) await tableTab.click()
   await expect(page.getByTestId('object-row').first()).toBeVisible({ timeout: 60_000 })
 }
 
@@ -271,5 +281,44 @@ test.describe('palette drill-in, recent order, and global commands', () => {
     await agentTab.click()
     await expect(page.getByTestId('agent-view').filter({ hasText: 'zzzzqqqqnomatch' })).toBeVisible()
     await expect(page.getByTestId('activity-log')).not.toContainText('Agent:')
+  })
+
+  test('login reaches a table when the saved layout focuses an agent tab', async ({ page, browser }) => {
+    test.setTimeout(180_000)
+    await login(page)
+    const palette = await openPalette(page)
+    await page.getByTestId('palette-input').fill('how many products')
+    await page.keyboard.press('Control+j')
+    await expect(palette).toHaveCount(0)
+    // An earlier test can leave its own agent tab behind; the run started here
+    // is the one the shell focuses and appends last.
+    const agentTab = page.locator('.pane-tab[data-view-type="agent"].active')
+      .filter({ hasText: 'how many products' })
+      .last()
+    await expect(agentTab).toBeVisible({ timeout: 30_000 })
+
+    // Leave the agent tab focused and wait for the layout save, so the next
+    // login really restores an agent focus instead of a table.
+    const saved = page.waitForResponse((response) =>
+      response.request().method() === 'PUT'
+      && new URL(response.url()).pathname.endsWith('/state')
+      && response.ok(),
+    )
+    await agentTab.click()
+    await expect(agentTab).toHaveClass(/active/)
+    await saved
+
+    const context = await browser.newContext({
+      baseURL,
+      viewport: { width: 1440, height: 900 },
+      locale: 'sv-SE',
+    })
+    try {
+      const fresh = await context.newPage()
+      await login(fresh)
+      await expect(fresh.getByTestId('object-row').first()).toBeVisible()
+    } finally {
+      await context.close()
+    }
   })
 })

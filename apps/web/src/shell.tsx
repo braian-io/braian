@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useNavigate, useSearch } from '@tanstack/react-router'
-import { useUrlStateSync } from './url-state'
+import { objectKeyFromValues } from './url-public'
+import { urlObjectTypeKey, useReadableUrl } from './use-readable-url'
 import { ImportMappingsView } from './import/mappings-view'
 import { CatalogsView, MergeProfilesView, MergeRunsView, OwnershipView } from './catalogs/views'
 import { flushSync } from 'react-dom'
@@ -440,7 +441,7 @@ export function Shell() {
   )
   // The detail panel follows the active list. Switching list/view/workspace
   // resets it to that list's selection instead of keeping a stale object.
-  useDetailFollow(
+  const detailListId = useDetailFollow(
     doc,
     detailListViews,
     Boolean(doc && workspace.data && workspace.data.id === workspaceId),
@@ -459,38 +460,43 @@ export function Shell() {
     && !layoutHealPending
     && orderedWorkspaces.length > 0,
   )
-  useUrlStateSync({
+  const urlViews = viewRows(workspace.data?.views)
+  const openedValues = opened.data?.values
+  const objectKey = opened.data?.id === objectId
+    ? objectKeyFromValues(String(opened.data.type ?? ''), openedValues as Record<string, unknown> | undefined, defs.data)
+    : null
+  useReadableUrl({
     search,
     ready: urlReady,
-    state: {
-      workspaceId,
-      viewId: doc?.focus ?? null,
-      catalogId: urlCatalogId,
-      objectId,
-    },
-    valid: {
-      workspace: (id) => orderedWorkspaces.some((item) => item.id === id),
-      view: (id) => viewRows(workspace.data?.views).some((view) => view.id === id),
-      catalog: (id) => Boolean(id),
-      object: (id) => Boolean(id),
-    },
-    viewOpen: (id) => Boolean(doc && layoutViews(doc.layout).includes(id)),
+    catalogsEnabled: me.isSuccess,
+    workspaceId,
+    workspaces: orderedWorkspaces.map((item) => ({
+      id: item.id,
+      label: workspaceDisplayName(item.name, item.share_token),
+    })),
+    viewId: doc?.focus ?? null,
+    views: urlViews.map((view) => ({ id: view.id, label: view.title })),
+    openViewIds: doc ? layoutViews(doc.layout) : [],
+    catalogId: urlCatalogId,
+    objectTypeKey: urlObjectTypeKey(doc?.focus ?? null, detailListId, urlViews),
+    viewTypeKey: (id) => urlObjectTypeKey(id, null, urlViews),
+    objectId,
+    objectKey,
+    objectLoaded: Boolean(objectId && opened.isSuccess && opened.data?.id === objectId),
     navigate: (next) => {
       void navigate({ to: '/', search: next.search, replace: next.replace })
     },
-    apply: (next) => {
-      if (next.workspaceId !== undefined) setWorkspaceId(next.workspaceId)
-      if (next.catalogId !== undefined) {
-        window.dispatchEvent(new CustomEvent('braian-set-catalog', {
-          detail: { scope: 'workspace', catalogId: next.catalogId },
-        }))
-      }
-      if (next.objectId !== undefined) setObjectId(next.objectId)
-      // The URL may be stale or repeat the focused view; re-opening it commits
-      // a new layout and remounts the table (losing loaded column prefs).
-      if (next.viewId !== undefined && docRef.current?.focus !== next.viewId) {
-        applyRef.current('ui.open_view', { id: next.viewId })
-      }
+    applyWorkspace: (id) => setWorkspaceId(id),
+    applyCatalog: (id) => {
+      window.dispatchEvent(new CustomEvent('braian-set-catalog', {
+        detail: { scope: 'workspace', catalogId: id },
+      }))
+    },
+    applyObject: (id) => setObjectId(id),
+    // The URL may be stale or repeat the focused view; re-opening it commits
+    // a new layout and remounts the table (losing loaded column prefs).
+    applyView: (id) => {
+      if (docRef.current?.focus !== id) applyRef.current('ui.open_view', { id })
     },
   })
 

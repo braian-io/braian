@@ -51,21 +51,26 @@ test('grid focus moves without selecting; Enter and Space select; Left/Right mov
   await expect(page.getByTestId('detail-empty')).toHaveCount(0)
   await expect(page.getByTestId('object-detail')).toBeVisible()
   const firstObjectId = firstRowId!.replace(/^object-row-/, '')
-  await expect.poll(() => objectParam(page)).toBe(firstObjectId)
+  const firstKey = (await first.locator('[data-column="number"], [data-column="key"]').first().innerText()).trim()
+  expect(firstKey).not.toBe('')
+  expect(firstKey).not.toBe(firstObjectId)
+  await expect.poll(() => objectParam(page)).toBe(firstKey)
 
   // Arrow moves focus only; the selected row and Detail stay put.
   await page.keyboard.press('ArrowDown')
   await expect(grid).toHaveAttribute('aria-activedescendant', secondRowId!)
   await expect(second).toHaveAttribute('aria-selected', 'false')
   await expect(first).toHaveAttribute('aria-selected', 'true')
-  await expect.poll(() => objectParam(page)).toBe(firstObjectId)
+  await expect.poll(() => objectParam(page)).toBe(firstKey)
 
   // Space selects the newly focused row, same as Enter.
   await page.keyboard.press('Space')
   await expect(second).toHaveAttribute('aria-selected', 'true')
   await expect(first).toHaveAttribute('aria-selected', 'false')
   const secondObjectId = secondRowId!.replace(/^object-row-/, '')
-  await expect.poll(() => objectParam(page)).toBe(secondObjectId)
+  const secondKey = (await second.locator('[data-column="number"], [data-column="key"]').first().innerText()).trim()
+  expect(secondKey).not.toBe(secondObjectId)
+  await expect.poll(() => objectParam(page)).toBe(secondKey)
 
   // Left/Right still move the active cell on the focused row.
   const activeCell = second.locator('.cell.active-cell')

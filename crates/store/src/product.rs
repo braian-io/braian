@@ -2164,6 +2164,35 @@ impl Store {
             .map(|row| (row.get(0), row.get(1), row.get(2), row.get::<_, i64>(3)))
             .collect())
     }
+
+    /// One page of keyless object heads whose id ends with `suffix`.
+    ///
+    /// Link objects have a null key and are left out of [`Self::list_objects_page`].
+    /// Their public token is the short random id suffix, so this lookup reads
+    /// Postgres directly and keeps the same cursor order. `suffix` is lowercase
+    /// hex; the API validates the shape before calling.
+    pub async fn list_keyless_objects_by_id_suffix(
+        &self,
+        type_id: Option<Uuid>,
+        suffix: &str,
+        after_id: Option<Uuid>,
+        limit: i64,
+    ) -> Result<Vec<(Uuid, Option<String>, Uuid, i64)>, Error> {
+        let client = self.checkout_interactive().await?;
+        let sql = "SELECT id, key, type_id, version FROM objects \
+             WHERE catalog_id = braian_catalog() AND deleted_at IS NULL AND key IS NULL \
+             AND ($1::uuid IS NULL OR type_id = $1) \
+             AND right(replace(id::text, '-', ''), length($2)) = $2 \
+             AND ($3::uuid IS NULL OR id > $3) \
+             ORDER BY id LIMIT $4";
+        let rows = client
+            .query(sql, &[&type_id, &suffix, &after_id, &limit])
+            .await?;
+        Ok(rows
+            .iter()
+            .map(|row| (row.get(0), row.get(1), row.get(2), row.get::<_, i64>(3)))
+            .collect())
+    }
 }
 
 fn assortment_json(row: &tokio_postgres::Row) -> Value {

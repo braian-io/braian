@@ -5699,6 +5699,11 @@ export interface operations {
                 limit?: number;
                 /** @description Opaque `next_cursor` from the previous page. */
                 cursor?: string;
+                /**
+                 * @description Lowercase hex tail of an id. Returns keyless rows (link objects), which
+                 *     the ordinary list leaves out, so a keyless public URL can be resolved.
+                 */
+                id_suffix?: string;
             };
             header?: never;
             path?: never;

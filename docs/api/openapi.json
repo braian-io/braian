@@ -3409,6 +3409,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "id_suffix",
+            "in": "query",
+            "description": "Lowercase hex tail of an id. Returns keyless rows (link objects), which\nthe ordinary list leaves out, so a keyless public URL can be resolved.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {

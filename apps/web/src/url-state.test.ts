@@ -30,6 +30,7 @@ function setup(input: {
   state?: UrlStateValues
   ready?: boolean
   viewOpen?: (id: string) => boolean
+  forceReplace?: boolean
 }) {
   const navigate = vi.fn()
   const apply = vi.fn()
@@ -39,6 +40,7 @@ function setup(input: {
       state: UrlStateValues
       ready: boolean
       viewOpen: ((id: string) => boolean) | undefined
+      forceReplace: boolean | undefined
     }) =>
       useUrlStateSync({
         search: props.search,
@@ -46,6 +48,7 @@ function setup(input: {
         ready: props.ready,
         valid,
         viewOpen: props.viewOpen,
+        forceReplace: props.forceReplace,
         navigate,
         apply,
       }),
@@ -55,6 +58,7 @@ function setup(input: {
         state: input.state ?? base,
         ready: input.ready ?? true,
         viewOpen: input.viewOpen,
+        forceReplace: input.forceReplace,
       },
     },
   )
@@ -63,7 +67,12 @@ function setup(input: {
     state: UrlStateValues
     ready: boolean
     viewOpen?: (id: string) => boolean
-  }) => hook.rerender({ ...props, viewOpen: props.viewOpen ?? input.viewOpen })
+    forceReplace?: boolean
+  }) => hook.rerender({
+    ...props,
+    viewOpen: props.viewOpen ?? input.viewOpen,
+    forceReplace: props.forceReplace ?? input.forceReplace,
+  })
   return { navigate, apply, rerender }
 }
 
@@ -126,6 +135,62 @@ describe('URL sync', () => {
     expect(hook.navigate).toHaveBeenCalledWith({
       search: { ws: 'w1', view: 'v1', catalog: 'master', object: 'o1' },
       replace: false,
+    })
+  })
+
+  it('does not double-push when two updates land before the URL catches up', () => {
+    const hook = setup({ search: { ws: 'w1', view: 'v1', catalog: 'master' } })
+    hook.navigate.mockClear()
+
+    hook.rerender({
+      search: { ws: 'w1', view: 'v1', catalog: 'master' },
+      state: { ...base, objectId: 'o1' },
+      ready: true,
+    })
+    expect(hook.navigate).toHaveBeenLastCalledWith({
+      search: { ws: 'w1', view: 'v1', catalog: 'master', object: 'o1' },
+      replace: false,
+    })
+
+    hook.rerender({
+      search: { ws: 'w1', view: 'v1', catalog: 'master' },
+      state: { ...base, objectId: 'o2' },
+      ready: true,
+    })
+    expect(hook.navigate).toHaveBeenLastCalledWith({
+      search: { ws: 'w1', view: 'v1', catalog: 'master', object: 'o2' },
+      replace: true,
+    })
+
+    hook.rerender({
+      search: { ws: 'w1', view: 'v1', catalog: 'master', object: 'o2' },
+      state: { ...base, objectId: 'o2' },
+      ready: true,
+    })
+    hook.navigate.mockClear()
+    hook.rerender({
+      search: { ws: 'w1', view: 'v1', catalog: 'master', object: 'o2' },
+      state: { ...base, objectId: 'o1' },
+      ready: true,
+    })
+    expect(hook.navigate).toHaveBeenLastCalledWith({
+      search: { ws: 'w1', view: 'v1', catalog: 'master', object: 'o1' },
+      replace: false,
+    })
+  })
+
+  it('replaces when the write comes from resolving the same target', () => {
+    const hook = setup({ search: { ws: 'w1', view: 'v1', catalog: 'master', object: 'o1' } })
+    hook.navigate.mockClear()
+    hook.rerender({
+      search: { ws: 'w1', view: 'v1', catalog: 'master', object: 'o1' },
+      state: { ...base, objectId: 'o2' },
+      ready: true,
+      forceReplace: true,
+    })
+    expect(hook.navigate).toHaveBeenLastCalledWith({
+      search: { ws: 'w1', view: 'v1', catalog: 'master', object: 'o2' },
+      replace: true,
     })
   })
 

@@ -2455,19 +2455,45 @@ async fn list_objects(
             let Some(cached) = cached.as_ref() else {
                 return Ok(empty_object_list());
             };
+            // Saved view state stores type ids (see V18), so the list accepts
+            // both a type key and a type id. A key stays the shorter spelling.
             match cached.model.type_id(want) {
                 Some(id) => Some(id.as_uuid()),
-                None => return Ok(empty_object_list()),
+                None => match Uuid::parse_str(want) {
+                    Ok(id) if cached.defs.types.iter().any(|item| item.id.as_uuid() == id) => {
+                        Some(id)
+                    }
+                    _ => return Ok(empty_object_list()),
+                },
             }
         }
         None => None,
     };
     let key_contains = query.q.as_deref().filter(|value| !value.is_empty());
+    let id_suffix = match query.id_suffix.as_deref() {
+        None => None,
+        Some(value)
+            if (8..=32).contains(&value.len())
+                && value.chars().all(|ch| ch.is_ascii_hexdigit()) =>
+        {
+            Some(value.to_ascii_lowercase())
+        }
+        Some(_) => return Ok(empty_object_list()),
+    };
     let page_limit = usize::try_from(limit).unwrap_or(2000);
-    let mut heads = store
-        .list_objects_page(type_id, key_contains, after_id, limit.saturating_add(1))
-        .await
-        .map_err(store_status)?;
+    let mut heads: Vec<(Uuid, Option<String>, Uuid, i64)> = match id_suffix.as_deref() {
+        Some(suffix) => store
+            .list_keyless_objects_by_id_suffix(type_id, suffix, after_id, limit.saturating_add(1))
+            .await
+            .map_err(store_status)?,
+        None => store
+            .list_objects_page(type_id, key_contains, after_id, limit.saturating_add(1))
+            .await
+            .map_err(store_status)?
+            .into_iter()
+            .map(|(id, key, type_id, version)| (id, Some(key), type_id, version))
+            .collect(),
+    };
     let next_cursor = if heads.len() > page_limit {
         heads.truncate(page_limit);
         heads.last().map(|(id, _, _, _)| encode_cursor(*id))
@@ -2495,7 +2521,7 @@ async fn list_objects(
             };
             json!({
                 "id": id,
-                "key": key,
+                "key": key.unwrap_or_default(),
                 "type": type_key,
                 "version": version,
             })
@@ -6471,6 +6497,10 @@ pub(crate) async fn run_operation(
                     .get("cursor")
                     .and_then(Value::as_str)
                     .map(str::to_owned),
+                id_suffix: args
+                    .get("id_suffix")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
             }),
         )
         .await?
@@ -7158,6 +7188,9 @@ pub(crate) struct ListParams {
     limit: Option<i64>,
     /// Opaque `next_cursor` from the previous page.
     cursor: Option<String>,
+    /// Lowercase hex tail of an id. Returns keyless rows (link objects), which
+    /// the ordinary list leaves out, so a keyless public URL can be resolved.
+    id_suffix: Option<String>,
 }
 
 #[derive(Deserialize, ToSchema)]
