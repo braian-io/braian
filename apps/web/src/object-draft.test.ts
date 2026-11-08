@@ -241,17 +241,17 @@ describe('language-aware shared cells', () => {
       columnId: 'name@sv',
       language: 'sv',
       baseVersion: 2,
-      originalText: 'Äpplen',
-      proposedText: 'Äpplen QA',
-      value: 'Äpplen QA',
+      originalText: 'Apples sv',
+      proposedText: 'Apples sv QA',
+      value: 'Apples sv QA',
     })
     expect(objectDraftCells('obj-1').map(draftCellKey)).toEqual([
       'obj-1\nname\nen',
       'obj-1\nname\nsv',
     ])
-    expect(draftValues('obj-1')).toEqual({ name: { en: 'Apples QA', sv: 'Äpplen QA' } })
-    expect(overlayValues('obj-1', { name: { en: 'Apples', sv: 'Äpplen', de: 'Äpfel' } }, 2)).toEqual({
-      name: { en: 'Apples QA', sv: 'Äpplen QA', de: 'Äpfel' },
+    expect(draftValues('obj-1')).toEqual({ name: { en: 'Apples QA', sv: 'Apples sv QA' } })
+    expect(overlayValues('obj-1', { name: { en: 'Apples', sv: 'Apples sv', de: 'Apples de' } }, 2)).toEqual({
+      name: { en: 'Apples QA', sv: 'Apples sv QA', de: 'Apples de' },
     })
   })
 
@@ -320,7 +320,7 @@ describe('language-aware shared cells', () => {
 
   it('does not paint another saved language into a stale unqualified language column', () => {
     stageObjectCell({ objectId: 'obj-1', attribute: 'name', columnId: 'name@en', language: 'en', baseVersion: 1, originalText: 'Apples', proposedText: 'Apples QA', value: 'Apples QA' })
-    stageObjectCell({ objectId: 'obj-1', attribute: 'name', columnId: 'name@sv', language: 'sv', baseVersion: 1, originalText: 'Äpplen', proposedText: 'Äpplen QA', value: 'Äpplen QA' })
+    stageObjectCell({ objectId: 'obj-1', attribute: 'name', columnId: 'name@sv', language: 'sv', baseVersion: 1, originalText: 'Apples sv', proposedText: 'Apples sv QA', value: 'Apples sv QA' })
     noteObjectDraftSaved('obj-1', 2)
     expect(paintObjectCell({
       objectId: 'obj-1',
@@ -335,9 +335,9 @@ describe('language-aware shared cells', () => {
       columnId: 'name@sv',
       attribute: 'name',
       language: 'sv',
-      serverText: 'Äpplen',
+      serverText: 'Apples sv',
       serverVersion: 1,
-    })).toEqual({ text: 'Äpplen QA', drafted: false, held: true })
+    })).toEqual({ text: 'Apples sv QA', drafted: false, held: true })
   })
 })
 

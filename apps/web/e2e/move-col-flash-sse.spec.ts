@@ -210,6 +210,8 @@ test.describe('move column, pathValues flash, live row sweep', () => {
     // Enter commits the React draft, not the DOM value. Wait until the controlled
     // input shows the new text so the key handler closes over that draft.
     await expect(editor).toHaveValue(nextText)
+    await editor.press('Enter')
+    await expect(pageB.locator('[data-testid^="cell-editor-description"]')).toHaveCount(0)
     const saved = pageB.waitForResponse(
       (res) =>
         res.url().includes('/v1/objects/') &&
@@ -217,7 +219,7 @@ test.describe('move column, pathValues flash, live row sweep', () => {
         res.ok(),
       { timeout: 30_000 },
     )
-    await editor.press('Enter')
+    await mainTable(pageB).getByTestId('review-and-save').click()
     await saved
     await expect(pageB.locator('[data-testid^="cell-editor-description"]')).toHaveCount(0)
 

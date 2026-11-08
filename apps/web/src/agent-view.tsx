@@ -125,30 +125,18 @@ export function AgentView({ runId, push }: AgentViewProps) {
     previousStatus.current = status
   }, [run.data?.status])
   useEffect(() => {
-    if (!run.data) return
-    const waiting = run.data.status === 'waiting'
-    if (waiting && focusedWaiting.current) return
-    if (opened.current && !focusAfter.current && !waiting) return
-    let cancel = false
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        if (cancel) return
-        const root = rootRef.current
-        if (!root) return
-        opened.current = true
-        focusAfter.current = false
-        if (waiting) {
-          focusedWaiting.current = true
-          root.querySelector<HTMLButtonElement>('[data-testid="agent-open-draft"]')?.focus()
-          return
-        }
-        focusedWaiting.current = false
-        root.querySelector<HTMLButtonElement>('[data-testid="agent-open-draft"]')?.focus()
-      })
+    if (!run.data || opened.current) return
+    opened.current = true
+    const frame = requestAnimationFrame(() => {
+      const root = rootRef.current
+      if (!root) return
+      const active = document.activeElement
+      if (active && active !== document.body && !root.contains(active)) return
+      focusedWaiting.current = run.data?.status === 'waiting'
+      focusAfter.current = false
+      root.querySelector<HTMLButtonElement>('[data-testid="agent-open-draft"]')?.focus()
     })
-    return () => {
-      cancel = true
-    }
+    return () => cancelAnimationFrame(frame)
   }, [run.data])
   if (run.isPending) {
     return (
