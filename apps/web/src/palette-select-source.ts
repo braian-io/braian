@@ -31,6 +31,26 @@ export type SourceCycleCheck = {
   sourceOf: (viewId: string) => string | undefined | null
 }
 
+/**
+ * The view the picker will change. A dock menu passes its explicit view so the
+ * picker keeps working on that panel even while another panel holds focus.
+ * Ctrl+K has no explicit target and follows the focused object table.
+ */
+export function resolveSourceTarget<T extends { id: string; type: string }>(
+  views: T[],
+  explicitViewId?: string | null,
+  focusViewId?: string | null,
+): T | undefined {
+  const explicit = explicitViewId
+    ? views.find((view) => view.id === explicitViewId && view.type === 'object_table')
+    : undefined
+  if (explicit) return explicit
+  const focused = focusViewId
+    ? views.find((view) => view.id === focusViewId && view.type === 'object_table')
+    : undefined
+  return focused ?? views.find((view) => view.type === 'object_table')
+}
+
 function linkTypesFor(option: PeerSourceOption, type: TypeName): string[] {
   const typeIds = new Set([type.id, type.key].filter(Boolean))
   const keys = (option.links ?? [])

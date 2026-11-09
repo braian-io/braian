@@ -248,6 +248,7 @@ export function Shell() {
 
   const [paletteStartAddView, setPaletteStartAddView] = useState(false)
   const [paletteStartSelectSource, setPaletteStartSelectSource] = useState(false)
+  const [paletteSourceTargetViewId, setPaletteSourceTargetViewId] = useState<string | null>(null)
   const [paletteStartNewFromTemplate, setPaletteStartNewFromTemplate] = useState(false)
   const [paletteStartSwitchCatalog, setPaletteStartSwitchCatalog] = useState(false)
   const catalogNamesById = useCatalogNamesById(me.isSuccess)
@@ -506,6 +507,7 @@ export function Shell() {
       registerCommandRunner('palette:search', () => {
         setFieldsEditColumnId(null)
         setPaletteStartAddView(false)
+        setPaletteSourceTargetViewId(null)
         setPaletteStartNewFromTemplate(false)
         setPaletteMode('list')
         setPaletteEpoch((value) => value + 1)
@@ -518,6 +520,7 @@ export function Shell() {
       registerCommandRunner('agent:open', () => {
         setFieldsEditColumnId(null)
         setPaletteStartAddView(false)
+        setPaletteSourceTargetViewId(null)
         setPaletteStartNewFromTemplate(false)
         setPaletteMode('ai')
         setPaletteEpoch((value) => value + 1)
@@ -559,13 +562,15 @@ export function Shell() {
         setPaletteStartNewFromTemplate(false)
         setPaletteStartSwitchCatalog(false)
         setPaletteStartSelectSource(false)
+        setPaletteSourceTargetViewId(null)
         setPaletteStartAddView(true)
         setPaletteMode('list')
       }),
       registerCommandRunner('view:select-source', (target) => {
         const typeId = typeof target.typeId === 'string' ? target.typeId : typeof target.typeKey === 'string' ? target.typeKey : ''
+        const targetViewId = typeof target.viewId === 'string' ? target.viewId : undefined
         if (typeId) {
-          void applyViewTypeSourceRef.current(typeId, typeof target.viewId === 'string' ? target.viewId : undefined)
+          void applyViewTypeSourceRef.current(typeId, targetViewId)
           return
         }
         // The agent and keyboard share this runner: a peer source is explicit state.
@@ -574,13 +579,11 @@ export function Shell() {
           : typeof target.sourceViewId === 'string' ? target.sourceViewId : ''
         if (peerViewId) {
           const linkType = typeof target.linkType === 'string' ? target.linkType : undefined
-          void applyViewPeerSourceRef.current(
-            peerViewId,
-            typeof target.viewId === 'string' ? target.viewId : undefined,
-            linkType,
-          )
+          void applyViewPeerSourceRef.current(peerViewId, targetViewId, linkType)
           return
         }
+        // Keep the menu's view through the picker; doc.focus may be another pane.
+        setPaletteSourceTargetViewId(targetViewId ?? null)
         setPaletteStartAddView(false)
         setPaletteStartNewFromTemplate(false)
         setPaletteStartSwitchCatalog(false)
@@ -592,6 +595,7 @@ export function Shell() {
         setFieldsEditColumnId(null)
         setPaletteStartAddView(false)
         setPaletteStartSelectSource(false)
+        setPaletteSourceTargetViewId(null)
         setPaletteStartSwitchCatalog(false)
         setPaletteStartNewFromTemplate(true)
         setPaletteMode('list')
@@ -601,6 +605,7 @@ export function Shell() {
         setFieldsEditColumnId(null)
         setPaletteStartAddView(false)
         setPaletteStartSelectSource(false)
+        setPaletteSourceTargetViewId(null)
         setPaletteStartNewFromTemplate(false)
         setPaletteStartSwitchCatalog(true)
         setPaletteMode('list')
@@ -976,6 +981,8 @@ export function Shell() {
       flushSync(() => {
         setFieldsEditColumnId(null)
         setPaletteStartAddView(false)
+        setPaletteStartSelectSource(false)
+        setPaletteSourceTargetViewId(null)
         setPaletteStartNewFromTemplate(false)
         setPaletteMode('list')
         setPaletteEpoch((value) => value + 1)
@@ -1958,6 +1965,7 @@ export function Shell() {
               placeOverride.current = { target, zone: 'center' }
               setPaletteStartNewFromTemplate(false)
               setPaletteStartSelectSource(false)
+              setPaletteSourceTargetViewId(null)
               setPaletteStartAddView(true)
               setPaletteMode('list')
             }}
@@ -2015,13 +2023,18 @@ export function Shell() {
           theme={theme}
           onSignOut={() => { void runCommand('session:sign-out') }}
           focusViewId={doc?.focus ?? null}
+          sourceTargetViewId={paletteSourceTargetViewId}
           startAddView={paletteStartAddView}
           startSelectSource={paletteStartSelectSource}
           startNewFromTemplate={paletteStartNewFromTemplate}
           startSwitchCatalog={paletteStartSwitchCatalog}
           workspaceCatalogId={workspaceCatalogRef(workspace.data)?.catalogId || MASTER_CATALOG_ID}
-          onSelectSourceType={(typeId) => { void applyViewTypeSourceRef.current(typeId) }}
-          onSelectSourcePeer={(peerViewId, linkType) => { void applyViewPeerSourceRef.current(peerViewId, undefined, linkType) }}
+          onSelectSourceType={(typeId, targetViewId) => {
+            void applyViewTypeSourceRef.current(typeId, targetViewId)
+          }}
+          onSelectSourcePeer={(peerViewId, linkType, targetViewId) => {
+            void applyViewPeerSourceRef.current(peerViewId, targetViewId, linkType)
+          }}
           onPrepareAddView={() => {
             const focus = docRef.current?.focus
             placeOverride.current = focus ? { target: focus, zone: 'center' } : { zone: 'center' }
@@ -2030,6 +2043,7 @@ export function Shell() {
             placeOverride.current = undefined
             setPaletteStartAddView(false)
             setPaletteStartSelectSource(false)
+            setPaletteSourceTargetViewId(null)
             setPaletteStartNewFromTemplate(false)
             setPaletteStartSwitchCatalog(false)
             setPaletteMode(null)

@@ -29,6 +29,7 @@ import { addViewRootItem, addViewSubmenuRows, isAddViewRoot, parseAddViewChoice 
 import {
   isSelectSourceRoot,
   parseSelectSourceChoice,
+  resolveSourceTarget,
   selectSourceRootItem,
   selectSourceSubmenuRows,
   type PeerSourceOption,
@@ -122,6 +123,7 @@ export function CommandPalette({
   theme = 'dark',
   onSignOut,
   focusViewId,
+  sourceTargetViewId,
   onPrepareAddView,
   startAddView,
   startSelectSource,
@@ -146,14 +148,16 @@ export function CommandPalette({
   theme?: 'dark' | 'light'
   onSignOut?: () => void
   focusViewId?: string | null
+  /** Dock menu target. Keeps the picker on that view even when another pane has focus. */
+  sourceTargetViewId?: string | null
   onPrepareAddView?: () => void
   startAddView?: boolean
   startSelectSource?: boolean
   startNewFromTemplate?: boolean
   startSwitchCatalog?: boolean
   workspaceCatalogId?: string
-  onSelectSourceType?: (typeId: string) => void
-  onSelectSourcePeer?: (viewId: string, linkType?: string) => void
+  onSelectSourceType?: (typeId: string, targetViewId?: string) => void
+  onSelectSourcePeer?: (viewId: string, linkType?: string, targetViewId?: string) => void
   onClose: () => void
   onAgentRun?: (run: { id: string; title: string; workspace_id?: string | null }) => void
   fieldsMode?: boolean
@@ -282,6 +286,11 @@ export function CommandPalette({
     }
     return next
   }, [views])
+  const sourceTarget = useMemo(
+    () => resolveSourceTarget(views, sourceTargetViewId, focusViewId),
+    [views, focusViewId, sourceTargetViewId],
+  )
+  const sourceTargetId = sourceTarget?.id
   const peerSourceOptions = useMemo<PeerSourceOption[]>(() => {
     const options: PeerSourceOption[] = []
     for (const sourceView of views) {
@@ -316,7 +325,7 @@ export function CommandPalette({
         // A view that already follows a peer source stays choosable even before
         // it has a selected row, so chains A -> B -> C can be built in order.
         // The target itself stays visible so a self-source can be shown disabled.
-        if (rows.length === 0 && !peerSourceByView.has(sourceView.id) && sourceView.id !== focusViewId) continue
+        if (rows.length === 0 && !peerSourceByView.has(sourceView.id) && sourceView.id !== sourceTargetId) continue
         const links = linkedTypeLinks(bound.id, defs.data)
         if (links.length === 0) continue
         const typeIds = [...new Set(links.map((link) => link.typeId))]
@@ -333,11 +342,7 @@ export function CommandPalette({
     return options
     // selectionVersion re-reads the live registry; the other inputs shape the list.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [views, types, defs.data, focusViewId, selectedKey, selectionVersion, peerSourceByView])
-  const sourceTarget = useMemo(() => {
-    const focused = views.find((view) => view.id === focusViewId && view.type === 'object_table')
-    return focused ?? views.find((view) => view.type === 'object_table')
-  }, [views, focusViewId])
+  }, [views, types, defs.data, sourceTargetId, selectedKey, selectionVersion, peerSourceByView])
   const currentSource = useMemo(() => {
     if (!sourceTarget) return null
     const bound = typeOfView(sourceTarget, types)
@@ -704,8 +709,8 @@ export function CommandPalette({
     }
     const sourceChoice = parseSelectSourceChoice(id)
     if (sourceChoice) {
-      if ('typeId' in sourceChoice) onSelectSourceType?.(sourceChoice.typeId)
-      else onSelectSourcePeer?.(sourceChoice.peerViewId, sourceChoice.linkType)
+      if ('typeId' in sourceChoice) onSelectSourceType?.(sourceChoice.typeId, sourceTarget?.id)
+      else onSelectSourcePeer?.(sourceChoice.peerViewId, sourceChoice.linkType, sourceTarget?.id)
       onClose()
       return
     }

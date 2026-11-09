@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   isSelectSourceRoot,
   parseSelectSourceChoice,
+  resolveSourceTarget,
   selectSourceRootItem,
   selectSourceSubmenuRows,
   SELECT_SOURCE_ROOT_ID,
@@ -147,6 +148,76 @@ describe('palette peer sources (Notion 103 PR 2)', () => {
     expect(byView('view-c')?.subtitle).toBe('Would create a cycle')
     expect(byView('view-free')?.disabled).toBeUndefined()
     expect(byView('view-free')?.subtitle).toBe('ART-1')
+  })
+
+  it('resolves the explicit menu target over focus, and focus for Ctrl+K', () => {
+    const tables = [
+      { id: 'view-products', type: 'object_table' },
+      { id: 'view-articles', type: 'object_table' },
+      { id: 'view-detail', type: 'object_detail' },
+    ]
+    expect(resolveSourceTarget(tables, 'view-articles', 'view-products')?.id).toBe('view-articles')
+    expect(resolveSourceTarget(tables, undefined, 'view-articles')?.id).toBe('view-articles')
+    expect(resolveSourceTarget(tables, 'view-detail', 'view-articles')?.id).toBe('view-articles')
+    expect(resolveSourceTarget(tables, null, 'view-detail')?.id).toBe('view-products')
+  })
+
+  it('does not disable a valid peer of the menu target just because another pane holds focus', () => {
+    const tables = [
+      { id: 'view-products', type: 'object_table' },
+      { id: 'view-articles', type: 'object_table' },
+    ]
+    const productAndArticleTypes: TypeName[] = [
+      { id: 't-article', key: 'article', singular: 'Article', plural: 'Articles', kind: 'entity' },
+      { id: 't-product', key: 'product', singular: 'Product', plural: 'Products', kind: 'entity' },
+    ]
+    const peerOptions = [{
+      viewId: 'view-products',
+      viewTitle: 'Products',
+      selection: 'row' as const,
+      label: 'PROD-1',
+      typeIds: ['t-article'],
+      links: [{ typeId: 't-article', linkType: 'product_articles' }],
+    }]
+    // The repro: Products holds focus while the Articles menu opens.
+    const target = resolveSourceTarget(tables, 'view-articles', 'view-products')
+    const rows = selectSourceSubmenuRows(
+      productAndArticleTypes,
+      peerOptions,
+      { typeId: 't-article' },
+      { targetViewId: target?.id ?? '', sourceOf: () => undefined },
+    )
+    const all = rows.find((row) => row.id === 'select-source:type:t-article')
+    const peer = rows.find((row) => row.id === 'select-source:peer:t-article:view-products:row')
+    expect(all?.chips).toEqual([{ text: copy.current, tone: 'ok' }])
+    expect(peer?.disabled).toBeUndefined()
+    expect(peer?.subtitle).toBe('PROD-1')
+  })
+
+  it('still disables a genuine A -> B -> C -> A source cycle', () => {
+    const tables = [
+      { id: 'view-a', type: 'object_table' },
+      { id: 'view-b', type: 'object_table' },
+      { id: 'view-c', type: 'object_table' },
+    ]
+    const sources = new Map<string, string>([
+      ['view-b', 'view-a'],
+      ['view-c', 'view-b'],
+    ])
+    const target = resolveSourceTarget(tables, 'view-a', 'view-b')
+    const rows = selectSourceSubmenuRows(types, [{
+      viewId: 'view-c',
+      viewTitle: 'C',
+      selection: 'row',
+      label: 'ART-1',
+      typeIds: ['t-article'],
+    }], null, {
+      targetViewId: target?.id ?? '',
+      sourceOf: (viewId) => sources.get(viewId),
+    })
+    const cycle = rows.find((row) => row.id === 'select-source:peer:t-article:view-c:row')
+    expect(cycle?.disabled).toBe(true)
+    expect(cycle?.subtitle).toBe('ART-1 · Would create a cycle')
   })
 
   it('parses peer choices with an optional link type and still ignores the link type as a source', () => {
