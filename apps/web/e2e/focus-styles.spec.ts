@@ -331,14 +331,59 @@ test('focus and hover use one indicator aligned to the element', async ({ page }
 
   const search = table.locator('.search-field').first()
   await page.mouse.move(5, 5)
+  const searchRest = await paint(search)
   await search.hover()
   const searchPaint = await paint(search)
-  expectOneIndicator(searchPaint, 'hovered search field')
+  // Hover is a soft fill, not a focus mark: no 2px accent ring appears until the field is focused.
+  expect(indicators(searchPaint).count, JSON.stringify(indicators(searchPaint))).toBe(0)
   expect(searchPaint.outlineStyle).toBe('none')
-  expect(searchPaint.boxShadow).toContain(searchPaint.accent)
-  expect(searchPaint.boxShadow).toContain('2px')
+  expect(searchPaint.boxShadow).not.toContain(searchPaint.accent)
+  expect(searchPaint.boxShadow).not.toContain('2px')
   expect(searchPaint.visibleBorder).toBe(false)
+  expect(searchPaint.backgroundColor).not.toBe(searchRest.backgroundColor)
   await screenshotElement(page, search, 'search-field-hovered')
+})
+
+test('Account and the active pane tab are reachable by Tab without a click', async ({ page }) => {
+  test.setTimeout(120_000)
+  await page.addInitScript(() => localStorage.setItem('braian.theme', JSON.stringify('dark')))
+  await login(page)
+
+  const userMenu = page.getByTestId('user-menu')
+  const activeOpen = page.locator('section.pane.focused .pane-tab.active .pane-tab-open').first()
+  await expect(userMenu).toHaveAttribute('aria-label', 'Account')
+  await expect(activeOpen).toBeVisible()
+
+  const focused = (target: Locator) => target.evaluate((element) => element === document.activeElement)
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+
+  let accountStep = -1
+  let activeTabStep = -1
+  for (let step = 1; step <= 200 && (accountStep < 0 || activeTabStep < 0); step += 1) {
+    await page.keyboard.press('Tab')
+    if (accountStep < 0 && await focused(userMenu)) {
+      accountStep = step
+      const value = await paint(userMenu)
+      expectOneIndicator(value, 'Account keyboard focus')
+      expect(value.outlineStyle).not.toBe('none')
+      expect(value.outlineWidth).toBe(2)
+      expect(value.boxShadow).not.toContain(value.accent)
+      await screenshotElement(page, userMenu, 'tab-account-focused')
+    }
+    if (activeTabStep < 0 && await focused(activeOpen)) {
+      activeTabStep = step
+      const value = await paint(activeOpen)
+      expectOneIndicator(value, 'active pane tab keyboard focus')
+      expect(value.outlineStyle).not.toBe('none')
+      expect(value.outlineWidth).toBe(2)
+      expect(value.outlineOffset).toBeLessThanOrEqual(0)
+      expect(value.boxShadow).not.toContain(value.accent)
+      await screenshotElement(page, activeOpen, 'tab-active-pane-focused')
+    }
+  }
+  expect(accountStep, 'Account must be reachable by Tab from the page start').toBeGreaterThan(0)
+  expect(activeTabStep, 'The active pane tab must be reachable by Tab from the page start').toBeGreaterThan(0)
+  console.log('row135 follow-up tab evidence', JSON.stringify({ accountStep, activeTabStep }))
 })
 
 test('Tab shows one keyboard ring on the user menu, tree and table', async ({ page }) => {
