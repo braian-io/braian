@@ -99,12 +99,13 @@ test.describe('nested chrome', () => {
       expect(panePaint.afterBoxShadow).toBe('none')
       const gridPaint = await paint(grid)
       expect(gridPaint.outlineStyle).toBe('none')
-      // The focused cell adds its own hover-accent ring, not a second left-edge marker.
+      // The focused cell adds its own 2px accent inset ring, not a second left-edge marker.
       const focusedCellPaint = await paint(cell)
       const focusedCellShadows = shadows(focusedCellPaint.boxShadow)
       expect(focusedCellShadows).toHaveLength(1)
-      expect(focusedCellShadows[0]).toContain('inset')
-      expect(focusedCellShadows[0]).toContain(focusedCellPaint.accentHover)
+      expect(focusedCellShadows[0]).toContain('0px 0px 0px 2px inset')
+      expect(focusedCellShadows[0]).toContain(focusedCellPaint.accent)
+      expect(focusedCellShadows[0]).not.toContain(focusedCellPaint.accentHover)
       expect(focusedCellShadows[0]).not.toContain('3px')
 
       await page.locator('[data-view-type="object_detail"]').first().click()

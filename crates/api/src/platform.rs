@@ -2060,6 +2060,7 @@ For a clear edit, such as renaming the selected object, call propose_change imme
 Call ask_person only when a real decision is missing, such as which of several ambiguous fields to use. Do not guess and do not use it to confirm an obvious action. \
 The UI snapshot is the current screen: workspace, open panes with their types, focused pane, selected objects (id, key, name, type, version), active filter and sort, the open table's columns (id, header, hidden), and the data language. \
 To hide or show a column, call ui_hide_column or ui_show_column with {{\"column\": id}}. \
+To move a column, call ui_move_column with {{\"column\": id, \"direction\": \"left\" or \"right\", \"viewId\": focused pane id}}. \
 Answer questions about the selection, the open views, or the workspace from that snapshot. Do not call search or list_objects for those questions, and do not ask for a screenshot. \
 Call get_object when a field value is missing from the snapshot. Call ui_get_context or ui_get_selection to read the snapshot again. \
 UI snapshot: {snapshot}"
@@ -3070,6 +3071,28 @@ async fn register_view_type(
 /// Copies the workspace type into selection calls. The agent loop is the only
 /// caller that has the screen; a human request is left unchanged.
 fn selection_args(operation: &str, args: &Value, context: &Value) -> Value {
+    if operation == "ui.move_column" {
+        let mut call = args.clone();
+        let Some(object) = call.as_object_mut() else {
+            return call;
+        };
+        let named = object
+            .get("viewId")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+            .is_some();
+        if !named
+            && let Some(focused) = context
+                .get("focused")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|text| !text.is_empty())
+        {
+            object.insert("viewId".into(), json!(focused));
+        }
+        return call;
+    }
     if operation != "list_assortments" && operation != "assortment.save" {
         return args.clone();
     }
@@ -4418,6 +4441,24 @@ async fn attach_base_values(state: &AppState, body: &mut Value) -> Result<(), Pr
     Ok(())
 }
 
+/// Rejects a proposal that belongs to another catalog before any claim.
+///
+/// Catalog scoping is a session setting, not row-level security, so a lookup
+/// by id alone would otherwise reach across catalogs. Both the import-draft
+/// path and the ordinary claim path run after this check.
+async fn require_proposal_owner(state: &AppState, id: Uuid) -> Result<(), Problem> {
+    let catalog = state.store.catalog_id();
+    match state
+        .store
+        .proposal_catalog(id)
+        .await
+        .map_err(store_status)?
+    {
+        Some(owner) if owner == catalog => Ok(()),
+        _ => Err(Problem::new(StatusCode::NOT_FOUND, "not_found", "proposal")),
+    }
+}
+
 async fn accept_proposal(
     State(state): State<AppState>,
     Auth(identity): Auth,
@@ -4426,6 +4467,7 @@ async fn accept_proposal(
 ) -> Result<AcceptReply, Problem> {
     require(&identity, Role::Editor)?;
     crate::review::require_review(&identity, false, braian_model::ReviewAction::Save, None)?;
+    require_proposal_owner(&state, id).await?;
     // An import draft keeps its rows in the import session, not in proposal_rows.
     if let Some(session_id) = state
         .store
@@ -4460,6 +4502,13 @@ async fn accept_proposal(
         .map_err(store_status)?
         .ok_or_else(|| Problem::new(StatusCode::NOT_FOUND, "not_found", "proposal"))?;
     crate::review::reject_stale_save(&identity, &proposal)?;
+    if proposal.get("status").and_then(Value::as_str) != Some("open") {
+        return Err(Problem::new(
+            StatusCode::CONFLICT,
+            "conflict",
+            "this proposal is no longer pending",
+        ));
+    }
     let rows = proposal
         .get("rows")
         .and_then(Value::as_array)
@@ -4492,6 +4541,14 @@ async fn accept_proposal(
             return Err(store_status(error));
         }
     };
+    if proposal.get("status").and_then(Value::as_str) != Some("open") {
+        lock.release().await.map_err(store_status)?;
+        return Err(Problem::new(
+            StatusCode::CONFLICT,
+            "conflict",
+            "this proposal is no longer pending",
+        ));
+    }
     let rows = proposal
         .get("rows")
         .and_then(Value::as_array)
@@ -4581,20 +4638,14 @@ async fn close_claimed_proposal(
     let Some(rows) = rows else {
         return Ok(());
     };
-    if rows.is_empty()
-        || rows
-            .iter()
-            .any(|row| row.get("status").and_then(Value::as_str) == Some("pending"))
-    {
+    if rows.is_empty() {
         return Ok(());
     }
-    let accepted = rows
-        .iter()
-        .any(|row| row.get("status").and_then(Value::as_str) == Some("accepted"));
-    let status = if accepted { "accepted" } else { "discarded" };
+    // Re-read the full membership under the claim. Do not decide from the
+    // caller's subset: an unselected, failed or deleted row is still pending.
     state
         .store
-        .set_proposal_status(id, status, claim, false)
+        .finalize_proposal(id, claim)
         .await
         .map_err(store_status)?;
     Ok(())
@@ -4705,21 +4756,16 @@ async fn apply_selected(
     let claim = lock.token();
     let outcome =
         apply_selected_locked(state, identity, proposal_id, rows, job_id, patches, claim).await;
+    // Decide from the full membership, not from this call's subset. While any
+    // row is still pending (unselected, failed or deleted) the proposal stays
+    // open. finalize_proposal checks that in the same transaction as the claim.
     let status_result = match outcome.as_ref() {
-        Ok(tally)
-            if tally.failed.is_empty() && !(tally.accepted.is_empty() && tally.rejected == 0) =>
-        {
-            let status = if tally.accepted.is_empty() && tally.rejected > 0 {
-                "discarded"
-            } else {
-                "accepted"
-            };
-            state
-                .store
-                .set_proposal_status(proposal_id, status, claim, false)
-                .await
-        }
-        _ => Ok(()),
+        Ok(_) => state
+            .store
+            .finalize_proposal(proposal_id, claim)
+            .await
+            .map(|_| ()),
+        Err(_) => Ok(()),
     };
     let release_result = lock.release().await;
     let tally = outcome?;
@@ -5374,6 +5420,7 @@ async fn discard_proposal(
 ) -> Result<StatusCode, Problem> {
     require(&identity, Role::Editor)?;
     crate::review::require_review(&identity, false, braian_model::ReviewAction::Discard, None)?;
+    require_proposal_owner(&state, id).await?;
     if let Some(session_id) = state
         .store
         .proposal_session(id)
@@ -5384,13 +5431,21 @@ async fn discard_proposal(
         return Ok(StatusCode::NO_CONTENT);
     }
     let lock = state.store.claim_proposal(id).await.map_err(store_status)?;
-    let closed = state
+    let discarded = state
         .store
-        .set_proposal_status(id, "discarded", lock.token(), true)
+        .discard_proposal(id, lock.token(), identity.actor.actor)
         .await;
     let released = lock.release().await;
-    closed.map_err(store_status)?;
+    let report = discarded.map_err(store_status)?;
     released.map_err(store_status)?;
+    if report.recovered {
+        tracing::warn!(
+            proposal = %id,
+            previous_status = %report.previous_status,
+            rejected_rows = report.rejected_rows,
+            "discarded pending rows on a historically closed proposal"
+        );
+    }
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -8141,6 +8196,40 @@ mod tests {
         assert_eq!(value["name"], "ui.filter");
         assert_eq!(value["args"]["q"], "tent");
         assert_eq!(value["applied"], false);
+    }
+
+    #[test]
+    fn ui_move_column_keeps_an_explicit_view_id() {
+        let value = ui_command(
+            "ui.move_column",
+            &json!({ "column": "name", "direction": "left", "viewId": "products" }),
+        );
+        assert_eq!(value["ui"], true);
+        assert_eq!(value["args"]["viewId"], "products");
+        assert_eq!(value["args"]["column"], "name");
+    }
+
+    #[test]
+    fn move_column_args_follow_the_focused_view_without_losing_an_explicit_one() {
+        let context = json!({
+            "focused": "products",
+            "panes": [
+                { "id": "products", "type": "object_table", "title": "Products", "focused": true },
+                { "id": "articles", "type": "object_table", "title": "Articles", "focused": false }
+            ]
+        });
+        let focused = selection_args(
+            "ui.move_column",
+            &json!({ "column": "name", "direction": "right" }),
+            &context,
+        );
+        assert_eq!(focused["viewId"], "products");
+        let explicit = selection_args(
+            "ui.move_column",
+            &json!({ "column": "name", "direction": "right", "viewId": "articles" }),
+            &context,
+        );
+        assert_eq!(explicit["viewId"], "articles");
     }
 
     /// Names the browser lists in `apps/web/src/ui-bus.ts` (`uiOperations`).

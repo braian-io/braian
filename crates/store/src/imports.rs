@@ -475,7 +475,10 @@ impl Store {
         title: &str,
         counters: &Value,
     ) -> Result<Option<Uuid>, Error> {
-        let mut client = self.pool().get().await?;
+        // Checkout binds braian.catalog, so the draft proposal is stamped with
+        // the same catalog as its import session instead of a stale pooled
+        // setting. Accept/Discard then accept it only in that catalog.
+        let mut client = self.checkout().await?;
         let tx = client.transaction().await?;
         let Some(session) = tx
             .query_opt(

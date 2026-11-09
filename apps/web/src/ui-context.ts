@@ -34,6 +34,7 @@ let markedId: string | null = null
 const tables = new Map<string, { filter: string; sort: string; filterExpression: string }>()
 const tableColumns = new Map<string, UiColumn[]>()
 const activeColumns = new Map<string, string>()
+let lastActiveColumnViewId: string | null = null
 const selections = new Map<string, SelectedObject[]>()
 const enriched = new Map<string, SelectedObject>()
 
@@ -76,6 +77,7 @@ export function resetUiContext() {
   tables.clear()
   tableColumns.clear()
   activeColumns.clear()
+  lastActiveColumnViewId = null
   selections.clear()
   enriched.clear()
   treeNodes.clear()
@@ -111,8 +113,33 @@ export function publishColumns(viewId: string, columns: UiColumn[]) {
 }
 
 export function publishActiveColumn(viewId: string, columnId: string | null) {
-  if (!columnId) activeColumns.delete(viewId)
-  else activeColumns.set(viewId, columnId)
+  if (columnId) {
+    activeColumns.set(viewId, columnId)
+    lastActiveColumnViewId = viewId
+    return
+  }
+  activeColumns.delete(viewId)
+  if (lastActiveColumnViewId !== viewId) return
+  lastActiveColumnViewId = [...activeColumns.keys()].at(-1) ?? null
+}
+
+/** The header last activated in this exact view, never another pane's header. */
+export function readActiveColumn(viewId: string | null | undefined): string | null {
+  if (!viewId) return null
+  return activeColumns.get(viewId) ?? null
+}
+
+/** The most recently activated header and the view that owns it. */
+export function readLastActiveColumn(): { viewId: string; column: string } | null {
+  if (!lastActiveColumnViewId) return null
+  const column = activeColumns.get(lastActiveColumnViewId)
+  return column ? { viewId: lastActiveColumnViewId, column } : null
+}
+
+/** Columns published by one exact table, for a command that names that table. */
+export function readColumns(viewId: string | null | undefined): UiColumn[] {
+  if (!viewId) return []
+  return (tableColumns.get(viewId) ?? []).map((column) => ({ ...column }))
 }
 
 export function publishSelection(viewId: string, rows: SelectedObject[]) {

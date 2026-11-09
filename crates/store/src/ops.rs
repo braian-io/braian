@@ -768,11 +768,12 @@ impl Store {
     pub async fn claim_proposal(&self, id: Uuid) -> Result<ProposalLock, Error> {
         let mut client = self.checkout().await?;
         let tx = client.transaction().await?;
+        let catalog = self.catalog_id().as_uuid();
         let row = tx
             .query_opt(
                 "SELECT (claimed_until > now()) AS live
-                 FROM proposals WHERE id = $1 FOR UPDATE",
-                &[&id],
+                 FROM proposals WHERE id = $1 AND catalog_id = $2 FOR UPDATE",
+                &[&id, &catalog],
             )
             .await?;
         let Some(row) = row else {
@@ -788,8 +789,8 @@ impl Store {
             "UPDATE proposals
              SET claimed_by = $2,
                  claimed_until = now() + ($3::bigint * interval '1 millisecond')
-             WHERE id = $1",
-            &[&id, &token, &millis],
+             WHERE id = $1 AND catalog_id = $4",
+            &[&id, &token, &millis, &catalog],
         )
         .await?;
         tx.commit().await?;

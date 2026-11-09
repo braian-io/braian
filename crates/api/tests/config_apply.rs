@@ -230,12 +230,9 @@ async fn seed_catalog_history(
         )
         .await
         .unwrap();
-    let lock = scoped.claim_proposal(proposal).await.unwrap();
-    scoped
-        .set_proposal_status(proposal, "accepted", lock.token(), false)
+    braian_store::testing::force_proposal_status(&scoped, proposal, "accepted")
         .await
         .unwrap();
-    drop(lock);
 
     let session = uuid::Uuid::now_v7();
     scoped
