@@ -1,6 +1,6 @@
 # Status 2026-11-09
 
-Bas: `origin/main` tip `549d2d3` (#271). Senaste migrering i repot: `V44__proposal_recoveries.sql` (#268).
+Bas: `origin/main` tip `f001573` (#272). Senaste migrering i repot: `V44__proposal_recoveries.sql` (#268).
 
 ## Rad 212-uppföljning i den här PR:en — blandat utfall får samma slutstatus
 
@@ -47,6 +47,21 @@ användes, trots att en rad faktiskt hade tillämpats.
   den vägen med historisk Discard-återställning av samma medlemskap.
 - `apps/web/src/data-model.tsx` är orörd
   (`sha256 2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`).
+## Rad 135 uppföljning — levererad på main (#272)
+
+Demo-omtesten efter #269 visade att tabellcellens 2px-ring är rätt, men att tangentbordsfokus fortfarande saknades på några ställen. Mergad till `main` som #272 (`f001573`). Den rättade den kvarvarande fokusringen efter #269. Inte deployad eller accepterad.
+
+- `apps/web/src/styles.css`: tar bort `.pane-tab.active .pane-tab-open:focus-visible { outline: none; }`, så även den aktiva pane-fliken (till exempel Products) får samma 2px accentring på Tab som en inaktiv flik.
+- `apps/web/src/styles.css`: delar upp sökfältet. Endast `:focus-within` har `box-shadow: var(--inset), 0 0 0 2px var(--accent)`. `:hover:not(:focus-within)` byter till den mjukare `--hover`-fyllningen utan accentring, så hover inte ser ut som fokus.
+- Övriga `outline: none` i `styles.css` är genomgångna och behålls där de redan ersätter ringen med en likvärdig accentbehandling: grid med `.active-cell` (inset-ring), cell-editor (accentkant), inre `.search-field input`, menyalternativ med `data-highlighted`, palettens frågefält (ring på containern) och create-dialogens fält (accentkant). Ingen blanket-borttagning.
+- `apps/web/src/focus-ring.test.ts`: två enhetsregressioner: aktiv pane-flik får inte längre en outline-suppressor, och sökfältets hover-regel får inte innehålla 2px accentringen medan `:focus-within` måste göra det.
+- `apps/web/src/user-menu.test.tsx`: Account-triggern är en native `button` med `aria-label="Account"`, `tabIndex` 0 och inte disabled.
+- `apps/web/e2e/focus-styles.spec.ts`: hover på sökfältet ger ingen fokusring; Account-avataren och den aktiva pane-flikens `.pane-tab-open` nås med enbart Tab från sidstart efter inloggning och visar 2px accentring. Befintliga fokus-, nested-chrome- och tabelltester behålls.
+- `apps/web/e2e/layout.spec.ts`: CI:s e2e-shard 1 föll på den gamla hover-assertionen för Articles sökfält. Hover-delen kräver nu ingen accent och ingen 2px-ring, bara `outline: none`, `hovered` och en mjuk fyllnadsändring; fokusdelen behåller kravet på 2px accent via `:focus-within`.
+
+Muspekarens beteende: ett vanligt klick på en tabellcell visar inte den accentfärgade 2px-ringen. Ringen är tangentbordsfokus (`.grid:focus-visible .row.selected .cell.active-cell` / `.row.active .cell.active-cell`), medan urvalet är dimfyllning plus 3px vänsterkant. Det är samma separering som rad 135 krävde, och `e2e/focus-styles.spec.ts` assertar att ett pointer-klick lämnar `:focus-visible` falskt och cellen utan ring.
+
+Verifierat i isolerade `--rm`-containrar på ett task-ägt Docker-nätverk mot syntetisk Postgres 18 och Typesense 30.2, utan demo, host-verktyg, host-nätverk eller Docker-socket: typecheck grön; hela web-enhetssviten 150 filer / 818 tester grön; `focus-styles.spec.ts` 14/14 (inklusive de två nya regressionerna), `nested-chrome.spec.ts` 2/2 och `user-menu.spec.ts` 6/6; `check-english.py` grön. I webbläsaren (mörkt tema) nåddes Account på Tab-steg 8 och den aktiva pane-fliken på steg 16 från sidstart, båda med `2px solid` accentring. Skärmbilder skrevs till den gitignorerade `apps/web/test-results/focus-screenshots/` och committas inte.
 
 ## Rad 135 — levererad på main (#269)
 
@@ -63,7 +78,7 @@ CI på `e022849` föll i jobbet e2e3 på just den gamla syskonassertionen i `nes
 
 ## Rad 107 — levererad på main (#270)
 
-Kolumnflytt (Notion 107) är mergad till `main` som #270 (`a7e7d58`) och ingår i basen. Den är inte en del av den här PR:en (rad 215) och är inte deployad eller accepterad. Reproduktionen 2026-11-07: Products och Articles har båda `Name`, och Ctrl+Shift+→ på Products.Name flyttade `Name` i båda tabellerna eftersom `ui.move_column` broadcastades utan vyidentitet.
+Kolumnflytt (Notion 107) är mergad till `main` som #270 (`a7e7d58`) och ingår i basen. Den är inte en del av den här PR:en (rad 135-uppföljningen) och är inte deployad eller accepterad. Reproduktionen 2026-11-07: Products och Articles har båda `Name`, och Ctrl+Shift+→ på Products.Name flyttade `Name` i båda tabellerna eftersom `ui.move_column` broadcastades utan vyidentitet.
 
 - `apps/web/src/column-move.ts` är en gemensam målupplösning. Tangentbordet läser fokuserad vy och den vyns egen aktiva kolumn (`readActiveColumn`), aldrig en annan panes rubrik. Register-körarna (`column:move-left/right`), Ctrl+K, header-/cell-/radmenyn och buslyssnaren använder samma `viewId`.
 - Header- och cellmenyn skickar `target.viewId = view.id`. Ctrl+K tar den fokuserade tabellen, annars tabellen vars rubrik senast aktiverades (samma `viewId`), och läser den tabellens egna kolumner. `ui.move_column` bär `{ column, direction, viewId }`. `ObjectTable` lyssnar bara när `viewId` är dess egen vy; ett äldre event utan `viewId` följer fokus i stället för att broadcasta.
@@ -75,7 +90,7 @@ Kolumnflytt (Notion 107) är mergad till `main` som #270 (`a7e7d58`) och ingår 
 
 ## Rad 170 (mergad i #265) — i basen, inte den här PR:en
 
-Läsbara URL:er (Notion 170) är mergade i `main` som squash `61c6e3c` (#265). Den här grenen har nu `origin/main` `a7e7d58` (#270) som bas, som redan innehåller den ändringen, så avsnittet beskriver basen och inte ett omergat arbete i den här PR:en. Rad 135- och rad 107-ändringarna rör inte URL- eller review-koden.
+Läsbara URL:er (Notion 170) är mergade i `main` som squash `61c6e3c` (#265). Den här grenen har nu `origin/main` `549d2d3` (#271) som bas, som redan innehåller den ändringen, så avsnittet beskriver basen och inte ett omergat arbete i den här PR:en. Rad 135- och rad 107-ändringarna rör inte URL- eller review-koden.
 
 - `ws`, `view` och `catalog` är slug av visningsnamn. Unicode-bokstäver och siffror behålls (NFKC, gemener); ett namn utan bokstav eller siffra får ett `~`-suffix av id:t. `object` är objektets nyckel, inte ett uuid.
 - Nuvarande namn eller nyckel är adressen. Ett byte byter URL:en. Gamla länkar och uuid-adresser öppnas inte. Inga redirectar.
@@ -84,13 +99,13 @@ Läsbara URL:er (Notion 170) är mergade i `main` som squash `61c6e3c` (#265). D
 - `GET /v1/objects` accepterar både typnyckel och typ-id i `type`. Sparade vyer lagrar typ-id (V18), så en direktlänk annars fick tom träff.
 - Vitest täcker Unicode-slug (även namn som bara är kombinerande tecken), fallback, krock, escapad `~` i typad SKU, nyckellöst suffix som förlängs vid delad svans, kodning, uuid-avvisning, att en delad nyckel slås upp i produkttypen och att ett URL-objekt inte tappas när en annan rad redan är vald. `e2e/readable-urls.spec.ts` är registrerad i `scripts/e2e.mjs`: direktlänk och omladdning, nyckel i stället för uuid, navigationsslug, byte av nyckel, dubbletter, kodning, typad SKU med `~`, bakåt/framåt, trasig eller saknad måltavla, nyckellös länkrad efter omladdning och två kolliderande nyckellösa länkar vars utskrivna förlängda tokens laddas om. `e2e/palette-drill.spec.ts` har ett regressionstest för att inloggning når en objekttabell även när en tidigare sparad layout har en agentflik i fokus. Körningen är gjord i isolerade `--rm`-containrar mot syntetisk Postgres/Typesense; den är inte deployad.
 
-## Rad 215 i den här PR:en — Edit selection-dialogen
+## Rad 215 (mergad i #271) — i basen, inte den här PR:en
 
 Rapporten gällde att kontrollerna i Edit selection inte svarade på klick i Articles-arbetsytans Selections-panel. På basen `4cd25f7` gick klickflödet igenom i Chromium, Firefox och WebKit, både från radmenyn och från högerklick, efter att urvalet tillämpats och med en stagad objekt-draft. Ingen pointer-interception eller överlägg kunde reproduceras.
 
 Det som däremot gick att reproducera var fokus: dialogen öppnades från radmenyn med fokus kvar på radens "More actions"-knapp bakom modalen, och efter stängning hamnade fokus på `<body>`. Orsaken var att den delade `DialogContent` fångade opener i sin `useState` när komponenten monterades med skalet (långt före öppningen), och att `autoFocus` på namnfältet hann flytta fokus innan Radix `onOpenAutoFocus`. Nu fångas opener i `DialogContent` under render medan innehållet ännu inte är monterat, alltså innan ett `autoFocus`-fält hinner ta fokus (till skillnad från `onOpenAutoFocus`, som körs för sent), menyn fokuserar sin trigger innan kommandot öppnar dialogen, och namnfältet får fokus via Radix fokusomhändertagande. CI-regressionen där `create-dialog`-dialogen tappade opener-fokus efter stängning är åtgärdad; `create-dialog.spec.ts` går grönt (12/12) tillsammans med `edit-selection-click.spec.ts` (6/6). Efter Cancel, X och Escape återgår fokus till radens meny-knapp; inget överlägg ligger kvar och `body` har `pointer-events: auto`.
 
-`e2e/edit-selection-click.spec.ts` (registrerad i `scripts/e2e.mjs`) täcker: öppna via faktisk meny, klicka namnfältet, byta namn på den seedade manuella Articles-selectionen Cheese, Save selection, synligt namn och API-läsning efter omladdning, Cancel/X/Escape utan oavsiktlig ändring, upprepad öppning, Type/Kind låsta i edit-läget, samt en stagad tabelldraft. Körningen är gjord i isolerade `--rm`-containrar mot syntetisk Postgres/Typesense; den är inte mergad, deployad eller accepterad.
+`e2e/edit-selection-click.spec.ts` (registrerad i `scripts/e2e.mjs`) täcker: öppna via faktisk meny, klicka namnfältet, byta namn på den seedade manuella Articles-selectionen Cheese, Save selection, synligt namn och API-läsning efter omladdning, Cancel/X/Escape utan oavsiktlig ändring, upprepad öppning, Type/Kind låsta i edit-läget, samt en stagad tabelldraft. Körningen är gjord i isolerade `--rm`-containrar mot syntetisk Postgres/Typesense. Mergad till `main` som #271 (`549d2d3`); inte deployad eller accepterad.
 
 Braian går att starta lokalt och att klicka igenom på [demo.braian.io](https://demo.braian.io). Postgres är källan och ändringsloggen. Indexer, sök, auth, förslag och webbgränssnittet sitter på samma kedja. Flödet står i `docs/events.md`. Demokatalogen som `just dev` visar är bara seed: hjälteobjekt plus 240 syntetiska livsmedel (leverantörer, produkter och artiklar). Etiketter finns på sv/en/de och objektdata är engelska. Strukturen heter Food, leverantörer står utanför trädet och pekas ut med länkar. Tester skriver i databasen `braian_e2e` och sökaliaset `braian_e2e`, inte i demon.
 
@@ -99,7 +114,7 @@ Skalprovet (5 000 skrivningar i sekunden, 1 miljon och 10 miljoner objekt) är i
 
 ## Levererat sedan 2026-11-01 (verifierat via `git log` på main)
 
-Sedan statusen 2026-11-01 (`8300319` / #145) har ungefär #146–#270 landat (125 commits på main, `git rev-list --count 8300319..a7e7d58`; #265, som gav rad 170 läsbara URL:er, är mergad som `61c6e3c`, och #270 som gav rad 107 kolumnflytt stannar i måltabellen är mergad som `a7e7d58`). Den här PR:en är bara rad 215 och är inte mergad, deployad eller accepterad. Många leveranser står på Att testa i Notion och väntar på Glenns genomgång.
+Sedan statusen 2026-11-01 (`8300319` / #145) har ungefär #146–#272 landat (`git rev-list --count 8300319..f001573`; #265, som gav rad 170 läsbara URL:er, är mergad som `61c6e3c`, #270 som gav rad 107 kolumnflytt stannar i måltabellen är mergad som `a7e7d58`, och #271 som gav rad 215 Edit selection-fokus är mergad som `549d2d3`). Den här PR:en är rad 212-uppföljningen (blandat Discard-utfall) och är inte mergad, deployad eller accepterad. #272 (rad 135-uppföljning) landade på main som `f001573`. Många leveranser står på Att testa i Notion och väntar på Glenns genomgång.
 
 ### Kartläggning #253–#270 (squash på main, `git log` + `gh pr view`)
 - #253 `2d78daf` · rad 149 · fix(web): move hardcoded UI strings into copy (row 149)
