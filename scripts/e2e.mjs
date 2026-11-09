@@ -50,6 +50,7 @@ const specs = [
   'e2e/grid-focus-select.spec.ts',
   'e2e/column-drag-and-system-fields.spec.ts',
   'e2e/column-move-target.spec.ts',
+  'e2e/column-move-race.spec.ts',
   'e2e/table-flash-sort-palette.spec.ts',
   'e2e/move-col-flash-sse.spec.ts',
   'e2e/palette-root-focus.spec.ts',
