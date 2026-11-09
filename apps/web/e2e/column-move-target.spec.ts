@@ -21,7 +21,7 @@ type Fixture = {
   articlesId: string
 }
 
-async function createWorkspace(page: Page): Promise<Fixture> {
+async function createWorkspace(page: Page, options: { peerArticles?: boolean } = {}): Promise<Fixture> {
   const workspaceId = crypto.randomUUID()
   const productsId = crypto.randomUUID()
   const articlesId = crypto.randomUUID()
@@ -61,7 +61,15 @@ async function createWorkspace(page: Page): Promise<Fixture> {
       title: 'Articles',
       pane: 'right',
       position: 0,
-      state: { columns: ['number', 'name', 'status'], sort: 'number', object_type: ARTICLE_TYPE_ID, type_key: 'article' },
+      state: {
+        columns: ['number', 'name', 'status'],
+        sort: 'number',
+        object_type: ARTICLE_TYPE_ID,
+        type_key: 'article',
+        ...(options.peerArticles
+          ? { source: { kind: 'peer', viewId: productsId, selection: 'row' } }
+          : {}),
+      },
     },
   ]) {
     const response = await page.request.post('/v1/views', {
@@ -155,6 +163,18 @@ async function moveOnBus(page: Page, viewId: string, direction: 'left' | 'right'
     const bus = await import(/* @vite-ignore */ busPath)
     bus.dispatchUi('ui.move_column', { column: 'name', direction: moveDirection, viewId: targetViewId })
   }, { targetViewId: viewId, moveDirection: direction })
+}
+
+/** The view id saved by the next column move, before it happens. */
+function nextColumnPrefsPut(page: Page) {
+  return page.waitForResponse(
+    (response) =>
+      response.url().includes('/column-prefs') && response.request().method() === 'PUT',
+    { timeout: 15_000 },
+  ).then((response) => {
+    const match = response.url().match(/\/v1\/views\/([^/]+)\/column-prefs/)
+    return match?.[1] ?? ''
+  })
 }
 
 test('every move path targets the clicked header table, never its neighbor', async ({ page }) => {
@@ -260,3 +280,72 @@ test('every move path targets the clicked header table, never its neighbor', asy
   await expect.poll(() => columnIds(articles)).toEqual(beforeArticles)
   await shot(page, '06-after-reload')
 })
+
+// Row 107 retest A1/C1b: the keyboard chord must use the same target as Ctrl+K —
+// the last clicked header/cell, not the focused pane.
+test('keyboard chord follows the last clicked header across peer panes (A1, C1b)', async ({ page }) => {
+  test.setTimeout(300_000)
+  await login(page)
+  const fixture = await createWorkspace(page, { peerArticles: true })
+  await openWorkspace(page, fixture.name)
+
+  const productsPane = page.locator(`[data-pane="${fixture.productsId}"]`)
+  const articlesPane = page.locator(`[data-pane="${fixture.articlesId}"]`)
+  const products = productsPane.getByTestId('object-table').first()
+  const articles = articlesPane.getByTestId('object-table').first()
+  await expect(products.getByTestId('object-row').first()).toBeVisible({ timeout: 60_000 })
+
+  const beforeProducts = await columnIds(products)
+  const beforeArticles = await columnIds(articles)
+  expect(beforeProducts).toContain('type')
+  expect(beforeArticles).toContain('type')
+  expect(beforeProducts.indexOf('name')).toBe(1)
+  expect(beforeArticles.indexOf('name')).toBe(1)
+  await shot(page, 'a1-01-before')
+
+  // A1: click a Products cell (Type), then the Articles header Name, then chord right.
+  // Only Articles Name may move; Products keeps its exact order.
+  await products.getByTestId('object-row').first().locator('[data-column="type"]').click()
+  await articles.getByTestId('col-name').click()
+  await expect(articles.getByTestId('col-name')).toHaveAttribute('data-active-column', 'true')
+
+  const a1saved = nextColumnPrefsPut(page)
+  await page.keyboard.press('Control+Shift+ArrowRight')
+  expect(await a1saved, 'A1: chord must target the Articles view').toBe(fixture.articlesId)
+  await expect
+    .poll(async () => (await columnIds(articles)).indexOf('name'), { message: 'A1: Articles Name moves right' })
+    .toBe(beforeArticles.indexOf('name') + 1)
+  expect(await columnIds(products), 'A1: Products is untouched').toEqual(beforeProducts)
+  await shot(page, 'a1-02-after')
+
+  const afterA1Articles = await columnIds(articles)
+
+  // C1b: Articles cell, Products header Name, chord right (Products Name moves),
+  // then Products header Name again, chord left (Products Name moves back).
+  await articles.getByTestId('object-row').first().locator('[data-column="type"]').click()
+  await products.getByTestId('col-name').click()
+  await expect(products.getByTestId('col-name')).toHaveAttribute('data-active-column', 'true')
+
+  const c1saved = nextColumnPrefsPut(page)
+  await page.keyboard.press('Control+Shift+ArrowRight')
+  expect(await c1saved, 'C1: chord must target the Products view').toBe(fixture.productsId)
+  await expect
+    .poll(async () => (await columnIds(products)).indexOf('name'), { message: 'C1: Products Name moves right' })
+    .toBe(beforeProducts.indexOf('name') + 1)
+  expect(await columnIds(articles), 'C1: Articles is untouched').toEqual(afterA1Articles)
+
+  await products.getByTestId('col-name').click()
+  await expect(products.getByTestId('col-name')).toHaveAttribute('data-active-column', 'true')
+
+  const c1bSaved = nextColumnPrefsPut(page)
+  await page.keyboard.press('Control+Shift+ArrowLeft')
+  expect(await c1bSaved, 'C1b: chord must target the Products view').toBe(fixture.productsId)
+  await expect
+    .poll(async () => (await columnIds(products)).indexOf('name'), { message: 'C1b: Products Name moves left' })
+    .toBe(beforeProducts.indexOf('name'))
+  expect(await columnIds(articles), 'C1b: Articles is untouched').toEqual(afterA1Articles)
+  // Soft check: the sort arrow stays on the column that was clicked, not a neighbour.
+  await expect(products.getByTestId('col-name')).not.toHaveAttribute('aria-sort', 'none')
+  await shot(page, 'c1b-03-after')
+})
+

@@ -167,6 +167,34 @@ describe('column move targets one table (Notion 107)', () => {
     expect(resolveColumnMoveTarget()).toEqual({ viewId: products, column: 'name' })
   })
 
+  it('keeps the last activation when a remounting table republishes no column', () => {
+    Frame(products)
+    publishActiveColumn(products, 'type')
+    publishActiveColumn(articles, 'name')
+
+    // A table reports a null active column before its first activation and after
+    // a remount. That must not erase the header the user clicked last.
+    publishActiveColumn(articles, null)
+    expect(resolveColumnMoveTarget()).toEqual({ viewId: articles, column: 'name' })
+
+    const seen: Array<Record<string, unknown>> = []
+    const stop = onUi((event) => {
+      if (event.name === 'ui.move_column') seen.push(event.args)
+    })
+    act(() => {
+      dispatchColumnMove('right')
+    })
+    stop()
+    expect(seen[0]).toMatchObject({ column: 'name', direction: 'right', viewId: articles })
+
+    // Seq 2 mirror: Articles cell, Products header Name, move right, then a
+    // remount of Products must still leave the chord targeting Products Name.
+    publishActiveColumn(articles, 'type')
+    publishActiveColumn(products, 'name')
+    publishActiveColumn(products, null)
+    expect(resolveColumnMoveTarget()).toEqual({ viewId: products, column: 'name' })
+  })
+
   it('records a clicked header as the target even when another pane keeps focus', async () => {
     Frame(products)
     render(<TwoTableHarness />)

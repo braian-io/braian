@@ -113,14 +113,14 @@ export function publishColumns(viewId: string, columns: UiColumn[]) {
 }
 
 export function publishActiveColumn(viewId: string, columnId: string | null) {
-  if (columnId) {
-    activeColumns.set(viewId, columnId)
-    lastActiveColumnViewId = viewId
+  if (!columnId) {
+    // A table reports no local active column only before its first activation
+    // or after a remount. Keep the last activation so a keyboard move still
+    // targets the header/cell the user clicked last, never another pane.
     return
   }
-  activeColumns.delete(viewId)
-  if (lastActiveColumnViewId !== viewId) return
-  lastActiveColumnViewId = [...activeColumns.keys()].at(-1) ?? null
+  activeColumns.set(viewId, columnId)
+  lastActiveColumnViewId = viewId
 }
 
 /** The header last activated in this exact view, never another pane's header. */

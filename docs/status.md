@@ -1,6 +1,18 @@
 # Status 2026-11-09
 
-Bas: `origin/main` tip `729f70f` (#274). Senaste migrering i repot: `V44__proposal_recoveries.sql` (#268).
+Bas: `origin/main` tip `86bb9a0` (#275). Senaste migrering i repot: `V44__proposal_recoveries.sql` (#268).
+
+## Rad 107-uppföljning 2 — tangentbordet följer senast klickade header
+
+Den här grenen (`junior/107-shortcut-target`) utgår från `origin/main` `86bb9a0` (#275) och är **inte mergad, deployad eller accepterad**. Den rättar Test-avvisningen på demo `86bb9a0`: Ctrl+K och kontextmenyn var rätt efter #274, men Ctrl+Shift+←/→ flyttade fortfarande fel tabell i sekvens A1 och C1b.
+
+- Rotorsak: `publishActiveColumn(viewId, null)` behandlade en tabells "ingen aktiv kolumn" (före första aktiveringen och vid en remount) som att tabellen släppte sin aktiva kolumn. Det kunde rensa `lastActiveColumnViewId` eller flytta den till en annan pane, så chordens `resolveColumnMoveTarget()` → `readLastActiveColumn()` inte pekade på headern användaren just klickat. Debug-körningen visade `publishActiveColumn … null` direkt före chord-eventet.
+- `apps/web/src/ui-context.ts`: ett null-meddelande ignoreras nu, så senaste icke-null-aktivering behålls. Tangentbordet ser därmed exakt samma mål som Ctrl+K (`resolveColumnMoveTarget`/`readLastActiveColumn`). Explicit `viewId` och fokus-fallback är oförändrade.
+- `apps/web/src/column-move-target.test.tsx`: ny enhetsregression för att en remount som publicerar null bevarar senast aktiverade header (både A1- och C1b-mönstret), och att `dispatchColumnMove` skickar rätt `{ viewId, column }`.
+- `apps/web/e2e/column-move-target.spec.ts`: nytt test för exakta A1 och C1b. Products-cell → Articles-header → Ctrl+Shift+→ flyttar bara Articles Name. Articles-cell → Products-header → Ctrl+Shift+→ flyttar Products Name, och Products-header igen → Ctrl+Shift+← flyttar tillbaka Products Name. Grannvyn behåller exakt sin kolumnordning i varje steg. Det befintliga #274-testet (header → Ctrl+K/kontextmeny, alla fem vägar) är kvar och grönt. En mjuk kontroll säger att `aria-sort` inte blir `none` efter flytten.
+- Bevis i `docker run --rm` på uppgiftsägt nätverk `row107shortcut-net` mot syntetisk Postgres 18 och Typesense 30.2 (containrarna `row107shortcut-postgres`/`row107shortcut-typesense`), utan host-nätverk, Docker-socket eller demo-DB: web-typecheck exit 0; riktade vitest-filer `column-move-target.test.tsx` + `ui-context.test.ts` 6/6; `column-move-target.spec.ts` 2/2 (A1/C1b 18,3 s, hela filen 1,4 m). Skärmdumpar: `a1-01-before`, `a1-02-after`, `c1b-03-after` i uppgiftens scratchkatalog.
+- `apps/web/src/data-model.tsx` är orörd (`sha256 2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`).
+- Sortpilen: den mjuka kontrollen passerade i den här körningen. Den tidigare glitchen är inte oberoende bekräftad eller bevisad åtgärdad, så inget sådant påstående görs.
 
 ## Rad 215 uppföljning — låsta fält, levande namn och väntande Save
 
