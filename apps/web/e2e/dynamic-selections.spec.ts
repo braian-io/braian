@@ -95,8 +95,9 @@ test('dynamic selections can be created, edited and deleted with usage', async (
 
   const edit = page.getByTestId('new-selection')
   await expect(edit.getByRole('heading', { name: 'Edit selection' })).toBeVisible()
-  await expect(page.getByTestId('selection-type')).toBeDisabled()
-  await expect(page.getByTestId('selection-kind')).toBeDisabled()
+  await expect(page.getByTestId('selection-type')).toHaveAttribute('data-locked', 'true')
+  await expect(page.getByTestId('selection-kind')).toHaveAttribute('data-locked', 'true')
+  await expect(edit.locator('select')).toHaveCount(0)
   await page.getByTestId('assortment-name').fill('Aged cheese')
   await page.getByTestId('selection-query').fill('type_key:=product && groups:=food:cheese && a_labels:=organic_eu')
   await edit.getByRole('button', { name: 'Save selection' }).click()

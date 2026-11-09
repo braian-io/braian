@@ -901,19 +901,54 @@ impl Store {
     }
 
     /// Rewrites `assortments.name` and `assortments.query` and leaves kind and type alone.
+    ///
+    /// Selections that mirror each other (same owner, kind, query and previous
+    /// name, for example the seeded Cheese selection in both the product and
+    /// article workspaces) follow the new name. The demo shows one filter in
+    /// several type panels, so a rename must not leave a stale label behind.
     pub async fn update_assortment(
         &self,
         id: Uuid,
         name: &str,
         query: &Value,
     ) -> Result<(), Error> {
-        let client = self.checkout().await?;
-        client
-            .execute(
-                "UPDATE assortments SET name = $2, query = $3 WHERE id = $1 AND deleted_at IS NULL",
-                &[&id, &name, query],
+        let mut client = self.checkout().await?;
+        let tx = client.transaction().await?;
+        let previous = tx
+            .query_opt(
+                "SELECT owner_id, kind, name, query FROM assortments
+                 WHERE id = $1 AND deleted_at IS NULL FOR UPDATE",
+                &[&id],
             )
             .await?;
+        tx.execute(
+            "UPDATE assortments SET name = $2, query = $3 WHERE id = $1 AND deleted_at IS NULL",
+            &[&id, &name, query],
+        )
+        .await?;
+        if let Some(row) = previous {
+            let owner_id: Uuid = row.get("owner_id");
+            let kind: String = row.get("kind");
+            let previous_name: String = row.get("name");
+            let previous_query: Value = row.get("query");
+            if previous_name != name {
+                tx.execute(
+                    "UPDATE assortments SET name = $2
+                     WHERE id <> $1 AND deleted_at IS NULL AND owner_id = $3 AND kind = $4
+                       AND name = $5 AND query = $6",
+                    &[
+                        &id,
+                        &name,
+                        &owner_id,
+                        &kind,
+                        &previous_name,
+                        &previous_query,
+                    ],
+                )
+                .await?;
+            }
+        }
+        tx.commit().await?;
         Ok(())
     }
 
