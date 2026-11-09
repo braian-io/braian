@@ -99,8 +99,66 @@ async function shot(page: Page, name: string) {
   await page.screenshot({ path: `${shots}/${name}.png`, fullPage: true })
 }
 
-test('only the explicitly targeted table moves a shared Name column', async ({ page }) => {
-  test.setTimeout(180_000)
+/** Run one move and prove the other table keeps its exact column order. */
+async function moveOnly(options: {
+  page: Page
+  target: Locator
+  other: Locator
+  viewId: string
+  direction: 'left' | 'right'
+  label: string
+  trigger: () => Promise<unknown>
+}) {
+  const { page, target, other, viewId, direction, label, trigger } = options
+  const beforeTarget = await columnIds(target)
+  const beforeOther = await columnIds(other)
+  const from = beforeTarget.indexOf('name')
+  expect(from, `${label}: target starts with Name`).toBeGreaterThanOrEqual(0)
+  const to = from + (direction === 'left' ? -1 : 1)
+  expect(to, `${label}: move stays in bounds`).toBeGreaterThanOrEqual(0)
+  expect(to, `${label}: move stays in bounds`).toBeLessThan(beforeTarget.length)
+
+  const saved = columnPrefs(page, viewId)
+  await trigger()
+  await saved
+  await expect
+    .poll(async () => (await columnIds(target)).indexOf('name'), { message: `${label}: target moves ${direction}` })
+    .toBe(to)
+  expect(await columnIds(other), `${label}: other table is untouched`).toEqual(beforeOther)
+}
+
+async function moveFromPalette(page: Page, direction: 'left' | 'right') {
+  const label = direction === 'left' ? 'Move column left' : 'Move column right'
+  await page.keyboard.press('Control+k')
+  await expect(page.getByTestId('command-palette')).toBeVisible()
+  await page.getByTestId('palette-input').fill(label)
+  const option = page
+    .getByTestId('command-palette')
+    .getByRole('option')
+    .filter({ hasText: label })
+    .first()
+  await expect(option).toContainText('Name')
+  await page.keyboard.press('Enter')
+  await expect(page.getByTestId('command-palette')).toBeHidden()
+}
+
+async function moveFromHeaderMenu(page: Page, table: Locator, direction: 'left' | 'right') {
+  await table.getByTestId('col-name').click({ button: 'right' })
+  const menu = page.getByTestId('context-menu')
+  await expect(menu).toBeVisible()
+  await menu.getByRole('menuitem', { name: new RegExp(`Move column ${direction}`) }).click()
+}
+
+async function moveOnBus(page: Page, viewId: string, direction: 'left' | 'right') {
+  await page.evaluate(async ({ targetViewId, moveDirection }) => {
+    const busPath = '/src/ui-bus.ts'
+    const bus = await import(/* @vite-ignore */ busPath)
+    bus.dispatchUi('ui.move_column', { column: 'name', direction: moveDirection, viewId: targetViewId })
+  }, { targetViewId: viewId, moveDirection: direction })
+}
+
+test('every move path targets the clicked header table, never its neighbor', async ({ page }) => {
+  test.setTimeout(300_000)
   await login(page)
   const fixture = await createWorkspace(page)
   await openWorkspace(page, fixture.name)
@@ -114,81 +172,91 @@ test('only the explicitly targeted table moves a shared Name column', async ({ p
 
   const beforeProducts = await columnIds(products)
   const beforeArticles = await columnIds(articles)
-  const nameIndex = beforeProducts.indexOf('name')
-  expect(nameIndex).toBeGreaterThanOrEqual(0)
-  expect(beforeArticles).toContain('name')
+  expect(beforeProducts.indexOf('name')).toBe(1)
+  expect(beforeArticles.indexOf('name')).toBe(1)
   await shot(page, '01-before')
 
-  // Keyboard: Ctrl+Shift+Right follows the last activated header in Products.
-  const productsName = products.getByTestId('col-name')
-  await productsName.click()
-  await expect(productsName).toHaveAttribute('data-active-column', 'true')
-  const keyboardMove = columnPrefs(page, fixture.productsId)
-  await page.keyboard.press('Control+Shift+ArrowRight')
-  await keyboardMove
-  await expect.poll(async () => (await columnIds(products)).indexOf('name')).toBe(nameIndex + 1)
-  expect(await columnIds(articles)).toEqual(beforeArticles)
-  await shot(page, '02-after-keyboard-products')
+  const keyboard = (direction: 'left' | 'right') => () =>
+    page.keyboard.press(direction === 'left' ? 'Control+Shift+ArrowLeft' : 'Control+Shift+ArrowRight')
 
-  // Ctrl+K uses the same registry command and must only move Products.
+  // 1) Keyboard after a header click, both tables and both directions.
   await products.getByTestId('col-name').click()
-  await page.keyboard.press('Control+k')
-  await expect(page.getByTestId('command-palette')).toBeVisible()
-  await page.getByTestId('palette-input').fill('Move column left')
-  const paletteMove = page.getByTestId('command-palette').getByRole('option').filter({ hasText: 'Move column left' }).first()
-  await expect(paletteMove).toContainText('Name')
-  const paletteDone = columnPrefs(page, fixture.productsId)
-  await page.keyboard.press('Enter')
-  await paletteDone
-  await expect.poll(async () => (await columnIds(products)).indexOf('name')).toBe(nameIndex)
-  expect(await columnIds(articles)).toEqual(beforeArticles)
-
-  // Switch focus to Articles, then run the header menu command targeted at Products.
+  await expect(products.getByTestId('col-name')).toHaveAttribute('data-active-column', 'true')
+  await moveOnly({ page, target: products, other: articles, viewId: fixture.productsId, direction: 'right', label: 'keyboard products right', trigger: keyboard('right') })
+  await moveOnly({ page, target: products, other: articles, viewId: fixture.productsId, direction: 'left', label: 'keyboard products left', trigger: keyboard('left') })
   await articles.getByTestId('col-name').click()
-  await products.getByTestId('col-name').click({ button: 'right' })
-  const menu = page.getByTestId('context-menu')
-  await expect(menu).toBeVisible()
-  const headerMove = columnPrefs(page, fixture.productsId)
-  await menu.getByRole('menuitem', { name: /Move column right/ }).click()
-  await headerMove
-  await expect.poll(async () => (await columnIds(products)).indexOf('name')).toBe(nameIndex + 1)
+  await expect(articles.getByTestId('col-name')).toHaveAttribute('data-active-column', 'true')
+  await moveOnly({ page, target: articles, other: products, viewId: fixture.articlesId, direction: 'right', label: 'keyboard articles right', trigger: keyboard('right') })
+  await moveOnly({ page, target: articles, other: products, viewId: fixture.articlesId, direction: 'left', label: 'keyboard articles left', trigger: keyboard('left') })
+  expect(await columnIds(products)).toEqual(beforeProducts)
   expect(await columnIds(articles)).toEqual(beforeArticles)
-  await shot(page, '03-after-header-explicit-products')
+  await shot(page, '02-after-keyboard-both')
 
-  // The agent sends ui.move_column with the same explicit viewId on the UI bus.
-  const busMove = columnPrefs(page, fixture.productsId)
-  await page.evaluate(async ({ viewId }) => {
-    const busPath = '/src/ui-bus.ts'
-    const bus = await import(/* @vite-ignore */ busPath)
-    bus.dispatchUi('ui.move_column', { column: 'name', direction: 'left', viewId })
-  }, { viewId: fixture.productsId })
-  await busMove
-  await expect.poll(async () => (await columnIds(products)).indexOf('name')).toBe(nameIndex)
+  // 2) Ctrl+K after a header click, both tables. Repeat clicks keep the same
+  // active column, which used to leave the move target on the other pane.
+  await products.getByTestId('col-name').click()
+  await moveOnly({ page, target: products, other: articles, viewId: fixture.productsId, direction: 'right', label: 'palette products right', trigger: () => moveFromPalette(page, 'right') })
+  await products.getByTestId('col-name').click()
+  await moveOnly({ page, target: products, other: articles, viewId: fixture.productsId, direction: 'left', label: 'palette products left', trigger: () => moveFromPalette(page, 'left') })
+  await articles.getByTestId('col-name').click()
+  await moveOnly({ page, target: articles, other: products, viewId: fixture.articlesId, direction: 'right', label: 'palette articles right', trigger: () => moveFromPalette(page, 'right') })
+  await articles.getByTestId('col-name').click()
+  await moveOnly({ page, target: articles, other: products, viewId: fixture.articlesId, direction: 'left', label: 'palette articles left', trigger: () => moveFromPalette(page, 'left') })
+  expect(await columnIds(products)).toEqual(beforeProducts)
   expect(await columnIds(articles)).toEqual(beforeArticles)
-  await shot(page, '04-after-bus-explicit-products')
+  await shot(page, '03-after-palette-both')
 
-  // Legal boundaries do nothing and cannot leak to the other table.
-  const atBoundary = { products: await columnIds(products), articles: await columnIds(articles) }
-  await products.getByTestId(`col-${atBoundary.products[0]}`).click()
+  // 3) Cell focus keyboard, both tables and both directions.
+  const cellKeyboard = (table: Locator, direction: 'left' | 'right') => async () => {
+    await table.getByTestId('object-row').first().locator('[data-column="name"]').click()
+    await keyboard(direction)()
+  }
+  await moveOnly({ page, target: products, other: articles, viewId: fixture.productsId, direction: 'right', label: 'cell products right', trigger: cellKeyboard(products, 'right') })
+  await moveOnly({ page, target: products, other: articles, viewId: fixture.productsId, direction: 'left', label: 'cell products left', trigger: cellKeyboard(products, 'left') })
+  await moveOnly({ page, target: articles, other: products, viewId: fixture.articlesId, direction: 'right', label: 'cell articles right', trigger: cellKeyboard(articles, 'right') })
+  await moveOnly({ page, target: articles, other: products, viewId: fixture.articlesId, direction: 'left', label: 'cell articles left', trigger: cellKeyboard(articles, 'left') })
+  expect(await columnIds(products)).toEqual(beforeProducts)
+  expect(await columnIds(articles)).toEqual(beforeArticles)
+
+  // 4) Header menu, both tables and both directions.
+  await moveOnly({ page, target: products, other: articles, viewId: fixture.productsId, direction: 'right', label: 'menu products right', trigger: () => moveFromHeaderMenu(page, products, 'right') })
+  await moveOnly({ page, target: products, other: articles, viewId: fixture.productsId, direction: 'left', label: 'menu products left', trigger: () => moveFromHeaderMenu(page, products, 'left') })
+  await moveOnly({ page, target: articles, other: products, viewId: fixture.articlesId, direction: 'right', label: 'menu articles right', trigger: () => moveFromHeaderMenu(page, articles, 'right') })
+  await moveOnly({ page, target: articles, other: products, viewId: fixture.articlesId, direction: 'left', label: 'menu articles left', trigger: () => moveFromHeaderMenu(page, articles, 'left') })
+  expect(await columnIds(products)).toEqual(beforeProducts)
+  expect(await columnIds(articles)).toEqual(beforeArticles)
+  await shot(page, '04-after-header-menu-both')
+
+  // 5) Explicit ui.move_column on the bus, both tables and both directions.
+  await moveOnly({ page, target: products, other: articles, viewId: fixture.productsId, direction: 'right', label: 'bus products right', trigger: () => moveOnBus(page, fixture.productsId, 'right') })
+  await moveOnly({ page, target: products, other: articles, viewId: fixture.productsId, direction: 'left', label: 'bus products left', trigger: () => moveOnBus(page, fixture.productsId, 'left') })
+  await moveOnly({ page, target: articles, other: products, viewId: fixture.articlesId, direction: 'right', label: 'bus articles right', trigger: () => moveOnBus(page, fixture.articlesId, 'right') })
+  await moveOnly({ page, target: articles, other: products, viewId: fixture.articlesId, direction: 'left', label: 'bus articles left', trigger: () => moveOnBus(page, fixture.articlesId, 'left') })
+  expect(await columnIds(products)).toEqual(beforeProducts)
+  expect(await columnIds(articles)).toEqual(beforeArticles)
+  await shot(page, '05-after-bus-both')
+
+  // Legal boundaries cannot leak to the other table. Articles still has Name
+  // active, so a wrong target would move it instead of doing nothing.
+  const firstColumn = beforeProducts[0]!
+  const lastColumn = beforeProducts[beforeProducts.length - 1]!
+  await products.getByTestId(`col-${firstColumn}`).click()
   await page.keyboard.press('Control+Shift+ArrowLeft')
   await page.waitForTimeout(400)
-  expect(await columnIds(products)).toEqual(atBoundary.products)
-  expect(await columnIds(articles)).toEqual(atBoundary.articles)
+  expect(await columnIds(products)).toEqual(beforeProducts)
+  expect(await columnIds(articles)).toEqual(beforeArticles)
 
-  const lastColumn = atBoundary.products[atBoundary.products.length - 1]!
   await products.getByTestId(`col-${lastColumn}`).click()
   await page.keyboard.press('Control+Shift+ArrowRight')
   await page.waitForTimeout(400)
-  expect(await columnIds(products)).toEqual(atBoundary.products)
-  expect(await columnIds(articles)).toEqual(atBoundary.articles)
+  expect(await columnIds(products)).toEqual(beforeProducts)
+  expect(await columnIds(articles)).toEqual(beforeArticles)
 
   // Reload keeps both saved column orders.
-  const finalProducts = await columnIds(products)
-  const finalArticles = await columnIds(articles)
   await openWorkspace(page, fixture.name)
   await expect(products.getByTestId('object-row').first()).toBeVisible({ timeout: 60_000 })
   await expect(articles.getByTestId('object-row').first()).toBeVisible({ timeout: 60_000 })
-  await expect.poll(() => columnIds(products)).toEqual(finalProducts)
-  await expect.poll(() => columnIds(articles)).toEqual(finalArticles)
-  await shot(page, '05-after-reload')
+  await expect.poll(() => columnIds(products)).toEqual(beforeProducts)
+  await expect.poll(() => columnIds(articles)).toEqual(beforeArticles)
+  await shot(page, '06-after-reload')
 })

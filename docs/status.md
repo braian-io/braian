@@ -1,11 +1,23 @@
 # Status 2026-11-09
 
-Bas: `origin/main` tip `f001573` (#272). Senaste migrering i repot: `V44__proposal_recoveries.sql` (#268).
+Bas: `origin/main` tip `77ff773` (#273). Senaste migrering i repot: `V44__proposal_recoveries.sql` (#268).
 
-## Rad 212-uppföljning i den här PR:en — blandat utfall får samma slutstatus
+## Rad 107-uppföljning i den här PR:en — header-klick sätter målvyn
 
-Grenen `junior/212-mixed-outcome-status` utgår från `549d2d3` (#271) och är
-inte mergad, deployad eller accepterad. Den rättar en kvarvarande
+Den här grenen (`junior/107-header-column-target`) utgår från `549d2d3` (#271) och är **inte mergad, deployad eller accepterad**. Den rättar Test-avvisningen på demo `549d2d3`: ingen väg flyttade kolumnen i båda tabellerna längre, men två av fem vägar flyttade den i fel tabell. Ett header-klick satte inte den tabellen som mål, så upplösningen föll tillbaka på tabellen som senast hade cellfokus.
+
+- `apps/web/src/column-move.ts`: målupplösningen föredrar nu den senast aktiverade kolumnen (header-klick eller cellfokus) före den fokuserade panen. Fokus är kvar som fallback när ingen kolumn aktiverats. Ett explicit `viewId` vinner fortfarande.
+- `apps/web/src/panes.tsx`: varje kolumnaktivering publiceras direkt via `activateColumn`, även ett upprepat header-klick som lämnar `activeColumn` oförändrat. Det gör att tangentbordet och Ctrl+K följer den tabell vars header användaren senast klickade. Sortering på header-klick är oförändrad.
+- Header-menyn, cellfokus, radmenyn, buslyssnaren och ett explicit `viewId` behåller samma `viewId`-plumbing som #270.
+- `apps/web/src/column-move-target.test.tsx`: två tabeller med samma `Name`; senast aktiverad kolumn vinner över fokus, explicit `viewId` vinner, och ett header-klick (även upprepat) sätter målvyn.
+- `apps/web/e2e/column-move-target.spec.ts`: Products och Articles sida vid sida. Alla fem vägar körs mot båda tabellerna och båda riktningarna: tangentbord efter header-klick, Ctrl+K efter header-klick (inklusive upprepat klick), cellfokus-tangentbord, header-meny och explicit `ui.move_column` på bus. Varje steg kontrollerar att grann tabellen behåller exakt sin kolumnordning; första/sista kolumn är gränsfall och omladdning bevarar ordningen.
+- Bevis i uppgiftsägda `--rm`-containrar på `row107follow-net` mot syntetisk Postgres 18 och Typesense 30.2, utan host-verktyg, hostnätverk eller Docker-socket: `pnpm typecheck` grön; hela vitest-sviten 150 filer / 816 tester gröna; `column-move-target.spec.ts` 1/1 (30,5 s); `move-col-flash-sse`, `column-drag-and-system-fields`, `palette-root-focus` och `shortcut-registry` 13/13; `scripts/check-english.py` exit 0. Skärmdumpar: `01-before.png` till `06-after-reload.png` i uppgiftens scratchkatalog.
+- `apps/web/src/data-model.tsx` är orörd (`sha256 2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`).
+- Header-klick sorterar fortfarande. Om header-klick i stället ska välja utan att sortera, eller om ett separat väljargest ska införas, bör bli en egen backlog-rad; det är inte ändrat här.
+
+## Rad 212-uppföljning — levererad på main (#273)
+
+Mergad till `main` som #273 (`77ff773`). Grenen utgick från `549d2d3` (#271). Inte deployad eller accepterad. Den rättar en kvarvarande
 inkonsekvens efter #268: när A redan var sparad (raden `accepted`) och B
 fortfarande `pending`, stängde en Discard från draft-baren det öppna
 förslaget som `discarded`. Samma blandade medlemskap via den historiska
@@ -114,7 +126,7 @@ Skalprovet (5 000 skrivningar i sekunden, 1 miljon och 10 miljoner objekt) är i
 
 ## Levererat sedan 2026-11-01 (verifierat via `git log` på main)
 
-Sedan statusen 2026-11-01 (`8300319` / #145) har ungefär #146–#272 landat (`git rev-list --count 8300319..f001573`; #265, som gav rad 170 läsbara URL:er, är mergad som `61c6e3c`, #270 som gav rad 107 kolumnflytt stannar i måltabellen är mergad som `a7e7d58`, och #271 som gav rad 215 Edit selection-fokus är mergad som `549d2d3`). Den här PR:en är rad 212-uppföljningen (blandat Discard-utfall) och är inte mergad, deployad eller accepterad. #272 (rad 135-uppföljning) landade på main som `f001573`. Många leveranser står på Att testa i Notion och väntar på Glenns genomgång.
+Sedan statusen 2026-11-01 (`8300319` / #145) har ungefär #146–#272 landat (`git rev-list --count 8300319..f001573`; #265, som gav rad 170 läsbara URL:er, är mergad som `61c6e3c`, #270 som gav rad 107 kolumnflytt stannar i måltabellen är mergad som `a7e7d58`, och #271 som gav rad 215 Edit selection-fokus är mergad som `549d2d3`). Den här PR:en är rad 107-uppföljningen (rubrikklick sätter måltabell) och är inte mergad, deployad eller accepterad. #272 (`f001573`) och #273 (`77ff773`) landade på main. Många leveranser står på Att testa i Notion och väntar på Glenns genomgång.
 
 ### Kartläggning #253–#270 (squash på main, `git log` + `gh pr view`)
 - #253 `2d78daf` · rad 149 · fix(web): move hardcoded UI strings into copy (row 149)

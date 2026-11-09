@@ -8,9 +8,11 @@ export type ColumnMoveTarget = {
 }
 
 /**
- * Resolve one table for a column move. An explicit view wins. Otherwise use the
- * focused table when it has an active header, then the table whose header was
- * activated last. The result is always one view, never a broadcast.
+ * Resolve one table for a column move. An explicit view wins. Otherwise the
+ * column the user activated last (a header click or a cell focus) names the
+ * table, even when another pane still holds document focus. When no column was
+ * activated, fall back to the focused table. The result is always one view,
+ * never a broadcast.
  */
 export function resolveColumnMoveTarget(target: ColumnMoveTarget = {}) {
   const snapshot = readUiContext()
@@ -22,18 +24,18 @@ export function resolveColumnMoveTarget(target: ColumnMoveTarget = {}) {
       column: explicitColumn || readActiveColumn(named) || undefined,
     }
   }
-  const focusedColumn = snapshot.focused ? readActiveColumn(snapshot.focused) : null
-  if (snapshot.focused && focusedColumn) {
-    return {
-      viewId: snapshot.focused,
-      column: explicitColumn || focusedColumn,
-    }
-  }
   const last = readLastActiveColumn()
   if (last) {
     return {
       viewId: last.viewId,
       column: explicitColumn || last.column,
+    }
+  }
+  const focusedColumn = snapshot.focused ? readActiveColumn(snapshot.focused) : null
+  if (snapshot.focused && focusedColumn) {
+    return {
+      viewId: snapshot.focused,
+      column: explicitColumn || focusedColumn,
     }
   }
   return {
