@@ -2060,6 +2060,7 @@ For a clear edit, such as renaming the selected object, call propose_change imme
 Call ask_person only when a real decision is missing, such as which of several ambiguous fields to use. Do not guess and do not use it to confirm an obvious action. \
 The UI snapshot is the current screen: workspace, open panes with their types, focused pane, selected objects (id, key, name, type, version), active filter and sort, the open table's columns (id, header, hidden), and the data language. \
 To hide or show a column, call ui_hide_column or ui_show_column with {{\"column\": id}}. \
+To move a column, call ui_move_column with {{\"column\": id, \"direction\": \"left\" or \"right\", \"viewId\": focused pane id}}. \
 Answer questions about the selection, the open views, or the workspace from that snapshot. Do not call search or list_objects for those questions, and do not ask for a screenshot. \
 Call get_object when a field value is missing from the snapshot. Call ui_get_context or ui_get_selection to read the snapshot again. \
 UI snapshot: {snapshot}"
@@ -3070,6 +3071,28 @@ async fn register_view_type(
 /// Copies the workspace type into selection calls. The agent loop is the only
 /// caller that has the screen; a human request is left unchanged.
 fn selection_args(operation: &str, args: &Value, context: &Value) -> Value {
+    if operation == "ui.move_column" {
+        let mut call = args.clone();
+        let Some(object) = call.as_object_mut() else {
+            return call;
+        };
+        let named = object
+            .get("viewId")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+            .is_some();
+        if !named
+            && let Some(focused) = context
+                .get("focused")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|text| !text.is_empty())
+        {
+            object.insert("viewId".into(), json!(focused));
+        }
+        return call;
+    }
     if operation != "list_assortments" && operation != "assortment.save" {
         return args.clone();
     }
@@ -8141,6 +8164,40 @@ mod tests {
         assert_eq!(value["name"], "ui.filter");
         assert_eq!(value["args"]["q"], "tent");
         assert_eq!(value["applied"], false);
+    }
+
+    #[test]
+    fn ui_move_column_keeps_an_explicit_view_id() {
+        let value = ui_command(
+            "ui.move_column",
+            &json!({ "column": "name", "direction": "left", "viewId": "products" }),
+        );
+        assert_eq!(value["ui"], true);
+        assert_eq!(value["args"]["viewId"], "products");
+        assert_eq!(value["args"]["column"], "name");
+    }
+
+    #[test]
+    fn move_column_args_follow_the_focused_view_without_losing_an_explicit_one() {
+        let context = json!({
+            "focused": "products",
+            "panes": [
+                { "id": "products", "type": "object_table", "title": "Products", "focused": true },
+                { "id": "articles", "type": "object_table", "title": "Articles", "focused": false }
+            ]
+        });
+        let focused = selection_args(
+            "ui.move_column",
+            &json!({ "column": "name", "direction": "right" }),
+            &context,
+        );
+        assert_eq!(focused["viewId"], "products");
+        let explicit = selection_args(
+            "ui.move_column",
+            &json!({ "column": "name", "direction": "right", "viewId": "articles" }),
+            &context,
+        );
+        assert_eq!(explicit["viewId"], "articles");
     }
 
     /// Names the browser lists in `apps/web/src/ui-bus.ts` (`uiOperations`).

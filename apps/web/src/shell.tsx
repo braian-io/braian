@@ -63,6 +63,7 @@ import { CommandPalette } from './palette'
 import { SharedContextMenuHost, prefersNativeContextMenu } from './shared-context-menu'
 import { StateNote } from './states'
 import { requestNewSelection } from './assortment-filter'
+import { dispatchColumnMove } from './column-move'
 import { dispatchUi } from './ui-bus'
 import { registerCommandRunner, runCommand } from './command-registry'
 import { useShortcutBindings } from './shortcut-bindings'
@@ -614,12 +615,10 @@ export function Shell() {
         if (target.column) dispatchUi('ui.hide_column', { column: String(target.column) })
       }),
       registerCommandRunner('column:move-left', (target) => {
-        const column = target.column ? String(target.column) : readUiContext().activeColumn
-        if (column) dispatchUi('ui.move_column', { column, direction: 'left' })
+        dispatchColumnMove('left', target)
       }),
       registerCommandRunner('column:move-right', (target) => {
-        const column = target.column ? String(target.column) : readUiContext().activeColumn
-        if (column) dispatchUi('ui.move_column', { column, direction: 'right' })
+        dispatchColumnMove('right', target)
       }),
       registerModelCommandRunners(),
     ]
@@ -1011,9 +1010,7 @@ export function Shell() {
     zoom: () => applyRef.current('zoom', {}),
     closeView: () => applyRef.current('close_view', {}),
     moveColumn: (direction) => {
-      const column = readUiContext().activeColumn
-      if (!column) return
-      dispatchUi('ui.move_column', { column, direction })
+      dispatchColumnMove(direction)
     },
     paletteOpen: Boolean(paletteMode),
     helpOpen: help,

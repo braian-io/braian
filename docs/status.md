@@ -1,6 +1,6 @@
 # Status 2026-11-07
 
-Bas: `origin/main` tip `ca7a786` (#266). Senaste migrering i repot: `V43__soft_delete.sql` (#260).
+Bas: `origin/main` tip `4cd25f7` (#267). Senaste migrering i repot: `V43__soft_delete.sql` (#260).
 
 ## Rad 170 i den här PR:en — byggt på branchen, inte deployat
 
@@ -12,6 +12,18 @@ Läsbara URL:er (Notion 170) är byggda på den här branchen. De ligger **inte*
 - Nyckellösa objekt (länkrader) får `~` plus det slumpmässiga id-suffixet, inte tidsstämpel-prefixet som UUIDv7 delar. Delar flera nyckellösa rader samma 8 tecken förlängs suffixet (12, 16, sedan 32) tills det är unikt. De slås upp med `GET /v1/objects?id_suffix=...` i katalogen; typen utelämnas eftersom en länkrad har länktypen.
 - `GET /v1/objects` accepterar både typnyckel och typ-id i `type`. Sparade vyer lagrar typ-id (V18), så en direktlänk annars fick tom träff.
 - Vitest täcker Unicode-slug (även namn som bara är kombinerande tecken), fallback, krock, escapad `~` i typad SKU, nyckellöst suffix som förlängs vid delad svans, kodning, uuid-avvisning, att en delad nyckel slås upp i produkttypen och att ett URL-objekt inte tappas när en annan rad redan är vald. `e2e/readable-urls.spec.ts` är registrerad i `scripts/e2e.mjs`: direktlänk och omladdning, nyckel i stället för uuid, navigationsslug, byte av nyckel, dubbletter, kodning, typad SKU med `~`, bakåt/framåt, trasig eller saknad måltavla, nyckellös länkrad efter omladdning och två kolliderande nyckellösa länkar vars utskrivna förlängda tokens laddas om. `e2e/palette-drill.spec.ts` har ett regressionstest för att inloggning når en objekttabell även när en tidigare sparad layout har en agentflik i fokus. Körningen är gjord i isolerade `--rm`-containrar mot syntetisk Postgres/Typesense; den är inte deployad.
+
+## Rad 107 i den här PR:en — kolumnflytt stannar i måltabellen
+
+Kolumnflytt (Notion 107) är byggd på den här branchen och är **inte** mergad, deployad eller accepterad. Reproduktionen 2026-11-07: Products och Articles har båda `Name`, och Ctrl+Shift+→ på Products.Name flyttade `Name` i båda tabellerna eftersom `ui.move_column` broadcastades utan vyidentitet.
+
+- `apps/web/src/column-move.ts` är en gemensam målupplösning. Tangentbordet läser fokuserad vy och den vyns egen aktiva kolumn (`readActiveColumn`), aldrig en annan panes rubrik. Register-körarna (`column:move-left/right`), Ctrl+K, header-/cell-/radmenyn och buslyssnaren använder samma `viewId`.
+- Header- och cellmenyn skickar `target.viewId = view.id`. Ctrl+K tar den fokuserade tabellen, annars tabellen vars rubrik senast aktiverades (samma `viewId`), och läser den tabellens egna kolumner. `ui.move_column` bär `{ column, direction, viewId }`. `ObjectTable` lyssnar bara när `viewId` är dess egen vy; ett äldre event utan `viewId` följer fokus i stället för att broadcasta.
+- Agenten får `viewId` i `ui_move_column`-anropet. `selection_args` behåller ett explicit `viewId` och fyller annars i fokuserad pane från UI-snapshoten. `ui_command` ekar argumenten oförändrade.
+- Oförändrat: Ctrl+K:s fyra Alt+piltangbordsrader för Focus pane, grannpanesnavigering, dockens Move left/right/up/down/Maximize/Close med titel+genväg, Alt+←/→ och Ctrl+Alt+Z maximera/återställ. Inga nya dubblettrader i paletten.
+- Vitest: `column-move-target.test.tsx` (två tabeller med samma `Name`, tangentbordsmål, explicit header-/palettmål efter fokusbyte, agent-/busdispatch utan viewId-broadcast, gränsfall) samt registry-, palette-, shortcut- och ui-bus-testerna. `cargo test -p braian-api ui_move_column` och `move_column_args_follow` täcker agentargumenten; `cargo fmt --all --check` är grön.
+- Playwright: `e2e/column-move-target.spec.ts` skapar en isolerad workspace med Products och Articles sida vid sida, flyttar `Name` med Ctrl+Shift+→, Ctrl+K, header-menyn med fokus i Articles och en explicit `ui.move_column` på bus; före/efter-kolumnordning för båda tabellerna, gränsfall för första/sista kolumn och omladdning ingår. Skärmdumpar: `artifacts/row107/01-before.png` till `05-after-reload.png`.
+- Körningarna är gjorda i isolerade `--rm`-containrar på ett uppgiftsägt Docker-nätverk mot syntetisk Postgres/Typesense. Web-typecheck är grön. Full web-unitsvit utan `path-cell` gav 810/811; den enda röda var en 5-sekundstimeout i den tidskänsliga `palette-home-end.test.tsx`. `palette-home-end`, `path-cell`, `active-row` och `column-move-target` passerade tillsammans vid isolerad omkörning (31/31). Ingen av dem rör den här ändringen.
 
 Braian går att starta lokalt och att klicka igenom på [demo.braian.io](https://demo.braian.io). Postgres är källan och ändringsloggen. Indexer, sök, auth, förslag och webbgränssnittet sitter på samma kedja. Flödet står i `docs/events.md`. Demokatalogen som `just dev` visar är bara seed: hjälteobjekt plus 240 syntetiska livsmedel (leverantörer, produkter och artiklar). Etiketter finns på sv/en/de och objektdata är engelska. Strukturen heter Food, leverantörer står utanför trädet och pekas ut med länkar. Tester skriver i databasen `braian_e2e` och sökaliaset `braian_e2e`, inte i demon.
 

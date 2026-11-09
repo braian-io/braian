@@ -63,8 +63,10 @@ import {
   typeViewPaletteItems,
 } from './type-labels'
 import { linkedTypeLinks, peerSourceOf } from './view-source'
+import { resolveColumnMoveTarget } from './column-move'
 import { dispatchUi } from './ui-bus'
 import {
+  readColumns,
   readSelection,
   readTreeNode,
   readUiContext,
@@ -353,6 +355,12 @@ export function CommandPalette({
   }, [sourceTarget, peerSourceByView])
   // Columns of the open table, read once when the palette opens.
   const tableColumns = useMemo(() => readUiContext().columns, [])
+  // Move column follows the focused table, or the table whose header was last clicked.
+  const moveTarget = useMemo(() => resolveColumnMoveTarget(), [focusViewId])
+  const moveColumns = useMemo(
+    () => (moveTarget.viewId ? readColumns(moveTarget.viewId) : tableColumns),
+    [moveTarget.viewId, tableColumns],
+  )
   const catalogsList = useCatalogsQuery()
   const catalogOptions = (catalogsList.data ?? []).map((row) => ({
     id: row.id || MASTER_CATALOG_ID,
@@ -407,7 +415,7 @@ export function CommandPalette({
         subtitle: copy.assortments,
         keywords: ['assortment', 'selection', 'delete', 'remove'],
       },
-      ...columnEntries(tableColumns, readUiContext().activeColumn),
+      ...columnEntries(moveColumns, moveTarget.column ?? null),
       ...(session.group
         ? [{
             id: 'model:delete-group',
@@ -449,7 +457,7 @@ export function CommandPalette({
           ]),
       { id: 'attr:new', group: 'model' as const, title: copy.newAttribute, subtitle: copy.attributeDefinitions, keywords: ['attribute', 'create'] },
     ],
-    [workspaces, views, session.group, types, selectedKey, suggestionTotal, feedbackEnabled, theme, tableColumns, defs.data, operationRecords],
+    [workspaces, views, session.group, types, selectedKey, suggestionTotal, feedbackEnabled, theme, moveColumns, moveTarget, defs.data, operationRecords, focusViewId],
   )
   const hits: PaletteItem[] = objectPaletteRows((found.data?.hits as Json[] | undefined) ?? [], defs.data)
   useEffect(() => {
@@ -756,8 +764,9 @@ export function CommandPalette({
     }
     if (id === 'column:move-left' || id === 'column:move-right') {
       void runCommand(id, {
-        column: readUiContext().activeColumn ?? undefined,
-        columnHeader: undefined,
+        column: moveTarget.column,
+        columnHeader: moveColumns.find((column) => column.id === moveTarget.column)?.header,
+        viewId: moveTarget.viewId,
       })
       onClose()
       return
