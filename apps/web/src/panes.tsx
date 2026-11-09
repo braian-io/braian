@@ -762,6 +762,13 @@ export function ObjectTable({
   useEffect(() => {
     publishActiveColumn(view.id, activeColumn || null)
   }, [activeColumn, view.id])
+  // Record every activation directly. A repeated click on the same header leaves
+  // state unchanged, so the effect above would not run and the move target would
+  // stay on another pane.
+  const activateColumn = (column: string) => {
+    setActiveColumn(column)
+    publishActiveColumn(view.id, column)
+  }
   const exportVisible = () => {
     const body = exportPayload({
       columns: columnDefs,
@@ -994,7 +1001,7 @@ export function ObjectTable({
 
   const onRowMenu = (index: number, x: number, y: number, column: string) => {
     setActive(index)
-    if (column) setActiveColumn(column)
+    if (column) activateColumn(column)
     const row = rowAt(index)
     if (!row) return
     session.setObjectId(row.id)
@@ -1038,7 +1045,7 @@ export function ObjectTable({
     if (prefersNativeContextMenu(event.target)) return
     event.preventDefault()
     event.stopPropagation()
-    setActiveColumn(column)
+    activateColumn(column)
     const row = active < 0 ? undefined : rowAt(active)
     const box = event.currentTarget.getBoundingClientRect()
     // A pointer right-click carries button 2; the ContextMenu key opens this event without one.
@@ -1066,7 +1073,7 @@ export function ObjectTable({
     if (header && headerColumn) {
       const row = active < 0 ? undefined : rowAt(active)
       const box = header.getBoundingClientRect()
-      setActiveColumn(headerColumn)
+      activateColumn(headerColumn)
       openSharedContextMenu({
         context: 'table-header',
         x: box.left,
@@ -1166,7 +1173,7 @@ export function ObjectTable({
       event.preventDefault()
       const at = shown.indexOf(cellColumn)
       const next = shown[Math.max(0, Math.min(shown.length - 1, at + (event.key === 'ArrowRight' ? 1 : -1)))]
-      if (next) setActiveColumn(next)
+      if (next) activateColumn(next)
       return
     }
     if (!['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End', 'Enter', ' ', 'Escape'].includes(event.key)) return
@@ -1939,7 +1946,7 @@ export function ObjectTable({
                           ? 'desc'
                           : false
                     }
-                    onActivate={() => setActiveColumn(id)}
+                    onActivate={() => activateColumn(id)}
                     onSort={() => {
                       if (!column.sort) return
                       // Three states (TanStack enableSortingRemoval equivalent):
@@ -2006,7 +2013,7 @@ export function ObjectTable({
                         flash={flashId === row.id}
                         active={active === rowIndex}
                         activeColumn={active === rowIndex ? cellColumn : ''}
-                        onColumn={setActiveColumn}
+                        onColumn={activateColumn}
                         onActivate={onRowClick}
                         onMenu={onRowMenu}
                         onCellDoubleClick={(row, column) => {
@@ -2045,7 +2052,7 @@ export function ObjectTable({
                   flash={flashId === row.id}
                   active={active === item.index}
                   activeColumn={active === item.index ? cellColumn : ''}
-                  onColumn={setActiveColumn}
+                  onColumn={activateColumn}
                   onActivate={onRowClick}
                   onMenu={onRowMenu}
                   onCellDoubleClick={(row, column) => {

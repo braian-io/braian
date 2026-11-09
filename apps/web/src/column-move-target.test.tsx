@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useMemo, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { dispatchColumnMove, resolveColumnMoveTarget } from './column-move'
@@ -147,19 +147,45 @@ function position(pane: 'products-pane' | 'articles-pane', column: string) {
 }
 
 describe('column move targets one table (Notion 107)', () => {
-  it('resolves the focused table and its own active column', () => {
+  it('resolves the most recently activated column, not the focused table', () => {
     Frame(products)
     publishActiveColumn(products, 'name')
     publishActiveColumn(articles, 'status')
 
-    expect(resolveColumnMoveTarget()).toEqual({ viewId: products, column: 'name' })
-    expect(resolveColumnMoveTarget({ viewId: articles })).toEqual({ viewId: articles, column: 'status' })
+    // The latest header activation wins even while another pane holds focus.
+    expect(resolveColumnMoveTarget()).toEqual({ viewId: articles, column: 'status' })
+    expect(resolveColumnMoveTarget({ viewId: products })).toEqual({ viewId: products, column: 'name' })
     expect(resolveColumnMoveTarget({ viewId: articles, column: 'name' })).toEqual({ viewId: articles, column: 'name' })
+
+    // Re-activating the same column still makes it the latest target.
+    publishActiveColumn(products, 'name')
+    expect(resolveColumnMoveTarget()).toEqual({ viewId: products, column: 'name' })
 
     // A palette opened while focus sits outside the tables still targets the
     // table whose header was activated last, never both tables.
     Frame('detail')
-    expect(resolveColumnMoveTarget()).toEqual({ viewId: articles, column: 'status' })
+    expect(resolveColumnMoveTarget()).toEqual({ viewId: products, column: 'name' })
+  })
+
+  it('records a clicked header as the target even when another pane keeps focus', async () => {
+    Frame(products)
+    render(<TwoTableHarness />)
+    await waitFor(() => expect(screen.getAllByTestId('object-row')).toHaveLength(tableRows.length * 2))
+
+    const productsName = screen.getByTestId('products-pane').querySelector('[data-testid="col-name"]') as HTMLElement
+    const articlesName = screen.getByTestId('articles-pane').querySelector('[data-testid="col-name"]') as HTMLElement
+
+    fireEvent.click(productsName)
+    await waitFor(() => expect(resolveColumnMoveTarget()).toEqual({ viewId: products, column: 'name' }))
+
+    Frame(articles)
+    fireEvent.click(articlesName)
+    await waitFor(() => expect(resolveColumnMoveTarget()).toEqual({ viewId: articles, column: 'name' }))
+
+    // Products keeps Name active, so a repeat click changes no state; the target
+    // must still switch back to Products instead of following the focused pane.
+    fireEvent.click(productsName)
+    await waitFor(() => expect(resolveColumnMoveTarget()).toEqual({ viewId: products, column: 'name' }))
   })
 
   it('moves only the named table when two tables share the Name field', async () => {

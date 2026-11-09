@@ -515,6 +515,111 @@ async fn discard_recovers_a_closed_proposal_with_pending_rows_idempotently() {
 }
 
 #[tokio::test]
+async fn discard_of_an_open_mixed_proposal_ends_accepted() {
+    let db = TestDb::create().await;
+    let who = db
+        .store()
+        .create_principal(PrincipalKind::Human, "ada")
+        .await
+        .unwrap();
+    let id = Uuid::now_v7();
+    let accepted = Uuid::now_v7();
+    let pending = Uuid::now_v7();
+    let rows = [(accepted, "first"), (pending, "second")]
+        .into_iter()
+        .enumerate()
+        .map(|(position, (row_id, key))| ProposalRow {
+            id: row_id,
+            object_id: None,
+            object_key: Some(key.into()),
+            type_key: Some("item".into()),
+            base_version: None,
+            patch: json!({ "values": { "sku": key } }),
+            status: "pending".into(),
+            conflict: false,
+            position: i32::try_from(position).unwrap_or(0),
+        })
+        .collect::<Vec<_>>();
+    db.store()
+        .create_proposal(id, "Mixed draft", "user", who, None, false, &rows)
+        .await
+        .unwrap();
+    let lock = db.store().claim_proposal(id).await.unwrap();
+    db.store()
+        .commit_proposal_row(
+            &actor(who),
+            id,
+            accepted,
+            "accepted",
+            ProposalWrite::None,
+            lock.token(),
+        )
+        .await
+        .unwrap();
+    // The draft-bar discard rejects the remaining pending row while the
+    // proposal is still open. An accepted row means something was applied.
+    let report = db
+        .store()
+        .discard_proposal(id, lock.token(), who)
+        .await
+        .unwrap();
+    lock.release().await.unwrap();
+    assert_eq!(
+        report,
+        braian_store::DiscardReport {
+            previous_status: "open".into(),
+            status: "accepted".into(),
+            rejected_rows: 1,
+            recovered: false,
+        }
+    );
+    let stored = db.store().proposal(id).await.unwrap().unwrap();
+    assert_eq!(
+        stored["status"], "accepted",
+        "a mixed discard must not claim everything was discarded: {stored}"
+    );
+    assert_eq!(stored["rows"][0]["status"], "accepted", "{stored}");
+    assert_eq!(stored["rows"][1]["status"], "rejected", "{stored}");
+    assert_eq!(
+        testing::proposal_recovery_count(db.store(), id)
+            .await
+            .unwrap(),
+        0
+    );
+}
+
+#[tokio::test]
+async fn discard_of_an_open_proposal_without_accepted_rows_ends_discarded() {
+    let db = TestDb::create().await;
+    let who = db
+        .store()
+        .create_principal(PrincipalKind::Human, "ada")
+        .await
+        .unwrap();
+    let (id, row_id) = open_proposal(db.store(), who).await;
+    let lock = db.store().claim_proposal(id).await.unwrap();
+    let report = db
+        .store()
+        .discard_proposal(id, lock.token(), who)
+        .await
+        .unwrap();
+    lock.release().await.unwrap();
+    assert_eq!(
+        report,
+        braian_store::DiscardReport {
+            previous_status: "open".into(),
+            status: "discarded".into(),
+            rejected_rows: 1,
+            recovered: false,
+        }
+    );
+    let stored = db.store().proposal(id).await.unwrap().unwrap();
+    assert_eq!(stored["status"], "discarded", "{stored}");
+    assert_eq!(stored["rows"][0]["id"], json!(row_id));
+    assert_eq!(stored["rows"][0]["status"], "rejected", "{stored}");
+}
+
+#[tokio::test]
 async fn claims_and_discards_are_scoped_to_the_store_catalog() {
     let db = TestDb::create().await;
     let who = db

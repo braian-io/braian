@@ -1,6 +1,95 @@
 # Status 2026-11-09
 
-Bas: `origin/main` tip `549d2d3` (#271). Senaste migrering i repot: `V44__proposal_recoveries.sql` (#268).
+Bas: `origin/main` tip `729f70f` (#274). Senaste migrering i repot: `V44__proposal_recoveries.sql` (#268).
+
+## Rad 215 uppföljning — låsta fält, levande namn och väntande Save
+
+Test av #271 på demo `549d2d3` (2026-11-09) fann tre saker som den här grenen rättar. Ändringen är inte mergad, deployad eller accepterad.
+
+- Type och Kind i Edit selection var disabled `<select>` och såg därför fortfarande ut som dropdowns med chevron. I edit-läget renderas de nu som read-only värden med låsikon, utan select eller chevron. Namnfältet har en synlig 1px-kant i vila. Reglerna ligger i `apps/web/src/styles.css` (`.model-field .selection-name`, `.model-field .model-field-locked`).
+- Products-panelen visade kvar "Cheese" efter att Articles-selectionen bytt namn. Orsaken var inte React Query-cachen: demon har två speglade selection-rader med samma filter, samma namn och samma ägare, en per typ. Product-raden behöll därför sitt gamla namn även efter F5. `Store::update_assortment` låter nu speglade rader (samma ägare, kind, fråga och tidigare namn) följa med vid namnbytet, och webbklienten invaliderar redan alla `assortments`-frågor. Både Articles- och Products-chippen samt listan visar det nya namnet efter omladdning. Skrivvägen är oförändrad: Save selection går direkt via `PUT /v1/assortments/{id}`, inte som en draft.
+- Save selection visar nu `Saving…` och är disabled medan PUT:en pågår. Namnet läses från inputfältets värde vid submit, så ett snabbt skrivet namn inte kan sparas trunkerat. Ctrl+A i namnfältet markerar bara fältets text.
+
+`e2e/edit-selection-click.spec.ts` täcker nu också: låsta Type/Kind utan select/chevron, synlig namnkant i vila, snabbskrivning följt av omedelbar Save och fullt namn efter omladdning, `Saving…` medan PUT:en väntar, Ctrl+A som bara markerar namnfältet, samt Articles- och Products-chippen och listan efter namnbyte och F5. `crates/store/tests/dynamic_selections.rs` har `renaming_a_mirrored_selection_updates_the_same_filter_in_another_type`. Körningen är gjord i isolerade `--rm`-containrar på ett uppgiftsägt Docker-nätverk mot syntetisk Postgres 18 och Typesense 30.2: web-typecheck grön, 150 vitest-filer med 815 tester gröna, `edit-selection-click.spec.ts` 7/7, `dynamic-selections.spec.ts` 2/2, `new-selection-dialog.spec.ts` 1/1, store-testet 3/3, `cargo fmt --all --check` och `cargo clippy -p braian-store --tests -- -D warnings` gröna. Inga demo-, host- eller Docker-socket-körningar.
+`e2e/edit-selection-click.spec.ts` (registrerad i `scripts/e2e.mjs`) täcker: öppna via faktisk meny, klicka namnfältet, byta namn på den seedade manuella Articles-selectionen Cheese, Save selection, synligt namn och API-läsning efter omladdning, Cancel/X/Escape utan oavsiktlig ändring, upprepad öppning, Type/Kind låsta i edit-läget, samt en stagad tabelldraft. Körningen är gjord i isolerade `--rm`-containrar mot syntetisk Postgres/Typesense. Mergad till `main` som #271 (`549d2d3`); inte deployad eller accepterad.
+
+Braian går att starta lokalt och att klicka igenom på [demo.braian.io](https://demo.braian.io). Postgres är källan och ändringsloggen. Indexer, sök, auth, förslag och webbgränssnittet sitter på samma kedja. Flödet står i `docs/events.md`. Demokatalogen som `just dev` visar är bara seed: hjälteobjekt plus 240 syntetiska livsmedel (leverantörer, produkter och artiklar). Etiketter finns på sv/en/de och objektdata är engelska. Strukturen heter Food, leverantörer står utanför trädet och pekas ut med länkar. Tester skriver i databasen `braian_e2e` och sökaliaset `braian_e2e`, inte i demon.
+
+Skalprovet (5 000 skrivningar i sekunden, 1 miljon och 10 miljoner objekt) är inte gjort. En virtuell tabell mot 100 013 objekt är mätt, se `docs/measurements/2026-10-25-table-100k.md`.
+
+
+## Rad 107-uppföljning — levererad på main (#274)
+
+Den här grenen (`junior/107-header-column-target`) utgår från `549d2d3` (#271) och är **inte mergad, deployad eller accepterad**. Den rättar Test-avvisningen på demo `549d2d3`: ingen väg flyttade kolumnen i båda tabellerna längre, men två av fem vägar flyttade den i fel tabell. Ett header-klick satte inte den tabellen som mål, så upplösningen föll tillbaka på tabellen som senast hade cellfokus.
+
+- `apps/web/src/column-move.ts`: målupplösningen föredrar nu den senast aktiverade kolumnen (header-klick eller cellfokus) före den fokuserade panen. Fokus är kvar som fallback när ingen kolumn aktiverats. Ett explicit `viewId` vinner fortfarande.
+- `apps/web/src/panes.tsx`: varje kolumnaktivering publiceras direkt via `activateColumn`, även ett upprepat header-klick som lämnar `activeColumn` oförändrat. Det gör att tangentbordet och Ctrl+K följer den tabell vars header användaren senast klickade. Sortering på header-klick är oförändrad.
+- Header-menyn, cellfokus, radmenyn, buslyssnaren och ett explicit `viewId` behåller samma `viewId`-plumbing som #270.
+- `apps/web/src/column-move-target.test.tsx`: två tabeller med samma `Name`; senast aktiverad kolumn vinner över fokus, explicit `viewId` vinner, och ett header-klick (även upprepat) sätter målvyn.
+- `apps/web/e2e/column-move-target.spec.ts`: Products och Articles sida vid sida. Alla fem vägar körs mot båda tabellerna och båda riktningarna: tangentbord efter header-klick, Ctrl+K efter header-klick (inklusive upprepat klick), cellfokus-tangentbord, header-meny och explicit `ui.move_column` på bus. Varje steg kontrollerar att grann tabellen behåller exakt sin kolumnordning; första/sista kolumn är gränsfall och omladdning bevarar ordningen.
+- Bevis i uppgiftsägda `--rm`-containrar på `row107follow-net` mot syntetisk Postgres 18 och Typesense 30.2, utan host-verktyg, hostnätverk eller Docker-socket: `pnpm typecheck` grön; hela vitest-sviten 150 filer / 816 tester gröna; `column-move-target.spec.ts` 1/1 (30,5 s); `move-col-flash-sse`, `column-drag-and-system-fields`, `palette-root-focus` och `shortcut-registry` 13/13; `scripts/check-english.py` exit 0. Skärmdumpar: `01-before.png` till `06-after-reload.png` i uppgiftens scratchkatalog.
+- `apps/web/src/data-model.tsx` är orörd (`sha256 2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`).
+- Header-klick sorterar fortfarande. Om header-klick i stället ska välja utan att sortera, eller om ett separat väljargest ska införas, bör bli en egen backlog-rad; det är inte ändrat här.
+
+## Rad 212-uppföljning — levererad på main (#273)
+
+Mergad till `main` som #273 (`77ff773`). Grenen utgick från `549d2d3` (#271). Inte deployad eller accepterad. Den rättar en kvarvarande
+inkonsekvens efter #268: när A redan var sparad (raden `accepted`) och B
+fortfarande `pending`, stängde en Discard från draft-baren det öppna
+förslaget som `discarded`. Samma blandade medlemskap via den historiska
+återställningsvägen på ett redan stängt förslag behöll `accepted`. Review →
+Proposals visade alltså olika slutstatus beroende på vilken Discard-väg som
+användes, trots att en rad faktiskt hade tillämpats.
+
+- `Store::discard_proposal` härleder nu den öppna radens slutstatus från
+  medlemskapet på samma sätt som `finalize_proposal`: minst en `accepted` rad
+  ger `accepted`, annars `discarded`. Kvarvarande `pending`-rader avvisas
+  fortfarande i samma transaktion.
+- Historisk återställning av ett redan stängt förslag behåller sin tidigare
+  status, avvisar bara `pending`-rader och skriver samma
+  `proposal_recoveries`-granskningsrad som förut. Därmed slutar båda vägarna
+  `accepted` för ett blandat utfall, och ren Discard utan accepterade rader
+  slutar fortsatt `discarded`.
+- Katalogägarskap, claim/lease, scoped Discard och rollskydd från #268 är
+  oförändrade.
+- Regressioner: `crates/store/tests/proposals.rs` har
+  `discard_of_an_open_mixed_proposal_ends_accepted` (A accepterad, B
+  `pending`, Discard via store-vägen) och
+  `discard_of_an_open_proposal_without_accepted_rows_ends_discarded`.
+  Historiska `discard_recovers_a_closed_proposal_with_pending_rows_idempotently`
+  kräver fortsatt `accepted`, B `rejected` och en granskningsrad.
+  `crates/api/tests/http.rs` beskriver nu samma blandade fall över HTTP:
+  `discarded["status"] == "accepted"` med A `accepted` och B `rejected`.
+- Bevis i engångscontainrar (`docker run --rm`, eget nät, tmpfs, ingen
+  hostnetwork, ingen demo-DB): `cargo fmt --all --check` (exit 0),
+  `cargo clippy -p braian-store -p braian-api --all-targets -- -D warnings`
+  (exit 0), `cargo test -p braian-store` (105 godkända),
+  `cargo test -p braian-api` (219 godkända, 1 ignorerad live-test),
+  web-typecheck (exit 0), hela vitest-sviten (810 godkända; 5 tidskänsliga
+  filer slog timeout under full körning och passerade 34/34 vid isolerad
+  omkörning), English checker (exit 0) och
+  `e2e/proposal-lifecycle.spec.ts` (1 godkänd, 49,1 s).
+- Testbevisets väg: QA-skärmbilderna under
+  `/workspace/braian-qa/212-retest268-20261109-0949/` (`01-version` …
+  `07-after-discard-B`) visar mixed draft-bar Discard; den här grenen jämför
+  den vägen med historisk Discard-återställning av samma medlemskap.
+- `apps/web/src/data-model.tsx` är orörd
+  (`sha256 2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`).
+## Rad 135 uppföljning — levererad på main (#272)
+
+Demo-omtesten efter #269 visade att tabellcellens 2px-ring är rätt, men att tangentbordsfokus fortfarande saknades på några ställen. Mergad till `main` som #272 (`f001573`). Den rättade den kvarvarande fokusringen efter #269. Inte deployad eller accepterad.
+
+- `apps/web/src/styles.css`: tar bort `.pane-tab.active .pane-tab-open:focus-visible { outline: none; }`, så även den aktiva pane-fliken (till exempel Products) får samma 2px accentring på Tab som en inaktiv flik.
+- `apps/web/src/styles.css`: delar upp sökfältet. Endast `:focus-within` har `box-shadow: var(--inset), 0 0 0 2px var(--accent)`. `:hover:not(:focus-within)` byter till den mjukare `--hover`-fyllningen utan accentring, så hover inte ser ut som fokus.
+- Övriga `outline: none` i `styles.css` är genomgångna och behålls där de redan ersätter ringen med en likvärdig accentbehandling: grid med `.active-cell` (inset-ring), cell-editor (accentkant), inre `.search-field input`, menyalternativ med `data-highlighted`, palettens frågefält (ring på containern) och create-dialogens fält (accentkant). Ingen blanket-borttagning.
+- `apps/web/src/focus-ring.test.ts`: två enhetsregressioner: aktiv pane-flik får inte längre en outline-suppressor, och sökfältets hover-regel får inte innehålla 2px accentringen medan `:focus-within` måste göra det.
+- `apps/web/src/user-menu.test.tsx`: Account-triggern är en native `button` med `aria-label="Account"`, `tabIndex` 0 och inte disabled.
+- `apps/web/e2e/focus-styles.spec.ts`: hover på sökfältet ger ingen fokusring; Account-avataren och den aktiva pane-flikens `.pane-tab-open` nås med enbart Tab från sidstart efter inloggning och visar 2px accentring. Befintliga fokus-, nested-chrome- och tabelltester behålls.
+- `apps/web/e2e/layout.spec.ts`: CI:s e2e-shard 1 föll på den gamla hover-assertionen för Articles sökfält. Hover-delen kräver nu ingen accent och ingen 2px-ring, bara `outline: none`, `hovered` och en mjuk fyllnadsändring; fokusdelen behåller kravet på 2px accent via `:focus-within`.
+
+Muspekarens beteende: ett vanligt klick på en tabellcell visar inte den accentfärgade 2px-ringen. Ringen är tangentbordsfokus (`.grid:focus-visible .row.selected .cell.active-cell` / `.row.active .cell.active-cell`), medan urvalet är dimfyllning plus 3px vänsterkant. Det är samma separering som rad 135 krävde, och `e2e/focus-styles.spec.ts` assertar att ett pointer-klick lämnar `:focus-visible` falskt och cellen utan ring.
+
+Verifierat i isolerade `--rm`-containrar på ett task-ägt Docker-nätverk mot syntetisk Postgres 18 och Typesense 30.2, utan demo, host-verktyg, host-nätverk eller Docker-socket: typecheck grön; hela web-enhetssviten 150 filer / 818 tester grön; `focus-styles.spec.ts` 14/14 (inklusive de två nya regressionerna), `nested-chrome.spec.ts` 2/2 och `user-menu.spec.ts` 6/6; `check-english.py` grön. I webbläsaren (mörkt tema) nåddes Account på Tab-steg 8 och den aktiva pane-fliken på steg 16 från sidstart, båda med `2px solid` accentring. Skärmbilder skrevs till den gitignorerade `apps/web/test-results/focus-screenshots/` och committas inte.
 
 ## Rad 135 — levererad på main (#269)
 
@@ -17,7 +106,7 @@ CI på `e022849` föll i jobbet e2e3 på just den gamla syskonassertionen i `nes
 
 ## Rad 107 — levererad på main (#270)
 
-Kolumnflytt (Notion 107) är mergad till `main` som #270 (`a7e7d58`) och ingår i basen. Den är inte en del av den här PR:en (rad 215) och är inte deployad eller accepterad. Reproduktionen 2026-11-07: Products och Articles har båda `Name`, och Ctrl+Shift+→ på Products.Name flyttade `Name` i båda tabellerna eftersom `ui.move_column` broadcastades utan vyidentitet.
+Kolumnflytt (Notion 107) är mergad till `main` som #270 (`a7e7d58`) och ingår i basen. Den är inte en del av den här PR:en (rad 135-uppföljningen) och är inte deployad eller accepterad. Reproduktionen 2026-11-07: Products och Articles har båda `Name`, och Ctrl+Shift+→ på Products.Name flyttade `Name` i båda tabellerna eftersom `ui.move_column` broadcastades utan vyidentitet.
 
 - `apps/web/src/column-move.ts` är en gemensam målupplösning. Tangentbordet läser fokuserad vy och den vyns egen aktiva kolumn (`readActiveColumn`), aldrig en annan panes rubrik. Register-körarna (`column:move-left/right`), Ctrl+K, header-/cell-/radmenyn och buslyssnaren använder samma `viewId`.
 - Header- och cellmenyn skickar `target.viewId = view.id`. Ctrl+K tar den fokuserade tabellen, annars tabellen vars rubrik senast aktiverades (samma `viewId`), och läser den tabellens egna kolumner. `ui.move_column` bär `{ column, direction, viewId }`. `ObjectTable` lyssnar bara när `viewId` är dess egen vy; ett äldre event utan `viewId` följer fokus i stället för att broadcasta.
@@ -29,7 +118,7 @@ Kolumnflytt (Notion 107) är mergad till `main` som #270 (`a7e7d58`) och ingår 
 
 ## Rad 170 (mergad i #265) — i basen, inte den här PR:en
 
-Läsbara URL:er (Notion 170) är mergade i `main` som squash `61c6e3c` (#265). Den här grenen har nu `origin/main` `a7e7d58` (#270) som bas, som redan innehåller den ändringen, så avsnittet beskriver basen och inte ett omergat arbete i den här PR:en. Rad 135- och rad 107-ändringarna rör inte URL- eller review-koden.
+Läsbara URL:er (Notion 170) är mergade i `main` som squash `61c6e3c` (#265). Den här grenen har nu `origin/main` `549d2d3` (#271) som bas, som redan innehåller den ändringen, så avsnittet beskriver basen och inte ett omergat arbete i den här PR:en. Rad 135- och rad 107-ändringarna rör inte URL- eller review-koden.
 
 - `ws`, `view` och `catalog` är slug av visningsnamn. Unicode-bokstäver och siffror behålls (NFKC, gemener); ett namn utan bokstav eller siffra får ett `~`-suffix av id:t. `object` är objektets nyckel, inte ett uuid.
 - Nuvarande namn eller nyckel är adressen. Ett byte byter URL:en. Gamla länkar och uuid-adresser öppnas inte. Inga redirectar.
@@ -39,6 +128,7 @@ Läsbara URL:er (Notion 170) är mergade i `main` som squash `61c6e3c` (#265). D
 - Vitest täcker Unicode-slug (även namn som bara är kombinerande tecken), fallback, krock, escapad `~` i typad SKU, nyckellöst suffix som förlängs vid delad svans, kodning, uuid-avvisning, att en delad nyckel slås upp i produkttypen och att ett URL-objekt inte tappas när en annan rad redan är vald. `e2e/readable-urls.spec.ts` är registrerad i `scripts/e2e.mjs`: direktlänk och omladdning, nyckel i stället för uuid, navigationsslug, byte av nyckel, dubbletter, kodning, typad SKU med `~`, bakåt/framåt, trasig eller saknad måltavla, nyckellös länkrad efter omladdning och två kolliderande nyckellösa länkar vars utskrivna förlängda tokens laddas om. `e2e/palette-drill.spec.ts` har ett regressionstest för att inloggning når en objekttabell även när en tidigare sparad layout har en agentflik i fokus. Körningen är gjord i isolerade `--rm`-containrar mot syntetisk Postgres/Typesense; den är inte deployad.
 
 ## Rad 215 — Edit selection-dialogen (mergad i #271)
+## Rad 215 (mergad i #271) — i basen, inte den här PR:en
 
 Rapporten gällde att kontrollerna i Edit selection inte svarade på klick i Articles-arbetsytans Selections-panel. På basen `4cd25f7` gick klickflödet igenom i Chromium, Firefox och WebKit, både från radmenyn och från högerklick, efter att urvalet tillämpats och med en stagad objekt-draft. Ingen pointer-interception eller överlägg kunde reproduceras.
 
@@ -46,24 +136,9 @@ Det som däremot gick att reproducera var fokus: dialogen öppnades från radmen
 
 `e2e/edit-selection-click.spec.ts` (registrerad i `scripts/e2e.mjs`) täcker: öppna via faktisk meny, klicka namnfältet, byta namn på den seedade manuella Articles-selectionen Cheese, Save selection, synligt namn och API-läsning efter omladdning, Cancel/X/Escape utan oavsiktlig ändring, upprepad öppning, Type/Kind låsta i edit-läget, samt en stagad tabelldraft. Körningen är gjord i isolerade `--rm`-containrar mot syntetisk Postgres/Typesense. #271 är mergad till `main` som `549d2d3`; den är inte deployad eller accepterad.
 
-## Rad 215 uppföljning — låsta fält, levande namn och väntande Save
-
-Test av #271 på demo `549d2d3` (2026-11-09) fann tre saker som den här grenen rättar. Ändringen är inte mergad, deployad eller accepterad.
-
-- Type och Kind i Edit selection var disabled `<select>` och såg därför fortfarande ut som dropdowns med chevron. I edit-läget renderas de nu som read-only värden med låsikon, utan select eller chevron. Namnfältet har en synlig 1px-kant i vila. Reglerna ligger i `apps/web/src/styles.css` (`.model-field .selection-name`, `.model-field .model-field-locked`).
-- Products-panelen visade kvar "Cheese" efter att Articles-selectionen bytt namn. Orsaken var inte React Query-cachen: demon har två speglade selection-rader med samma filter, samma namn och samma ägare, en per typ. Product-raden behöll därför sitt gamla namn även efter F5. `Store::update_assortment` låter nu speglade rader (samma ägare, kind, fråga och tidigare namn) följa med vid namnbytet, och webbklienten invaliderar redan alla `assortments`-frågor. Både Articles- och Products-chippen samt listan visar det nya namnet efter omladdning. Skrivvägen är oförändrad: Save selection går direkt via `PUT /v1/assortments/{id}`, inte som en draft.
-- Save selection visar nu `Saving…` och är disabled medan PUT:en pågår. Namnet läses från inputfältets värde vid submit, så ett snabbt skrivet namn inte kan sparas trunkerat. Ctrl+A i namnfältet markerar bara fältets text.
-
-`e2e/edit-selection-click.spec.ts` täcker nu också: låsta Type/Kind utan select/chevron, synlig namnkant i vila, snabbskrivning följt av omedelbar Save och fullt namn efter omladdning, `Saving…` medan PUT:en väntar, Ctrl+A som bara markerar namnfältet, samt Articles- och Products-chippen och listan efter namnbyte och F5. `crates/store/tests/dynamic_selections.rs` har `renaming_a_mirrored_selection_updates_the_same_filter_in_another_type`. Körningen är gjord i isolerade `--rm`-containrar på ett uppgiftsägt Docker-nätverk mot syntetisk Postgres 18 och Typesense 30.2: web-typecheck grön, 150 vitest-filer med 815 tester gröna, `edit-selection-click.spec.ts` 7/7, `dynamic-selections.spec.ts` 2/2, `new-selection-dialog.spec.ts` 1/1, store-testet 3/3, `cargo fmt --all --check` och `cargo clippy -p braian-store --tests -- -D warnings` gröna. Inga demo-, host- eller Docker-socket-körningar.
-
-Braian går att starta lokalt och att klicka igenom på [demo.braian.io](https://demo.braian.io). Postgres är källan och ändringsloggen. Indexer, sök, auth, förslag och webbgränssnittet sitter på samma kedja. Flödet står i `docs/events.md`. Demokatalogen som `just dev` visar är bara seed: hjälteobjekt plus 240 syntetiska livsmedel (leverantörer, produkter och artiklar). Etiketter finns på sv/en/de och objektdata är engelska. Strukturen heter Food, leverantörer står utanför trädet och pekas ut med länkar. Tester skriver i databasen `braian_e2e` och sökaliaset `braian_e2e`, inte i demon.
-
-Skalprovet (5 000 skrivningar i sekunden, 1 miljon och 10 miljoner objekt) är inte gjort. En virtuell tabell mot 100 013 objekt är mätt, se `docs/measurements/2026-10-25-table-100k.md`.
-
-
 ## Levererat sedan 2026-11-01 (verifierat via `git log` på main)
 
-Sedan statusen 2026-11-01 (`8300319` / #145) har ungefär #146–#270 landat (125 commits på main, `git rev-list --count 8300319..a7e7d58`; #265, som gav rad 170 läsbara URL:er, är mergad som `61c6e3c`, och #270 som gav rad 107 kolumnflytt stannar i måltabellen är mergad som `a7e7d58`). Den här PR:en är bara rad 215 och är inte mergad, deployad eller accepterad. Många leveranser står på Att testa i Notion och väntar på Glenns genomgång.
+Sedan statusen 2026-11-01 (`8300319` / #145) har ungefär #146–#272 landat (`git rev-list --count 8300319..f001573`; #265, som gav rad 170 läsbara URL:er, är mergad som `61c6e3c`, #270 som gav rad 107 kolumnflytt stannar i måltabellen är mergad som `a7e7d58`, och #271 som gav rad 215 Edit selection-fokus är mergad som `549d2d3`). Den här PR:en är rad 107-uppföljningen (rubrikklick sätter måltabell) och är inte mergad, deployad eller accepterad. #272 (`f001573`) och #273 (`77ff773`) landade på main. Många leveranser står på Att testa i Notion och väntar på Glenns genomgång.
 
 ### Kartläggning #253–#270 (squash på main, `git log` + `gh pr view`)
 - #253 `2d78daf` · rad 149 · fix(web): move hardcoded UI strings into copy (row 149)

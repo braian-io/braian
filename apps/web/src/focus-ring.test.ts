@@ -77,3 +77,20 @@ describe('focus ring', () => {
     expect(focused).not.toContain('background')
   })
 })
+
+describe('follow-up focus ring', () => {
+  it('lets the active pane tab keep the shared keyboard ring', () => {
+    expect(css).not.toMatch(/\.pane-tab\.active \.pane-tab-open:focus-visible[^{]*\{[^}]*outline:\s*none/)
+    expect(css).not.toMatch(/\.pane-tab-open:focus-visible[^{]*\{[^}]*outline:\s*none/)
+  })
+
+  it('keeps the strong accent ring on search focus, not on hover', () => {
+    const hover = rule('.search-field:hover:not(:focus-within)')
+    expect(hover).toContain('background: var(--hover)')
+    expect(hover).not.toContain('0 0 0 2px var(--accent)')
+    expect(hover).not.toContain('outline: none')
+
+    const focus = rule('.search-field:focus-within')
+    expect(focus).toContain('box-shadow: var(--inset), 0 0 0 2px var(--accent)')
+  })
+})
