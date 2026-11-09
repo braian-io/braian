@@ -1,8 +1,8 @@
 # Status 2026-11-09
 
-Bas: `origin/main` tip `4cd25f7` (#267). Senaste migrering i repot: `V43__soft_delete.sql` (#260).
+Bas: `origin/main` tip `ef9b43a` (#269). Senaste migrering i repot: `V44__proposal_recoveries.sql` (#268).
 
-## Rad 135 i den här PR:en — fokusring (design H1)
+## Rad 135 — levererad på main (#269)
 
 Rättar Test-avvisningen 2026-11-07 15:42 Europe/Stockholm: den aktiva tabellcellens tangentbordsmarkering är nu `box-shadow: inset 0 0 0 2px var(--accent)`, inte `inset 0 0 0 1px var(--accent-hover)`. Urval och fokus är fortfarande separata: vald rad behåller `--accent-dim`-fyllningen och 3px vänsterkant medan 2px accent-ringen följer den aktiva cellen. Ingen ny shortcut eller urvalssemantik.
 
@@ -13,11 +13,11 @@ Rättar Test-avvisningen 2026-11-07 15:42 Europe/Stockholm: den aktiva tabellcel
 
 Verifierat i isolerade `--rm`-containrar mot syntetisk Postgres 18 och Typesense 30.2, utan demo, host-verktyg eller Docker-socket: typecheck grön; 57 enhetstester i 5 filer gröna; `focus-styles.spec.ts` 13/13, `grid-focus-select.spec.ts` 1/1 och `user-menu.spec.ts` 6/6. Beräknade stilar i webbläsaren (mörkt tema): aktiv cell `rgb(154, 77, 255) 0px 0px 0px 2px inset`, träd `2px solid` med offset `-2px`, användarmeny `2px solid` med offset `0`, grid utan extra outline, vald rad `rgba(154, 77, 255, 0.28)` med `rgb(154, 77, 255) 3px 0px 0px 0px inset`. Skärmbilder togs i den isolerade körningen (`apps/web/test-results/focus-screenshots/`, ej committade).
 
-CI på `e022849` föll i jobbet e2e3 på just den gamla syskonassertionen i `nested-chrome`, inte på fokusregeln. Efter rättelsen kördes `nested-chrome.spec.ts` mörkt och ljust (2/2) samt `focus-styles.spec.ts` (13/13) om i task-egna `--rm`-containrar mot samma typ av syntetiska Postgres/Typesense; inga fokus-styles-assertioner ändrades eller försvagades. Oberoende kodgranskning accepterade koden vid `3b6ca5f`, medan dokumentationsgranskningen kvarstår. Inte mergad, inte deployad, inte accepterad.
+CI på `e022849` föll i jobbet e2e3 på just den gamla syskonassertionen i `nested-chrome`, inte på fokusregeln. Efter rättelsen kördes `nested-chrome.spec.ts` mörkt och ljust (2/2) samt `focus-styles.spec.ts` (13/13) om i task-egna `--rm`-containrar mot samma typ av syntetiska Postgres/Typesense; inga fokus-styles-assertioner ändrades eller försvagades. Oberoende kodgranskning accepterade koden vid `3b6ca5f`, medan dokumentationsgranskningen kvarstår. Mergad till `main` som #269 (`ef9b43a`); inte deployad eller accepterad.
 
 ## Rad 170 (mergad i #265) — i basen, inte den här PR:en
 
-Läsbara URL:er (Notion 170) är mergade i `main` som squash `61c6e3c` (#265). Den här grenen utgår från `4cd25f7` (#267), som redan innehåller den ändringen, så avsnittet beskriver basen och inte ett omergat arbete i den här PR:en. Rad 135-ändringen rör inte URL- eller review-koden.
+Läsbara URL:er (Notion 170) är mergade i `main` som squash `61c6e3c` (#265). Den här grenen har nu `origin/main` `ef9b43a` (#269) som bas, som redan innehåller den ändringen, så avsnittet beskriver basen och inte ett omergat arbete i den här PR:en. Rad 135-ändringen rör inte URL- eller review-koden.
 
 - `ws`, `view` och `catalog` är slug av visningsnamn. Unicode-bokstäver och siffror behålls (NFKC, gemener); ett namn utan bokstav eller siffra får ett `~`-suffix av id:t. `object` är objektets nyckel, inte ett uuid.
 - Nuvarande namn eller nyckel är adressen. Ett byte byter URL:en. Gamla länkar och uuid-adresser öppnas inte. Inga redirectar.
@@ -26,6 +26,18 @@ Läsbara URL:er (Notion 170) är mergade i `main` som squash `61c6e3c` (#265). D
 - `GET /v1/objects` accepterar både typnyckel och typ-id i `type`. Sparade vyer lagrar typ-id (V18), så en direktlänk annars fick tom träff.
 - Vitest täcker Unicode-slug (även namn som bara är kombinerande tecken), fallback, krock, escapad `~` i typad SKU, nyckellöst suffix som förlängs vid delad svans, kodning, uuid-avvisning, att en delad nyckel slås upp i produkttypen och att ett URL-objekt inte tappas när en annan rad redan är vald. `e2e/readable-urls.spec.ts` är registrerad i `scripts/e2e.mjs`: direktlänk och omladdning, nyckel i stället för uuid, navigationsslug, byte av nyckel, dubbletter, kodning, typad SKU med `~`, bakåt/framåt, trasig eller saknad måltavla, nyckellös länkrad efter omladdning och två kolliderande nyckellösa länkar vars utskrivna förlängda tokens laddas om. `e2e/palette-drill.spec.ts` har ett regressionstest för att inloggning når en objekttabell även när en tidigare sparad layout har en agentflik i fokus. Körningen är gjord i isolerade `--rm`-containrar mot syntetisk Postgres/Typesense; den är inte deployad.
 
+## Rad 107 i den här PR:en — kolumnflytt stannar i måltabellen
+
+Kolumnflytt (Notion 107) är byggd på den här branchen och är **inte** mergad, deployad eller accepterad. Reproduktionen 2026-11-07: Products och Articles har båda `Name`, och Ctrl+Shift+→ på Products.Name flyttade `Name` i båda tabellerna eftersom `ui.move_column` broadcastades utan vyidentitet.
+
+- `apps/web/src/column-move.ts` är en gemensam målupplösning. Tangentbordet läser fokuserad vy och den vyns egen aktiva kolumn (`readActiveColumn`), aldrig en annan panes rubrik. Register-körarna (`column:move-left/right`), Ctrl+K, header-/cell-/radmenyn och buslyssnaren använder samma `viewId`.
+- Header- och cellmenyn skickar `target.viewId = view.id`. Ctrl+K tar den fokuserade tabellen, annars tabellen vars rubrik senast aktiverades (samma `viewId`), och läser den tabellens egna kolumner. `ui.move_column` bär `{ column, direction, viewId }`. `ObjectTable` lyssnar bara när `viewId` är dess egen vy; ett äldre event utan `viewId` följer fokus i stället för att broadcasta.
+- Agenten får `viewId` i `ui_move_column`-anropet. `selection_args` behåller ett explicit `viewId` och fyller annars i fokuserad pane från UI-snapshoten. `ui_command` ekar argumenten oförändrade.
+- Oförändrat: Ctrl+K:s fyra Alt+piltangbordsrader för Focus pane, grannpanesnavigering, dockens Move left/right/up/down/Maximize/Close med titel+genväg, Alt+←/→ och Ctrl+Alt+Z maximera/återställ. Inga nya dubblettrader i paletten.
+- Vitest: `column-move-target.test.tsx` (två tabeller med samma `Name`, tangentbordsmål, explicit header-/palettmål efter fokusbyte, agent-/busdispatch utan viewId-broadcast, gränsfall) samt registry-, palette-, shortcut- och ui-bus-testerna. `cargo test -p braian-api ui_move_column` och `move_column_args_follow` täcker agentargumenten; `cargo fmt --all --check` är grön.
+- Playwright: `e2e/column-move-target.spec.ts` skapar en isolerad workspace med Products och Articles sida vid sida, flyttar `Name` med Ctrl+Shift+→, Ctrl+K, header-menyn med fokus i Articles och en explicit `ui.move_column` på bus; före/efter-kolumnordning för båda tabellerna, gränsfall för första/sista kolumn och omladdning ingår. Skärmdumpar: `artifacts/row107/01-before.png` till `05-after-reload.png`.
+- Körningarna är gjorda i isolerade `--rm`-containrar på ett uppgiftsägt Docker-nätverk mot syntetisk Postgres/Typesense. Web-typecheck är grön. Full web-unitsvit utan `path-cell` gav 810/811; den enda röda var en 5-sekundstimeout i den tidskänsliga `palette-home-end.test.tsx`. `palette-home-end`, `path-cell`, `active-row` och `column-move-target` passerade tillsammans vid isolerad omkörning (31/31). Ingen av dem rör den här ändringen.
+
 Braian går att starta lokalt och att klicka igenom på [demo.braian.io](https://demo.braian.io). Postgres är källan och ändringsloggen. Indexer, sök, auth, förslag och webbgränssnittet sitter på samma kedja. Flödet står i `docs/events.md`. Demokatalogen som `just dev` visar är bara seed: hjälteobjekt plus 240 syntetiska livsmedel (leverantörer, produkter och artiklar). Etiketter finns på sv/en/de och objektdata är engelska. Strukturen heter Food, leverantörer står utanför trädet och pekas ut med länkar. Tester skriver i databasen `braian_e2e` och sökaliaset `braian_e2e`, inte i demon.
 
 Skalprovet (5 000 skrivningar i sekunden, 1 miljon och 10 miljoner objekt) är inte gjort. En virtuell tabell mot 100 013 objekt är mätt, se `docs/measurements/2026-10-25-table-100k.md`.
@@ -33,9 +45,9 @@ Skalprovet (5 000 skrivningar i sekunden, 1 miljon och 10 miljoner objekt) är i
 
 ## Levererat sedan 2026-11-01 (verifierat via `git log` på main)
 
-Sedan statusen 2026-11-01 (`8300319` / #145) har ungefär #146–#266 landat (120 commits på main, `git rev-list --count 8300319..ca7a786`; #265 är mergad i main som squash `61c6e3c`). Många leveranser står på Att testa i Notion och väntar på Glenns genomgång.
+Sedan statusen 2026-11-01 (`8300319` / #145) har ungefär #146–#269 landat (124 commits på main, `git rev-list --count 8300319..ef9b43a`; #265, som gav rad 170 läsbara URL:er, är mergad som `61c6e3c`). Den här PR:en är bara rad 107 och är inte mergad, deployad eller accepterad. Många leveranser står på Att testa i Notion och väntar på Glenns genomgång.
 
-### Kartläggning #253–#266 (squash på main, `git log` + `gh pr view`)
+### Kartläggning #253–#269 (squash på main, `git log` + `gh pr view`)
 - #253 `2d78daf` · rad 149 · fix(web): move hardcoded UI strings into copy (row 149)
 - #254 `434697a` · docs-only, ingen Notion-rad · docs: refresh status.md for 2026-11-06
 - #255 `4583c56` · rad 153 · fix(web): grid focus without select; Enter/Space select (row 153)
@@ -48,6 +60,9 @@ Sedan statusen 2026-11-01 (`8300319` / #145) har ungefär #146–#266 landat (12
 - #262 `1d179b1` · rad 171 · fix(agent): propose a display-name change for a named product (row 171)
 - #263 `fc09d6c` · rad 205 · fix(web): attribute table bool columns use Braian checkboxes and pointer cursor
 - #266 `ca7a786` · review · feat(review): project every draft into one save or discard (#266) — agentförslag, importrader, config-apply och personens modelldraft läses som samma `ReviewDraft`; Save och Discard går kvar via befintliga proposal- och modelldraft-writes
+- #267 `4cd25f7` · rad 212 · Show one shared object draft in the table and Detail (#267)
+- #268 `a7a8ce2` · rad 212 · fix: preserve pending proposal rows and support scoped discard recovery (#268)
+- #269 `ef9b43a` · rad 135 · fix(web): restore 2px accent keyboard focus ring for active cells (#269)
 
 ### Seed, kataloger och config
 - #146: status.md 2026-11-01.
@@ -141,11 +156,11 @@ Endast mergade PR:er i intervallet #104–#145 (läget vid status 2026-11-01). #
 - #124: store byggs om när inbäddade migreringar ändras.
 - #133: CI återanvänder release-binären och kortar stack-jobbet.
 
-## Pågående arbete (inte mergat, inte deployat)
+## Nyligen levererat — detaljer (PR 267–268)
 
-- **Rad 212 / PR 267 (PR2): en delad objekt-draft i tabell och Detail.**
-  Grenen `junior/212-ai-drafts` bygger på `ca7a786` (#266). Den är öppen och
-  inte mergad eller deployad. Enter stagar en cell i en modulstore som både
+- **Rad 212 / PR 267 (PR2, mergad i #267): en delad objekt-draft i tabell och Detail.**
+  Grenen `junior/212-ai-drafts` byggde på `ca7a786` (#266) och är mergad till
+  `main` som #267 (`4cd25f7`). Enter stagar en cell i en modulstore som både
   tabellen och Detail läser. Save/Discard gäller exakt de granskade raderna.
   Språkberoende celler har identitet per objekt, attribut och språk, och en
   sammanslagning tappar inte andra språk. En sen eller äldre läsning kan inte
@@ -215,9 +230,9 @@ Endast mergade PR:er i intervallet #104–#145 (läget vid status 2026-11-01). #
   avvikelsen på main (`expected 4, got 1`) återupprepades inte här.
   `model-draft.spec.ts` är inte längre en känd avvikelse i den här grenen.
 
-- **Rad 212 / livscykel för förslag (separat PR, ännu inte mergad).**
-  Grenen `junior/212-proposal-lifecycle` utgår från `4cd25f7` (#267) och är
-  varken mergad eller deployad. Den rättar rotorsaken som QA hittade: när en
+- **Rad 212 / livscykel för förslag (mergad i #268).**
+  Grenen `junior/212-proposal-lifecycle` utgick från `4cd25f7` (#267) och är
+  mergad till `main` som #268 (`a7a8ce2`). Den rättar rotorsaken som QA hittade: när en
   person sparade bara de synliga raderna stängdes hela förslaget trots att en
   dold rad fortfarande var `pending`. `accept_proposal` räknade bara det
   skickade urvalet; `close_claimed_proposal` fanns med full medlemskap men
@@ -263,7 +278,7 @@ Endast mergade PR:er i intervallet #104–#145 (läget vid status 2026-11-01). #
   1 godkänd (31,9 s).
 - `apps/web/src/data-model.tsx` är orörd (sha256 lika med `4cd25f7`). Inga av de
   tre faktiska demolämningarna har rörts; de kräver fortsatt verifierad deploy
-  och ny QA. Inget påstående om merge, deploy eller demoacceptans.
+  och ny QA. Mergad i #268; inget påstående om deploy eller demoacceptans.
 
 ## Öppet
 

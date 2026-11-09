@@ -104,6 +104,7 @@ import { beginLinkDrag, dispatchLinkDrop, endLinkDrag, linkDragActive, linkDragC
 import { groupKeyOf, labelCodes, labelSearchFilter, publishSelectionLabels, SELECTION_APPLIED_EVENT, selectionFilterText, selectionMatchesType } from './assortment-filter'
 import { appendPathFilter, objectTableFilter } from './table-filter'
 import { dispatchUi, onUi } from './ui-bus'
+import { columnMoveAppliesTo } from './column-move'
 import {
   EMPTY_SELECTION,
   enrichSelection,
@@ -828,6 +829,7 @@ export function ObjectTable({
     }
     if (event.name === 'ui.hide_column') setHidden((current) => [...new Set([...current, String(args.column ?? args.id ?? '')])])
     if (event.name === 'ui.move_column') {
+      if (!columnMoveAppliesTo(args, view.id)) return
       const from = String(args.from ?? args.column ?? '')
       if (!from) return
       const direction = String(args.direction ?? '')
@@ -1014,6 +1016,7 @@ export function ObjectTable({
         columnHeader: column ? columnHeader(column) : undefined,
         hiddenColumns,
         typeKey: session.listType ?? undefined,
+        viewId: view.id,
         objects: chosen.flatMap((id) => {
           const item = known.get(id)
           return item ? [item] : []
@@ -1050,6 +1053,7 @@ export function ObjectTable({
         columnHeader: columnHeader(column),
         typeKey: session.listType ?? undefined,
         singular: session.listType ? singularOf(defs.data, session.listType, uiLanguage) || undefined : undefined,
+        viewId: view.id,
       },
     })
   }
@@ -1073,6 +1077,7 @@ export function ObjectTable({
           columnHeader: columnHeader(headerColumn),
           typeKey: session.listType ?? undefined,
           singular: session.listType ? singularOf(defs.data, session.listType, uiLanguage) || undefined : undefined,
+          viewId: view.id,
         },
       })
       return
