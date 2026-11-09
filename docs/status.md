@@ -12,6 +12,7 @@ Demo-omtesten efter #269 visade att tabellcellens 2px-ring är rätt, men att ta
 - `apps/web/src/focus-ring.test.ts`: två enhetsregressioner: aktiv pane-flik får inte längre en outline-suppressor, och sökfältets hover-regel får inte innehålla 2px accentringen medan `:focus-within` måste göra det.
 - `apps/web/src/user-menu.test.tsx`: Account-triggern är en native `button` med `aria-label="Account"`, `tabIndex` 0 och inte disabled.
 - `apps/web/e2e/focus-styles.spec.ts`: hover på sökfältet ger ingen fokusring; Account-avataren och den aktiva pane-flikens `.pane-tab-open` nås med enbart Tab från sidstart efter inloggning och visar 2px accentring. Befintliga fokus-, nested-chrome- och tabelltester behålls.
+- `apps/web/e2e/layout.spec.ts`: CI:s e2e-shard 1 föll på den gamla hover-assertionen för Articles sökfält. Hover-delen kräver nu ingen accent och ingen 2px-ring, bara `outline: none`, `hovered` och en mjuk fyllnadsändring; fokusdelen behåller kravet på 2px accent via `:focus-within`.
 
 Muspekarens beteende: ett vanligt klick på en tabellcell visar inte den accentfärgade 2px-ringen. Ringen är tangentbordsfokus (`.grid:focus-visible .row.selected .cell.active-cell` / `.row.active .cell.active-cell`), medan urvalet är dimfyllning plus 3px vänsterkant. Det är samma separering som rad 135 krävde, och `e2e/focus-styles.spec.ts` assertar att ett pointer-klick lämnar `:focus-visible` falskt och cellen utan ring.
 

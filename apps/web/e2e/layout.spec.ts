@@ -513,8 +513,8 @@ test('Articles search box stays clear of the toolbar and rings the field itself'
   expect(ring!.input.outlineStyle).toBe('none')
 
   await filter.evaluate((element) => (element as HTMLInputElement).blur())
-  await filter.hover()
-  const hover = await table.evaluate((root) => {
+  await page.mouse.move(5, 5)
+  const readSearchField = async () => table.evaluate((root) => {
     const input = root.querySelector<HTMLElement>('[data-testid="quick-filter"]')
     const field = input?.closest<HTMLElement>('.search-field')
     if (!field) return null
@@ -528,12 +528,19 @@ test('Articles search box stays clear of the toolbar and rings the field itself'
       hovered: field.matches(':hover'),
       outlineStyle: style.outlineStyle,
       boxShadow: style.boxShadow,
+      backgroundColor: style.backgroundColor,
       accent,
     }
   })
-  expect(hover, 'hover ring').not.toBeNull()
+  const rest = await readSearchField()
+  await filter.hover()
+  const hover = await readSearchField()
+  expect(rest, 'search field at rest').not.toBeNull()
+  expect(hover, 'search field hover').not.toBeNull()
+  // Hover is a soft fill only; the 2px accent ring belongs to focus-within.
   expect(hover!.hovered).toBe(true)
   expect(hover!.outlineStyle).toBe('none')
-  expect(hover!.boxShadow).toContain(hover!.accent)
-  expect(hover!.boxShadow).toContain('2px')
+  expect(hover!.boxShadow).not.toContain(hover!.accent)
+  expect(hover!.boxShadow).not.toContain('2px')
+  expect(hover!.backgroundColor).not.toBe(rest!.backgroundColor)
 })
