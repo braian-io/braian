@@ -2,9 +2,9 @@
 
 Bas: `origin/main` tip `4cd25f7` (#267). Senaste migrering i repot: `V43__soft_delete.sql` (#260).
 
-## Rad 170 i den här PR:en — byggt på branchen, inte deployat
+## Rad 170 — levererad på main (#265)
 
-Läsbara URL:er (Notion 170) är byggda på den här branchen. De ligger **inte** på demo eller prod förrän PR:en mergas och en deploy körs. Avsnitten under beskriver `main` vid `ca7a786` (#266) plus den här ändringen. Branchen utgår från `da6cf75` och rör inte review-koden från #266.
+Läsbara URL:er (Notion 170) är mergade till `main` som #265 (`61c6e3c`) och ingår i basen `4cd25f7` (#267). De är alltså inte en del av den här PR:en (rad 107) och väntar inte på merge här. Avsnitten under beskriver URL-kontraktet som det ser ut på `main`.
 
 - `ws`, `view` och `catalog` är slug av visningsnamn. Unicode-bokstäver och siffror behålls (NFKC, gemener); ett namn utan bokstav eller siffra får ett `~`-suffix av id:t. `object` är objektets nyckel, inte ett uuid.
 - Nuvarande namn eller nyckel är adressen. Ett byte byter URL:en. Gamla länkar och uuid-adresser öppnas inte. Inga redirectar.
@@ -32,7 +32,7 @@ Skalprovet (5 000 skrivningar i sekunden, 1 miljon och 10 miljoner objekt) är i
 
 ## Levererat sedan 2026-11-01 (verifierat via `git log` på main)
 
-Sedan statusen 2026-11-01 (`8300319` / #145) har ungefär #146–#266 landat (120 commits på main, `git rev-list --count 8300319..ca7a786`; #265 är den här PR:en och inte mergad). Många leveranser står på Att testa i Notion och väntar på Glenns genomgång.
+Sedan statusen 2026-11-01 (`8300319` / #145) har ungefär #146–#267 landat (122 commits på main, `git rev-list --count 8300319..4cd25f7`; #265, som gav rad 170 läsbara URL:er, är mergad som `61c6e3c`). Den här PR:en är bara rad 107 och är inte mergad, deployad eller accepterad. Många leveranser står på Att testa i Notion och väntar på Glenns genomgång.
 
 ### Kartläggning #253–#266 (squash på main, `git log` + `gh pr view`)
 - #253 `2d78daf` · rad 149 · fix(web): move hardcoded UI strings into copy (row 149)
