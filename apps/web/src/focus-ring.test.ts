@@ -49,10 +49,12 @@ describe('focus ring', () => {
   it('puts the grid keyboard mark on the active cell', () => {
     expect(rule('.grid:focus-visible')).toContain('outline: none')
     const cell = rule('.grid:focus-visible .row.selected .cell.active-cell')
-    expect(cell).toContain('box-shadow: inset 0 0 0 1px var(--accent-hover)')
+    expect(cell).toContain('box-shadow: inset 0 0 0 2px var(--accent)')
+    expect(cell).not.toContain('var(--accent-hover)')
     // Focus alone (no selection yet) uses the same one-cell mark, not a row fill.
     const focusedCell = rule('.grid:focus-visible .row.active .cell.active-cell')
-    expect(focusedCell).toContain('box-shadow: inset 0 0 0 1px var(--accent-hover)')
+    expect(focusedCell).toContain('box-shadow: inset 0 0 0 2px var(--accent)')
+    expect(focusedCell).not.toContain('var(--accent-hover)')
 
     const pointerHeader = rule('.grid:focus-within .head .cell.column-active .column-header-btn')
     expect(pointerHeader).toContain('color: var(--accent)')
