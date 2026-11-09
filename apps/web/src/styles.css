@@ -531,7 +531,6 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
 }
 /* Hover belongs to the tab itself. The inner button must not paint a second box around the text. */
 .pane-tab-open:hover { background: transparent; }
-.pane-tab.active .pane-tab-open:focus-visible { outline: none; }
 .tab-x {
   display: inline-flex;
   align-items: center;
@@ -966,9 +965,12 @@ select.link-type-line { width: 100%; font-weight: 600; }
   box-shadow: var(--inset);
   color: var(--muted);
 }
+/* Hover is a soft fill, not a focus mark: only the keyboard/field focus draws the accent ring. */
+.search-field:hover:not(:focus-within) {
+  background: var(--hover);
+}
 /* Ring the whole field, not the inner input: the icon and shortcut stay inside one border level.
    A shadow ring follows the field radius; an outline can sit off the rounded edge next to the inset. */
-.search-field:hover,
 .search-field:focus-within {
   outline: none;
   box-shadow: var(--inset), 0 0 0 2px var(--accent);

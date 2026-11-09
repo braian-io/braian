@@ -5287,7 +5287,10 @@ async fn a_failed_or_deleted_row_stays_pending_and_supported_discard_clears_it()
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     let discarded = proposal_body(&app, id).await;
-    assert_eq!(discarded["status"], "discarded", "{discarded}");
+    assert_eq!(
+        discarded["status"], "accepted",
+        "a mixed discard must show that the accepted row was applied: {discarded}"
+    );
     assert_eq!(discarded["rows"][0]["status"], "accepted", "{discarded}");
     assert_eq!(discarded["rows"][1]["status"], "rejected", "{discarded}");
     let (_, _, saved_a) = call(

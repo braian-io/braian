@@ -32,9 +32,18 @@ function mount(overrides: Partial<Parameters<typeof UserMenu>[0]> = {}) {
 }
 
 describe('UserMenu', () => {
-  it('shows the initial and opens with the keyboard', () => {
+  it('shows the initial and keeps the Account trigger in the tab order', () => {
     const { trigger } = mount()
     expect(trigger.textContent).toBe('A')
+    expect(trigger.tagName).toBe('BUTTON')
+    expect(trigger.getAttribute('aria-label')).toBe('Account')
+    expect((trigger as HTMLButtonElement).tabIndex).toBe(0)
+    expect((trigger as HTMLButtonElement).disabled).toBe(false)
+    expect(screen.queryByTestId('user-menu-email')).toBeNull()
+  })
+
+  it('opens with the keyboard', () => {
+    const { trigger } = mount()
     expect(screen.queryByTestId('user-menu-email')).toBeNull()
     fireEvent.keyDown(trigger, { key: 'Enter' })
     expect(screen.getByTestId('user-menu-email').textContent).toBe('admin@braian.io')
