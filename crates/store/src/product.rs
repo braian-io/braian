@@ -1771,7 +1771,9 @@ impl Store {
     /// Discards an open proposal, or repairs a historical closed proposal that
     /// still has pending rows.
     ///
-    /// An open proposal becomes `discarded` and every pending row becomes
+    /// An open proposal ends `accepted` when at least one row was accepted and
+    /// `discarded` when no row was accepted, using the same membership
+    /// derivation as [`Store::finalize_proposal`]. Every pending row becomes
     /// `rejected` in this transaction. An already `accepted` or `discarded`
     /// proposal keeps its status and its accepted rows; only pending rows are
     /// rejected. Rejecting a row is not an object write, so already persisted
@@ -1815,8 +1817,20 @@ impl Store {
             )
             .await?
             .get(0);
+        let accepted: i64 = tx
+            .query_one(
+                "SELECT count(*)::bigint FROM proposal_rows
+                 WHERE proposal_id = $1 AND status = 'accepted'",
+                &[&id],
+            )
+            .await?
+            .get(0);
         let next = if current == "open" {
-            "discarded".to_owned()
+            if accepted > 0 {
+                "accepted".to_owned()
+            } else {
+                "discarded".to_owned()
+            }
         } else {
             current.clone()
         };

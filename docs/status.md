@@ -1,6 +1,52 @@
 # Status 2026-11-09
 
-Bas: `origin/main` tip `a7e7d58` (#270). Senaste migrering i repot: `V44__proposal_recoveries.sql` (#268).
+Bas: `origin/main` tip `549d2d3` (#271). Senaste migrering i repot: `V44__proposal_recoveries.sql` (#268).
+
+## Rad 212-uppföljning i den här PR:en — blandat utfall får samma slutstatus
+
+Grenen `junior/212-mixed-outcome-status` utgår från `549d2d3` (#271) och är
+inte mergad, deployad eller accepterad. Den rättar en kvarvarande
+inkonsekvens efter #268: när A redan var sparad (raden `accepted`) och B
+fortfarande `pending`, stängde en Discard från draft-baren det öppna
+förslaget som `discarded`. Samma blandade medlemskap via den historiska
+återställningsvägen på ett redan stängt förslag behöll `accepted`. Review →
+Proposals visade alltså olika slutstatus beroende på vilken Discard-väg som
+användes, trots att en rad faktiskt hade tillämpats.
+
+- `Store::discard_proposal` härleder nu den öppna radens slutstatus från
+  medlemskapet på samma sätt som `finalize_proposal`: minst en `accepted` rad
+  ger `accepted`, annars `discarded`. Kvarvarande `pending`-rader avvisas
+  fortfarande i samma transaktion.
+- Historisk återställning av ett redan stängt förslag behåller sin tidigare
+  status, avvisar bara `pending`-rader och skriver samma
+  `proposal_recoveries`-granskningsrad som förut. Därmed slutar båda vägarna
+  `accepted` för ett blandat utfall, och ren Discard utan accepterade rader
+  slutar fortsatt `discarded`.
+- Katalogägarskap, claim/lease, scoped Discard och rollskydd från #268 är
+  oförändrade.
+- Regressioner: `crates/store/tests/proposals.rs` har
+  `discard_of_an_open_mixed_proposal_ends_accepted` (A accepterad, B
+  `pending`, Discard via store-vägen) och
+  `discard_of_an_open_proposal_without_accepted_rows_ends_discarded`.
+  Historiska `discard_recovers_a_closed_proposal_with_pending_rows_idempotently`
+  kräver fortsatt `accepted`, B `rejected` och en granskningsrad.
+  `crates/api/tests/http.rs` beskriver nu samma blandade fall över HTTP:
+  `discarded["status"] == "accepted"` med A `accepted` och B `rejected`.
+- Bevis i engångscontainrar (`docker run --rm`, eget nät, tmpfs, ingen
+  hostnetwork, ingen demo-DB): `cargo fmt --all --check` (exit 0),
+  `cargo clippy -p braian-store -p braian-api --all-targets -- -D warnings`
+  (exit 0), `cargo test -p braian-store` (105 godkända),
+  `cargo test -p braian-api` (219 godkända, 1 ignorerad live-test),
+  web-typecheck (exit 0), hela vitest-sviten (810 godkända; 5 tidskänsliga
+  filer slog timeout under full körning och passerade 34/34 vid isolerad
+  omkörning), English checker (exit 0) och
+  `e2e/proposal-lifecycle.spec.ts` (1 godkänd, 49,1 s).
+- Testbevisets väg: QA-skärmbilderna under
+  `/workspace/braian-qa/212-retest268-20261109-0949/` (`01-version` …
+  `07-after-discard-B`) visar mixed draft-bar Discard; den här grenen jämför
+  den vägen med historisk Discard-återställning av samma medlemskap.
+- `apps/web/src/data-model.tsx` är orörd
+  (`sha256 2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`).
 
 ## Rad 135 — levererad på main (#269)
 
