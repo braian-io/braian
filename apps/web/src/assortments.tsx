@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { MoreHorizontal } from 'lucide-react'
+import { Lock, MoreHorizontal } from 'lucide-react'
 import { api, catalogName, searchQuery, type Json } from './api'
 import { formatCount } from './format'
 import {
@@ -67,9 +67,12 @@ export function NewSelectionDialog({ session }: { session: SelectionSession }) {
   const [name, setName] = useState('')
   const [kind, setKind] = useState<SelectionKind>('manual')
   const [typeKey, setTypeKey] = useState(workspaceType)
+  const typeLabel = types.find((type) => type.key === typeKey)?.plural || typeKey
   const [query, setQuery] = useState('')
   const [editing, setEditing] = useState<Json | null>(null)
   const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const nameRef = useRef<HTMLInputElement>(null)
   const queryClient = useQueryClient()
 
   useEffect(() => {
@@ -107,7 +110,10 @@ export function NewSelectionDialog({ session }: { session: SelectionSession }) {
   }, [workspaceType, firstType])
 
   const save = async () => {
-    const title = name.trim()
+    if (saving) return
+    // Fast typing can outrun React state; the input's value is the source of
+    // truth so a click immediately after the last key cannot save a prefix.
+    const title = (nameRef.current?.value ?? name).trim()
     const chosen = typeKey || workspaceType
     if (!title || !chosen) return
     if (kind === 'dynamic' && !query.trim()) {
@@ -115,6 +121,7 @@ export function NewSelectionDialog({ session }: { session: SelectionSession }) {
       return
     }
     setError('')
+    setSaving(true)
     const manual = (editing?.query as Json | undefined) ?? manualSelectionQuery(session)
     const body = {
       ...(editing ? { id: String(editing.id) } : {}),
@@ -125,6 +132,8 @@ export function NewSelectionDialog({ session }: { session: SelectionSession }) {
     }
     try {
       if (editing) {
+        // Selections are written directly through the assortment endpoint, not
+        // as review drafts. Keep that path; only the pending state is new.
         await api.put('/v1/assortments/{id}', { params: { path: { id: String(editing.id) } }, body })
       } else {
         await api.post('/v1/assortments', { body })
@@ -138,6 +147,8 @@ export function NewSelectionDialog({ session }: { session: SelectionSession }) {
     } catch (reason) {
       const message = writeErrorMessage(reason)
       if (message) setError(message)
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -160,9 +171,10 @@ export function NewSelectionDialog({ session }: { session: SelectionSession }) {
           <label className="model-field">
             <span>{copy.assortment}</span>
             <Input
+              ref={nameRef}
+              className="selection-name"
               data-testid="assortment-name"
               value={name}
-              autoFocus
               aria-label={copy.assortment}
               placeholder={copy.assortment}
               onChange={(event) => setName(event.target.value)}
@@ -170,32 +182,56 @@ export function NewSelectionDialog({ session }: { session: SelectionSession }) {
           </label>
           <label className="model-field">
             <span>{copy.type}</span>
-            <select
-              aria-label={copy.type}
-              data-testid="selection-type"
-              value={typeKey}
-              disabled={Boolean(editing)}
-              onChange={(event) => setTypeKey(event.target.value)}
-            >
-              {types.map((type) => (
-                <option key={type.key} value={type.key}>
-                  {type.plural || type.key}
-                </option>
-              ))}
-            </select>
+            {editing ? (
+              <span
+                className="model-field-locked"
+                data-testid="selection-type"
+                data-locked="true"
+                aria-readonly="true"
+                aria-label={copy.type}
+              >
+                <Lock size={12} aria-hidden="true" />
+                <span>{typeLabel}</span>
+              </span>
+            ) : (
+              <select
+                aria-label={copy.type}
+                data-testid="selection-type"
+                value={typeKey}
+                onChange={(event) => setTypeKey(event.target.value)}
+              >
+                {types.map((type) => (
+                  <option key={type.key} value={type.key}>
+                    {type.plural || type.key}
+                  </option>
+                ))}
+              </select>
+            )}
           </label>
           <label className="model-field">
             <span>{copy.selectionKind}</span>
-            <select
-              aria-label={copy.selectionKind}
-              data-testid="selection-kind"
-              value={kind}
-              disabled={Boolean(editing)}
-              onChange={(event) => setKind(selectionKind(event.target.value))}
-            >
-              <option value="dynamic">{copy.dynamicSelection}</option>
-              <option value="manual">{copy.manualSelection}</option>
-            </select>
+            {editing ? (
+              <span
+                className="model-field-locked"
+                data-testid="selection-kind"
+                data-locked="true"
+                aria-readonly="true"
+                aria-label={copy.selectionKind}
+              >
+                <Lock size={12} aria-hidden="true" />
+                <span>{kind === 'dynamic' ? copy.dynamicSelection : copy.manualSelection}</span>
+              </span>
+            ) : (
+              <select
+                aria-label={copy.selectionKind}
+                data-testid="selection-kind"
+                value={kind}
+                onChange={(event) => setKind(selectionKind(event.target.value))}
+              >
+                <option value="dynamic">{copy.dynamicSelection}</option>
+                <option value="manual">{copy.manualSelection}</option>
+              </select>
+            )}
           </label>
           {kind === 'dynamic' ? (
             <label className="model-field">
@@ -215,7 +251,9 @@ export function NewSelectionDialog({ session }: { session: SelectionSession }) {
             <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
               {copy.cancel}
             </Button>
-            <Button type="submit" variant="primary">{copy.saveAssortment}</Button>
+            <Button type="submit" variant="primary" data-testid="save-selection" disabled={saving}>
+              {saving ? copy.saving : copy.saveAssortment}
+            </Button>
           </div>
         </form>
       </DialogContent>

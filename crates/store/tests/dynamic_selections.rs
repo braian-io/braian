@@ -99,3 +99,68 @@ async fn deleting_a_selection_clears_the_views_that_used_it() {
     assert!(view.get("selection_id").is_none(), "{view}");
     assert_eq!(view["type_key"], "item");
 }
+
+#[tokio::test]
+async fn renaming_a_mirrored_selection_updates_the_same_filter_in_another_type() {
+    let db = TestDb::create().await;
+    let user = db
+        .store()
+        .create_user("mirror@example.com", "x", "editor", "Mirror")
+        .await
+        .unwrap();
+    let product = Uuid::parse_str("018f0000-0000-7000-8000-000000000200").unwrap();
+    let article = Uuid::parse_str("018f0000-0000-7000-8000-000000000201").unwrap();
+    let query = json!({ "group": "food:cheese" });
+
+    let product_selection = Uuid::now_v7();
+    db.store()
+        .save_assortment(
+            product_selection,
+            user.id,
+            product,
+            "Cheese",
+            "manual",
+            &query,
+        )
+        .await
+        .unwrap();
+    let article_selection = Uuid::now_v7();
+    db.store()
+        .save_assortment(
+            article_selection,
+            user.id,
+            article,
+            "Cheese",
+            "manual",
+            &query,
+        )
+        .await
+        .unwrap();
+    let other = Uuid::now_v7();
+    db.store()
+        .save_assortment(other, user.id, article, "Organic", "manual", &query)
+        .await
+        .unwrap();
+
+    db.store()
+        .update_assortment(article_selection, "Aged cheese", &query)
+        .await
+        .unwrap();
+
+    let renamed = db
+        .store()
+        .assortment(article_selection)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(renamed["name"], "Aged cheese");
+    let mirrored = db
+        .store()
+        .assortment(product_selection)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(mirrored["name"], "Aged cheese");
+    let untouched = db.store().assortment(other).await.unwrap().unwrap();
+    assert_eq!(untouched["name"], "Organic");
+}

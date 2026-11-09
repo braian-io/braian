@@ -531,7 +531,6 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
 }
 /* Hover belongs to the tab itself. The inner button must not paint a second box around the text. */
 .pane-tab-open:hover { background: transparent; }
-.pane-tab.active .pane-tab-open:focus-visible { outline: none; }
 .tab-x {
   display: inline-flex;
   align-items: center;
@@ -966,9 +965,12 @@ select.link-type-line { width: 100%; font-weight: 600; }
   box-shadow: var(--inset);
   color: var(--muted);
 }
+/* Hover is a soft fill, not a focus mark: only the keyboard/field focus draws the accent ring. */
+.search-field:hover:not(:focus-within) {
+  background: var(--hover);
+}
 /* Ring the whole field, not the inner input: the icon and shortcut stay inside one border level.
    A shadow ring follows the field radius; an outline can sit off the rounded edge next to the inset. */
-.search-field:hover,
 .search-field:focus-within {
   outline: none;
   box-shadow: var(--inset), 0 0 0 2px var(--accent);
@@ -1831,14 +1833,14 @@ canvas.graph.panning { cursor: grabbing; }
 
 .menu-note { margin: 0; padding: var(--space-1) var(--space-2); color: var(--text-2); font-size: var(--text-md); }
 /* The active cell in the active row: where Shift+F10 opens the menu.
-   Keyboard focus gets the ring and the header underline; a pointer selection
-   marks the active column with text only, so it does not add a second border. */
+   Keyboard focus gets the 2px accent ring and the header underline; a pointer
+   selection marks the active column with text only, so it does not add a second border. */
 .grid:focus-within .head .cell.column-active .column-header-btn {
   color: var(--accent);
 }
 .grid:focus-visible .row.selected .cell.active-cell,
 .grid:focus-visible .row.active .cell.active-cell {
-  box-shadow: inset 0 0 0 1px var(--accent-hover);
+  box-shadow: inset 0 0 0 2px var(--accent);
 }
 .grid:focus-visible .head .cell.column-active {
   box-shadow: inset 0 -2px 0 var(--accent);
@@ -2620,6 +2622,29 @@ html[data-theme-switching] *::after {
   box-shadow: var(--inset);
 }
 .model-field small { color: var(--muted); }
+/* The selection name is a real field at rest: keep a visible border while the
+   locked Type and Kind read as text with a lock, never as dropdowns. */
+.model-field .selection-name {
+  border: 1px solid var(--border);
+}
+.model-field .selection-name:hover:not(:focus-visible) {
+  border-color: var(--text-2);
+}
+.model-field .model-field-locked {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1_5);
+  min-height: 30px;
+  padding: 0 var(--space-2);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--text-2);
+  box-shadow: var(--inset);
+}
+.model-field .model-field-locked svg {
+  flex: none;
+  color: var(--muted);
+}
 
 .import-screen {
   position: fixed;
