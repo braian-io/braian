@@ -6,7 +6,7 @@ use tokio_postgres::types::ToSql;
 use uuid::Uuid;
 
 use crate::error::Error;
-use crate::ids::{PrincipalId, PrincipalKind};
+use crate::ids::{CatalogId, PrincipalId, PrincipalKind};
 use crate::session::Store;
 use braian_model::ObjectId;
 
@@ -1509,6 +1509,20 @@ impl Store {
         Ok(())
     }
 
+    /// Catalog that owns `id`. Missing ids return `None`.
+    ///
+    /// Proposals are stamped with the catalog on insert, but reads and claims
+    /// by id alone cross catalogs because there is no row-level security. Call
+    /// this before any claim or mutation so a request scoped to one catalog
+    /// cannot act on another catalog's proposal.
+    pub async fn proposal_catalog(&self, id: Uuid) -> Result<Option<CatalogId>, Error> {
+        let client = self.checkout().await?;
+        let row = client
+            .query_opt("SELECT catalog_id FROM proposals WHERE id = $1", &[&id])
+            .await?;
+        Ok(row.map(|row| CatalogId::from_uuid(row.get(0))))
+    }
+
     pub async fn proposal(&self, id: Uuid) -> Result<Option<Value>, Error> {
         let client = self.checkout().await?;
         let Some(row) = client
@@ -1773,11 +1787,12 @@ impl Store {
     ) -> Result<DiscardReport, Error> {
         let mut client = self.checkout().await?;
         let tx = client.transaction().await?;
+        let catalog = self.catalog_id().as_uuid();
         let row = tx
             .query_opt(
                 "SELECT status, claimed_by, (claimed_until > now()) AS live
-                 FROM proposals WHERE id = $1 FOR UPDATE",
-                &[&id],
+                 FROM proposals WHERE id = $1 AND catalog_id = $2 FOR UPDATE",
+                &[&id, &catalog],
             )
             .await?;
         let Some(row) = row else {

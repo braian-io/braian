@@ -5076,6 +5076,50 @@ fn update_row(object: &Value, key: &str, name: &str) -> Value {
     })
 }
 
+async fn create_source_catalog(app: &axum::Router, key: &str) -> Value {
+    let body = json!({ "key": key, "name": "Other source", "kind": "source", "editable": true });
+    let (status, _, catalog) = call(
+        app,
+        "POST",
+        "/v1/catalogs",
+        Some(HUMAN),
+        &[("content-type", "application/json")],
+        Some(&body.to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{catalog}");
+    catalog
+}
+
+async fn test_client(db: &TestDb) -> tokio_postgres::Client {
+    let (client, connection) = tokio_postgres::connect(&db.database_url(), tokio_postgres::NoTls)
+        .await
+        .expect("test database connection");
+    tokio::spawn(async move {
+        let _ = connection.await;
+    });
+    client
+}
+
+async fn proposal_claim_state(client: &tokio_postgres::Client, id: Uuid) -> (Option<Uuid>, bool) {
+    let row = client
+        .query_one(
+            "SELECT claimed_by, claimed_until IS NOT NULL FROM proposals WHERE id = $1",
+            &[&id],
+        )
+        .await
+        .expect("proposal claim row");
+    (row.get(0), row.get(1))
+}
+
+async fn changes_count(client: &tokio_postgres::Client) -> i64 {
+    client
+        .query_one("SELECT count(*)::bigint FROM changes", &[])
+        .await
+        .expect("changes count")
+        .get(0)
+}
+
 async fn accept_rows(app: &axum::Router, id: &str, rows: &[String]) -> (StatusCode, Value) {
     let body = json!({ "rows": rows });
     let (status, _, accepted) = call(
@@ -5497,4 +5541,275 @@ async fn a_large_scoped_accept_finishes_its_rows_and_leaves_the_rest_pending() {
     assert_eq!(status, StatusCode::OK, "{last}");
     let closed = proposal_body(&app, id).await;
     assert_eq!(closed["status"], "accepted", "{closed}");
+}
+
+#[tokio::test]
+async fn a_cross_catalog_discard_changes_no_rows_claims_or_audits() {
+    let (db, app) = app().await;
+    create_source_catalog(&app, "other").await;
+    let client = test_client(&db).await;
+
+    // An open proposal in the master catalog is not reachable through another
+    // catalog prefix, even though the id is known.
+    let a = create_item(&app, "XCAT-A", "Xcat A").await;
+    let b = create_item(&app, "XCAT-B", "Xcat B").await;
+    let open = create_rows_proposal(
+        &app,
+        "Cross catalog open",
+        json!([
+            update_row(&a, "XCAT-A", "Xcat A2"),
+            update_row(&b, "XCAT-B", "Xcat B2"),
+        ]),
+    )
+    .await;
+    let open_id = open["id"].as_str().unwrap().to_owned();
+    let open_uuid = Uuid::parse_str(&open_id).unwrap();
+    let open_rows = proposal_row_ids(&open);
+    let changes_before_open = changes_count(&client).await;
+
+    let accept_body = json!({ "rows": open_rows }).to_string();
+    let (status, _, refused_accept) = call(
+        &app,
+        "POST",
+        &format!("/v1/catalogs/other/proposals/{open_id}/accept"),
+        Some(HUMAN),
+        &[("content-type", "application/json")],
+        Some(&accept_body),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{refused_accept}");
+    assert_eq!(refused_accept["code"], "not_found", "{refused_accept}");
+    let (status, _, refused_discard) = call(
+        &app,
+        "POST",
+        &format!("/v1/catalogs/other/proposals/{open_id}/discard"),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{refused_discard}");
+    assert_eq!(refused_discard["code"], "not_found", "{refused_discard}");
+
+    let still = proposal_body(&app, &open_id).await;
+    assert_eq!(still["status"], "open", "{still}");
+    assert!(
+        still["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|row| row["status"] == "pending"),
+        "a cross-catalog call changed proposal rows: {still}"
+    );
+    let (claimed_by, claimed_until) = proposal_claim_state(&client, open_uuid).await;
+    assert!(claimed_by.is_none(), "a cross-catalog call left a claim");
+    assert!(!claimed_until, "a cross-catalog call left a live lease");
+    assert_eq!(
+        braian_store::testing::proposal_recovery_count(db.store(), open_uuid)
+            .await
+            .unwrap(),
+        0
+    );
+    let (_, _, saved_a) = call(
+        &app,
+        "GET",
+        &format!("/v1/objects/{}", a["id"].as_str().unwrap()),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(saved_a["values"]["name"]["sv"], "Xcat A", "{saved_a}");
+    assert_eq!(
+        changes_count(&client).await,
+        changes_before_open,
+        "a cross-catalog accept or discard wrote an object change"
+    );
+
+    // A historical accepted+pending proposal would have been repaired and
+    // audited by a cross-catalog discard before this guard.
+    let c = create_item(&app, "XCAT-C", "Xcat C").await;
+    let d = create_item(&app, "XCAT-D", "Xcat D").await;
+    let history = create_rows_proposal(
+        &app,
+        "Cross catalog history",
+        json!([
+            update_row(&c, "XCAT-C", "Xcat C2"),
+            update_row(&d, "XCAT-D", "Xcat D2"),
+        ]),
+    )
+    .await;
+    let history_id = history["id"].as_str().unwrap().to_owned();
+    let history_uuid = Uuid::parse_str(&history_id).unwrap();
+    let history_rows = proposal_row_ids(&history);
+    let (status, accepted) = accept_rows(&app, &history_id, &history_rows[..1]).await;
+    assert_eq!(status, StatusCode::OK, "{accepted}");
+    braian_store::testing::force_proposal_status(db.store(), history_uuid, "accepted")
+        .await
+        .unwrap();
+    let (_, _, saved_c) = call(
+        &app,
+        "GET",
+        &format!("/v1/objects/{}", c["id"].as_str().unwrap()),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    let changes_before_history = changes_count(&client).await;
+
+    let (status, _, refused_recovery) = call(
+        &app,
+        "POST",
+        &format!("/v1/catalogs/other/proposals/{history_id}/discard"),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{refused_recovery}");
+
+    let untouched = proposal_body(&app, &history_id).await;
+    assert_eq!(untouched["status"], "accepted", "{untouched}");
+    assert_eq!(untouched["rows"][0]["status"], "accepted", "{untouched}");
+    assert_eq!(
+        untouched["rows"][1]["status"], "pending",
+        "a cross-catalog call rejected a pending row: {untouched}"
+    );
+    let (claimed_by, claimed_until) = proposal_claim_state(&client, history_uuid).await;
+    assert!(claimed_by.is_none(), "a cross-catalog call left a claim");
+    assert!(!claimed_until, "a cross-catalog call left a live lease");
+    assert_eq!(
+        braian_store::testing::proposal_recovery_count(db.store(), history_uuid)
+            .await
+            .unwrap(),
+        0,
+        "a cross-catalog call wrote a recovery audit row"
+    );
+    assert_eq!(
+        changes_count(&client).await,
+        changes_before_history,
+        "a cross-catalog recovery wrote an object change"
+    );
+
+    // Same-catalog discard still repairs exactly once and keeps live values.
+    let (status, _, _) = call(
+        &app,
+        "POST",
+        &format!("/v1/proposals/{history_id}/discard"),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let repaired = proposal_body(&app, &history_id).await;
+    assert_eq!(repaired["status"], "accepted", "{repaired}");
+    assert_eq!(repaired["rows"][0]["status"], "accepted", "{repaired}");
+    assert_eq!(repaired["rows"][1]["status"], "rejected", "{repaired}");
+    let (_, _, after_c) = call(
+        &app,
+        "GET",
+        &format!("/v1/objects/{}", c["id"].as_str().unwrap()),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(after_c["version"], saved_c["version"], "{after_c}");
+    assert_eq!(after_c["values"], saved_c["values"], "{after_c}");
+    assert_eq!(
+        braian_store::testing::proposal_recovery_count(db.store(), history_uuid)
+            .await
+            .unwrap(),
+        1
+    );
+    let (status, _, _) = call(
+        &app,
+        "POST",
+        &format!("/v1/proposals/{history_id}/discard"),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(
+        braian_store::testing::proposal_recovery_count(db.store(), history_uuid)
+            .await
+            .unwrap(),
+        1,
+        "a repeated discard wrote another audit row"
+    );
+}
+
+#[tokio::test]
+async fn a_master_discard_cannot_reach_a_source_catalog_proposal() {
+    let (db, app) = app().await;
+    create_source_catalog(&app, "other").await;
+    let other = db.store().catalog_by_key("other").await.unwrap().unwrap();
+    let source = db.store().with_catalog(other.id);
+    let client = test_client(&db).await;
+
+    let body = json!({
+        "title": "Source only",
+        "rows": [{
+            "object_key": "SRC-ONLY",
+            "type_key": "item",
+            "patch": { "values": { "sku": "SRC-ONLY" } }
+        }]
+    });
+    let (status, _, proposal) = call(
+        &app,
+        "POST",
+        "/v1/catalogs/other/proposals",
+        Some(HUMAN),
+        &[("content-type", "application/json")],
+        Some(&body.to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{proposal}");
+    let id = proposal["id"].as_str().unwrap().to_owned();
+    let uuid = Uuid::parse_str(&id).unwrap();
+
+    let (status, _, refused) = call(
+        &app,
+        "POST",
+        &format!("/v1/proposals/{id}/discard"),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{refused}");
+    let (claimed_by, claimed_until) = proposal_claim_state(&client, uuid).await;
+    assert!(
+        claimed_by.is_none(),
+        "a master call claimed a source proposal"
+    );
+    assert!(!claimed_until, "a master call left a live lease");
+    assert_eq!(
+        braian_store::testing::proposal_recovery_count(db.store(), uuid)
+            .await
+            .unwrap(),
+        0
+    );
+
+    let open = source.proposal(uuid).await.unwrap().unwrap();
+    assert_eq!(open["status"], "open", "{open}");
+    assert_eq!(open["rows"][0]["status"], "pending", "{open}");
+
+    let (status, _, _) = call(
+        &app,
+        "POST",
+        &format!("/v1/catalogs/other/proposals/{id}/discard"),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let discarded = source.proposal(uuid).await.unwrap().unwrap();
+    assert_eq!(discarded["status"], "discarded", "{discarded}");
+    assert_eq!(discarded["rows"][0]["status"], "rejected", "{discarded}");
 }

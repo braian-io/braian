@@ -513,3 +513,79 @@ async fn discard_recovers_a_closed_proposal_with_pending_rows_idempotently() {
         1
     );
 }
+
+#[tokio::test]
+async fn claims_and_discards_are_scoped_to_the_store_catalog() {
+    let db = TestDb::create().await;
+    let who = db
+        .store()
+        .create_principal(PrincipalKind::Human, "ada")
+        .await
+        .unwrap();
+    let catalog = db
+        .store()
+        .create_catalog(
+            braian_store::CatalogId::new(),
+            "other",
+            "Other source",
+            braian_store::CatalogKind::Source,
+            true,
+        )
+        .await
+        .unwrap();
+    let source = db.store().with_catalog(catalog.id);
+    let (id, row_id) = open_proposal(&source, who).await;
+
+    assert_eq!(
+        db.store().proposal_catalog(id).await.unwrap(),
+        Some(catalog.id)
+    );
+    let cross = db.store().claim_proposal(id).await.unwrap_err();
+    assert!(
+        matches!(cross, Error::ProposalNotFound(proposal) if proposal == id),
+        "the master store claimed a source proposal: {cross}"
+    );
+
+    let lock = source.claim_proposal(id).await.unwrap();
+    let cross = db
+        .store()
+        .discard_proposal(id, lock.token(), who)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(cross, Error::ProposalNotFound(proposal) if proposal == id),
+        "the master store discarded a source proposal: {cross}"
+    );
+    let stored = source.proposal(id).await.unwrap().unwrap();
+    assert_eq!(stored["status"], "open", "{stored}");
+    assert_eq!(stored["rows"][0]["id"], json!(row_id));
+    assert_eq!(stored["rows"][0]["status"], "pending", "{stored}");
+    lock.release().await.unwrap();
+
+    let lock = source.claim_proposal(id).await.unwrap();
+    let report = source
+        .discard_proposal(id, lock.token(), who)
+        .await
+        .unwrap();
+    lock.release().await.unwrap();
+    assert_eq!(report.status, "discarded");
+    assert_eq!(report.rejected_rows, 1);
+    let stored = source.proposal(id).await.unwrap().unwrap();
+    assert_eq!(stored["status"], "discarded", "{stored}");
+    assert_eq!(stored["rows"][0]["status"], "rejected", "{stored}");
+
+    let lock = source.claim_proposal(id).await.unwrap();
+    let again = source
+        .discard_proposal(id, lock.token(), who)
+        .await
+        .unwrap();
+    lock.release().await.unwrap();
+    assert_eq!(again.rejected_rows, 0);
+    assert!(!again.recovered);
+    assert_eq!(
+        testing::proposal_recovery_count(db.store(), id)
+            .await
+            .unwrap(),
+        0
+    );
+}

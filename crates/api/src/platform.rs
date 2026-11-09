@@ -4418,6 +4418,24 @@ async fn attach_base_values(state: &AppState, body: &mut Value) -> Result<(), Pr
     Ok(())
 }
 
+/// Rejects a proposal that belongs to another catalog before any claim.
+///
+/// Catalog scoping is a session setting, not row-level security, so a lookup
+/// by id alone would otherwise reach across catalogs. Both the import-draft
+/// path and the ordinary claim path run after this check.
+async fn require_proposal_owner(state: &AppState, id: Uuid) -> Result<(), Problem> {
+    let catalog = state.store.catalog_id();
+    match state
+        .store
+        .proposal_catalog(id)
+        .await
+        .map_err(store_status)?
+    {
+        Some(owner) if owner == catalog => Ok(()),
+        _ => Err(Problem::new(StatusCode::NOT_FOUND, "not_found", "proposal")),
+    }
+}
+
 async fn accept_proposal(
     State(state): State<AppState>,
     Auth(identity): Auth,
@@ -4426,6 +4444,7 @@ async fn accept_proposal(
 ) -> Result<AcceptReply, Problem> {
     require(&identity, Role::Editor)?;
     crate::review::require_review(&identity, false, braian_model::ReviewAction::Save, None)?;
+    require_proposal_owner(&state, id).await?;
     // An import draft keeps its rows in the import session, not in proposal_rows.
     if let Some(session_id) = state
         .store
@@ -5378,6 +5397,7 @@ async fn discard_proposal(
 ) -> Result<StatusCode, Problem> {
     require(&identity, Role::Editor)?;
     crate::review::require_review(&identity, false, braian_model::ReviewAction::Discard, None)?;
+    require_proposal_owner(&state, id).await?;
     if let Some(session_id) = state
         .store
         .proposal_session(id)

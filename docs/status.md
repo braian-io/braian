@@ -223,18 +223,31 @@ Endast mergade PR:er i intervallet #104–#145 (läget vid status 2026-11-01). #
   objekt behöver inte röras och ingen databasreparation krävs. Åtgärden är
   atomär och idempotent; en ny tabell `proposal_recoveries` (V44) skriver en
   granskningsrad per faktisk återställning, inte vid upprepade no-op-anrop.
-  Roll-, katalog- och stale-skydd ligger kvar i API:t.
+  Roll- och stale-skydd ligger kvar i API:t.
+- Katalogisolering före varje claim/mutation: `proposal_catalog` läser ägaren
+  och Accept/Discard avvisar en proposal från en annan katalog med 404 innan
+  importgrenen eller claimen körs. `claim_proposal` och `discard_proposal`
+  filtrerar dessutom på `catalog_id` i samma transaktion, eftersom kataloger
+  är en session-inställning och inte row-level security. En API-regression
+  skapar en källkatalog och bevisar att cross-catalog Accept/Discard lämnar
+  rader, `claimed_by`/`claimed_until` och `proposal_recoveries` orörda; en
+  master-Discard når inte heller en proposal i en källkatalog. Samma-katalog
+  Discard är fortsatt idempotent och bevarar accepterade rader och live-värden.
 - Bevis i den här grenen, allt i engångscontainrar (`docker run --rm`, eget
   nät, tmpfs, ingen hostnetwork, ingen demo-DB):
   `cargo check -p braian-store -p braian-api --tests` (exit 0),
   `cargo clippy -p braian-store -p braian-api --all-targets -- -D warnings`
-  (exit 0), `cargo test -p braian-store --test proposals` (9 godkända),
-  `review_drafts` (4), `migration_upgrade` (9, med baslinje från `origin/main`),
-  `cargo test -p braian-api --test http` (48), `config_apply` (16) och
-  `product` (2). Web: `tsc --noEmit` (exit 0) och hela vitest-sviten
-  (149 filer, 812 tester). Ny `e2e/proposal-lifecycle.spec.ts` kördes mot
-  isolerad Postgres/Typesense/API/Vite: A synlig/sparad, B dold och kvar som
-  `pending`, förslaget `open`, och B syns igen efter reload: 1 godkänd (18,9 s).
+  (exit 0), `cargo fmt --all --check` (exit 0),
+  `cargo test -p braian-store --test proposals` (10 godkända, inklusive
+  katalogscopad claim/discard), `review_drafts` (4), `migration_upgrade`
+  (9, med baslinje från `origin/main`), `cargo test -p braian-api --test http`
+  (50, inklusive cross-catalog Accept/Discard), `config_apply` (16),
+  `import_http` (9) och `product` (2). Web: `tsc --noEmit` (exit 0) och hela
+  vitest-sviten (149 filer, 812 tester). English checker
+  (`scripts/check-english.py`, exit 0). Ny `e2e/proposal-lifecycle.spec.ts`
+  kördes mot isolerad Postgres/Typesense/API/Vite: A synlig/sparad, B dold och
+  kvar som `pending`, förslaget `open`, och B syns igen efter reload:
+  1 godkänd (31,9 s).
 - `apps/web/src/data-model.tsx` är orörd (sha256 lika med `4cd25f7`). Inga av de
   tre faktiska demolämningarna har rörts; de kräver fortsatt verifierad deploy
   och ny QA. Inget påstående om merge, deploy eller demoacceptans.
