@@ -1,8 +1,24 @@
 # Status 2026-11-09
 
-Bas: `origin/main` tip `77ff773` (#273). Senaste migrering i repot: `V44__proposal_recoveries.sql` (#268).
+Bas: `origin/main` tip `729f70f` (#274). Senaste migrering i repot: `V44__proposal_recoveries.sql` (#268).
 
-## Rad 107-uppföljning i den här PR:en — header-klick sätter målvyn
+## Rad 215 uppföljning — låsta fält, levande namn och väntande Save
+
+Test av #271 på demo `549d2d3` (2026-11-09) fann tre saker som den här grenen rättar. Ändringen är inte mergad, deployad eller accepterad.
+
+- Type och Kind i Edit selection var disabled `<select>` och såg därför fortfarande ut som dropdowns med chevron. I edit-läget renderas de nu som read-only värden med låsikon, utan select eller chevron. Namnfältet har en synlig 1px-kant i vila. Reglerna ligger i `apps/web/src/styles.css` (`.model-field .selection-name`, `.model-field .model-field-locked`).
+- Products-panelen visade kvar "Cheese" efter att Articles-selectionen bytt namn. Orsaken var inte React Query-cachen: demon har två speglade selection-rader med samma filter, samma namn och samma ägare, en per typ. Product-raden behöll därför sitt gamla namn även efter F5. `Store::update_assortment` låter nu speglade rader (samma ägare, kind, fråga och tidigare namn) följa med vid namnbytet, och webbklienten invaliderar redan alla `assortments`-frågor. Både Articles- och Products-chippen samt listan visar det nya namnet efter omladdning. Skrivvägen är oförändrad: Save selection går direkt via `PUT /v1/assortments/{id}`, inte som en draft.
+- Save selection visar nu `Saving…` och är disabled medan PUT:en pågår. Namnet läses från inputfältets värde vid submit, så ett snabbt skrivet namn inte kan sparas trunkerat. Ctrl+A i namnfältet markerar bara fältets text.
+
+`e2e/edit-selection-click.spec.ts` täcker nu också: låsta Type/Kind utan select/chevron, synlig namnkant i vila, snabbskrivning följt av omedelbar Save och fullt namn efter omladdning, `Saving…` medan PUT:en väntar, Ctrl+A som bara markerar namnfältet, samt Articles- och Products-chippen och listan efter namnbyte och F5. `crates/store/tests/dynamic_selections.rs` har `renaming_a_mirrored_selection_updates_the_same_filter_in_another_type`. Körningen är gjord i isolerade `--rm`-containrar på ett uppgiftsägt Docker-nätverk mot syntetisk Postgres 18 och Typesense 30.2: web-typecheck grön, 150 vitest-filer med 815 tester gröna, `edit-selection-click.spec.ts` 7/7, `dynamic-selections.spec.ts` 2/2, `new-selection-dialog.spec.ts` 1/1, store-testet 3/3, `cargo fmt --all --check` och `cargo clippy -p braian-store --tests -- -D warnings` gröna. Inga demo-, host- eller Docker-socket-körningar.
+`e2e/edit-selection-click.spec.ts` (registrerad i `scripts/e2e.mjs`) täcker: öppna via faktisk meny, klicka namnfältet, byta namn på den seedade manuella Articles-selectionen Cheese, Save selection, synligt namn och API-läsning efter omladdning, Cancel/X/Escape utan oavsiktlig ändring, upprepad öppning, Type/Kind låsta i edit-läget, samt en stagad tabelldraft. Körningen är gjord i isolerade `--rm`-containrar mot syntetisk Postgres/Typesense. Mergad till `main` som #271 (`549d2d3`); inte deployad eller accepterad.
+
+Braian går att starta lokalt och att klicka igenom på [demo.braian.io](https://demo.braian.io). Postgres är källan och ändringsloggen. Indexer, sök, auth, förslag och webbgränssnittet sitter på samma kedja. Flödet står i `docs/events.md`. Demokatalogen som `just dev` visar är bara seed: hjälteobjekt plus 240 syntetiska livsmedel (leverantörer, produkter och artiklar). Etiketter finns på sv/en/de och objektdata är engelska. Strukturen heter Food, leverantörer står utanför trädet och pekas ut med länkar. Tester skriver i databasen `braian_e2e` och sökaliaset `braian_e2e`, inte i demon.
+
+Skalprovet (5 000 skrivningar i sekunden, 1 miljon och 10 miljoner objekt) är inte gjort. En virtuell tabell mot 100 013 objekt är mätt, se `docs/measurements/2026-10-25-table-100k.md`.
+
+
+## Rad 107-uppföljning — levererad på main (#274)
 
 Den här grenen (`junior/107-header-column-target`) utgår från `549d2d3` (#271) och är **inte mergad, deployad eller accepterad**. Den rättar Test-avvisningen på demo `549d2d3`: ingen väg flyttade kolumnen i båda tabellerna längre, men två av fem vägar flyttade den i fel tabell. Ett header-klick satte inte den tabellen som mål, så upplösningen föll tillbaka på tabellen som senast hade cellfokus.
 
@@ -111,18 +127,14 @@ Läsbara URL:er (Notion 170) är mergade i `main` som squash `61c6e3c` (#265). D
 - `GET /v1/objects` accepterar både typnyckel och typ-id i `type`. Sparade vyer lagrar typ-id (V18), så en direktlänk annars fick tom träff.
 - Vitest täcker Unicode-slug (även namn som bara är kombinerande tecken), fallback, krock, escapad `~` i typad SKU, nyckellöst suffix som förlängs vid delad svans, kodning, uuid-avvisning, att en delad nyckel slås upp i produkttypen och att ett URL-objekt inte tappas när en annan rad redan är vald. `e2e/readable-urls.spec.ts` är registrerad i `scripts/e2e.mjs`: direktlänk och omladdning, nyckel i stället för uuid, navigationsslug, byte av nyckel, dubbletter, kodning, typad SKU med `~`, bakåt/framåt, trasig eller saknad måltavla, nyckellös länkrad efter omladdning och två kolliderande nyckellösa länkar vars utskrivna förlängda tokens laddas om. `e2e/palette-drill.spec.ts` har ett regressionstest för att inloggning når en objekttabell även när en tidigare sparad layout har en agentflik i fokus. Körningen är gjord i isolerade `--rm`-containrar mot syntetisk Postgres/Typesense; den är inte deployad.
 
+## Rad 215 — Edit selection-dialogen (mergad i #271)
 ## Rad 215 (mergad i #271) — i basen, inte den här PR:en
 
 Rapporten gällde att kontrollerna i Edit selection inte svarade på klick i Articles-arbetsytans Selections-panel. På basen `4cd25f7` gick klickflödet igenom i Chromium, Firefox och WebKit, både från radmenyn och från högerklick, efter att urvalet tillämpats och med en stagad objekt-draft. Ingen pointer-interception eller överlägg kunde reproduceras.
 
 Det som däremot gick att reproducera var fokus: dialogen öppnades från radmenyn med fokus kvar på radens "More actions"-knapp bakom modalen, och efter stängning hamnade fokus på `<body>`. Orsaken var att den delade `DialogContent` fångade opener i sin `useState` när komponenten monterades med skalet (långt före öppningen), och att `autoFocus` på namnfältet hann flytta fokus innan Radix `onOpenAutoFocus`. Nu fångas opener i `DialogContent` under render medan innehållet ännu inte är monterat, alltså innan ett `autoFocus`-fält hinner ta fokus (till skillnad från `onOpenAutoFocus`, som körs för sent), menyn fokuserar sin trigger innan kommandot öppnar dialogen, och namnfältet får fokus via Radix fokusomhändertagande. CI-regressionen där `create-dialog`-dialogen tappade opener-fokus efter stängning är åtgärdad; `create-dialog.spec.ts` går grönt (12/12) tillsammans med `edit-selection-click.spec.ts` (6/6). Efter Cancel, X och Escape återgår fokus till radens meny-knapp; inget överlägg ligger kvar och `body` har `pointer-events: auto`.
 
-`e2e/edit-selection-click.spec.ts` (registrerad i `scripts/e2e.mjs`) täcker: öppna via faktisk meny, klicka namnfältet, byta namn på den seedade manuella Articles-selectionen Cheese, Save selection, synligt namn och API-läsning efter omladdning, Cancel/X/Escape utan oavsiktlig ändring, upprepad öppning, Type/Kind låsta i edit-läget, samt en stagad tabelldraft. Körningen är gjord i isolerade `--rm`-containrar mot syntetisk Postgres/Typesense. Mergad till `main` som #271 (`549d2d3`); inte deployad eller accepterad.
-
-Braian går att starta lokalt och att klicka igenom på [demo.braian.io](https://demo.braian.io). Postgres är källan och ändringsloggen. Indexer, sök, auth, förslag och webbgränssnittet sitter på samma kedja. Flödet står i `docs/events.md`. Demokatalogen som `just dev` visar är bara seed: hjälteobjekt plus 240 syntetiska livsmedel (leverantörer, produkter och artiklar). Etiketter finns på sv/en/de och objektdata är engelska. Strukturen heter Food, leverantörer står utanför trädet och pekas ut med länkar. Tester skriver i databasen `braian_e2e` och sökaliaset `braian_e2e`, inte i demon.
-
-Skalprovet (5 000 skrivningar i sekunden, 1 miljon och 10 miljoner objekt) är inte gjort. En virtuell tabell mot 100 013 objekt är mätt, se `docs/measurements/2026-10-25-table-100k.md`.
-
+`e2e/edit-selection-click.spec.ts` (registrerad i `scripts/e2e.mjs`) täcker: öppna via faktisk meny, klicka namnfältet, byta namn på den seedade manuella Articles-selectionen Cheese, Save selection, synligt namn och API-läsning efter omladdning, Cancel/X/Escape utan oavsiktlig ändring, upprepad öppning, Type/Kind låsta i edit-läget, samt en stagad tabelldraft. Körningen är gjord i isolerade `--rm`-containrar mot syntetisk Postgres/Typesense. #271 är mergad till `main` som `549d2d3`; den är inte deployad eller accepterad.
 
 ## Levererat sedan 2026-11-01 (verifierat via `git log` på main)
 

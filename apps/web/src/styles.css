@@ -2622,6 +2622,29 @@ html[data-theme-switching] *::after {
   box-shadow: var(--inset);
 }
 .model-field small { color: var(--muted); }
+/* The selection name is a real field at rest: keep a visible border while the
+   locked Type and Kind read as text with a lock, never as dropdowns. */
+.model-field .selection-name {
+  border: 1px solid var(--border);
+}
+.model-field .selection-name:hover:not(:focus-visible) {
+  border-color: var(--text-2);
+}
+.model-field .model-field-locked {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1_5);
+  min-height: 30px;
+  padding: 0 var(--space-2);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--text-2);
+  box-shadow: var(--inset);
+}
+.model-field .model-field-locked svg {
+  flex: none;
+  color: var(--muted);
+}
 
 .import-screen {
   position: fixed;
