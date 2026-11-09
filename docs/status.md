@@ -2,6 +2,18 @@
 
 Bas: `origin/main` tip `729f70f` (#274). Senaste migrering i repot: `V44__proposal_recoveries.sql` (#268).
 
+## Rad 103 — Select source med explicit målvy
+
+Grenen `junior/103-select-source-target` utgår från `86bb9a0` (#275) och är **inte mergad, deployad eller accepterad**. Den rättar Test-avvisningen från 2026-11-07: medan Products höll fokus öppnades Articles-panelens Select source-meny, men paletten visade "Current: All Products" och "Articles from Products" var felaktigt inaktiverad som cykel.
+
+- `apps/web/src/palette-select-source.ts`: ny `resolveSourceTarget` föredrar ett explicit meny-mål (`viewId`) framför fokus, och fokus framför den första objektstabellen. Ctrl+K har inget explicit mål och följer därför den fokuserade tabellen som förut.
+- `apps/web/src/palette.tsx`: paletten använder målet för både "Current"-märkning och cykelkontroll, och skickar med målvyn när en typ eller peer-källa väljs.
+- `apps/web/src/shell.tsx`: `view:select-source`-köraren bevarar meny-målets `viewId` i `paletteSourceTargetViewId` och nollställer det för Ctrl+K samt alla andra palettvägar.
+- `apps/web/e2e/select-source-target.spec.ts`: två målvyper i båda fokus-/menyordningarna, relation och explicit All, omladdning, Ctrl+K fokusregression, samt en äkta A→B→C→A-cykel jämfört med den felaktiga cykeln.
+- Bevis i uppgiftsägda `--rm`-containrar på `row103-net` mot syntetisk Postgres 18 och Typesense 30.2, utan host-verktyg, hostnätverk eller Docker-socket: `pnpm typecheck` grön; vitest 821/822 gröna (den enda felvigheten `graph-scene.test.ts` är ett tidskänsligt test som passerar isolerat, 415 ms); `select-source-target.spec.ts` 2/2; regressioner 14/14 (`view-source-type`, `peer-source`, `peer-source-empty`, `peer-source-chain`, `source-all-explicit`, `link-source-repair`, `link-types`, `type-template-peer`, `template-picker`); `scripts/check-english.py` exit 0.
+- `apps/web/src/data-model.tsx` orörd (`sha256 2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`).
+- Kvarstående beteende (oförändrat): omladdning bevarar källan men inte den valda raden. Efter omladdning visar målet peer-empty-tillståndet tills en rad väljs igen, och ingen tyst All-fallback sker.
+
 ## Rad 215 uppföljning — låsta fält, levande namn och väntande Save
 
 Test av #271 på demo `549d2d3` (2026-11-09) fann tre saker som den här grenen rättar. Ändringen är inte mergad, deployad eller accepterad.
