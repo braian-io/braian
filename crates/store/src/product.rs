@@ -6,7 +6,7 @@ use tokio_postgres::types::ToSql;
 use uuid::Uuid;
 
 use crate::error::Error;
-use crate::ids::{PrincipalId, PrincipalKind};
+use crate::ids::{CatalogId, PrincipalId, PrincipalKind};
 use crate::session::Store;
 use braian_model::ObjectId;
 
@@ -48,6 +48,17 @@ pub struct ProposalRow {
     pub status: String,
     pub conflict: bool,
     pub position: i32,
+}
+
+/// What one supported discard did to an ordinary proposal.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiscardReport {
+    pub previous_status: String,
+    pub status: String,
+    /// Pending rows rejected by this call. No object value is rewritten.
+    pub rejected_rows: u32,
+    /// True when a proposal that was already closed still had pending rows.
+    pub recovered: bool,
 }
 
 /// One usage count. Empty place ids mean the attribute's total object count.
@@ -1498,6 +1509,20 @@ impl Store {
         Ok(())
     }
 
+    /// Catalog that owns `id`. Missing ids return `None`.
+    ///
+    /// Proposals are stamped with the catalog on insert, but reads and claims
+    /// by id alone cross catalogs because there is no row-level security. Call
+    /// this before any claim or mutation so a request scoped to one catalog
+    /// cannot act on another catalog's proposal.
+    pub async fn proposal_catalog(&self, id: Uuid) -> Result<Option<CatalogId>, Error> {
+        let client = self.checkout().await?;
+        let row = client
+            .query_opt("SELECT catalog_id FROM proposals WHERE id = $1", &[&id])
+            .await?;
+        Ok(row.map(|row| CatalogId::from_uuid(row.get(0))))
+    }
+
     pub async fn proposal(&self, id: Uuid) -> Result<Option<Value>, Error> {
         let client = self.checkout().await?;
         let Some(row) = client
@@ -1593,9 +1618,12 @@ impl Store {
     /// Moves an open proposal to `accepted` or `discarded` while `claim` still holds it.
     ///
     /// A missing row, a lease that is not `claim`, and any other current status
-    /// are errors. When `reject_pending` is set, rows still `pending` become
-    /// `rejected` in the same transaction, so a failed status write leaves them
-    /// pending. The claim is cleared when the new status commits.
+    /// are errors. Without `reject_pending`, a proposal that still has pending
+    /// rows is also an error: ordinary accepts must inspect the full membership
+    /// through [`Store::finalize_proposal`], and only a discard may reject the
+    /// rows it leaves behind. When `reject_pending` is set, rows still `pending`
+    /// become `rejected` in the same transaction, so a failed status write leaves
+    /// them pending. The claim is cleared when the new status commits.
     pub async fn set_proposal_status(
         &self,
         id: Uuid,
@@ -1635,6 +1663,23 @@ impl Store {
         if holder != Some(claim) || live != Some(true) {
             return Err(Error::ProposalClaimLost(id));
         }
+        if !reject_pending {
+            let pending: i64 = tx
+                .query_one(
+                    "SELECT count(*)::bigint FROM proposal_rows
+                     WHERE proposal_id = $1 AND status = 'pending'",
+                    &[&id],
+                )
+                .await?
+                .get(0);
+            if pending > 0 {
+                return Err(Error::ProposalTransition {
+                    id,
+                    from: current,
+                    to: status.to_owned(),
+                });
+            }
+        }
         if reject_pending {
             tx.execute(
                 "UPDATE proposal_rows SET status = 'rejected'
@@ -1656,6 +1701,161 @@ impl Store {
         }
         tx.commit().await?;
         Ok(())
+    }
+
+    /// Closes an open proposal only when every row is terminal.
+    ///
+    /// The whole membership is read and the new status is written in the same
+    /// transaction while `claim` holds the proposal. A row that is still
+    /// `pending` - because the caller selected only part of the proposal, a
+    /// write failed, or the object was deleted - leaves the proposal open.
+    /// Otherwise the result is `accepted` when at least one row was accepted
+    /// and `discarded` when every terminal row was rejected. Returns `None`
+    /// when the proposal was already closed or still has pending rows.
+    pub async fn finalize_proposal(&self, id: Uuid, claim: Uuid) -> Result<Option<String>, Error> {
+        let mut client = self.checkout().await?;
+        let tx = client.transaction().await?;
+        let row = tx
+            .query_opt(
+                "SELECT status, claimed_by, (claimed_until > now()) AS live
+                 FROM proposals WHERE id = $1 FOR UPDATE",
+                &[&id],
+            )
+            .await?;
+        let Some(row) = row else {
+            return Err(Error::ProposalNotFound(id));
+        };
+        let current: String = row.get(0);
+        if current != "open" {
+            return Ok(None);
+        }
+        let holder: Option<Uuid> = row.get(1);
+        let live: Option<bool> = row.get(2);
+        if holder != Some(claim) || live != Some(true) {
+            return Err(Error::ProposalClaimLost(id));
+        }
+        let counts = tx
+            .query_one(
+                "SELECT
+                    count(*) FILTER (WHERE status = 'pending')::bigint,
+                    count(*) FILTER (WHERE status = 'accepted')::bigint
+                 FROM proposal_rows WHERE proposal_id = $1",
+                &[&id],
+            )
+            .await?;
+        let pending: i64 = counts.get(0);
+        if pending > 0 {
+            return Ok(None);
+        }
+        let accepted: i64 = counts.get(1);
+        let status = if accepted > 0 {
+            "accepted"
+        } else {
+            "discarded"
+        };
+        let updated = tx
+            .execute(
+                "UPDATE proposals
+                 SET status = $2, claimed_by = NULL, claimed_until = NULL, resolved_at = now()
+                 WHERE id = $1 AND claimed_by = $3",
+                &[&id, &status, &claim],
+            )
+            .await?;
+        if updated != 1 {
+            return Err(Error::ProposalClaimLost(id));
+        }
+        tx.commit().await?;
+        Ok(Some(status.to_owned()))
+    }
+
+    /// Discards an open proposal, or repairs a historical closed proposal that
+    /// still has pending rows.
+    ///
+    /// An open proposal becomes `discarded` and every pending row becomes
+    /// `rejected` in this transaction. An already `accepted` or `discarded`
+    /// proposal keeps its status and its accepted rows; only pending rows are
+    /// rejected. Rejecting a row is not an object write, so already persisted
+    /// values are untouched and a pending row whose object was deleted is still
+    /// cleared. When a closed proposal had pending rows, one audit row is
+    /// written in the same transaction. Calling this again with nothing pending
+    /// is an idempotent no-op.
+    pub async fn discard_proposal(
+        &self,
+        id: Uuid,
+        claim: Uuid,
+        actor: PrincipalId,
+    ) -> Result<DiscardReport, Error> {
+        let mut client = self.checkout().await?;
+        let tx = client.transaction().await?;
+        let catalog = self.catalog_id().as_uuid();
+        let row = tx
+            .query_opt(
+                "SELECT status, claimed_by, (claimed_until > now()) AS live
+                 FROM proposals WHERE id = $1 AND catalog_id = $2 FOR UPDATE",
+                &[&id, &catalog],
+            )
+            .await?;
+        let Some(row) = row else {
+            return Err(Error::ProposalNotFound(id));
+        };
+        let current: String = row.get(0);
+        let holder: Option<Uuid> = row.get(1);
+        let live: Option<bool> = row.get(2);
+        if holder != Some(claim) || live != Some(true) {
+            return Err(Error::ProposalClaimLost(id));
+        }
+        let rejected: i64 = tx
+            .query_one(
+                "WITH rejected AS (
+                    UPDATE proposal_rows SET status = 'rejected'
+                    WHERE proposal_id = $1 AND status = 'pending'
+                    RETURNING 1
+                 ) SELECT count(*)::bigint FROM rejected",
+                &[&id],
+            )
+            .await?
+            .get(0);
+        let next = if current == "open" {
+            "discarded".to_owned()
+        } else {
+            current.clone()
+        };
+        if next != current {
+            let updated = tx
+                .execute(
+                    "UPDATE proposals
+                     SET status = $2, claimed_by = NULL, claimed_until = NULL, resolved_at = now()
+                     WHERE id = $1 AND claimed_by = $3",
+                    &[&id, &next, &claim],
+                )
+                .await?;
+            if updated != 1 {
+                return Err(Error::ProposalClaimLost(id));
+            }
+        }
+        let recovered = current != "open" && rejected > 0;
+        if recovered {
+            tx.execute(
+                "INSERT INTO proposal_recoveries
+                    (id, proposal_id, previous_status, rejected_rows, actor)
+                 VALUES ($1, $2, $3, $4, $5)",
+                &[
+                    &Uuid::now_v7(),
+                    &id,
+                    &current,
+                    &i32::try_from(rejected).unwrap_or(i32::MAX),
+                    &actor.as_uuid(),
+                ],
+            )
+            .await?;
+        }
+        tx.commit().await?;
+        Ok(DiscardReport {
+            previous_status: current,
+            status: next,
+            rejected_rows: u32::try_from(rejected).unwrap_or(u32::MAX),
+            recovered,
+        })
     }
 
     /// Records that a person undid an accept without reopening the proposal.
