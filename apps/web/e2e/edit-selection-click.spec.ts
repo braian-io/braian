@@ -131,7 +131,9 @@ test('Edit selection from the row menu keeps focus in the dialog and renames a m
   })
   expect(selected).toEqual({ start: 0, end: 'Cheese'.length, length: 'Cheese'.length })
   expect(await page.evaluate(() => document.activeElement?.getAttribute('data-testid'))).toBe('assortment-name')
-  expect(await page.evaluate(() => window.getSelection()?.toString() ?? '')).toBe('Cheese')
+  // Browsers expose an input selection differently: either nothing or exactly
+  // the field's text. Either way the page outside the field is not selected.
+  expect(['', 'Cheese']).toContain(await page.evaluate(() => window.getSelection()?.toString() ?? ''))
   // Type fast and press Save in the next action: the full value must win.
   await name.pressSequentially('Aged cheese 215', { delay: 0 })
   await dialog.getByRole('button', { name: 'Save selection' }).click()
