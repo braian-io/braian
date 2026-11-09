@@ -162,7 +162,6 @@ export function NewSelectionDialog({ session }: { session: SelectionSession }) {
             <Input
               data-testid="assortment-name"
               value={name}
-              autoFocus
               aria-label={copy.assortment}
               placeholder={copy.assortment}
               onChange={(event) => setName(event.target.value)}

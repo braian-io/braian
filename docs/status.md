@@ -1,10 +1,10 @@
-# Status 2026-11-07
+# Status 2026-11-09
 
-Bas: `origin/main` tip `ca7a786` (#266). Senaste migrering i repot: `V43__soft_delete.sql` (#260).
+Bas: `origin/main` tip `4cd25f7` (#267). Senaste migrering i repot: `V43__soft_delete.sql` (#260).
 
-## Rad 170 i den här PR:en — byggt på branchen, inte deployat
+## Rad 170 — levererad på main (#265)
 
-Läsbara URL:er (Notion 170) är byggda på den här branchen. De ligger **inte** på demo eller prod förrän PR:en mergas och en deploy körs. Avsnitten under beskriver `main` vid `ca7a786` (#266) plus den här ändringen. Branchen utgår från `da6cf75` och rör inte review-koden från #266.
+Läsbara URL:er (Notion 170) är mergade till `main` som #265 (`61c6e3c`) och ingår i basen `4cd25f7` (#267). De är alltså inte en del av den här PR:en (rad 215) och väntar inte på merge här. Avsnitten under beskriver URL-kontraktet som det ser ut på `main`.
 
 - `ws`, `view` och `catalog` är slug av visningsnamn. Unicode-bokstäver och siffror behålls (NFKC, gemener); ett namn utan bokstav eller siffra får ett `~`-suffix av id:t. `object` är objektets nyckel, inte ett uuid.
 - Nuvarande namn eller nyckel är adressen. Ett byte byter URL:en. Gamla länkar och uuid-adresser öppnas inte. Inga redirectar.
@@ -13,6 +13,14 @@ Läsbara URL:er (Notion 170) är byggda på den här branchen. De ligger **inte*
 - `GET /v1/objects` accepterar både typnyckel och typ-id i `type`. Sparade vyer lagrar typ-id (V18), så en direktlänk annars fick tom träff.
 - Vitest täcker Unicode-slug (även namn som bara är kombinerande tecken), fallback, krock, escapad `~` i typad SKU, nyckellöst suffix som förlängs vid delad svans, kodning, uuid-avvisning, att en delad nyckel slås upp i produkttypen och att ett URL-objekt inte tappas när en annan rad redan är vald. `e2e/readable-urls.spec.ts` är registrerad i `scripts/e2e.mjs`: direktlänk och omladdning, nyckel i stället för uuid, navigationsslug, byte av nyckel, dubbletter, kodning, typad SKU med `~`, bakåt/framåt, trasig eller saknad måltavla, nyckellös länkrad efter omladdning och två kolliderande nyckellösa länkar vars utskrivna förlängda tokens laddas om. `e2e/palette-drill.spec.ts` har ett regressionstest för att inloggning når en objekttabell även när en tidigare sparad layout har en agentflik i fokus. Körningen är gjord i isolerade `--rm`-containrar mot syntetisk Postgres/Typesense; den är inte deployad.
 
+## Rad 215 i den här PR:en — Edit selection-dialogen
+
+Rapporten gällde att kontrollerna i Edit selection inte svarade på klick i Articles-arbetsytans Selections-panel. På basen `4cd25f7` gick klickflödet igenom i Chromium, Firefox och WebKit, både från radmenyn och från högerklick, efter att urvalet tillämpats och med en stagad objekt-draft. Ingen pointer-interception eller överlägg kunde reproduceras.
+
+Det som däremot gick att reproducera var fokus: dialogen öppnades från radmenyn med fokus kvar på radens "More actions"-knapp bakom modalen, och efter stängning hamnade fokus på `<body>`. Orsaken var att den delade `DialogContent` fångade opener i sin `useState` när komponenten monterades med skalet (långt före öppningen), och att `autoFocus` på namnfältet hann flytta fokus innan Radix `onOpenAutoFocus`. Nu fångas opener i `onOpenAutoFocus`, menyn fokuserar sin trigger innan kommandot öppnar dialogen, och namnfältet får fokus via Radix fokusomhändertagande. Efter Cancel, X och Escape återgår fokus till radens meny-knapp; inget överlägg ligger kvar och `body` har `pointer-events: auto`.
+
+`e2e/edit-selection-click.spec.ts` (registrerad i `scripts/e2e.mjs`) täcker: öppna via faktisk meny, klicka namnfältet, byta namn på den seedade manuella Articles-selectionen Cheese, Save selection, synligt namn och API-läsning efter omladdning, Cancel/X/Escape utan oavsiktlig ändring, upprepad öppning, Type/Kind låsta i edit-läget, samt en stagad tabelldraft. Körningen är gjord i isolerade `--rm`-containrar mot syntetisk Postgres/Typesense; den är inte mergad, deployad eller accepterad.
+
 Braian går att starta lokalt och att klicka igenom på [demo.braian.io](https://demo.braian.io). Postgres är källan och ändringsloggen. Indexer, sök, auth, förslag och webbgränssnittet sitter på samma kedja. Flödet står i `docs/events.md`. Demokatalogen som `just dev` visar är bara seed: hjälteobjekt plus 240 syntetiska livsmedel (leverantörer, produkter och artiklar). Etiketter finns på sv/en/de och objektdata är engelska. Strukturen heter Food, leverantörer står utanför trädet och pekas ut med länkar. Tester skriver i databasen `braian_e2e` och sökaliaset `braian_e2e`, inte i demon.
 
 Skalprovet (5 000 skrivningar i sekunden, 1 miljon och 10 miljoner objekt) är inte gjort. En virtuell tabell mot 100 013 objekt är mätt, se `docs/measurements/2026-10-25-table-100k.md`.
@@ -20,9 +28,9 @@ Skalprovet (5 000 skrivningar i sekunden, 1 miljon och 10 miljoner objekt) är i
 
 ## Levererat sedan 2026-11-01 (verifierat via `git log` på main)
 
-Sedan statusen 2026-11-01 (`8300319` / #145) har ungefär #146–#266 landat (120 commits på main, `git rev-list --count 8300319..ca7a786`; #265 är den här PR:en och inte mergad). Många leveranser står på Att testa i Notion och väntar på Glenns genomgång.
+Sedan statusen 2026-11-01 (`8300319` / #145) har ungefär #146–#267 landat (122 commits på main, `git rev-list --count 8300319..4cd25f7`; #265 som gav rad 170 läsbara URL:er är mergad som `61c6e3c`, och #267 som gav rad 212 den delade objekt-draften är mergad som `4cd25f7`). Den här PR:en är bara rad 215 och är inte mergad, deployad eller accepterad. Många leveranser står på Att testa i Notion och väntar på Glenns genomgång.
 
-### Kartläggning #253–#266 (squash på main, `git log` + `gh pr view`)
+### Kartläggning #253–#267 (squash på main, `git log` + `gh pr view`)
 - #253 `2d78daf` · rad 149 · fix(web): move hardcoded UI strings into copy (row 149)
 - #254 `434697a` · docs-only, ingen Notion-rad · docs: refresh status.md for 2026-11-06
 - #255 `4583c56` · rad 153 · fix(web): grid focus without select; Enter/Space select (row 153)
@@ -35,6 +43,7 @@ Sedan statusen 2026-11-01 (`8300319` / #145) har ungefär #146–#266 landat (12
 - #262 `1d179b1` · rad 171 · fix(agent): propose a display-name change for a named product (row 171)
 - #263 `fc09d6c` · rad 205 · fix(web): attribute table bool columns use Braian checkboxes and pointer cursor
 - #266 `ca7a786` · review · feat(review): project every draft into one save or discard (#266) — agentförslag, importrader, config-apply och personens modelldraft läses som samma `ReviewDraft`; Save och Discard går kvar via befintliga proposal- och modelldraft-writes
+- #267 `4cd25f7` · rad 212 · Show one shared object draft in the table and Detail (#267) — en delad objekt-draft i tabell och Detail; Enter stagar en cell, Save skriver den, och en sen eller äldre läsning kan inte ersätta draften
 
 ### Seed, kataloger och config
 - #146: status.md 2026-11-01.
@@ -128,11 +137,15 @@ Endast mergade PR:er i intervallet #104–#145 (läget vid status 2026-11-01). #
 - #124: store byggs om när inbäddade migreringar ändras.
 - #133: CI återanvänder release-binären och kortar stack-jobbet.
 
-## Pågående arbete (inte mergat, inte deployat)
+## Rad 212 — levererad på main (#267)
 
-- **Rad 212 / PR 267 (PR2): en delad objekt-draft i tabell och Detail.**
-  Grenen `junior/212-ai-drafts` bygger på `ca7a786` (#266). Den är öppen och
-  inte mergad eller deployad. Enter stagar en cell i en modulstore som både
+Rad 212 (den delade objekt-draften i tabell och Detail) är mergad till `main`
+som #267 (`4cd25f7`) och ingår i basen. Den är inte en del av den här PR:en
+(rad 215).
+
+- **En delad objekt-draft i tabell och Detail.**
+  Grenen `junior/212-ai-drafts` byggde på `ca7a786` (#266) och är nu mergad.
+  Enter stagar en cell i en modulstore som både
   tabellen och Detail läser. Save/Discard gäller exakt de granskade raderna.
   Språkberoende celler har identitet per objekt, attribut och språk, och en
   sammanslagning tappar inte andra språk. En sen eller äldre läsning kan inte
@@ -149,7 +162,7 @@ Endast mergade PR:er i intervallet #104–#145 (läget vid status 2026-11-01). #
   inte inkopplade i data-modelltabellen än.
 - Kvar till PR3: import/config-flöden som inte är en vanlig objektcell,
   per-fält-delaccept, samt inkoppling av modellstegsnycklar i
-  `data-model.tsx` när row170-ändringarna är inkopplade i den här grenen. Importdrafts ligger kvar i
+  `data-model.tsx` i efterföljande arbete. Importdrafts ligger kvar i
   importtabellen; modelldrafts har egen yta.
 - En lokal draft vinner över en väntande proposal på samma objekt: Save
   skriver draften och proposalen blir stale i stället för att blockera.
@@ -167,7 +180,7 @@ Endast mergade PR:er i intervallet #104–#145 (läget vid status 2026-11-01). #
   discard hittas på. Regressionstester renderar de faktiska `ObjectTable`- och
   `ObjectDetail`-anroparna med visibleA/hiddenB, update+create/delete och
   model/unmapped.
-- Verifierat i den här grenen, allt i throwaway-containrar:
+- Verifierat för rad 212, allt i throwaway-containrar:
   `./node_modules/.bin/tsc --noEmit` (exit 0), targeted-regressionerna
   (`object-draft-save`, `object-draft`, `detail-pending`,
   `object-draft-discard-table`) 4 filer / 60 tester och hela vitest-sviten i
@@ -197,10 +210,10 @@ Endast mergade PR:er i intervallet #104–#145 (läget vid status 2026-11-01). #
   1 underkänd innan Table-testet rättades. Den senare fulla sviten (777)
   innehöll den rättade testen. Siffran 60 påstås först efter stage 4:s nya
   riktiga körning ovan.
-- Separat baseline, ingen fix blandad i den här grenen:
+- Separat baseline, ingen fix blandad i rad 212-arbetet:
   `group-filter.spec.ts` passerade i den isolerade körningen; den kända
-  avvikelsen på main (`expected 4, got 1`) återupprepades inte här.
-  `model-draft.spec.ts` är inte längre en känd avvikelse i den här grenen.
+  avvikelsen på main (`expected 4, got 1`) återupprepades inte där.
+  `model-draft.spec.ts` är inte längre en känd avvikelse i rad 212-arbetet.
 
 ## Öppet
 

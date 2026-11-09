@@ -158,7 +158,10 @@ export function SharedContextMenuHost({
   const submenuParent = openSubmenu ? items.find((item) => item.id === openSubmenu) : undefined
   const submenuItems = submenuParent?.children ?? []
 
-  const close = () => {
+  // Focusing the trigger before a command opens a dialog keeps the modal's
+  // focus trap in charge. Queueing it afterwards would land focus on the
+  // trigger behind the modal.
+  const close = (restore = true) => {
     setRequest(null)
     setTypeahead('')
     setHighlighted(null)
@@ -166,7 +169,7 @@ export function SharedContextMenuHost({
     setSubmenuPos(null)
     const el = restoreFocus.current
     restoreFocus.current = null
-    queueMicrotask(() => el?.focus())
+    if (restore) queueMicrotask(() => el?.focus())
   }
 
   const closeSubmenu = () => {
@@ -238,7 +241,11 @@ export function SharedContextMenuHost({
       return
     }
     const target = request?.target ?? {}
-    close()
+    const trigger = restoreFocus.current
+    close(false)
+    if (trigger && trigger !== document.body && trigger.isConnected) {
+      trigger.focus({ preventScroll: true })
+    }
     void runCommand(command.id, target)
   }
 
