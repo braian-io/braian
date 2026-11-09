@@ -1,10 +1,23 @@
-# Status 2026-11-07
+# Status 2026-11-09
 
-Bas: `origin/main` tip `4cd25f7` (#267). Senaste migrering i repot: `V43__soft_delete.sql` (#260).
+Bas: `origin/main` tip `ef9b43a` (#269). Senaste migrering i repot: `V44__proposal_recoveries.sql` (#268).
 
-## Rad 170 — levererad på main (#265)
+## Rad 135 — levererad på main (#269)
 
-Läsbara URL:er (Notion 170) är mergade till `main` som #265 (`61c6e3c`) och ingår i basen `4cd25f7` (#267). De är alltså inte en del av den här PR:en (rad 107) och väntar inte på merge här. Avsnitten under beskriver URL-kontraktet som det ser ut på `main`.
+Rättar Test-avvisningen 2026-11-07 15:42 Europe/Stockholm: den aktiva tabellcellens tangentbordsmarkering är nu `box-shadow: inset 0 0 0 2px var(--accent)`, inte `inset 0 0 0 1px var(--accent-hover)`. Urval och fokus är fortfarande separata: vald rad behåller `--accent-dim`-fyllningen och 3px vänsterkant medan 2px accent-ringen följer den aktiva cellen. Ingen ny shortcut eller urvalssemantik.
+
+- `apps/web/src/styles.css`: 2px accent inset på `.cell.active-cell` när griden har tangentbordsfokus.
+- `apps/web/src/focus-ring.test.ts`: regressionen kräver exakt 2px `--accent` och avvisar `--accent-hover`.
+- `apps/web/e2e/focus-styles.spec.ts`: Tab till användarmenyn, trädet och tabellen; vald rad behåller sin fyllning när ringen flyttar mellan celler.
+- `apps/web/e2e/nested-chrome.spec.ts`: den kvarvarande syskonassertionen krävde fortfarande `--accent-hover`; den kräver nu exakt `0px 0px 0px 2px inset` i `--accent` och avvisar `--accent-hover`, medan urvalets 3px vänsterkant, dimma fyllning och frånvaro av extra markör behålls.
+
+Verifierat i isolerade `--rm`-containrar mot syntetisk Postgres 18 och Typesense 30.2, utan demo, host-verktyg eller Docker-socket: typecheck grön; 57 enhetstester i 5 filer gröna; `focus-styles.spec.ts` 13/13, `grid-focus-select.spec.ts` 1/1 och `user-menu.spec.ts` 6/6. Beräknade stilar i webbläsaren (mörkt tema): aktiv cell `rgb(154, 77, 255) 0px 0px 0px 2px inset`, träd `2px solid` med offset `-2px`, användarmeny `2px solid` med offset `0`, grid utan extra outline, vald rad `rgba(154, 77, 255, 0.28)` med `rgb(154, 77, 255) 3px 0px 0px 0px inset`. Skärmbilder togs i den isolerade körningen (`apps/web/test-results/focus-screenshots/`, ej committade).
+
+CI på `e022849` föll i jobbet e2e3 på just den gamla syskonassertionen i `nested-chrome`, inte på fokusregeln. Efter rättelsen kördes `nested-chrome.spec.ts` mörkt och ljust (2/2) samt `focus-styles.spec.ts` (13/13) om i task-egna `--rm`-containrar mot samma typ av syntetiska Postgres/Typesense; inga fokus-styles-assertioner ändrades eller försvagades. Oberoende kodgranskning accepterade koden vid `3b6ca5f`, medan dokumentationsgranskningen kvarstår. Mergad till `main` som #269 (`ef9b43a`); inte deployad eller accepterad.
+
+## Rad 170 (mergad i #265) — i basen, inte den här PR:en
+
+Läsbara URL:er (Notion 170) är mergade i `main` som squash `61c6e3c` (#265). Den här grenen har nu `origin/main` `ef9b43a` (#269) som bas, som redan innehåller den ändringen, så avsnittet beskriver basen och inte ett omergat arbete i den här PR:en. Rad 135-ändringen rör inte URL- eller review-koden.
 
 - `ws`, `view` och `catalog` är slug av visningsnamn. Unicode-bokstäver och siffror behålls (NFKC, gemener); ett namn utan bokstav eller siffra får ett `~`-suffix av id:t. `object` är objektets nyckel, inte ett uuid.
 - Nuvarande namn eller nyckel är adressen. Ett byte byter URL:en. Gamla länkar och uuid-adresser öppnas inte. Inga redirectar.
@@ -32,9 +45,9 @@ Skalprovet (5 000 skrivningar i sekunden, 1 miljon och 10 miljoner objekt) är i
 
 ## Levererat sedan 2026-11-01 (verifierat via `git log` på main)
 
-Sedan statusen 2026-11-01 (`8300319` / #145) har ungefär #146–#267 landat (122 commits på main, `git rev-list --count 8300319..4cd25f7`; #265, som gav rad 170 läsbara URL:er, är mergad som `61c6e3c`). Den här PR:en är bara rad 107 och är inte mergad, deployad eller accepterad. Många leveranser står på Att testa i Notion och väntar på Glenns genomgång.
+Sedan statusen 2026-11-01 (`8300319` / #145) har ungefär #146–#269 landat (124 commits på main, `git rev-list --count 8300319..ef9b43a`; #265, som gav rad 170 läsbara URL:er, är mergad som `61c6e3c`). Den här PR:en är bara rad 107 och är inte mergad, deployad eller accepterad. Många leveranser står på Att testa i Notion och väntar på Glenns genomgång.
 
-### Kartläggning #253–#266 (squash på main, `git log` + `gh pr view`)
+### Kartläggning #253–#269 (squash på main, `git log` + `gh pr view`)
 - #253 `2d78daf` · rad 149 · fix(web): move hardcoded UI strings into copy (row 149)
 - #254 `434697a` · docs-only, ingen Notion-rad · docs: refresh status.md for 2026-11-06
 - #255 `4583c56` · rad 153 · fix(web): grid focus without select; Enter/Space select (row 153)
@@ -47,6 +60,9 @@ Sedan statusen 2026-11-01 (`8300319` / #145) har ungefär #146–#267 landat (12
 - #262 `1d179b1` · rad 171 · fix(agent): propose a display-name change for a named product (row 171)
 - #263 `fc09d6c` · rad 205 · fix(web): attribute table bool columns use Braian checkboxes and pointer cursor
 - #266 `ca7a786` · review · feat(review): project every draft into one save or discard (#266) — agentförslag, importrader, config-apply och personens modelldraft läses som samma `ReviewDraft`; Save och Discard går kvar via befintliga proposal- och modelldraft-writes
+- #267 `4cd25f7` · rad 212 · Show one shared object draft in the table and Detail (#267)
+- #268 `a7a8ce2` · rad 212 · fix: preserve pending proposal rows and support scoped discard recovery (#268)
+- #269 `ef9b43a` · rad 135 · fix(web): restore 2px accent keyboard focus ring for active cells (#269)
 
 ### Seed, kataloger och config
 - #146: status.md 2026-11-01.
@@ -140,11 +156,11 @@ Endast mergade PR:er i intervallet #104–#145 (läget vid status 2026-11-01). #
 - #124: store byggs om när inbäddade migreringar ändras.
 - #133: CI återanvänder release-binären och kortar stack-jobbet.
 
-## Pågående arbete (inte mergat, inte deployat)
+## Nyligen levererat — detaljer (PR 267–268)
 
-- **Rad 212 / PR 267 (PR2): en delad objekt-draft i tabell och Detail.**
-  Grenen `junior/212-ai-drafts` bygger på `ca7a786` (#266). Den är öppen och
-  inte mergad eller deployad. Enter stagar en cell i en modulstore som både
+- **Rad 212 / PR 267 (PR2, mergad i #267): en delad objekt-draft i tabell och Detail.**
+  Grenen `junior/212-ai-drafts` byggde på `ca7a786` (#266) och är mergad till
+  `main` som #267 (`4cd25f7`). Enter stagar en cell i en modulstore som både
   tabellen och Detail läser. Save/Discard gäller exakt de granskade raderna.
   Språkberoende celler har identitet per objekt, attribut och språk, och en
   sammanslagning tappar inte andra språk. En sen eller äldre läsning kan inte
@@ -213,6 +229,56 @@ Endast mergade PR:er i intervallet #104–#145 (läget vid status 2026-11-01). #
   `group-filter.spec.ts` passerade i den isolerade körningen; den kända
   avvikelsen på main (`expected 4, got 1`) återupprepades inte här.
   `model-draft.spec.ts` är inte längre en känd avvikelse i den här grenen.
+
+- **Rad 212 / livscykel för förslag (mergad i #268).**
+  Grenen `junior/212-proposal-lifecycle` utgick från `4cd25f7` (#267) och är
+  mergad till `main` som #268 (`a7a8ce2`). Den rättar rotorsaken som QA hittade: när en
+  person sparade bara de synliga raderna stängdes hela förslaget trots att en
+  dold rad fortfarande var `pending`. `accept_proposal` räknade bara det
+  skickade urvalet; `close_claimed_proposal` fanns med full medlemskap men
+  användes inte på den vanliga accept-vägen. Dessutom kunde `set_proposal_status`
+  sätta `accepted` med kvarvarande `pending`, vilket gjorde att en historisk
+  sådan proposal inte kunde discardas (409).
+- Ändringen: `finalize_proposal` läser hela medlemskapet och stänger bara när
+  ingen rad är `pending`, i samma transaktion som claimen. Alla kvarvarande
+  `pending`-rader - ovalda, misslyckade, versionskrockade eller med soft-deletad
+  objekt - håller förslaget öppet. `accepted` sätts när minst en rad är
+  accepterad, annars `discarded`. Accept vägrar ett förslag som redan är stängt.
+  `set_proposal_status` vägrar stänga utan att först avvisa `pending`-rader.
+- Stödd städning av historiska `accepted`/`discarded`-förslag med kvarvarande
+  `pending`: `discard_proposal` claimar, avvisar bara `pending`-rader och behåller
+  redan accepterade rader och redan persistade objektvärden. Soft-deletade
+  objekt behöver inte röras och ingen databasreparation krävs. Åtgärden är
+  atomär och idempotent; en ny tabell `proposal_recoveries` (V44) skriver en
+  granskningsrad per faktisk återställning, inte vid upprepade no-op-anrop.
+  Roll- och stale-skydd ligger kvar i API:t.
+- Katalogisolering före varje claim/mutation: `proposal_catalog` läser ägaren
+  och Accept/Discard avvisar en proposal från en annan katalog med 404 innan
+  importgrenen eller claimen körs. `claim_proposal` och `discard_proposal`
+  filtrerar dessutom på `catalog_id` i samma transaktion, eftersom kataloger
+  är en session-inställning och inte row-level security. En API-regression
+  skapar en källkatalog och bevisar att cross-catalog Accept/Discard lämnar
+  rader, `claimed_by`/`claimed_until` och `proposal_recoveries` orörda; en
+  master-Discard når inte heller en proposal i en källkatalog. Samma-katalog
+  Discard är fortsatt idempotent och bevarar accepterade rader och live-värden.
+- Bevis i den här grenen, allt i engångscontainrar (`docker run --rm`, eget
+  nät, tmpfs, ingen hostnetwork, ingen demo-DB):
+  `cargo check -p braian-store -p braian-api --tests` (exit 0),
+  `cargo clippy -p braian-store -p braian-api --all-targets -- -D warnings`
+  (exit 0), `cargo fmt --all --check` (exit 0),
+  `cargo test -p braian-store --test proposals` (10 godkända, inklusive
+  katalogscopad claim/discard), `review_drafts` (4), `migration_upgrade`
+  (9, med baslinje från `origin/main`), `cargo test -p braian-api --test http`
+  (50, inklusive cross-catalog Accept/Discard), `config_apply` (16),
+  `import_http` (9) och `product` (2). Web: `tsc --noEmit` (exit 0) och hela
+  vitest-sviten (149 filer, 812 tester). English checker
+  (`scripts/check-english.py`, exit 0). Ny `e2e/proposal-lifecycle.spec.ts`
+  kördes mot isolerad Postgres/Typesense/API/Vite: A synlig/sparad, B dold och
+  kvar som `pending`, förslaget `open`, och B syns igen efter reload:
+  1 godkänd (31,9 s).
+- `apps/web/src/data-model.tsx` är orörd (sha256 lika med `4cd25f7`). Inga av de
+  tre faktiska demolämningarna har rörts; de kräver fortsatt verifierad deploy
+  och ny QA. Mergad i #268; inget påstående om deploy eller demoacceptans.
 
 ## Öppet
 

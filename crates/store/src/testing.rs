@@ -192,6 +192,9 @@ fn template_name() -> String {
         include_str!("../migrations/V39__proposal_resolved_at.sql"),
         include_str!("../migrations/V40__proposal_reverted_at.sql"),
         include_str!("../migrations/V41__agent_questions_and_table.sql"),
+        include_str!("../migrations/V42__agent_session.sql"),
+        include_str!("../migrations/V43__soft_delete.sql"),
+        include_str!("../migrations/V44__proposal_recoveries.sql"),
     ];
     for sql in sqls {
         for byte in sql.as_bytes() {
@@ -219,6 +222,36 @@ pub async fn expire_claims(store: &Store, lane: &str) -> Result<(), Error> {
 /// Expires one proposal lease so the next claim can take it without waiting.
 pub async fn expire_proposal_claim(store: &Store, id: Uuid) -> Result<(), Error> {
     store.expire_proposal_claim(id).await
+}
+
+/// Reconstructs the historical inconsistent state a bug could leave behind:
+/// a proposal that is already closed while rows are still pending.
+///
+/// Normal store calls refuse to create this state. Tests use this helper to
+/// verify that supported discard repairs it without reopening accepted rows.
+pub async fn force_proposal_status(store: &Store, id: Uuid, status: &str) -> Result<(), Error> {
+    let client = store.checkout().await?;
+    client
+        .execute(
+            "UPDATE proposals
+             SET status = $2, resolved_at = COALESCE(resolved_at, now())
+             WHERE id = $1",
+            &[&id, &status],
+        )
+        .await?;
+    Ok(())
+}
+
+/// Number of durable recovery audit rows for one proposal.
+pub async fn proposal_recovery_count(store: &Store, id: Uuid) -> Result<i64, Error> {
+    let client = store.checkout().await?;
+    let row = client
+        .query_one(
+            "SELECT count(*)::bigint FROM proposal_recoveries WHERE proposal_id = $1",
+            &[&id],
+        )
+        .await?;
+    Ok(row.get(0))
 }
 
 async fn admin_conn(admin_url: &str) -> Result<PgConn, Error> {

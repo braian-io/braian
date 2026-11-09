@@ -99,6 +99,22 @@ describe('save scope', () => {
     expect(plan).toEqual([{ kind: 'accept', proposalId: 'p-1', rowIds: ['r1'] }])
   })
 
+  it('accepts only the visible row of one proposal and leaves the hidden row for review', () => {
+    const plan = draftSavePlan({
+      objectIds: [],
+      serverVersions: {},
+      principal: 'human',
+      fileAsProposal: false,
+      roleCanWrite: true,
+      scope: ['obj-1'],
+      proposals: [
+        proposalCell('p-1', 'obj-1', 'r1'),
+        proposalCell('p-1', 'obj-2', 'r2'),
+      ],
+    })
+    expect(plan).toEqual([{ kind: 'accept', proposalId: 'p-1', rowIds: ['r1'] }])
+  })
+
   it('saves a local draft and accepts a proposal on another reviewed row', () => {
     stage('obj-1', 'One')
     const plan = draftSavePlan({

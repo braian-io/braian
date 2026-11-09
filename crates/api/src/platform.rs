@@ -4441,6 +4441,24 @@ async fn attach_base_values(state: &AppState, body: &mut Value) -> Result<(), Pr
     Ok(())
 }
 
+/// Rejects a proposal that belongs to another catalog before any claim.
+///
+/// Catalog scoping is a session setting, not row-level security, so a lookup
+/// by id alone would otherwise reach across catalogs. Both the import-draft
+/// path and the ordinary claim path run after this check.
+async fn require_proposal_owner(state: &AppState, id: Uuid) -> Result<(), Problem> {
+    let catalog = state.store.catalog_id();
+    match state
+        .store
+        .proposal_catalog(id)
+        .await
+        .map_err(store_status)?
+    {
+        Some(owner) if owner == catalog => Ok(()),
+        _ => Err(Problem::new(StatusCode::NOT_FOUND, "not_found", "proposal")),
+    }
+}
+
 async fn accept_proposal(
     State(state): State<AppState>,
     Auth(identity): Auth,
@@ -4449,6 +4467,7 @@ async fn accept_proposal(
 ) -> Result<AcceptReply, Problem> {
     require(&identity, Role::Editor)?;
     crate::review::require_review(&identity, false, braian_model::ReviewAction::Save, None)?;
+    require_proposal_owner(&state, id).await?;
     // An import draft keeps its rows in the import session, not in proposal_rows.
     if let Some(session_id) = state
         .store
@@ -4483,6 +4502,13 @@ async fn accept_proposal(
         .map_err(store_status)?
         .ok_or_else(|| Problem::new(StatusCode::NOT_FOUND, "not_found", "proposal"))?;
     crate::review::reject_stale_save(&identity, &proposal)?;
+    if proposal.get("status").and_then(Value::as_str) != Some("open") {
+        return Err(Problem::new(
+            StatusCode::CONFLICT,
+            "conflict",
+            "this proposal is no longer pending",
+        ));
+    }
     let rows = proposal
         .get("rows")
         .and_then(Value::as_array)
@@ -4515,6 +4541,14 @@ async fn accept_proposal(
             return Err(store_status(error));
         }
     };
+    if proposal.get("status").and_then(Value::as_str) != Some("open") {
+        lock.release().await.map_err(store_status)?;
+        return Err(Problem::new(
+            StatusCode::CONFLICT,
+            "conflict",
+            "this proposal is no longer pending",
+        ));
+    }
     let rows = proposal
         .get("rows")
         .and_then(Value::as_array)
@@ -4604,20 +4638,14 @@ async fn close_claimed_proposal(
     let Some(rows) = rows else {
         return Ok(());
     };
-    if rows.is_empty()
-        || rows
-            .iter()
-            .any(|row| row.get("status").and_then(Value::as_str) == Some("pending"))
-    {
+    if rows.is_empty() {
         return Ok(());
     }
-    let accepted = rows
-        .iter()
-        .any(|row| row.get("status").and_then(Value::as_str) == Some("accepted"));
-    let status = if accepted { "accepted" } else { "discarded" };
+    // Re-read the full membership under the claim. Do not decide from the
+    // caller's subset: an unselected, failed or deleted row is still pending.
     state
         .store
-        .set_proposal_status(id, status, claim, false)
+        .finalize_proposal(id, claim)
         .await
         .map_err(store_status)?;
     Ok(())
@@ -4728,21 +4756,16 @@ async fn apply_selected(
     let claim = lock.token();
     let outcome =
         apply_selected_locked(state, identity, proposal_id, rows, job_id, patches, claim).await;
+    // Decide from the full membership, not from this call's subset. While any
+    // row is still pending (unselected, failed or deleted) the proposal stays
+    // open. finalize_proposal checks that in the same transaction as the claim.
     let status_result = match outcome.as_ref() {
-        Ok(tally)
-            if tally.failed.is_empty() && !(tally.accepted.is_empty() && tally.rejected == 0) =>
-        {
-            let status = if tally.accepted.is_empty() && tally.rejected > 0 {
-                "discarded"
-            } else {
-                "accepted"
-            };
-            state
-                .store
-                .set_proposal_status(proposal_id, status, claim, false)
-                .await
-        }
-        _ => Ok(()),
+        Ok(_) => state
+            .store
+            .finalize_proposal(proposal_id, claim)
+            .await
+            .map(|_| ()),
+        Err(_) => Ok(()),
     };
     let release_result = lock.release().await;
     let tally = outcome?;
@@ -5397,6 +5420,7 @@ async fn discard_proposal(
 ) -> Result<StatusCode, Problem> {
     require(&identity, Role::Editor)?;
     crate::review::require_review(&identity, false, braian_model::ReviewAction::Discard, None)?;
+    require_proposal_owner(&state, id).await?;
     if let Some(session_id) = state
         .store
         .proposal_session(id)
@@ -5407,13 +5431,21 @@ async fn discard_proposal(
         return Ok(StatusCode::NO_CONTENT);
     }
     let lock = state.store.claim_proposal(id).await.map_err(store_status)?;
-    let closed = state
+    let discarded = state
         .store
-        .set_proposal_status(id, "discarded", lock.token(), true)
+        .discard_proposal(id, lock.token(), identity.actor.actor)
         .await;
     let released = lock.release().await;
-    closed.map_err(store_status)?;
+    let report = discarded.map_err(store_status)?;
     released.map_err(store_status)?;
+    if report.recovered {
+        tracing::warn!(
+            proposal = %id,
+            previous_status = %report.previous_status,
+            rejected_rows = report.rejected_rows,
+            "discarded pending rows on a historically closed proposal"
+        );
+    }
     Ok(StatusCode::NO_CONTENT)
 }
 
