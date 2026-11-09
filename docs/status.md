@@ -1,8 +1,18 @@
-# Status 2026-11-07
+# Status 2026-11-09
 
-Bas: `origin/main` tip `ca7a786` (#266). Senaste migrering i repot: `V43__soft_delete.sql` (#260).
+Bas: `origin/main` tip `4cd25f7` (#267). Senaste migrering i repot: `V43__soft_delete.sql` (#260).
 
-## Rad 170 i den här PR:en — byggt på branchen, inte deployat
+## Rad 135 i den här PR:en — fokusring (design H1)
+
+Rättar Test-avvisningen 2026-11-07 15:42 Europe/Stockholm: den aktiva tabellcellens tangentbordsmarkering är nu `box-shadow: inset 0 0 0 2px var(--accent)`, inte `inset 0 0 0 1px var(--accent-hover)`. Urval och fokus är fortfarande separata: vald rad behåller `--accent-dim`-fyllningen och 3px vänsterkant medan 2px accent-ringen följer den aktiva cellen. Ingen ny shortcut eller urvalssemantik.
+
+- `apps/web/src/styles.css`: 2px accent inset på `.cell.active-cell` när griden har tangentbordsfokus.
+- `apps/web/src/focus-ring.test.ts`: regressionen kräver exakt 2px `--accent` och avvisar `--accent-hover`.
+- `apps/web/e2e/focus-styles.spec.ts`: Tab till användarmenyn, trädet och tabellen; vald rad behåller sin fyllning när ringen flyttar mellan celler.
+
+Verifierat i isolerade `--rm`-containrar mot syntetisk Postgres 18 och Typesense 30.2, utan demo, host-verktyg eller Docker-socket: typecheck grön; 57 enhetstester i 5 filer gröna; `focus-styles.spec.ts` 13/13, `grid-focus-select.spec.ts` 1/1 och `user-menu.spec.ts` 6/6. Beräknade stilar i webbläsaren (mörkt tema): aktiv cell `rgb(154, 77, 255) 0px 0px 0px 2px inset`, träd `2px solid` med offset `-2px`, användarmeny `2px solid` med offset `0`, grid utan extra outline, vald rad `rgba(154, 77, 255, 0.28)` med `rgb(154, 77, 255) 3px 0px 0px 0px inset`. Skärmbilder togs i den isolerade körningen (`apps/web/test-results/focus-screenshots/`, ej committade). Inga kända fel i ändringen; CI och oberoende granskning återstår. Inte deployad, inte accepterad.
+
+## Rad 170 (mergad i #265) — byggt på branchen, inte deployat
 
 Läsbara URL:er (Notion 170) är byggda på den här branchen. De ligger **inte** på demo eller prod förrän PR:en mergas och en deploy körs. Avsnitten under beskriver `main` vid `ca7a786` (#266) plus den här ändringen. Branchen utgår från `da6cf75` och rör inte review-koden från #266.
 

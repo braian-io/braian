@@ -1831,14 +1831,14 @@ canvas.graph.panning { cursor: grabbing; }
 
 .menu-note { margin: 0; padding: var(--space-1) var(--space-2); color: var(--text-2); font-size: var(--text-md); }
 /* The active cell in the active row: where Shift+F10 opens the menu.
-   Keyboard focus gets the ring and the header underline; a pointer selection
-   marks the active column with text only, so it does not add a second border. */
+   Keyboard focus gets the 2px accent ring and the header underline; a pointer
+   selection marks the active column with text only, so it does not add a second border. */
 .grid:focus-within .head .cell.column-active .column-header-btn {
   color: var(--accent);
 }
 .grid:focus-visible .row.selected .cell.active-cell,
 .grid:focus-visible .row.active .cell.active-cell {
-  box-shadow: inset 0 0 0 1px var(--accent-hover);
+  box-shadow: inset 0 0 0 2px var(--accent);
 }
 .grid:focus-visible .head .cell.column-active {
   box-shadow: inset 0 -2px 0 var(--accent);
