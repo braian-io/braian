@@ -780,12 +780,10 @@ export function ObjectTable({
   useEffect(() => {
     publishColumns(view.id, all.map((id) => ({ id, header: columnHeader(id), hidden: hidden.includes(id) })))
   }, [columnStamp, view.id])
-  useEffect(() => {
-    publishActiveColumn(view.id, activeColumn || null)
-  }, [activeColumn, view.id])
-  // Record every activation directly. A repeated click on the same header leaves
-  // state unchanged, so the effect above would not run and the move target would
-  // stay on another pane.
+  // Record every activation directly, in the event that caused it. Publishing
+  // from a passive effect here would land after the next pane's header click
+  // when a body click and a Detail open commit later, and the stale publish
+  // would steal the keyboard move target from the header the user clicked last.
   const activateColumn = (column: string) => {
     setActiveColumn(column)
     publishActiveColumn(view.id, column)

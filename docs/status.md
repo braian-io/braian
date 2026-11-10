@@ -1,6 +1,29 @@
 # Status 2026-11-09
 
-Bas: `origin/main` tip `86bb9a0` (#275). Senaste migrering i repot: `V44__proposal_recoveries.sql` (#268).
+Bas: `origin/main` tip `795eb06` (#277). Senaste migrering i repot: `V44__proposal_recoveries.sql` (#268).
+
+## Rad 107-uppföljning 3 — senast klickade header vinner även när Detail öppnas
+
+Den här grenen (`junior/107-header-race`) utgår från `origin/main` `795eb06` (#277) och är **inte mergad, deployad eller accepterad**. Den rättar den intermittenta resten efter #277: direkt efter omladdning kunde Products-cell → Articles-header → Ctrl+Shift+→ flytta Products `Type` i stället för Articles `Name` (cirka 1 av 6 första interaktioner på demo).
+
+- Rotorsak: `ObjectTable` publicerade sin `activeColumn` både direkt i `activateColumn` och igen från en passiv `useEffect`. Ett body-klick startar Detail asynkront; när den passiva effekten för body-tabellen kördes efter header-klicket i den andra panen skrev den tillbaka body-tabellens kolumn som `lastActiveColumnViewId`. Upprepade header-klick ändrade inget React-state, så ingen motpublicering återställde headern. En tillfälligt återinsatt effekt reproducerade exakt felet i enhetsregressionen (`viewId` Products, `column` `type`).
+- `apps/web/src/panes.tsx`: den passiva `publishActiveColumn`-effekten är borttagen. Kolumnmålet publiceras bara synkront i den händelse som faktiskt aktiverar kolumnen (`activateColumn`), så en senare Detail-/fokus-commit kan inte skriva över ett senare header-klick.
+- `apps/web/src/sortable-column-header.tsx`: headern registreras synkront på `pointerdown` (primärknapp) utöver klick och fokus. Därmed hinner målet sättas även om klicket/omslaget avbryts när Detail öppnas och fokus flyttas.
+- `apps/web/src/column-move-target.test.tsx`: ny enhetsregression för ordningen body-klick → upprepat header-`pointerdown` medan body-state fortfarande commits; headern ska behålla målet. Testet faller om den gamla passiva effekten sätts tillbaka.
+- `apps/web/e2e/column-move-race.spec.ts` (registrerad i `scripts/e2e.mjs`): 20 repetitioner i båda riktningarna (40 race). Efter omladdning och synliga rader skickas body-klick (Type), header-`pointerdown`/klick på `Name` och chorden direkt efter varandra utan väntan eller polling. Events dispatchas mot noderna i stället för att klickas via skärmkoordinater, eftersom Playwrights actionability/force-box kunde vänta in Detail-omflödet (och därmed dölja racet) eller träffa ett grann-element. `Name` alternerar mellan index 1 och 2, så ingen flytt är en no-op. Ett enda fel fäller testet. Det befintliga `column-move-target.spec.ts` är oförändrat (det tillfälliga repro-testet är borttaget).
+- Bevis i `docker run --rm` på uppgiftsägt nätverk `row107shortcut-net` mot syntetisk Postgres 18 och Typesense 30.2 (containrarna `row107shortcut-postgres`/`row107shortcut-typesense`), utan host-nätverk, Docker-socket eller demo-DB: web-typecheck exit 0; `column-move-target.test.tsx` 6/6 (inklusive den nya regressionen); `column-move-target.spec.ts` 2/2 (59,8 s); `column-move-race.spec.ts` 1/1 med 40 race (4,2 m). Hela vitest-sviten kördes också: 149/150 filer och 823/824 tester gröna; enda felet var det tidskänsliga `graph-scene.test.ts` (1629 ms mot 1000 ms-gränsen) på en belastad maskin, utan koppling till den här ändringen.
+- `apps/web/src/data-model.tsx` är orörd (`sha256 2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`).
+- Ärlig avgränsning: den tightade e2e-stressen kördes grön med fixen. Ingen baseline-körning av e2e mot den gamla koden gjordes; att ordningen verkligen var fel visas av enhetsregressionen när den gamla passiva effekten återinsattes tillfälligt.
+
+## Rad 135-uppföljning 3 — fokusringen klipps inte längre
+
+Grenen `junior/135-focus-ring-visible` utgår från `origin/main` `795eb06` (#277) och är **inte mergad, deployad eller accepterad**. Den kompletterar #269/#272: 2px accentringen fanns, men klipptes mot flik-, sök- och menykanter, och användarmenyns pilmarkerade rad saknade ring eftersom `:focus-visible` inte sätts vid pilnavigering.
+
+- `apps/web/src/styles.css`: `.tabs`, `.pane-tab` och `.standard-table-bar` har 2px padding så flikens respektive sökfältets ring ryms innanför listen. Användarmenyns markerade rad får nu ring via `.menu.user-menu-content .menu-item[data-highlighted]` (2px `--accent`, `outline-offset: -2px`) i stället för att kräva `:focus-visible`; pilnavigeringen är oförändrad.
+- `apps/web/e2e/focus-styles.spec.ts`: nya tester för top-nav, sökfält, aktiv pane-flik med stängnings-X, användarmeny efter Enter + ArrowDown samt datamodellsträdet och Shift+Tab. Hjälparna `ringClip`/`expectRingUnclipped` kontrollerar att ringens bounding box inte skärs av någon overflow-ancestor. Användarmenytestet assertar den målade 2px accentoutlinen på `[data-highlighted]` i stället för `:focus-visible`, eftersom pilnavigering inte sätter den flaggan.
+- Oförändrat: `apps/web/src/data-model.tsx` (`sha256 2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`).
+
+Verifierat i isolerad `BRAIAN_E2E_ISOLATE=1`-körning via `scripts/e2e.mjs` med `BRAIAN_E2E_COMPOSE_PROJECT=row135ring` mot syntetisk Postgres 18 och Typesense 30.2, utan demo, host-nätverk eller Docker-socket: `pnpm --dir apps/web exec tsc --noEmit` grön; `vitest run src/focus-ring.test.ts src/user-menu.test.tsx` 14/14; `focus-styles.spec.ts` 19/19 (2,2 m). Fokusbevis från webbläsaren (mörkt tema): användarmenyns markerade rad `2px solid` `rgb(154, 77, 255)` med offset `-2px`; träd `2px solid` offset `-2px`; Account-trigger `2px solid` offset `0`; aktiv cell `rgb(154, 77, 255) 0px 0px 0px 2px inset`. Skärmbilder: `row135-*.png` i `apps/web/test-results/focus-screenshots/` och uppgiftens scratch (`shots/direct/`), ej committade.
 
 ## Rad 103-uppföljning — omladdning, cykeltext och målfilter i Select source
 

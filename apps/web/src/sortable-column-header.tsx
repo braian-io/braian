@@ -65,6 +65,12 @@ export function SortableColumnHeader({
         sortState === 'asc' ? 'ascending' : sortState === 'desc' ? 'descending' : 'none'
       }
       onClick={onActivate}
+      // Record the header synchronously on pointerdown. A body click can open
+      // Detail and move focus while the click is still in flight; the last
+      // header the pointer touched must still win the column-move chord.
+      onPointerDown={(event) => {
+        if (event.button === 0) onActivate()
+      }}
       onContextMenu={onContextMenu}
     >
       <Button

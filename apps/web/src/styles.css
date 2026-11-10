@@ -262,7 +262,9 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
   padding-right: var(--space-1);
 }
 .brand img { display: block; width: 16px; height: 16px; }
-.tabs { display: flex; align-items: end; gap: var(--space-0_5); min-width: 0; height: 100%; overflow: auto; }
+/* 2px of padding keeps a tab's focus ring inside the strip on the first/last
+   tab and along the bottom edge instead of clipping it. */
+.tabs { display: flex; align-items: end; gap: var(--space-0_5); min-width: 0; height: 100%; overflow: auto; padding: var(--space-0_5); }
 .tab-index {
   margin-left: var(--space-1_5);
   color: var(--muted);
@@ -359,7 +361,9 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
   color: var(--text);
   box-shadow: inset 0 -2px 0 var(--accent);
 }
-.pane-tab { border-radius: var(--r-md); height: 28px; }
+/* The inner button fills the content box; 2px of padding keeps its focus ring
+   inside the tab instead of clipping it against the strip. */
+.pane-tab { border-radius: var(--r-md); height: 28px; padding: var(--space-0_5) var(--space-2_5); }
 /* The active pane tab is one flat underline: no fill, no rounded ends. */
 .pane-tab.active,
 .pane-tab.active .pane-tab-open,
@@ -895,6 +899,9 @@ select.link-type-line { width: 100%; font-weight: 600; }
   flex-wrap: nowrap;
   min-width: 0;
   overflow: hidden;
+  /* The search field rings the whole field with an outer shadow. 2px of padding
+     keeps that ring inside the bar instead of clipping it on the edges. */
+  padding: var(--space-0_5);
 }
 .standard-table-bar .search-field {
   flex: 1 1 0;
@@ -1825,6 +1832,14 @@ canvas.graph.panning { cursor: grabbing; }
    Legacy menus without a highlighted item keep the global focus ring. */
 .menu:has([data-highlighted]) button:focus-visible,
 .menu:has([data-highlighted]) .menu-item:focus-visible { outline: none; }
+/* The account menu is arrow-navigated: the highlighted item is the focused
+   item, so it keeps the same 2px accent ring as other keyboard-focused
+   controls even when the browser does not match :focus-visible for arrow
+   navigation. The ring sits inside the item so the menu edge never clips it. */
+.menu.user-menu-content .menu-item[data-highlighted] {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
 /* Legacy fixed menus without a highlighted item still get a weak pointer hover. */
 .menu:not(:has([data-highlighted])) button:hover { background: color-mix(in srgb, var(--accent-dim) 55%, transparent); }
 .menu button.danger { color: var(--danger); }
