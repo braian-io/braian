@@ -112,6 +112,7 @@ import {
   publishColumns,
   publishSelection,
   publishTable,
+  readMarkedSelection,
   readSelection,
   readTreeNode,
   subscribeUiSelections,
@@ -698,6 +699,26 @@ export function ObjectTable({
     ? `${peerSource.viewId}:${peerSource.selection}:${peerSource.linkType ?? ''}:${peerFilter}`
     : ''
   const peerScopeRef = useRef(peerScope)
+  // Reload restores the open object from the URL, but a fresh table starts with
+  // no row selection, so a peer view that follows it would show its empty state.
+  // Adopt the marked object once it belongs to this table's type and the user
+  // has not picked a row here. A peer-sourced table never adopts it: its
+  // selection is its own row, not the object open in detail.
+  const markedSelection = readMarkedSelection()
+  const markedForTable = Boolean(
+    markedSelection
+    && markedSelection.id
+    && markedSelection.type
+    && bound
+    && (markedSelection.type === bound.id || markedSelection.type === bound.key),
+  )
+  useEffect(() => {
+    if (peerSource) return
+    if (selected.length > 0) return
+    if (!markedForTable || !markedSelection) return
+    setSelected([markedSelection.id])
+    setActive(locateRef.current(markedSelection.id))
+  }, [markedForTable, markedSelection, peerSource, selected])
   useEffect(() => {
     const scopeChanged = peerScopeRef.current !== peerScope
     peerScopeRef.current = peerScope
@@ -759,12 +780,10 @@ export function ObjectTable({
   useEffect(() => {
     publishColumns(view.id, all.map((id) => ({ id, header: columnHeader(id), hidden: hidden.includes(id) })))
   }, [columnStamp, view.id])
-  useEffect(() => {
-    publishActiveColumn(view.id, activeColumn || null)
-  }, [activeColumn, view.id])
-  // Record every activation directly. A repeated click on the same header leaves
-  // state unchanged, so the effect above would not run and the move target would
-  // stay on another pane.
+  // Record every activation directly, in the event that caused it. Publishing
+  // from a passive effect here would land after the next pane's header click
+  // when a body click and a Detail open commit later, and the stale publish
+  // would steal the keyboard move target from the header the user clicked last.
   const activateColumn = (column: string) => {
     setActiveColumn(column)
     publishActiveColumn(view.id, column)

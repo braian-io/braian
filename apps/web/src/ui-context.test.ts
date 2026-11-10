@@ -6,6 +6,7 @@ import {
   publishMarked,
   publishSelection,
   publishTable,
+  readMarkedSelection,
   readUiContext,
   resetUiContext,
 } from './ui-context'
@@ -39,5 +40,12 @@ describe('ui context', () => {
     expect(snap.sort).toBe('key:asc')
     expect(snap.language).toBe('sv')
     expect(snap.workspace?.name).toBe('Enrich objects')
+  })
+
+  it('keeps the marked object type so a table can restore a URL selection', () => {
+    publishMarked(id, 'product')
+    expect(readMarkedSelection()).toEqual({ id, key: '', name: '', type: 'product' })
+    publishMarked(null)
+    expect(readMarkedSelection()).toBeNull()
   })
 })
