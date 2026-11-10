@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
-import { mainTable } from './ui'
+import { mainTable, setTheme } from './ui'
 
 const PRODUCT_TYPE = 'product'
 const stamp = Date.now().toString().slice(-8)
@@ -67,6 +67,60 @@ async function filterTo(page: Page, text: string) {
 
 function rowFor(page: Page, id: string) {
   return page.locator(`#object-row-${id}`)
+}
+
+const ENABLED_DANGER = ['rgb(251, 113, 133)', 'rgb(192, 35, 62)']
+
+async function actionPaint(page: Page) {
+  return page.getByTestId('proposal').evaluate(() => {
+    const read = (id: string) => {
+      const node = document.querySelector(`[data-testid="${id}"]`)
+      if (!(node instanceof HTMLElement)) throw new Error(`missing ${id}`)
+      const style = getComputedStyle(node)
+      return {
+        opacity: Number(style.opacity || 1),
+        background: style.backgroundColor,
+        color: style.color,
+      }
+    }
+    return { save: read('save-all'), discard: read('discard-all') }
+  })
+}
+
+async function expectClosedActions(page: Page, reason: string, shot?: string) {
+  const review = page.getByTestId('proposal')
+  const save = review.getByTestId('save-all')
+  const discard = review.getByTestId('discard-all')
+  await expect(save).toBeDisabled()
+  await expect(discard).toBeDisabled()
+  const paint = await actionPaint(page)
+  expect(paint.save.opacity, 'Save all must not look active').toBeLessThan(1)
+  expect(paint.discard.opacity, 'Discard all must not look active').toBeLessThan(1)
+  expect(ENABLED_DANGER, 'Discard all must not keep the enabled danger fill').not.toContain(paint.discard.background)
+  const explanation = review.getByTestId('proposal-actions-reason')
+  await expect(explanation).toHaveText(reason)
+  await expect(explanation).toHaveAttribute('title', reason)
+  const id = await explanation.getAttribute('id')
+  expect(id).toBeTruthy()
+  await expect(save).toHaveAttribute('aria-describedby', id!)
+  await expect(discard).toHaveAttribute('aria-describedby', id!)
+  if (shot && shots) {
+    await review.locator('.toolbar').first().screenshot({ path: `${shots}/${shot}` })
+  }
+}
+
+async function expectPendingActions(page: Page) {
+  const review = page.getByTestId('proposal')
+  const save = review.getByTestId('save-all')
+  const discard = review.getByTestId('discard-all')
+  await expect(save).toBeEnabled()
+  await expect(discard).toBeEnabled()
+  const paint = await actionPaint(page)
+  expect(paint.save.opacity).toBe(1)
+  expect(paint.discard.opacity).toBe(1)
+  await expect(review.getByTestId('proposal-actions-reason')).toHaveCount(0)
+  expect(await save.getAttribute('aria-describedby')).toBeNull()
+  expect(await discard.getAttribute('aria-describedby')).toBeNull()
 }
 
 async function proposalBody(page: Page, id: string) {
@@ -156,6 +210,12 @@ test('a scoped Save accepts only the visible row and the hidden row stays review
     expect(openList.ok()).toBeTruthy()
     const listed = (await openList.json()) as { proposals?: Array<{ id?: string; status?: string }> }
     expect(listed.proposals?.some((item) => item.id === proposalId && item.status === 'open')).toBe(true)
+    // A proposal with a pending row keeps both bulk actions live and unlabelled.
+    await page.locator('nav.tabs').getByRole('button', { name: /Review/ }).click()
+    await expect(page.getByTestId(`proposal-row-${proposalId}`)).toBeVisible({ timeout: 30_000 })
+    await page.getByTestId(`proposal-row-${proposalId}`).click()
+    await expect(page.getByTestId('proposal')).toContainText(`Lifecycle ${stamp}`)
+    await expectPendingActions(page)
     expect(await objectName(page, b.id)).toBe(NAME_B)
     expect(await objectName(page, a.id)).toBe(SAVED_A)
   } finally {
@@ -267,9 +327,11 @@ test('closed accepted, discarded and mixed proposals disable bulk actions and th
     await expect(page.getByTestId(`proposal-row-${acceptedId}`)).toBeVisible({ timeout: 30_000 })
     await page.getByTestId(`proposal-row-${acceptedId}`).click()
     await expect(review).toContainText(acceptedTitle)
-    await expect(review.getByTestId('save-all')).toBeDisabled()
-    await expect(review.getByTestId('discard-all')).toBeDisabled()
+    await expectClosedActions(page, 'Proposal already accepted', 'closed-accepted-disabled-look.png')
     if (shots) await page.screenshot({ path: `${shots}/closed-accepted-review.png`, fullPage: true })
+    await setTheme(page, 'light')
+    await expectClosedActions(page, 'Proposal already accepted', 'closed-accepted-disabled-look-light.png')
+    await setTheme(page, 'dark')
 
     const acceptAcceptedAgain = await page.request.post(`/v1/proposals/${acceptedId}/accept`, { data: {} })
     expect(acceptAcceptedAgain.status(), await acceptAcceptedAgain.text()).toBe(409)
@@ -282,8 +344,8 @@ test('closed accepted, discarded and mixed proposals disable bulk actions and th
     await expect(page.getByTestId(`proposal-row-${discardedId}`)).toBeVisible({ timeout: 30_000 })
     await page.getByTestId(`proposal-row-${discardedId}`).click()
     await expect(review).toContainText(discardedTitle)
-    await expect(review.getByTestId('save-all')).toBeDisabled()
-    await expect(review.getByTestId('discard-all')).toBeDisabled()
+    await expectClosedActions(page, 'Proposal already discarded', 'closed-discarded-disabled-look.png')
+    if (shots) await page.screenshot({ path: `${shots}/closed-discarded-review.png`, fullPage: true })
 
     const acceptDiscardedAgain = await page.request.post(`/v1/proposals/${discardedId}/accept`, { data: {} })
     expect(acceptDiscardedAgain.status(), await acceptDiscardedAgain.text()).toBe(409)
@@ -296,8 +358,7 @@ test('closed accepted, discarded and mixed proposals disable bulk actions and th
     await expect(page.getByTestId(`proposal-row-${mixedId}`)).toBeVisible({ timeout: 30_000 })
     await page.getByTestId(`proposal-row-${mixedId}`).click()
     await expect(review).toContainText(mixedTitle)
-    await expect(review.getByTestId('save-all')).toBeDisabled()
-    await expect(review.getByTestId('discard-all')).toBeDisabled()
+    await expectClosedActions(page, 'Proposal already closed', 'closed-mixed-disabled-look.png')
     if (shots) await page.screenshot({ path: `${shots}/closed-mixed-review.png`, fullPage: true })
 
     const acceptMixedAgain = await page.request.post(`/v1/proposals/${mixedId}/accept`, { data: {} })
@@ -317,4 +378,70 @@ test('closed accepted, discarded and mixed proposals disable bulk actions and th
     if (c) await deleteProduct(page, c.id)
     if (d) await deleteProduct(page, d.id)
   }
+})
+
+test('disabled action styles leave other disabled controls muted, not broken', async ({ page }) => {
+  test.setTimeout(120_000)
+  await login(page)
+  await page.evaluate(() => {
+    const wrap = document.createElement('div')
+    wrap.id = 'row212-disabled-fixture'
+    wrap.style.cssText =
+      'position:fixed;z-index:2147483647;left:16px;top:16px;display:flex;gap:8px;align-items:center;padding:12px;background:var(--panel);border:1px solid var(--border);border-radius:8px;'
+    wrap.innerHTML = [
+      '<button class="btn btn-raised" disabled>Neutral</button>',
+      '<button class="btn btn-danger" disabled>Danger</button>',
+      '<button class="btn btn-accent" disabled>Accent</button>',
+      '<button class="btn btn-ghost icon-btn" disabled aria-label="Disabled icon">x</button>',
+      '<button class="tab" disabled>Tab</button>',
+      '<button class="filter-chip" disabled>Chip</button>',
+    ].join('')
+    document.body.append(wrap)
+  })
+  const fixture = page.locator('#row212-disabled-fixture')
+  const paint = await fixture.evaluate((node) => {
+    const read = (selector: string) => {
+      const element = node.querySelector(selector)
+      if (!(element instanceof HTMLElement)) throw new Error(`missing ${selector}`)
+      const style = getComputedStyle(element)
+      return { opacity: Number(style.opacity || 1) }
+    }
+    return {
+      raised: read('.btn-raised'),
+      danger: read('.btn-danger'),
+      accent: read('.btn-accent'),
+      icon: read('.icon-btn'),
+      tab: read('.tab'),
+      chip: read('.filter-chip'),
+    }
+  })
+  expect(paint.raised.opacity).toBeLessThan(1)
+  expect(paint.danger.opacity).toBeLessThan(1)
+  expect(paint.accent.opacity).toBeLessThan(1)
+  expect(paint.icon.opacity, 'ghost icon buttons keep the global opacity').toBe(1)
+  expect(paint.tab.opacity).toBe(1)
+  expect(paint.chip.opacity).toBe(1)
+  if (shots) await fixture.screenshot({ path: `${shots}/other-disabled-buttons-dark.png` })
+  await setTheme(page, 'light')
+  if (shots) await fixture.screenshot({ path: `${shots}/other-disabled-buttons-light.png` })
+  await setTheme(page, 'dark')
+  await page.evaluate(() => document.getElementById('row212-disabled-fixture')?.remove())
+
+  // The real create dialog keeps its local 0.45 disabled rule; the new action
+  // styles must not widen or override it.
+  await openProducts(page)
+  const table = mainTable(page)
+  await table.getByTestId('table-add-row').click()
+  const dialog = page.getByTestId('new-object')
+  await expect(dialog).toBeVisible()
+  const submit = dialog.locator('button[type="submit"]').first()
+  await submit.evaluate((node) => {
+    const button = node as HTMLButtonElement
+    button.disabled = true
+  })
+  const submitOpacity = await submit.evaluate((node) => Number(getComputedStyle(node).opacity || 1))
+  expect(submitOpacity).toBeCloseTo(0.45, 2)
+  if (shots) await dialog.screenshot({ path: `${shots}/create-dialog-primary-disabled-dark.png` })
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
 })

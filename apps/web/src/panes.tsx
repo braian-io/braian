@@ -92,6 +92,7 @@ import {
   withIndefinite,
 } from './type-labels'
 import { publishProposal } from './proposal-bus'
+import { ProposalBulkActions } from './proposal-actions'
 import { acceptPendingLine, pendingLines, pendingRowsForObject, rejectPendingRow } from './proposal-focus'
 import { ImportWorkspace } from './import/view'
 import { rollbackTargetSeq } from './history-rollback'
@@ -3726,8 +3727,14 @@ export function ProposalView({ session }: { session: PanesSession }) {
         {proposal.data ? <span className="meta-chip neutral" data-testid="source-badge">{sourceLabel(proposal.data)}</span> : null}
         {proposal.data?.status ? <MetaChip tone={statusTone(String(proposal.data.status))}>{String(proposal.data.status)}</MetaChip> : null}
         {proposalStale ? <span className="meta-chip" data-testid="proposal-stale">{copy.proposalStale}</span> : null}
-        <Button type="button" variant="default" data-testid="save-all" disabled={loadingObjects || accept.isPending || discard.isPending || proposalStale || !hasPendingRows} onClick={saveAll}>{copy.saveAll}</Button>
-        <Button type="button" variant="danger" data-testid="discard-all" disabled={accept.isPending || discard.isPending || !hasPendingRows} onClick={() => discard.mutate()}>{copy.discardAll}</Button>
+        <ProposalBulkActions
+          status={proposal.data?.status}
+          rows={rows}
+          saveDisabled={loadingObjects || accept.isPending || discard.isPending || proposalStale || !hasPendingRows}
+          discardDisabled={accept.isPending || discard.isPending || !hasPendingRows}
+          onSave={saveAll}
+          onDiscard={() => discard.mutate()}
+        />
         {error ? <p className="error" data-testid="proposal-error">{error}</p> : null}
         {consequence.length > 0 && session.proposalId ? (
           <Button type="button" variant="default" onClick={() => publishProposal(session.proposalId ?? '')}>{copy.reviewChange}</Button>
