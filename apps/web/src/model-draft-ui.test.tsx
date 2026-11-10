@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from './api'
 import { copy } from './i18n'
-import { ModelDraftHost } from './model-draft-ui'
+import { draftHasForcedReview, draftSaveGate, ModelDraftHost } from './model-draft-ui'
 import { openModelDialog, requestReview } from './model-stage'
 
 const mock = vi.hoisted(() => {
@@ -50,6 +50,13 @@ const blocked = {
   steps: [{ op: 'upsert_structure' }],
   error: '4 objects are still in groups this save removes',
   consequence: { destructive: false, lines: [] },
+}
+
+const allowedTrees = {
+  ...draft,
+  lines: ['Type recipe may use food'],
+  steps: [{ op: 'set_structures', type_key: 'recipe', structures: ['structure-food'] }],
+  consequence: { destructive: false, lines: ['Type recipe may use food'] },
 }
 
 function Host({ client: provided }: { client?: QueryClient } = {}) {
@@ -110,6 +117,109 @@ describe('review dialog', () => {
     expect(saves()[0]?.[1]).toEqual({ body: {} })
     expect(screen.queryByTestId('review-dialog')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Confirm' })).toBeNull()
+  })
+
+  it('gates a non-destructive allowed-tree draft as a review', () => {
+    expect(draftSaveGate(allowedTrees)).toBe('confirm')
+    expect(draftHasForcedReview(allowedTrees)).toBe(true)
+    expect(draftSaveGate(draft)).toBe('direct')
+    expect(draftHasForcedReview(draft)).toBe(false)
+    expect(draftSaveGate(destructive)).toBe('confirm')
+    expect(draftHasForcedReview(destructive)).toBe(false)
+  })
+
+  it('opens a primary Save review for an allowed-tree change without saving', async () => {
+    mock.use((path) => {
+      if (path === '/v1/model/draft') return Promise.resolve(allowedTrees)
+      return Promise.resolve({})
+    })
+    render(<Host />)
+    fireEvent.click(await screen.findByTestId('review-save'))
+    const dialog = await screen.findByTestId('review-dialog')
+    expect(dialog.textContent).toContain('Type recipe may use food')
+    const save = screen.getByTestId('confirm-review')
+    expect(save.textContent).toBe(copy.save)
+    expect(save.className).toContain('btn-accent')
+    expect(save.className).not.toContain('btn-danger')
+    expect(saves()).toEqual([])
+  })
+
+  it('discards the staged draft when a forced allowed-tree review is cancelled', async () => {
+    let discarded = false
+    mock.use((path) => {
+      if (path === '/v1/model/draft') {
+        return Promise.resolve(discarded ? { count: 0, conflict: false, steps: [] } : allowedTrees)
+      }
+      return Promise.resolve({})
+    })
+    mock.methods.delete.mockImplementation(() => {
+      discarded = true
+      return Promise.resolve({})
+    })
+    render(<Host />)
+    fireEvent.click(await screen.findByTestId('review-save'))
+    await screen.findByTestId('review-dialog')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(mock.methods.delete).toHaveBeenCalledWith('/v1/model/draft'))
+    expect(saves()).toEqual([])
+    await waitFor(() => expect(screen.queryByTestId('review-dialog')).toBeNull())
+    await waitFor(() => expect(screen.queryByTestId('unsaved-changes')).toBeNull())
+  })
+
+  it('discards the staged draft when a forced allowed-tree review is closed with Escape', async () => {
+    let discarded = false
+    mock.use((path) => {
+      if (path === '/v1/model/draft') {
+        return Promise.resolve(discarded ? { count: 0, conflict: false, steps: [] } : allowedTrees)
+      }
+      return Promise.resolve({})
+    })
+    mock.methods.delete.mockImplementation(() => {
+      discarded = true
+      return Promise.resolve({})
+    })
+    render(<Host />)
+    fireEvent.click(await screen.findByTestId('review-save'))
+    const dialog = await screen.findByTestId('review-dialog')
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+    await waitFor(() => expect(mock.methods.delete).toHaveBeenCalledWith('/v1/model/draft'))
+    expect(saves()).toEqual([])
+    await waitFor(() => expect(screen.queryByTestId('review-dialog')).toBeNull())
+  })
+
+  it('saves a forced allowed-tree review once and closes the dialog', async () => {
+    let count = 1
+    mock.use((path) => {
+      if (path === '/v1/model/draft') {
+        return Promise.resolve(count > 0 ? allowedTrees : { count: 0, conflict: false, steps: [] })
+      }
+      if (String(path).includes('/v1/model/draft/save')) {
+        count = 0
+        return Promise.resolve({ applied: true })
+      }
+      return Promise.resolve({})
+    })
+    render(<Host />)
+    fireEvent.click(await screen.findByTestId('review-save'))
+    fireEvent.click(await screen.findByTestId('confirm-review'))
+    await waitFor(() => expect(saves()).toHaveLength(1))
+    expect(saves()[0]?.[1]).toEqual({ body: {} })
+    await waitFor(() => expect(screen.queryByTestId('review-dialog')).toBeNull())
+    await waitFor(() => expect(screen.queryByTestId('unsaved-changes')).toBeNull())
+  })
+
+  it('leaves a destructive draft staged when its review is cancelled', async () => {
+    mock.use((path) => {
+      if (path === '/v1/model/draft') return Promise.resolve(destructive)
+      return Promise.resolve({})
+    })
+    render(<Host />)
+    fireEvent.click(await screen.findByTestId('review-save'))
+    await screen.findByTestId('review-dialog')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByTestId('review-dialog')).toBeNull())
+    expect(saves()).toEqual([])
+    expect(mock.methods.delete).not.toHaveBeenCalled()
   })
 
   it('asks before a destructive save and does not save on Escape', async () => {

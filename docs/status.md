@@ -2,6 +2,19 @@
 
 Bas: `origin/main` tip `86bb9a0` (#275). Senaste migrering i repot: `V44__proposal_recoveries.sql` (#268).
 
+## Rad 129 — Allowed trees öppnar Review med Cancel innan sparning
+
+Grenen `junior/129-allowed-trees-review` utgår från `origin/main` `795eb06` (#277) och är **inte mergad, deployad eller accepterad**. Den rättar Test-avvisningen från 2026-11-09: en Allowed-tree-avtoggle på en befintlig typ auto-sparade genom modelldraften utan att någon ReviewDialog eller Cancel öppnades.
+
+- `apps/web/src/model-draft-ui.tsx`: `draftSaveGate` returnerar nu `'confirm'` också för en draft med ett `set_structures`-steg, även när `consequence.destructive` är false. `draftHasForcedReview` läser draftens steg, inte bara konsekvensen. Övriga säkra draftar (t.ex. attributändringar) direct-save fortfarande.
+- `ReviewDialog`: en tvungen icke-destruktiv granskning visar primär **Save** (`variant="primary"`, inte danger Delete) och beskrivningen kommer från draftens första ändringsrad i stället för "0 values on 0 objects will be deleted". Cancel (och Escape/overlay) kastar det stagade draftet via `DELETE /v1/model/draft`, så omladdning visar oförändrat och draftantalet blir 0. Den destruktiva vägen är oförändrad: danger Delete, Cancel stänger utan att spara och lämnar draften kvar.
+- `apps/web/src/model-draft-ui.test.tsx`: gate-enhetstest, dialog utan spar-POST, Cancel → DELETE, Escape → DELETE, Save → exakt en POST, samt att en destruktiv draft lämnas kvar vid Cancel.
+- `apps/web/src/data-model.test.tsx`: integrationstest där AllowedTrees-togglen tillsammans med `ModelDraftHost` öppnar ReviewDialog utan spar-POST.
+- `apps/web/e2e/row129-allowed-trees.spec.ts` (registrerad i `scripts/e2e.mjs`): ägd fixture, toggle → synlig ReviewDialog med Save+Cancel, live-structures oförändrade, inga save-POST eller PUT; Cancel → omladdning → oförändrat, draft 0; toggle → Save → omladdning → ändringen kvar; restore via samma Review-väg; fixture borttagen.
+- Bevis i `docker run --rm` och isolerat compose-projekt `row129fix` (eget nätverk, syntetisk Postgres 18 + Typesense 30.2, portar 25433/28108), utan host-nätverk, Docker-socket eller demo-DB: `tsc --noEmit` exit 0; hela vitest-sviten 150 filer / 830 tester gröna; `row129-allowed-trees.spec.ts` 1/1 (44,4 s); regression `save-confirm.spec.ts` 3/3 (direkt sparning av säker icke-strukturändring, destruktiv attributborttagning, destruktiv gruppborttagning). Skärmdumpar i uppgiftens scratchkatalog.
+- `apps/web/src/data-model.tsx` är orörd (`sha256 2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`).
+- Kvarstående beteende (oförändrat): ReviewDialog för en **destruktiv** ändring lämnar draften stagad efter Cancel, så användaren kan öppna den igen. På den tvungna icke-destruktiva allowed-tree-vägen kastas draften, enligt mandate.
+
 ## Rad 107-uppföljning 2 — tangentbordet följer senast klickade header
 
 Den här grenen (`junior/107-shortcut-target`) utgår från `origin/main` `86bb9a0` (#275) och är **inte mergad, deployad eller accepterad**. Den rättar Test-avvisningen på demo `86bb9a0`: Ctrl+K och kontextmenyn var rätt efter #274, men Ctrl+Shift+←/→ flyttade fortfarande fel tabell i sekvens A1 och C1b.

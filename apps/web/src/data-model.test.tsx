@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { copy } from './i18n'
 import { DataModel } from './data-model'
+import { ModelDraftHost } from './model-draft-ui'
 import { requestAttributeAction } from './attribute-actions'
 import { chooseModelSelection } from './model-selection'
 
@@ -14,7 +15,7 @@ const mock = vi.hoisted(() => {
 })
 const stageModel = vi.hoisted(() => vi.fn(async () => undefined))
 const stageModelSteps = vi.hoisted(() => vi.fn(async () => undefined))
-const requestReview = vi.hoisted(() => vi.fn())
+const requestReview = vi.hoisted(() => vi.fn(() => window.dispatchEvent(new Event('braian-review-save'))))
 
 vi.mock('./api', async () => {
   const actual = await vi.importActual<typeof import('./api')>('./api')
@@ -126,6 +127,16 @@ function Host({ mode = 'classes' }: { mode?: string }) {
   )
 }
 
+function HostWithDraftBar({ mode = 'classes' }: { mode?: string } = {}) {
+  const [client] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: false } } }))
+  return (
+    <QueryClientProvider client={client}>
+      <DataModel view={{ state: { mode } }} />
+      <ModelDraftHost />
+    </QueryClientProvider>
+  )
+}
+
 function row(root: HTMLElement, id: string) {
   const found = root.querySelector(`[data-row-id="${id}"]`)
   if (!(found instanceof HTMLElement)) throw new Error(`missing row ${id}`)
@@ -226,6 +237,36 @@ describe('type attributes table', () => {
     }))
     expect(requestReview).toHaveBeenCalledTimes(1)
     expect(mock.methods.put).not.toHaveBeenCalled()
+  })
+
+  it('opens the review dialog for an allowed-tree toggle without saving directly', async () => {
+    chooseModelSelection({ kind: 'type', typeKey: 'recipe' })
+    mock.methods.get.mockImplementation((path: string) => {
+      if (path === '/v1/definitions') return Promise.resolve({ ...definitions, attributes: allAttributes })
+      if (path === '/v1/model/draft') {
+        return Promise.resolve({
+          count: 1,
+          conflict: false,
+          updated_at: '2026-10-27T10:00:00Z',
+          lines: ['Type recipe may use food'],
+          warnings: [],
+          steps: [{ op: 'set_structures', type_key: 'recipe', structures: ['structure-food'] }],
+          consequence: { destructive: false, lines: ['Type recipe may use food'] },
+        })
+      }
+      return Promise.resolve({})
+    })
+    render(<HostWithDraftBar />)
+    const trees = await screen.findByTestId('allowed-trees')
+    fireEvent.click(within(trees).getByRole('checkbox', { name: 'Food' }))
+    await waitFor(() => expect(stageModel).toHaveBeenCalledWith('model.set_structures', {
+      type_key: 'recipe',
+      structures: ['structure-food'],
+    }))
+    const dialog = await screen.findByTestId('review-dialog')
+    expect(dialog.textContent).toContain('Type recipe may use food')
+    const saves = mock.methods.post.mock.calls.filter((call) => String(call[0]).includes('/v1/model/draft/save'))
+    expect(saves).toEqual([])
   })
 
   it('shows an error when staging allowed trees fails', async () => {
