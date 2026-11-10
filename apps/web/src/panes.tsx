@@ -3327,7 +3327,7 @@ export function GraphView({ session, view }: { session: PanesSession; view?: Pan
   if (modelSource) {
     if (defs.isError || stats.isError) return <StateNote tone="error" title={copy.graphError} testId="graph" />
     if (!defs.data || !stats.data) return <StateNote tone="loading" title={copy.graphLoading} testId="graph" />
-    return <GraphMap key="data-model" model={{ defs: defs.data, stats: stats.data }} />
+    return <GraphMap key="data-model" defs={defs.data} model={{ defs: defs.data, stats: stats.data }} />
   }
   if (!session.objectId) return <StateNote tone="empty" title={emptyGraph(typeNames(defs.data, uiLanguage), session.listType)} testId="graph" />
   if (graph.isError || object.isError) return <StateNote tone="error" title={copy.graphError} testId="graph" />

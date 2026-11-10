@@ -175,7 +175,7 @@ const measuredSeconds = {
   'e2e/focus-styles.spec.ts': 30,
   'e2e/design-polish-low-rows.spec.ts': 30,
   'e2e/graph.spec.ts': 26,
-  'e2e/row128-type-menu.spec.ts': 30,
+  'e2e/row128-type-menu.spec.ts': 210,
   'e2e/history.spec.ts': 6,
   'e2e/import.spec.ts': 4,
   'e2e/structure.spec.ts': 6,
