@@ -216,6 +216,28 @@ describe('column move targets one table (Notion 107)', () => {
     await waitFor(() => expect(resolveColumnMoveTarget()).toEqual({ viewId: products, column: 'name' }))
   })
 
+  it('keeps the header pointerdown when a body click commits its state later', async () => {
+    Frame(products)
+    render(<TwoTableHarness />)
+    await waitFor(() => expect(screen.getAllByTestId('object-row')).toHaveLength(tableRows.length * 2))
+
+    const articlesName = screen.getByTestId('articles-pane').querySelector('[data-testid="col-name"]') as HTMLElement
+    const productsType = screen.getByTestId('products-pane').querySelector('[data-testid="object-row"] [data-column="type"]') as HTMLElement
+
+    // The header is already active, so repeating the click changes no React state.
+    fireEvent.click(articlesName)
+    await waitFor(() => expect(resolveColumnMoveTarget()).toEqual({ viewId: articles, column: 'name' }))
+
+    // A body cell click in the other pane starts a Detail open; the repeat header
+    // pointerdown lands before that state change commits. Its passive republish
+    // must not steal the target from the header the user touched last.
+    act(() => {
+      fireEvent.click(productsType)
+      fireEvent.pointerDown(articlesName)
+    })
+    await waitFor(() => expect(resolveColumnMoveTarget()).toEqual({ viewId: articles, column: 'name' }))
+  })
+
   it('moves only the named table when two tables share the Name field', async () => {
     Frame(products)
     render(<TwoTableHarness />)
