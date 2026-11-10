@@ -64,6 +64,15 @@ function marked(row: PaletteItem, current: boolean): PaletteItem {
   return current ? { ...row, chips: [{ text: copy.current, tone: 'ok' }] } : row
 }
 
+/** Cycle explanation names the edge that would close the loop. */
+function cycleSubtitle(type: TypeName, option: PeerSourceOption): string {
+  const source = option.viewTitle.trim()
+  if (!source) return copy.wouldCreateCycle
+  return copy.wouldCreateCycleFollows
+    .replace('{type}', type.plural)
+    .replace('{source}', source)
+}
+
 /** Palette / menu root that opens the type-source submenu (Notion 103 PR 1). */
 export function selectSourceRootItem(): PaletteItem {
   return {
@@ -84,9 +93,16 @@ export function selectSourceSubmenuRows(
   peerOptions: PeerSourceOption[] = [],
   current?: CurrentSource | null,
   cycleCheck?: SourceCycleCheck,
+  targetTypeId?: string,
 ): PaletteItem[] {
+  // The picker changes one view, so it offers only the type that view can be.
+  // A generic view has no single type and keeps every type.
+  const scoped = targetTypeId
+    ? types.filter((type) => type.kind !== 'link' && (type.id === targetTypeId || type.key === targetTypeId))
+    : []
+  const visible = scoped.length > 0 ? scoped : types
   const rows: PaletteItem[] = []
-  for (const type of types) {
+  for (const type of visible) {
     if (type.kind === 'link' || !type.id || !type.key) continue
     const allCurrent = Boolean(current && current.typeId === type.id && !current.peerViewId)
     rows.push(marked({
@@ -121,9 +137,7 @@ export function selectSourceSubmenuRows(
             .replace('{source}', option.viewTitle)
             .replace('{linkType}', linkType ?? '')
           : copy.fromSourceLabel.replace('{type}', type.plural).replace('{source}', option.viewTitle)
-        const subtitle = createsCycle
-          ? [option.label, copy.wouldCreateCycle].filter(Boolean).join(' · ')
-          : option.label
+        const subtitle = createsCycle ? cycleSubtitle(type, option) : option.label
         rows.push(marked({
           id: `select-source:peer:${type.id}:${option.viewId}:${option.selection}${many && linkType ? `:${linkType}` : ''}`,
           group: 'views',

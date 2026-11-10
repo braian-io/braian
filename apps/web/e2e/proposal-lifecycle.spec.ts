@@ -6,10 +6,24 @@ const PRODUCT_TYPE = 'product'
 const stamp = Date.now().toString().slice(-8)
 const KEY_A = `LIFE-A-${stamp}`
 const KEY_B = `LIFE-B-${stamp}`
+const KEY_C = `LIFE-C-${stamp}`
+const KEY_D = `LIFE-D-${stamp}`
+const KEY_E = `LIFE-E-${stamp}`
+const KEY_F = `LIFE-F-${stamp}`
 const NAME_A = `Lifecycle A ${stamp}`
 const NAME_B = `Lifecycle B ${stamp}`
+const NAME_C = `Lifecycle C ${stamp}`
+const NAME_D = `Lifecycle D ${stamp}`
+const NAME_E = `Lifecycle E ${stamp}`
+const NAME_F = `Lifecycle F ${stamp}`
 const SAVED_A = `Lifecycle A saved ${stamp}`
 const PROPOSED_B = `Lifecycle B proposed ${stamp}`
+const SAVED_C = `Lifecycle C saved ${stamp}`
+const SAVED_E = `Lifecycle E saved ${stamp}`
+const PROPOSED_D = `Lifecycle D proposed ${stamp}`
+const PROPOSED_F = `Lifecycle F proposed ${stamp}`
+
+const shots = process.env.BRAIAN_SHOTS_DIR
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -150,5 +164,157 @@ test('a scoped Save accepts only the visible row and the hidden row stays review
     }
     if (a) await deleteProduct(page, a.id)
     if (b) await deleteProduct(page, b.id)
+  }
+})
+
+test('closed accepted, discarded and mixed proposals disable bulk actions and the API refuses to reopen them', async ({ page }) => {
+  test.setTimeout(180_000)
+  const acceptedTitle = `Closed accepted ${stamp}`
+  const discardedTitle = `Closed discarded ${stamp}`
+  const mixedTitle = `Closed mixed ${stamp}`
+  let a: { id: string; version: number } | null = null
+  let b: { id: string; version: number } | null = null
+  let c: { id: string; version: number } | null = null
+  let d: { id: string; version: number } | null = null
+  let acceptedId = ''
+  let discardedId = ''
+  let mixedId = ''
+  try {
+    await login(page)
+    a = await createProduct(page, KEY_C, NAME_C)
+    b = await createProduct(page, KEY_D, NAME_D)
+    c = await createProduct(page, KEY_E, NAME_E)
+    d = await createProduct(page, KEY_F, NAME_F)
+
+    const accepted = await page.request.post('/v1/proposals', {
+      data: {
+        title: acceptedTitle,
+        rows: [
+          {
+            object_id: a.id,
+            object_key: KEY_C,
+            type_key: PRODUCT_TYPE,
+            base_version: a.version,
+            patch: { values: { name: { en: SAVED_C } } },
+          },
+        ],
+      },
+    })
+    expect(accepted.ok(), await accepted.text()).toBeTruthy()
+    acceptedId = ((await accepted.json()) as { id: string }).id
+    const acceptAccepted = await page.request.post(`/v1/proposals/${acceptedId}/accept`, { data: {} })
+    expect(acceptAccepted.ok(), await acceptAccepted.text()).toBeTruthy()
+
+    const discarded = await page.request.post('/v1/proposals', {
+      data: {
+        title: discardedTitle,
+        rows: [
+          {
+            object_id: b.id,
+            object_key: KEY_D,
+            type_key: PRODUCT_TYPE,
+            base_version: b.version,
+            patch: { values: { name: { en: PROPOSED_D } } },
+          },
+        ],
+      },
+    })
+    expect(discarded.ok(), await discarded.text()).toBeTruthy()
+    discardedId = ((await discarded.json()) as { id: string }).id
+    const discardDiscarded = await page.request.post(`/v1/proposals/${discardedId}/discard`)
+    expect(discardDiscarded.ok(), await discardDiscarded.text()).toBeTruthy()
+
+    const mixed = await page.request.post('/v1/proposals', {
+      data: {
+        title: mixedTitle,
+        rows: [
+          {
+            object_id: c.id,
+            object_key: KEY_E,
+            type_key: PRODUCT_TYPE,
+            base_version: c.version,
+            patch: { values: { name: { en: SAVED_E } } },
+          },
+          {
+            object_id: d.id,
+            object_key: KEY_F,
+            type_key: PRODUCT_TYPE,
+            base_version: d.version,
+            patch: { values: { name: { en: PROPOSED_F } } },
+          },
+        ],
+      },
+    })
+    expect(mixed.ok(), await mixed.text()).toBeTruthy()
+    const mixedBody = (await mixed.json()) as {
+      id: string
+      rows: Array<{ id: string; object_id: string }>
+    }
+    mixedId = mixedBody.id
+    const savedRow = mixedBody.rows.find((row) => row.object_id === c!.id)
+    expect(savedRow, 'the mixed proposal has a row for C').toBeTruthy()
+    const acceptMixed = await page.request.post(`/v1/proposals/${mixedId}/accept`, {
+      data: { rows: [savedRow!.id] },
+    })
+    expect(acceptMixed.ok(), await acceptMixed.text()).toBeTruthy()
+    const discardMixed = await page.request.post(`/v1/proposals/${mixedId}/discard`)
+    expect(discardMixed.ok(), await discardMixed.text()).toBeTruthy()
+
+    await page.locator('nav.tabs').getByRole('button', { name: /Review/ }).click()
+    const review = page.getByTestId('proposal')
+    await expect(review).toBeVisible()
+
+    await expect(page.getByTestId(`proposal-row-${acceptedId}`)).toBeVisible({ timeout: 30_000 })
+    await page.getByTestId(`proposal-row-${acceptedId}`).click()
+    await expect(review).toContainText(acceptedTitle)
+    await expect(review.getByTestId('save-all')).toBeDisabled()
+    await expect(review.getByTestId('discard-all')).toBeDisabled()
+    if (shots) await page.screenshot({ path: `${shots}/closed-accepted-review.png`, fullPage: true })
+
+    const acceptAcceptedAgain = await page.request.post(`/v1/proposals/${acceptedId}/accept`, { data: {} })
+    expect(acceptAcceptedAgain.status(), await acceptAcceptedAgain.text()).toBe(409)
+    const discardAcceptedAgain = await page.request.post(`/v1/proposals/${acceptedId}/discard`)
+    expect(discardAcceptedAgain.status(), await discardAcceptedAgain.text()).toBe(204)
+    const acceptedBody = await proposalBody(page, acceptedId)
+    expect(acceptedBody.status).toBe('accepted')
+    expect(acceptedBody.rows?.find((row) => row.object_id === a!.id)?.status).toBe('accepted')
+
+    await expect(page.getByTestId(`proposal-row-${discardedId}`)).toBeVisible({ timeout: 30_000 })
+    await page.getByTestId(`proposal-row-${discardedId}`).click()
+    await expect(review).toContainText(discardedTitle)
+    await expect(review.getByTestId('save-all')).toBeDisabled()
+    await expect(review.getByTestId('discard-all')).toBeDisabled()
+
+    const acceptDiscardedAgain = await page.request.post(`/v1/proposals/${discardedId}/accept`, { data: {} })
+    expect(acceptDiscardedAgain.status(), await acceptDiscardedAgain.text()).toBe(409)
+    const discardDiscardedAgain = await page.request.post(`/v1/proposals/${discardedId}/discard`)
+    expect(discardDiscardedAgain.status(), await discardDiscardedAgain.text()).toBe(204)
+    const discardedBody = await proposalBody(page, discardedId)
+    expect(discardedBody.status).toBe('discarded')
+    expect(discardedBody.rows?.find((row) => row.object_id === b!.id)?.status).toBe('rejected')
+
+    await expect(page.getByTestId(`proposal-row-${mixedId}`)).toBeVisible({ timeout: 30_000 })
+    await page.getByTestId(`proposal-row-${mixedId}`).click()
+    await expect(review).toContainText(mixedTitle)
+    await expect(review.getByTestId('save-all')).toBeDisabled()
+    await expect(review.getByTestId('discard-all')).toBeDisabled()
+    if (shots) await page.screenshot({ path: `${shots}/closed-mixed-review.png`, fullPage: true })
+
+    const acceptMixedAgain = await page.request.post(`/v1/proposals/${mixedId}/accept`, { data: {} })
+    expect(acceptMixedAgain.status(), await acceptMixedAgain.text()).toBe(409)
+    const discardMixedAgain = await page.request.post(`/v1/proposals/${mixedId}/discard`)
+    expect(discardMixedAgain.status(), await discardMixedAgain.text()).toBe(204)
+    const mixedAfter = await proposalBody(page, mixedId)
+    expect(mixedAfter.status).toBe('accepted')
+    expect(mixedAfter.rows?.find((row) => row.object_id === c!.id)?.status).toBe('accepted')
+    expect(mixedAfter.rows?.find((row) => row.object_id === d!.id)?.status).toBe('rejected')
+  } finally {
+    for (const id of [acceptedId, discardedId, mixedId]) {
+      if (id) await page.request.post(`/v1/proposals/${id}/discard`).catch(() => undefined)
+    }
+    if (a) await deleteProduct(page, a.id)
+    if (b) await deleteProduct(page, b.id)
+    if (c) await deleteProduct(page, c.id)
+    if (d) await deleteProduct(page, d.id)
   }
 })

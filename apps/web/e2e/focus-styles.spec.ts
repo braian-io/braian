@@ -94,6 +94,116 @@ function expectOneIndicator(value: Paint, label: string) {
   if (found.outline) expect(value.outlineOffset, `${label} outline offset`).toBeLessThanOrEqual(0)
 }
 
+type RingClip = {
+  accent: string
+  outline: string
+  outlineWidth: number
+  outlineOffset: number
+  outlineColor: string
+  boxShadow: string
+  ring: { left: number; top: number; right: number; bottom: number }
+  clipped: { side: string; ancestor: string }[]
+}
+
+/**
+ * The ring is an outline (outside for offset >= 0, inside for a negative offset)
+ * or an outer box-shadow spread. Walk the ancestors and report every overflow
+ * clip that would cut the ring's bounding box.
+ */
+async function ringClip(locator: Locator): Promise<RingClip> {
+  return locator.evaluate((el) => {
+    const style = getComputedStyle(el)
+    const rect = el.getBoundingClientRect()
+    const width = style.outlineStyle === 'none' ? 0 : Number.parseFloat(style.outlineWidth) || 0
+    const offset = style.outlineStyle === 'none' ? 0 : Number.parseFloat(style.outlineOffset) || 0
+    let spread = 0
+    if (style.boxShadow !== 'none') {
+      const layers: string[] = []
+      let depth = 0
+      let start = 0
+      for (let i = 0; i < style.boxShadow.length; i += 1) {
+        const ch = style.boxShadow[i]
+        if (ch === '(') depth += 1
+        else if (ch === ')') depth -= 1
+        else if (ch === ',' && depth === 0) {
+          layers.push(style.boxShadow.slice(start, i))
+          start = i + 1
+        }
+      }
+      layers.push(style.boxShadow.slice(start))
+      for (const layer of layers) {
+        const lengths = layer.trim().split(/\s+/).filter((part) => /^[-+]?[0-9.]+px$/.test(part)).map((part) => Number(part.slice(0, -2)))
+        const blur = lengths.length >= 3 ? lengths[2] : 0
+        const layerSpread = lengths.length >= 4 ? lengths[3] : 0
+        if (blur === 0 && layerSpread > spread) spread = layerSpread
+      }
+    }
+    const reach = Math.max(width + offset, spread)
+    const ring = {
+      left: rect.left - reach,
+      top: rect.top - reach,
+      right: rect.right + reach,
+      bottom: rect.bottom + reach,
+    }
+    const clipped: { side: string; ancestor: string }[] = []
+    let node = el.parentElement
+    while (node) {
+      const s = getComputedStyle(node)
+      if (s.overflowX !== 'visible' || s.overflowY !== 'visible') {
+        const r = node.getBoundingClientRect()
+        const clip = {
+          left: r.left + (Number.parseFloat(s.borderLeftWidth) || 0),
+          right: r.right - (Number.parseFloat(s.borderRightWidth) || 0),
+          top: r.top + (Number.parseFloat(s.borderTopWidth) || 0),
+          bottom: r.bottom - (Number.parseFloat(s.borderBottomWidth) || 0),
+        }
+        const sides: [string, boolean][] = [
+          ['left', ring.left < clip.left - 0.5],
+          ['right', ring.right > clip.right + 0.5],
+          ['top', ring.top < clip.top - 0.5],
+          ['bottom', ring.bottom > clip.bottom + 0.5],
+        ]
+        const ancestor = `${node.tagName}.${String(node.className).split(' ').slice(0, 3).join('.')}`
+        for (const [side, hit] of sides) {
+          if (hit) clipped.push({ side, ancestor })
+        }
+      }
+      node = node.parentElement
+    }
+    const probe = document.createElement('span')
+    probe.style.color = 'var(--accent)'
+    document.body.appendChild(probe)
+    const accent = getComputedStyle(probe).color
+    probe.remove()
+    return {
+      accent,
+      outline: style.outlineStyle === 'none' ? 'none' : `${style.outlineWidth} ${style.outlineStyle} ${style.outlineOffset}`,
+      outlineWidth: width,
+      outlineOffset: offset,
+      outlineColor: style.outlineColor,
+      boxShadow: style.boxShadow,
+      ring,
+      clipped,
+    }
+  })
+}
+
+function expectRingUnclipped(locator: Locator, label: string) {
+  return ringClip(locator).then((value) => {
+    expect(value.clipped, `${label}: ${JSON.stringify(value)}`).toEqual([])
+    return value
+  })
+}
+
+async function tabUntilFocused(page: Page, locator: Locator, max = 60) {
+  for (let step = 0; step < max; step += 1) {
+    const focused = await locator.evaluate((el) => el === document.activeElement)
+    if (focused) return true
+    await page.keyboard.press('Tab')
+  }
+  return false
+}
+
 async function screenshotElement(page: Page, target: Locator, name: string) {
   const box = await target.boundingBox()
   if (!box) throw new Error(`missing box for ${name}`)
@@ -927,4 +1037,133 @@ for (const passTheme of ['dark', 'light'] as const) test(`tab close target grows
   expect(hit.width).toBeGreaterThanOrEqual(20)
   expect(hit.height).toBeGreaterThanOrEqual(20)
   await screenshotElement(page, inactive, `tab-close-hovered-${passTheme}`)
+})
+
+test('top nav tab ring is fully visible', async ({ page }) => {
+  test.setTimeout(120_000)
+  await page.addInitScript(() => localStorage.setItem('braian.theme', JSON.stringify('dark')))
+  await login(page)
+  const firstTab = page.locator('nav.tabs .tab').first()
+  await expect(firstTab).toBeVisible()
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+  await page.keyboard.press('Tab')
+  await expect(firstTab).toBeFocused()
+  await page.waitForTimeout(250)
+  const clip = await expectRingUnclipped(firstTab, 'top nav tab')
+  expect(clip.outline).not.toBe('none')
+  expect(clip.outlineWidth).toBe(2)
+  expect(clip.outlineColor).toBe(clip.accent)
+  await screenshotElement(page, firstTab, 'row135-top-nav-tab-unclipped')
+})
+
+test('search field Tab focus ring is fully visible', async ({ page }) => {
+  test.setTimeout(120_000)
+  await page.addInitScript(() => localStorage.setItem('braian.theme', JSON.stringify('dark')))
+  await login(page)
+  await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
+  const table = mainTable(page)
+  const input = table.getByTestId('quick-filter').first()
+  await expect(input).toBeVisible({ timeout: 60_000 })
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+  const reached = await tabUntilFocused(page, input)
+  expect(reached, 'quick filter reachable by Tab from the page start').toBe(true)
+  await expect(input).toBeFocused()
+  const field = input.locator('xpath=ancestor::label[contains(@class,"search-field")]')
+  const clip = await expectRingUnclipped(field, 'search field')
+  expect(clip.boxShadow).toContain(clip.accent)
+  expect(clip.boxShadow).toContain('2px')
+  expect(clip.outline).toBe('none')
+  await screenshotElement(page, field, 'row135-search-unclipped')
+})
+
+test('active pane tab and its close X keep fully visible rings', async ({ page }) => {
+  test.setTimeout(120_000)
+  await page.addInitScript(() => localStorage.setItem('braian.theme', JSON.stringify('dark')))
+  await login(page)
+  const activeOpen = page.locator('section.pane.focused .pane-tab.active .pane-tab-open').first()
+  await expect(activeOpen).toBeVisible()
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+  const reached = await tabUntilFocused(page, activeOpen)
+  expect(reached, 'active pane tab reachable by Tab from the page start').toBe(true)
+  await expect(activeOpen).toBeFocused()
+  await page.waitForTimeout(250)
+  const openClip = await expectRingUnclipped(activeOpen, 'active pane tab')
+  expect(openClip.outline).not.toBe('none')
+  expect(openClip.outlineWidth).toBe(2)
+  expect(openClip.outlineColor).toBe(openClip.accent)
+  await screenshotElement(page, activeOpen, 'row135-active-tab-unclipped')
+
+  const activeTab = page.locator('section.pane.focused .pane-tab.active').first()
+  const close = activeTab.locator('.tab-x')
+  await page.keyboard.press('Tab')
+  await expect(close).toBeFocused()
+  await page.waitForTimeout(250)
+  const closeClip = await expectRingUnclipped(close, 'active tab close X')
+  expect(closeClip.outline).not.toBe('none')
+  expect(closeClip.outlineWidth).toBe(2)
+  expect(closeClip.outlineColor).toBe(closeClip.accent)
+  await screenshotElement(page, activeTab, 'row135-tab-x-unclipped')
+})
+
+test('user menu arrow-focused item shows the accent ring', async ({ page }) => {
+  test.setTimeout(120_000)
+  await page.addInitScript(() => localStorage.setItem('braian.theme', JSON.stringify('dark')))
+  await login(page)
+  const userMenu = page.getByTestId('user-menu')
+  const reached = await tabUntilFocused(page, userMenu)
+  expect(reached, 'user menu reachable by Tab').toBe(true)
+  await page.keyboard.press('Enter')
+  await expect(page.getByTestId('user-menu-content')).toBeVisible()
+  await page.keyboard.press('ArrowDown')
+  const item = page.locator('[data-testid="user-menu-content"] [data-highlighted]').first()
+  await expect(item).toBeVisible()
+  await expect(item).toBeFocused()
+  // Arrow navigation may leave :focus-visible unset; the ring must follow the
+  // highlighted item regardless, so assert the painted outline itself.
+  const clip = await expectRingUnclipped(item, 'arrow-focused user menu item')
+  expect(clip.outline).not.toBe('none')
+  expect(clip.outlineWidth).toBe(2)
+  expect(clip.outlineColor).toBe(clip.accent)
+  await screenshotElement(page, page.getByTestId('user-menu-content'), 'row135-user-menu-arrow-ring')
+  await page.keyboard.press('Escape')
+})
+
+test('data model tree focus and Shift+Tab keep visible rings', async ({ page }) => {
+  test.setTimeout(120_000)
+  await page.addInitScript(() => localStorage.setItem('braian.theme', JSON.stringify('dark')))
+  await login(page)
+  const treeTab = page.locator('.pane-tab', { hasText: 'Food' }).first()
+  await expect(treeTab).toBeVisible()
+  await treeTab.click()
+  const tree = page.getByTestId('structure-tree').first()
+  await expect(tree).toBeVisible({ timeout: 30_000 })
+  const reached = await tabUntilFocused(page, tree, 80)
+  expect(reached, 'data model tree reachable by Tab').toBe(true)
+  await page.waitForTimeout(250)
+  const treeClip = await expectRingUnclipped(tree, 'data model tree')
+  expect(treeClip.outline).not.toBe('none')
+  expect(treeClip.outlineWidth).toBe(2)
+  expect(treeClip.outlineColor).toBe(treeClip.accent)
+  await screenshotElement(page, tree, 'row135-tree-unclipped')
+
+  await page.keyboard.press('Shift+Tab')
+  await page.waitForTimeout(250)
+  const shift = await page.evaluate(() => {
+    const el = document.activeElement
+    if (!(el instanceof HTMLElement)) return null
+    const style = getComputedStyle(el)
+    return {
+      tag: el.tagName,
+      testid: el.dataset.testid ?? null,
+      matchesFocusVisible: el.matches(':focus-visible'),
+      outlineStyle: style.outlineStyle,
+      outlineWidth: style.outlineWidth,
+      outlineColor: style.outlineColor,
+    }
+  })
+  expect(shift, 'Shift+Tab leaves the tree for a real control').not.toBeNull()
+  expect(shift?.matchesFocusVisible, "Shift+Tab target isn't focus-visible").toBe(true)
+  expect(shift?.outlineStyle, 'Shift+Tab target has no outline').not.toBe('none')
+  expect(Number.parseFloat(shift?.outlineWidth ?? '0'), 'Shift+Tab target outline width').toBeGreaterThan(0)
+  await screenshotElement(page, page.locator('body'), 'row135-shift-tab')
 })

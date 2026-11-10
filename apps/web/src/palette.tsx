@@ -501,7 +501,7 @@ export function CommandPalette({
     if (!startSelectSource) return
     setStack([{
       label: `${copy.dataSource} ›`,
-      rows: selectSourceSubmenuRows(types, peerSourceOptions, currentSource, sourceCycle),
+      rows: selectSourceSubmenuRows(types, peerSourceOptions, currentSource, sourceCycle, currentSource?.typeId),
     }])
     setActive(0)
     // Mount-only: dock menu Select source opens the submenu immediately.
@@ -701,7 +701,7 @@ export function CommandPalette({
     if (isSelectSourceRoot(id)) {
       setStack((current) => [...current, {
         label: item.title,
-        rows: selectSourceSubmenuRows(types, peerSourceOptions, currentSource, sourceCycle),
+        rows: selectSourceSubmenuRows(types, peerSourceOptions, currentSource, sourceCycle, currentSource?.typeId),
       }])
       setQuery('')
       setActive(0)
@@ -1441,8 +1441,8 @@ export function CommandPalette({
                 ))}
                 {proposal.error ? <p className="error">{proposal.error}</p> : null}
                 <div className="toolbar">
-                  <Button type="button" variant="danger" onClick={() => void api.post('/v1/proposals/{id}/discard', { params: { path: { id: proposal.id } } }).then(() => setProposal(null))}>{copy.discardAll}</Button>
-                  <Button type="button" variant="primary" onClick={() => void api.post('/v1/proposals/{id}/accept', { params: { path: { id: proposal.id } }, body: {} }).then(() => { session.setProposalId(proposal.id); setProposal(null); session.push(copy.saved) })}>{copy.saveAll}</Button>
+                  <Button type="button" variant="danger" disabled={!proposal.rows.some((row) => row.status === 'pending')} onClick={() => void api.post('/v1/proposals/{id}/discard', { params: { path: { id: proposal.id } } }).then(() => setProposal(null))}>{copy.discardAll}</Button>
+                  <Button type="button" variant="primary" disabled={!proposal.rows.some((row) => row.status === 'pending')} onClick={() => void api.post('/v1/proposals/{id}/accept', { params: { path: { id: proposal.id } }, body: {} }).then(() => { session.setProposalId(proposal.id); setProposal(null); session.push(copy.saved) })}>{copy.saveAll}</Button>
                 </div>
               </div>
             ) : null}
