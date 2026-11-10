@@ -201,7 +201,7 @@ test('type attributes reorder and checkbox persist after reload', async ({ page 
   else await expect(persisted).not.toBeChecked()
 })
 
-test('allowed trees save directly without a confirmation dialog', async ({ page }) => {
+test('allowed trees open the review dialog before saving', async ({ page }) => {
   test.setTimeout(180_000)
   await login(page)
   const definitions = (await (await page.request.get('/v1/definitions')).json()) as {
@@ -242,6 +242,13 @@ test('allowed trees save directly without a confirmation dialog', async ({ page 
     return (type?.structures ?? []).map(String).some((token) => token === structureId || token === structureKey)
   }
 
+  let savePosts = 0
+  let directPut = 0
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().includes('/v1/model/draft/save')) savePosts += 1
+    if (request.method() === 'PUT' && /\/v1\/(types|structures)/.test(request.url())) directPut += 1
+  })
+
   await openAttributes()
   const trees = page.getByTestId('allowed-trees')
   const checkbox = trees.getByRole('checkbox', { name: structureLabel, exact: true })
@@ -249,7 +256,23 @@ test('allowed trees save directly without a confirmation dialog', async ({ page 
   else await expect(checkbox).not.toBeChecked()
 
   await checkbox.click()
-  await expect(page.getByTestId('review-dialog')).toHaveCount(0)
+  const dialog = page.getByTestId('review-dialog')
+  await expect(dialog).toBeVisible({ timeout: 10_000 })
+  const confirm = dialog.getByTestId('confirm-review')
+  await expect(confirm).toHaveText('Save')
+  await expect(confirm).not.toHaveClass(/btn-danger/)
+  await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeVisible()
+  expect(savePosts).toBe(0)
+  expect(directPut).toBe(0)
+  expect(await persisted()).toBe(initiallyAllowed)
+
+  const save = page.waitForResponse((response) =>
+    response.url().includes('/v1/model/draft/save') && response.request().method() === 'POST')
+  await confirm.click()
+  expect((await save).ok()).toBeTruthy()
+  expect(savePosts).toBe(1)
+  await expect(dialog).toHaveCount(0)
+  await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
   await expect.poll(persisted).toBe(expected)
 
   await page.reload()
@@ -257,4 +280,23 @@ test('allowed trees save directly without a confirmation dialog', async ({ page 
   const reloaded = page.getByTestId('allowed-trees').getByRole('checkbox', { name: structureLabel, exact: true })
   if (expected) await expect(reloaded).toBeChecked()
   else await expect(reloaded).not.toBeChecked()
+
+  // Put the type back through the same Review path so no draft is left behind.
+  await reloaded.click()
+  const restore = page.getByTestId('review-dialog')
+  await expect(restore).toBeVisible({ timeout: 10_000 })
+  const restoreSave = page.waitForResponse((response) =>
+    response.url().includes('/v1/model/draft/save') && response.request().method() === 'POST')
+  await restore.getByTestId('confirm-review').click()
+  expect((await restoreSave).ok()).toBeTruthy()
+  expect(savePosts).toBe(2)
+  await expect(restore).toHaveCount(0)
+  await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
+  await expect.poll(persisted).toBe(initiallyAllowed)
+
+  await page.reload()
+  await openAttributes()
+  const restored = page.getByTestId('allowed-trees').getByRole('checkbox', { name: structureLabel, exact: true })
+  if (initiallyAllowed) await expect(restored).toBeChecked()
+  else await expect(restored).not.toBeChecked()
 })

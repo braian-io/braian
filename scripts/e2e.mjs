@@ -102,6 +102,7 @@ const specs = [
   'e2e/switch-catalog-view.spec.ts',
   'e2e/z-catalogs.spec.ts',
   'e2e/readable-urls.spec.ts',
+  'e2e/row129-allowed-trees.spec.ts',
 ]
 
 // Explicit compose targeting. The default keeps `just up` and CI on the
