@@ -70,6 +70,20 @@ Grenen `junior/129-allowed-trees-review` utgår från `origin/main` `795eb06` (#
 - Isolerad compose-körning i projektet `row129ci` (eget nätverk, syntetisk Postgres 18 + Typesense 30.2, portar 25433/28108; binären byggd i `rust:1.93-bookworm` med named volume `row129-cargo-home`, utan host-nätverk, Docker-socket eller demo-DB): hela `drag.spec.ts` 5/5 gröna (inkl. det uppdaterade allowed-tree-testet, 30,7 s) och `row129-allowed-trees.spec.ts` 1/1 (46,2 s). `select-source-target.spec.ts` 2/2 gröna (45,8 s): CI:s `states.get(productsId) undefined` i e2e (2) reproducerades alltså inte och är en flake, inte en produktbugg; rad 103-produktkoden är orörd.
 - Kvarstående beteende (oförändrat): ReviewDialog för en **destruktiv** ändring lämnar draften stagad efter Cancel, så användaren kan öppna den igen. På den tvungna icke-destruktiva allowed-tree-vägen kastas draften, enligt mandate.
 
+## Rad 128 — typnoder i modellgrafen öppnar delade kontextmenyn
+
+Grenen `junior/128-type-node-context-menu` utgår från `origin/main` `795eb06` (#277) och är **inte mergad, deployad eller accepterad**. Den rättar QA-avvisningen på demo `4cd25f7`: högerklick på en riktig Product-typnod i Data model → Model graph öppnade ingen Braian-meny (`[data-testid="context-menu"]` saknades).
+
+- `apps/web/src/graph-map.tsx`: porten som tidigare bara släppte igenom `kind === 'object'` släpper nu igenom både `object` och `type` med `typeKey` (`canOpenGraphNodeMenu`). Ctrl/Cmd+Enter följer samma port.
+- Samma fil: de tillgänglighetsbaserade nodknapparna ligger utanför skärmen (`.graph-a11y`), så ett riktigt högerklick träffar canvasen. En canvas-nivå-`contextmenu`-lyssnare hit-testar noden och öppnar exakt samma delade meny (`openGraphNodeMenu`). Tom canvas släpps fortfarande genom till webbläsarens egen meny.
+- Menyn är `extraOnly` och node-scopad: den visar bara länkval från `linkChoices` (Articles/Suppliers för Product) och aldrig globala kommandon (Search, Sign out, Light mode, Send feedback, Open agent, Switch catalog, Export).
+- Tom-menyn undviks: `SharedContextMenuHost` returnerar `null` när `items.length === 0`. För en typ utan länktyper läggs ett node-scopat fallback-alternativ till (`graph:type:view`, "Open <typ>"). Objektnoder utan länkval är oförändrade (tom extra-lista).
+- `graph:type:view` och de befintliga `graph:add-link:*` har ingen registrerad command-runner; klick skickar bara ett `braian:command`-event som ingen lyssnare agerar på. Ingen ny add-link-funktion har byggts. För typnoder skickas aldrig `objectId` (vilket skulle kunna tolkas som ett objekt-id); bara `typeKey`.
+- `apps/web/src/graph-map.test.tsx`: porten (type+typeKey öppnar, object+typeKey öppnar, andra kind och utan typeKey nekar), extras-fallback och target utan objectId, plus en komponenttest som högerklickar och trycker Ctrl+Enter på en typnod och kontrollerar att menyn syns, att inga globala etiketter finns och att inget skrivs.
+- `apps/web/e2e/row128-type-menu.spec.ts` (registrerad i `scripts/e2e.mjs`): högerklick på `type:product` öppnar menyn utan globala alternativ; Ctrl+Enter gör samma; tom canvas öppnar ingen meny; kontroll i objektgrafen att en `kind=object`-nod fortfarande får meny utan globala alternativ. Skärmdumpar under `apps/web/test-results/row128-type-menu/`.
+- Bevis i isolerad compose-project `row128fix` (eget nätverk, syntetisk Postgres 18 + Typesense 30.2, portar 25433/28108) utan host-nätverk, Docker-socket eller demo-DB: `braian` byggd i `rust:1.93-bookworm` med namngiven `row128-cargo-home`-volym; vitest i `node:22` 151 filer / 834 tester gröna; `tsc --noEmit` exit 0; `scripts/check-english.py` exit 0; e2e 2/2 (25,2 s).
+- `apps/web/src/data-model.tsx` är orörd (`sha256 2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`).
+
 ## Rad 107-uppföljning 2 — tangentbordet följer senast klickade header
 
 Den här grenen (`junior/107-shortcut-target`) utgår från `origin/main` `86bb9a0` (#275) och är **inte mergad, deployad eller accepterad**. Den rättar Test-avvisningen på demo `86bb9a0`: Ctrl+K och kontextmenyn var rätt efter #274, men Ctrl+Shift+←/→ flyttade fortfarande fel tabell i sekvens A1 och C1b.

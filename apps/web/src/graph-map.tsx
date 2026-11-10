@@ -59,12 +59,66 @@ import { openObjectLabel } from './type-labels'
 import { copy, uiLanguage } from './i18n'
 import { linkChoices } from './link-section'
 import { openSharedContextMenu, prefersNativeContextMenu } from './shared-context-menu'
-import type { RegistryCommand } from './command-registry'
+import type { CommandTarget, RegistryCommand } from './command-registry'
 
 type SimNode = SimulationNodeDatum & SceneNode & { degree: number }
 type SimLink = SimulationLinkDatum<SimNode> & { id: string; label: string }
 type Marker = { x: number; y: number }
 const NO_GRAPH: Json = {}
+
+/** Object and model-type nodes carry a type key and can open the graph node menu. */
+export function canOpenGraphNodeMenu(node: Pick<SceneNode, 'kind' | 'typeKey'>) {
+  return (node.kind === 'object' || node.kind === 'type') && Boolean(node.typeKey)
+}
+
+/**
+ * Node-scoped items for the graph menu. Link choices are type-key based, so a
+ * model type with no link types still needs one item or the menu stays hidden.
+ */
+export function graphNodeMenuExtras(
+  defs: Json | undefined,
+  node: Pick<SceneNode, 'kind' | 'typeKey' | 'caption'>,
+): RegistryCommand[] {
+  const extras: RegistryCommand[] = linkChoices(defs, node.typeKey ?? '').map((choice) => ({
+    id: `graph:add-link:${choice.key}`,
+    title: choice.label,
+    contexts: ['graph-node'],
+    group: 'object',
+    palette: false,
+  }))
+  if (extras.length === 0 && node.kind === 'type') {
+    extras.push({
+      id: 'graph:type:view',
+      title: openObjectLabel(node.caption),
+      contexts: ['graph-node'],
+      group: 'object',
+      palette: false,
+    })
+  }
+  return extras
+}
+
+/** A model type is not an object: never hand its node id to an object command. */
+export function graphNodeTarget(node: Pick<SceneNode, 'kind' | 'id' | 'typeKey'>): CommandTarget {
+  return node.kind === 'object' ? { objectId: node.id, typeKey: node.typeKey } : { typeKey: node.typeKey }
+}
+
+/** Node-scoped shared menu for a graph node, anchored at the pointer or node. */
+export function openGraphNodeMenu(
+  node: Pick<SceneNode, 'kind' | 'id' | 'typeKey' | 'caption'>,
+  defs: Json | undefined,
+  x: number,
+  y: number,
+) {
+  openSharedContextMenu({
+    context: 'graph-node',
+    x,
+    y,
+    target: graphNodeTarget(node),
+    extraOnly: true,
+    extra: graphNodeMenuExtras(defs, node),
+  })
+}
 type Palette = {
   fill: Record<NodeKind, string>
   text: string
@@ -755,6 +809,14 @@ export function GraphMap({
       selectRef.current(hit.id)
       expandRef.current(hit)
     }
+    // The a11y node buttons are off-screen, so a real right-click lands on the
+    // canvas. Hit-test it and open the same node menu the buttons open.
+    const onContextMenu = (event: MouseEvent) => {
+      const hit = hitTest(event.offsetX, event.offsetY)
+      if (!hit || !canOpenGraphNodeMenu(hit) || prefersNativeContextMenu(event.target)) return
+      event.preventDefault()
+      openGraphNodeMenu(hit, defsRef.current, event.clientX, event.clientY)
+    }
 
     let sawPointer = 0
     const pointerRecent = () => performance.now() - sawPointer < 80
@@ -794,6 +856,7 @@ export function GraphMap({
     canvas.addEventListener('mouseup', onMouseUp)
     canvas.addEventListener('wheel', onWheel, { passive: false })
     canvas.addEventListener('dblclick', onDouble)
+    canvas.addEventListener('contextmenu', onContextMenu)
     let lastW = 0
     let lastH = 0
     const observer = new ResizeObserver(() => {
@@ -829,6 +892,7 @@ export function GraphMap({
       canvas.removeEventListener('mouseup', onMouseUp)
       canvas.removeEventListener('wheel', onWheel)
       canvas.removeEventListener('dblclick', onDouble)
+      canvas.removeEventListener('contextmenu', onContextMenu)
       if (simRef.current === sim) simRef.current = null
     }
   }, [])
@@ -1073,43 +1137,15 @@ export function GraphMap({
               void expand(node)
             }}
             onContextMenu={(event) => {
-              if (node.kind !== 'object' || !node.typeKey || prefersNativeContextMenu(event.target)) return
+              if (!canOpenGraphNodeMenu(node) || prefersNativeContextMenu(event.target)) return
               event.preventDefault()
-              const extras: RegistryCommand[] = linkChoices(defs, node.typeKey).map((choice) => ({
-                id: `graph:add-link:${choice.key}`,
-                title: choice.label,
-                contexts: ['graph-node'],
-                group: 'object',
-                palette: false,
-              }))
-              openSharedContextMenu({
-                context: 'graph-node',
-                x: event.clientX,
-                y: event.clientY,
-                target: { objectId: node.id, typeKey: node.typeKey },
-                extraOnly: true,
-                extra: [...extras],
-              })
+              openGraphNodeMenu(node, defs, event.clientX, event.clientY)
             }}
             onKeyDown={(event) => {
-              if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && node.kind === 'object' && node.typeKey) {
+              if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && canOpenGraphNodeMenu(node)) {
                 event.preventDefault()
                 const rect = event.currentTarget.getBoundingClientRect()
-                const extras: RegistryCommand[] = linkChoices(defs, node.typeKey).map((choice) => ({
-                  id: `graph:add-link:${choice.key}`,
-                  title: choice.label,
-                  contexts: ['graph-node'],
-                  group: 'object',
-                  palette: false,
-                }))
-                openSharedContextMenu({
-                  context: 'graph-node',
-                  x: rect.left,
-                  y: rect.bottom,
-                  target: { objectId: node.id, typeKey: node.typeKey },
-                  extraOnly: true,
-                  extra: [...extras],
-                })
+                openGraphNodeMenu(node, defs, rect.left, rect.bottom)
               }
             }}
           >
