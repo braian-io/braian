@@ -23,6 +23,8 @@ const SAVED_E = `Lifecycle E saved ${stamp}`
 const PROPOSED_D = `Lifecycle D proposed ${stamp}`
 const PROPOSED_F = `Lifecycle F proposed ${stamp}`
 
+const shots = process.env.BRAIAN_SHOTS_DIR
+
 async function login(page: Page) {
   const demo = demoCredentials()
   await page.goto('/')
@@ -267,6 +269,7 @@ test('closed accepted, discarded and mixed proposals disable bulk actions and th
     await expect(review).toContainText(acceptedTitle)
     await expect(review.getByTestId('save-all')).toBeDisabled()
     await expect(review.getByTestId('discard-all')).toBeDisabled()
+    if (shots) await page.screenshot({ path: `${shots}/closed-accepted-review.png`, fullPage: true })
 
     const acceptAcceptedAgain = await page.request.post(`/v1/proposals/${acceptedId}/accept`, { data: {} })
     expect(acceptAcceptedAgain.status(), await acceptAcceptedAgain.text()).toBe(409)
@@ -295,6 +298,7 @@ test('closed accepted, discarded and mixed proposals disable bulk actions and th
     await expect(review).toContainText(mixedTitle)
     await expect(review.getByTestId('save-all')).toBeDisabled()
     await expect(review.getByTestId('discard-all')).toBeDisabled()
+    if (shots) await page.screenshot({ path: `${shots}/closed-mixed-review.png`, fullPage: true })
 
     const acceptMixedAgain = await page.request.post(`/v1/proposals/${mixedId}/accept`, { data: {} })
     expect(acceptMixedAgain.status(), await acceptMixedAgain.text()).toBe(409)
