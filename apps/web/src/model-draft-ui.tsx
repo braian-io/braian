@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, type Json } from './api'
+import { api, textValue, type Json } from './api'
 import { Button } from './components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
 import { writeErrorMessage } from './write-error'
 import { formatCount, formatTimestamp } from './format'
-import { copy } from './i18n'
+import { copy, uiLanguage } from './i18n'
 import { attributeKey } from './model-view'
-import { onDraftChange, requestDiscardDraft, setModelFocus, stageModel } from './model-stage'
+import { onDraftChange, removeDraftSteps, requestDiscardDraft, setModelFocus, stageModel } from './model-stage'
+import { StateNote } from './states'
 
 export type DraftSaveGate = 'idle' | 'direct' | 'confirm' | 'blocked'
 
@@ -46,14 +47,65 @@ function confirmLead(body: Json): string {
   if (body.error) return String(body.error)
   const consequence = asRecord(body.consequence)
   const lines = (body.lines as string[] | undefined) ?? (consequence?.lines as string[] | undefined) ?? []
-  // A forced allowed-tree review has nothing to delete; the changed trees are
-  // the useful description.
+  // A forced allowed-tree review has nothing to delete; allowedTreesSentence
+  // names the changed trees. Never fall back to the server's raw-key line.
   if (draftHasForcedReview(body) && consequence?.destructive !== true) {
-    return lines[0] || String(consequence?.sentence ?? '') || copy.destructiveSave
+    return copy.allowedTrees.replace('…', '')
   }
   const sentence = String(consequence?.sentence ?? '')
   if (sentence) return sentence
   return lines[0] || copy.destructiveSave
+}
+
+/** Indices of the allowed-tree steps that belong to the last changed type. */
+export function allowedTreeStepIndexes(body: Json): number[] {
+  const steps = Array.isArray(body.steps) ? body.steps : []
+  const last = [...steps].reverse().map(asRecord).find((step) => step?.op === 'set_structures')
+  const typeKey = String(last?.type_key ?? '')
+  return steps.flatMap((step, index) => {
+    const record = asRecord(step)
+    if (record?.op !== 'set_structures') return []
+    if (typeKey && String(record.type_key ?? '') !== typeKey) return []
+    return [index]
+  })
+}
+
+function typeLabel(defs: Json | undefined, key: string): string {
+  const objectType = ((defs?.types as Json[]) ?? []).find(
+    (item) => String(item.key ?? '') === key || String(item.id ?? '') === key,
+  )
+  return textValue(objectType?.singular, uiLanguage) || textValue(objectType?.labels, uiLanguage) || copy.objectType
+}
+
+function treeLabel(defs: Json | undefined, token: string): string {
+  const tree = ((defs?.structures as Json[]) ?? []).find(
+    (item) => String(item.id ?? '') === token || String(item.key ?? '') === token,
+  )
+  return textValue(tree?.labels, uiLanguage) || copy.structure
+}
+
+/** A display-name sentence for the allowed-tree steps, never their raw keys. */
+export function allowedTreesSentence(body: Json): string | undefined {
+  const steps = (Array.isArray(body.steps) ? body.steps : [])
+    .map(asRecord)
+    .filter((step): step is Json => step?.op === 'set_structures')
+  if (steps.length === 0) return undefined
+  const defs = asRecord(body.definitions)
+  // Several toggles can stack in one draft. The last step for a type is its final set.
+  const latest = new Map<string, string[]>()
+  for (const step of steps) {
+    const typeKey = String(step.type_key ?? '')
+    if (!typeKey) continue
+    const structures = Array.isArray(step.structures) ? step.structures.map((item) => String(item)) : []
+    latest.set(typeKey, structures)
+  }
+  if (latest.size === 0) return undefined
+  return [...latest]
+    .map(([typeKey, structures]) => {
+      const names = structures.map((token) => treeLabel(defs, token)).filter(Boolean)
+      return `${copy.allowedTreesFor} ${typeLabel(defs, typeKey)}: ${names.length > 0 ? names.join(', ') : copy.none}`
+    })
+    .join(' ')
 }
 
 type DialogKind = 'type' | 'list' | 'family' | 'tree' | 'link'
@@ -62,6 +114,7 @@ export function ModelDraftHost() {
   const queryClient = useQueryClient()
   const draft = useQuery({ queryKey: ['model-draft'], queryFn: () => api.get('/v1/model/draft') })
   const [review, setReview] = useState(false)
+  const [reviewLoading, setReviewLoading] = useState(false)
   const [dialog, setDialog] = useState<DialogKind | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -84,13 +137,23 @@ export function ModelDraftHost() {
     void queryClient.invalidateQueries({ queryKey: ['model-draft'] })
     void queryClient.invalidateQueries({ queryKey: ['definitions'] })
   }
-  const decide = async () => {
+  // Cancel removes only the allowed-tree step, so other draft work survives.
+  const revertReviewSteps = (indexes: number[]) => {
+    if (indexes.length === 0) return
+    void removeDraftSteps(indexes).catch((reason: unknown) => {
+      const message = writeErrorMessage(reason)
+      if (message) setError(message)
+    })
+  }
+  const decide = async (showProgress = false) => {
     if (saving.current) {
       again.current = true
       return
     }
     saving.current = true
+    rememberOpener()
     setBusy(true)
+    if (showProgress) setReviewLoading(true)
     setError('')
     let posted = ''
     try {
@@ -102,7 +165,7 @@ export function ModelDraftHost() {
         const body = result.data
         const gate = draftSaveGate(body)
         if ((gate === 'confirm' || gate === 'blocked') && body) {
-          rememberOpener()
+          setReviewLoading(false)
           setReview(true)
           if (!again.current) return
           continue
@@ -113,6 +176,7 @@ export function ModelDraftHost() {
         await api.post('/v1/model/draft/save', { body: draftSaveBody(body) })
         posted = token
         setReview(false)
+        setReviewLoading(false)
         refresh()
       } while (again.current)
     } catch (reason: unknown) {
@@ -121,13 +185,14 @@ export function ModelDraftHost() {
     } finally {
       saving.current = false
       setBusy(false)
+      setReviewLoading(false)
     }
   }
   const decideRef = useRef(decide)
   decideRef.current = decide
   useEffect(() => {
     const open = () => {
-      void decideRef.current()
+      void decideRef.current(true)
     }
     const discard = () => {
       void api.delete('/v1/model/draft').then(() => {
@@ -174,16 +239,26 @@ export function ModelDraftHost() {
               {copy.rebaseDraft}
             </Button>
           ) : (
-            <Button type="button" variant="primary" data-testid="review-save" disabled={busy} onClick={() => { void decide() }}>{copy.reviewAndSave}</Button>
+            <Button type="button" variant="primary" data-testid="review-save" disabled={busy || review || reviewLoading} onClick={() => { void decide(draftSaveGate(draft.data) === 'confirm') }}>{copy.reviewAndSave}</Button>
           )}
-          <Button type="button" variant="danger" onClick={() => requestDiscardDraft()}>{copy.discardDraft}</Button>
+          <Button
+            type="button"
+            variant="danger"
+            data-testid="discard-draft"
+            disabled={busy || review || reviewLoading}
+            onClick={() => requestDiscardDraft()}
+          >
+            {copy.discardDraft}
+          </Button>
           {error ? <span className="error">{error}</span> : null}
         </div>
       ) : null}
+      {reviewLoading && !review ? <ReviewLoadingDialog /> : null}
       {review && draft.data ? (
         <ReviewDialog
           body={draft.data}
           onClose={closeReview}
+          onRevert={revertReviewSteps}
           onSaved={() => {
             setReview(false)
             refresh()
@@ -195,18 +270,31 @@ export function ModelDraftHost() {
   )
 }
 
-function ReviewDialog({ body, onClose, onSaved }: { body: Json; onClose: () => void; onSaved: () => void }) {
+function ReviewDialog({
+  body,
+  onClose,
+  onRevert,
+  onSaved,
+}: {
+  body: Json
+  onClose: () => void
+  onRevert: (indexes: number[]) => void
+  onSaved: () => void
+}) {
   const blocked = draftSaveGate(body) === 'blocked'
   const destructive = asRecord(body.consequence)?.destructive === true
-  // A non-destructive allowed-tree change is reviewed too. Cancel discards the
-  // staged draft so a reload matches the live model.
+  // A non-destructive allowed-tree change is reviewed too. Cancel removes only
+  // that step, so unrelated draft work stays.
   const forced = !blocked && !destructive && draftHasForcedReview(body)
+  const lead = !blocked && !destructive && draftHasForcedReview(body)
+    ? allowedTreesSentence(body) ?? confirmLead(body)
+    : confirmLead(body)
   const warnings = (body.warnings as string[] | undefined) ?? []
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const saving = useRef(false)
   const close = () => {
-    if (forced) requestDiscardDraft()
+    if (forced) onRevert(allowedTreeStepIndexes(body))
     onClose()
   }
   const save = () => {
@@ -231,11 +319,12 @@ function ReviewDialog({ body, onClose, onSaved }: { body: Json; onClose: () => v
         className="consequence"
         data-testid="review-dialog"
         onEscapeKeyDown={(event) => event.stopPropagation()}
+        onCloseAutoFocus={(event) => event.preventDefault()}
       >
         <div className="toolbar">
-          <DialogTitle asChild><strong>{copy.save}</strong></DialogTitle>
+          <DialogTitle asChild><strong>{copy.reviewChangeTitle}</strong></DialogTitle>
         </div>
-        <DialogDescription asChild><p className="hint">{confirmLead(body)}</p></DialogDescription>
+        <DialogDescription asChild><p className="hint">{lead}</p></DialogDescription>
         {blocked ? <p className="error" role="alert">{String(body.error)}</p> : null}
         {warnings.map((warning) => <p key={warning} className="error">{warning}</p>)}
         {error ? <p className="error" role="alert">{error}</p> : null}
@@ -253,6 +342,24 @@ function ReviewDialog({ body, onClose, onSaved }: { body: Json; onClose: () => v
             </Button>
           )}
         </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function ReviewLoadingDialog() {
+  return (
+    <Dialog open onOpenChange={() => undefined}>
+      <DialogContent
+        className="consequence review-loading"
+        data-testid="review-loading"
+        onEscapeKeyDown={(event) => event.stopPropagation()}
+      >
+        <div className="toolbar">
+          <DialogTitle asChild><strong>{copy.reviewChangeTitle}</strong></DialogTitle>
+        </div>
+        <DialogDescription asChild><p className="hint">{copy.reviewChange}</p></DialogDescription>
+        <StateNote tone="loading" title={copy.loadingModel} />
       </DialogContent>
     </Dialog>
   )
