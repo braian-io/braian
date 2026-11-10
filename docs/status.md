@@ -15,6 +15,16 @@ Den här grenen (`junior/107-header-race`) utgår från `origin/main` `795eb06` 
 - `apps/web/src/data-model.tsx` är orörd (`sha256 2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`).
 - Ärlig avgränsning: den tightade e2e-stressen kördes grön med fixen. Ingen baseline-körning av e2e mot den gamla koden gjordes; att ordningen verkligen var fel visas av enhetsregressionen när den gamla passiva effekten återinsattes tillfälligt.
 
+## Rad 135-uppföljning 3 — fokusringen klipps inte längre
+
+Grenen `junior/135-focus-ring-visible` utgår från `origin/main` `795eb06` (#277) och är **inte mergad, deployad eller accepterad**. Den kompletterar #269/#272: 2px accentringen fanns, men klipptes mot flik-, sök- och menykanter, och användarmenyns pilmarkerade rad saknade ring eftersom `:focus-visible` inte sätts vid pilnavigering.
+
+- `apps/web/src/styles.css`: `.tabs`, `.pane-tab` och `.standard-table-bar` har 2px padding så flikens respektive sökfältets ring ryms innanför listen. Användarmenyns markerade rad får nu ring via `.menu.user-menu-content .menu-item[data-highlighted]` (2px `--accent`, `outline-offset: -2px`) i stället för att kräva `:focus-visible`; pilnavigeringen är oförändrad.
+- `apps/web/e2e/focus-styles.spec.ts`: nya tester för top-nav, sökfält, aktiv pane-flik med stängnings-X, användarmeny efter Enter + ArrowDown samt datamodellsträdet och Shift+Tab. Hjälparna `ringClip`/`expectRingUnclipped` kontrollerar att ringens bounding box inte skärs av någon overflow-ancestor. Användarmenytestet assertar den målade 2px accentoutlinen på `[data-highlighted]` i stället för `:focus-visible`, eftersom pilnavigering inte sätter den flaggan.
+- Oförändrat: `apps/web/src/data-model.tsx` (`sha256 2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`).
+
+Verifierat i isolerad `BRAIAN_E2E_ISOLATE=1`-körning via `scripts/e2e.mjs` med `BRAIAN_E2E_COMPOSE_PROJECT=row135ring` mot syntetisk Postgres 18 och Typesense 30.2, utan demo, host-nätverk eller Docker-socket: `pnpm --dir apps/web exec tsc --noEmit` grön; `vitest run src/focus-ring.test.ts src/user-menu.test.tsx` 14/14; `focus-styles.spec.ts` 19/19 (2,2 m). Fokusbevis från webbläsaren (mörkt tema): användarmenyns markerade rad `2px solid` `rgb(154, 77, 255)` med offset `-2px`; träd `2px solid` offset `-2px`; Account-trigger `2px solid` offset `0`; aktiv cell `rgb(154, 77, 255) 0px 0px 0px 2px inset`. Skärmbilder: `row135-*.png` i `apps/web/test-results/focus-screenshots/` och uppgiftens scratch (`shots/direct/`), ej committade.
+
 ## Rad 107-uppföljning 2 — tangentbordet följer senast klickade header
 
 Den här grenen (`junior/107-shortcut-target`) utgår från `origin/main` `86bb9a0` (#275) och är **inte mergad, deployad eller accepterad**. Den rättar Test-avvisningen på demo `86bb9a0`: Ctrl+K och kontextmenyn var rätt efter #274, men Ctrl+Shift+←/→ flyttade fortfarande fel tabell i sekvens A1 och C1b.
