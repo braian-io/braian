@@ -59,11 +59,12 @@ import { openObjectLabel } from './type-labels'
 import { copy, uiLanguage } from './i18n'
 import { linkChoices } from './link-section'
 import { openSharedContextMenu, prefersNativeContextMenu } from './shared-context-menu'
-import type { CommandTarget, RegistryCommand } from './command-registry'
+import { registerCommandRunner, type CommandTarget, type RegistryCommand } from './command-registry'
+import { requestOpenModelType } from './model-type-open'
 
 type SimNode = SimulationNodeDatum & SceneNode & { degree: number }
 type SimLink = SimulationLinkDatum<SimNode> & { id: string; label: string }
-type Marker = { x: number; y: number }
+type Marker = { x: number; y: number; r: number }
 const NO_GRAPH: Json = {}
 
 /** Object and model-type nodes carry a type key and can open the graph node menu. */
@@ -72,35 +73,57 @@ export function canOpenGraphNodeMenu(node: Pick<SceneNode, 'kind' | 'typeKey'>) 
 }
 
 /**
- * Node-scoped items for the graph menu. Link choices are type-key based, so a
- * model type with no link types still needs one item or the menu stays hidden.
+ * Node-scoped items for the graph menu. A model type is not an object: its
+ * entries are type actions (open it in Object types), never object links.
+ * Object nodes keep their link choices; the runner opens the add-link dialog.
  */
 export function graphNodeMenuExtras(
   defs: Json | undefined,
   node: Pick<SceneNode, 'kind' | 'typeKey' | 'caption'>,
 ): RegistryCommand[] {
-  const extras: RegistryCommand[] = linkChoices(defs, node.typeKey ?? '').map((choice) => ({
+  if (node.kind === 'type') {
+    return [
+      {
+        id: 'graph:type:view',
+        title: openObjectLabel(node.caption),
+        contexts: ['graph-node'],
+        group: 'object',
+        palette: false,
+      },
+    ]
+  }
+  return linkChoices(defs, node.typeKey ?? '').map((choice) => ({
     id: `graph:add-link:${choice.key}`,
     title: choice.label,
     contexts: ['graph-node'],
     group: 'object',
     palette: false,
   }))
-  if (extras.length === 0 && node.kind === 'type') {
-    extras.push({
-      id: 'graph:type:view',
-      title: openObjectLabel(node.caption),
-      contexts: ['graph-node'],
-      group: 'object',
-      palette: false,
-    })
-  }
-  return extras
 }
 
 /** A model type is not an object: never hand its node id to an object command. */
 export function graphNodeTarget(node: Pick<SceneNode, 'kind' | 'id' | 'typeKey'>): CommandTarget {
   return node.kind === 'object' ? { objectId: node.id, typeKey: node.typeKey } : { typeKey: node.typeKey }
+}
+
+/** The visible node is the menu anchor; the off-screen a11y button never is. */
+export function nodeMenuAnchor(marker: Pick<Marker, 'x' | 'y'> & { r?: number } | undefined, fallback: { x: number; y: number }) {
+  if (marker && Number.isFinite(marker.x) && Number.isFinite(marker.y)) {
+    const radius = Number.isFinite(marker.r) ? Number(marker.r) : 0
+    return { x: marker.x + radius, y: marker.y + radius }
+  }
+  return fallback
+}
+
+function runGraphNodeCommand(id: string, target: CommandTarget) {
+  if (id === 'graph:type:view') {
+    if (target.typeKey) requestOpenModelType(String(target.typeKey))
+    return
+  }
+  if (id.startsWith('graph:add-link:')) {
+    const linkType = id.slice('graph:add-link:'.length)
+    window.dispatchEvent(new CustomEvent('braian-add-link', { detail: linkType ? { linkType } : {} }))
+  }
 }
 
 /** Node-scoped shared menu for a graph node, anchored at the pointer or node. */
@@ -110,13 +133,17 @@ export function openGraphNodeMenu(
   x: number,
   y: number,
 ) {
+  const extra = graphNodeMenuExtras(defs, node)
+  for (const command of extra) {
+    registerCommandRunner(command.id, (target) => runGraphNodeCommand(command.id, target))
+  }
   openSharedContextMenu({
     context: 'graph-node',
     x,
     y,
     target: graphNodeTarget(node),
     extraOnly: true,
-    extra: graphNodeMenuExtras(defs, node),
+    extra,
   })
 }
 type Palette = {
@@ -152,6 +179,7 @@ export function GraphMap({
   const [extras, setExtras] = useState<Scene[]>([])
   const [known, setKnown] = useState<Record<string, KnownObject>>({})
   const [selected, setSelected] = useState(focusKey)
+  const [focused, setFocused] = useState('')
   const [hidden, setHidden] = useState<Set<string>>(() => new Set())
   const [full, setFull] = useState(false)
   const [markers, setMarkers] = useState<Record<string, Marker>>({})
@@ -452,7 +480,11 @@ export function GraphMap({
       for (const node of sim.nodes()) {
         if (isLegendHidden(hiddenRef.current, node) || node.x == null || node.y == null) continue
         const point = screenOf(node.x, node.y)
-        const marker = { x: Math.round(rect.left + point.x), y: Math.round(rect.top + point.y) }
+        const marker = {
+          x: Math.round(rect.left + point.x),
+          y: Math.round(rect.top + point.y),
+          r: Math.round(nodeRadius(node.kind, node.degree ?? 0) * transform.k),
+        }
         next[node.id] = marker
         const button = document.querySelector<HTMLElement>(`[data-node-id="${CSS.escape(node.id)}"]`)
         if (button) {
@@ -718,6 +750,8 @@ export function GraphMap({
     let dragged = false
 
     const onPointerDown = (event: PointerEvent) => {
+      // Right-click opens the context menu; it must not select, drag or refit the graph.
+      if (event.button !== 0) return
       canvas.focus()
       const hit = hitTest(event.offsetX, event.offsetY)
       lastX = event.offsetX
@@ -979,6 +1013,16 @@ export function GraphMap({
     pinTick >= 0 && simRef.current?.nodes().some((node) => node.id === selected && node.fx != null && node.fy != null),
   )
   const shown = placed.nodes.filter((node) => !isLegendHidden(hidden, node))
+  const focusedNode = focused ? shown.find((node) => node.id === focused) : undefined
+  const focusMarker = focusedNode ? markers[focusedNode.id] : undefined
+  const canvasBox = focusMarker ? canvasRef.current?.getBoundingClientRect() : undefined
+  const focusRing = focusMarker && canvasBox
+    ? {
+        left: focusMarker.x - canvasBox.left,
+        top: focusMarker.y - canvasBox.top,
+        size: 2 * (focusMarker.r + 4),
+      }
+    : undefined
 
   useLayoutEffect(() => {
     const canvas = canvasRef.current
@@ -1005,6 +1049,17 @@ export function GraphMap({
 
   const revealSheet = () => setSheet((mode) => (mode === 'dismissed' || mode === 'chip' ? 'compact' : mode))
 
+  const openMenuForNode = (node: SceneNode) => {
+    const rect = canvasRef.current?.getBoundingClientRect()
+    const fallback = rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : { x: 8, y: 8 }
+    const anchor = nodeMenuAnchor(markers[node.id], fallback)
+    openGraphNodeMenu(node, defsRef.current, anchor.x, anchor.y)
+  }
+  const opensNodeMenu = (event: { key: string; ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean }) =>
+    ((event.ctrlKey || event.metaKey) && event.key === 'Enter') ||
+    (event.shiftKey === true && event.key === 'F10') ||
+    event.key === 'ContextMenu'
+
   const onKey = (event: ReactKeyboardEvent<HTMLCanvasElement>) => {
     if (event.key === 'Escape') {
       if (density === 'narrow' && sheet !== 'dismissed' && selected) {
@@ -1012,6 +1067,11 @@ export function GraphMap({
         return
       }
       setSelected('')
+      return
+    }
+    if (opensNodeMenu(event) && selectedNode && canOpenGraphNodeMenu(selectedNode)) {
+      event.preventDefault()
+      openMenuForNode(selectedNode)
       return
     }
     if (event.key === 'Enter' && selectedNode) {
@@ -1076,6 +1136,19 @@ export function GraphMap({
               tabIndex={0}
               onKeyDown={onKey}
             />
+            {focusedNode && focusRing ? (
+              <span
+                className="graph-focus-ring"
+                data-testid="graph-focus-ring"
+                data-node-id={focusedNode.id}
+                style={{
+                  left: focusRing.left,
+                  top: focusRing.top,
+                  width: focusRing.size,
+                  height: focusRing.size,
+                }}
+              />
+            ) : null}
           </div>
           <div className="graph-legend" ref={legendRef} role="group" aria-label={copy.graphLegend}>
             {legend.map((entry) => {
@@ -1136,17 +1209,24 @@ export function GraphMap({
               selectRef.current(node.id)
               void expand(node)
             }}
+            onFocus={() => setFocused(node.id)}
+            onBlur={() => {
+              const id = node.id
+              requestAnimationFrame(() => {
+                const active = document.activeElement
+                if (active instanceof Element && active.closest('[data-testid="context-menu"]')) return
+                setFocused((current) => (current === id ? '' : current))
+              })
+            }}
             onContextMenu={(event) => {
               if (!canOpenGraphNodeMenu(node) || prefersNativeContextMenu(event.target)) return
               event.preventDefault()
-              openGraphNodeMenu(node, defs, event.clientX, event.clientY)
+              openMenuForNode(node)
             }}
             onKeyDown={(event) => {
-              if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && canOpenGraphNodeMenu(node)) {
-                event.preventDefault()
-                const rect = event.currentTarget.getBoundingClientRect()
-                openGraphNodeMenu(node, defs, rect.left, rect.bottom)
-              }
+              if (!canOpenGraphNodeMenu(node) || !opensNodeMenu(event)) return
+              event.preventDefault()
+              openMenuForNode(node)
             }}
           >
             {node.caption}

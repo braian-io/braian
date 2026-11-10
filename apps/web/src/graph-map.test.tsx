@@ -1,8 +1,15 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Json } from './api'
-import { canOpenGraphNodeMenu, GraphMap, graphNodeMenuExtras, graphNodeTarget } from './graph-map'
+import {
+  canOpenGraphNodeMenu,
+  GraphMap,
+  graphNodeMenuExtras,
+  graphNodeTarget,
+  nodeMenuAnchor,
+  openGraphNodeMenu,
+} from './graph-map'
 import { SharedContextMenuHost } from './shared-context-menu'
 
 const defs: Json = {
@@ -66,23 +73,38 @@ describe('graph node menu gate', () => {
 })
 
 describe('graph node menu extras', () => {
-  it('uses the type link choices for a model type', () => {
-    const extras = graphNodeMenuExtras(defs, { kind: 'type', typeKey: 'product', caption: 'Product' })
+  it('gives a model type only type actions, never object link choices', () => {
+    const product = graphNodeMenuExtras(defs, { kind: 'type', typeKey: 'product', caption: 'Product' })
+    expect(product.map((extra) => extra.id)).toEqual(['graph:type:view'])
+    expect(product[0]?.title).toBe('Open Product')
+    expect(product[0]?.contexts).toEqual(['graph-node'])
+
+    const supplier = graphNodeMenuExtras(defs, { kind: 'type', typeKey: 'supplier', caption: 'Supplier' })
+    const article = graphNodeMenuExtras(defs, { kind: 'type', typeKey: 'article', caption: 'Article' })
+    expect(supplier[0]?.title).toBe('Open Supplier')
+    expect(article[0]?.title).toBe('Open Article')
+    expect(product[0]?.title).not.toBe(supplier[0]?.title)
+  })
+
+  it('keeps link choices on object nodes', () => {
+    const extras = graphNodeMenuExtras(defs, { kind: 'object', typeKey: 'product', caption: 'Product' })
     expect(extras.map((extra) => extra.id)).toEqual(['graph:add-link:product_articles'])
     expect(extras[0]?.title).toBe('Articles')
     expect(extras[0]?.contexts).toEqual(['graph-node'])
   })
 
-  it('adds a node-scoped fallback for a type without link choices', () => {
-    const extras = graphNodeMenuExtras(defs, { kind: 'type', typeKey: 'supplier', caption: 'Supplier' })
-    expect(extras).toHaveLength(1)
-    expect(extras[0]?.id).toBe('graph:type:view')
-    expect(extras[0]?.title).toBe('Open Supplier')
-    expect(extras[0]?.contexts).toEqual(['graph-node'])
-  })
-
   it('leaves object nodes without link choices empty', () => {
     expect(graphNodeMenuExtras(defs, { kind: 'object', typeKey: 'supplier', caption: 'Supplier' })).toEqual([])
+  })
+})
+
+describe('node menu anchor', () => {
+  it('anchors at the visible node marker, not an off-screen button', () => {
+    expect(nodeMenuAnchor({ x: 120, y: 240, r: 30 }, { x: 8, y: 8 })).toEqual({ x: 150, y: 270 })
+  })
+
+  it('falls back to the visible canvas when no marker is published', () => {
+    expect(nodeMenuAnchor(undefined, { x: 400, y: 300 })).toEqual({ x: 400, y: 300 })
   })
 })
 
@@ -118,24 +140,53 @@ describe('GraphMap model type node menu', () => {
     renderModelGraph()
     fireEvent.keyDown(typeNode(), { key: 'Enter', ctrlKey: true })
     const menu = screen.getByTestId('context-menu')
-    expect(within(menu).getAllByRole('menuitem').length).toBeGreaterThan(0)
+    expect(within(menu).getAllByRole('menuitem').length).toBe(1)
+    expect(within(menu).getByRole('menuitem').textContent).toBe('Open Product')
   })
 
-  it('clicking a type node menu item does not write or pass an object id', () => {
+  it('Shift+F10 and the ContextMenu key open the same shared menu', () => {
+    renderModelGraph()
+    fireEvent.keyDown(typeNode(), { key: 'F10', shiftKey: true })
+    expect(screen.getByTestId('context-menu')).toBeTruthy()
+    cleanup()
+    renderModelGraph()
+    fireEvent.keyDown(typeNode(), { key: 'ContextMenu' })
+    expect(screen.getByTestId('context-menu')).toBeTruthy()
+  })
+
+  it('clicking a type node menu item opens that type and does not write', () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
-    const commands: Array<{ id: string; target?: { objectId?: string } }> = []
-    const onCommand = (event: Event) => commands.push((event as CustomEvent).detail)
-    window.addEventListener('braian:command', onCommand)
+    const opened: string[] = []
+    const onOpen = (event: Event) => opened.push(String((event as CustomEvent<{ key?: string }>).detail?.key ?? ''))
+    window.addEventListener('braian-open-model-type', onOpen)
     try {
       renderModelGraph()
       fireEvent.contextMenu(typeNode(), { clientX: 40, clientY: 40 })
       const menu = screen.getByTestId('context-menu')
       fireEvent.click(within(menu).getAllByRole('menuitem')[0])
-      expect(commands).toHaveLength(1)
-      expect(commands[0]?.target?.objectId).toBeUndefined()
+      expect(opened).toEqual(['product'])
       expect(fetchSpy).not.toHaveBeenCalled()
     } finally {
-      window.removeEventListener('braian:command', onCommand)
+      window.removeEventListener('braian-open-model-type', onOpen)
+    }
+  })
+
+  it('an object node link entry opens the add-link dialog for that link type', () => {
+    const added: string[] = []
+    const onAdd = (event: Event) =>
+      added.push(String((event as CustomEvent<{ linkType?: string }>).detail?.linkType ?? ''))
+    window.addEventListener('braian-add-link', onAdd)
+    try {
+      renderModelGraph()
+      act(() => {
+        openGraphNodeMenu({ kind: 'object', id: 'obj-1', typeKey: 'product', caption: 'Product' }, defs, 10, 10)
+      })
+      const menu = screen.getByTestId('context-menu')
+      expect(within(menu).getByRole('menuitem').textContent).toBe('Articles')
+      fireEvent.click(within(menu).getAllByRole('menuitem')[0])
+      expect(added).toEqual(['product_articles'])
+    } finally {
+      window.removeEventListener('braian-add-link', onAdd)
     }
   })
 
