@@ -501,7 +501,7 @@ export function CommandPalette({
     if (!startSelectSource) return
     setStack([{
       label: `${copy.dataSource} ›`,
-      rows: selectSourceSubmenuRows(types, peerSourceOptions, currentSource, sourceCycle),
+      rows: selectSourceSubmenuRows(types, peerSourceOptions, currentSource, sourceCycle, currentSource?.typeId),
     }])
     setActive(0)
     // Mount-only: dock menu Select source opens the submenu immediately.
@@ -701,7 +701,7 @@ export function CommandPalette({
     if (isSelectSourceRoot(id)) {
       setStack((current) => [...current, {
         label: item.title,
-        rows: selectSourceSubmenuRows(types, peerSourceOptions, currentSource, sourceCycle),
+        rows: selectSourceSubmenuRows(types, peerSourceOptions, currentSource, sourceCycle, currentSource?.typeId),
       }])
       setQuery('')
       setActive(0)
