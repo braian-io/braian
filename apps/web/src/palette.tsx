@@ -1441,8 +1441,8 @@ export function CommandPalette({
                 ))}
                 {proposal.error ? <p className="error">{proposal.error}</p> : null}
                 <div className="toolbar">
-                  <Button type="button" variant="danger" onClick={() => void api.post('/v1/proposals/{id}/discard', { params: { path: { id: proposal.id } } }).then(() => setProposal(null))}>{copy.discardAll}</Button>
-                  <Button type="button" variant="primary" onClick={() => void api.post('/v1/proposals/{id}/accept', { params: { path: { id: proposal.id } }, body: {} }).then(() => { session.setProposalId(proposal.id); setProposal(null); session.push(copy.saved) })}>{copy.saveAll}</Button>
+                  <Button type="button" variant="danger" disabled={!proposal.rows.some((row) => row.status === 'pending')} onClick={() => void api.post('/v1/proposals/{id}/discard', { params: { path: { id: proposal.id } } }).then(() => setProposal(null))}>{copy.discardAll}</Button>
+                  <Button type="button" variant="primary" disabled={!proposal.rows.some((row) => row.status === 'pending')} onClick={() => void api.post('/v1/proposals/{id}/accept', { params: { path: { id: proposal.id } }, body: {} }).then(() => { session.setProposalId(proposal.id); setProposal(null); session.push(copy.saved) })}>{copy.saveAll}</Button>
                 </div>
               </div>
             ) : null}
