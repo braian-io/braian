@@ -112,6 +112,7 @@ import {
   publishColumns,
   publishSelection,
   publishTable,
+  readMarkedSelection,
   readSelection,
   readTreeNode,
   subscribeUiSelections,
@@ -698,6 +699,26 @@ export function ObjectTable({
     ? `${peerSource.viewId}:${peerSource.selection}:${peerSource.linkType ?? ''}:${peerFilter}`
     : ''
   const peerScopeRef = useRef(peerScope)
+  // Reload restores the open object from the URL, but a fresh table starts with
+  // no row selection, so a peer view that follows it would show its empty state.
+  // Adopt the marked object once it belongs to this table's type and the user
+  // has not picked a row here. A peer-sourced table never adopts it: its
+  // selection is its own row, not the object open in detail.
+  const markedSelection = readMarkedSelection()
+  const markedForTable = Boolean(
+    markedSelection
+    && markedSelection.id
+    && markedSelection.type
+    && bound
+    && (markedSelection.type === bound.id || markedSelection.type === bound.key),
+  )
+  useEffect(() => {
+    if (peerSource) return
+    if (selected.length > 0) return
+    if (!markedForTable || !markedSelection) return
+    setSelected([markedSelection.id])
+    setActive(locateRef.current(markedSelection.id))
+  }, [markedForTable, markedSelection, peerSource, selected])
   useEffect(() => {
     const scopeChanged = peerScopeRef.current !== peerScope
     peerScopeRef.current = peerScope
@@ -759,12 +780,10 @@ export function ObjectTable({
   useEffect(() => {
     publishColumns(view.id, all.map((id) => ({ id, header: columnHeader(id), hidden: hidden.includes(id) })))
   }, [columnStamp, view.id])
-  useEffect(() => {
-    publishActiveColumn(view.id, activeColumn || null)
-  }, [activeColumn, view.id])
-  // Record every activation directly. A repeated click on the same header leaves
-  // state unchanged, so the effect above would not run and the move target would
-  // stay on another pane.
+  // Record every activation directly, in the event that caused it. Publishing
+  // from a passive effect here would land after the next pane's header click
+  // when a body click and a Detail open commit later, and the stale publish
+  // would steal the keyboard move target from the header the user clicked last.
   const activateColumn = (column: string) => {
     setActiveColumn(column)
     publishActiveColumn(view.id, column)
@@ -3695,6 +3714,7 @@ export function ProposalView({ session }: { session: PanesSession }) {
   }
   const consequence = ((proposal.data?.consequence as Json | undefined)?.lines as unknown[] | undefined)?.map(String) ?? []
   const proposalStale = Boolean(proposal.data?.stale)
+  const hasPendingRows = rows.some((row) => row.status === 'pending')
   const droppedIds = new Set(dropped)
   const saveAll = () => {
     accept.mutate(acceptSelection(rows, objects, defs.data, droppedIds))
@@ -3706,8 +3726,8 @@ export function ProposalView({ session }: { session: PanesSession }) {
         {proposal.data ? <span className="meta-chip neutral" data-testid="source-badge">{sourceLabel(proposal.data)}</span> : null}
         {proposal.data?.status ? <MetaChip tone={statusTone(String(proposal.data.status))}>{String(proposal.data.status)}</MetaChip> : null}
         {proposalStale ? <span className="meta-chip" data-testid="proposal-stale">{copy.proposalStale}</span> : null}
-        <Button type="button" variant="default" data-testid="save-all" disabled={loadingObjects || accept.isPending || discard.isPending || proposalStale} onClick={saveAll}>{copy.saveAll}</Button>
-        <Button type="button" variant="danger" data-testid="discard-all" disabled={accept.isPending || discard.isPending} onClick={() => discard.mutate()}>{copy.discardAll}</Button>
+        <Button type="button" variant="default" data-testid="save-all" disabled={loadingObjects || accept.isPending || discard.isPending || proposalStale || !hasPendingRows} onClick={saveAll}>{copy.saveAll}</Button>
+        <Button type="button" variant="danger" data-testid="discard-all" disabled={accept.isPending || discard.isPending || !hasPendingRows} onClick={() => discard.mutate()}>{copy.discardAll}</Button>
         {error ? <p className="error" data-testid="proposal-error">{error}</p> : null}
         {consequence.length > 0 && session.proposalId ? (
           <Button type="button" variant="default" onClick={() => publishProposal(session.proposalId ?? '')}>{copy.reviewChange}</Button>

@@ -16,12 +16,21 @@ function asRecord(value: unknown): Json | undefined {
   return value as Json
 }
 
-/** Uses the draft's preview error and `consequence.destructive`. Nothing else. */
+/** Allowed trees are reviewed even when the change is not destructive. */
+export function draftHasForcedReview(body: Json | null | undefined): boolean {
+  if (!body) return false
+  const steps = body.steps
+  if (!Array.isArray(steps)) return false
+  return steps.some((step) => asRecord(step)?.op === 'set_structures')
+}
+
+/** Preview error, `consequence.destructive`, and the allowed-tree operation. */
 export function draftSaveGate(body: Json | null | undefined): DraftSaveGate {
   if (!body) return 'idle'
   if (Number(body.count ?? 0) <= 0 || body.conflict === true) return 'idle'
   if (body.error) return 'blocked'
   if (asRecord(body.consequence)?.destructive === true) return 'confirm'
+  if (draftHasForcedReview(body)) return 'confirm'
   return 'direct'
 }
 
@@ -36,9 +45,14 @@ export function draftSaveBody(body: Json): Json {
 function confirmLead(body: Json): string {
   if (body.error) return String(body.error)
   const consequence = asRecord(body.consequence)
+  const lines = (body.lines as string[] | undefined) ?? (consequence?.lines as string[] | undefined) ?? []
+  // A forced allowed-tree review has nothing to delete; the changed trees are
+  // the useful description.
+  if (draftHasForcedReview(body) && consequence?.destructive !== true) {
+    return lines[0] || String(consequence?.sentence ?? '') || copy.destructiveSave
+  }
   const sentence = String(consequence?.sentence ?? '')
   if (sentence) return sentence
-  const lines = (body.lines as string[] | undefined) ?? (consequence?.lines as string[] | undefined) ?? []
   return lines[0] || copy.destructiveSave
 }
 
@@ -183,10 +197,18 @@ export function ModelDraftHost() {
 
 function ReviewDialog({ body, onClose, onSaved }: { body: Json; onClose: () => void; onSaved: () => void }) {
   const blocked = draftSaveGate(body) === 'blocked'
+  const destructive = asRecord(body.consequence)?.destructive === true
+  // A non-destructive allowed-tree change is reviewed too. Cancel discards the
+  // staged draft so a reload matches the live model.
+  const forced = !blocked && !destructive && draftHasForcedReview(body)
   const warnings = (body.warnings as string[] | undefined) ?? []
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const saving = useRef(false)
+  const close = () => {
+    if (forced) requestDiscardDraft()
+    onClose()
+  }
   const save = () => {
     if (saving.current || blocked) return
     saving.current = true
@@ -204,7 +226,7 @@ function ReviewDialog({ body, onClose, onSaved }: { body: Json; onClose: () => v
       })
   }
   return (
-    <Dialog open onOpenChange={(next) => { if (!next) onClose() }}>
+    <Dialog open onOpenChange={(next) => { if (!next) close() }}>
       <DialogContent
         className="consequence"
         data-testid="review-dialog"
@@ -218,9 +240,17 @@ function ReviewDialog({ body, onClose, onSaved }: { body: Json; onClose: () => v
         {warnings.map((warning) => <p key={warning} className="error">{warning}</p>)}
         {error ? <p className="error" role="alert">{error}</p> : null}
         <div className="toolbar">
-          <Button type="button" variant="ghost" onClick={onClose}>{copy.cancel}</Button>
+          <Button type="button" variant="ghost" onClick={close}>{copy.cancel}</Button>
           {blocked ? null : (
-            <Button type="button" variant="danger" data-testid="confirm-review" disabled={busy} onClick={save}>{copy.delete}</Button>
+            <Button
+              type="button"
+              variant={destructive ? 'danger' : 'primary'}
+              data-testid="confirm-review"
+              disabled={busy}
+              onClick={save}
+            >
+              {destructive ? copy.delete : copy.save}
+            </Button>
           )}
         </div>
       </DialogContent>

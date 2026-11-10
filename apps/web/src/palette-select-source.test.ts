@@ -145,7 +145,7 @@ describe('palette peer sources (Notion 103 PR 2)', () => {
     expect(byView('view-a')?.disabled).toBe(true)
     expect(byView('view-b')?.disabled).toBe(true)
     expect(byView('view-c')?.disabled).toBe(true)
-    expect(byView('view-c')?.subtitle).toBe('Would create a cycle')
+    expect(byView('view-c')?.subtitle).toBe('Would create a cycle (Articles follows C)')
     expect(byView('view-free')?.disabled).toBeUndefined()
     expect(byView('view-free')?.subtitle).toBe('ART-1')
   })
@@ -217,7 +217,51 @@ describe('palette peer sources (Notion 103 PR 2)', () => {
     })
     const cycle = rows.find((row) => row.id === 'select-source:peer:t-article:view-c:row')
     expect(cycle?.disabled).toBe(true)
-    expect(cycle?.subtitle).toBe('ART-1 · Would create a cycle')
+    expect(cycle?.subtitle).toBe('Would create a cycle (Articles follows C)')
+  })
+
+  it('names the follow direction in the cycle explanation', () => {
+    const rows = selectSourceSubmenuRows(types, [
+      {
+        viewId: 'view-products',
+        viewTitle: 'Products',
+        selection: 'row',
+        label: 'PROD-1',
+        typeIds: ['t-article'],
+      },
+    ], null, {
+      targetViewId: 'view-articles',
+      sourceOf: (viewId) => (viewId === 'view-products' ? 'view-articles' : undefined),
+    })
+    const cycle = rows.find((row) => row.id === 'select-source:peer:t-article:view-products:row')
+    expect(cycle?.disabled).toBe(true)
+    expect(cycle?.subtitle).toBe('Would create a cycle (Articles follows Products)')
+  })
+
+  it('offers only the target view type in the submenu', () => {
+    const scoped: TypeName[] = [
+      { id: 't-article', key: 'article', singular: 'Article', plural: 'Articles', kind: 'entity' },
+      { id: 't-product', key: 'product', singular: 'Product', plural: 'Products', kind: 'entity' },
+      { id: 't-supplier', key: 'supplier', singular: 'Supplier', plural: 'Suppliers', kind: 'entity' },
+    ]
+    const peerOptions = [
+      { viewId: 'view-products', viewTitle: 'Products', selection: 'row' as const, label: 'PROD-1', typeIds: ['t-article'] },
+      { viewId: 'view-articles', viewTitle: 'Articles', selection: 'row' as const, label: 'ART-1', typeIds: ['t-product', 't-supplier'] },
+    ]
+    const rows = selectSourceSubmenuRows(scoped, peerOptions, { typeId: 't-product' }, undefined, 't-product')
+    expect(rows.map((row) => row.id)).toEqual([
+      'select-source:type:t-product',
+      'select-source:peer:t-product:view-articles:row',
+    ])
+  })
+
+  it('keeps every type for a generic target view', () => {
+    const scoped: TypeName[] = [
+      { id: 't-article', key: 'article', singular: 'Article', plural: 'Articles', kind: 'entity' },
+      { id: 't-product', key: 'product', singular: 'Product', plural: 'Products', kind: 'entity' },
+    ]
+    const rows = selectSourceSubmenuRows(scoped, [], undefined, undefined, '')
+    expect(rows.map((row) => row.id)).toEqual(['select-source:type:t-article', 'select-source:type:t-product'])
   })
 
   it('parses peer choices with an optional link type and still ignores the link type as a source', () => {

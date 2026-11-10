@@ -420,6 +420,57 @@ async fn finalize_proposal_derives_discarded_and_rejects_a_foreign_claim() {
 }
 
 #[tokio::test]
+async fn a_closed_proposal_cannot_be_reopened_or_reset() {
+    let db = TestDb::create().await;
+    let who = db
+        .store()
+        .create_principal(PrincipalKind::Human, "ada")
+        .await
+        .unwrap();
+    let (id, row_id) = open_proposal(db.store(), who).await;
+    let lock = db.store().claim_proposal(id).await.unwrap();
+    db.store()
+        .set_proposal_status(id, "accepted", lock.token(), true)
+        .await
+        .unwrap();
+    lock.release().await.unwrap();
+    let stored = db.store().proposal(id).await.unwrap().unwrap();
+    assert_eq!(stored["status"], "accepted");
+    assert_eq!(stored["rows"][0]["status"], "rejected");
+
+    let lock = db.store().claim_proposal(id).await.unwrap();
+    let reopen = db
+        .store()
+        .set_proposal_status(id, "discarded", lock.token(), true)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(reopen, Error::ProposalTransition { .. }),
+        "{reopen}"
+    );
+    let accept_again = db
+        .store()
+        .set_proposal_status(id, "accepted", lock.token(), true)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(accept_again, Error::ProposalTransition { .. }),
+        "{accept_again}"
+    );
+    let finalized = db
+        .store()
+        .finalize_proposal(id, lock.token())
+        .await
+        .unwrap();
+    assert_eq!(finalized, None, "a closed proposal must stay closed");
+    lock.release().await.unwrap();
+    let stored = db.store().proposal(id).await.unwrap().unwrap();
+    assert_eq!(stored["status"], "accepted", "{stored}");
+    assert_eq!(stored["rows"][0]["id"], json!(row_id), "{stored}");
+    assert_eq!(stored["rows"][0]["status"], "rejected", "{stored}");
+}
+
+#[tokio::test]
 async fn discard_recovers_a_closed_proposal_with_pending_rows_idempotently() {
     let db = TestDb::create().await;
     let who = db

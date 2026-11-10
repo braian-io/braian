@@ -2638,6 +2638,238 @@ async fn proposal_status_errors_reach_the_api() {
 }
 
 #[tokio::test]
+async fn closed_accepted_proposal_rejects_bulk_accept_and_discard_is_a_no_op() {
+    let (db, app) = app().await;
+    let a = create_item(&app, "LIFE-ACC", "Life acc").await;
+    let proposal = create_rows_proposal(
+        &app,
+        "Closed accepted",
+        json!([update_row(&a, "LIFE-ACC", "Life acc 2")]),
+    )
+    .await;
+    let id = proposal["id"].as_str().unwrap().to_owned();
+    let uuid = Uuid::parse_str(&id).unwrap();
+    let (status, accepted) = accept_rows(&app, &id, &[]).await;
+    assert_eq!(status, StatusCode::OK, "{accepted}");
+    assert_eq!(
+        accepted["accepted"].as_array().unwrap().len(),
+        1,
+        "{accepted}"
+    );
+
+    let (status, _, saved) = call(
+        &app,
+        "GET",
+        &format!("/v1/objects/{}", a["id"].as_str().unwrap()),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{saved}");
+    assert_eq!(saved["values"]["name"]["sv"], "Life acc 2", "{saved}");
+
+    let (status, rejected) = accept_rows(&app, &id, &[]).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{rejected}");
+    assert_eq!(rejected["code"], "conflict", "{rejected}");
+    assert!(
+        rejected["detail"]
+            .as_str()
+            .unwrap()
+            .contains("no longer pending"),
+        "{rejected}"
+    );
+
+    let (status, _, _) = call(
+        &app,
+        "POST",
+        &format!("/v1/proposals/{id}/discard"),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let stored = proposal_body(&app, &id).await;
+    assert_eq!(stored["status"], "accepted", "{stored}");
+    assert_eq!(stored["rows"][0]["status"], "accepted", "{stored}");
+    let (status, _, after) = call(
+        &app,
+        "GET",
+        &format!("/v1/objects/{}", a["id"].as_str().unwrap()),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{after}");
+    assert_eq!(after["version"], saved["version"], "{after}");
+    assert_eq!(after["values"], saved["values"], "{after}");
+    assert_eq!(
+        braian_store::testing::proposal_recovery_count(db.store(), uuid)
+            .await
+            .unwrap(),
+        0
+    );
+}
+
+#[tokio::test]
+async fn closed_discarded_proposal_rejects_bulk_accept_and_discard_is_a_no_op() {
+    let (db, app) = app().await;
+    let b = create_item(&app, "LIFE-DIS", "Life dis").await;
+    let proposal = create_rows_proposal(
+        &app,
+        "Closed discarded",
+        json!([update_row(&b, "LIFE-DIS", "Life dis 2")]),
+    )
+    .await;
+    let id = proposal["id"].as_str().unwrap().to_owned();
+    let uuid = Uuid::parse_str(&id).unwrap();
+    let (status, _, _) = call(
+        &app,
+        "POST",
+        &format!("/v1/proposals/{id}/discard"),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let stored = proposal_body(&app, &id).await;
+    assert_eq!(stored["status"], "discarded", "{stored}");
+    assert_eq!(stored["rows"][0]["status"], "rejected", "{stored}");
+
+    let (status, rejected) = accept_rows(&app, &id, &[]).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{rejected}");
+    assert_eq!(rejected["code"], "conflict", "{rejected}");
+    assert!(
+        rejected["detail"]
+            .as_str()
+            .unwrap()
+            .contains("no longer pending"),
+        "{rejected}"
+    );
+
+    let (status, _, _) = call(
+        &app,
+        "POST",
+        &format!("/v1/proposals/{id}/discard"),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let after = proposal_body(&app, &id).await;
+    assert_eq!(after["status"], "discarded", "{after}");
+    assert_eq!(after["rows"][0]["status"], "rejected", "{after}");
+    let (_, _, object) = call(
+        &app,
+        "GET",
+        &format!("/v1/objects/{}", b["id"].as_str().unwrap()),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(object["values"]["name"]["sv"], "Life dis", "{object}");
+    assert_eq!(
+        braian_store::testing::proposal_recovery_count(db.store(), uuid)
+            .await
+            .unwrap(),
+        0
+    );
+}
+
+#[tokio::test]
+async fn closed_mixed_proposal_without_pending_rejects_bulk_accept_and_keeps_accepted_rows() {
+    let (db, app) = app().await;
+    let a = create_item(&app, "LIFE-MIX-A", "Life mix A").await;
+    let b = create_item(&app, "LIFE-MIX-B", "Life mix B").await;
+    let proposal = create_rows_proposal(
+        &app,
+        "Closed mixed",
+        json!([
+            update_row(&a, "LIFE-MIX-A", "Mix A2"),
+            update_row(&b, "LIFE-MIX-B", "Mix B2"),
+        ]),
+    )
+    .await;
+    let id = proposal["id"].as_str().unwrap().to_owned();
+    let uuid = Uuid::parse_str(&id).unwrap();
+    let ids = proposal_row_ids(&proposal);
+    let (status, accepted) = accept_rows(&app, &id, &ids[..1]).await;
+    assert_eq!(status, StatusCode::OK, "{accepted}");
+    assert_eq!(
+        accepted["accepted"].as_array().unwrap().len(),
+        1,
+        "{accepted}"
+    );
+    let (status, _, _) = call(
+        &app,
+        "POST",
+        &format!("/v1/proposals/{id}/discard"),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let stored = proposal_body(&app, &id).await;
+    assert_eq!(stored["status"], "accepted", "{stored}");
+    assert_eq!(stored["rows"][0]["status"], "accepted", "{stored}");
+    assert_eq!(stored["rows"][1]["status"], "rejected", "{stored}");
+
+    let (_, _, saved_a) = call(
+        &app,
+        "GET",
+        &format!("/v1/objects/{}", a["id"].as_str().unwrap()),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(saved_a["values"]["name"]["sv"], "Mix A2", "{saved_a}");
+
+    let (status, rejected) = accept_rows(&app, &id, &[]).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{rejected}");
+    assert_eq!(rejected["code"], "conflict", "{rejected}");
+
+    let (status, _, _) = call(
+        &app,
+        "POST",
+        &format!("/v1/proposals/{id}/discard"),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let after = proposal_body(&app, &id).await;
+    assert_eq!(after["status"], "accepted", "{after}");
+    assert_eq!(after["rows"][0]["status"], "accepted", "{after}");
+    assert_eq!(after["rows"][1]["status"], "rejected", "{after}");
+    let (_, _, after_a) = call(
+        &app,
+        "GET",
+        &format!("/v1/objects/{}", a["id"].as_str().unwrap()),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(after_a["version"], saved_a["version"], "{after_a}");
+    assert_eq!(after_a["values"], saved_a["values"], "{after_a}");
+    assert_eq!(
+        braian_store::testing::proposal_recovery_count(db.store(), uuid)
+            .await
+            .unwrap(),
+        0
+    );
+}
+
+#[tokio::test]
 async fn an_agent_cannot_discard_a_proposal_and_a_person_can() {
     let (_db, app) = app().await;
     let (status, _, created) = call(

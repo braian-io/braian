@@ -24,7 +24,15 @@ const proposal: Json = {
   id: 'p1',
   title: 'Proposal',
   status: 'open',
-  rows: [],
+  rows: [
+    {
+      id: 'r1',
+      object_id: 'obj-1',
+      type_key: 'item',
+      status: 'pending',
+      patch: { values: { name: { en: 'New' } } },
+    },
+  ],
 }
 
 function Host({ push }: { push: (line: string) => void }) {

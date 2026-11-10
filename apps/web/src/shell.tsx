@@ -1026,8 +1026,8 @@ export function Shell() {
 
 
   useEffect(() => {
-    publishMarked(objectId)
-  }, [objectId])
+    publishMarked(objectId, opened.data?.type ?? null)
+  }, [objectId, opened.data?.type])
 
   useEffect(() => {
     const surface = workspace.data

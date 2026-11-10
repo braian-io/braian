@@ -51,6 +51,7 @@ const specs = [
   'e2e/grid-focus-select.spec.ts',
   'e2e/column-drag-and-system-fields.spec.ts',
   'e2e/column-move-target.spec.ts',
+  'e2e/column-move-race.spec.ts',
   'e2e/table-flash-sort-palette.spec.ts',
   'e2e/move-col-flash-sse.spec.ts',
   'e2e/palette-root-focus.spec.ts',
@@ -93,6 +94,7 @@ const specs = [
   'e2e/peer-source-empty.spec.ts',
   'e2e/peer-source-chain.spec.ts',
   'e2e/select-source-target.spec.ts',
+  'e2e/select-source-reload.spec.ts',
   'e2e/source-all-explicit.spec.ts',
   'e2e/link-source-repair.spec.ts',
   'e2e/link-types.spec.ts',
@@ -101,6 +103,7 @@ const specs = [
   'e2e/switch-catalog-view.spec.ts',
   'e2e/z-catalogs.spec.ts',
   'e2e/readable-urls.spec.ts',
+  'e2e/row129-allowed-trees.spec.ts',
 ]
 
 // Explicit compose targeting. The default keeps `just up` and CI on the
@@ -224,6 +227,7 @@ const measuredSeconds = {
   'e2e/peer-source.spec.ts': 45,
   'e2e/peer-source-empty.spec.ts': 50,
   'e2e/select-source-target.spec.ts': 70,
+  'e2e/select-source-reload.spec.ts': 60,
   'e2e/link-types.spec.ts': 90,
   'e2e/save-confirm.spec.ts': 70,
   'e2e/attribute-table-bool-columns.spec.ts': 55,
