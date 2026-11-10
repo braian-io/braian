@@ -1,8 +1,10 @@
 import { expect, test, type APIResponse, type Page } from '@playwright/test'
 import { mkdirSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { demoCredentials } from './demo'
 
-const shots = '/home/administrator/dev/row129-fix-20261110-0433/shots'
+const shots = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'test-results', 'row129-allowed-trees')
 mkdirSync(shots, { recursive: true })
 
 async function login(page: Page) {
