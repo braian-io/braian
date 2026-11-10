@@ -10,18 +10,21 @@ const KEY_C = `LIFE-C-${stamp}`
 const KEY_D = `LIFE-D-${stamp}`
 const KEY_E = `LIFE-E-${stamp}`
 const KEY_F = `LIFE-F-${stamp}`
+const KEY_G = `LIFE-G-${stamp}`
 const NAME_A = `Lifecycle A ${stamp}`
 const NAME_B = `Lifecycle B ${stamp}`
 const NAME_C = `Lifecycle C ${stamp}`
 const NAME_D = `Lifecycle D ${stamp}`
 const NAME_E = `Lifecycle E ${stamp}`
 const NAME_F = `Lifecycle F ${stamp}`
+const NAME_G = `Lifecycle G ${stamp}`
 const SAVED_A = `Lifecycle A saved ${stamp}`
 const PROPOSED_B = `Lifecycle B proposed ${stamp}`
 const SAVED_C = `Lifecycle C saved ${stamp}`
 const SAVED_E = `Lifecycle E saved ${stamp}`
 const PROPOSED_D = `Lifecycle D proposed ${stamp}`
 const PROPOSED_F = `Lifecycle F proposed ${stamp}`
+const PROPOSED_G = `Lifecycle G proposed ${stamp}`
 
 const shots = process.env.BRAIAN_SHOTS_DIR
 
@@ -80,11 +83,98 @@ async function actionPaint(page: Page) {
       return {
         opacity: Number(style.opacity || 1),
         background: style.backgroundColor,
+        border: style.borderColor,
         color: style.color,
       }
     }
     return { save: read('save-all'), discard: read('discard-all') }
   })
+}
+
+type ActionPaint = Awaited<ReturnType<typeof actionPaint>>
+
+const samePaint = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right)
+
+// A closed proposal changes the buttons from enabled to disabled. The shared
+// button transition can still be running when the first computed style is
+// read, so wait for two identical reads (and, for the closed actions, for
+// Discard all to equal Save all) before asserting anything.
+async function settledActionPaint(page: Page, requireEquality = false) {
+  let previous: ActionPaint | undefined
+  let settled: ActionPaint | undefined
+  await expect
+    .poll(
+      async () => {
+        const current = await actionPaint(page)
+        const unchanged = previous !== undefined && samePaint(current, previous)
+        previous = current
+        const equal = !requireEquality || samePaint(current.discard, current.save)
+        if (unchanged && equal) settled = current
+        return unchanged && equal
+      },
+      {
+        timeout: 10_000,
+        message: requireEquality
+          ? 'disabled Discard all must settle to exactly the disabled Save all paint'
+          : 'proposal action paint must settle before it is compared',
+      },
+    )
+    .toBe(true)
+  return settled!
+}
+
+async function reasonReadability(page: Page) {
+  return page.getByTestId('proposal-actions-reason').evaluate((node) => {
+    const parse = (value: string) => {
+      const match = value.match(/rgba?\(([^)]+)\)/)
+      if (!match) return null
+      const parts = match[1]!.split(',').map((part) => Number(part.trim()))
+      return { r: parts[0]!, g: parts[1]!, b: parts[2]!, a: parts[3] ?? 1 }
+    }
+    const luminance = (rgb: { r: number; g: number; b: number }) => {
+      const channels = [rgb.r, rgb.g, rgb.b].map((channel) => {
+        const value = channel / 255
+        return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+      })
+      return 0.2126 * channels[0]! + 0.7152 * channels[1]! + 0.0722 * channels[2]!
+    }
+    const style = getComputedStyle(node)
+    const foreground = parse(style.color)!
+    let background = { r: 0, g: 0, b: 0, a: 0 }
+    let current: HTMLElement | null = node instanceof HTMLElement ? node : null
+    while (current) {
+      const candidate = parse(getComputedStyle(current).backgroundColor)
+      if (candidate && candidate.a > 0) {
+        background = candidate
+        break
+      }
+      current = current.parentElement
+    }
+    const ratio =
+      (Math.max(luminance(foreground), luminance(background)) + 0.05) /
+      (Math.min(luminance(foreground), luminance(background)) + 0.05)
+    return { fontSize: Number.parseFloat(style.fontSize), ratio, foreground: style.color, background: getComputedStyle(current ?? node).backgroundColor }
+  })
+}
+
+type ReasonReadability = Awaited<ReturnType<typeof reasonReadability>>
+
+async function settledReasonReadability(page: Page) {
+  let previous: ReasonReadability | undefined
+  let settled: ReasonReadability | undefined
+  await expect
+    .poll(
+      async () => {
+        const current = await reasonReadability(page)
+        const unchanged = previous !== undefined && samePaint(current, previous)
+        previous = current
+        if (unchanged) settled = current
+        return unchanged
+      },
+      { timeout: 10_000, message: 'the reason text paint must settle before its contrast is read' },
+    )
+    .toBe(true)
+  return settled!
 }
 
 async function expectClosedActions(page: Page, reason: string, shot?: string) {
@@ -93,17 +183,29 @@ async function expectClosedActions(page: Page, reason: string, shot?: string) {
   const discard = review.getByTestId('discard-all')
   await expect(save).toBeDisabled()
   await expect(discard).toBeDisabled()
-  const paint = await actionPaint(page)
+  const paint = await settledActionPaint(page, true)
   expect(paint.save.opacity, 'Save all must not look active').toBeLessThan(1)
   expect(paint.discard.opacity, 'Discard all must not look active').toBeLessThan(1)
   expect(ENABLED_DANGER, 'Discard all must not keep the enabled danger fill').not.toContain(paint.discard.background)
+  expect(paint.discard, 'disabled Discard all must paint exactly like disabled Save all').toEqual(paint.save)
+  const wrapper = review.getByTestId('proposal-actions')
+  await expect(wrapper, 'the tooltip must live where hover can reach it').toHaveAttribute('title', reason)
+  // A flex item blockifies inline-flex; both keep the buttons and label on one line.
+  await expect
+    .poll(async () => wrapper.evaluate((node) => getComputedStyle(node).display), {
+      timeout: 5_000,
+      message: 'the proposal action wrapper must settle on a flex display',
+    })
+    .toMatch(/^(inline-)?flex$/)
   const explanation = review.getByTestId('proposal-actions-reason')
   await expect(explanation).toHaveText(reason)
-  await expect(explanation).toHaveAttribute('title', reason)
   const id = await explanation.getAttribute('id')
   expect(id).toBeTruthy()
   await expect(save).toHaveAttribute('aria-describedby', id!)
   await expect(discard).toHaveAttribute('aria-describedby', id!)
+  const readability = await settledReasonReadability(page)
+  expect(readability.fontSize, 'reason text is at least the normal 13px').toBeGreaterThanOrEqual(13)
+  expect(readability.ratio, `reason contrast ${readability.foreground} on ${readability.background}`).toBeGreaterThanOrEqual(4.5)
   if (shot && shots) {
     await review.locator('.toolbar').first().screenshot({ path: `${shots}/${shot}` })
   }
@@ -115,10 +217,12 @@ async function expectPendingActions(page: Page) {
   const discard = review.getByTestId('discard-all')
   await expect(save).toBeEnabled()
   await expect(discard).toBeEnabled()
-  const paint = await actionPaint(page)
+  const paint = await settledActionPaint(page)
   expect(paint.save.opacity).toBe(1)
   expect(paint.discard.opacity).toBe(1)
+  expect(paint.discard.background, 'an enabled Discard all stays danger-coloured').toMatch(/rgb\(251, 113, 133\)|rgb\(192, 35, 62\)/)
   await expect(review.getByTestId('proposal-actions-reason')).toHaveCount(0)
+  await expect(review.getByTestId('proposal-actions')).not.toHaveAttribute('title')
   expect(await save.getAttribute('aria-describedby')).toBeNull()
   expect(await discard.getAttribute('aria-describedby')).toBeNull()
 }
@@ -346,6 +450,9 @@ test('closed accepted, discarded and mixed proposals disable bulk actions and th
     await expect(review).toContainText(discardedTitle)
     await expectClosedActions(page, 'Proposal already discarded', 'closed-discarded-disabled-look.png')
     if (shots) await page.screenshot({ path: `${shots}/closed-discarded-review.png`, fullPage: true })
+    await setTheme(page, 'light')
+    await expectClosedActions(page, 'Proposal already discarded', 'closed-discarded-disabled-look-light.png')
+    await setTheme(page, 'dark')
 
     const acceptDiscardedAgain = await page.request.post(`/v1/proposals/${discardedId}/accept`, { data: {} })
     expect(acceptDiscardedAgain.status(), await acceptDiscardedAgain.text()).toBe(409)
@@ -377,6 +484,98 @@ test('closed accepted, discarded and mixed proposals disable bulk actions and th
     if (b) await deleteProduct(page, b.id)
     if (c) await deleteProduct(page, c.id)
     if (d) await deleteProduct(page, d.id)
+  }
+})
+
+test('selecting a discarded proposal shows loading and never flashes the generic closed reason', async ({ page }) => {
+  test.setTimeout(180_000)
+  let product: { id: string; version: number } | null = null
+  let warmId = ''
+  let proposalId = ''
+  const warmTitle = `Closed discarded warm ${stamp}`
+  const targetTitle = `Closed discarded loading ${stamp}`
+  const detailRoute = /\/v1\/proposals\/[^/?]+$/
+  try {
+    await login(page)
+    product = await createProduct(page, KEY_G, NAME_G)
+    const makeDiscarded = async (title: string) => {
+      const created = await page.request.post('/v1/proposals', {
+        data: {
+          title,
+          rows: [
+            {
+              object_id: product!.id,
+              object_key: KEY_G,
+              type_key: PRODUCT_TYPE,
+              base_version: product!.version,
+              patch: { values: { name: { en: PROPOSED_G } } },
+            },
+          ],
+        },
+      })
+      expect(created.ok(), await created.text()).toBeTruthy()
+      const id = ((await created.json()) as { id: string }).id
+      const discarded = await page.request.post(`/v1/proposals/${id}/discard`)
+      expect(discarded.ok(), await discarded.text()).toBeTruthy()
+      return id
+    }
+    warmId = await makeDiscarded(warmTitle)
+    proposalId = await makeDiscarded(targetTitle)
+
+    await page.locator('nav.tabs').getByRole('button', { name: /Review/ }).click()
+    const review = page.getByTestId('proposal')
+    await expect(page.getByTestId(`proposal-row-${warmId}`)).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByTestId(`proposal-row-${proposalId}`)).toBeVisible({ timeout: 30_000 })
+    // Warm the view on a discarded proposal so the observer starts with no
+    // generic closed text on screen. Anything closed after this is a flash.
+    await page.getByTestId(`proposal-row-${warmId}`).click()
+    await expect(review).toContainText(warmTitle)
+    await expect(review.getByTestId('proposal-actions-reason')).toHaveText('Proposal already discarded')
+
+    await page.evaluate(() => {
+      const state = window as any
+      state.__closedSeen = false
+      state.__loadingSeen = false
+      const check = () => {
+        const current = document.querySelector('[data-testid="proposal"]')
+        if (!(current instanceof HTMLElement)) return
+        if (current.querySelector('[data-testid="proposal-actions-loading"]')) state.__loadingSeen = true
+        if (current.innerText.includes('Proposal already closed')) state.__closedSeen = true
+      }
+      const observer = new MutationObserver(check)
+      observer.observe(document.body, { childList: true, subtree: true, characterData: true })
+      state.__closedObserver = observer
+      check()
+    })
+    await page.route(detailRoute, async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 1_500))
+      await route.continue()
+    })
+
+    await page.getByTestId(`proposal-row-${proposalId}`).click()
+    const loading = review.getByTestId('proposal-actions-loading')
+    await expect(loading).toBeVisible()
+    await expect(loading).toHaveText('Loading proposal…')
+    await expect(review.getByTestId('save-all')).toBeDisabled()
+    await expect(review.getByTestId('discard-all')).toBeDisabled()
+    await expect(review.getByTestId('proposal-actions-reason')).toHaveCount(0)
+    await expect(review.getByTestId('proposal-actions')).not.toHaveAttribute('title')
+    await expect(review.getByText('Proposal already closed')).toHaveCount(0)
+    await expect(review.getByTestId('proposal-actions-reason')).toHaveText('Proposal already discarded', { timeout: 30_000 })
+    await expect(review.getByTestId('proposal-actions-loading')).toHaveCount(0)
+    const observed = await page.evaluate(() => {
+      const state = window as any
+      state.__closedObserver?.disconnect()
+      return { loading: state.__loadingSeen === true, closed: state.__closedSeen === true }
+    })
+    expect(observed.loading, 'the loading state must be observed').toBe(true)
+    expect(observed.closed, 'a discarded proposal must never show the generic closed reason').toBe(false)
+    await expect(review.getByText('Proposal already closed')).toHaveCount(0)
+  } finally {
+    await page.unroute(detailRoute).catch(() => undefined)
+    if (proposalId) await page.request.post(`/v1/proposals/${proposalId}/discard`).catch(() => undefined)
+    if (warmId) await page.request.post(`/v1/proposals/${warmId}/discard`).catch(() => undefined)
+    if (product) await deleteProduct(page, product.id)
   }
 })
 

@@ -6,20 +6,24 @@ export type ProposalActionRow = { status?: unknown }
 /**
  * Explains why the bulk actions are closed. Only a proposal without pending
  * rows is closed; an open proposal stays actionable even when it is stale.
+ * An unknown status is not a reason: the caller shows a loading state until
+ * the proposal and its rows are known.
  */
 export function closedProposalReason(status: unknown, rows: ProposalActionRow[]): string | null {
   if (rows.some((row) => row.status === 'pending')) return null
   const accepted = rows.some((row) => row.status === 'accepted')
   const rejected = rows.some((row) => row.status === 'rejected')
   if (accepted && rejected) return copy.proposalAlreadyClosed
-  if (String(status ?? '') === 'discarded' || (rejected && !accepted)) return copy.proposalAlreadyDiscarded
-  if (String(status ?? '') === 'accepted' || (accepted && !rejected)) return copy.proposalAlreadyAccepted
-  return copy.proposalAlreadyClosed
+  const value = String(status ?? '')
+  if (value === 'discarded' || (rejected && !accepted)) return copy.proposalAlreadyDiscarded
+  if (value === 'accepted' || (accepted && !rejected)) return copy.proposalAlreadyAccepted
+  return null
 }
 
 export function ProposalBulkActions({
   status,
   rows,
+  loading = false,
   saveDisabled,
   discardDisabled,
   onSave,
@@ -28,10 +32,13 @@ export function ProposalBulkActions({
   saveVariant = 'default',
   saveTestId = 'save-all',
   discardTestId = 'discard-all',
+  actionsTestId = 'proposal-actions',
   reasonTestId = 'proposal-actions-reason',
+  loadingTestId = 'proposal-actions-loading',
 }: {
   status?: unknown
   rows: ProposalActionRow[]
+  loading?: boolean
   saveDisabled: boolean
   discardDisabled: boolean
   onSave: () => void
@@ -40,16 +47,18 @@ export function ProposalBulkActions({
   saveVariant?: 'default' | 'primary'
   saveTestId?: string
   discardTestId?: string
+  actionsTestId?: string
   reasonTestId?: string
+  loadingTestId?: string
 }) {
-  const reason = closedProposalReason(status, rows)
+  const reason = loading ? null : closedProposalReason(status, rows)
   const descriptionId = reason ? reasonTestId : undefined
   const save = (
     <Button
       type="button"
       variant={saveVariant}
       data-testid={saveTestId}
-      disabled={saveDisabled}
+      disabled={loading || saveDisabled}
       aria-describedby={descriptionId}
       onClick={onSave}
     >
@@ -61,7 +70,7 @@ export function ProposalBulkActions({
       type="button"
       variant="danger"
       data-testid={discardTestId}
-      disabled={discardDisabled}
+      disabled={loading || discardDisabled}
       aria-describedby={descriptionId}
       onClick={onDiscard}
     >
@@ -69,7 +78,7 @@ export function ProposalBulkActions({
     </Button>
   )
   return (
-    <>
+    <span className="proposal-actions" data-testid={actionsTestId} title={reason ?? undefined}>
       {discardFirst ? discard : save}
       {discardFirst ? save : discard}
       {reason ? (
@@ -77,6 +86,11 @@ export function ProposalBulkActions({
           {reason}
         </span>
       ) : null}
-    </>
+      {loading ? (
+        <span className="proposal-actions-reason" data-testid={loadingTestId}>
+          {copy.loadingProposal}
+        </span>
+      ) : null}
+    </span>
   )
 }

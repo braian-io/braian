@@ -3716,6 +3716,7 @@ export function ProposalView({ session }: { session: PanesSession }) {
   const consequence = ((proposal.data?.consequence as Json | undefined)?.lines as unknown[] | undefined)?.map(String) ?? []
   const proposalStale = Boolean(proposal.data?.stale)
   const hasPendingRows = rows.some((row) => row.status === 'pending')
+  const proposalLoading = proposal.isPending
   const droppedIds = new Set(dropped)
   const saveAll = () => {
     accept.mutate(acceptSelection(rows, objects, defs.data, droppedIds))
@@ -3730,6 +3731,7 @@ export function ProposalView({ session }: { session: PanesSession }) {
         <ProposalBulkActions
           status={proposal.data?.status}
           rows={rows}
+          loading={proposalLoading}
           saveDisabled={loadingObjects || accept.isPending || discard.isPending || proposalStale || !hasPendingRows}
           discardDisabled={accept.isPending || discard.isPending || !hasPendingRows}
           onSave={saveAll}

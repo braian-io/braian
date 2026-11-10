@@ -214,6 +214,7 @@ export const copy = {
   proposalAlreadyAccepted: 'Proposal already accepted',
   proposalAlreadyDiscarded: 'Proposal already discarded',
   proposalAlreadyClosed: 'Proposal already closed',
+  loadingProposal: 'Loading proposal…',
   agentEmpty: 'The model replied without text.',
   lightMode: 'Light mode',
   darkMode: 'Dark mode',
