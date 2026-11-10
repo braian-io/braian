@@ -36,6 +36,10 @@
   --ok: #47ff9a;
   --warn: #f6c445;
   --danger: #fb7185;
+  --danger-disabled-bg: #5b3543;
+  --danger-disabled-text: #f4d0d5;
+  --accent-disabled-bg: #3f316e;
+  --accent-disabled-text: #e0d6fa;
   --r-sm: 4px;
   --r-md: 6px;
   --r-lg: 8px;
@@ -100,6 +104,10 @@
   --ok: #13804f;
   --warn: #a66a00;
   --danger: #c0233e;
+  --danger-disabled-bg: #f0c8cf;
+  --danger-disabled-text: #711a2b;
+  --accent-disabled-bg: #e5d9fb;
+  --accent-disabled-text: #4c1d95;
   --inset: inset 0 1px 0 #ffffff;
   --shadow-md: 0 16px 40px #1118271a;
 }
@@ -929,6 +937,7 @@ select.link-type-line { width: 100%; font-weight: 600; }
   gap: var(--space-1_5);
 }
 .toolbar { display: flex; gap: var(--space-1_5); align-items: center; flex-wrap: wrap; flex: none; min-height: 30px; }
+.proposal-actions-reason { color: var(--muted); font-size: var(--text-sm); }
 .toolbar button, .toolbar .search-field, .save-bar button { height: 30px; }
 .object-bar { position: relative; flex-wrap: nowrap; min-width: 0; overflow: hidden; }
 .object-bar .search-field { flex: 1 1 140px; min-width: 120px; max-width: 280px; }
@@ -2971,8 +2980,8 @@ button.tab-x:disabled:hover {
   background: #f3f4f6;
   color: #111827;
 }
-:root[data-theme='light'] button:not(.tab):not(.pane-tab):not(.pane-tab-open):not(.icon-btn):not(.btn-ghost):not(.btn-accent):not(.btn-danger):not(.primary):not(.avatar-btn):not(.catalog-selector-btn):not(.tab-x):not(.filter-chip):not(.choice-chip):not(.legend-chip):not(.agent-bg-indicator):not(.agent-mode):not(.agent-submit):disabled,
-:root[data-theme='light'] button:not(.tab):not(.pane-tab):not(.pane-tab-open):not(.icon-btn):not(.btn-ghost):not(.btn-accent):not(.btn-danger):not(.primary):not(.avatar-btn):not(.catalog-selector-btn):not(.tab-x):not(.filter-chip):not(.choice-chip):not(.legend-chip):not(.agent-bg-indicator):not(.agent-mode):not(.agent-submit):disabled:hover {
+:root[data-theme='light'] button:not(.tab):not(.pane-tab):not(.pane-tab-open):not(.icon-btn):not(.btn-ghost):not(.btn-accent):not(.btn-danger):not(.primary):not(.avatar-btn):not(.catalog-selector-btn):not(.tab-x):not(.filter-chip):not(.choice-chip):not(.legend-chip):not(.agent-bg-indicator):not(.agent-mode):not(.agent-submit):not(.btn-raised):disabled,
+:root[data-theme='light'] button:not(.tab):not(.pane-tab):not(.pane-tab-open):not(.icon-btn):not(.btn-ghost):not(.btn-accent):not(.btn-danger):not(.primary):not(.avatar-btn):not(.catalog-selector-btn):not(.tab-x):not(.filter-chip):not(.choice-chip):not(.legend-chip):not(.agent-bg-indicator):not(.agent-mode):not(.agent-submit):not(.btn-raised):disabled:hover {
   background: #f3f4f6;
   color: #4b5563;
   border-color: #e5e7eb;
@@ -2988,6 +2997,34 @@ button:disabled,
 button[aria-disabled='true'] {
   opacity: 1;
 }
+/* Disabled action buttons must read as inactive (row 212). The global rule
+   above keeps neutral tabs, chips and icon buttons at full opacity. These
+   variants carry a bulk action, so a muted fill and label keep a closed
+   proposal's Discard all from looking live. */
+/* Disabled action buttons (row 212) */
+button.btn-raised:disabled,
+button.btn-raised[aria-disabled='true'] {
+  color: var(--text-2);
+  opacity: 0.8;
+  box-shadow: none;
+}
+button.btn-danger:disabled,
+button.btn-danger[aria-disabled='true'] {
+  background: var(--danger-disabled-bg);
+  color: var(--danger-disabled-text);
+  opacity: 0.8;
+  box-shadow: none;
+}
+button.btn-accent:disabled,
+button.btn-accent[aria-disabled='true'],
+button.primary:disabled,
+button.primary[aria-disabled='true'] {
+  background: var(--accent-disabled-bg);
+  color: var(--accent-disabled-text);
+  opacity: 0.8;
+  box-shadow: none;
+}
+/* End disabled action buttons (row 212) */
 .pane-body,
 .detail-empty {
   cursor: default;

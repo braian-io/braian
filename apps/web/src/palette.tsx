@@ -51,6 +51,7 @@ import {
 } from './palette-switch-catalog'
 import { useCatalogsQuery } from './catalog-list'
 import { MASTER_CATALOG_ID } from './catalog-ref'
+import { ProposalBulkActions } from './proposal-actions'
 import { publishProposal } from './proposal-bus'
 import { modelFocus, openModelDialog, requestDiscardDraft, requestReview, stageModel } from './model-stage'
 import { isStandardAttribute, queueViewType, requestAttributeAction } from './attribute-actions'
@@ -99,6 +100,7 @@ type Step = { id: string; text: string; state: 'run' | 'done' }
 type ProposalPreview = {
   id: string
   title: string
+  status?: string
   rows: Json[]
   lines: string[]
   source?: string
@@ -1441,8 +1443,19 @@ export function CommandPalette({
                 ))}
                 {proposal.error ? <p className="error">{proposal.error}</p> : null}
                 <div className="toolbar">
-                  <Button type="button" variant="danger" disabled={!proposal.rows.some((row) => row.status === 'pending')} onClick={() => void api.post('/v1/proposals/{id}/discard', { params: { path: { id: proposal.id } } }).then(() => setProposal(null))}>{copy.discardAll}</Button>
-                  <Button type="button" variant="primary" disabled={!proposal.rows.some((row) => row.status === 'pending')} onClick={() => void api.post('/v1/proposals/{id}/accept', { params: { path: { id: proposal.id } }, body: {} }).then(() => { session.setProposalId(proposal.id); setProposal(null); session.push(copy.saved) })}>{copy.saveAll}</Button>
+                  <ProposalBulkActions
+                    status={proposal.status}
+                    rows={proposal.rows}
+                    saveDisabled={!proposal.rows.some((row) => row.status === 'pending')}
+                    discardDisabled={!proposal.rows.some((row) => row.status === 'pending')}
+                    discardFirst
+                    saveVariant="primary"
+                    saveTestId="palette-save-all"
+                    discardTestId="palette-discard-all"
+                    reasonTestId="palette-proposal-reason"
+                    onDiscard={() => void api.post('/v1/proposals/{id}/discard', { params: { path: { id: proposal.id } } }).then(() => setProposal(null))}
+                    onSave={() => void api.post('/v1/proposals/{id}/accept', { params: { path: { id: proposal.id } }, body: {} }).then(() => { session.setProposalId(proposal.id); setProposal(null); session.push(copy.saved) })}
+                  />
                 </div>
               </div>
             ) : null}
