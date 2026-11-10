@@ -1446,13 +1446,15 @@ export function CommandPalette({
                   <ProposalBulkActions
                     status={proposal.status}
                     rows={proposal.rows}
+                    loading={!proposal.status}
                     saveDisabled={!proposal.rows.some((row) => row.status === 'pending')}
                     discardDisabled={!proposal.rows.some((row) => row.status === 'pending')}
                     discardFirst
-                    saveVariant="primary"
+                    saveVariant={proposal.rows.some((row) => row.status === 'pending') ? 'primary' : 'default'}
                     saveTestId="palette-save-all"
                     discardTestId="palette-discard-all"
                     reasonTestId="palette-proposal-reason"
+                    loadingTestId="palette-proposal-loading"
                     onDiscard={() => void api.post('/v1/proposals/{id}/discard', { params: { path: { id: proposal.id } } }).then(() => setProposal(null))}
                     onSave={() => void api.post('/v1/proposals/{id}/accept', { params: { path: { id: proposal.id } }, body: {} }).then(() => { session.setProposalId(proposal.id); setProposal(null); session.push(copy.saved) })}
                   />
