@@ -48,6 +48,7 @@ import { stageModel } from './model-stage'
 import { AttributeDefinitions } from './attribute-definitions'
 import { ModelTableView } from './model-tables'
 import { clearQueuedViewType, peekQueuedViewType } from './attribute-actions'
+import { OPEN_MODEL_TYPE } from './model-type-open'
 import { FeedbackDialog } from './feedback-dialog'
 import { ConfigApplyDialog } from './config-apply-dialog'
 import { detectConfigFiles } from './config-drop'
@@ -1079,6 +1080,17 @@ export function Shell() {
     clearQueuedViewType()
     applyRef.current('ui.open_view', { id: found.id, zone: 'center' })
   }, [workspace.data])
+
+  useEffect(() => {
+    const openType = () => {
+      const surfaceNow = workspaceRef.current
+      if (!surfaceNow) return
+      const found = viewRows(surfaceNow.views).find((view) => view.type === 'object_types')
+      if (found) applyRef.current('ui.open_view', { id: found.id, zone: 'center' })
+    }
+    window.addEventListener(OPEN_MODEL_TYPE, openType)
+    return () => window.removeEventListener(OPEN_MODEL_TYPE, openType)
+  }, [])
 
   useEffect(() => {
     const openList = (event: Event) => {

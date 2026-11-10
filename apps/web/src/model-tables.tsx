@@ -7,6 +7,7 @@ import { attributeKey, objectTypes } from './model-view'
 import { onDraftChange, setModelFocus, stageModel } from './model-stage'
 import { StandardEditableTable, type StandardColumn } from './standard-editable-table'
 import { chooseModelSelection } from './model-selection'
+import { clearPendingModelType, OPEN_MODEL_TYPE, peekPendingModelType } from './model-type-open'
 import { StateNote } from './states'
 
 type TypeRow = {
@@ -87,7 +88,18 @@ export function ObjectTypesTable() {
     setActiveRowId(row.id)
     setModelFocus({ kind: 'type', key: row.key })
     setPendingKey(null)
+    clearPendingModelType(row.key)
   }, [rows, pendingKey])
+
+  useEffect(() => {
+    const open = () => {
+      const key = peekPendingModelType()
+      if (key) setPendingKey(key)
+    }
+    window.addEventListener(OPEN_MODEL_TYPE, open)
+    open()
+    return () => window.removeEventListener(OPEN_MODEL_TYPE, open)
+  }, [])
 
   const columns: Array<StandardColumn<TypeRow>> = [
     {
@@ -137,6 +149,7 @@ export function ObjectTypesTable() {
         setActiveRowId(null)
       }}
       activeRowId={activeRowId}
+      getRowKeyAttr={(row) => row.key}
       menuContext={(row) => (row?.key ? 'model-type' : 'model')}
       getMenuTarget={(row) => ({ typeKey: row?.key || undefined })}
       onActivateRow={(row) => {
