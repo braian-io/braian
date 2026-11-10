@@ -36,8 +36,6 @@
   --ok: #47ff9a;
   --warn: #f6c445;
   --danger: #fb7185;
-  --danger-disabled-bg: #5b3543;
-  --danger-disabled-text: #f4d0d5;
   --accent-disabled-bg: #3f316e;
   --accent-disabled-text: #e0d6fa;
   --r-sm: 4px;
@@ -104,8 +102,6 @@
   --ok: #13804f;
   --warn: #a66a00;
   --danger: #c0233e;
-  --danger-disabled-bg: #f0c8cf;
-  --danger-disabled-text: #711a2b;
   --accent-disabled-bg: #e5d9fb;
   --accent-disabled-text: #4c1d95;
   --inset: inset 0 1px 0 #ffffff;
@@ -937,7 +933,9 @@ select.link-type-line { width: 100%; font-weight: 600; }
   gap: var(--space-1_5);
 }
 .toolbar { display: flex; gap: var(--space-1_5); align-items: center; flex-wrap: wrap; flex: none; min-height: 30px; }
-.proposal-actions-reason { color: var(--muted); font-size: var(--text-sm); }
+.proposal-actions { display: inline-flex; align-items: center; gap: var(--space-1_5); }
+/* 13px and --text-2 keep the reason readable: WCAG AA normal text in both themes. */
+.proposal-actions-reason { color: var(--text-2); font-size: var(--text-base); line-height: 1.4; }
 .toolbar button, .toolbar .search-field, .save-bar button { height: 30px; }
 .object-bar { position: relative; flex-wrap: nowrap; min-width: 0; overflow: hidden; }
 .object-bar .search-field { flex: 1 1 140px; min-width: 120px; max-width: 280px; }
@@ -2970,13 +2968,13 @@ button.tab-x:disabled:hover {
   background: transparent;
   color: var(--muted);
 }
-:root[data-theme='light'] button:not(.tab):not(.pane-tab):not(.pane-tab-open):not(.icon-btn):not(.btn-ghost):not(.btn-accent):not(.btn-danger):not(.primary):not(.avatar-btn):not(.catalog-selector-btn):not(.tab-x):not(.filter-chip):not(.choice-chip):not(.legend-chip):not(.agent-bg-indicator):not(.agent-mode):not(.agent-submit) {
+:root[data-theme='light'] button:not(.tab):not(.pane-tab):not(.pane-tab-open):not(.icon-btn):not(.btn-ghost):not(.btn-accent):not(.btn-danger):not(.primary):not(.avatar-btn):not(.catalog-selector-btn):not(.tab-x):not(.filter-chip):not(.choice-chip):not(.legend-chip):not(.agent-bg-indicator):not(.agent-mode):not(.agent-submit):not(:disabled) {
   background: #ffffff;
   color: #111827;
   border-color: #d1d5db;
   box-shadow: none;
 }
-:root[data-theme='light'] button:not(.tab):not(.pane-tab):not(.pane-tab-open):not(.icon-btn):not(.btn-ghost):not(.btn-accent):not(.btn-danger):not(.primary):not(.avatar-btn):not(.catalog-selector-btn):not(.tab-x):not(.filter-chip):not(.choice-chip):not(.legend-chip):not(.agent-bg-indicator):not(.agent-mode):not(.agent-submit):hover {
+:root[data-theme='light'] button:not(.tab):not(.pane-tab):not(.pane-tab-open):not(.icon-btn):not(.btn-ghost):not(.btn-accent):not(.btn-danger):not(.primary):not(.avatar-btn):not(.catalog-selector-btn):not(.tab-x):not(.filter-chip):not(.choice-chip):not(.legend-chip):not(.agent-bg-indicator):not(.agent-mode):not(.agent-submit):not(:disabled):hover {
   background: #f3f4f6;
   color: #111827;
 }
@@ -3004,14 +3002,21 @@ button[aria-disabled='true'] {
 /* Disabled action buttons (row 212) */
 button.btn-raised:disabled,
 button.btn-raised[aria-disabled='true'] {
+  background: var(--raised);
   color: var(--text-2);
+  border-color: transparent;
   opacity: 0.8;
   box-shadow: none;
 }
+/* Discard all is only red while it can act. A closed proposal gets the same
+   muted fill, border and label as disabled Save all, in both themes. */
 button.btn-danger:disabled,
-button.btn-danger[aria-disabled='true'] {
-  background: var(--danger-disabled-bg);
-  color: var(--danger-disabled-text);
+button.btn-danger[aria-disabled='true'],
+:root[data-theme='light'] button.btn-danger:disabled,
+:root[data-theme='light'] button.btn-danger[aria-disabled='true'] {
+  background: var(--raised);
+  color: var(--text-2);
+  border-color: transparent;
   opacity: 0.8;
   box-shadow: none;
 }
