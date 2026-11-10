@@ -1,6 +1,21 @@
 # Status 2026-11-09
 
-Bas: `origin/main` tip `86bb9a0` (#275). Senaste migrering i repot: `V44__proposal_recoveries.sql` (#268).
+Bas: `origin/main` tip `795eb06` (#277). Senaste migrering i repot: `V44__proposal_recoveries.sql` (#268).
+
+## Rad 212-uppföljning — Save all/Discard all på slutna förslag
+
+Grenen `junior/212-closed-proposal-buttons` utgår från `795eb06` (#277) och är **inte mergad, deployad eller accepterad**. Den rättar Test-avvisningen efter #273: i Review → Proposals var **Save all** och **Discard all** fortfarande aktiva på slutgiltiga förslag (`accepted` eller `discarded`, inga `pending`-rader).
+
+- `apps/web/src/panes.tsx`: `hasPendingRows` (minst en rad med status `pending`) styr båda knapparna. Save all är som förut avstängd vid laddning, pågående mutation eller stale; Discard all vid pågående mutation. Utan pending-rader blir båda avstängda.
+- `apps/web/src/palette.tsx`: palettens förslagsförhandsvisning får samma gate. Förhandsvisningen nås inte i den nuvarande AI-vägen, så ändringen är ett lika bred skyddsnät utan synbar beteendeförändring.
+- API- och store-produktionskoden ändras **inte** i den här PR:en. `POST /v1/proposals/{id}/accept` svarar 409 `conflict` («this proposal is no longer pending») för icke-`open`, och `POST /v1/proposals/{id}/discard` är en idempotent no-op (204) utan pending-rader. Beteendet kom med #273 och bekräftas nu med tester.
+- `apps/web/src/proposal-closed.test.tsx` (ny): fyra tester — `accepted`, `discarded` och blandat (`accepted` + `rejected`) förslag har båda knapparna disabled; ett öppet förslag med en pending-rad har dem enabled.
+- `apps/web/src/proposal-errors.test.tsx`: fixture-objektet har nu en pending-rad, så Save all/Discard all förblir enabled i de tre befintliga fel-testen.
+- `crates/api/tests/http.rs`: tre nya tester — `closed_accepted_proposal_rejects_bulk_accept_and_discard_is_a_no_op`, `closed_discarded_proposal_rejects_bulk_accept_and_discard_is_a_no_op` och `closed_mixed_proposal_without_pending_rejects_bulk_accept_and_keeps_accepted_rows`. De kontrollerar 409/204, att objektversioner och värden inte ändras, och att ingen `proposal_recoveries`-rad skrivs.
+- `crates/store/tests/proposals.rs`: `a_closed_proposal_cannot_be_reopened_or_reset` — `set_proposal_status` vägrar både `discarded` och `accepted` igen, och `finalize_proposal` returnerar `None`.
+- `apps/web/e2e/proposal-lifecycle.spec.ts`: nytt test som skapar `accepted`, `discarded` och blandat (en accepterad + en avvisad rad) förslag, öppnar dem i Review och assertar att knapparna är disabled, att accept igen ger 409, discard igen 204, och att status, radstatus och verkliga värden står sig.
+- Bevis i `docker run --rm` på uppgiftsägt nätverk `row212buttons-net` mot syntetisk Postgres 18 (`row212buttons-postgres`) och Typesense 30.2 (`row212buttons-typesense`), utan host-nätverk, Docker-socket, demo-DB eller DB-reset: serverbygge i `rust:1.93-bookworm` (exit 0, 7m12s); `proposal-lifecycle.spec.ts` 2/2 (53,6 s); `cargo test -p braian-store --test proposals` 13/13; `cargo test -p braian-api --test http` 53/53; `pnpm --dir apps/web typecheck` exit 0; vitest `proposal-closed` + `proposal-errors` 7/7.
+- `apps/web/src/data-model.tsx` är orörd (`sha256 2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`).
 
 ## Rad 107-uppföljning 2 — tangentbordet följer senast klickade header
 
