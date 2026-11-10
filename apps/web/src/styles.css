@@ -3000,13 +3000,19 @@ button[aria-disabled='true'] {
    variants carry a bulk action, so a muted fill and label keep a closed
    proposal's Discard all from looking live. */
 /* Disabled action buttons (row 212) */
+/* The shared button transition would otherwise animate a newly disabled
+   Discard all through the enabled red fill before it settles. A disabled
+   action has no state to animate to, so switch instantly in both themes. */
 button.btn-raised:disabled,
-button.btn-raised[aria-disabled='true'] {
+button.btn-raised[aria-disabled='true'],
+:root[data-theme='light'] button.btn-raised:disabled,
+:root[data-theme='light'] button.btn-raised[aria-disabled='true'] {
   background: var(--raised);
   color: var(--text-2);
   border-color: transparent;
   opacity: 0.8;
   box-shadow: none;
+  transition: none;
 }
 /* Discard all is only red while it can act. A closed proposal gets the same
    muted fill, border and label as disabled Save all, in both themes. */
@@ -3019,6 +3025,7 @@ button.btn-danger[aria-disabled='true'],
   border-color: transparent;
   opacity: 0.8;
   box-shadow: none;
+  transition: none;
 }
 button.btn-accent:disabled,
 button.btn-accent[aria-disabled='true'],

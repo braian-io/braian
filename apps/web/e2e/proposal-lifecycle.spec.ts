@@ -91,6 +91,38 @@ async function actionPaint(page: Page) {
   })
 }
 
+type ActionPaint = Awaited<ReturnType<typeof actionPaint>>
+
+const samePaint = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right)
+
+// A closed proposal changes the buttons from enabled to disabled. The shared
+// button transition can still be running when the first computed style is
+// read, so wait for two identical reads (and, for the closed actions, for
+// Discard all to equal Save all) before asserting anything.
+async function settledActionPaint(page: Page, requireEquality = false) {
+  let previous: ActionPaint | undefined
+  let settled: ActionPaint | undefined
+  await expect
+    .poll(
+      async () => {
+        const current = await actionPaint(page)
+        const unchanged = previous !== undefined && samePaint(current, previous)
+        previous = current
+        const equal = !requireEquality || samePaint(current.discard, current.save)
+        if (unchanged && equal) settled = current
+        return unchanged && equal
+      },
+      {
+        timeout: 10_000,
+        message: requireEquality
+          ? 'disabled Discard all must settle to exactly the disabled Save all paint'
+          : 'proposal action paint must settle before it is compared',
+      },
+    )
+    .toBe(true)
+  return settled!
+}
+
 async function reasonReadability(page: Page) {
   return page.getByTestId('proposal-actions-reason').evaluate((node) => {
     const parse = (value: string) => {
@@ -125,13 +157,33 @@ async function reasonReadability(page: Page) {
   })
 }
 
+type ReasonReadability = Awaited<ReturnType<typeof reasonReadability>>
+
+async function settledReasonReadability(page: Page) {
+  let previous: ReasonReadability | undefined
+  let settled: ReasonReadability | undefined
+  await expect
+    .poll(
+      async () => {
+        const current = await reasonReadability(page)
+        const unchanged = previous !== undefined && samePaint(current, previous)
+        previous = current
+        if (unchanged) settled = current
+        return unchanged
+      },
+      { timeout: 10_000, message: 'the reason text paint must settle before its contrast is read' },
+    )
+    .toBe(true)
+  return settled!
+}
+
 async function expectClosedActions(page: Page, reason: string, shot?: string) {
   const review = page.getByTestId('proposal')
   const save = review.getByTestId('save-all')
   const discard = review.getByTestId('discard-all')
   await expect(save).toBeDisabled()
   await expect(discard).toBeDisabled()
-  const paint = await actionPaint(page)
+  const paint = await settledActionPaint(page, true)
   expect(paint.save.opacity, 'Save all must not look active').toBeLessThan(1)
   expect(paint.discard.opacity, 'Discard all must not look active').toBeLessThan(1)
   expect(ENABLED_DANGER, 'Discard all must not keep the enabled danger fill').not.toContain(paint.discard.background)
@@ -139,14 +191,19 @@ async function expectClosedActions(page: Page, reason: string, shot?: string) {
   const wrapper = review.getByTestId('proposal-actions')
   await expect(wrapper, 'the tooltip must live where hover can reach it').toHaveAttribute('title', reason)
   // A flex item blockifies inline-flex; both keep the buttons and label on one line.
-  expect(await wrapper.evaluate((node) => getComputedStyle(node).display)).toMatch(/^(inline-)?flex$/)
+  await expect
+    .poll(async () => wrapper.evaluate((node) => getComputedStyle(node).display), {
+      timeout: 5_000,
+      message: 'the proposal action wrapper must settle on a flex display',
+    })
+    .toMatch(/^(inline-)?flex$/)
   const explanation = review.getByTestId('proposal-actions-reason')
   await expect(explanation).toHaveText(reason)
   const id = await explanation.getAttribute('id')
   expect(id).toBeTruthy()
   await expect(save).toHaveAttribute('aria-describedby', id!)
   await expect(discard).toHaveAttribute('aria-describedby', id!)
-  const readability = await reasonReadability(page)
+  const readability = await settledReasonReadability(page)
   expect(readability.fontSize, 'reason text is at least the normal 13px').toBeGreaterThanOrEqual(13)
   expect(readability.ratio, `reason contrast ${readability.foreground} on ${readability.background}`).toBeGreaterThanOrEqual(4.5)
   if (shot && shots) {
@@ -160,7 +217,7 @@ async function expectPendingActions(page: Page) {
   const discard = review.getByTestId('discard-all')
   await expect(save).toBeEnabled()
   await expect(discard).toBeEnabled()
-  const paint = await actionPaint(page)
+  const paint = await settledActionPaint(page)
   expect(paint.save.opacity).toBe(1)
   expect(paint.discard.opacity).toBe(1)
   expect(paint.discard.background, 'an enabled Discard all stays danger-coloured').toMatch(/rgb\(251, 113, 133\)|rgb\(192, 35, 62\)/)

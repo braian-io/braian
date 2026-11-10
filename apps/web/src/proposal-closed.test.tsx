@@ -143,12 +143,14 @@ function installActionButtonStyles() {
   document.head.appendChild(style)
 }
 
-function expectClosedActions(reason: string) {
+async function expectClosedActions(reason: string) {
   expect(disabled('save-all')).toBe(true)
   expect(disabled('discard-all')).toBe(true)
   expect(opacity('save-all')).toBe(0.8)
   expect(opacity('discard-all')).toBe(0.8)
-  expect(paint('discard-all'), 'Discard all must look exactly like disabled Save all').toEqual(paint('save-all'))
+  await waitFor(() =>
+    expect(paint('discard-all'), 'Discard all must look exactly like disabled Save all').toEqual(paint('save-all')),
+  )
   const explanation = screen.getByTestId('proposal-actions-reason')
   expect(explanation.textContent).toBe(reason)
   expect(explanation.getAttribute('title')).toBe(reason)
@@ -180,7 +182,7 @@ describe('closed proposal bulk actions', () => {
     render(<Host />)
     await screen.findByTestId('save-all')
     await waitFor(() => expect(disabled('discard-all')).toBe(true))
-    expectClosedActions(copy.proposalAlreadyAccepted)
+    await expectClosedActions(copy.proposalAlreadyAccepted)
   })
 
   it('disables and explains Save all and Discard all on a discarded proposal', async () => {
@@ -188,7 +190,7 @@ describe('closed proposal bulk actions', () => {
     render(<Host />)
     await screen.findByTestId('save-all')
     await waitFor(() => expect(disabled('discard-all')).toBe(true))
-    expectClosedActions(copy.proposalAlreadyDiscarded)
+    await expectClosedActions(copy.proposalAlreadyDiscarded)
   })
 
   it('disables and explains both actions on a closed proposal with accepted and rejected rows', async () => {
@@ -201,7 +203,7 @@ describe('closed proposal bulk actions', () => {
     render(<Host />)
     await screen.findByTestId('save-all')
     await waitFor(() => expect(disabled('discard-all')).toBe(true))
-    expectClosedActions(copy.proposalAlreadyClosed)
+    await expectClosedActions(copy.proposalAlreadyClosed)
   })
 
   it('never calls a closed state before the proposal is known', async () => {
@@ -264,6 +266,12 @@ describe('closed proposal bulk actions', () => {
         declaration(raised, property),
       )
     }
+    for (const [name, block] of [
+      ['Save all', raised],
+      ['Discard all', danger],
+    ] as const) {
+      expect(declaration(block, 'transition'), `disabled ${name} must not animate through another colour`).toBe('none')
+    }
     const reason = ruleBlock(css, '.proposal-actions-reason')
     expect(parseFloat(resolveToken(declaration(reason, 'font-size'), variableBlock(css, ':root')))).toBeGreaterThanOrEqual(13)
     for (const [theme, selector] of [
@@ -277,7 +285,7 @@ describe('closed proposal bulk actions', () => {
     }
   })
 
-  it('uses the same disabled look and explanation in the Ctrl+K proposal preview', () => {
+  it('uses the same disabled look and explanation in the Ctrl+K proposal preview', async () => {
     render(
       <ProposalBulkActions
         rows={[row('r1', 'accepted'), row('r2', 'rejected')]}
@@ -293,7 +301,7 @@ describe('closed proposal bulk actions', () => {
     )
     expect(opacity('palette-save-all')).toBe(0.8)
     expect(opacity('palette-discard-all')).toBe(0.8)
-    expect(paint('palette-discard-all')).toEqual(paint('palette-save-all'))
+    await waitFor(() => expect(paint('palette-discard-all')).toEqual(paint('palette-save-all')))
     const explanation = screen.getByTestId('palette-proposal-reason')
     expect(explanation.textContent).toBe(copy.proposalAlreadyClosed)
     expect(screen.getByTestId('palette-save-all').getAttribute('aria-describedby')).toBe(explanation.id)
