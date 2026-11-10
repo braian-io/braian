@@ -362,6 +362,7 @@ export const copy = {
   fromSourceLabel: '{type} from {source}',
   fromSourceViaLabel: '{type} from {source} via {linkType}',
   wouldCreateCycle: 'Would create a cycle',
+  wouldCreateCycleFollows: 'Would create a cycle ({type} follows {source})',
   linkedTo: 'Linked to: {source}',
   viewMenu: 'View menu',
   closeView: 'Close view',

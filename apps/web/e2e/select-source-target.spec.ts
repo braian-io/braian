@@ -168,15 +168,16 @@ test.describe('Select source keeps the menu target (row 103)', () => {
       })
       expect(states.get(productsId)).toBeUndefined()
 
-      // Reload: only the intended view changed, and it persisted.
+      // Reload: only the intended view changed, and it persisted. The URL object
+      // restores the product row, so the header keeps the row label and Articles
+      // shows its linked rows instead of the peer empty state.
       await openWorkspace(page, new RegExp(`^${own.name}`))
       const productsAfter = pane(page, productsId)
       const articlesAfter = pane(page, articlesId)
-      // The selection itself is not persisted, so the header shows the source
-      // view without a row label after reload.
       await expect(articlesAfter.getByTestId('view-source-label')).toContainText('All Articles · Products', {
         timeout: 60_000,
       })
+      await expect(articlesAfter.getByTestId('object-row').first()).toBeVisible({ timeout: 30_000 })
       await expect(productsAfter.getByTestId('view-source-label')).toHaveText('All Products')
       await expect(productsAfter.getByTestId('peer-linked-to')).toHaveCount(0)
       states = await viewStates(page, own.workspaceId)

@@ -31,6 +31,7 @@ const blankFrame = (): Frame => ({ workspace: null, panes: [], focused: null, la
 
 let frame: Frame = blankFrame()
 let markedId: string | null = null
+let markedObject: SelectedObject | null = null
 const tables = new Map<string, { filter: string; sort: string; filterExpression: string }>()
 const tableColumns = new Map<string, UiColumn[]>()
 const activeColumns = new Map<string, string>()
@@ -74,6 +75,7 @@ export function readTreeNode(viewId: string): TreeNodeSelection | null {
 export function resetUiContext() {
   frame = blankFrame()
   markedId = null
+  markedObject = null
   tables.clear()
   tableColumns.clear()
   activeColumns.clear()
@@ -100,8 +102,15 @@ export function publishFrame(next: Frame) {
   frame = next
 }
 
-export function publishMarked(id: string | null) {
+export function publishMarked(id: string | null, type: string | null = null) {
   markedId = id
+  markedObject = id ? { id, key: '', name: '', type: type ?? '' } : null
+  bumpSelection()
+}
+
+/** The object open in detail, with its type when the object body has loaded. */
+export function readMarkedSelection(): SelectedObject | null {
+  return markedObject
 }
 
 export function publishTable(viewId: string, filter: string, sort: string, filterExpression = '') {
