@@ -271,7 +271,7 @@ function pageHtml(template, page) {
     return `<a href="${item.path}"${current}>${escapeHtml(item.nav)}</a>`
   }).join('')
 
-  const stable = page.slug ? `/docs/${page.slug}` : '/docs/'
+  const stable = page.slug ? `/docs/${page.slug}/` : '/docs/'
   const canonical = `https://braian.io${stable}`
 
   let html = template
