@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { curvePoint, placeEdgeLabel, type EdgeLabelBox, type EdgeLabelNode } from './graph-edge-label'
+import { curvePoint, edgeLabelMode, placeEdgeLabel, type EdgeLabelBox, type EdgeLabelNode } from './graph-edge-label'
 
 const from = { x: 0, y: 0 }
 const control = { x: 100, y: 0 }
@@ -15,6 +15,24 @@ function distanceToBox(node: EdgeLabelNode, box: EdgeLabelBox) {
   const closestY = Math.max(box.y, Math.min(node.y, box.y + box.height))
   return Math.hypot(node.x - closestX, node.y - closestY)
 }
+
+describe('edge label density', () => {
+  it('shows every label on a small, readable graph', () => {
+    expect(edgeLabelMode(7, 0.9, false)).toBe('all')
+    expect(edgeLabelMode(10, 0.9, false)).toBe('all')
+  })
+
+  it('keeps only the active node labels on a dense graph', () => {
+    expect(edgeLabelMode(11, 0.9, false)).toBe('active')
+    expect(edgeLabelMode(80, 1.4, false)).toBe('active')
+  })
+
+  it('hides labels when zoomed out; the model graph keeps its labels', () => {
+    expect(edgeLabelMode(4, 0.4, false)).toBe('none')
+    expect(edgeLabelMode(4, 0.4, true)).toBe('all')
+    expect(edgeLabelMode(40, 0.54, true)).toBe('all')
+  })
+})
 
 describe('edge label placement', () => {
   it('keeps the default mid when no nodes are visible', () => {

@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from './api'
 import { copy } from './i18n'
-import { graphDialogStyle, LinkCreateDialog, type LinkCreateRequest } from './link-create-dialog'
+import { LinkCreateDialog, placeDialog, type LinkCreateRequest } from './link-create-dialog'
 import type { LinkSubmitResult } from './link-write'
 import type { Json } from './api'
 
@@ -47,6 +47,15 @@ afterEach(() => {
   cleanup()
 })
 
+function distanceFromCentre(
+  point: { left: number; top: number },
+  size: { width: number; height: number },
+  viewport: { width: number; height: number },
+) {
+  const centre = placeDialog(size, undefined, viewport)
+  return Math.abs(point.left - centre.left) + Math.abs(point.top - centre.top)
+}
+
 describe('link create dialog ends and placement', () => {
   it('names both ends with the relation and never shows a UUID', () => {
     render(
@@ -84,32 +93,29 @@ describe('link create dialog ends and placement', () => {
     expect(ends.textContent).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)
   })
 
-  it('docks a graph dialog to the corner opposite the node and leaves Detail centred', () => {
-    const originalWidth = window.innerWidth
-    const originalHeight = window.innerHeight
-    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1440 })
-    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 900 })
-    try {
-      expect(graphDialogStyle(undefined, undefined)).toBeUndefined()
-      const style = graphDialogStyle(
-        { left: 1284, top: 421, right: 1398, bottom: 487 },
-        { left: 400, top: 100, right: 1440, bottom: 860 },
-      )
-      expect(style?.left).toBe('24px')
-      expect(style?.right).toBe('auto')
-      expect(style?.top).toBe('auto')
-      expect(style?.bottom).toBe('24px')
-      expect(style?.translate).toBe('none')
-      const left = Number(String(style?.left).replace('px', ''))
-      const bottom = Number(String(style?.bottom).replace('px', ''))
-      const width = Number(String(style?.maxWidth).replace('px', ''))
-      expect(left + width).toBeLessThanOrEqual(1284)
-      expect(left + width).toBeLessThanOrEqual(1440)
-      expect(bottom).toBeGreaterThan(0)
-    } finally {
-      Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth })
-      Object.defineProperty(window, 'innerHeight', { configurable: true, value: originalHeight })
-    }
+  it('centres the graph dialog like Detail, without docking to a panel corner', () => {
+    const viewport = { width: 1440, height: 900 }
+    const size = { width: 640, height: 280 }
+    const detail = placeDialog(size, undefined, viewport)
+    expect(detail).toEqual({ left: 400, top: 310 })
+    const graph = placeDialog(size, { left: 1284, top: 421, right: 1398, bottom: 487 }, viewport)
+    expect(graph).toEqual(detail)
+  })
+
+  it('shifts a graph dialog minimally only when the clicked node would be covered', () => {
+    const viewport = { width: 1440, height: 900 }
+    const size = { width: 640, height: 280 }
+    const avoid = { left: 500, top: 300, right: 700, bottom: 370 }
+    const point = placeDialog(size, avoid, viewport)
+    const box = { left: point.left, right: point.left + size.width, top: point.top, bottom: point.top + size.height }
+    const overlaps = box.left < avoid.right && box.right > avoid.left && box.top < avoid.bottom && box.bottom > avoid.top
+    expect(overlaps).toBe(false)
+    expect(box.left).toBeGreaterThanOrEqual(24)
+    expect(box.right).toBeLessThanOrEqual(1440 - 24)
+    expect(box.top).toBeGreaterThanOrEqual(24)
+    expect(box.bottom).toBeLessThanOrEqual(900 - 24)
+    // The default left/right/below/above shifts are 312, 376, 72 and 286 pixels.
+    expect(distanceFromCentre(point, size, viewport)).toBeLessThanOrEqual(72)
   })
 })
 

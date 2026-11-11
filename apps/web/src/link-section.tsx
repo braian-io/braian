@@ -161,9 +161,6 @@ export function LinkSections({
   }
   useEffect(() => {
     const stops = [
-      registerCommandRunner('link:open-peer', (target) => {
-        if (target.peerId) onOpenRef.current(String(target.peerId))
-      }),
       registerCommandRunner('link:edit', (target) => {
         if (target.linkId) onOpenRef.current(String(target.linkId))
       }),

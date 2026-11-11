@@ -85,6 +85,16 @@ describe('shared context menu registry', () => {
     expect(commandsForContext('row', target).map((command) => command.id)).toContain('object:open')
   })
 
+  it('shows one Open in the link row menu', () => {
+    const target = { linkId: 'lk1', peerId: 'p1', objectId: 'p1' }
+    const opens = commandsForContext('link', target).filter((command) => {
+      const title = typeof command.title === 'function' ? command.title(target) : command.title
+      return title === 'Open'
+    })
+    expect(opens).toHaveLength(1)
+    expect(opens[0]?.id).toBe('object:open')
+  })
+
   it('does not open a custom menu on an empty surface', () => {
     render(<SharedContextMenuHost feedbackEnabled />)
     const surface = document.createElement('div')
@@ -238,13 +248,14 @@ describe('placeContextMenu', () => {
     expect(point.y).toBeLessThan(280)
   })
 
-  it('moves to the other side instead of covering a node near the right edge', () => {
+  it('moves clear of a node near the right edge instead of covering it', () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1440 })
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: 900 })
     const avoid = { left: 1214, top: 421, right: 1398, bottom: 487 }
     const point = placeContextMenu(1336, 421, 220, 120, avoid)
     const box = { left: point.x, top: point.y, right: point.x + 220, bottom: point.y + 120 }
-    expect(box.right).toBeLessThanOrEqual(avoid.left)
+    const overlaps = box.left < avoid.right && box.right > avoid.left && box.top < avoid.bottom && box.bottom > avoid.top
+    expect(overlaps).toBe(false)
     expect(box.left).toBeGreaterThanOrEqual(8)
     expect(box.right).toBeLessThanOrEqual(1440 - 8)
     expect(box.top).toBeGreaterThanOrEqual(8)
@@ -263,5 +274,34 @@ describe('placeContextMenu', () => {
     expect(box.top).toBeGreaterThanOrEqual(8)
     expect(box.right).toBeLessThanOrEqual(340 - 8)
     expect(box.bottom).toBeLessThanOrEqual(300 - 8)
+  })
+
+  it('avoids every neighbour circle and label, not only the clicked node', () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1440 })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 900 })
+    const clicked = { left: 1214, top: 421, right: 1398, bottom: 487 }
+    const neighbour = { left: 940, top: 440, right: 1180, bottom: 520 }
+    const point = placeContextMenu(1336, 421, 220, 120, clicked, [clicked, neighbour])
+    const box = { left: point.x, top: point.y, right: point.x + 220, bottom: point.y + 120 }
+    for (const rect of [clicked, neighbour]) {
+      expect(box.left < rect.right && box.right > rect.left && box.top < rect.bottom && box.bottom > rect.top).toBe(false)
+    }
+    expect(box.left).toBeGreaterThanOrEqual(8)
+    expect(box.top).toBeGreaterThanOrEqual(8)
+    expect(box.right).toBeLessThanOrEqual(1440 - 8)
+    expect(box.bottom).toBeLessThanOrEqual(900 - 8)
+  })
+
+  it('takes the least overlap when no position can clear every node', () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 360 })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 360 })
+    const clicked = { left: 120, top: 140, right: 240, bottom: 200 }
+    const wall = { left: 0, top: 0, right: 360, bottom: 360 }
+    const point = placeContextMenu(180, 140, 220, 120, clicked, [clicked, wall])
+    const box = { left: point.x, top: point.y, right: point.x + 220, bottom: point.y + 120 }
+    expect(box.left).toBeGreaterThanOrEqual(8)
+    expect(box.top).toBeGreaterThanOrEqual(8)
+    expect(box.right).toBeLessThanOrEqual(360 - 8)
+    expect(box.bottom).toBeLessThanOrEqual(360 - 8)
   })
 })

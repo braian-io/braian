@@ -52,7 +52,7 @@ export function chooseLinkChoice<T extends LinkChoiceLike>(
 
 function restoreFocus(node: HTMLElement | null) {
   window.setTimeout(() => {
-    if (node?.isConnected) node.focus()
+    if (node?.isConnected) node.focus({ preventScroll: true })
   }, 0)
 }
 
@@ -85,6 +85,15 @@ export function LinkAddFlow({
   const queryClient = useQueryClient()
   const [target, setTarget] = useState<LinkEndpoint | null>(null)
   const opener = useRef<HTMLElement | null>(null)
+  const wasOpen = useRef(false)
+  // Capture the opener during render, before the picker's autoFocus moves
+  // focus into its search field. A layout effect runs too late and would
+  // remember the input instead of the graph node or Detail button.
+  if (request && !wasOpen.current) {
+    wasOpen.current = true
+    opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  }
+  if (!request && wasOpen.current) wasOpen.current = false
   const choices = useMemo(() => linkChoices(defs, typeKey), [defs, typeKey])
   const active = useMemo(
     () => chooseLinkChoice(choices, request ? { linkType: request.linkType, direction: request.direction } : null),
@@ -106,8 +115,6 @@ export function LinkAddFlow({
   )
   useEffect(() => {
     setTarget(null)
-    if (!request) return
-    opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
   }, [request])
   if (!request || !active) return null
   const refresh = (peerId?: string) => {
@@ -151,7 +158,6 @@ export function LinkAddFlow({
       target={target}
       defs={defs}
       avoid={request.anchor}
-      stage={request.stage}
       preferred={{ linkType: active.key, direction: active.direction }}
       onClose={close}
       onConfirm={async (link) => {

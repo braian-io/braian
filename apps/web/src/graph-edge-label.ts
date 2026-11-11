@@ -7,6 +7,15 @@ const DEFAULT_T = 0.68
 const CANDIDATE_TS = [DEFAULT_T, 0.6, 0.52, 0.44, 0.36, 0.75]
 const CANDIDATE_OFFSETS = [0, 1, -1, 2, -2, 3, -3]
 
+/** Readable edge labels everywhere on a small graph, only on the active node elsewhere. */
+export type EdgeLabelMode = 'all' | 'active' | 'none'
+
+export function edgeLabelMode(edgeCount: number, zoom: number, modelMode: boolean): EdgeLabelMode {
+  if (modelMode) return 'all'
+  if (zoom < 0.55) return 'none'
+  return edgeCount <= 10 ? 'all' : 'active'
+}
+
 export function curvePoint(from: Point, control: Point, to: Point, t: number): Point {
   const u = 1 - t
   return {

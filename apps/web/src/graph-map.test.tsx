@@ -4,12 +4,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Json } from './api'
 import {
   canOpenGraphNodeMenu,
+  clampLabelCenter,
   GraphMap,
   graphNodeMenuExtras,
   graphNodeKey,
   graphNodeTarget,
   nodeMenuAnchor,
   nodeMenuAvoid,
+  nodeObstacles,
   openGraphNodeMenu,
   runGraphNodeCommand,
 } from './graph-map'
@@ -193,6 +195,30 @@ describe('node menu anchor', () => {
       bottom: 487,
     })
     expect(nodeMenuAvoid(undefined, 'x')).toBeUndefined()
+  })
+
+  it('uses the measured, edge-clamped label box when the canvas has published one', () => {
+    expect(nodeMenuAvoid(
+      { x: 1306, y: 443, r: 22, label: { left: 1150, top: 467, right: 1436, bottom: 483 } },
+      'Dark chocolate 70% 100 g',
+    )).toEqual({ left: 1150, top: 421, right: 1436, bottom: 483 })
+  })
+
+  it('keeps a label inside the pane instead of clipping it at the edge', () => {
+    expect(clampLabelCenter(1400, 220, 1440)).toBe(1326)
+    expect(clampLabelCenter(20, 220, 1440)).toBe(114)
+    expect(clampLabelCenter(600, 220, 1440)).toBe(600)
+  })
+
+  it('lists every visible circle and label as a menu obstacle', () => {
+    expect(nodeObstacles({
+      a: { x: 100, y: 100, r: 20, label: { left: 60, top: 124, right: 140, bottom: 140 } },
+      b: { x: 300, y: 200, r: 10 },
+    })).toEqual([
+      { left: 80, top: 80, right: 120, bottom: 120 },
+      { left: 60, top: 124, right: 140, bottom: 140 },
+      { left: 290, top: 190, right: 310, bottom: 210 },
+    ])
   })
 })
 
