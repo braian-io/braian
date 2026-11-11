@@ -53,7 +53,7 @@ import {
   type SheetMode,
 } from './graph-chrome'
 import { buildModelScene, expandModelType, mergeModelScene } from './graph-model-scene'
-import { curvePoint, edgeLabelMode, placeEdgeLabel, type EdgeLabelBox } from './graph-edge-label'
+import { curvePoint, edgeLabelMode, placeEdgeLabel, type EdgeLabelBox, type EdgeLabelNode } from './graph-edge-label'
 import { chooseModelSelection } from './model-selection'
 import { openObjectLabel } from './type-labels'
 import { copy, uiLanguage } from './i18n'
@@ -256,6 +256,7 @@ export function openGraphNodeMenu(
   avoid?: Rect,
   stage?: Rect,
   obstacles?: Rect[],
+  bounds?: Rect,
 ) {
   const extra = graphNodeMenuExtras(defs, node)
   const target = {
@@ -275,6 +276,7 @@ export function openGraphNodeMenu(
     extra,
     avoid,
     obstacles,
+    ...(bounds ? { bounds } : {}),
   })
 }
 
@@ -318,6 +320,7 @@ export function GraphMap({
   const [shownEdges, setShownEdges] = useState<Set<string>>(() => new Set())
   const markersRef = useRef<Record<string, Marker>>({})
   const shownEdgesRef = useRef('')
+  const edgeLabelRectsRef = useRef<Record<string, Rect>>({})
   const [pinTick, setPinTick] = useState(0)
   const [busy, setBusy] = useState('')
   const [add, setAdd] = useState<LinkAddRequest | null>(null)
@@ -415,7 +418,12 @@ export function GraphMap({
   const frameKeyRef = useRef('')
   const simRef = useRef<Simulation<SimNode, SimLink> | null>(null)
   const drawRef = useRef<(shouldPublish: boolean) => void>(() => {})
-  const apiRef = useRef({ fit: () => {}, relayout: () => {}, refocus: () => {} })
+  const apiRef = useRef<{
+    fit: () => void
+    relayout: () => void
+    refocus: () => void
+    markerOf: (id: string) => { x: number; y: number; r: number } | undefined
+  }>({ fit: () => {}, relayout: () => {}, refocus: () => {}, markerOf: () => undefined })
   const hiddenRef = useRef(hidden)
   const selectedRef = useRef(selected)
   const expandRef = useRef<(node: SceneNode) => void>(() => {})
@@ -654,6 +662,26 @@ export function GraphMap({
       if (alive) setMarkers(next)
     }
 
+    const publishEdgeRects = (rects: Record<string, Rect>) => {
+      edgeLabelRectsRef.current = rects
+      const root = canvas.closest('.graph-wrap') ?? document
+      const spans = root.querySelectorAll<HTMLElement>('[data-testid="graph-edges"] [data-edge-id]')
+      for (const span of spans) {
+        const rect = rects[span.getAttribute('data-edge-id') ?? '']
+        if (!rect) {
+          span.removeAttribute('data-label-left')
+          span.removeAttribute('data-label-top')
+          span.removeAttribute('data-label-right')
+          span.removeAttribute('data-label-bottom')
+          continue
+        }
+        span.setAttribute('data-label-left', String(Math.round(rect.left)))
+        span.setAttribute('data-label-top', String(Math.round(rect.top)))
+        span.setAttribute('data-label-right', String(Math.round(rect.right)))
+        span.setAttribute('data-label-bottom', String(Math.round(rect.bottom)))
+      }
+    }
+
     const draw = (shouldPublish: boolean) => {
       resize()
       const width = canvas.clientWidth
@@ -689,14 +717,44 @@ export function GraphMap({
         }
       }
       const edgeMode = edgeLabelMode(links.length, transform.k, modelMode)
+      const settled = canvas.dataset.settled !== 'false'
       const labelNodes = nodes
         .filter((node) => !isLegendHidden(hiddenNow, node) && node.x != null && node.y != null)
         .map((node) => {
           const point = screenOf(node.x!, node.y!)
           return { x: point.x, y: point.y, radius: nodeRadius(node.kind, node.degree ?? 0) * transform.k }
         })
-      const placedEdgeLabels: EdgeLabelBox[] = []
+      const placedNodes: { node: SimNode; point: { x: number; y: number }; radius: number }[] = []
+      for (const node of nodes) {
+        if (isLegendHidden(hiddenNow, node) || node.x == null || node.y == null) continue
+        placedNodes.push({
+          node,
+          point: screenOf(node.x, node.y),
+          radius: nodeRadius(node.kind, node.degree ?? 0) * transform.k,
+        })
+      }
+      // Node captions and edge labels share one collision pass: an edge label
+      // that needs the space hides the caption beneath it below.
+      context.font = '12px "Inter Variable", Inter, sans-serif'
+      const labelCenters = new Map<string, number>()
+      const captionBoxes: LabelBox[] = placedNodes.map(({ node, point, radius }) => {
+        const textWidth = context.measureText(node.caption).width
+        const centerX = clampLabelCenter(point.x, textWidth, canvas.clientWidth)
+        labelCenters.set(node.id, centerX)
+        const active = node.id === current || highlight.has(node.id)
+        return {
+          id: node.id,
+          priority: labelPriority(node.kind, active),
+          left: centerX - textWidth / 2 - 4,
+          right: centerX + textWidth / 2 + 4,
+          top: point.y + radius + 4,
+          bottom: point.y + radius + 20,
+        }
+      })
+      const labels = visibleLabelIds(captionBoxes, transform.k)
+      const graphRoot = canvas.closest('.graph-wrap') ?? document
       const drawnEdges = new Set<string>()
+      const edgeRects: Record<string, Rect> = {}
 
       canvas.dataset.zoom = transform.k.toFixed(2)
       context.setTransform(dpr, 0, 0, dpr, 0, 0)
@@ -708,11 +766,11 @@ export function GraphMap({
       context.textAlign = 'center'
       context.textBaseline = 'middle'
 
-      const paintLink = (link: SimLink, emphasized: boolean) => {
+      const geometryOf = (link: SimLink) => {
         const source = endNode(link.source)
         const target = endNode(link.target)
-        if (!source || !target || source.x == null || source.y == null || target.x == null || target.y == null) return
-        if (isLegendHidden(hiddenNow, source) || isLegendHidden(hiddenNow, target)) return
+        if (!source || !target || source.x == null || source.y == null || target.x == null || target.y == null) return null
+        if (isLegendHidden(hiddenNow, source) || isLegendHidden(hiddenNow, target)) return null
         const from = screenOf(source.x, source.y)
         const to = screenOf(target.x, target.y)
         const dx = to.x - from.x
@@ -722,6 +780,15 @@ export function GraphMap({
         const control = { x: (from.x + to.x) / 2 + (-dy / len) * bend, y: (from.y + to.y) / 2 + (dx / len) * bend }
         const targetR = nodeRadius(target.kind, target.degree ?? 0) * transform.k
         const tip = pointAtDistance(from, control, to, targetR + 2, true)
+        return { source, target, from, control, to, tip }
+      }
+
+      const paintLink = (
+        link: SimLink,
+        emphasized: boolean,
+        geometry: NonNullable<ReturnType<typeof geometryOf>>,
+      ) => {
+        const { from, control, to, tip } = geometry
         context.save()
         context.globalAlpha = !hover || emphasized ? 0.95 : 0.12
         context.strokeStyle = emphasized ? colors.text2 : colors.border
@@ -733,52 +800,102 @@ export function GraphMap({
         context.stroke()
         const tangent = curveTangent(from, control, to, tip.t)
         arrow(context, tip.point.x, tip.point.y, Math.atan2(tangent.y, tangent.x))
-        const activeEndpoint = captionIds.has(source.id) && captionIds.has(target.id)
-        const settled = canvas.dataset.settled !== 'false'
-        // Placing labels on every simulation tick slows large expansions. The
-        // settled frame shows all labels on a readable graph, and hover or
-        // selection shows the labels for the active endpoint afterwards.
-        const showLabel = edgeMode !== 'none' && settled && (edgeMode === 'all' || activeEndpoint)
-        if (showLabel) {
-          drawnEdges.add(link.id)
-          context.font = '11px "Inter Variable", Inter, sans-serif'
-          const widthText = context.measureText(link.label).width
-          const boxW = widthText + 12
-          const boxH = 16
-          const mid = placeEdgeLabel(from, control, to, { width: boxW, height: boxH }, labelNodes, placedEdgeLabels)
-          placedEdgeLabels.push({ x: mid.x - boxW / 2, y: mid.y - boxH / 2, width: boxW, height: boxH })
-          context.globalAlpha = !hover || emphasized ? 1 : 0.16
-          context.fillStyle = colors.raised
-          context.strokeStyle = colors.border
-          context.lineWidth = 1
-          roundRect(context, mid.x - boxW / 2, mid.y - boxH / 2, boxW, boxH, 8)
-          context.fill()
-          context.stroke()
-          context.fillStyle = colors.text2
-          context.fillText(link.label, mid.x, mid.y + 0.5)
-        }
         context.restore()
+      }
+
+      type LabelCandidate = {
+        link: SimLink
+        geometry: NonNullable<ReturnType<typeof geometryOf>>
+        emphasized: boolean
+        priority: number
+      }
+      const labelCandidates: LabelCandidate[] = []
+      const considerLink = (link: SimLink, emphasized: boolean) => {
+        const geometry = geometryOf(link)
+        if (!geometry) return
+        paintLink(link, emphasized, geometry)
+        const activeEndpoint = captionIds.has(geometry.source.id) && captionIds.has(geometry.target.id)
+        // At rest every relation on a readable graph is named; hover narrows the
+        // set to the active endpoint. Collision below drops what cannot fit.
+        const dragging = canvas.dataset.dragging === 'true'
+        const showLabel = edgeMode !== 'none' && (settled || dragging) && (edgeMode === 'all' || activeEndpoint || !hover)
+        if (showLabel) {
+          labelCandidates.push({
+            link,
+            geometry,
+            emphasized,
+            priority: activeEndpoint ? 3 : 1,
+          })
+        }
       }
 
       for (const link of links) {
         const source = endId(link.source)
         const target = endId(link.target)
         if (hover && (highlight.has(source) || highlight.has(target))) continue
-        paintLink(link, false)
+        considerLink(link, false)
       }
       if (hover) {
         for (const link of links) {
           const source = endId(link.source)
           const target = endId(link.target)
-          if (highlight.has(source) || highlight.has(target)) paintLink(link, true)
+          if (highlight.has(source) || highlight.has(target)) considerLink(link, true)
         }
       }
 
-      const placedNodes: { node: SimNode; point: { x: number; y: number }; radius: number }[] = []
-      for (const node of nodes) {
-        if (isLegendHidden(hiddenNow, node) || node.x == null || node.y == null) continue
-        const point = screenOf(node.x, node.y)
-        const radius = nodeRadius(node.kind, node.degree ?? 0) * transform.k
+      const placedEdgeLabels: EdgeLabelBox[] = []
+      context.font = '11px "Inter Variable", Inter, sans-serif'
+      labelCandidates
+        .slice()
+        .sort((left, right) => right.priority - left.priority || left.link.id.localeCompare(right.link.id))
+        .forEach((candidate) => {
+          const { link, geometry, emphasized } = candidate
+          const widthText = context.measureText(link.label).width
+          const boxW = widthText + 12
+          const boxH = 16
+          const mid = placeEdgeLabel(
+            geometry.from,
+            geometry.control,
+            geometry.to,
+            { width: boxW, height: boxH },
+            labelNodes,
+            placedEdgeLabels,
+          )
+          const box: EdgeLabelBox = { x: mid.x - boxW / 2, y: mid.y - boxH / 2, width: boxW, height: boxH }
+          // Hide the lower-priority label instead of stacking it on a neighbour.
+          if (placedEdgeLabels.some((other) => boxOverlap(box, other) > 0)) return
+          if (labelNodes.some((node) => discOverlap(box, node) > 0)) return
+          placedEdgeLabels.push(box)
+          drawnEdges.add(link.id)
+          const rect = canvas.getBoundingClientRect()
+          edgeRects[link.id] = {
+            left: rect.left + box.x,
+            top: rect.top + box.y,
+            right: rect.left + box.x + box.width,
+            bottom: rect.top + box.y + box.height,
+          }
+          context.save()
+          context.globalAlpha = !hover || emphasized ? 1 : 0.16
+          context.fillStyle = colors.raised
+          context.strokeStyle = colors.border
+          context.lineWidth = 1
+          roundRect(context, box.x, box.y, box.width, box.height, 8)
+          context.fill()
+          context.stroke()
+          context.fillStyle = colors.text2
+          context.fillText(link.label, mid.x, mid.y + 0.5)
+          context.restore()
+        })
+      // Edge labels win the space they need; a caption that would sit under one
+      // is hidden instead of stacking on top of it.
+      const shownCaptionIds = new Set(labels)
+      for (const box of captionBoxes) {
+        if (!shownCaptionIds.has(box.id)) continue
+        const captionBox = { x: box.left, y: box.top, width: box.right - box.left, height: box.bottom - box.top }
+        if (placedEdgeLabels.some((other) => boxOverlap(captionBox, other) > 0)) shownCaptionIds.delete(box.id)
+      }
+
+      for (const { node, point, radius } of placedNodes) {
         const emphasized = !hover || highlight.has(node.id)
         const fill = colors.fill[node.kind]
         context.save()
@@ -797,28 +914,11 @@ export function GraphMap({
           context.fillText(mark, point.x, point.y)
         }
         context.restore()
-        placedNodes.push({ node, point, radius })
       }
 
       context.font = '12px "Inter Variable", Inter, sans-serif'
-      const labelCenters = new Map<string, number>()
-      const boxes: LabelBox[] = placedNodes.map(({ node, point, radius }) => {
-        const textWidth = context.measureText(node.caption).width
-        const centerX = clampLabelCenter(point.x, textWidth, canvas.clientWidth)
-        labelCenters.set(node.id, centerX)
-        const active = node.id === current || highlight.has(node.id)
-        return {
-          id: node.id,
-          priority: labelPriority(node.kind, active),
-          left: centerX - textWidth / 2 - 4,
-          right: centerX + textWidth / 2 + 4,
-          top: point.y + radius + 4,
-          bottom: point.y + radius + 20,
-        }
-      })
-      const labels = visibleLabelIds(boxes, transform.k)
       for (const { node, point, radius } of placedNodes) {
-        if (!labels.has(node.id) || !node.caption) continue
+        if (!shownCaptionIds.has(node.id) || !node.caption) continue
         const emphasized = !hover || highlight.has(node.id)
         const active = node.id === current || highlight.has(node.id)
         const centerX = labelCenters.get(node.id) ?? point.x
@@ -839,6 +939,12 @@ export function GraphMap({
       }
 
       if (shouldPublish) {
+        for (const { node } of placedNodes) {
+          graphRoot
+            .querySelector<HTMLElement>(`[data-node-id="${CSS.escape(node.id)}"]`)
+            ?.setAttribute('data-label-shown', shownCaptionIds.has(node.id) ? 'true' : 'false')
+        }
+        publishEdgeRects(edgeRects)
         const edgeSerial = [...drawnEdges].sort().join('|')
         if (edgeSerial !== shownEdgesRef.current) {
           shownEdgesRef.current = edgeSerial
@@ -890,6 +996,7 @@ export function GraphMap({
       movedRef.current = false
       fitAfterRef.current = true
       canvas.dataset.settled = 'false'
+      canvas.dataset.settling = 'true'
       sim.alpha(1).restart()
       pinRef.current((tick) => tick + 1)
     }
@@ -901,6 +1008,17 @@ export function GraphMap({
         movedRef.current = false
         fitAfterRef.current = true
       },
+      markerOf: (id: string) => {
+        const node = sim.nodes().find((item) => item.id === id)
+        if (!node || node.x == null || node.y == null) return undefined
+        const point = screenOf(node.x, node.y)
+        const rect = canvas.getBoundingClientRect()
+        return {
+          x: rect.left + point.x,
+          y: rect.top + point.y,
+          r: Math.round(nodeRadius(node.kind, node.degree ?? 0) * transform.k),
+        }
+      },
     }
     drawRef.current = draw
 
@@ -908,6 +1026,7 @@ export function GraphMap({
       if (alive) draw(false)
     })
     sim.on('end', () => {
+      canvas.dataset.settling = 'false'
       if (!alive || sim.nodes().length === 0) return
       sim.alphaTarget(0)
       canvas.dataset.settled = 'true'
@@ -939,6 +1058,10 @@ export function GraphMap({
         dragNode = hit
         hit.fx = hit.x
         hit.fy = hit.y
+        // The node is being moved: labels redraw with it, and the layout is not
+        // settled again until the released node comes to rest.
+        canvas.dataset.dragging = 'true'
+        canvas.dataset.settling = 'true'
         sim.alphaTarget(0.25).restart()
       } else {
         mode = 'pan'
@@ -975,6 +1098,7 @@ export function GraphMap({
       }
     }
     const onPointerUp = (event: PointerEvent) => {
+      if (mode === 'node') canvas.dataset.dragging = 'false'
       if (mode === 'node' && dragNode) {
         const travel = Math.hypot(event.offsetX - startX, event.offsetY - startY)
         if (modelMode || !dragged || travel <= 3) {
@@ -1009,7 +1133,7 @@ export function GraphMap({
       transform.y = event.offsetY - wy * next
       movedRef.current = true
       fitAfterRef.current = false
-      draw(false)
+      draw(true)
     }
     const onDouble = (event: MouseEvent) => {
       if (dragged) return
@@ -1032,11 +1156,14 @@ export function GraphMap({
       const avoid = nodeMenuAvoid(marker, hit.caption)
       const stage = stageRect()
       const anchor = nodeMenuAnchor(marker, { x: event.clientX, y: event.clientY })
-      const obstacles = nodeObstacles({
-        ...markersRef.current,
-        [hit.id]: { ...marker, label: avoid ? { ...avoid } : undefined },
-      })
-      openGraphNodeMenu(hit, defsRef.current, anchor.x, anchor.y, (request) => setAdd(request), avoid, stage, obstacles)
+      const obstacles = [
+        ...nodeObstacles({
+          ...markersRef.current,
+          [hit.id]: { ...marker, label: avoid ? { ...avoid } : undefined },
+        }),
+        ...Object.values(edgeLabelRectsRef.current),
+      ]
+      openGraphNodeMenu(hit, defsRef.current, anchor.x, anchor.y, (request) => setAdd(request), avoid, stage, obstacles, stage)
     }
 
     let sawPointer = 0
@@ -1137,7 +1264,21 @@ export function GraphMap({
       const degree = tally.get(node.id) ?? 0
       const old = previous.get(node.id)
       if (!old) {
-        const pos = seed(node.kind, index, placed.nodes.length)
+        // A new node joins beside the neighbour it was linked to, so the rest of
+        // the graph does not jump to make room.
+        const edge = placed.edges.find(
+          (item) =>
+            (item.source === node.id && previous.has(item.target)) ||
+            (item.target === node.id && previous.has(item.source)),
+        )
+        const neighbourId = edge ? (edge.source === node.id ? edge.target : edge.source) : ''
+        const neighbour = previous.get(neighbourId)
+        let pos = seed(node.kind, index, placed.nodes.length)
+        if (neighbour && neighbour.x != null && neighbour.y != null) {
+          const angle = (index / Math.max(1, placed.nodes.length)) * Math.PI * 2
+          const distance = 72 + nodeRadius(node.kind, degree) + nodeRadius(neighbour.kind, neighbour.degree ?? 0)
+          pos = { x: neighbour.x + Math.cos(angle) * distance, y: neighbour.y + Math.sin(angle) * distance }
+        }
         return { ...node, degree, x: pos.x, y: pos.y, vx: 0, vy: 0 }
       }
       if (old.caption !== node.caption || old.degree !== degree) captionsChanged = true
@@ -1162,13 +1303,36 @@ export function GraphMap({
     const sameNodes = reuse && oldNodes.length === next.length && next.every((node, index) => oldNodes[index]?.id === node.id)
     const previousLinks = sim.force<ForceLink<SimNode, SimLink>>('link')?.links() ?? []
     const sameLinks = previousLinks.length === links.length && links.every((link, index) => previousLinks[index]?.id === link.id)
-    if (reuse && next.length > previous.size) fitAfterRef.current = true
+    const addedCount = next.filter((node) => !previous.has(node.id)).length
     if (!sameNodes) sim.nodes(next)
     if (!sameLinks) sim.force<ForceLink<SimNode, SimLink>>('link')?.links(links)
     if (!sameNodes || !sameLinks || captionsChanged) {
-      canvas.dataset.settled = 'false'
       const cold = previous.size === 0
-      sim.alpha(cold ? 1 : captionsChanged && sameNodes && sameLinks ? 0.35 : 0.7).restart()
+      if (cold) {
+        canvas.dataset.settled = 'false'
+        canvas.dataset.settling = 'true'
+        sim.alpha(1).restart()
+      } else if (addedCount > 0) {
+        // Keep every settled node where it is; only the new arrivals were
+        // seeded, beside the neighbour they came from. No force pass may move
+        // the rest of the graph.
+        for (const node of next) {
+          node.vx = 0
+          node.vy = 0
+        }
+        drawRef.current(true)
+        if (fitAfterRef.current) {
+          fitAfterRef.current = false
+          apiRef.current.fit()
+        }
+      } else {
+        // A link or name changed without adding nodes: redraw, never re-layout.
+        for (const node of next) {
+          node.vx = 0
+          node.vy = 0
+        }
+        drawRef.current(true)
+      }
     } else drawRef.current(true)
   }, [placed, focusId])
 
@@ -1245,12 +1409,28 @@ export function GraphMap({
   const openMenuForNode = (node: SceneNode) => {
     const rect = canvasRef.current?.getBoundingClientRect()
     const fallback = rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : { x: 8, y: 8 }
-    const anchor = nodeMenuAnchor(markers[node.id], fallback)
-    const avoid = nodeMenuAvoid(markers[node.id], node.caption)
-    const obstacles = nodeObstacles(
-      avoid ? { ...markers, [node.id]: { ...markers[node.id]!, label: { ...avoid } } } : markers,
-    )
-    openGraphNodeMenu(node, defsRef.current, anchor.x, anchor.y, (request) => setAdd(request), avoid, stageRect(), obstacles)
+    // Use the live simulation position so a keyboard menu opens beside the node
+    // even when the last published marker is a frame behind.
+    const stored = markers[node.id]
+    const live = apiRef.current.markerOf(node.id)
+    const marker = live
+      ? {
+          ...live,
+          ...(stored && Math.abs(stored.x - live.x) <= 2 && Math.abs(stored.y - live.y) <= 2 ? { label: stored.label } : {}),
+        }
+      : stored
+    const anchor = nodeMenuAnchor(marker, fallback)
+    const avoid = nodeMenuAvoid(marker, node.caption)
+    const obstacles = [
+      ...nodeObstacles(
+        marker
+          ? { ...markers, [node.id]: { x: marker.x, y: marker.y, r: marker.r ?? 0, label: avoid } }
+          : markers,
+      ),
+      ...Object.values(edgeLabelRectsRef.current),
+    ]
+    const stage = stageRect()
+    openGraphNodeMenu(node, defsRef.current, anchor.x, anchor.y, (request) => setAdd(request), avoid, stage, obstacles, stage)
   }
   const opensNodeMenu = (event: { key: string; ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean }) =>
     ((event.ctrlKey || event.metaKey) && event.key === 'Enter') ||
@@ -1296,7 +1476,9 @@ export function GraphMap({
     if (!node) return
     node.fx = null
     node.fy = null
-    simRef.current?.alpha(0.3).restart()
+    const canvas = canvasRef.current
+    if (canvas) canvas.dataset.settling = 'true'
+    simRef.current?.alphaTarget(0).alpha(0.3).restart()
     setPinTick((tick) => tick + 1)
   }
 
@@ -1437,7 +1619,13 @@ export function GraphMap({
       </div>
       <div className="graph-a11y" data-testid="graph-edges">
         {placed.edges.map((edge) => (
-          <span key={edge.id} data-edge-id={edge.id} data-shown={shownEdges.has(edge.id) ? 'true' : 'false'}>{edge.label}</span>
+          <span
+            key={edge.id}
+            data-edge-id={edge.id}
+            data-source={edge.source}
+            data-target={edge.target}
+            data-shown={shownEdges.has(edge.id) ? 'true' : 'false'}
+          >{edge.label}</span>
         ))}
       </div>
       <div className="graph-a11y" data-testid="attribute-provenance">
@@ -1793,13 +1981,28 @@ function bendOf(id: string, len: number) {
   return sign * Math.min(72, Math.max(18, len * 0.18))
 }
 
+function boxOverlap(a: EdgeLabelBox, b: EdgeLabelBox) {
+  const width = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)
+  const height = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y)
+  return width > 0 && height > 0 ? width * height : 0
+}
+
+function discOverlap(box: EdgeLabelBox, node: EdgeLabelNode) {
+  const closestX = Math.max(box.x, Math.min(node.x, box.x + box.width))
+  const closestY = Math.max(box.y, Math.min(node.y, box.y + box.height))
+  const dx = node.x - closestX
+  const dy = node.y - closestY
+  const distanceSq = dx * dx + dy * dy
+  if (distanceSq >= node.radius * node.radius) return 0
+  return node.radius - Math.sqrt(distanceSq)
+}
+
 function curveTangent(
   from: { x: number; y: number },
   control: { x: number; y: number },
   to: { x: number; y: number },
   t: number,
-) {
-  return {
+) {  return {
     x: 2 * (1 - t) * (control.x - from.x) + 2 * t * (to.x - control.x),
     y: 2 * (1 - t) * (control.y - from.y) + 2 * t * (to.y - control.y),
   }
