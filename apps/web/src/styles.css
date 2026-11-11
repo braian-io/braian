@@ -3186,6 +3186,58 @@ button.primary[aria-disabled='true'] {
 }
 [data-testid='review-loading'] .dialog-close { display: none; }
 
+/* The review lists every pending step. The allowed-tree change is the reason
+   the dialog opened, so it keeps the accent rail. */
+.review-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.review-step {
+  padding-left: var(--space-2);
+  border-left: 2px solid transparent;
+  color: var(--text-2);
+}
+.review-step.allowed-trees-step {
+  border-left-color: var(--accent);
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* Attribute table: give the name and the long boolean headers their text
+   width, and keep every header tooltip as a fallback. The fixed widths above
+   must not let the reorder cell collapse to zero. */
+[data-testid='attribute-table'] .standard-grid-cell.standard-grid-reorder,
+[data-testid='attribute-table'] .standard-grid-cell.standard-grid-reorder-head {
+  flex: 0 0 58px;
+  width: 58px;
+  min-width: 58px;
+}
+[data-testid='attribute-table'] .standard-grid-cell[data-column='label'] {
+  flex: 2 1 220px;
+  min-width: 180px;
+}
+[data-testid='attribute-table'] .standard-grid-cell[data-column='key'] { min-width: 96px; }
+[data-testid='attribute-table'] .standard-grid-cell[data-column='kind'] { min-width: 96px; }
+[data-testid='attribute-table'] .standard-grid-cell[data-column='unit'] { min-width: 88px; }
+[data-testid='attribute-table'] .standard-grid-cell[data-column='from'] { min-width: 140px; }
+[data-testid='attribute-table'] .standard-grid-cell[data-column='showByDefault'] {
+  flex: 0 0 124px;
+  width: 124px;
+}
+[data-testid='attribute-table'] .standard-grid-cell[data-column='required'] {
+  flex: 0 0 84px;
+  width: 84px;
+}
+[data-testid='attribute-table'] .standard-grid-cell[data-column='languages'],
+[data-testid='attribute-table'] .standard-grid-cell[data-column='searchable'] {
+  flex: 0 0 92px;
+  width: 92px;
+}
+
 .column-header-btn {
   min-width: 0;
   max-width: 100%;

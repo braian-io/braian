@@ -3,7 +3,6 @@ import { useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight, MoreHorizontal, Plus } from 'lucide-react'
 import { api, operationId, type Json } from './api'
 import { reportWriteError, writeErrorMessage } from './write-error'
-import { formatCount } from './format'
 import { Button } from './components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './components/ui/dropdown-menu'
@@ -12,8 +11,6 @@ import { copy } from './i18n'
 import { groupNodes, structureKeys, type GroupNode, type ModelSelection } from './model-view'
 import { structureCaption } from './graph-scene'
 import {
-  deletionNeedsMove,
-  groupKeysToDelete,
   moveTargets,
   renameOnKey,
   structureKeyFromName,
@@ -29,15 +26,6 @@ type Draft =
 
 type DialogState =
   | { kind: 'move'; structure: string; group: string; label: string; parent: string; error: string }
-  | {
-      kind: 'delete-structure' | 'delete-group'
-      structure: string
-      group?: string
-      label: string
-      count: number | null
-      moveTo: string
-      error: string
-    }
 
 export function StructureSection({
   defs,
@@ -277,22 +265,8 @@ export function StructureSection({
         onClose={() => setDialog(null)}
         onConfirm={() => {
           if (!dialog || busy) return
-          if (dialog.kind === 'move') {
-            const parent = dialog.parent || null
-            void run(() => api.post('/v1/structures/{id}/groups/{group}/parent', { params: { path: { id: dialog.structure, group: dialog.group } }, body: { parent } }).then(() => undefined))
-            return
-          }
-          if (dialog.kind === 'delete-structure') {
-            void run(() => api.delete('/v1/structures/{id}', { params: { path: { id: dialog.structure } } }).then(() => undefined))
-            return
-          }
-          const group = dialog.group ?? ''
-          void run(() => api.delete('/v1/structures/{id}/groups/{group}', {
-            params: {
-              path: { id: dialog.structure, group },
-              ...(dialog.moveTo ? { query: { move_to: dialog.moveTo } } : {}),
-            },
-          }).then(() => undefined))
+          const parent = dialog.parent || null
+          void run(() => api.post('/v1/structures/{id}/groups/{group}/parent', { params: { path: { id: dialog.structure, group: dialog.group } }, body: { parent } }).then(() => undefined))
         }}
       />
     </section>
@@ -563,36 +537,15 @@ function StructureDialog({
   onClose: () => void
   onConfirm: () => void
 }) {
-  const nodes: MenuNode[] = dialog && dialog.kind !== 'delete-structure' ? groupNodes(defs, dialog.structure) : []
-  const targets = dialog?.kind === 'delete-group' && dialog.group ? moveTargets(nodes, dialog.group) : dialog?.kind === 'move' ? moveTargets(nodes, dialog.group) : []
-  const removed = dialog?.kind === 'delete-group' && dialog.group ? groupKeysToDelete(nodes, dialog.group) : []
-  const count = dialog && dialog.kind !== 'move' ? dialog.count : null
-  const needsMove = dialog?.kind === 'delete-group' && deletionNeedsMove(count ?? 0)
-  const blocked = dialog?.kind === 'delete-structure' && deletionNeedsMove(count ?? 0)
-  const confirmDisabled = busy || !dialog || (dialog.kind !== 'move' && count === null) || blocked || (needsMove && !dialog.moveTo) || (needsMove && targets.length === 0)
+  const nodes: MenuNode[] = dialog ? groupNodes(defs, dialog.structure) : []
+  const targets = dialog ? moveTargets(nodes, dialog.group) : []
+  const confirmDisabled = busy || !dialog
   return (
     <Dialog open={dialog !== null} onOpenChange={(open) => { if (!open) onClose() }}>
-      <DialogContent data-testid={dialog?.kind === 'move' ? 'move-dialog' : 'delete-dialog'}>
-        <DialogTitle>
-          {dialog?.kind === 'move' ? copy.moveGroupTitle : dialog?.kind === 'delete-structure' ? copy.deleteStructureTitle : copy.deleteGroupTitle}
-        </DialogTitle>
+      <DialogContent data-testid="move-dialog">
+        <DialogTitle>{copy.moveGroupTitle}</DialogTitle>
         <DialogDescription>{dialog?.label ?? ''}</DialogDescription>
-        {dialog && dialog.kind !== 'move' ? (
-          <p>{count === null ? copy.loadingModel : `${formatCount(count)} ${dialog.kind === 'delete-structure' ? copy.objectsInStructure : copy.objectsInGroup}`}</p>
-        ) : null}
-        {removed.length > 1 ? <p>{copy.groupsRemovedToo}</p> : null}
-        {blocked ? <p>{copy.structureOccupiedHint}</p> : null}
-        {needsMove && targets.length === 0 ? <p>{copy.nowhereToMove}</p> : null}
-        {dialog?.kind === 'delete-group' && needsMove && targets.length > 0 ? (
-          <label className="model-field">
-            {copy.moveObjectsTo}
-            <select data-testid="move-target" value={dialog.moveTo} onChange={(event) => onChange({ ...dialog, moveTo: event.target.value })}>
-              <option value="">{copy.moveTo}</option>
-              {targets.map((key) => <option key={key} value={key}>{structureCaption(key, defs, dialog.structure)}</option>)}
-            </select>
-          </label>
-        ) : null}
-        {dialog?.kind === 'move' ? (
+        {dialog ? (
           <label className="model-field">
             {copy.moveObjectsTo}
             <select data-testid="move-target" value={dialog.parent} onChange={(event) => onChange({ ...dialog, parent: event.target.value })}>
@@ -601,8 +554,7 @@ function StructureDialog({
             </select>
           </label>
         ) : null}
-        {dialog && dialog.kind !== 'move' && dialog.error ? <p role="alert">{dialog.error}</p> : null}
-        {dialog?.kind === 'move' && dialog.error ? <p role="alert">{dialog.error}</p> : null}
+        {dialog?.error ? <p role="alert">{dialog.error}</p> : null}
         <div className="dialog-actions">
           <Button type="button" variant="default" onClick={onClose}>{copy.cancel}</Button>
           <Button type="button" variant="default" data-testid="structure-confirm" disabled={confirmDisabled} onClick={onConfirm}>{copy.confirm}</Button>

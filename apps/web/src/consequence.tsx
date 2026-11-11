@@ -5,6 +5,7 @@ import { Button } from './components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
 import { copy } from './i18n'
 import { formatCount } from './format'
+import { describeModelSteps } from './model-step-text'
 import { affectedLabel, typeNames } from './type-labels'
 import { onProposal } from './proposal-bus'
 import { StateNote } from './states'
@@ -40,7 +41,20 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
   if (!id) return null
   const body = proposal.data
   const consequence = (body?.consequence as Json | undefined) ?? {}
-  const lines = (consequence.lines as string[] | undefined) ?? []
+  const rows = (body?.rows as Json[] | undefined) ?? []
+  const modelSteps = rows
+    .filter((row) => String(row.type_key ?? '') === 'model' && row.patch && typeof row.patch === 'object')
+    .sort((left, right) => Number(left.position ?? 0) - Number(right.position ?? 0))
+    .map((row) => row.patch as Json)
+  const stepTexts = describeModelSteps(modelSteps, defs.data)
+  const lines = stepTexts.length > 0
+    ? stepTexts.map((step) => step.sentence)
+    : ((consequence.lines as string[] | undefined) ?? [])
+  const title = stepTexts.length === 1
+    ? stepTexts[0]?.sentence ?? String(body?.title ?? copy.dataModel)
+    : stepTexts.length > 1
+      ? copy.reviewChangeTitle
+      : String(body?.title ?? copy.dataModel)
   const warnings = (consequence.warnings as string[] | undefined) ?? []
   const samples = (consequence.samples as Json[] | undefined) ?? []
   const jobs = (consequence.jobs as Json[] | undefined) ?? []
@@ -91,7 +105,7 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
         onEscapeKeyDown={(event) => event.stopPropagation()}
       >
         <div className="toolbar">
-          <DialogTitle asChild><strong>{String(body?.title ?? copy.dataModel)}</strong></DialogTitle>
+          <DialogTitle asChild><strong>{title}</strong></DialogTitle>
           {body?.source ? <span className="chip">{String(body.source)}</span> : null}
         </div>
         <DialogDescription asChild><p className="hint">{copy.reviewChange}</p></DialogDescription>
@@ -117,7 +131,7 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
         ) : null}
         <div data-testid="impact-result">
           <p>
-            {affectedLabel(((body?.rows as Json[] | undefined) ?? []).map((row) => String(row.type_key ?? '')), typeNames(defs.data))}: {formatCount(consequence.affected_objects ?? 0)}
+            {affectedLabel(rows.map((row) => String(row.type_key ?? '')), typeNames(defs.data))}: {formatCount(consequence.affected_objects ?? 0)}
           </p>
           <p>
             {copy.samples}: {samples.map((item) => String(item.key ?? item.id ?? '')).filter(Boolean).join(', ') || '—'}

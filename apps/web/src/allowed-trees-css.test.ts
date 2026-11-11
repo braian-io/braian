@@ -29,3 +29,19 @@ describe('allowed-tree layout', () => {
     expect(rule("[data-testid='review-loading'] .dialog-close")).toContain('display: none')
   })
 })
+
+describe('review steps and attribute columns', () => {
+  it('highlights the allowed-tree step and lists the others plainly', () => {
+    const steps = rule('.review-steps {')
+    expect(steps).toContain('list-style: none')
+    expect(rule('.review-step {')).toContain('border-left: 2px solid transparent')
+    expect(rule('.review-step.allowed-trees-step {')).toContain('border-left-color: var(--accent)')
+  })
+
+  it('gives the long boolean header and the name column their text width', () => {
+    expect(rule("[data-testid='attribute-table'] .standard-grid-cell[data-column='showByDefault']"))
+      .toContain('width: 124px')
+    expect(rule("[data-testid='attribute-table'] .standard-grid-cell[data-column='label']"))
+      .toContain('min-width: 180px')
+  })
+})
