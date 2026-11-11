@@ -3,4 +3,34 @@
   <url>
     <loc>https://braian.io/</loc>
   </url>
+  <url>
+    <loc>https://braian.io/docs/</loc>
+  </url>
+  <url>
+    <loc>https://braian.io/docs/getting-started</loc>
+  </url>
+  <url>
+    <loc>https://braian.io/docs/workspaces-and-panels</loc>
+  </url>
+  <url>
+    <loc>https://braian.io/docs/object-types-and-relations</loc>
+  </url>
+  <url>
+    <loc>https://braian.io/docs/data-sources</loc>
+  </url>
+  <url>
+    <loc>https://braian.io/docs/command-palette-and-shortcuts</loc>
+  </url>
+  <url>
+    <loc>https://braian.io/docs/deleting-and-restore</loc>
+  </url>
+  <url>
+    <loc>https://braian.io/docs/graph</loc>
+  </url>
+  <url>
+    <loc>https://braian.io/docs/feedback</loc>
+  </url>
+  <url>
+    <loc>https://braian.io/docs/self-hosting</loc>
+  </url>
 </urlset>
