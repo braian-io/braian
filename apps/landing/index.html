@@ -55,6 +55,21 @@
         }
       } catch (e) {}
     </script>
+    <script>
+      window.trackaton = window.trackaton || {}
+      window.trackaton.q = window.trackaton.q || []
+      window.trackaton.track = function (name, props) {
+        try {
+          window.trackaton.q.push([name, props])
+        } catch (e) {}
+      }
+    </script>
+    <script
+      src="https://trackaton.com/track.js"
+      data-website-id="jd75w96cp3pecv4f000m6p5ffs8j1sgj"
+      data-endpoint="https://resolute-orca-949.convex.site/api/e"
+      async
+    ></script>
   </head>
   <body>
     <div id="root"></div>
