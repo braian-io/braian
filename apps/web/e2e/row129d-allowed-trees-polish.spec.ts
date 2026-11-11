@@ -242,8 +242,13 @@ test('Esc, overlay, X and Cancel revert immediately and a parallel GET cannot fl
       const dialog = page.getByTestId('review-dialog')
       await expect(dialog).toBeVisible({ timeout: 20_000 })
       if (kind === 'Escape') await page.keyboard.press('Escape')
-      else if (kind === 'overlay') await page.locator('.overlay').click({ position: { x: 10, y: 10 } })
-      else if (kind === 'X') await dialog.getByRole('button', { name: 'Close' }).click()
+      else if (kind === 'overlay') {
+        // Row 129f locks the review by stage state, so an outside click is not
+        // a dismissal while the structure step is pending. Cancel still is.
+        await page.locator('.overlay').click({ position: { x: 10, y: 10 } })
+        await expect(dialog).toBeVisible()
+        await dialog.getByRole('button', { name: 'Cancel' }).click()
+      } else if (kind === 'X') await dialog.getByRole('button', { name: 'Close' }).click()
       else await dialog.getByRole('button', { name: 'Cancel' }).click()
 
       await expect(dialog).toHaveCount(0)
@@ -358,13 +363,24 @@ test('the loading shell is usable at once and blocks the table behind it', async
       return null
     }, selectedId)
     expect(point).toBeTruthy()
+    // Row 129f: the allowed-tree review is locked by stage state instead of a
+    // click burst. An outside click no longer counts as Cancel; the change is
+    // decided with Cancel, Save, X or Escape. The overlay still blocks the row.
     await page.mouse.click(point!.x, point!.y)
+    await expect(page.getByTestId('review-loading').or(page.getByTestId('review-dialog'))).toBeVisible()
+    // The modal marks the pane behind it aria-hidden, so read the box by CSS
+    // rather than by its accessible name while the dialog is open.
+    const boxed = page.locator("[data-testid='allowed-trees'] label").filter({ hasText: fixture.label }).locator("input[type='checkbox']")
+    await expect(boxed).toBeChecked()
+    await expect(selected).toHaveClass(/on/)
+    await expect(table.locator(`[data-row-id="${point!.id}"]`)).not.toHaveClass(/on/)
+    const cancel = page.getByTestId('review-loading').getByRole('button', { name: 'Cancel' })
+      .or(page.getByTestId('review-dialog').getByRole('button', { name: 'Cancel' }))
+    await cancel.click({ timeout: 20_000 })
     await expect(loading).toHaveCount(0)
     await expect(page.getByTestId('review-dialog')).toHaveCount(0)
     await expect(checkbox).not.toBeChecked({ timeout: 1_000 })
     await expect(page.getByTestId('unsaved-changes')).toHaveCount(0, { timeout: 1_000 })
-    await expect(selected).toHaveClass(/on/)
-    await expect(table.locator(`[data-row-id="${point!.id}"]`)).not.toHaveClass(/on/)
     delayed = false
     await page.unroute('**/v1/model/draft')
     await expect.poll(async () => (await draft(page)).count ?? 0, { timeout: 15_000 }).toBe(0)

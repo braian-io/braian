@@ -232,12 +232,6 @@ export function ModelDraftHost() {
   const revertSeq = useRef(0)
   const patching = useRef(false)
   const pendingReverts = useRef(new Map<number, PendingRevert>())
-  // The click that starts a toggle also opens the review shell under the
-  // pointer. Remember where it landed so the rest of the same double/triple
-  // click can be swallowed instead of dismissing that shell.
-  const pendingPoint = useRef<{ x: number; y: number } | null>(null)
-  const clickBurst = useRef<{ x: number; y: number; at: number } | null>(null)
-  const lockStartedAt = useRef(0)
   const rememberOpener = () => {
     // The loading shell opens on the same click. Keep the real opener (the
     // checkbox) when it was captured before that dialog mounted.
@@ -299,9 +293,11 @@ export function ModelDraftHost() {
       patching.current = false
     })
   }, [queryClient])
-  // The checkbox must ignore clicks from the click that starts the change until
-  // the review is decided. The control lives in a protected component, so lock
-  // it at the DOM boundary instead of adding a prop there.
+  // While a set_structures step for this type is pending or its review is open,
+  // every toggle in the allowed-tree fieldset is ignored: the box, its corners,
+  // the label, and Space/Enter on the focused control. The control lives in a
+  // protected component, so lock it at the DOM boundary instead of adding a
+  // prop there. The lock is the stage state, never click timing or position.
   useEffect(() => {
     const swallow = (event: Event) => {
       event.preventDefault()
@@ -309,14 +305,6 @@ export function ModelDraftHost() {
     }
     const applyLock = () => {
       const locked = lockedStructuresType() !== null
-      if (locked) {
-        lockStartedAt.current = performance.now()
-        const point = pendingPoint.current
-        clickBurst.current = point ? { ...point, at: lockStartedAt.current } : null
-      } else {
-        clickBurst.current = null
-        pendingPoint.current = null
-      }
       for (const fieldset of document.querySelectorAll<HTMLElement>("[data-testid='allowed-trees']")) {
         if (locked) fieldset.setAttribute('data-locked', 'true')
         else fieldset.removeAttribute('data-locked')
@@ -326,61 +314,33 @@ export function ModelDraftHost() {
         }
       }
     }
-    // The first pointer down records the control. The review shell is portaled
-    // above it, so the second click of a double click hits the overlay at the
-    // same coordinates. Swallow that burst before Radix reads it as "outside".
-    const rememberPoint = (event: PointerEvent) => {
-      if (lockedStructuresType() !== null) return
-      const target = event.target
-      if (!(target instanceof Element)) return
-      const control = target.closest("input[type='checkbox'], label")
-      if (!control || !control.closest("[data-testid='allowed-trees']")) return
-      pendingPoint.current = { x: event.clientX, y: event.clientY }
-    }
-    const inBurst = (event: Event) => {
-      const burst = clickBurst.current
-      if (!burst || !(event instanceof MouseEvent)) return false
-      if (performance.now() - burst.at > 800) {
-        clickBurst.current = null
-        return false
-      }
-      // Keyboard activation has no coordinates and is handled by keydown.
-      if (event.detail === 0 && event.clientX === 0 && event.clientY === 0) return false
-      return Math.abs(event.clientX - burst.x) <= 6 && Math.abs(event.clientY - burst.y) <= 6
-    }
     const guard = (event: Event) => {
       if (lockedStructuresType() === null) return
       const target = event.target
       if (!(target instanceof Element)) return
-      const input = target.closest("input[type='checkbox']")
-      if (input && input.closest("[data-testid='allowed-trees']")) {
-        swallow(event)
-        return
-      }
-      if (inBurst(event)) swallow(event)
+      if (!target.closest("[data-testid='allowed-trees']")) return
+      swallow(event)
     }
     const keyGuard = (event: Event) => {
       if (lockedStructuresType() === null) return
       if (!(event instanceof KeyboardEvent)) return
       if (event.key !== ' ' && event.key !== 'Enter') return
-      if (performance.now() - lockStartedAt.current > 800) return
-      // Space twice on the box: the second one must not activate a dialog
-      // button that autofocus happened to land on.
+      const target = event.target
+      if (!(target instanceof Element)) return
+      if (!target.closest("[data-testid='allowed-trees']")) return
       swallow(event)
     }
     applyLock()
-    for (const name of ['pointerdown', 'mousedown', 'mouseup', 'click', 'dblclick'] as const) {
+    for (const name of ['pointerdown', 'mousedown', 'mouseup', 'click', 'dblclick', 'change', 'input'] as const) {
       document.addEventListener(name, guard, true)
     }
-    document.addEventListener('pointerdown', rememberPoint, true)
     document.addEventListener('keydown', keyGuard, true)
     const off = onStructuresLockChange(applyLock)
     return () => {
       off()
-      for (const name of ['pointerdown', 'mousedown', 'mouseup', 'click', 'dblclick'] as const) {
+      for (const name of ['pointerdown', 'mousedown', 'mouseup', 'click', 'dblclick', 'change', 'input'] as const) {
         document.removeEventListener(name, guard, true)
       }
-      document.removeEventListener('pointerdown', rememberPoint, true)
       document.removeEventListener('keydown', keyGuard, true)
     }
   }, [])
@@ -668,6 +628,11 @@ function ReviewDialog({
         data-testid="review-dialog"
         onEscapeKeyDown={(event) => event.stopPropagation()}
         onCloseAutoFocus={(event) => event.preventDefault()}
+        // The review is decided with Cancel/Save/Esc. A click meant for the
+        // locked checkbox must not dismiss it while the change is pending.
+        onInteractOutside={(event) => event.preventDefault()}
+        onPointerDownOutside={(event) => event.preventDefault()}
+        onOpenAutoFocus={(event) => event.preventDefault()}
       >
         <div className="toolbar">
           <DialogTitle asChild><strong>{copy.reviewChangeTitle}</strong></DialogTitle>
@@ -718,6 +683,9 @@ function ReviewLoadingDialog({ onCancel }: { onCancel: () => void }) {
         data-testid="review-loading"
         onEscapeKeyDown={(event) => event.stopPropagation()}
         onCloseAutoFocus={(event) => event.preventDefault()}
+        onInteractOutside={(event) => event.preventDefault()}
+        onPointerDownOutside={(event) => event.preventDefault()}
+        onOpenAutoFocus={(event) => event.preventDefault()}
       >
         <div className="toolbar">
           <DialogTitle asChild><strong>{copy.reviewChangeTitle}</strong></DialogTitle>

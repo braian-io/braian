@@ -15,6 +15,30 @@ type HostSession = {
   push: (line: string) => void
 }
 
+/** Types whose Allowed trees list still contains a structure this proposal deletes. */
+export function typesLosingAllowedTree(defs: Json | undefined, steps: Json[]): string[] {
+  const tokens = steps
+    .filter((step) => step.op === 'delete_structure')
+    .map((step) => String(step.structure ?? ''))
+    .filter(Boolean)
+  if (tokens.length === 0) return []
+  const structures = (defs?.structures as Json[] | undefined) ?? []
+  const wanted = new Set(tokens)
+  for (const token of tokens) {
+    const structure = structures.find(
+      (row) => String(row.id ?? '') === token || String(row.key ?? '') === token,
+    )
+    if (!structure) continue
+    wanted.add(String(structure.id ?? ''))
+    wanted.add(String(structure.key ?? ''))
+  }
+  const names = typeNames(defs)
+    .filter((type) => type.structures?.some((token) => wanted.has(token)))
+    .map((type) => type.singular)
+    .filter(Boolean)
+  return [...new Set(names)]
+}
+
 function loadingTitle(operation: string | undefined): string {
   switch (operation) {
     case 'model.delete_structure':
@@ -92,6 +116,19 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
   const destructiveIntent = destructive || (proposal.isPending && String(operation ?? '').includes('delete'))
   const detail = (consequence.detail as string[] | undefined) ?? []
   const sentence = String(consequence.sentence ?? '')
+  const count = (key: string) => {
+    const value = consequence[key]
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+  }
+  const values = count('values')
+  const objects = count('objects')
+  const links = count('links')
+  const selections = count('selections')
+  // Nothing is removed at all. Say it once instead of "0 values on 0 objects"
+  // followed by "Affected objects: 0".
+  const noImpact = values === 0 && objects === 0 && (links ?? 0) === 0 && (selections ?? 0) === 0
+  const deleteLines = noImpact ? [copy.noValuesDeleted] : detail
+  const unlinkedTypes = typesLosingAllowedTree(defs.data, modelSteps)
   const close = dismiss
   const discard = () => {
     setBusy(true)
@@ -114,7 +151,10 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
           return
         }
         session.setProposalId(id)
-        session.push(copy.confirm)
+        // A delete is done when the type/structure disappears. Leaving a
+        // timestamped "Confirm" line in the activity footer reads as if the
+        // removal is still waiting for something.
+        if (!destructiveIntent) session.push(copy.confirm)
         void queryClient.invalidateQueries({ queryKey: ['definitions'] })
         void queryClient.invalidateQueries({ queryKey: ['proposals'] })
         void queryClient.invalidateQueries({ queryKey: ['proposal', id] })
@@ -158,16 +198,27 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
         )) : null}
         {!proposal.isPending && destructive ? (
           <div data-testid="delete-counts">
-            {detail.length > 0 ? detail.map((line) => <p key={line}>{line}</p>) : sentence ? <p>{sentence}</p> : null}
+            {deleteLines.length > 0
+              ? deleteLines.map((line) => <p key={line}>{line}</p>)
+              : sentence ? <p>{sentence}</p> : null}
           </div>
         ) : null}
+        {!proposal.isPending && unlinkedTypes.length > 0 ? (
+          <p data-testid="allowed-trees-unlink">
+            {copy.allowedTreesLinkRemoved.replace('{types}', unlinkedTypes.join(', '))}
+          </p>
+        ) : null}
         {!proposal.isPending ? <div data-testid="impact-result">
-          <p>
-            {affectedLabel(rows.map((row) => String(row.type_key ?? '')), typeNames(defs.data))}: {formatCount(consequence.affected_objects ?? 0)}
-          </p>
-          <p>
-            {copy.samples}: {samples.map((item) => String(item.key ?? item.id ?? '')).filter(Boolean).join(', ') || '—'}
-          </p>
+          {noImpact ? null : (
+            <>
+              <p>
+                {affectedLabel(rows.map((row) => String(row.type_key ?? '')), typeNames(defs.data))}: {formatCount(consequence.affected_objects ?? 0)}
+              </p>
+              <p>
+                {copy.samples}: {samples.map((item) => String(item.key ?? item.id ?? '')).filter(Boolean).join(', ') || '—'}
+              </p>
+            </>
+          )}
           {jobs.length === 0 ? <p>{copy.noJob}</p> : null}
           {jobs.map((job) => (
             <p key={String(job.key)}>
