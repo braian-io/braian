@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { Button } from './components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
 import { copy } from './i18n'
@@ -38,41 +38,61 @@ export type LinkCreateRequest = {
 
 export type LinkRect = { left: number; top: number; right: number; bottom: number }
 
+export type LinkSize = { width: number; height: number }
+export type LinkViewport = { width: number; height: number }
+export type LinkPoint = { left: number; top: number }
+
+function overlapArea(a: LinkRect, b: LinkRect) {
+  const width = Math.min(a.right, b.right) - Math.max(a.left, b.left)
+  const height = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)
+  return width > 0 && height > 0 ? width * height : 0
+}
+
 /**
- * The Graph dialog docks to the corner opposite the clicked node so the node
- * circle and its label stay visible. Detail passes no avoid and stays centred.
+ * Detail's dialog is centred. The Graph dialog starts from that same centre
+ * and only moves along one axis when the clicked node (circle + label) sits
+ * under it, so it never docks to a corner or a different panel.
  */
-export function graphDialogStyle(avoid: LinkRect | undefined, stage: LinkRect | undefined): CSSProperties | undefined {
-  if (!avoid) return undefined
-  if (typeof window === 'undefined') return undefined
-  const vw = window.innerWidth
-  const vh = window.innerHeight
-  const bounds = stage ?? { left: 0, top: 0, right: vw, bottom: vh }
-  const centerX = (avoid.left + avoid.right) / 2
-  const centerY = (avoid.top + avoid.bottom) / 2
-  const stageCenterX = (bounds.left + bounds.right) / 2
-  const stageCenterY = (bounds.top + bounds.bottom) / 2
-  const margin = 24
-  const style: CSSProperties = { translate: 'none' }
-  if (centerX >= stageCenterX) {
-    style.left = `${margin}px`
-    style.right = 'auto'
-    const room = avoid.left - margin * 2
-    style.maxWidth = `${Math.max(160, Math.min(640, room, vw - margin * 2))}px`
-  } else {
-    style.right = `${margin}px`
-    style.left = 'auto'
-    const room = vw - avoid.right - margin * 2
-    style.maxWidth = `${Math.max(160, Math.min(640, room, vw - margin * 2))}px`
-  }
-  if (centerY >= stageCenterY) {
-    style.top = `${margin}px`
-    style.bottom = 'auto'
-  } else {
-    style.bottom = `${margin}px`
-    style.top = 'auto'
-  }
-  return style
+export function placeDialog(
+  size: LinkSize,
+  avoid: LinkRect | undefined,
+  viewport: LinkViewport,
+  margin = 24,
+): LinkPoint {
+  const maxLeft = Math.max(margin, viewport.width - size.width - margin)
+  const maxTop = Math.max(margin, viewport.height - size.height - margin)
+  const clamp = (point: LinkPoint): LinkPoint => ({
+    left: Math.min(Math.max(point.left, margin), maxLeft),
+    top: Math.min(Math.max(point.top, margin), maxTop),
+  })
+  const centered = clamp({
+    left: (viewport.width - size.width) / 2,
+    top: (viewport.height - size.height) / 2,
+  })
+  if (!avoid) return centered
+  const box = (point: LinkPoint): LinkRect => ({
+    left: point.left,
+    right: point.left + size.width,
+    top: point.top,
+    bottom: point.top + size.height,
+  })
+  if (overlapArea(box(centered), avoid) === 0) return centered
+  const gap = 12
+  const candidates = [
+    { left: avoid.right + gap, top: centered.top },
+    { left: avoid.left - size.width - gap, top: centered.top },
+    { left: centered.left, top: avoid.bottom + gap },
+    { left: centered.left, top: avoid.top - size.height - gap },
+  ].map((point) => clamp(point))
+  const distance = (point: LinkPoint) =>
+    Math.abs(point.left - centered.left) + Math.abs(point.top - centered.top)
+  const clear = candidates
+    .filter((point) => overlapArea(box(point), avoid) === 0)
+    .sort((a, b) => distance(a) - distance(b))
+  if (clear[0]) return clear[0]
+  return candidates
+    .slice()
+    .sort((a, b) => overlapArea(box(a), avoid) - overlapArea(box(b), avoid) || distance(a) - distance(b))[0]!
 }
 
 /**
@@ -87,7 +107,6 @@ export function LinkCreateDialog({
   defs,
   preferred,
   avoid,
-  stage,
   onClose,
   onConfirm,
   onConfirmMany,
@@ -101,8 +120,6 @@ export function LinkCreateDialog({
   preferred?: { linkType: string; direction: LinkDirection }
   /** Graph only: the clicked node's circle + label. */
   avoid?: LinkRect
-  /** Graph only: the stage the dialog docks inside. */
-  stage?: LinkRect
   onClose: () => void
   /** Resolves when the link is saved or filed. Throw to keep the dialog open. */
   onConfirm: (request: LinkCreateRequest) => Promise<void>
@@ -139,7 +156,6 @@ export function LinkCreateDialog({
       defs={defs}
       preferred={preferred}
       avoid={avoid}
-      stage={stage}
       onClose={onClose}
       onConfirm={onConfirm}
       onConfirmMany={onConfirmMany}
@@ -155,7 +171,6 @@ function LinkFields({
   defs,
   preferred,
   avoid,
-  stage,
   onClose,
   onConfirm,
   onConfirmMany,
@@ -167,7 +182,6 @@ function LinkFields({
   defs?: Json
   preferred?: { linkType: string; direction: LinkDirection }
   avoid?: LinkRect
-  stage?: LinkRect
   onClose: () => void
   onConfirm: (request: LinkCreateRequest) => Promise<void>
   onConfirmMany?: (requests: LinkCreateRequest[]) => Promise<LinkSubmitResult>
@@ -191,7 +205,6 @@ function LinkFields({
   }, [selected])
   if (!choice) return null
   const summary = linkEndsSummary(source, pending, choice.label)
-  const dialogStyle = graphDialogStyle(avoid, stage)
   const updateField = (key: string, value: string, invalid = false) => {
     setDraft((state) => ({ ...state, [key]: value }))
     setFieldErrors((state) => {
@@ -341,7 +354,7 @@ function LinkFields({
       })
   }
   return (
-    <LinkDialog testId="link-create-dialog" title={copy.addLink} onClose={onClose} style={dialogStyle}>
+    <LinkDialog testId="link-create-dialog" title={copy.addLink} onClose={onClose} avoid={avoid}>
       <form
         className="dialog-form create-form"
         onSubmit={(event) => {
@@ -483,23 +496,47 @@ function partialMessage(
 function LinkDialog({
   testId,
   title,
+  avoid,
   onClose,
-  style,
   children,
 }: {
   testId: string
   title: string
+  /** Graph only: the clicked node's circle + label, in client coordinates. */
+  avoid?: LinkRect
   onClose: () => void
-  style?: CSSProperties
   children: ReactNode
 }) {
+  const content = useRef<HTMLDivElement | null>(null)
+  const [placed, setPlaced] = useState<CSSProperties | undefined>()
   useEffect(() => pushLinkUi(), [])
+  useLayoutEffect(() => {
+    if (!avoid) {
+      setPlaced(undefined)
+      return
+    }
+    const element = content.current
+    if (!element) return
+    const box = element.getBoundingClientRect()
+    const next = placeDialog(
+      { width: box.width, height: box.height },
+      avoid,
+      { width: window.innerWidth, height: window.innerHeight },
+    )
+    setPlaced((current) => {
+      if (Math.abs(next.left - box.left) < 0.5 && Math.abs(next.top - box.top) < 0.5) return undefined
+      const style: CSSProperties = { left: `${next.left}px`, top: `${next.top}px`, translate: 'none' }
+      if (current && current.left === style.left && current.top === style.top) return current
+      return style
+    })
+  }, [avoid])
   return (
     <Dialog open onOpenChange={(next) => { if (!next) onClose() }}>
       <DialogContent
+        ref={content}
         className="create-dialog"
         data-testid={testId}
-        style={style}
+        style={placed}
         aria-label={title}
         onEscapeKeyDown={(event) => event.stopPropagation()}
         onCloseAutoFocus={(event) => {
