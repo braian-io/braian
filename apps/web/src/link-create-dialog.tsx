@@ -322,6 +322,7 @@ function LinkFields({
                 className="link-type-line"
                 aria-label={copy.linkType}
                 data-testid="link-type-choice"
+                data-choice={choiceValue(choice)}
                 autoFocus
                 value={choiceValue(choice)}
                 onChange={(event) => setSelected(event.target.value)}
@@ -332,7 +333,7 @@ function LinkFields({
               </select>
             </div>
           ) : (
-            <p className="link-type-line" data-testid="link-type-single">{choice.label}</p>
+            <p className="link-type-line" data-testid="link-type-single" data-choice={choiceValue(choice)}>{choice.label}</p>
           )}
           {choice.fields.map((field, index) => (
             <div className="create-field" key={field.key}>
