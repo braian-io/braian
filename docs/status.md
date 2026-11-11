@@ -1,4 +1,4 @@
-# Status 2026-11-11
+# Status 2026-11-12
 
 ## Rad 216b — rättade antal och återställningsfel efter Test på e70184f
 
@@ -30,7 +30,7 @@ Vad som ändrades:
 
 ## Rad 224 — landningssidan beskriver produkten på main, och docs/guide finns
 
-Grenen `junior/224-landing-update` utgår från `origin/main` `e70184f8f9d8901f34c4db2b5c737e55a63509b4` (#301, rad 216) och är **inte mergad, deployad eller accepterad**. Arbetet ligger i worktreen `/home/administrator/dev/wt-224-landing-20261111-2303`; ingen PR öppnades, ingen merge gjordes och demon rördes inte.
+Grenen `junior/224-landing-update` utgick från `origin/main` `e70184f8f9d8901f34c4db2b5c737e55a63509b4` (#301, rad 216). Arbetet låg i worktreen `/home/administrator/dev/wt-224-landing-20261111-2303`; ingen egen PR öppnades för grenen, men innehållet nådde `main` genom rad 225 (#303). Demon rördes inte.
 
 Acceptanskriterierna från `brief.md` (Braian Test grindar bara på dessa):
 
@@ -43,7 +43,7 @@ Acceptanskriterierna från `brief.md` (Braian Test grindar bara på dessa):
 
 Vad som ändrades:
 
-- `apps/landing/src/content.ts`: nav och sektioner är Workspaces, Model, Sources, Graph, Agent, Delete, Feedback, Architecture, Performance, Open source. Nya sektioner för arbetsytor/paneler, typer/relationer, datakällor, graf, radering/restore och feedback. Agent-, arkitektur- och open source-copyn är rättad. `docsUrl` pekar nu på `docs/guide` i repot.
+- `apps/landing/src/content.ts`: nav och sektioner är Workspaces, Model, Sources, Graph, Agent, Delete, Feedback, Architecture, Performance, Open source. Nya sektioner för arbetsytor/paneler, typer/relationer, datakällor, graf, radering/restore och feedback. Agent-, arkitektur- och open source-copyn är rättad. `docsUrl` pekade då på `docs/guide` i repot; rad 225b ändrade den till `https://braian.io/docs/`.
 - `apps/landing/src/App.tsx`: renderar de nya sektionerna med samma DisclosureList/sheet-komponenter som resten av sidan. Inga nya beroenden.
 - `apps/landing/scripts/check-frozen.mjs` + `check:frozen` i `apps/landing/package.json`: hash-kontroll av de frysta artefakterna.
 - `docs/guide/*`: tio korta sidor enligt ovan. Guiden beskriver bland annat att en vy kan följa typ, länkad rad eller strukturnod; att trädvalet är exakt placerad grupp och att nodvalet inte återställs från URL:en vid reload; att grafens API ger ett hopp per anrop och att scenen stannar vid 400 noder; att feedback bara finns för admin när en webhook är konfigurerad; samt att agenten saknar raderingsverktyg.
@@ -61,17 +61,28 @@ Bevis (inga databaser eller containrar behövdes):
 
 ## Rad 225 — guiden publiceras som statisk HTML under /docs, med graph-sidan
 
-Grenen `junior/225-docs-foundation` utgår från `origin/main` `59ba66f` (row 128g, #302) och är **inte mergad eller deployad**. Den har nu ordinary-mergat `junior/224-landing-update` (`d0e9a56`, bas `e70184f`/#301) så att 224:s `docs/guide`-träd är basen; 225 lägger till den statiska `/docs`-publiceringen som 224 saknade och uppdaterar graph-sidan.
+Rad 225 är mergad till `main` som #303 (squash `5f2402e`) och publicerad på https://braian.io/docs/. Grenen `junior/225-docs-foundation` utgick från `origin/main` `59ba66f` (row 128g, #302) och ordinary-mergade `junior/224-landing-update` (`d0e9a56`, bas `e70184f`/#301), så att 224:s `docs/guide`-träd blev basen; 225 lade till den statiska `/docs`-publiceringen som 224 saknade och uppdaterade graph-sidan.
 
 Vad som ändrades:
 
 - `docs/guide/`: 224:s tio sidor behålls (index, getting-started, workspaces-and-panels, object-types-and-relations, data-sources, command-palette-and-shortcuts, deleting-and-restore, graph, feedback, self-hosting). 225:s kortare sex sidor är inte kopierade; deras konkreta användardetaljer är inflätade i 224:s sidor. Alla länkar i guiden pekar nu på byggda `/docs/...`-sidor eller GitHub-dokument.
-- `docs/guide/graph.md`: skriven mot nuvarande kod (`apps/web/src/graph-map.tsx`, `shared-context-menu.tsx`, `i18n.ts`) och 128g: menyn öppnas vid nodens högra kant (cirkel + etikett), inom 16 px när panelen har plats, med legenderna synliga; ett musklick flyttar tangentbordsfokus så nästa `Shift+F10` öppnar samma nod; Pin sitter kvar på kortet och växlar Pin/Unpin; Fit skiljs från Re-layout; tom canvas ger Fit/Re-layout; kameran passar vid första laddning, Re-layout och resize/fullskärm tills användaren zoomar, panorerar eller drar en nod. Ingen row 226-funktion beskrivs eller utlovas. Den gamla platshållaren "graph guide will follow" är borta; index länkar `/docs/graph`.
+- `docs/guide/graph.md`: skriven mot koden i `apps/web/src/graph-map.tsx`, `shared-context-menu.tsx` och `i18n.ts`: menyn öppnas intill noden; ett musklick flyttar tangentbordsfokus så nästa `Shift+F10` öppnar samma nod; Pin sitter kvar på kortet och växlar Pin/Unpin, och ett klick på en pinnad nod släpper pinnen; Fit skiljs från Re-layout; tom canvas och gruppnoder ger canvasmenyn Fit/Re-layout; Fit körs vid Re-layout och när full storlek öppnas, inte efter F5 eller när full storlek stängs. Ingen row 226-funktion beskrivs eller utlovas. Den gamla platshållaren "graph guide will follow" är borta; index länkar `/docs/graph`.
 - `apps/landing/scripts/guide.mjs`: `GUIDE_PAGES` kräver nu alla tio sidor (inte de sex ursprungliga), bygger delad navigering och varje sida under `dist/docs`; länkkontrollen kräver att varje `/docs`-länk resolverar. En saknad sida får bygget att avbryta.
 - `apps/landing/scripts/prerender.mjs` behåller ordningen: homepage-prerender och dess CTA-kontroller körs först, därefter `buildGuide`. `pnpm --dir apps/landing build` skriver `/docs`, `/docs/graph` och övriga åtta sidor.
-- `apps/landing/public/sitemap.xml`: listar nu alla `/docs`-sidor (inklusive graph, deleting-and-restore, feedback, self-hosting) så guiden blir upptäckbar. Det är en medveten sitemapändring; `apps/landing/scripts/check-frozen.mjs` har uppdaterad sha256 för sitemap. Trackaton-scriptet i `apps/landing/index.html` och `robots.txt` är orörda (samma hash).
+- `apps/landing/public/sitemap.xml`: listar alla `/docs`-sidor (inklusive graph, deleting-and-restore, feedback, self-hosting) med avslutande snedstreck, så crawlers inte går via 308. Det är en medveten sitemapändring; `apps/landing/scripts/check-frozen.mjs` har uppdaterad sha256 för sitemap. Trackaton-scriptet i `apps/landing/index.html` och `robots.txt` är orörda (samma hash).
 
-Bevis: `pnpm --dir apps/landing exec tsc --noEmit` exit 0; `pnpm --dir apps/landing build` exit 0 med `prerendered 10 guide pages under dist/docs` och homepage-kontrollerna intakta; `pnpm --dir apps/landing check:frozen` exit 0 efter sitemap-uppdateringen; `python3 scripts/check-english.py` exit 0. En saknad guidesida får bygget att falla (verifierat). Ingen compose, databas eller E2E behövdes. `apps/web/src/data-model.tsx` och produktbeteendet är orörda. Ärlig avgränsning: guiden beskriver nuvarande webbapp; den publiceras som statisk HTML av landningsbygget, inte av en separat docs-tjänst. Ingen PR öppnades eller mergades.
+Bevis: `pnpm --dir apps/landing exec tsc --noEmit` exit 0; `pnpm --dir apps/landing build` exit 0 med `prerendered 10 guide pages under dist/docs` och homepage-kontrollerna intakta; `pnpm --dir apps/landing check:frozen` exit 0 efter sitemap-uppdateringen; `python3 scripts/check-english.py` exit 0. En saknad guidesida får bygget att falla (verifierat). Ingen compose, databas eller E2E behövdes. `apps/web/src/data-model.tsx` och produktbeteendet är orörda. Ärlig avgränsning: guiden beskriver nuvarande webbapp; den publiceras som statisk HTML av landningsbygget, inte av en separat docs-tjänst. 225 öppnades som PR #303 och mergades; uppgiften deployade inte själv, utan publiceringen på https://braian.io/docs/ följde av mergen.
+
+## Rad 225b — docs-sanning efter Test-avslag på rad 225
+
+Grenen `junior/225b-docs-truth` utgår från `origin/main` `5f2402e` (#303). Den rättar guiden mot demon på buildId `5f2402e` utan att ändra produktbeteende.
+
+- `docs/guide/graph.md`: menyn beskrivs som intill noden utan avståndslöfte; Fit körs vid Re-layout och när full storlek öppnas, inte efter F5 eller när full storlek stängs; ett klick på en pinnad nod släpper pinnen; gruppnoder får canvasmenyn Fit/Re-layout; inget påstående att etiketter undviker varandra.
+- `docs/guide/deleting-and-restore.md`: en kort not säger att räkningarna och Restore är under rättning i 216b, med demon `5f2402e` som exempel. Sidans fyra startpunkter och person-only delete är oförändrade.
+- `apps/landing/src/content.ts`: `docsUrl` pekar på `https://braian.io/docs/`, så footerns Documentation-länk gör detsamma.
+- `apps/landing/public/sitemap.xml` och `apps/landing/scripts/guide.mjs`: `/docs/<slug>/` med avslutande snedstreck i sitemap samt i canonical och `og:url`; index är kvar på `/docs/`. Endast sitemap-hashen i `check-frozen.mjs` är uppdaterad.
+
+Bevis i `docker run --rm` med `node:22-bookworm`: `pnpm --dir apps/landing typecheck` exit 0; `pnpm --dir apps/landing check:frozen` exit 0; `pnpm --dir apps/landing build` exit 0 med `prerendered 10 guide pages under dist/docs`, och byggda sidor har canonical `https://braian.io/docs/graph/` (index `https://braian.io/docs/`). `python3 scripts/check-english.py` exit 0 i `python:3-slim`. `apps/landing/index.html`, `robots.txt` och GitHub-/demolänkarna är byte-identiska med `origin/main`; `apps/web/src/data-model.tsx` är orörd.
 
 # Status 2026-11-09
 
