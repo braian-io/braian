@@ -1,7 +1,7 @@
 export const demoUrl = 'https://demo.braian.io'
 export const repoUrl = 'https://github.com/braian-io/braian'
 export const licenseUrl = 'https://github.com/braian-io/braian/blob/main/LICENSE'
-export const docsUrl = 'https://github.com/braian-io/braian/tree/main/docs/guide'
+export const docsUrl = 'https://braian.io/docs/'
 
 export const nav = [
   { href: '#workspaces', label: 'Workspaces' },

@@ -11,7 +11,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const expected = {
   trackatonQueue: 'c83d197889dd74532c6d710097fe6e1f94236a3c17741e3420347c0eb5b698b2',
   trackatonTag: 'eed966c25b92ef646ee1111c178db5430322ba2136349c2ec206eddcf036f199',
-  sitemap: 'a54202315a6941e1b90401ea6893bb8379ab1488ba8d97b5193a1317ad46405d',
+  sitemap: 'eaa0cadff578c8bdc2bc797c5346904ee02a80a6b7d08eb8faaa4db3d9051fda',
   robots: 'a783ab1141f6f2223ea4705d158044253e58d9535289e18ba9469bd906e42bea',
 }
 
