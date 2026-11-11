@@ -4,12 +4,6 @@ Deleting an object is a person's action. It is available from four places, opens
 confirmation dialog and writes to the API immediately after confirmation — it is not
 part of the draft/Save flow that object edits use.
 
-> **Current demo note.** On build `5f2402e` the count line can over-count cascade
-> links — a product with two links showed “Removes 3 objects and 2 links” — and
-> **Restore** can leave Detail and Graph showing “The graph could not be loaded”.
-> Row 216b fixes the counts and Restore. Until that fix is deployed, read the counts
-> and the restore behaviour below as the intended behaviour.
-
 ## Four entry points
 
 1. **Row or cell context menu** — `Delete…` on the selected row(s).
