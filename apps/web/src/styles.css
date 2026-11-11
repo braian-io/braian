@@ -3151,6 +3151,40 @@ button.primary[aria-disabled='true'] {
 .standard-grid-empty { padding: var(--space-4); color: var(--muted); }
 .standard-table-filters { flex-wrap: wrap; gap: var(--space-1_5); padding: var(--space-1_5) var(--space-2); }
 .type-names legend[title] { cursor: help; border-bottom: 1px dotted var(--muted); }
+/* Allowed trees are a compact checkbox list, not the stretched text fields
+   Singular/Plural/Key use. Keep the same 16px box as the attribute table so
+   its focus ring stays on the control instead of the whole row. */
+[data-testid='allowed-trees'] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1_5) var(--space-3);
+}
+[data-testid='allowed-trees'] legend,
+[data-testid='allowed-trees'] > .hint { flex-basis: 100%; }
+[data-testid='allowed-trees'] > .hint { margin: 0; }
+[data-testid='allowed-trees'] label {
+  flex: none;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-1_5);
+  font-size: var(--text-md);
+  color: var(--text-2);
+  line-height: 1.2;
+}
+[data-testid='allowed-trees'] input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  box-shadow: none;
+  accent-color: var(--accent);
+}
+[data-testid='review-loading'] .dialog-close { display: none; }
 
 .column-header-btn {
   min-width: 0;

@@ -252,6 +252,7 @@ describe('type attributes table', () => {
           warnings: [],
           steps: [{ op: 'set_structures', type_key: 'recipe', structures: ['structure-food'] }],
           consequence: { destructive: false, lines: ['Type recipe may use food'] },
+          definitions,
         })
       }
       return Promise.resolve({})
@@ -264,7 +265,9 @@ describe('type attributes table', () => {
       structures: ['structure-food'],
     }))
     const dialog = await screen.findByTestId('review-dialog')
-    expect(dialog.textContent).toContain('Type recipe may use food')
+    const description = document.getElementById(dialog.getAttribute('aria-describedby') ?? '')
+    expect(description?.textContent).toBe('Allowed trees for Recipe: Food')
+    expect(dialog.textContent).not.toContain('Type recipe may use food')
     const saves = mock.methods.post.mock.calls.filter((call) => String(call[0]).includes('/v1/model/draft/save'))
     expect(saves).toEqual([])
   })

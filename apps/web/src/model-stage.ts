@@ -57,6 +57,17 @@ export async function stageModelSteps(steps: Array<{ op: string } & Record<strin
   return draft
 }
 
+/** Remove only the named draft steps. Higher indexes go first so the rest stay valid. */
+export async function removeDraftSteps(indexes: number[]) {
+  if (indexes.length === 0) return undefined
+  let result: unknown
+  for (const index of [...new Set(indexes)].sort((left, right) => right - left)) {
+    result = await api.post('/v1/model/draft/steps', { body: { remove: index } })
+  }
+  emitDraft()
+  return result
+}
+
 export function openModelDialog(kind: 'type' | 'list' | 'family' | 'tree' | 'link') {
   window.dispatchEvent(new CustomEvent('braian-model-dialog', { detail: kind }))
 }
