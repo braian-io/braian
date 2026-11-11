@@ -58,7 +58,7 @@ import { chooseModelSelection } from './model-selection'
 import { openObjectLabel } from './type-labels'
 import { copy, uiLanguage } from './i18n'
 import { linkChoices } from './link-section'
-import { LinkAddFlow, type LinkAddRequest } from './link-add'
+import { LinkAddFlow, type LinkAddRequest, type Rect } from './link-add'
 import { openSharedContextMenu, prefersNativeContextMenu } from './shared-context-menu'
 import { registerCommandRunner, type CommandTarget, type RegistryCommand } from './command-registry'
 import { requestOpenModelType } from './model-type-open'
@@ -116,12 +116,28 @@ export function graphLinkMenuTitle(
   return copy.linkMenuVerb.replace('{label}', label)
 }
 
+/** The object key a graph node already carries as its number property. */
+export function graphNodeKey(node: Pick<SceneNode, 'properties'> | { properties?: SceneNode['properties'] }) {
+  const property = (node.properties ?? []).find((item) => item.label === copy.number)
+  return String(property?.value ?? '')
+}
+
 /** A model type is not an object: never hand its node id to an object command. */
 export function graphNodeTarget(
-  node: Pick<SceneNode, 'kind' | 'id' | 'typeKey'> & { objectId?: string },
+  node: Pick<SceneNode, 'kind' | 'id' | 'typeKey'> & {
+    objectId?: string
+    caption?: string
+    properties?: SceneNode['properties']
+  },
 ): CommandTarget {
   if (node.kind !== 'object') return { typeKey: node.typeKey }
-  return { objectId: node.objectId ?? node.id, typeKey: node.typeKey }
+  const key = graphNodeKey(node)
+  return {
+    objectId: node.objectId ?? node.id,
+    typeKey: node.typeKey,
+    ...(key ? { sourceKey: key } : {}),
+    ...(node.caption ? { sourceName: node.caption } : {}),
+  }
 }
 
 /** The menu opens beside the visible node so it never covers the node label. */
@@ -131,6 +147,22 @@ export function nodeMenuAnchor(marker: Pick<Marker, 'x' | 'y'> & { r?: number } 
     return { x: marker.x + radius + 8, y: marker.y - radius }
   }
   return fallback
+}
+
+/** The circle plus the caption rectangle under it, in client coordinates. */
+export function nodeMenuAvoid(
+  marker: (Pick<Marker, 'x' | 'y'> & { r?: number }) | undefined,
+  caption: string,
+): Rect | undefined {
+  if (!marker || !Number.isFinite(marker.x) || !Number.isFinite(marker.y)) return undefined
+  const radius = Number.isFinite(marker.r) ? Number(marker.r) : 0
+  const labelWidth = Math.max(radius * 2, caption.trim().length * 7 + 16)
+  return {
+    left: marker.x - labelWidth / 2,
+    top: marker.y - radius,
+    right: marker.x + labelWidth / 2,
+    bottom: marker.y + radius + 22,
+  }
 }
 
 /** `graph:add-link:<key>:<direction>`; the direction is what the picker must use. */
@@ -145,6 +177,10 @@ export function graphLinkRequest(id: string, target: CommandTarget): LinkAddRequ
     ...(direction ? { direction } : {}),
     ...(target.objectId ? { objectId: String(target.objectId) } : {}),
     ...(target.typeKey ? { typeKey: String(target.typeKey) } : {}),
+    ...(target.sourceKey ? { sourceKey: String(target.sourceKey) } : {}),
+    ...(target.sourceName ? { sourceName: String(target.sourceName) } : {}),
+    ...(target.anchor ? { anchor: target.anchor as Rect } : {}),
+    ...(target.stage ? { stage: target.stage as Rect } : {}),
   }
 }
 
@@ -172,23 +208,34 @@ export function runGraphNodeCommand(
 
 /** Node-scoped shared menu for a graph node, anchored at the pointer or node. */
 export function openGraphNodeMenu(
-  node: Pick<SceneNode, 'kind' | 'id' | 'typeKey' | 'caption'> & { objectId?: string },
+  node: Pick<SceneNode, 'kind' | 'id' | 'typeKey' | 'caption'> & {
+    objectId?: string
+    properties?: SceneNode['properties']
+  },
   defs: Json | undefined,
   x: number,
   y: number,
   onAddLink?: (request: LinkAddRequest) => void,
+  avoid?: Rect,
+  stage?: Rect,
 ) {
   const extra = graphNodeMenuExtras(defs, node)
+  const target = {
+    ...graphNodeTarget(node),
+    ...(avoid ? { anchor: avoid } : {}),
+    ...(stage ? { stage } : {}),
+  }
   for (const command of extra) {
-    registerCommandRunner(command.id, (target) => runGraphNodeCommand(command.id, target, onAddLink))
+    registerCommandRunner(command.id, (next) => runGraphNodeCommand(command.id, { ...target, ...next }, onAddLink))
   }
   openSharedContextMenu({
     context: 'graph-node',
     x,
     y,
-    target: graphNodeTarget(node),
+    target,
     extraOnly: true,
     extra,
+    avoid,
   })
 }
 
@@ -538,6 +585,7 @@ export function GraphMap({
         if (button) {
           button.setAttribute('data-x', String(marker.x))
           button.setAttribute('data-y', String(marker.y))
+          button.setAttribute('data-r', String(marker.r))
         }
       }
       const serial = JSON.stringify(next)
@@ -901,11 +949,11 @@ export function GraphMap({
       const rect = canvas.getBoundingClientRect()
       const point = screenOf(hit.x ?? 0, hit.y ?? 0)
       const radius = nodeRadius(hit.kind, hit.degree ?? 0) * transform.k
-      const anchor = nodeMenuAnchor(
-        { x: rect.left + point.x, y: rect.top + point.y, r: radius },
-        { x: event.clientX, y: event.clientY },
-      )
-      openGraphNodeMenu(hit, defsRef.current, anchor.x, anchor.y, (request) => setAdd(request))
+      const marker = { x: rect.left + point.x, y: rect.top + point.y, r: radius }
+      const avoid = nodeMenuAvoid(marker, hit.caption)
+      const stage = stageRect()
+      const anchor = nodeMenuAnchor(marker, { x: event.clientX, y: event.clientY })
+      openGraphNodeMenu(hit, defsRef.current, anchor.x, anchor.y, (request) => setAdd(request), avoid, stage)
     }
 
     let sawPointer = 0
@@ -1015,6 +1063,8 @@ export function GraphMap({
       old.subtitle = node.subtitle
       old.rawCaption = node.rawCaption
       old.objectId = node.objectId
+      old.typeKey = node.typeKey
+      old.typeName = node.typeName
       old.properties = node.properties
       old.degree = degree
       return old
@@ -1105,11 +1155,16 @@ export function GraphMap({
 
   const revealSheet = () => setSheet((mode) => (mode === 'dismissed' || mode === 'chip' ? 'compact' : mode))
 
+  const stageRect = (): Rect | undefined => {
+    const rect = stageRef.current?.getBoundingClientRect()
+    return rect ? { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom } : undefined
+  }
   const openMenuForNode = (node: SceneNode) => {
     const rect = canvasRef.current?.getBoundingClientRect()
     const fallback = rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : { x: 8, y: 8 }
     const anchor = nodeMenuAnchor(markers[node.id], fallback)
-    openGraphNodeMenu(node, defsRef.current, anchor.x, anchor.y, (request) => setAdd(request))
+    const avoid = nodeMenuAvoid(markers[node.id], node.caption)
+    openGraphNodeMenu(node, defsRef.current, anchor.x, anchor.y, (request) => setAdd(request), avoid, stageRect())
   }
   const opensNodeMenu = (event: { key: string; ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean }) =>
     ((event.ctrlKey || event.metaKey) && event.key === 'Enter') ||
@@ -1260,6 +1315,7 @@ export function GraphMap({
             data-subtitle={node.subtitle}
             data-x={markers[node.id] ? String(markers[node.id].x) : undefined}
             data-y={markers[node.id] ? String(markers[node.id].y) : undefined}
+            data-r={markers[node.id] ? String(markers[node.id].r) : undefined}
             onClick={() => selectRef.current(node.id)}
             onDoubleClick={() => {
               selectRef.current(node.id)

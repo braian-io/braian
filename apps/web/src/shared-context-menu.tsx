@@ -30,6 +30,8 @@ export function prefersNativeContextMenu(target: EventTarget | null): boolean {
   return isTextEntryTarget(target) || hasSelectedText(target)
 }
 
+export type MenuRect = { left: number; top: number; right: number; bottom: number }
+
 export type OpenMenuRequest = {
   context: MenuContext
   target?: CommandTarget
@@ -38,6 +40,8 @@ export type OpenMenuRequest = {
   extra?: RegistryCommand[]
   /** When set, only `extra` items are shown (surface-specific menus). */
   extraOnly?: boolean
+  /** The node circle + label a graph menu must not cover. */
+  avoid?: MenuRect
 }
 
 export const OPEN_CONTEXT_MENU = 'braian:open-context-menu'
@@ -68,15 +72,54 @@ const MENU_MIN_MARGIN = 8
 const MENU_FALLBACK_WIDTH = 240
 const MENU_FALLBACK_HEIGHT = 160
 
+function overlapArea(a: MenuRect, b: MenuRect) {
+  const width = Math.min(a.right, b.right) - Math.max(a.left, b.left)
+  const height = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)
+  return width > 0 && height > 0 ? width * height : 0
+}
+
+/** Place a fixed menu beside a node, trying right, left, below and above it. */
+function placeBesideMenu(avoid: MenuRect, menuWidth: number, menuHeight: number, vw: number, vh: number) {
+  const margin = MENU_MIN_MARGIN
+  const gap = MENU_GAP
+  const clampLeft = (value: number) => Math.max(margin, Math.min(value, vw - menuWidth - margin))
+  const clampTop = (value: number) => Math.max(margin, Math.min(value, vh - menuHeight - margin))
+  const candidates = [
+    { x: avoid.right + gap, y: clampTop(avoid.top) },
+    { x: avoid.left - menuWidth - gap, y: clampTop(avoid.top) },
+    { x: clampLeft((avoid.left + avoid.right) / 2 - menuWidth / 2), y: avoid.bottom + gap },
+    { x: clampLeft((avoid.left + avoid.right) / 2 - menuWidth / 2), y: avoid.top - menuHeight - gap },
+  ]
+  const fits = (point: { x: number; y: number }) =>
+    point.x >= margin && point.y >= margin && point.x + menuWidth <= vw - margin && point.y + menuHeight <= vh - margin
+  const boxAt = (point: { x: number; y: number }): MenuRect => ({
+    left: point.x,
+    top: point.y,
+    right: point.x + menuWidth,
+    bottom: point.y + menuHeight,
+  })
+  const clear = candidates.find((point) => fits(point) && overlapArea(boxAt(point), avoid) === 0)
+  if (clear) return clear
+  const fitting = candidates.filter(fits)
+  if (fitting.length > 0) {
+    return fitting.reduce((best, point) =>
+      overlapArea(boxAt(point), avoid) < overlapArea(boxAt(best), avoid) ? point : best,
+    )
+  }
+  return { x: clampLeft(candidates[0]!.x), y: clampTop(candidates[0]!.y) }
+}
+
 /** Place a fixed menu just below/right of (x, y), flipping when it would leave the viewport. */
 export function placeContextMenu(
   x: number,
   y: number,
   menuWidth = MENU_FALLBACK_WIDTH,
   menuHeight = MENU_FALLBACK_HEIGHT,
+  avoid?: MenuRect,
 ) {
   const vw = typeof window === 'undefined' ? 0 : window.innerWidth
   const vh = typeof window === 'undefined' ? 0 : window.innerHeight
+  if (avoid && vw > 0 && vh > 0) return placeBesideMenu(avoid, menuWidth, menuHeight, vw, vh)
   let left = x + MENU_GAP
   let top = y + MENU_GAP
   if (vh > 0 && top + menuHeight > vh - MENU_MIN_MARGIN) {
@@ -90,8 +133,8 @@ export function placeContextMenu(
   return { x: left, y: top }
 }
 
-function clamp(x: number, y: number) {
-  return placeContextMenu(x, y)
+function clamp(x: number, y: number, avoid?: MenuRect) {
+  return placeContextMenu(x, y, MENU_FALLBACK_WIDTH, MENU_FALLBACK_HEIGHT, avoid)
 }
 
 function uniqueCommands(items: RegistryCommand[]): RegistryCommand[] {
@@ -191,7 +234,7 @@ export function SharedContextMenuHost({
     const menu = menuRef.current
     if (menu) {
       const size = menu.getBoundingClientRect()
-      const next = placeContextMenu(request.x, request.y, size.width, size.height)
+      const next = placeContextMenu(request.x, request.y, size.width, size.height, request.avoid)
       menu.style.left = `${next.x}px`
       menu.style.top = `${next.y}px`
     }
@@ -372,7 +415,7 @@ export function SharedContextMenuHost({
   }
 
   if (!request || items.length === 0) return null
-  const point = clamp(request.x, request.y)
+  const point = clamp(request.x, request.y, request.avoid)
   const marked = highlighted ?? items[0]?.id ?? null
 
   const renderItem = (

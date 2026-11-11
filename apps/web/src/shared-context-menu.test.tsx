@@ -237,4 +237,31 @@ describe('placeContextMenu', () => {
     expect(point.y + 120).toBeLessThanOrEqual(300)
     expect(point.y).toBeLessThan(280)
   })
+
+  it('moves to the other side instead of covering a node near the right edge', () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1440 })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 900 })
+    const avoid = { left: 1214, top: 421, right: 1398, bottom: 487 }
+    const point = placeContextMenu(1336, 421, 220, 120, avoid)
+    const box = { left: point.x, top: point.y, right: point.x + 220, bottom: point.y + 120 }
+    expect(box.right).toBeLessThanOrEqual(avoid.left)
+    expect(box.left).toBeGreaterThanOrEqual(8)
+    expect(box.right).toBeLessThanOrEqual(1440 - 8)
+    expect(box.top).toBeGreaterThanOrEqual(8)
+    expect(box.bottom).toBeLessThanOrEqual(900 - 8)
+  })
+
+  it('uses the room above or below when neither side fits', () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 340 })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 300 })
+    const avoid = { left: 100, top: 120, right: 240, bottom: 180 }
+    const point = placeContextMenu(250, 120, 220, 80, avoid)
+    const box = { left: point.x, top: point.y, right: point.x + 220, bottom: point.y + 80 }
+    const overlaps = box.left < avoid.right && box.right > avoid.left && box.top < avoid.bottom && box.bottom > avoid.top
+    expect(overlaps).toBe(false)
+    expect(box.left).toBeGreaterThanOrEqual(8)
+    expect(box.top).toBeGreaterThanOrEqual(8)
+    expect(box.right).toBeLessThanOrEqual(340 - 8)
+    expect(box.bottom).toBeLessThanOrEqual(300 - 8)
+  })
 })

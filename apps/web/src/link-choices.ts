@@ -24,6 +24,8 @@ export type LinkChoice = {
   linkType: string
   direction: LinkDirection
   label: string
+  /** Type keys the peer must have for this relation. */
+  targetTypes?: string[]
   fields: LinkField[]
   fromCardinality?: string
   toCardinality?: string
@@ -63,6 +65,7 @@ export function allowedLinks(defs: Json | undefined, sourceType: string, targetT
         linkType: key,
         direction: 'out',
         label: labelOf(spec?.to_label, key),
+        targetTypes: to,
         fields,
         fromCardinality: String(spec?.from_cardinality ?? 'many'),
         toCardinality: String(spec?.to_cardinality ?? 'many'),
@@ -73,6 +76,7 @@ export function allowedLinks(defs: Json | undefined, sourceType: string, targetT
         linkType: key,
         direction: 'in',
         label: labelOf(spec?.from_label, key),
+        targetTypes: from,
         fields,
         fromCardinality: String(spec?.from_cardinality ?? 'many'),
         toCardinality: String(spec?.to_cardinality ?? 'many'),
@@ -92,9 +96,17 @@ export function linksForEnds(defs: Json | undefined, sourceType: string, targetT
   let choices = allowedLinks(defs, sourceType, unique[0] ?? '')
   for (const type of unique.slice(1)) {
     const next = allowedLinks(defs, sourceType, type)
-    choices = choices.filter((choice) =>
-      next.some((item) => item.linkType === choice.linkType && item.direction === choice.direction),
-    )
+    choices = choices
+      .filter((choice) =>
+        next.some((item) => item.linkType === choice.linkType && item.direction === choice.direction),
+      )
+      .map((choice) => {
+        const matching = next.filter((item) => item.linkType === choice.linkType && item.direction === choice.direction)
+        return {
+          ...choice,
+          targetTypes: [...new Set([...(choice.targetTypes ?? []), ...matching.flatMap((item) => item.targetTypes ?? [])])],
+        }
+      })
   }
   return choices
 }
@@ -119,21 +131,64 @@ export function linkPairExplanation(defs: Json | undefined, anchorType: string, 
 
 type LinkEnd = { id: string; name?: string; key?: string }
 
-/** `PROD-CHEDDAR Mature cheddar ← ART-CHED-400 Mature cheddar 400 g`, then `+N more`. */
-export function linkEndsSummary(source: LinkEnd, peers: LinkEnd[]): string {
+/**
+ * `PROD-CHEDDAR · Mature cheddar — Product — ART-CHED-400 · Mature cheddar 400 g`,
+ * then `+N more`. The relation label makes the direction clear without a bare arrow.
+ */
+export function linkEndsSummary(source: LinkEnd, peers: LinkEnd[], label?: string): string {
   const shown = peers.slice(0, 5).map(linkEndLabel)
   const extra = peers.length - shown.length
   const right = extra > 0
     ? `${shown.join(', ')} ${copy.linkMore.replace('{count}', String(extra))}`
     : shown.join(', ')
-  return copy.linkEnds.replace('{left}', linkEndLabel(source)).replace('{right}', right)
+  const middle = label ? copy.linkEndsRelation.replace('{label}', label) : copy.linkEndsArrow
+  return copy.linkEnds
+    .replace('{left}', linkEndLabel(source))
+    .replace('{middle}', middle)
+    .replace('{right}', right)
 }
 
+/** Key and name, never an id that happens to be a UUID. */
 export function linkEndLabel(item: LinkEnd) {
-  const key = item.key?.trim() ?? ''
-  const name = item.name?.trim() ?? ''
-  if (key && name && key !== name) return `${key} ${name}`
-  return name || key || item.id
+  const key = visibleText(item.key)
+  const name = visibleText(item.name)
+  if (key && name && key !== name) return `${key} · ${name}`
+  return name || key
+}
+
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** A UUID is an identity, not a label. Hide one if an upstream sent it as text. */
+export function visibleText(value: unknown) {
+  const text = String(value ?? '').trim()
+  return uuidPattern.test(text) ? '' : text
+}
+
+/** Only rows the relation can link to, minus the source and its existing peers. */
+export function filterLinkCandidates<T extends { id: string; typeKey?: string }>(
+  items: T[],
+  targetTypes: string[] | undefined,
+  exclude: Set<string>,
+) {
+  const allowed = targetTypes && targetTypes.length > 0 ? new Set(targetTypes) : null
+  return items.filter((item) => !exclude.has(item.id) && (!allowed || (item.typeKey != null && allowed.has(item.typeKey))))
+}
+
+/** Peers already linked to the source for exactly this relation and direction. */
+export function existingLinkPeerIds(
+  sides: Array<{ link_type: string; direction: string; links?: Array<{ peer_id: string }> }> | undefined,
+  linkType: string | undefined,
+  direction: LinkDirection | undefined,
+) {
+  if (!linkType || !direction) return []
+  const ids: string[] = []
+  for (const side of sides ?? []) {
+    if (side.link_type !== linkType || side.direction !== direction) continue
+    for (const link of side.links ?? []) {
+      if (link.peer_id) ids.push(String(link.peer_id))
+    }
+  }
+  return [...new Set(ids)]
 }
 
 /** `3 articles`, or `1 object` when the dragged rows do not share a type. */
@@ -156,9 +211,9 @@ export function linkHitFromDocument(row: Json, defs?: Json): LinkHit | null {
   const id = String(row.id ?? '')
   if (!id) return null
   const typeKey = String(row.type_key ?? row.type ?? '')
-  const key = String(row.key ?? '')
-  const name = catalogName(row, defs) || key || id
-  return { id, key: key || id, name, typeKey }
+  const key = visibleText(row.key)
+  const name = visibleText(catalogName(row, defs)) || key
+  return { id, key, name, typeKey }
 }
 
 export function linkPaletteItem(hit: LinkHit, defs?: Json): PaletteItem {
@@ -167,7 +222,7 @@ export function linkPaletteItem(hit: LinkHit, defs?: Json): PaletteItem {
     id: `hit:${hit.id}`,
     sourceId: hit.id,
     group: 'search',
-    title: hit.name,
+    title: hit.name || type || hit.key || copy.nodeObject,
     subtitle: hit.key,
     typeKey: hit.typeKey,
     entity: true,

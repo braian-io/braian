@@ -21,7 +21,7 @@ test.beforeEach(async ({ page }) => {
 
 test('arrow keys choose a target and Enter creates the link', async ({ page }) => {
   await open(page, 'ART-CHED-400')
-  const add = page.getByTestId('add-link').first()
+  const add = sectionAdd(page, 'Replaced by')
   await add.focus()
   await page.keyboard.press('Enter')
   const search = page.getByTestId('link-search')
@@ -49,26 +49,20 @@ test('arrow keys choose a target and Enter creates the link', async ({ page }) =
   if (body.id) await page.request.delete(`/v1/links/${body.id}`)
 })
 
-test('a pair with no allowed link type explains that in a dialog', async ({ page }) => {
+test('a section picker only offers the relation target type', async ({ page }) => {
   await open(page, 'PROD-OAT')
-  const add = page.getByTestId('add-link').first()
+  const add = sectionAdd(page, 'Articles')
   await add.focus()
   await page.keyboard.press('Enter')
   await page.getByTestId('link-search').fill('PROD-COFFEE')
-  await expect(page.getByRole('option', { name: /PROD-COFFEE|Coffee/i })).toBeVisible()
-  await choose(page, 'PROD-COFFEE')
-  await page.keyboard.press('Enter')
-  const invalid = page.getByTestId('link-invalid-dialog')
-  await expect(invalid).toBeVisible()
-  await expect(invalid).toContainText('This is not a valid link type.')
-  await expect(invalid).toContainText(/Products can't link to Products/i)
-  await expect(invalid).toContainText(/Products can link to/i)
-  await expect(page.getByTestId('link-create-confirm')).toHaveCount(0)
+  await expect(page.getByTestId('link-picker-empty')).toBeVisible()
+  await expect(page.getByRole('option', { name: /PROD-COFFEE|Coffee/i })).toHaveCount(0)
+  await page.getByTestId('link-search').fill('ART-COFFEE')
+  await expect(page.getByRole('option', { name: /Breakfast filter coffee 250 g/ })).toBeVisible()
   await shot(page, 'link-invalid-dark.png')
   await page.keyboard.press('Escape')
-  await expect(invalid).toBeHidden()
+  await expect(page.getByTestId('link-picker')).toBeHidden()
   await expect(add).toBeFocused()
-  await expect(page.getByTestId('link-row').filter({ hasText: 'PROD-COFFEE' })).toHaveCount(0)
 })
 
 test('Escape closes the picker and returns focus to Add link', async ({ page }) => {
@@ -84,7 +78,7 @@ test('Escape closes the picker and returns focus to Add link', async ({ page }) 
 
 test('Add link dialog is vertically centered', async ({ page }) => {
   await open(page, 'ART-CHED-400')
-  await page.getByTestId('add-link').first().focus()
+  await sectionAdd(page, 'Replaced by').focus()
   await page.keyboard.press('Enter')
   await page.getByTestId('link-search').fill('ART-COFFEE-250')
   await expect(page.getByRole('option', { name: /Breakfast filter coffee 250 g/ })).toBeVisible()
@@ -107,7 +101,7 @@ test('the light theme shows the same picker and dialog', async ({ page }) => {
   test.skip(!shots, 'screenshots are taken only when BRAIAN_SHOTS is set')
   await setTheme(page, 'light')
   await open(page, 'ART-CHED-400')
-  await page.getByTestId('add-link').first().focus()
+  await sectionAdd(page, 'Replaced by').focus()
   await page.keyboard.press('Enter')
   await page.getByTestId('link-search').fill('ART-COFFEE-250')
   await expect(page.getByRole('option', { name: /Breakfast filter coffee 250 g/ })).toBeVisible()
@@ -130,6 +124,11 @@ async function open(page: Page, key: string) {
   await expect(page.getByTestId('object-detail')).toBeVisible()
   await expect(page.getByTestId('object-detail')).toContainText(key)
   await expect(page.getByTestId('add-link').first()).toBeVisible()
+}
+
+function sectionAdd(page: Page, section: string) {
+  const card = page.getByTestId('link-section').filter({ has: page.locator('h3', { hasText: section }) })
+  return card.getByTestId('add-link')
 }
 
 async function choose(page: Page, key: string) {

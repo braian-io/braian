@@ -6,8 +6,10 @@ import {
   canOpenGraphNodeMenu,
   GraphMap,
   graphNodeMenuExtras,
+  graphNodeKey,
   graphNodeTarget,
   nodeMenuAnchor,
+  nodeMenuAvoid,
   openGraphNodeMenu,
   runGraphNodeCommand,
 } from './graph-map'
@@ -155,6 +157,20 @@ describe('graph node menu extras', () => {
     ])
   })
 
+  it('gives article, product and supplier nodes menus from their own type, and they differ', () => {
+    const article = graphNodeMenuExtras(defs, { kind: 'object', typeKey: 'article', caption: 'Article' })
+    const product = graphNodeMenuExtras(defs, { kind: 'object', typeKey: 'product', caption: 'Product' })
+    const supplier = graphNodeMenuExtras(defs, { kind: 'object', typeKey: 'supplier', caption: 'Supplier' })
+    const titles = (items: typeof article) => items.map((item) => typeof item.title === 'string' ? item.title : '')
+    expect(titles(article)).toEqual(['Link Product…', 'Link Supplier…', 'Link Replaced by…', 'Link Replaces…'])
+    expect(titles(product)).toEqual(['Link Articles…', 'Link Suppliers…'])
+    expect(titles(supplier)).toEqual(['Link Articles…', 'Link Product…'])
+    expect(titles(article)).not.toEqual(titles(product))
+    expect(titles(product)).not.toEqual(titles(supplier))
+    expect(titles(article)).not.toEqual(titles(supplier))
+    expect(titles(supplier).some((title) => /supplier of product/i.test(title))).toBe(false)
+  })
+
   it('leaves object nodes without link choices empty', () => {
     expect(graphNodeMenuExtras(defs, { kind: 'object', typeKey: 'unknown', caption: 'Unknown' })).toEqual([])
   })
@@ -168,6 +184,16 @@ describe('node menu anchor', () => {
   it('falls back to the visible canvas when no marker is published', () => {
     expect(nodeMenuAnchor(undefined, { x: 400, y: 300 })).toEqual({ x: 400, y: 300 })
   })
+
+  it('builds an exclusion rectangle around the circle and its caption', () => {
+    expect(nodeMenuAvoid({ x: 1306, y: 443, r: 22 }, 'Dark chocolate 70% 100 g')).toEqual({
+      left: 1306 - Math.max(44, 'Dark chocolate 70% 100 g'.length * 7 + 16) / 2,
+      top: 421,
+      right: 1306 + Math.max(44, 'Dark chocolate 70% 100 g'.length * 7 + 16) / 2,
+      bottom: 487,
+    })
+    expect(nodeMenuAvoid(undefined, 'x')).toBeUndefined()
+  })
 })
 
 describe('graph node menu target', () => {
@@ -180,6 +206,27 @@ describe('graph node menu target', () => {
     expect(graphNodeTarget({ kind: 'object', id: 'obj-1', typeKey: 'product' })).toEqual({
       objectId: 'obj-1',
       typeKey: 'product',
+    })
+  })
+
+  it('carries the node key and caption so the dialog can name both ends', () => {
+    expect(
+      graphNodeKey({ properties: [{ label: 'Number', value: 'ART-CHOC-100' }] }),
+    ).toBe('ART-CHOC-100')
+    expect(
+      graphNodeTarget({
+        kind: 'object',
+        id: 'object:obj-1',
+        objectId: 'obj-1',
+        typeKey: 'article',
+        caption: 'Dark chocolate 70% 100 g',
+        properties: [{ label: 'Number', value: 'ART-CHOC-100' }],
+      }),
+    ).toEqual({
+      objectId: 'obj-1',
+      typeKey: 'article',
+      sourceKey: 'ART-CHOC-100',
+      sourceName: 'Dark chocolate 70% 100 g',
     })
   })
 })
@@ -287,6 +334,7 @@ describe('GraphMap model type node menu', () => {
         direction: 'in',
         objectId: 'obj-1',
         typeKey: 'article',
+        sourceName: 'Article',
       },
     ])
   })
