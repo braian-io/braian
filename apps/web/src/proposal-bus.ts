@@ -1,12 +1,12 @@
-export type OpenProposal = { id: string }
+export type OpenProposal = { id: string; operation?: string }
 
 type Listener = (proposal: OpenProposal) => void
 
 const listeners = new Set<Listener>()
 
-export function publishProposal(id: string) {
+export function publishProposal(id: string, operation?: string) {
   if (!id) return
-  for (const listen of listeners) listen({ id })
+  for (const listen of listeners) listen({ id, operation })
 }
 
 export function onProposal(listen: Listener) {

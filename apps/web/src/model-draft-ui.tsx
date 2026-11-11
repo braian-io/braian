@@ -18,10 +18,13 @@ import {
   requestDiscardDraft,
   setModelFocus,
   stageModel,
+  structuresStageInFlight,
+  structuresStageTarget,
   takeStagedStructures,
   type StagedStructures,
 } from './model-stage'
 import { describeModelSteps } from './model-step-text'
+import { registerModelDefinitions } from './model-selection'
 import { StateNote } from './states'
 
 export type DraftSaveGate = 'idle' | 'direct' | 'confirm' | 'blocked'
@@ -184,11 +187,37 @@ export function allowedTreesSentence(body: Json): string | undefined {
     .join(' ')
 }
 
+type PendingRevert = {
+  created: StagedStructures[]
+  committed: Json | undefined
+  /** A step whose index is not known yet, matched by type and structures. */
+  wildcard?: { typeKey: string; structures: string[] }
+}
+
+/**
+ * The newest set_structures step for the exact change an in-flight request is
+ * about to add. Older identical steps are never removed.
+ */
+function wildcardStepIndexes(body: Json, target: { typeKey: string; structures: string[] }): number[] {
+  const steps = Array.isArray(body.steps) ? body.steps : []
+  let found = -1
+  steps.forEach((raw, index) => {
+    const step = asRecord(raw)
+    if (step?.op !== 'set_structures') return
+    if (String(step.type_key ?? '') !== target.typeKey) return
+    const now = Array.isArray(step.structures) ? step.structures.map(String) : []
+    if (now.join('\u0000') !== target.structures.join('\u0000')) return
+    found = index
+  })
+  return found >= 0 ? [found] : []
+}
+
 type DialogKind = 'type' | 'list' | 'family' | 'tree' | 'link'
 
 export function ModelDraftHost() {
   const queryClient = useQueryClient()
   const draft = useQuery({ queryKey: ['model-draft'], queryFn: () => api.get('/v1/model/draft') })
+  const storedDefs = useQuery({ queryKey: ['definitions'], queryFn: () => api.get('/v1/definitions') })
   const [review, setReview] = useState(false)
   const [reviewCreated, setReviewCreated] = useState<StagedStructures[]>([])
   const [reviewLoading, setReviewLoading] = useState(false)
@@ -202,7 +231,13 @@ export function ModelDraftHost() {
   const activeCreated = useRef<StagedStructures[]>([])
   const revertSeq = useRef(0)
   const patching = useRef(false)
-  const pendingReverts = useRef(new Map<number, { created: StagedStructures[]; committed: Json | undefined }>())
+  const pendingReverts = useRef(new Map<number, PendingRevert>())
+  // The click that starts a toggle also opens the review shell under the
+  // pointer. Remember where it landed so the rest of the same double/triple
+  // click can be swallowed instead of dismissing that shell.
+  const pendingPoint = useRef<{ x: number; y: number } | null>(null)
+  const clickBurst = useRef<{ x: number; y: number; at: number } | null>(null)
+  const lockStartedAt = useRef(0)
   const rememberOpener = () => {
     // The loading shell opens on the same click. Keep the real opener (the
     // checkbox) when it was captured before that dialog mounted.
@@ -223,6 +258,13 @@ export function ModelDraftHost() {
   useEffect(() => onDraftChange(() => {
     void queryClient.invalidateQueries({ queryKey: ['model-draft'] })
   }), [queryClient])
+  // Validate the stored selection against the definitions the model views use,
+  // including unsaved draft types. data-model.tsx stays untouched.
+  useEffect(() => {
+    const preview = draft.data?.conflict === true ? undefined : (draft.data?.definitions as Json | undefined)
+    const defs = preview ?? (storedDefs.data as Json | undefined)
+    if (defs) registerModelDefinitions(defs)
+  }, [draft.data, storedDefs.data])
   // While a remove is in flight a parallel GET may still return the step. Keep
   // the optimistic revert applied to whatever the cache now holds, so the box
   // and the count never flash back. The patch only touches the steps this
@@ -235,10 +277,21 @@ export function ModelDraftHost() {
       if (!data) return
       let next = data
       for (const revert of pendingReverts.current.values()) {
-        const indexes = allowedTreeStepIndexes(next, revert.created)
+        const indexes = revert.wildcard
+          ? wildcardStepIndexes(next, revert.wildcard)
+          : allowedTreeStepIndexes(next, revert.created)
         if (indexes.length === 0) continue
         const patched = revertedDraft(next, indexes, revert.committed)
         if (patched) next = patched
+      }
+      // Once the cancelled request has settled and a fresh snapshot no longer
+      // has the step, the wildcard has done its job.
+      if (!structuresStageInFlight()) {
+        for (const [id, revert] of pendingReverts.current) {
+          if (revert.wildcard && wildcardStepIndexes(next, revert.wildcard).length === 0) {
+            pendingReverts.current.delete(id)
+          }
+        }
       }
       if (next === data) return
       patching.current = true
@@ -250,8 +303,20 @@ export function ModelDraftHost() {
   // the review is decided. The control lives in a protected component, so lock
   // it at the DOM boundary instead of adding a prop there.
   useEffect(() => {
+    const swallow = (event: Event) => {
+      event.preventDefault()
+      event.stopImmediatePropagation()
+    }
     const applyLock = () => {
       const locked = lockedStructuresType() !== null
+      if (locked) {
+        lockStartedAt.current = performance.now()
+        const point = pendingPoint.current
+        clickBurst.current = point ? { ...point, at: lockStartedAt.current } : null
+      } else {
+        clickBurst.current = null
+        pendingPoint.current = null
+      }
       for (const fieldset of document.querySelectorAll<HTMLElement>("[data-testid='allowed-trees']")) {
         if (locked) fieldset.setAttribute('data-locked', 'true')
         else fieldset.removeAttribute('data-locked')
@@ -261,24 +326,62 @@ export function ModelDraftHost() {
         }
       }
     }
+    // The first pointer down records the control. The review shell is portaled
+    // above it, so the second click of a double click hits the overlay at the
+    // same coordinates. Swallow that burst before Radix reads it as "outside".
+    const rememberPoint = (event: PointerEvent) => {
+      if (lockedStructuresType() !== null) return
+      const target = event.target
+      if (!(target instanceof Element)) return
+      const control = target.closest("input[type='checkbox'], label")
+      if (!control || !control.closest("[data-testid='allowed-trees']")) return
+      pendingPoint.current = { x: event.clientX, y: event.clientY }
+    }
+    const inBurst = (event: Event) => {
+      const burst = clickBurst.current
+      if (!burst || !(event instanceof MouseEvent)) return false
+      if (performance.now() - burst.at > 800) {
+        clickBurst.current = null
+        return false
+      }
+      // Keyboard activation has no coordinates and is handled by keydown.
+      if (event.detail === 0 && event.clientX === 0 && event.clientY === 0) return false
+      return Math.abs(event.clientX - burst.x) <= 6 && Math.abs(event.clientY - burst.y) <= 6
+    }
     const guard = (event: Event) => {
       if (lockedStructuresType() === null) return
       const target = event.target
       if (!(target instanceof Element)) return
       const input = target.closest("input[type='checkbox']")
       if (input && input.closest("[data-testid='allowed-trees']")) {
-        event.preventDefault()
-        event.stopPropagation()
+        swallow(event)
+        return
       }
+      if (inBurst(event)) swallow(event)
+    }
+    const keyGuard = (event: Event) => {
+      if (lockedStructuresType() === null) return
+      if (!(event instanceof KeyboardEvent)) return
+      if (event.key !== ' ' && event.key !== 'Enter') return
+      if (performance.now() - lockStartedAt.current > 800) return
+      // Space twice on the box: the second one must not activate a dialog
+      // button that autofocus happened to land on.
+      swallow(event)
     }
     applyLock()
-    document.addEventListener('click', guard, true)
-    document.addEventListener('keydown', guard, true)
+    for (const name of ['pointerdown', 'mousedown', 'mouseup', 'click', 'dblclick'] as const) {
+      document.addEventListener(name, guard, true)
+    }
+    document.addEventListener('pointerdown', rememberPoint, true)
+    document.addEventListener('keydown', keyGuard, true)
     const off = onStructuresLockChange(applyLock)
     return () => {
       off()
-      document.removeEventListener('click', guard, true)
-      document.removeEventListener('keydown', guard, true)
+      for (const name of ['pointerdown', 'mousedown', 'mouseup', 'click', 'dblclick'] as const) {
+        document.removeEventListener(name, guard, true)
+      }
+      document.removeEventListener('pointerdown', rememberPoint, true)
+      document.removeEventListener('keydown', keyGuard, true)
     }
   }, [])
   const refresh = () => {
@@ -333,6 +436,19 @@ export function ModelDraftHost() {
     } else if (!staging) {
       const created = takeStagedStructures()
       if (created.length > 0) revertReviewSteps(created)
+    } else {
+      // The POST is still in flight. Its step has no index yet, so remember the
+      // change itself and strip it from any draft snapshot that arrives late.
+      const target = structuresStageTarget()
+      if (target) {
+        const id = ++revertSeq.current
+        pendingReverts.current.set(id, {
+          created: [],
+          committed: queryClient.getQueryData<Json>(['definitions']),
+          wildcard: target,
+        })
+        void queryClient.cancelQueries({ queryKey: ['model-draft'] })
+      }
     }
     releaseStructuresLock()
     restoreOpener()
@@ -600,6 +716,8 @@ function ReviewLoadingDialog({ onCancel }: { onCancel: () => void }) {
       <DialogContent
         className="consequence review-loading"
         data-testid="review-loading"
+        onEscapeKeyDown={(event) => event.stopPropagation()}
+        onCloseAutoFocus={(event) => event.preventDefault()}
       >
         <div className="toolbar">
           <DialogTitle asChild><strong>{copy.reviewChangeTitle}</strong></DialogTitle>

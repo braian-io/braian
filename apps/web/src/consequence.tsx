@@ -15,9 +15,29 @@ type HostSession = {
   push: (line: string) => void
 }
 
+function loadingTitle(operation: string | undefined): string {
+  switch (operation) {
+    case 'model.delete_structure':
+      return copy.deleteStructureTitle
+    case 'model.delete_group':
+      return copy.deleteGroupTitle
+    case 'model.delete_type':
+      return copy.deleteType
+    case 'model.delete_attribute':
+      return copy.deleteAttribute
+    case 'model.delete_unit_family':
+      return copy.deleteUnitFamily
+    case 'model.delete_unit':
+      return copy.deleteUnit
+    default:
+      return copy.reviewChangeTitle
+  }
+}
+
 export function ConsequenceHost({ session }: { session: HostSession }) {
   const queryClient = useQueryClient()
   const [id, setId] = useState<string | null>(null)
+  const [operation, setOperation] = useState<string | undefined>()
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const opener = useRef<HTMLElement | null>(null)
@@ -30,6 +50,7 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
   useEffect(() => onProposal((proposal) => {
     opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     setError('')
+    setOperation(proposal.operation)
     setId(proposal.id)
   }), [])
   const defs = useQuery({ queryKey: ['definitions'], queryFn: () => api.get('/v1/definitions'), staleTime: 60_000 })
@@ -50,16 +71,25 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
   const lines = stepTexts.length > 0
     ? stepTexts.map((step) => step.sentence)
     : ((consequence.lines as string[] | undefined) ?? [])
-  const title = stepTexts.length === 1
+  const loadedTitle = stepTexts.length === 1
     ? stepTexts[0]?.sentence ?? String(body?.title ?? copy.dataModel)
     : stepTexts.length > 1
       ? copy.reviewChangeTitle
       : String(body?.title ?? copy.dataModel)
+  // The proposal fetch can be slow. Name the operation we already know instead
+  // of showing the generic "Data model" while the counts are unknown.
+  const title = proposal.isPending ? loadingTitle(operation) : loadedTitle
+  // A single model step is already the title. Do not repeat it under a
+  // "Model diff" label.
+  const showDiff = stepTexts.length !== 1 && lines.length > 0
   const warnings = (consequence.warnings as string[] | undefined) ?? []
   const samples = (consequence.samples as Json[] | undefined) ?? []
   const jobs = (consequence.jobs as Json[] | undefined) ?? []
   const errors = (consequence.definition_errors as string[] | undefined) ?? []
   const destructive = consequence.destructive === true
+  // The operation already tells us this is a delete while the proposal loads,
+  // so the danger confirm keeps its Delete label and test id.
+  const destructiveIntent = destructive || (proposal.isPending && String(operation ?? '').includes('delete'))
   const detail = (consequence.detail as string[] | undefined) ?? []
   const sentence = String(consequence.sentence ?? '')
   const close = dismiss
@@ -113,7 +143,7 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
         <DialogDescription asChild><p className="hint">{copy.reviewChange}</p></DialogDescription>
         {proposal.isPending ? <StateNote tone="loading" title={copy.loadingModel} /> : null}
         {proposal.isError ? <StateNote tone="error" title={copy.errorModel} /> : null}
-        {lines.length > 0 ? (
+        {!proposal.isPending && showDiff ? (
           <>
             <p className="hint">{copy.modelDiff}</p>
             <ul className="proposal-tree" data-testid="model-diff">
@@ -123,15 +153,15 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
             </ul>
           </>
         ) : null}
-        {warnings.map((warning) => (
+        {!proposal.isPending ? warnings.map((warning) => (
           <p key={warning} className="error" role="status" data-testid="key-warning">{warning}</p>
-        ))}
-        {destructive ? (
+        )) : null}
+        {!proposal.isPending && destructive ? (
           <div data-testid="delete-counts">
             {detail.length > 0 ? detail.map((line) => <p key={line}>{line}</p>) : sentence ? <p>{sentence}</p> : null}
           </div>
         ) : null}
-        <div data-testid="impact-result">
+        {!proposal.isPending ? <div data-testid="impact-result">
           <p>
             {affectedLabel(rows.map((row) => String(row.type_key ?? '')), typeNames(defs.data))}: {formatCount(consequence.affected_objects ?? 0)}
           </p>
@@ -144,21 +174,21 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
               {String(job.title)} · {((job.reads_fields as string[]) ?? []).join(', ')}
             </p>
           ))}
-        </div>
-        {errors.map((item) => (
+        </div> : null}
+        {!proposal.isPending ? errors.map((item) => (
           <p key={item} className="error">{item}</p>
-        ))}
+        )) : null}
         {error ? <p className="error">{error}</p> : null}
         <div className="toolbar">
           <Button type="button" variant="ghost" onClick={discard} disabled={busy}>{copy.cancel}</Button>
           <Button
             type="button"
-            variant={destructive ? 'danger' : 'primary'}
-            data-testid={destructive ? 'confirm-delete' : 'confirm-model'}
+            variant={destructiveIntent ? 'danger' : 'primary'}
+            data-testid={destructiveIntent ? 'confirm-delete' : 'confirm-model'}
             onClick={confirm}
-            disabled={busy || errors.length > 0}
+            disabled={busy || proposal.isPending || proposal.isError || errors.length > 0}
           >
-            {destructive ? copy.delete : copy.confirm}
+            {destructiveIntent ? copy.delete : copy.confirm}
           </Button>
         </div>
       </DialogContent>

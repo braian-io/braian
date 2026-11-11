@@ -325,6 +325,43 @@ describe('review dialog', () => {
     expect(saves()).toEqual([])
   })
 
+  it('Escape while the set_structures POST is in flight removes the late step and leaves no count', async () => {
+    let steps: Array<{ op: string } & Record<string, unknown>> = []
+    let release: (() => void) | undefined
+    const pendingPost = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    mock.use((path, init) => {
+      if (path === '/v1/model/draft') return Promise.resolve({ ...allowedTrees, count: steps.length, steps: [...steps] })
+      if (path === '/v1/model/draft/steps') {
+        const body = (init as { body?: { remove?: number } } | undefined)?.body
+        if (typeof body?.remove === 'number') {
+          steps = steps.filter((_, index) => index !== body.remove)
+          return Promise.resolve({ ...allowedTrees, count: steps.length, steps: [...steps] })
+        }
+        return pendingPost.then(() => {
+          steps = [{ op: 'set_structures', type_key: 'recipe', structures: ['structure-food'] }]
+          return { ...allowedTrees, count: steps.length, steps: [...steps] }
+        })
+      }
+      return Promise.resolve({})
+    })
+    render(<Host />)
+    await waitFor(() => expect(mock.methods.get).toHaveBeenCalledWith('/v1/model/draft'))
+    const staged = stageModel('model.set_structures', { type_key: 'recipe', structures: ['structure-food'] })
+    staged.catch(() => undefined)
+    const loading = await screen.findByTestId('review-loading')
+    fireEvent.keyDown(loading, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByTestId('review-loading')).toBeNull())
+
+    release?.()
+    await waitFor(() => expect(mock.methods.post).toHaveBeenCalledWith('/v1/model/draft/steps', { body: { remove: 0 } }))
+    await waitFor(() => expect(screen.queryByTestId('unsaved-changes')).toBeNull())
+    expect(screen.queryByTestId('review-dialog')).toBeNull()
+    expect(screen.queryByTestId('review-loading')).toBeNull()
+    expect(steps).toEqual([])
+  })
+
   it('Escape removes only the step the dialog created', async () => {
     let steps: Array<{ op: string } & Record<string, unknown>> = []
     let current = { ...allowedTrees, count: 0, steps }

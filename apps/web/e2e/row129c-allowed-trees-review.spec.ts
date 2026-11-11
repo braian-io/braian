@@ -383,7 +383,8 @@ test('deleting a structure shows its label in one confirmation and never its key
     await expect(dialogs).toHaveCount(1, { timeout: 20_000 })
     const dialog = dialogs.first()
     await expect(dialog).toContainText(`Delete structure ${label}`)
-    await expect(dialog.getByTestId('model-diff')).toHaveText(`Delete structure ${label}`)
+    // A single step is already the title, so there is no duplicate Model diff line.
+    await expect(dialog.getByTestId('model-diff')).toHaveCount(0)
     await expect(dialog).not.toContainText(fixture.structureKey)
     await expect(page.getByTestId('structure-confirm')).toHaveCount(0)
     await expect(dialog.getByTestId('confirm-delete')).toBeVisible()

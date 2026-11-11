@@ -34,6 +34,12 @@ describe('allowed-tree layout', () => {
     expect(locked).toContain('pointer-events: none')
     expect(locked).toContain('cursor: default')
   })
+
+  it('keeps the checkbox focus ring visible on the dark background', () => {
+    const focus = rule("[data-testid='allowed-trees'] input[type='checkbox']:focus-visible")
+    expect(focus).toContain('outline: 2px solid var(--text)')
+    expect(focus).toContain('outline-offset: 2px')
+  })
 })
 
 describe('review steps and attribute columns', () => {

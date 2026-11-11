@@ -86,6 +86,7 @@ export function releaseStructuresLock(token?: number) {
 type StructuresStage = {
   token: number
   typeKey: string
+  structures: string[]
   cancelled: boolean
   settled: boolean
   promise: Promise<unknown>
@@ -96,6 +97,15 @@ let structuresStage: StructuresStage | null = null
 /** True while a set_structures request is on its way and can still be cancelled. */
 export function structuresStageInFlight(): boolean {
   return Boolean(structuresStage && !structuresStage.settled)
+}
+
+/**
+ * The change the in-flight request will add. Cancel can remove it from the
+ * cache as soon as it appears, before the response names its index.
+ */
+export function structuresStageTarget(): { typeKey: string; structures: string[] } | null {
+  if (!structuresStage || structuresStage.settled) return null
+  return { typeKey: structuresStage.typeKey, structures: [...structuresStage.structures] }
 }
 
 /**
@@ -171,6 +181,7 @@ async function stageStructures(name: string, args: Json): Promise<unknown> {
   const stage: StructuresStage = {
     token,
     typeKey,
+    structures: Array.isArray(args.structures) ? args.structures.map(String) : [],
     cancelled: false,
     settled: false,
     promise: Promise.resolve(),
@@ -230,7 +241,7 @@ export async function stageModel(name: string, args: Json = {}) {
     const result = await api.post('/v1/operations/{name}', { params: { path: { name: name } }, body: args })
     const record = jsonRecord(result)
     const id = String(record?.proposal_id ?? record?.id ?? '')
-    if (id) publishProposal(id)
+    if (id) publishProposal(id, name)
     return result
   }
   if (name === 'model.set_structures') return stageStructures(name, args)
