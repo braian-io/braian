@@ -178,13 +178,20 @@ export function kindLabel(kind: NodeKind) {
   return copy.nodeStructure
 }
 
+/** Sentence case for every relation label; upstream labels arrive lowercase. */
+export function sentenceCaseLabel(text: string) {
+  const trimmed = text.trim()
+  if (!trimmed) return ''
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1)
+}
+
 export function relationLabel(kind: string) {
   if (kind === 'article_of') return copy.articleOf
   if (kind === 'variant_of') return copy.variantOf
   if (kind === 'replaces') return copy.replacesRelation
   const words = kind.replace(/[_-]+/g, ' ').trim()
   if (!words) return copy.related
-  return words.charAt(0).toUpperCase() + words.slice(1)
+  return sentenceCaseLabel(words)
 }
 
 export function parseTypedId(id: string) {
@@ -450,7 +457,7 @@ export function buildScene(input: {
     const otherKey = record?.typeKey || String(relationType?.key ?? '')
     const typeNameForOther = otherKey ? typeLabel(input.defs, otherKey, uiLanguage) || otherKey : ''
     const caption = record?.name || typeNameForOther || copy.nodeObject
-    const edgeLabel = String(linkRow.label ?? '') || relationLabel(String(linkRow.link_type ?? ''))
+    const edgeLabel = sentenceCaseLabel(String(linkRow.label ?? '')) || relationLabel(String(linkRow.link_type ?? ''))
     putNode(nodes, {
       id: nodeId,
       kind: 'object',

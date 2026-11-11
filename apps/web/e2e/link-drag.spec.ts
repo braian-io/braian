@@ -32,7 +32,7 @@ test('dragging one row onto another table creates the link', async ({ page }) =>
   await expect(dialog).toBeVisible()
   await expect(dialog.getByTestId('link-ends')).toContainText('PROD-COFFEE')
   await expect(dialog.getByTestId('link-ends')).toContainText('ART-OAT-1L')
-  await expect(dialog.getByTestId('link-ends')).toContainText('←')
+  await expect(dialog.getByTestId('link-ends')).toContainText('— Articles —')
   await expect(dialog.getByTestId('link-type-single')).toBeVisible()
   await shot(page, 'link-drag-dialog-dark.png')
   await page.getByTestId('link-create-confirm').click()

@@ -6,7 +6,7 @@ import { Kbd } from './components/ui/kbd'
 import { MetaChip } from './chips'
 import { readFrecency, touch } from './frecency'
 import { copy, uiLanguage } from './i18n'
-import { linkHitFromDocument, linkPaletteItem, linkPickerRows, type LinkDirection, type LinkHit } from './link-choices'
+import { filterLinkCandidates, linkEndLabel, linkHitFromDocument, linkPaletteItem, linkPickerRows, visibleText, type LinkDirection, type LinkHit } from './link-choices'
 import { pushLinkUi } from './link-ui'
 import { paletteKeyEffect, type PaletteKeyEffect } from './palette-core'
 import { groupTitle, readPaletteMemory, rememberPaletteItem, resultAnnouncement, type PaletteItem } from './palette-model'
@@ -15,6 +15,7 @@ export function LinkObjectPicker({
   sourceId,
   excludeIds,
   defs,
+  source,
   relation,
   onClose,
   onChoose,
@@ -22,7 +23,9 @@ export function LinkObjectPicker({
   sourceId: string
   excludeIds?: string[]
   defs?: Json
-  relation?: { label: string; direction: LinkDirection }
+  /** The object the link starts from, named in the crumb. */
+  source?: { key?: string; name?: string }
+  relation?: { label: string; direction: LinkDirection; targetTypes?: string[] }
   onClose: () => void
   onChoose: (hit: LinkHit) => void
 }) {
@@ -45,12 +48,25 @@ export function LinkObjectPicker({
   })
   const excluded = useMemo(() => new Set(excludeIds && excludeIds.length > 0 ? excludeIds : [sourceId]), [excludeIds, sourceId])
   const hits = useMemo(() => {
-    return ((found.data?.hits as Json[]) ?? [])
+    const rows = ((found.data?.hits as Json[]) ?? [])
       .map((hit) => linkHitFromDocument((hit.document as Json) ?? hit, defs))
-      .filter((hit): hit is LinkHit => hit != null && !excluded.has(hit.id))
-  }, [found.data, defs, excluded])
+      .filter((hit): hit is LinkHit => hit != null)
+    return filterLinkCandidates(rows, relation?.targetTypes, excluded)
+  }, [found.data, defs, excluded, relation?.targetTypes])
   const frecency = useMemo(() => readFrecency(), [query])
-  const memory = useMemo(() => readPaletteMemory().filter((item) => !excluded.has(selectedId(item) ?? '')), [query, excluded])
+  const memory = useMemo(
+    () =>
+      filterLinkCandidates(
+        readPaletteMemory().map((item) => ({
+          ...item,
+          title: visibleText(item.title) || copy.nodeObject,
+          subtitle: visibleText(item.subtitle),
+        })),
+        relation?.targetTypes,
+        new Set(),
+      ).filter((item) => !excluded.has(selectedId(item) ?? '')),
+    [query, excluded, relation?.targetTypes],
+  )
   const rows = useMemo(
     () => linkPickerRows({ hits, query: debounced, frecency, memory, defs }),
     [hits, debounced, frecency, memory, defs],
@@ -115,10 +131,19 @@ export function LinkObjectPicker({
         <div className="palette-query">
           <div className="crumb" data-testid="link-picker-crumb">
             {copy.addLink}
+            {source ? (
+              <>
+                {' · '}
+                <span data-testid="link-picker-source">{linkEndLabel({ id: '', key: source.key, name: source.name })}</span>
+              </>
+            ) : null}
             {relation ? (
-              <span data-testid="link-picker-relation">
-                {relation.label} · {relation.direction === 'out' ? copy.linkFromHere : copy.linkToHere}
-              </span>
+              <>
+                {' · '}
+                <span data-testid="link-picker-relation">
+                  {relation.label} · {relation.direction === 'out' ? copy.linkFromHere : copy.linkToHere}
+                </span>
+              </>
             ) : null}
           </div>
           <CommandInput
@@ -187,8 +212,8 @@ function hitFromMemory(row: PaletteItem): LinkHit | null {
   if (!id) return null
   return {
     id,
-    key: row.subtitle || id,
-    name: row.title,
+    key: row.subtitle || '',
+    name: visibleText(row.title),
     typeKey: row.typeKey ?? '',
   }
 }

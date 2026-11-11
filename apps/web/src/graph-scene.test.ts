@@ -1,7 +1,7 @@
 import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation } from 'd3-force'
 import { describe, expect, it } from 'vitest'
 import type { Json } from './api'
-import { buildScene, capScene, mergeScene, nodeMark, nodeRadius, relationLabel, structureCaption, visibleLabelIds } from './graph-scene'
+import { buildScene, capScene, mergeScene, nodeMark, nodeRadius, relationLabel, sentenceCaseLabel, structureCaption, visibleLabelIds } from './graph-scene'
 
 const defs: Json = {
   types: [{ key: 'article', labels: { en: 'Article' } }, { key: 'product', labels: { en: 'Product' } }],
@@ -134,8 +134,40 @@ describe('graph scene', () => {
     expect(resolved?.rawCaption).toBe(false)
     expect(resolved?.properties.some((property) => property.value === 'PROD-TENT')).toBe(true)
     expect(relationLabel('variant_of')).toBe('Variant of')
+    expect(sentenceCaseLabel('supplier of product n-n')).toBe('Supplier of product n-n')
+    expect(sentenceCaseLabel('Supplier of product n-n')).toBe('Supplier of product n-n')
     expect(structureCaption('bag')).toBe('bag')
     expect(structureCaption('tents', defs)).toBe('Tents')
+  })
+
+  it('sentence-cases a relation label that arrives lowercase from the API', () => {
+    const scene = buildScene({
+      graph: {
+        id: 'tent',
+        key: 'ART-TENT-2',
+        type: 'article',
+        links: [
+          {
+            link_type: 'supplier_of_product',
+            label: 'supplier of product n-n',
+            object_id: 'prod',
+            key: 'PROD-TENT',
+            type_id: 'type-product',
+            direction: 'outgoing',
+          },
+        ],
+        attributes: [],
+      },
+      defs: {
+        ...defs,
+        types: [
+          ...((defs.types as Json[]) ?? []),
+          { id: 'type-product', key: 'product', kind: 'entity', labels: { en: 'Product' } },
+        ],
+      },
+    })
+    expect(scene.edges.some((edge) => edge.label === 'Supplier of product n-n')).toBe(true)
+    expect(scene.edges.some((edge) => edge.label === 'supplier of product n-n')).toBe(false)
   })
 
   it('draws an ancestor group attribute as inherited when it has no class', () => {
