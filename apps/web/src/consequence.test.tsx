@@ -100,4 +100,47 @@ describe('consequence dialog', () => {
     expect(description?.textContent).toBe(copy.reviewChange)
     expect(screen.getByRole('button', { name: 'Close' })).toBeTruthy()
   })
+
+  it('names a deleted structure by its label and shows one confirmation', async () => {
+    const structureProposal: Json = {
+      ...proposal,
+      title: 'Delete structure qa129r_0516',
+      rows: [{
+        id: 'row-1',
+        position: 0,
+        status: 'pending',
+        conflict: false,
+        type_key: 'model',
+        patch: { op: 'delete_structure', structure: 'structure-food' },
+      }],
+      consequence: {
+        ...(proposal.consequence as Json),
+        lines: ['Delete structure qa129r_0516'],
+      },
+    }
+    mock.use((path) => {
+      if (path === '/v1/definitions') {
+        return Promise.resolve({
+          languages: ['en'],
+          types: [],
+          structures: [
+            { id: 'structure-food', key: 'qa129r_0516', labels: { en: 'Food' }, groups: [] },
+          ],
+        })
+      }
+      if (path.startsWith('/v1/proposals/')) return Promise.resolve(structureProposal)
+      return Promise.resolve({})
+    })
+    render(<Host />)
+    publishProposal('proposal-structure')
+
+    const dialog = await screen.findByRole('dialog')
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
+    const title = document.getElementById(dialog.getAttribute('aria-labelledby') ?? '')
+    expect(title?.textContent).toBe('Delete structure Food')
+    const diff = await screen.findByTestId('model-diff')
+    expect(diff.textContent).toBe('Delete structure Food')
+    expect(dialog.textContent).not.toContain('qa129r_0516')
+    expect(screen.getByTestId('confirm-delete')).toBeTruthy()
+  })
 })
