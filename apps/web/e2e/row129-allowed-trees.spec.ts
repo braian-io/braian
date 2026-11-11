@@ -181,8 +181,9 @@ test('an allowed-tree toggle reviews before it saves, and Cancel discards only t
       }
     })
     expect(review.title).toBe('Review change')
-    expect(review.description).toContain('Allowed trees for Product:')
-    expect(review.description).toContain(fixture.label)
+    // The highlighted step already names the trees. The description is neutral.
+    expect(review.description).toBe('Review the change before it is saved.')
+    await expect(dialog.getByTestId('review-steps').getByText(/Allowed trees for Product:/)).toHaveCount(1)
     expect(review.description).not.toContain(fixture.structureKey)
     expect(review.description).not.toContain('product')
     await expect(dialog.getByTestId('confirm-review')).toHaveText('Save')

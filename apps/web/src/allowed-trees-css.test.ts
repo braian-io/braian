@@ -25,8 +25,14 @@ describe('allowed-tree layout', () => {
     expect(check).not.toContain('padding: var(--space-1_5)')
   })
 
-  it('keeps the loading dialog close button out of the way', () => {
-    expect(rule("[data-testid='review-loading'] .dialog-close")).toContain('display: none')
+  it('keeps the loading dialog close button available from the first frame', () => {
+    expect(rule("[data-testid='review-loading'] .dialog-close")).toContain('display: flex')
+  })
+
+  it('shows a locked toggle as inert but keeps its label', () => {
+    const locked = rule("[data-testid='allowed-trees'][data-locked='true'] input[type='checkbox']")
+    expect(locked).toContain('pointer-events: none')
+    expect(locked).toContain('cursor: default')
   })
 })
 

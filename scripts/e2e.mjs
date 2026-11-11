@@ -108,6 +108,7 @@ const specs = [
   'e2e/readable-urls.spec.ts',
   'e2e/row129-allowed-trees.spec.ts',
   'e2e/row129c-allowed-trees-review.spec.ts',
+  'e2e/row129d-allowed-trees-polish.spec.ts',
 ]
 
 // Explicit compose targeting. The default keeps `just up` and CI on the
@@ -250,6 +251,7 @@ const measuredSeconds = {
   'e2e/agent-session.spec.ts': 150,
   'e2e/agent-rename.spec.ts': 24,
   'e2e/row129c-allowed-trees-review.spec.ts': 90,
+  'e2e/row129d-allowed-trees-polish.spec.ts': 300,
 }
 
 const reseedSeconds = 4

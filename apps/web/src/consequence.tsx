@@ -104,9 +104,11 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
         data-testid="consequence"
         onEscapeKeyDown={(event) => event.stopPropagation()}
       >
-        <div className="toolbar">
+        <div className="toolbar consequence-title">
           <DialogTitle asChild><strong>{title}</strong></DialogTitle>
-          {body?.source ? <span className="chip">{String(body.source)}</span> : null}
+          {body?.source && String(body.source) !== 'user'
+            ? <span className="chip" data-testid="proposal-source">{String(body.source)}</span>
+            : null}
         </div>
         <DialogDescription asChild><p className="hint">{copy.reviewChange}</p></DialogDescription>
         {proposal.isPending ? <StateNote tone="loading" title={copy.loadingModel} /> : null}
