@@ -10,9 +10,11 @@ const CANDIDATE_OFFSETS = [0, 1, -1, 2, -2, 3, -3]
 /** Readable edge labels everywhere on a small graph, only on the active node elsewhere. */
 export type EdgeLabelMode = 'all' | 'active' | 'none'
 
-export function edgeLabelMode(edgeCount: number, zoom: number, modelMode: boolean): EdgeLabelMode {
+export function edgeLabelMode(edgeCount: number, _zoom: number, modelMode: boolean): EdgeLabelMode {
+  // A sparse graph names every relation at rest even when the fitted camera is
+  // zoomed out (a typical object graph lands at 0.44). A dense graph labels the
+  // focused endpoint's edges, so selection and hover always win over zoom.
   if (modelMode) return 'all'
-  if (zoom < 0.55) return 'none'
   return edgeCount <= 10 ? 'all' : 'active'
 }
 

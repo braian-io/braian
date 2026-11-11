@@ -15,6 +15,46 @@ export type Box = { x: number; y: number; width: number; height: number }
 export type GraphFrame = { x: number; y: number; width: number; height: number }
 export type Bounds = { minX: number; minY: number; maxX: number; maxY: number }
 
+export type NodeLabelPlacement = {
+  orientation: 'below' | 'above'
+  captionY: number
+  subtitleY: number
+  top: number
+  bottom: number
+}
+
+const CAPTION_HALF = 8
+const SUBTITLE_GAP = 14
+const SUBTITLE_HALF = 5
+
+/**
+ * Keep a caption (and the active node's subtitle) inside the pane. A caption
+ * that would run past the bottom edge flips above the circle instead of
+ * clipping; both orientations clamp to a small margin.
+ */
+export function placeNodeLabel(
+  pointY: number,
+  radius: number,
+  stageHeight: number,
+  hasSubtitle = false,
+  margin = 4,
+): NodeLabelPlacement {
+  const height = Number.isFinite(stageHeight) ? Math.max(0, stageHeight) : 0
+  const belowCaption = pointY + radius + 12
+  const belowBottom = belowCaption + CAPTION_HALF + (hasSubtitle ? SUBTITLE_GAP + SUBTITLE_HALF : 0)
+  const aboveCaption = pointY - radius - 12 - (hasSubtitle ? SUBTITLE_GAP : 0)
+  const aboveTop = aboveCaption - CAPTION_HALF
+  const orientation: 'below' | 'above' = belowBottom <= height - margin || aboveTop < margin ? 'below' : 'above'
+  const caption = orientation === 'below' ? belowCaption : aboveCaption
+  const minCaption = margin + CAPTION_HALF + (orientation === 'above' && hasSubtitle ? SUBTITLE_GAP : 0)
+  const maxCaption = height - margin - CAPTION_HALF - (orientation === 'below' && hasSubtitle ? SUBTITLE_GAP : 0)
+  const captionY = maxCaption <= minCaption ? height / 2 : Math.min(Math.max(caption, minCaption), maxCaption)
+  const subtitleY = orientation === 'below' ? captionY + SUBTITLE_GAP : captionY - SUBTITLE_GAP
+  const top = Math.min(captionY - CAPTION_HALF, hasSubtitle ? subtitleY - SUBTITLE_HALF : captionY - CAPTION_HALF)
+  const bottom = Math.max(captionY + CAPTION_HALF, hasSubtitle ? subtitleY + SUBTITLE_HALF : captionY + CAPTION_HALF)
+  return { orientation, captionY, subtitleY, top, bottom }
+}
+
 export function graphDensity(width: number): GraphDensity {
   if (!Number.isFinite(width) || width < GRAPH_WIDE_MIN_PX) return 'narrow'
   return 'wide'
