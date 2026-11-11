@@ -65,6 +65,16 @@ async function openWorkspace(page: Page, name: RegExp) {
   await page.locator('nav.tabs').getByRole('button', { name }).click()
 }
 
+/** The table can be visible before the first search response paints its rows. */
+async function waitForRows(target: Locator, timeout = 30_000) {
+  await expect
+    .poll(async () => target.getByTestId('object-row').count(), {
+      message: 'object table rows',
+      timeout,
+    })
+    .toBeGreaterThan(0)
+}
+
 async function openSourceMenu(page: Page, target: Locator) {
   await target.hover()
   await target.getByTestId('view-menu').click()
@@ -97,6 +107,22 @@ async function viewStates(page: Page, workspaceId: string) {
   return new Map<string, SourceState | undefined>(body.views.map((view) => [view.id, view.state?.source]))
 }
 
+/** The label changes optimistically; the view state is written afterwards. */
+async function waitForSourceState(
+  page: Page,
+  workspaceId: string,
+  viewId: string,
+  expected: SourceState | undefined,
+  timeout = 30_000,
+) {
+  await expect
+    .poll(async () => (await viewStates(page, workspaceId)).get(viewId), {
+      message: `persisted source state for ${viewId}`,
+      timeout,
+    })
+    .toEqual(expected)
+}
+
 test.describe('Select source keeps the menu target (row 103)', () => {
   test('relation and explicit All hit the menu view in both focus orders and survive reload', async ({ page }) => {
     test.setTimeout(180_000)
@@ -126,6 +152,8 @@ test.describe('Select source keeps the menu target (row 103)', () => {
       await expect(articles.getByTestId('object-table').first()).toBeVisible({ timeout: 60_000 })
       await expect(products.getByTestId('view-source-label')).toHaveText('All Products')
       await expect(articles.getByTestId('view-source-label')).toHaveText('All Articles')
+      await waitForRows(products)
+      await waitForRows(articles)
 
       const productsBefore = await products.getByTestId('object-row').count()
       expect(productsBefore).toBeGreaterThan(0)
@@ -156,17 +184,17 @@ test.describe('Select source keeps the menu target (row 103)', () => {
       await expect(articles.getByTestId('peer-linked-to')).toHaveText('Linked to: Products')
       await expect(products.getByTestId('view-source-label')).toHaveText('All Products')
       await expect(products.getByTestId('peer-linked-to')).toHaveCount(0)
+      await waitForRows(products)
       expect(await products.getByTestId('object-row').count()).toBe(productsBefore)
       await shot(page, '02-products-relation-applied.png')
 
-      let states = await viewStates(page, own.workspaceId)
-      expect(states.get(articlesId)).toEqual({
+      await waitForSourceState(page, own.workspaceId, articlesId, {
         kind: 'peer',
         viewId: productsId,
         selection: 'row',
         linkType: 'product_articles',
       })
-      expect(states.get(productsId)).toBeUndefined()
+      await waitForSourceState(page, own.workspaceId, productsId, undefined)
 
       // Reload: only the intended view changed, and it persisted. The URL object
       // restores the product row, so the header keeps the row label and Articles
@@ -180,14 +208,13 @@ test.describe('Select source keeps the menu target (row 103)', () => {
       await expect(articlesAfter.getByTestId('object-row').first()).toBeVisible({ timeout: 30_000 })
       await expect(productsAfter.getByTestId('view-source-label')).toHaveText('All Products')
       await expect(productsAfter.getByTestId('peer-linked-to')).toHaveCount(0)
-      states = await viewStates(page, own.workspaceId)
-      expect(states.get(articlesId)).toEqual({
+      await waitForSourceState(page, own.workspaceId, articlesId, {
         kind: 'peer',
         viewId: productsId,
         selection: 'row',
         linkType: 'product_articles',
       })
-      expect(states.get(productsId)).toBeUndefined()
+      await waitForSourceState(page, own.workspaceId, productsId, undefined)
 
       // Pick a row again so Articles has linked rows and can take focus for
       // the second menu order.
@@ -207,15 +234,23 @@ test.describe('Select source keeps the menu target (row 103)', () => {
       await expect(palette).toHaveCount(0)
 
       await expect(productsAfter.getByTestId('view-source-label')).toHaveText('All Products')
-      await expect(articlesAfter.getByTestId('view-source-label')).toContainText('Products ›', { timeout: 30_000 })
-      states = await viewStates(page, own.workspaceId)
-      expect(states.get(productsId)).toEqual({ kind: 'all' })
-      expect(states.get(articlesId)).toEqual({
+      await waitForSourceState(page, own.workspaceId, productsId, { kind: 'all' })
+      await waitForSourceState(page, own.workspaceId, articlesId, {
         kind: 'peer',
         viewId: productsId,
         selection: 'row',
         linkType: 'product_articles',
       })
+      // Persisting explicit All on the unfocused Products view can remount its
+      // table and drop the live row selection that the Articles peer label
+      // reads. Re-assert that precondition instead of sampling the label while
+      // the two views disagree.
+      const productRow = productsAfter.getByTestId('object-row').first()
+      if ((await productRow.getAttribute('aria-selected')) !== 'true') {
+        await productRow.click()
+        await expect(productRow).toHaveAttribute('aria-selected', 'true')
+      }
+      await expect(articlesAfter.getByTestId('view-source-label')).toContainText('Products ›', { timeout: 30_000 })
 
       await openWorkspace(page, new RegExp(`^${own.name}`))
       const productsReloaded = pane(page, productsId)
@@ -289,6 +324,7 @@ test.describe('Select source keeps the menu target (row 103)', () => {
       const products = pane(page, productsId)
       const suppliers = pane(page, suppliersId)
       await expect(articles.getByTestId('object-table').first()).toBeVisible({ timeout: 60_000 })
+      await waitForRows(articles)
       // B and C have a peer source but no selected row yet, so they explain the
       // empty state instead of rendering a table.
       await expect(products.getByTestId('peer-empty-text')).toHaveText('Select a row in Articles', {

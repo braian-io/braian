@@ -2,6 +2,19 @@
 
 Bas: `origin/main` tip `795eb06` (#277). Senaste migrering i repot: `V44__proposal_recoveries.sql` (#268).
 
+## Flake-hardening — kända flaky e2e-tester (test-only)
+
+Grenen `junior/flake-hardening` ändrar **bara tester** (fem e2e-specar plus en test-hook i `scripts/e2e.mjs`); ingen produktkod, inget i `apps/web/src`. Målet är att de flaky tester som hållit tillbaka PR 285, 287 och andra ska vänta in det de faktiskt asserterar, utan att försvaga någon assertion.
+
+- `select-source-target.spec.ts` (`:101` / tidigare `:211`): väntar på att tabellens rader ritats och pollar den persisterade vyns `source`-state i stället för att läsa den direkt efter den optimistiska etiketten. Samma förväntade värden som förut. Om radvalet släpps när Products-vyn omrenderas efter explicit All, återställs raden innan Articles-etiketten asserteras (förutsättningen, inte själva asserten).
+- `focus-styles.spec.ts:1108` (användarmenyns ring): pollar den beräknade outline tills menyregeln målats innan ringens klippning mäts.
+- `agent-tab.spec.ts`: sparandet i `ensureDistinctName` väntar på PATCH-svaret och på aktivitetsloggen innan nästa fråga ställs, så att mock-förslaget inte hinner bli inaktuellt; route-hanteraren i `an agent tab in another workspace is announced` tål ett avbrutet svar från den ersatta sidan (`Response has been disposed`).
+- `group-filter.spec.ts:60/86`: väntar på att filterchipet är aktivt innan radantalet läses.
+- `palette-drill.spec.ts:205` (`Ctrl+J asks and Tab does not`): läser alternativens ordning först när två avläsningar stämmer överens.
+- `scripts/e2e.mjs`: `BRAIAN_E2E_PW_ARGS_JSON` skickar extra Playwright-argument (till exempel `--repeat-each`) till den isolerade körningen.
+
+Bevis (docker `--rm`, uppgiftsägt nätverk `row-flake-net`, syntetisk data): `select-source-target` 20/20, `group-filter` 20/20, `palette-drill` 20/20, `focus-styles:1108` 20/20, `agent-tab` hela filen 3/3 efter sista ändringen (11 passed, 1 skipped per körning; före route-hanterarens skydd föll `:309` två gånger av ~9). Ärlig avgränsning: repeterade körningar på en belastad VPS är inte ett bevis för att flaken är borta; `agent-tab`-felen är lastberoende och kan återkomma.
+
 ## Rad 128b — objektnodens meny i Graph öppnar länkvalet
 
 Grenen `junior/128b-object-node-links` utgår från `origin/main` `8f8d5aa` (#285) och är **inte mergad, deployad eller accepterad**. Den rättar Test-avvisningen på `8f8d5aa`: på Articles → ART-CHED-200 → Graph stängde ett klick på "Supplier" (eller "Articles" från produktnoden) bara menyn. Typnodernas "Open <Type>" fungerade redan och är oförändrat.

@@ -1119,7 +1119,14 @@ test('user menu arrow-focused item shows the accent ring', async ({ page }) => {
   await expect(item).toBeVisible()
   await expect(item).toBeFocused()
   // Arrow navigation may leave :focus-visible unset; the ring must follow the
-  // highlighted item regardless, so assert the painted outline itself.
+  // highlighted item regardless, so assert the painted outline itself. The
+  // highlight class and focus can settle in separate frames, so poll the
+  // computed outline until the menu rule has been painted.
+  await expect
+    .poll(async () => (await ringClip(item)).outline, {
+      message: 'arrow-focused user menu item outline',
+    })
+    .not.toBe('none')
   const clip = await expectRingUnclipped(item, 'arrow-focused user menu item')
   expect(clip.outline).not.toBe('none')
   expect(clip.outlineWidth).toBe(2)

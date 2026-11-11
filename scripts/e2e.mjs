@@ -491,8 +491,11 @@ function exitCode(error) {
 }
 
 function runPlaywright(files, webUrl) {
+  const extra = process.env.BRAIAN_E2E_PW_ARGS_JSON
+    ? JSON.parse(process.env.BRAIAN_E2E_PW_ARGS_JSON)
+    : []
   return new Promise((resolve) => {
-    const child = spawn(pnpm, ['--dir', 'apps/web', 'exec', 'playwright', 'test', ...files], {
+    const child = spawn(pnpm, ['--dir', 'apps/web', 'exec', 'playwright', 'test', ...extra, ...files], {
       cwd: root,
       stdio: 'inherit',
       shell: windows,
