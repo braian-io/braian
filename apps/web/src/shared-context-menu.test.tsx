@@ -292,6 +292,58 @@ describe('placeContextMenu', () => {
     expect(box.bottom).toBeLessThanOrEqual(900 - 8)
   })
 
+  it('clamps the menu to the given pane bounds, not the viewport', () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1440 })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 900 })
+    const bounds = { left: 100, top: 50, right: 520, bottom: 350 }
+    const point = placeContextMenu(500, 340, 220, 120, undefined, undefined, bounds)
+    expect(point.x).toBeGreaterThanOrEqual(bounds.left + 8)
+    expect(point.y).toBeGreaterThanOrEqual(bounds.top + 8)
+    expect(point.x + 220).toBeLessThanOrEqual(bounds.right - 8)
+    expect(point.y + 120).toBeLessThanOrEqual(bounds.bottom - 8)
+  })
+
+  it('hugs the node inside the bounds when there is free space beside it', () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1440 })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 900 })
+    const bounds = { left: 0, top: 0, right: 600, bottom: 400 }
+    const avoid = { left: 280, top: 150, right: 340, bottom: 210 }
+    const point = placeContextMenu(300, 150, 180, 90, avoid, [avoid], bounds)
+    const gapX = Math.max(point.x - avoid.right, avoid.left - (point.x + 180), 0)
+    const gapY = Math.max(point.y - avoid.bottom, avoid.top - (point.y + 90), 0)
+    expect(Math.hypot(gapX, gapY)).toBeLessThanOrEqual(16)
+    expect(point.x).toBeGreaterThanOrEqual(bounds.left + 8)
+    expect(point.y).toBeGreaterThanOrEqual(bounds.top + 8)
+    expect(point.x + 180).toBeLessThanOrEqual(bounds.right - 8)
+    expect(point.y + 90).toBeLessThanOrEqual(bounds.bottom - 8)
+  })
+
+  it('clears a neighbouring label inside the bounds before moving further away', () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1440 })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 900 })
+    const bounds = { left: 0, top: 0, right: 700, bottom: 400 }
+    const avoid = { left: 120, top: 120, right: 190, bottom: 180 }
+    const label = { left: 198, top: 100, right: 320, bottom: 184 }
+    const point = placeContextMenu(140, 120, 200, 100, avoid, [avoid, label], bounds)
+    const box = { left: point.x, top: point.y, right: point.x + 200, bottom: point.y + 100 }
+    const overlaps = (rect: { left: number; right: number; top: number; bottom: number }) =>
+      box.left < rect.right && box.right > rect.left && box.top < rect.bottom && box.bottom > rect.top
+    expect(overlaps(avoid)).toBe(false)
+    expect(overlaps(label)).toBe(false)
+    expect(box.left).toBeGreaterThanOrEqual(bounds.left + 8)
+    expect(box.right).toBeLessThanOrEqual(bounds.right - 8)
+    expect(box.top).toBeGreaterThanOrEqual(bounds.top + 8)
+    expect(box.bottom).toBeLessThanOrEqual(bounds.bottom - 8)
+  })
+
+  it('stays at the left margin when the bounds are smaller than the menu', () => {
+    const bounds = { left: 10, top: 12, right: 210, bottom: 162 }
+    const point = placeContextMenu(80, 80, 220, 120, undefined, undefined, bounds)
+    expect(point.x).toBe(bounds.left + 8)
+    expect(point.y).toBeGreaterThanOrEqual(bounds.top + 8)
+    expect(point.y).toBeLessThanOrEqual(bounds.bottom - 8)
+  })
+
   it('takes the least overlap when no position can clear every node', () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 360 })
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: 360 })

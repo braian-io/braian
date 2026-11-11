@@ -1826,7 +1826,8 @@ canvas.graph.panning { cursor: grabbing; }
 }
 .menu {
   position: fixed;
-  z-index: 20;
+  /* Above the fixed fullscreen graph (.graph-full, z-index 35), below overlays. */
+  z-index: 36;
   background: var(--raised);
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
@@ -1867,7 +1868,7 @@ canvas.graph.panning { cursor: grabbing; }
 .menu:not(:has([data-highlighted])) button:hover { background: color-mix(in srgb, var(--accent-dim) 55%, transparent); }
 .menu button.danger { color: var(--danger); }
 .menu .menu-chevron { flex: none; margin-left: auto; color: var(--muted); }
-.menu-submenu { z-index: 21; }
+.menu-submenu { z-index: 37; }
 
 .menu-note { margin: 0; padding: var(--space-1) var(--space-2); color: var(--text-2); font-size: var(--text-md); }
 /* The active cell in the active row: where Shift+F10 opens the menu.
@@ -1899,7 +1900,8 @@ canvas.graph.panning { cursor: grabbing; }
   display: grid;
   place-items: start center;
   padding-top: 12vh;
-  z-index: 30;
+  /* The link picker must sit above the fullscreen graph (.graph-full, 35). */
+  z-index: 38;
 }
 .overlay { z-index: 40; }
 .palette form, .help div, .login form, .dialog, .command {

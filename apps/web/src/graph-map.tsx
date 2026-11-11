@@ -44,6 +44,7 @@ import {
   inspectorChrome,
   legendLayout,
   nodeSummary,
+  placeNodeLabel,
   propertiesOpen,
   readGraphFrame,
   sheetAfterGesture,
@@ -257,11 +258,12 @@ export function openGraphNodeMenu(
   stage?: Rect,
   obstacles?: Rect[],
   bounds?: Rect,
+  dialogAnchor?: Rect,
 ) {
   const extra = graphNodeMenuExtras(defs, node)
   const target = {
     ...graphNodeTarget(node),
-    ...(avoid ? { anchor: avoid } : {}),
+    ...(dialogAnchor || avoid ? { anchor: dialogAnchor ?? avoid } : {}),
     ...(stage ? { stage } : {}),
   }
   for (const command of extra) {
@@ -415,7 +417,6 @@ export function GraphMap({
   const inspectorRef = useRef<HTMLElement>(null)
   const legendRef = useRef<HTMLDivElement>(null)
   const densityRef = useRef<GraphDensity>('wide')
-  const frameKeyRef = useRef('')
   const simRef = useRef<Simulation<SimNode, SimLink> | null>(null)
   const drawRef = useRef<(shouldPublish: boolean) => void>(() => {})
   const apiRef = useRef<{
@@ -426,11 +427,13 @@ export function GraphMap({
   }>({ fit: () => {}, relayout: () => {}, refocus: () => {}, markerOf: () => undefined })
   const hiddenRef = useRef(hidden)
   const selectedRef = useRef(selected)
+  const focusedRef = useRef(focused)
   const expandRef = useRef<(node: SceneNode) => void>(() => {})
   const selectRef = useRef<(id: string) => void>(() => {})
   const pinRef = useRef(setPinTick)
   hiddenRef.current = hidden
   selectedRef.current = selected
+  focusedRef.current = focused
   selectRef.current = (id: string) => {
     setSelected(id)
     setSheet((mode) => (mode === 'dismissed' || mode === 'chip' ? 'compact' : mode))
@@ -449,7 +452,6 @@ export function GraphMap({
     if (modelMode && node.kind === 'type' && node.typeKey) {
       expandedRef.current.add(node.id)
       const extra = expandModelType(defsRef.current, node.typeKey)
-      fitAfterRef.current = true
       if (extra.nodes.length || extra.edges.length) setExtras((current) => [...current, extra])
       return
     }
@@ -514,7 +516,6 @@ export function GraphMap({
           extra = groupMembers(parsed.structure, parsed.key, named, defsRef.current)
         }
       }
-      fitAfterRef.current = true
       if (extra.nodes.length || extra.edges.length) setExtras((current) => [...current, extra])
     } catch {
       expandedRef.current.delete(node.id)
@@ -605,6 +606,13 @@ export function GraphMap({
       y: transform.y + y * transform.k,
     })
 
+    const focusNodeButton = (id: string, root: Element = canvas) => {
+      const button = root
+        .closest('.graph-wrap')
+        ?.querySelector<HTMLElement>(`[data-node-id="${CSS.escape(id)}"]`)
+      button?.focus({ preventScroll: true })
+    }
+
     const hitTest = (ox: number, oy: number) => {
       const wx = (ox - transform.x) / transform.k
       const wy = (oy - transform.y) / transform.k
@@ -629,13 +637,22 @@ export function GraphMap({
         const point = screenOf(node.x, node.y)
         const radius = Math.round(nodeRadius(node.kind, node.degree ?? 0) * transform.k)
         const textWidth = context.measureText(node.caption).width
+        const placement = placeNodeLabel(point.y, radius, canvas.clientHeight)
+        const tooWide = textWidth + 8 > canvas.clientWidth - 2
         const centerX = clampLabelCenter(point.x, textWidth, canvas.clientWidth)
-        const label = {
-          left: Math.round(rect.left + centerX - textWidth / 2 - 4),
-          top: Math.round(rect.top + point.y + radius + 4),
-          right: Math.round(rect.left + centerX + textWidth / 2 + 4),
-          bottom: Math.round(rect.top + point.y + radius + 20),
-        }
+        const label = tooWide
+          ? {
+              left: Math.round(rect.left + point.x - radius),
+              top: Math.round(rect.top + point.y - radius),
+              right: Math.round(rect.left + point.x + radius),
+              bottom: Math.round(rect.top + point.y + radius),
+            }
+          : {
+              left: Math.round(rect.left + centerX - textWidth / 2 - 4),
+              top: Math.round(rect.top + placement.captionY - 8),
+              right: Math.round(rect.left + centerX + textWidth / 2 + 4),
+              bottom: Math.round(rect.top + placement.captionY + 8),
+            }
         const marker = {
           x: Math.round(rect.left + point.x),
           y: Math.round(rect.top + point.y),
@@ -703,19 +720,10 @@ export function GraphMap({
           if (target === hover) highlight.add(source)
         }
       }
-      const captionIds = new Set<string>()
-      const captionSeed = hover || current
-      if (captionSeed) {
-        captionIds.add(captionSeed)
-        for (const link of links) {
-          const source = endId(link.source)
-          const target = endId(link.target)
-          if (source === captionSeed || target === captionSeed) {
-            captionIds.add(source)
-            captionIds.add(target)
-          }
-        }
-      }
+      const labelFocus = new Set<string>()
+      if (hover) labelFocus.add(hover)
+      if (focusedRef.current) labelFocus.add(focusedRef.current)
+      if (current) labelFocus.add(current)
       const edgeMode = edgeLabelMode(links.length, transform.k, modelMode)
       const settled = canvas.dataset.settled !== 'false'
       const labelNodes = nodes
@@ -737,21 +745,34 @@ export function GraphMap({
       // that needs the space hides the caption beneath it below.
       context.font = '12px "Inter Variable", Inter, sans-serif'
       const labelCenters = new Map<string, number>()
+      const labelPlacements = new Map<string, ReturnType<typeof placeNodeLabel>>()
       const captionBoxes: LabelBox[] = placedNodes.map(({ node, point, radius }) => {
         const textWidth = context.measureText(node.caption).width
         const centerX = clampLabelCenter(point.x, textWidth, canvas.clientWidth)
         labelCenters.set(node.id, centerX)
         const active = node.id === current || highlight.has(node.id)
+        const placement = placeNodeLabel(
+          point.y,
+          radius,
+          canvas.clientHeight,
+          active && Boolean(node.subtitle) && transform.k >= 0.6,
+        )
+        labelPlacements.set(node.id, placement)
         return {
           id: node.id,
           priority: labelPriority(node.kind, active),
           left: centerX - textWidth / 2 - 4,
           right: centerX + textWidth / 2 + 4,
-          top: point.y + radius + 4,
-          bottom: point.y + radius + 20,
+          top: placement.top,
+          bottom: placement.bottom,
         }
       })
       const labels = visibleLabelIds(captionBoxes, transform.k)
+      // A caption wider than the pane cannot be clamped: hide it rather than
+      // paint a plate outside the frame.
+      for (const box of captionBoxes) {
+        if (box.right - box.left > canvas.clientWidth - 2) labels.delete(box.id)
+      }
       const graphRoot = canvas.closest('.graph-wrap') ?? document
       const drawnEdges = new Set<string>()
       const edgeRects: Record<string, Rect> = {}
@@ -808,23 +829,31 @@ export function GraphMap({
         geometry: NonNullable<ReturnType<typeof geometryOf>>
         emphasized: boolean
         priority: number
+        /** One label per relation type around the focused endpoint. */
+        typeKey: string
       }
       const labelCandidates: LabelCandidate[] = []
       const considerLink = (link: SimLink, emphasized: boolean) => {
         const geometry = geometryOf(link)
         if (!geometry) return
         paintLink(link, emphasized, geometry)
-        const activeEndpoint = captionIds.has(geometry.source.id) && captionIds.has(geometry.target.id)
-        // At rest every relation on a readable graph is named; hover narrows the
-        // set to the active endpoint. Collision below drops what cannot fit.
+        const sourceFocus = labelFocus.has(geometry.source.id)
+        const targetFocus = labelFocus.has(geometry.target.id)
+        const activeEndpoint = sourceFocus || targetFocus
+        // A small graph names every relation at rest. On a dense graph only the
+        // selected / hovered / focused node's edges are named, independent of
+        // the camera zoom; collision below drops what cannot fit.
         const dragging = canvas.dataset.dragging === 'true'
-        const showLabel = edgeMode !== 'none' && (settled || dragging) && (edgeMode === 'all' || activeEndpoint || !hover)
+        const showLabel = (settled || dragging) && (edgeMode === 'all' || activeEndpoint)
         if (showLabel) {
           labelCandidates.push({
             link,
             geometry,
             emphasized,
             priority: activeEndpoint ? 3 : 1,
+            typeKey: activeEndpoint
+              ? `${sourceFocus ? geometry.source.id : geometry.target.id}|${link.label}`
+              : '',
           })
         }
       }
@@ -844,12 +873,14 @@ export function GraphMap({
       }
 
       const placedEdgeLabels: EdgeLabelBox[] = []
+      const placedLabelTypes = new Set<string>()
       context.font = '11px "Inter Variable", Inter, sans-serif'
       labelCandidates
         .slice()
         .sort((left, right) => right.priority - left.priority || left.link.id.localeCompare(right.link.id))
         .forEach((candidate) => {
-          const { link, geometry, emphasized } = candidate
+          const { link, geometry, emphasized, typeKey } = candidate
+          if (typeKey && placedLabelTypes.has(typeKey)) return
           const widthText = context.measureText(link.label).width
           const boxW = widthText + 12
           const boxH = 16
@@ -865,6 +896,7 @@ export function GraphMap({
           // Hide the lower-priority label instead of stacking it on a neighbour.
           if (placedEdgeLabels.some((other) => boxOverlap(box, other) > 0)) return
           if (labelNodes.some((node) => discOverlap(box, node) > 0)) return
+          if (typeKey) placedLabelTypes.add(typeKey)
           placedEdgeLabels.push(box)
           drawnEdges.add(link.id)
           const rect = canvas.getBoundingClientRect()
@@ -917,23 +949,25 @@ export function GraphMap({
       }
 
       context.font = '12px "Inter Variable", Inter, sans-serif'
-      for (const { node, point, radius } of placedNodes) {
+      for (const { node, point } of placedNodes) {
         if (!shownCaptionIds.has(node.id) || !node.caption) continue
         const emphasized = !hover || highlight.has(node.id)
         const active = node.id === current || highlight.has(node.id)
         const centerX = labelCenters.get(node.id) ?? point.x
+        const placement = labelPlacements.get(node.id)
+        if (!placement) continue
         context.save()
         context.globalAlpha = emphasized ? 1 : 0.28
-        haloText(context, node.caption, centerX, point.y + radius + 12, colors.text, colors.bg)
+        haloText(context, node.caption, centerX, placement.captionY, colors.text, colors.bg)
         if (active && node.subtitle && transform.k >= 0.6) {
           context.font = '10px "Inter Variable", Inter, sans-serif'
           const subtitleWidth = context.measureText(node.subtitle).width
           const subtitleX = clampLabelCenter(point.x, subtitleWidth, canvas.clientWidth)
           context.lineWidth = 3
           context.strokeStyle = colors.bg
-          context.strokeText(node.subtitle, subtitleX, point.y + radius + 26)
+          context.strokeText(node.subtitle, subtitleX, placement.subtitleY)
           context.fillStyle = colors.muted
-          context.fillText(node.subtitle, subtitleX, point.y + radius + 26)
+          context.fillText(node.subtitle, subtitleX, placement.subtitleY)
         }
         context.restore()
       }
@@ -1054,15 +1088,10 @@ export function GraphMap({
       startY = event.offsetY
       dragged = false
       if (hit) {
+        // A plain click must not wake the simulation: pin only once the pointer
+        // actually travels, so selecting a node never moves the hub.
         mode = 'node'
         dragNode = hit
-        hit.fx = hit.x
-        hit.fy = hit.y
-        // The node is being moved: labels redraw with it, and the layout is not
-        // settled again until the released node comes to rest.
-        canvas.dataset.dragging = 'true'
-        canvas.dataset.settling = 'true'
-        sim.alphaTarget(0.25).restart()
       } else {
         mode = 'pan'
         canvas.classList.add('panning')
@@ -1090,7 +1119,16 @@ export function GraphMap({
         fitAfterRef.current = false
         draw(false)
       } else if (dragNode && dragNode.x != null && dragNode.y != null) {
-        // Moving a node is not taking over the camera: the graph refits when it settles, until the user pans or zooms.
+        if (!dragged) return
+        if (dragNode.fx == null || dragNode.fy == null) {
+          dragNode.fx = dragNode.x
+          dragNode.fy = dragNode.y
+          // The node is being moved: labels redraw with it, and the layout is
+          // not settled again until the released node comes to rest.
+          canvas.dataset.dragging = 'true'
+          canvas.dataset.settling = 'true'
+          sim.alphaTarget(0.25).restart()
+        }
         dragNode.fx = (dragNode.fx ?? dragNode.x) + dx / transform.k
         dragNode.fy = (dragNode.fy ?? dragNode.y) + dy / transform.k
         movedRef.current = true
@@ -1154,6 +1192,7 @@ export function GraphMap({
       const radius = nodeRadius(hit.kind, hit.degree ?? 0) * transform.k
       const marker = { x: rect.left + point.x, y: rect.top + point.y, r: radius }
       const avoid = nodeMenuAvoid(marker, hit.caption)
+      const circle = { left: marker.x - radius, top: marker.y - radius, right: marker.x + radius, bottom: marker.y + radius }
       const stage = stageRect()
       const anchor = nodeMenuAnchor(marker, { x: event.clientX, y: event.clientY })
       const obstacles = [
@@ -1163,7 +1202,10 @@ export function GraphMap({
         }),
         ...Object.values(edgeLabelRectsRef.current),
       ]
-      openGraphNodeMenu(hit, defsRef.current, anchor.x, anchor.y, (request) => setAdd(request), avoid, stage, obstacles, stage)
+      // The menu hugs the circle; the label below it stays an obstacle and the
+      // dialog anchor still uses the circle + caption union.
+      focusNodeButton(hit.id, canvas)
+      openGraphNodeMenu(hit, defsRef.current, anchor.x, anchor.y, (request) => setAdd(request), circle, stage, obstacles, stage, avoid)
     }
 
     let sawPointer = 0
@@ -1205,16 +1247,13 @@ export function GraphMap({
     canvas.addEventListener('wheel', onWheel, { passive: false })
     canvas.addEventListener('dblclick', onDouble)
     canvas.addEventListener('contextmenu', onContextMenu)
-    let lastW = 0
-    let lastH = 0
+    // A resize (inspector growth, fullscreen toggle, pane split) must never move
+    // the camera once it exists. It only repaints at the current transform; the
+    // first fit happens when the simulation settles and on the toolbar buttons.
     const observer = new ResizeObserver(() => {
-      const w = canvas.clientWidth
-      const h = canvas.clientHeight
-      const jumped = Math.abs(w - lastW) > 48 || Math.abs(h - lastH) > 48
-      lastW = w
-      lastH = h
-      if (jumped && w > 40 && h > 40 && sim.nodes().length > 0) fit()
-      else draw(false)
+      // Publish the new client rects too: the camera does not move, but the a11y
+      // nodes and menu anchors must follow the resized canvas.
+      draw(true)
     })
     observer.observe(canvas)
     const theme = new MutationObserver(() => {
@@ -1338,7 +1377,7 @@ export function GraphMap({
 
   useEffect(() => {
     drawRef.current(true)
-  }, [selected, hidden])
+  }, [selected, hidden, focused])
 
   useLayoutEffect(() => {
     const stage = stageRef.current
@@ -1377,29 +1416,6 @@ export function GraphMap({
       }
     : undefined
 
-  useLayoutEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    let fitting = false
-    const apply = () => {
-      if (fitting) return
-      const stage = { width: canvas.clientWidth, height: canvas.clientHeight }
-      if (stage.width < 20 || stage.height < 20) return
-      const frame = readGraphFrame(stage, measureChromeBoxes(canvas, [inspectorRef.current, legendRef.current]), densityRef.current)
-      const key = `${Math.round(frame.x)}:${Math.round(frame.y)}:${Math.round(frame.width)}:${Math.round(frame.height)}`
-      if (key === frameKeyRef.current) return
-      frameKeyRef.current = key
-      fitting = true
-      apiRef.current.fit()
-      fitting = false
-    }
-    const observer = new ResizeObserver(() => apply())
-    if (inspectorRef.current) observer.observe(inspectorRef.current)
-    if (legendRef.current) observer.observe(legendRef.current)
-    apply()
-    return () => observer.disconnect()
-  }, [density, sheet, placement, full, selected])
-
   const revealSheet = () => setSheet((mode) => (mode === 'dismissed' || mode === 'chip' ? 'compact' : mode))
 
   const stageRect = (): Rect | undefined => {
@@ -1421,16 +1437,34 @@ export function GraphMap({
       : stored
     const anchor = nodeMenuAnchor(marker, fallback)
     const avoid = nodeMenuAvoid(marker, node.caption)
+    const radius = marker?.r ?? 0
+    const circle = marker
+      ? { left: marker.x - radius, top: marker.y - radius, right: marker.x + radius, bottom: marker.y + radius }
+      : undefined
     const obstacles = [
       ...nodeObstacles(
         marker
-          ? { ...markers, [node.id]: { x: marker.x, y: marker.y, r: marker.r ?? 0, label: avoid } }
+          ? { ...markers, [node.id]: { x: marker.x, y: marker.y, r: radius, label: avoid } }
           : markers,
       ),
       ...Object.values(edgeLabelRectsRef.current),
     ]
+    // A mouse-opened menu must leave a visible focus ring after Esc.
+    const button = stageRef.current?.querySelector<HTMLElement>(`[data-node-id="${CSS.escape(node.id)}"]`)
+    button?.focus({ preventScroll: true })
     const stage = stageRect()
-    openGraphNodeMenu(node, defsRef.current, anchor.x, anchor.y, (request) => setAdd(request), avoid, stage, obstacles, stage)
+    openGraphNodeMenu(
+      node,
+      defsRef.current,
+      anchor.x,
+      anchor.y,
+      (request) => setAdd(request),
+      circle ?? avoid,
+      stage,
+      obstacles,
+      stage,
+      avoid,
+    )
   }
   const opensNodeMenu = (event: { key: string; ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean }) =>
     ((event.ctrlKey || event.metaKey) && event.key === 'Enter') ||
@@ -1446,9 +1480,12 @@ export function GraphMap({
       setSelected('')
       return
     }
-    if (opensNodeMenu(event) && selectedNode && canOpenGraphNodeMenu(selectedNode)) {
+    if (opensNodeMenu(event)) {
+      // Never let the browser open its native menu on the graph surface. With a
+      // usable selected node our menu opens; otherwise the key does nothing.
       event.preventDefault()
-      openMenuForNode(selectedNode)
+      event.stopPropagation()
+      if (selectedNode && canOpenGraphNodeMenu(selectedNode)) openMenuForNode(selectedNode)
       return
     }
     if (event.key === 'Enter' && selectedNode) {
@@ -1474,12 +1511,11 @@ export function GraphMap({
   const unpin = () => {
     const node = simRef.current?.nodes().find((item) => item.id === selected)
     if (!node) return
+    // Unpin only releases the node; it never re-runs the layout.
     node.fx = null
     node.fy = null
-    const canvas = canvasRef.current
-    if (canvas) canvas.dataset.settling = 'true'
-    simRef.current?.alphaTarget(0).alpha(0.3).restart()
     setPinTick((tick) => tick + 1)
+    drawRef.current(true)
   }
 
   return (
@@ -1580,6 +1616,7 @@ export function GraphMap({
             key={node.id}
             type="button"
             data-node-id={node.id}
+            data-selected={node.id === selected ? 'true' : undefined}
             data-subtitle={node.subtitle}
             data-x={markers[node.id] ? String(markers[node.id].x) : undefined}
             data-y={markers[node.id] ? String(markers[node.id].y) : undefined}
@@ -1608,9 +1645,24 @@ export function GraphMap({
               openMenuForNode(node)
             }}
             onKeyDown={(event) => {
-              if (!canOpenGraphNodeMenu(node) || !opensNodeMenu(event)) return
+              if (opensNodeMenu(event)) {
+                // Shift+F10 / ContextMenu on any node must not fall through to
+                // the browser menu, even when the node has no node actions.
+                event.preventDefault()
+                event.stopPropagation()
+                if (canOpenGraphNodeMenu(node)) openMenuForNode(node)
+                return
+              }
+              if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) return
               event.preventDefault()
-              openMenuForNode(node)
+              const direction =
+                event.key === 'ArrowUp' ? 'up' : event.key === 'ArrowDown' ? 'down' : event.key === 'ArrowLeft' ? 'left' : 'right'
+              const next = spatialNeighbor(simRef.current?.nodes() ?? [], hidden, node.id, direction)
+              if (!next || next === node.id) return
+              setSelected(next)
+              revealSheet()
+              const button = stageRef.current?.querySelector<HTMLElement>(`[data-node-id="${CSS.escape(next)}"]`)
+              button?.focus({ preventScroll: true })
             }}
           >
             {node.caption}

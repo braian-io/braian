@@ -17,20 +17,26 @@ function distanceToBox(node: EdgeLabelNode, box: EdgeLabelBox) {
 }
 
 describe('edge label density', () => {
-  it('shows every label on a small, readable graph', () => {
+  it('shows every label on a small graph at rest, even at the fitted default zoom', () => {
     expect(edgeLabelMode(7, 0.9, false)).toBe('all')
     expect(edgeLabelMode(10, 0.9, false)).toBe('all')
+    expect(edgeLabelMode(4, 0.44, false)).toBe('all')
+    expect(edgeLabelMode(10, 0.25, false)).toBe('all')
   })
 
-  it('keeps only the active node labels on a dense graph', () => {
+  it('keeps only the active node labels on a dense graph, independent of zoom', () => {
     expect(edgeLabelMode(11, 0.9, false)).toBe('active')
     expect(edgeLabelMode(80, 1.4, false)).toBe('active')
+    // The fitted camera on a typical object graph lands at 0.44; selection and
+    // hover still label their edges there.
+    expect(edgeLabelMode(51, 0.44, false)).toBe('active')
+    expect(edgeLabelMode(51, 0.35, false)).toBe('active')
   })
 
-  it('hides labels when zoomed out; the model graph keeps its labels', () => {
-    expect(edgeLabelMode(4, 0.4, false)).toBe('none')
+  it('keeps the model graph labels at every zoom', () => {
     expect(edgeLabelMode(4, 0.4, true)).toBe('all')
     expect(edgeLabelMode(40, 0.54, true)).toBe('all')
+    expect(edgeLabelMode(400, 0.25, true)).toBe('all')
   })
 })
 
