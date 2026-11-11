@@ -2,6 +2,14 @@
 
 Bas: `origin/main` tip `795eb06` (#277). Senaste migrering i repot: `V44__proposal_recoveries.sql` (#268).
 
+## Säkerhet — dev-portarna bara loopback
+
+Grenen `junior/security-compose-bind-loopback` utgår från `origin/main` `580f972` (#296) och är **inte mergad, deployad eller accepterad**. `compose.yaml` publicerade Postgres och Typesense på `0.0.0.0`, så en lokal `just up` nåddes utifrån trots ufw. Portarna blir nu `"${POSTGRES_BIND:-127.0.0.1}:${POSTGRES_HOST_PORT:-5433}:5432"` och `"${TYPESENSE_BIND:-127.0.0.1}:${TYPESENSE_HOST_PORT:-8108}:8108"`, så standardbindningen är loopback. `.env.example` och `docs/dev.md` säger att `HOST_PORT` bara är ett portnummer, att `127.0.0.1:` i det gör bindningsspecen ogiltig, och att `BIND=0.0.0.0` går men inte är standard.
+
+- `docker compose config` (dummy-värden, läs-kontroll) visar `host_ip: 127.0.0.1` för båda tjänsterna med standardvärdena och med CI:s `POSTGRES_HOST_PORT=5433` (bara port); med `POSTGRES_BIND=0.0.0.0`/`TYPESENSE_BIND=0.0.0.0` blir `host_ip: 0.0.0.0`. En `127.0.0.1:`-prefix i `HOST_PORT` ger `invalid IP address: 127.0.0.1:127.0.0.1`.
+- CI:s `.env`-steg (`.github/workflows/ci.yml`) sätter `POSTGRES_HOST_PORT=5433` och når tjänsterna på `localhost:5433` / `localhost:8108`; med standard-`BIND` blir det `127.0.0.1:5433:5432` respektive `127.0.0.1:8108:8108`, och `localhost` slås upp till `127.0.0.1` på runnern. Arbetsflödet är oförändrat eftersom inget skifte bevisats.
+- Inga Rust-, web-, CI- eller demodatavärden ändrades. `apps/web/src/data-model.tsx` är orörd, och `product_suppliers`-etiketterna är orörda. Demovärden (`/opt/braian`) och Caddy har inte rörts.
+
 ## Rad 129e — riktig dubbelklick på kryssrutan, Esc-race, markering och raderingsdialog
 
 Grenen `junior/129e-allowed-trees-input` utgår från `origin/main` `0adeebe` (#293) och är **inte mergad, deployad eller accepterad**. Den rättar Test-avvisningen på `0adeebe`: ett riktigt dubbel-/trippelklick på själva kryssrutan (inte bara Playwrights `dblclick` eller ett syntetiskt click) gav ingen dialog och draft 0, medan etiketten fungerade; Esc/Cancel/X under en pågående `POST /v1/model/draft/steps` kunde komma tillbaka som «1 unsaved changes»; Object types-raden Product var inte markerad efter Save + F5; raderingsdialogen visade «Data model», aktiverad Confirm och påhittade «Affected objects: 0 / Sample: —» medan förslaget laddade, och upprepade sedan titeln under «Model diff»; ett okänt sparat `braian.modelSelection` kunde visas som rå typnyckel; och fokusringen på kryssrutan efter Esc var svag på mörk bakgrund.
