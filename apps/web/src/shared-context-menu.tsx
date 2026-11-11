@@ -92,30 +92,30 @@ function placeBesideMenu(
 ) {
   const margin = MENU_MIN_MARGIN
   const gap = MENU_GAP
+  // Try to hug the anchor first; only move further out when a label or another
+  // node blocks every near spot.
+  const nearGaps = [gap, gap + 4, gap + 8, gap + 12]
   const clampLeft = (value: number) => Math.max(area.left + margin, Math.min(value, area.right - menuWidth - margin))
   const clampTop = (value: number) => Math.max(area.top + margin, Math.min(value, area.bottom - menuHeight - margin))
-  const around = (rect: MenuRect) => {
+  const around = (rect: MenuRect, gaps: number[]) => {
     const middleX = (rect.left + rect.right) / 2 - menuWidth / 2
     const middleY = (rect.top + rect.bottom) / 2 - menuHeight / 2
-    return [
-      { x: rect.right + gap, y: rect.top },
-      { x: rect.right + gap, y: rect.bottom - menuHeight },
-      { x: rect.right + gap, y: middleY },
-      { x: rect.left - menuWidth - gap, y: rect.top },
-      { x: rect.left - menuWidth - gap, y: rect.bottom - menuHeight },
-      { x: rect.left - menuWidth - gap, y: middleY },
-      { x: middleX, y: rect.bottom + gap },
-      { x: middleX, y: rect.top - menuHeight - gap },
-      { x: rect.left, y: rect.bottom + gap },
-      { x: rect.right - menuWidth, y: rect.bottom + gap },
-      { x: rect.left, y: rect.top - menuHeight - gap },
-      { x: rect.right - menuWidth, y: rect.top - menuHeight - gap },
-    ]
+    // Slide along each side: an edge label below the node must not force the
+    // whole menu away when the same side is free a little higher or lower.
+    const rows = [rect.top, rect.top - menuHeight / 2, middleY, rect.bottom - menuHeight / 2, rect.bottom - menuHeight, rect.top - menuHeight, rect.bottom]
+    const columns = [rect.left, rect.left - menuWidth / 2, middleX, rect.right - menuWidth / 2, rect.right - menuWidth, rect.left - menuWidth, rect.right]
+    return gaps.flatMap((gapAt) => [
+      ...rows.map((y) => ({ x: rect.right + gapAt, y })),
+      ...rows.map((y) => ({ x: rect.left - menuWidth - gapAt, y })),
+      ...columns.map((x) => ({ x, y: rect.bottom + gapAt })),
+      ...columns.map((x) => ({ x, y: rect.top - menuHeight - gapAt })),
+    ])
   }
   const blockers = obstacles.length > 0 ? obstacles : [anchor]
-  const candidates = [anchor, ...blockers]
-    .flatMap(around)
-    .map((point) => ({ x: clampLeft(point.x), y: clampTop(point.y) }))
+  const candidates = [
+    ...around(anchor, nearGaps),
+    ...blockers.flatMap((rect) => around(rect, [gap])),
+  ].map((point) => ({ x: clampLeft(point.x), y: clampTop(point.y) }))
   const unique = candidates.filter(
     (point, index) => candidates.findIndex((other) => other.x === point.x && other.y === point.y) === index,
   )
@@ -132,8 +132,13 @@ function placeBesideMenu(
   })
   const overlap = (point: { x: number; y: number }) =>
     obstacles.reduce((total, rect) => total + overlapArea(boxAt(point), rect), 0)
-  const distance = (point: { x: number; y: number }) =>
-    Math.abs(point.x - anchor.right) + Math.abs(point.y - anchor.top)
+  // Smallest gap between the menu box and the anchor rect, not a corner distance.
+  const distance = (point: { x: number; y: number }) => {
+    const box = boxAt(point)
+    const dx = Math.max(anchor.left - box.right, box.left - anchor.right, 0)
+    const dy = Math.max(anchor.top - box.bottom, box.top - anchor.bottom, 0)
+    return Math.hypot(dx, dy)
+  }
   // A coarse grid finds free space when every edge-hugging candidate still
   // touches a neighbour. Menus are small and this runs once per open.
   const grid: Array<{ x: number; y: number }> = []

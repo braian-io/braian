@@ -11,6 +11,7 @@ import {
   inspectorChrome,
   legendLayout,
   nodeSummary,
+  placeNodeLabel,
   propertiesOpen,
   readGraphFrame,
   sheetAfterGesture,
@@ -226,3 +227,41 @@ describe('visible graph frame', () => {
 })
 
 const EDGE_SLACK = 12
+
+
+describe('node label placement', () => {
+  it('draws the caption below a node with room', () => {
+    expect(placeNodeLabel(300, 20, 600)).toEqual({
+      orientation: 'below',
+      captionY: 332,
+      subtitleY: 346,
+      top: 324,
+      bottom: 340,
+    })
+  })
+
+  it('flips the caption above a node that sits on the bottom edge', () => {
+    const placement = placeNodeLabel(560, 20, 600)
+    expect(placement.orientation).toBe('above')
+    expect(placement.captionY).toBe(528)
+    expect(placement.top).toBeGreaterThanOrEqual(4)
+    expect(placement.bottom).toBeLessThanOrEqual(596)
+  })
+
+  it('reserves room for an active subtitle when it flips', () => {
+    const placement = placeNodeLabel(545, 20, 600, true)
+    expect(placement.orientation).toBe('above')
+    expect(placement.captionY).toBe(499)
+    expect(placement.subtitleY).toBe(485)
+    expect(placement.top).toBeGreaterThanOrEqual(4)
+    expect(placement.bottom).toBeLessThanOrEqual(596)
+  })
+
+  it('clamps to the pane instead of clipping in a tiny frame', () => {
+    const placement = placeNodeLabel(620, 24, 60)
+    expect(placement.captionY).toBeGreaterThanOrEqual(12)
+    expect(placement.captionY).toBeLessThanOrEqual(48)
+    expect(placement.top).toBeGreaterThanOrEqual(0)
+    expect(placement.bottom).toBeLessThanOrEqual(60)
+  })
+})
