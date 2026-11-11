@@ -42,8 +42,10 @@ export type OpenMenuRequest = {
   extraOnly?: boolean
   /** The node circle + label a graph menu must not cover. */
   avoid?: MenuRect
-  /** Every visible node circle and label the menu should try not to cover. */
+  /** Every visible node circle, label and edge label the menu should try not to cover. */
   obstacles?: MenuRect[]
+  /** Keep the menu inside this pane/frame instead of the whole window. */
+  bounds?: MenuRect
 }
 
 export const OPEN_CONTEXT_MENU = 'braian:open-context-menu'
@@ -85,14 +87,13 @@ function placeBesideMenu(
   anchor: MenuRect,
   menuWidth: number,
   menuHeight: number,
-  vw: number,
-  vh: number,
+  area: MenuRect,
   obstacles: MenuRect[] = [anchor],
 ) {
   const margin = MENU_MIN_MARGIN
   const gap = MENU_GAP
-  const clampLeft = (value: number) => Math.max(margin, Math.min(value, vw - menuWidth - margin))
-  const clampTop = (value: number) => Math.max(margin, Math.min(value, vh - menuHeight - margin))
+  const clampLeft = (value: number) => Math.max(area.left + margin, Math.min(value, area.right - menuWidth - margin))
+  const clampTop = (value: number) => Math.max(area.top + margin, Math.min(value, area.bottom - menuHeight - margin))
   const around = (rect: MenuRect) => {
     const middleX = (rect.left + rect.right) / 2 - menuWidth / 2
     const middleY = (rect.top + rect.bottom) / 2 - menuHeight / 2
@@ -119,7 +120,10 @@ function placeBesideMenu(
     (point, index) => candidates.findIndex((other) => other.x === point.x && other.y === point.y) === index,
   )
   const fits = (point: { x: number; y: number }) =>
-    point.x >= margin && point.y >= margin && point.x + menuWidth <= vw - margin && point.y + menuHeight <= vh - margin
+    point.x >= area.left + margin &&
+    point.y >= area.top + margin &&
+    point.x + menuWidth <= area.right - margin &&
+    point.y + menuHeight <= area.bottom - margin
   const boxAt = (point: { x: number; y: number }): MenuRect => ({
     left: point.x,
     top: point.y,
@@ -134,8 +138,8 @@ function placeBesideMenu(
   // touches a neighbour. Menus are small and this runs once per open.
   const grid: Array<{ x: number; y: number }> = []
   const step = 16
-  for (let y = margin; y + menuHeight <= vh - margin; y += step) {
-    for (let x = margin; x + menuWidth <= vw - margin; x += step) grid.push({ x, y })
+  for (let y = area.top + margin; y + menuHeight <= area.bottom - margin; y += step) {
+    for (let x = area.left + margin; x + menuWidth <= area.right - margin; x += step) grid.push({ x, y })
   }
   const all = [...unique, ...grid]
   const zero = all
@@ -161,27 +165,36 @@ export function placeContextMenu(
   menuHeight = MENU_FALLBACK_HEIGHT,
   avoid?: MenuRect,
   obstacles?: MenuRect[],
+  bounds?: MenuRect,
 ) {
   const vw = typeof window === 'undefined' ? 0 : window.innerWidth
   const vh = typeof window === 'undefined' ? 0 : window.innerHeight
-  if (avoid && vw > 0 && vh > 0) {
-    return placeBesideMenu(avoid, menuWidth, menuHeight, vw, vh, obstacles ?? [avoid])
+  const area = bounds ?? { left: 0, top: 0, right: vw, bottom: vh }
+  const areaKnown = area.right > area.left && area.bottom > area.top
+  if (avoid && areaKnown) {
+    return placeBesideMenu(avoid, menuWidth, menuHeight, area, obstacles ?? [avoid])
   }
   let left = x + MENU_GAP
   let top = y + MENU_GAP
-  if (vh > 0 && top + menuHeight > vh - MENU_MIN_MARGIN) {
-    top = Math.max(MENU_MIN_MARGIN, y - menuHeight - MENU_GAP)
+  if (areaKnown && top + menuHeight > area.bottom - MENU_MIN_MARGIN) {
+    top = Math.max(area.top + MENU_MIN_MARGIN, y - menuHeight - MENU_GAP)
   }
-  if (vw > 0 && left + menuWidth > vw - MENU_MIN_MARGIN) {
-    left = Math.max(MENU_MIN_MARGIN, x - menuWidth - MENU_GAP)
+  if (areaKnown && left + menuWidth > area.right - MENU_MIN_MARGIN) {
+    left = Math.max(area.left + MENU_MIN_MARGIN, x - menuWidth - MENU_GAP)
   }
-  left = Math.max(MENU_MIN_MARGIN, vw > 0 ? Math.min(left, vw - Math.min(menuWidth, vw - MENU_MIN_MARGIN)) : left)
-  top = Math.max(MENU_MIN_MARGIN, vh > 0 ? Math.min(top, vh - Math.min(menuHeight, vh - MENU_MIN_MARGIN)) : top)
+  left = Math.max(
+    area.left + MENU_MIN_MARGIN,
+    areaKnown ? Math.min(left, area.right - Math.min(menuWidth, area.right - area.left - MENU_MIN_MARGIN)) : left,
+  )
+  top = Math.max(
+    area.top + MENU_MIN_MARGIN,
+    areaKnown ? Math.min(top, area.bottom - Math.min(menuHeight, area.bottom - area.top - MENU_MIN_MARGIN)) : top,
+  )
   return { x: left, y: top }
 }
 
-function clamp(x: number, y: number, avoid?: MenuRect, obstacles?: MenuRect[]) {
-  return placeContextMenu(x, y, MENU_FALLBACK_WIDTH, MENU_FALLBACK_HEIGHT, avoid, obstacles)
+function clamp(x: number, y: number, avoid?: MenuRect, obstacles?: MenuRect[], bounds?: MenuRect) {
+  return placeContextMenu(x, y, MENU_FALLBACK_WIDTH, MENU_FALLBACK_HEIGHT, avoid, obstacles, bounds)
 }
 
 function uniqueCommands(items: RegistryCommand[]): RegistryCommand[] {
@@ -280,8 +293,25 @@ export function SharedContextMenuHost({
     if (!request) return
     const menu = menuRef.current
     if (menu) {
+      const bounds = request.bounds
+      if (bounds) {
+        const width = Math.max(120, bounds.right - bounds.left - MENU_MIN_MARGIN * 2)
+        const height = Math.max(80, bounds.bottom - bounds.top - MENU_MIN_MARGIN * 2)
+        menu.style.maxWidth = `${width}px`
+        menu.style.maxHeight = `${height}px`
+        menu.style.overflowY = 'auto'
+        if (width < MENU_FALLBACK_WIDTH) menu.style.minWidth = '0px'
+      }
       const size = menu.getBoundingClientRect()
-      const next = placeContextMenu(request.x, request.y, size.width, size.height, request.avoid, request.obstacles)
+      const next = placeContextMenu(
+        request.x,
+        request.y,
+        size.width,
+        size.height,
+        request.avoid,
+        request.obstacles,
+        bounds,
+      )
       menu.style.left = `${next.x}px`
       menu.style.top = `${next.y}px`
     }
@@ -462,7 +492,7 @@ export function SharedContextMenuHost({
   }
 
   if (!request || items.length === 0) return null
-  const point = clamp(request.x, request.y, request.avoid, request.obstacles)
+  const point = clamp(request.x, request.y, request.avoid, request.obstacles, request.bounds)
   const marked = highlighted ?? items[0]?.id ?? null
 
   const renderItem = (

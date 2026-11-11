@@ -1934,6 +1934,8 @@ canvas.graph.panning { cursor: grabbing; }
   background: var(--panel);
 }
 .palette-query:focus-within { box-shadow: var(--ring); }
+.link-picker-relation { display: inline; }
+.link-picker-relation .meta-chip { display: inline; }
 .palette-query input,
 .palette-query [cmdk-input-wrapper] {
   background: transparent;

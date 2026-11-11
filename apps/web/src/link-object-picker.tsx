@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api, type Json } from './api'
 import { Command, CommandInput, CommandItem, CommandList } from './components/ui/command'
 import { Kbd } from './components/ui/kbd'
+import { Portal } from './components/ui/portal'
 import { MetaChip } from './chips'
 import { readFrecency, touch } from './frecency'
 import { copy, uiLanguage } from './i18n'
@@ -32,6 +33,7 @@ export function LinkObjectPicker({
   const [query, setQuery] = useState('')
   const [debounced, setDebounced] = useState('')
   const [active, setActive] = useState(0)
+  const rootRef = useRef<HTMLDivElement>(null)
   useEffect(() => pushLinkUi(), [])
   useEffect(() => {
     if (!query.trim()) {
@@ -90,6 +92,25 @@ export function LinkObjectPicker({
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    // Keep Tab inside the picker. The search field is the only tab stop today,
+    // so Tab and Shift+Tab both keep typing in place instead of reaching the
+    // pane behind the overlay.
+    if (event.key === 'Tab') {
+      const focusable = Array.from(
+        rootRef.current?.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      ).filter((element) => element.getClientRects().length > 0)
+      if (focusable.length === 0) return
+      event.preventDefault()
+      event.stopPropagation()
+      const current = focusable.indexOf(document.activeElement as HTMLElement)
+      const next = event.shiftKey
+        ? current <= 0 ? focusable.length - 1 : current - 1
+        : current < 0 || current === focusable.length - 1 ? 0 : current + 1
+      focusable[next]?.focus()
+      return
+    }
     const effect: PaletteKeyEffect = paletteKeyEffect({
       key: event.key,
       ctrlKey: event.ctrlKey,
@@ -113,92 +134,97 @@ export function LinkObjectPicker({
 
   const showEmpty = debounced.trim().length > 0 && !found.isFetching && rows.length === 0
   return (
-    <div
-      className="palette"
-      role="dialog"
-      aria-label={relation ? `${copy.addLink} ${relation.label}` : copy.addLink}
-      data-testid="link-picker"
-      onMouseDown={onClose}
-    >
-      <Command
-        shouldFilter={false}
-        loop={false}
-        disablePointerSelection
-        value={rows[active]?.id ?? ''}
-        onMouseDown={(event) => event.stopPropagation()}
-        onKeyDownCapture={onKeyDown}
+    <Portal>
+      <div
+        ref={rootRef}
+        className="palette"
+        role="dialog"
+        aria-label={relation ? `${copy.addLink} ${relation.label}` : copy.addLink}
+        data-testid="link-picker"
+        onMouseDown={onClose}
       >
-        <div className="palette-query">
-          <div className="crumb" data-testid="link-picker-crumb">
-            {copy.addLink}
-            {source ? (
-              <>
-                {' · '}
-                <span data-testid="link-picker-source">{linkEndLabel({ id: '', key: source.key, name: source.name })}</span>
-              </>
-            ) : null}
-            {relation ? (
-              <>
-                {' · '}
-                <span data-testid="link-picker-relation">
-                  {relation.label} · {relation.direction === 'out' ? copy.linkFromHere : copy.linkToHere}
-                </span>
-              </>
-            ) : null}
-          </div>
-          <CommandInput
-            data-testid="link-search"
-            autoFocus
-            role="combobox"
-            aria-autocomplete="list"
-            aria-controls="link-picker-list"
-            aria-expanded="true"
-            data-palette-active={active >= 0 ? String(active) : ''}
-            value={query}
-            placeholder={copy.linkSearchPlaceholder}
-            onValueChange={(value) => setQuery(value)}
-          />
-        </div>
-        <div className="sr-only" aria-live="polite" data-testid="link-picker-results">
-          {resultAnnouncement(rows.length, debounced)}
-        </div>
-        <CommandList id="link-picker-list" role="listbox">
-          {showEmpty ? (
-            <p className="palette-empty" data-testid="link-picker-empty">{copy.noResultsFor.replace('{query}', debounced.trim())}</p>
-          ) : null}
-          {rows.length > 0 ? <div className="palette-heading">{rows[0]?.group === 'recent' ? groupTitle.recent : groupTitle.search}</div> : null}
-          {rows.map((row, index) => (
-            <CommandItem
-              key={row.id}
-              id={`link-opt-${index}`}
-              data-palette-index={index}
-              value={row.id}
-              role="option"
-              aria-selected={index === active}
-              className={index === active ? 'hit on' : 'hit'}
-              onPointerDown={() => setActive(index)}
-              onSelect={() => choose(row)}
-            >
-              <span className="hit-copy">
-                <span className="hit-title">{mark(row.title, query)}</span>
-                {row.subtitle ? <small>{row.subtitle}</small> : null}
-              </span>
-              {row.chips && row.chips.length > 0 ? (
-                <span className="hit-chips">
-                  {row.chips.map((chip) => (
-                    <MetaChip key={chip.text} tone={chip.tone}>{chip.text}</MetaChip>
-                  ))}
-                </span>
+        <Command
+          shouldFilter={false}
+          loop={false}
+          disablePointerSelection
+          value={rows[active]?.id ?? ''}
+          onMouseDown={(event) => event.stopPropagation()}
+          onKeyDownCapture={onKeyDown}
+        >
+          <div className="palette-query">
+            <div className="crumb" data-testid="link-picker-crumb">
+              {copy.addLink}
+              {source ? (
+                <>
+                  {' · '}
+                  <span data-testid="link-picker-source">{linkEndLabel({ id: '', key: source.key, name: source.name })}</span>
+                </>
               ) : null}
-            </CommandItem>
-          ))}
-        </CommandList>
-        <div className="palette-foot" data-testid="link-picker-foot">
-          <span><Kbd>Enter</Kbd> {copy.linkChoose}</span>
-          <span><Kbd>Esc</Kbd> {copy.close}</span>
-        </div>
-      </Command>
-    </div>
+              {relation ? (
+                <>
+                  {' · '}
+                  <span data-testid="link-picker-relation" className="link-picker-relation">
+                    <MetaChip tone="neutral">{relation.label}</MetaChip>
+                    {' · '}
+                    {relation.direction === 'out' ? copy.linkFromHere : copy.linkToHere}
+                  </span>
+                </>
+              ) : null}
+            </div>
+            <CommandInput
+              data-testid="link-search"
+              autoFocus
+              role="combobox"
+              aria-autocomplete="list"
+              aria-controls="link-picker-list"
+              aria-expanded="true"
+              data-palette-active={active >= 0 ? String(active) : ''}
+              value={query}
+              placeholder={copy.linkSearchPlaceholder}
+              onValueChange={(value) => setQuery(value)}
+            />
+          </div>
+          <div className="sr-only" aria-live="polite" data-testid="link-picker-results">
+            {resultAnnouncement(rows.length, debounced)}
+          </div>
+          <CommandList id="link-picker-list" role="listbox">
+            {showEmpty ? (
+              <p className="palette-empty" data-testid="link-picker-empty">{copy.noResultsFor.replace('{query}', debounced.trim())}</p>
+            ) : null}
+            {rows.length > 0 ? <div className="palette-heading">{rows[0]?.group === 'recent' ? groupTitle.recent : groupTitle.search}</div> : null}
+            {rows.map((row, index) => (
+              <CommandItem
+                key={row.id}
+                id={`link-opt-${index}`}
+                data-palette-index={index}
+                value={row.id}
+                role="option"
+                aria-selected={index === active}
+                className={index === active ? 'hit on' : 'hit'}
+                onPointerDown={() => setActive(index)}
+                onSelect={() => choose(row)}
+              >
+                <span className="hit-copy">
+                  <span className="hit-title">{mark(row.title, query)}</span>
+                  {row.subtitle ? <small>{row.subtitle}</small> : null}
+                </span>
+                {row.chips && row.chips.length > 0 ? (
+                  <span className="hit-chips">
+                    {row.chips.map((chip) => (
+                      <MetaChip key={chip.text} tone={chip.tone}>{chip.text}</MetaChip>
+                    ))}
+                  </span>
+                ) : null}
+              </CommandItem>
+            ))}
+          </CommandList>
+          <div className="palette-foot" data-testid="link-picker-foot">
+            <span><Kbd>Enter</Kbd> {copy.linkChoose}</span>
+            <span><Kbd>Esc</Kbd> {copy.close}</span>
+          </div>
+        </Command>
+      </div>
+    </Portal>
   )
 }
 
