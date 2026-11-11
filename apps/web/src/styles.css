@@ -871,6 +871,8 @@ button.agent-bg-indicator strong { font-variant-numeric: tabular-nums; }
 }
 .link-ends[data-many='true'] { flex-direction: column; align-items: flex-start; }
 .link-end { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.create-dialog .link-end { white-space: normal; overflow-wrap: anywhere; }
+.create-dialog .dialog-actions { flex-wrap: wrap; }
 .link-type-line { margin: 0; color: var(--accent-hover); font-size: var(--text-base); font-weight: 600; }
 select.link-type-line { width: 100%; font-weight: 600; }
 @media (prefers-reduced-motion: reduce) {
@@ -2461,6 +2463,9 @@ html[data-theme-switching] *::after {
 /* Create dialog only. One padding for header, fields, and footer.
    Each control has a single border — no raised card around it. */
 .dialog.create-dialog {
+  width: min(640px, calc(100vw - 48px));
+  max-width: calc(100vw - 48px);
+  box-sizing: border-box;
   padding: 22px;
   gap: 0;
 }

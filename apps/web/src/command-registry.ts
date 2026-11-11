@@ -439,13 +439,6 @@ export const registryCommands: RegistryCommand[] = [
     group: 'object',
   },
   {
-    id: 'link:open-peer',
-    title: copy.open,
-    contexts: ['link'],
-    group: 'object',
-    when: (target) => Boolean(target.peerId),
-  },
-  {
     id: 'link:edit',
     title: copy.editLink,
     contexts: ['link'],

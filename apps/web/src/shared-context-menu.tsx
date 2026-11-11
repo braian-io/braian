@@ -42,6 +42,8 @@ export type OpenMenuRequest = {
   extraOnly?: boolean
   /** The node circle + label a graph menu must not cover. */
   avoid?: MenuRect
+  /** Every visible node circle and label the menu should try not to cover. */
+  obstacles?: MenuRect[]
 }
 
 export const OPEN_CONTEXT_MENU = 'braian:open-context-menu'
@@ -79,17 +81,43 @@ function overlapArea(a: MenuRect, b: MenuRect) {
 }
 
 /** Place a fixed menu beside a node, trying right, left, below and above it. */
-function placeBesideMenu(avoid: MenuRect, menuWidth: number, menuHeight: number, vw: number, vh: number) {
+function placeBesideMenu(
+  anchor: MenuRect,
+  menuWidth: number,
+  menuHeight: number,
+  vw: number,
+  vh: number,
+  obstacles: MenuRect[] = [anchor],
+) {
   const margin = MENU_MIN_MARGIN
   const gap = MENU_GAP
   const clampLeft = (value: number) => Math.max(margin, Math.min(value, vw - menuWidth - margin))
   const clampTop = (value: number) => Math.max(margin, Math.min(value, vh - menuHeight - margin))
-  const candidates = [
-    { x: avoid.right + gap, y: clampTop(avoid.top) },
-    { x: avoid.left - menuWidth - gap, y: clampTop(avoid.top) },
-    { x: clampLeft((avoid.left + avoid.right) / 2 - menuWidth / 2), y: avoid.bottom + gap },
-    { x: clampLeft((avoid.left + avoid.right) / 2 - menuWidth / 2), y: avoid.top - menuHeight - gap },
-  ]
+  const around = (rect: MenuRect) => {
+    const middleX = (rect.left + rect.right) / 2 - menuWidth / 2
+    const middleY = (rect.top + rect.bottom) / 2 - menuHeight / 2
+    return [
+      { x: rect.right + gap, y: rect.top },
+      { x: rect.right + gap, y: rect.bottom - menuHeight },
+      { x: rect.right + gap, y: middleY },
+      { x: rect.left - menuWidth - gap, y: rect.top },
+      { x: rect.left - menuWidth - gap, y: rect.bottom - menuHeight },
+      { x: rect.left - menuWidth - gap, y: middleY },
+      { x: middleX, y: rect.bottom + gap },
+      { x: middleX, y: rect.top - menuHeight - gap },
+      { x: rect.left, y: rect.bottom + gap },
+      { x: rect.right - menuWidth, y: rect.bottom + gap },
+      { x: rect.left, y: rect.top - menuHeight - gap },
+      { x: rect.right - menuWidth, y: rect.top - menuHeight - gap },
+    ]
+  }
+  const blockers = obstacles.length > 0 ? obstacles : [anchor]
+  const candidates = [anchor, ...blockers]
+    .flatMap(around)
+    .map((point) => ({ x: clampLeft(point.x), y: clampTop(point.y) }))
+  const unique = candidates.filter(
+    (point, index) => candidates.findIndex((other) => other.x === point.x && other.y === point.y) === index,
+  )
   const fits = (point: { x: number; y: number }) =>
     point.x >= margin && point.y >= margin && point.x + menuWidth <= vw - margin && point.y + menuHeight <= vh - margin
   const boxAt = (point: { x: number; y: number }): MenuRect => ({
@@ -98,12 +126,28 @@ function placeBesideMenu(avoid: MenuRect, menuWidth: number, menuHeight: number,
     right: point.x + menuWidth,
     bottom: point.y + menuHeight,
   })
-  const clear = candidates.find((point) => fits(point) && overlapArea(boxAt(point), avoid) === 0)
-  if (clear) return clear
-  const fitting = candidates.filter(fits)
+  const overlap = (point: { x: number; y: number }) =>
+    obstacles.reduce((total, rect) => total + overlapArea(boxAt(point), rect), 0)
+  const distance = (point: { x: number; y: number }) =>
+    Math.abs(point.x - anchor.right) + Math.abs(point.y - anchor.top)
+  // A coarse grid finds free space when every edge-hugging candidate still
+  // touches a neighbour. Menus are small and this runs once per open.
+  const grid: Array<{ x: number; y: number }> = []
+  const step = 16
+  for (let y = margin; y + menuHeight <= vh - margin; y += step) {
+    for (let x = margin; x + menuWidth <= vw - margin; x += step) grid.push({ x, y })
+  }
+  const all = [...unique, ...grid]
+  const zero = all
+    .filter((point) => fits(point) && overlap(point) === 0)
+    .sort((a, b) => distance(a) - distance(b))
+  if (zero[0]) return zero[0]
+  const fitting = all.filter(fits)
   if (fitting.length > 0) {
     return fitting.reduce((best, point) =>
-      overlapArea(boxAt(point), avoid) < overlapArea(boxAt(best), avoid) ? point : best,
+      overlap(point) < overlap(best) || (overlap(point) === overlap(best) && distance(point) < distance(best))
+        ? point
+        : best,
     )
   }
   return { x: clampLeft(candidates[0]!.x), y: clampTop(candidates[0]!.y) }
@@ -116,10 +160,13 @@ export function placeContextMenu(
   menuWidth = MENU_FALLBACK_WIDTH,
   menuHeight = MENU_FALLBACK_HEIGHT,
   avoid?: MenuRect,
+  obstacles?: MenuRect[],
 ) {
   const vw = typeof window === 'undefined' ? 0 : window.innerWidth
   const vh = typeof window === 'undefined' ? 0 : window.innerHeight
-  if (avoid && vw > 0 && vh > 0) return placeBesideMenu(avoid, menuWidth, menuHeight, vw, vh)
+  if (avoid && vw > 0 && vh > 0) {
+    return placeBesideMenu(avoid, menuWidth, menuHeight, vw, vh, obstacles ?? [avoid])
+  }
   let left = x + MENU_GAP
   let top = y + MENU_GAP
   if (vh > 0 && top + menuHeight > vh - MENU_MIN_MARGIN) {
@@ -133,8 +180,8 @@ export function placeContextMenu(
   return { x: left, y: top }
 }
 
-function clamp(x: number, y: number, avoid?: MenuRect) {
-  return placeContextMenu(x, y, MENU_FALLBACK_WIDTH, MENU_FALLBACK_HEIGHT, avoid)
+function clamp(x: number, y: number, avoid?: MenuRect, obstacles?: MenuRect[]) {
+  return placeContextMenu(x, y, MENU_FALLBACK_WIDTH, MENU_FALLBACK_HEIGHT, avoid, obstacles)
 }
 
 function uniqueCommands(items: RegistryCommand[]): RegistryCommand[] {
@@ -212,7 +259,7 @@ export function SharedContextMenuHost({
     setSubmenuPos(null)
     const el = restoreFocus.current
     restoreFocus.current = null
-    if (restore) queueMicrotask(() => el?.focus())
+    if (restore) queueMicrotask(() => el?.focus({ preventScroll: true }))
   }
 
   const closeSubmenu = () => {
@@ -234,7 +281,7 @@ export function SharedContextMenuHost({
     const menu = menuRef.current
     if (menu) {
       const size = menu.getBoundingClientRect()
-      const next = placeContextMenu(request.x, request.y, size.width, size.height, request.avoid)
+      const next = placeContextMenu(request.x, request.y, size.width, size.height, request.avoid, request.obstacles)
       menu.style.left = `${next.x}px`
       menu.style.top = `${next.y}px`
     }
@@ -415,7 +462,7 @@ export function SharedContextMenuHost({
   }
 
   if (!request || items.length === 0) return null
-  const point = clamp(request.x, request.y, request.avoid)
+  const point = clamp(request.x, request.y, request.avoid, request.obstacles)
   const marked = highlighted ?? items[0]?.id ?? null
 
   const renderItem = (
