@@ -55,6 +55,10 @@ async function resetEnrich(page: Page) {
 async function choose(table: Locator, name: string) {
   const inline = table.locator('.toolbar-actions, [data-testid="standard-table-filters"]').getByRole('button', { name, exact: true })
   await inline.click()
+  // The chip turns on before the table's search request with the new filter
+  // expression lands. Waiting for the applied state here keeps the row count
+  // from being read while the previous (or no) group filter is still active.
+  await expect(inline).toHaveClass(/\bon\b/)
 }
 
 test('selecting a structure group lists the same products as its selection', async ({ page }) => {
@@ -80,6 +84,7 @@ test('selecting a structure group lists the same products as its selection', asy
   await choose(table, 'All')
   await filter.fill('')
   await expect(table.getByTestId('object-row').first()).toBeVisible()
+  await expect.poll(async () => table.getByTestId('object-row').count()).toBeGreaterThan(0)
   await choose(table, 'Cheese')
   await filter.fill('PROD-CHEDDAR')
   await expect(table.getByTestId('object-row').first()).toContainText('PROD-CHEDDAR')

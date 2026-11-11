@@ -31,6 +31,7 @@ const specs = [
   'e2e/design-polish-low-rows.spec.ts',
   'e2e/graph.spec.ts',
   'e2e/row128-type-menu.spec.ts',
+  'e2e/row128b-object-node-links.spec.ts',
   'e2e/history.spec.ts',
   'e2e/import.spec.ts',
   'e2e/structure.spec.ts',
@@ -176,6 +177,7 @@ const measuredSeconds = {
   'e2e/design-polish-low-rows.spec.ts': 30,
   'e2e/graph.spec.ts': 26,
   'e2e/row128-type-menu.spec.ts': 210,
+  'e2e/row128b-object-node-links.spec.ts': 150,
   'e2e/history.spec.ts': 6,
   'e2e/import.spec.ts': 4,
   'e2e/structure.spec.ts': 6,
@@ -489,8 +491,11 @@ function exitCode(error) {
 }
 
 function runPlaywright(files, webUrl) {
+  const extra = process.env.BRAIAN_E2E_PW_ARGS_JSON
+    ? JSON.parse(process.env.BRAIAN_E2E_PW_ARGS_JSON)
+    : []
   return new Promise((resolve) => {
-    const child = spawn(pnpm, ['--dir', 'apps/web', 'exec', 'playwright', 'test', ...files], {
+    const child = spawn(pnpm, ['--dir', 'apps/web', 'exec', 'playwright', 'test', ...extra, ...files], {
       cwd: root,
       stdio: 'inherit',
       shell: windows,

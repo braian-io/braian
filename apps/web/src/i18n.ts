@@ -682,6 +682,7 @@ export const copy = {
   linkToName: 'Link to {name}',
   linkToCount: 'Link {name} to {count} objects',
   linkDragVerb: 'Link {label}',
+  linkMenuVerb: 'Link {label}…',
   linkOneObject: '1 object',
   linkManyObjects: '{count} objects',
   linkCant: "{from} can't link to {to}",

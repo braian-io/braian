@@ -391,6 +391,7 @@ export function linkChoices(defs: Json | undefined, typeKey: string) {
   return sectionsFor(defs, typeKey, []).map((section) => ({
     key: section.link_type,
     label: section.label,
+    direction: section.direction,
   }))
 }
 

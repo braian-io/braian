@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
 
 const baseURL = process.env.BRAIAN_WEB_URL ?? 'http://127.0.0.1:3000'
@@ -25,6 +25,29 @@ async function openPalette(page: Page) {
   const palette = page.getByTestId('command-palette')
   await expect(palette).toBeVisible()
   return palette
+}
+
+/**
+ * The first ArrowDown can also finish loading the grouped command list, so the
+ * option order may change after the highlight has moved. Sample the order only
+ * once two reads agree that it has settled.
+ */
+async function waitForStableOptions(palette: Locator, timeout = 15_000): Promise<string[]> {
+  let stable: string[] = []
+  await expect
+    .poll(
+      async () => {
+        const values = await palette
+          .getByRole('option')
+          .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-value') ?? ''))
+        const settled = values.length > 1 && values.join('\u0000') === stable.join('\u0000')
+        stable = values
+        return settled
+      },
+      { message: 'palette option order', timeout, intervals: [100, 100, 150, 200, 250] },
+    )
+    .toBe(true)
+  return stable
 }
 
 test.describe('palette drill-in, recent order, and global commands', () => {
@@ -209,9 +232,11 @@ test.describe('palette drill-in, recent order, and global commands', () => {
     const input = page.getByTestId('palette-input')
     await input.focus()
     await expect.poll(async () => palette.getByRole('option').count()).toBeGreaterThan(1)
+    await waitForStableOptions(palette)
     await page.keyboard.press('ArrowDown')
     const highlighted = palette.locator('.hit.on')
     await expect(highlighted).toBeVisible()
+    await waitForStableOptions(palette)
     const first = await highlighted.getAttribute('data-value')
     expect(first).toBeTruthy()
     await page.keyboard.press('ArrowDown')

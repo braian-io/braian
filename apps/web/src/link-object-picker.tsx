@@ -6,7 +6,7 @@ import { Kbd } from './components/ui/kbd'
 import { MetaChip } from './chips'
 import { readFrecency, touch } from './frecency'
 import { copy, uiLanguage } from './i18n'
-import { linkHitFromDocument, linkPaletteItem, linkPickerRows, type LinkHit } from './link-choices'
+import { linkHitFromDocument, linkPaletteItem, linkPickerRows, type LinkDirection, type LinkHit } from './link-choices'
 import { pushLinkUi } from './link-ui'
 import { paletteKeyEffect, type PaletteKeyEffect } from './palette-core'
 import { groupTitle, readPaletteMemory, rememberPaletteItem, resultAnnouncement, type PaletteItem } from './palette-model'
@@ -15,12 +15,14 @@ export function LinkObjectPicker({
   sourceId,
   excludeIds,
   defs,
+  relation,
   onClose,
   onChoose,
 }: {
   sourceId: string
   excludeIds?: string[]
   defs?: Json
+  relation?: { label: string; direction: LinkDirection }
   onClose: () => void
   onChoose: (hit: LinkHit) => void
 }) {
@@ -95,7 +97,13 @@ export function LinkObjectPicker({
 
   const showEmpty = debounced.trim().length > 0 && !found.isFetching && rows.length === 0
   return (
-    <div className="palette" role="dialog" aria-label={copy.addLink} data-testid="link-picker" onMouseDown={onClose}>
+    <div
+      className="palette"
+      role="dialog"
+      aria-label={relation ? `${copy.addLink} ${relation.label}` : copy.addLink}
+      data-testid="link-picker"
+      onMouseDown={onClose}
+    >
       <Command
         shouldFilter={false}
         loop={false}
@@ -105,7 +113,14 @@ export function LinkObjectPicker({
         onKeyDownCapture={onKeyDown}
       >
         <div className="palette-query">
-          <div className="crumb" data-testid="link-picker-crumb">{copy.addLink}</div>
+          <div className="crumb" data-testid="link-picker-crumb">
+            {copy.addLink}
+            {relation ? (
+              <span data-testid="link-picker-relation">
+                {relation.label} · {relation.direction === 'out' ? copy.linkFromHere : copy.linkToHere}
+              </span>
+            ) : null}
+          </div>
           <CommandInput
             data-testid="link-search"
             autoFocus
