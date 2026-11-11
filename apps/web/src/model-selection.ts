@@ -1,7 +1,11 @@
+import type { Json } from './api'
 import { setModelFocus } from './model-stage'
 import type { ModelSelection } from './model-view'
 
 const SELECTION_KEY = 'braian.modelSelection'
+const KNOWN_KEY = 'braian.modelKeys'
+
+type KnownModel = { types: string[]; groups: string[] }
 
 let previewType = ''
 const listeners = new Set<() => void>()
@@ -22,6 +26,13 @@ function isSelection(value: unknown): value is ModelSelection {
   return false
 }
 
+function isKnown(value: unknown): value is KnownModel {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const record = value as Record<string, unknown>
+  return Array.isArray(record.types) && record.types.every((item) => typeof item === 'string')
+    && Array.isArray(record.groups) && record.groups.every((item) => typeof item === 'string')
+}
+
 function readStoredSelection(): ModelSelection | null {
   const store = storageOrNull()
   if (!store) return null
@@ -34,6 +45,37 @@ function readStoredSelection(): ModelSelection | null {
     return null
   }
 }
+
+function readKnown(): KnownModel | null {
+  const store = storageOrNull()
+  if (!store) return null
+  try {
+    const raw = store.getItem(KNOWN_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as unknown
+    return isKnown(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function writeKnown(next: KnownModel) {
+  const store = storageOrNull()
+  if (!store) return
+  try {
+    store.setItem(KNOWN_KEY, JSON.stringify(next))
+  } catch {
+    // A full or disabled storage must not break the view.
+  }
+}
+
+function selectionExists(next: ModelSelection, known: KnownModel) {
+  if (next.kind === 'type') return known.types.includes(next.typeKey)
+  return known.groups.includes(`${next.structure}/${next.group}`)
+}
+
+/** Types and groups seen in the last loaded definitions, if any. */
+let known: KnownModel | null = readKnown()
 
 function writeStoredSelection(next: ModelSelection | null) {
   const store = storageOrNull()
@@ -48,12 +90,50 @@ function writeStoredSelection(next: ModelSelection | null) {
 
 // The Data model view is restored by the workspace and view persistence. The
 // selected type has to survive the same reload, or Type attributes reopens
-// empty after Save + F5.
+// empty after Save + F5. A stored key that no longer exists is dropped before
+// any component can show it as a title.
 let selection: ModelSelection | null = readStoredSelection()
+if (selection && known && !selectionExists(selection, known)) {
+  selection = null
+  writeStoredSelection(null)
+}
 if (selection?.kind === 'type') previewType = selection.typeKey
 
 function notify() {
   for (const listen of listeners) listen()
+}
+
+/**
+ * Remembers the current definitions so a stored selection can be validated
+ * against them, both now and on the next reload. A selection for a type or
+ * group that was deleted (or never existed) is cleared, never rendered raw.
+ */
+export function registerModelDefinitions(defs: Json | undefined) {
+  if (!defs) return
+  const types: string[] = []
+  for (const raw of (defs.types as Json[] | undefined) ?? []) {
+    const key = String(raw.key ?? '')
+    const id = String(raw.id ?? '')
+    if (key) types.push(key)
+    if (id && id !== key) types.push(id)
+  }
+  const groups: string[] = []
+  for (const raw of (defs.structures as Json[] | undefined) ?? []) {
+    const structureKey = String(raw.key ?? raw.id ?? '')
+    if (!structureKey) continue
+    for (const group of (raw.groups as Json[] | undefined) ?? []) {
+      const groupKey = String(group.key ?? '')
+      if (groupKey) groups.push(`${structureKey}/${groupKey}`)
+    }
+  }
+  known = { types: [...new Set(types)], groups: [...new Set(groups)] }
+  writeKnown(known)
+  if (selection && !selectionExists(selection, known)) {
+    selection = null
+    previewType = ''
+    writeStoredSelection(null)
+    notify()
+  }
 }
 
 export function chooseModelSelection(next: ModelSelection) {

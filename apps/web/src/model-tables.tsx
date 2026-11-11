@@ -6,7 +6,7 @@ import { copy, uiLanguage } from './i18n'
 import { attributeKey, objectTypes } from './model-view'
 import { onDraftChange, setModelFocus, stageModel } from './model-stage'
 import { StandardEditableTable, type StandardColumn } from './standard-editable-table'
-import { chooseModelSelection } from './model-selection'
+import { chooseModelSelection, getModelSelection, subscribeModelSelection } from './model-selection'
 import { clearPendingModelType, OPEN_MODEL_TYPE, peekPendingModelType } from './model-type-open'
 import { StateNote } from './states'
 
@@ -90,6 +90,20 @@ export function ObjectTypesTable() {
     setPendingKey(null)
     clearPendingModelType(row.key)
   }, [rows, pendingKey])
+
+  // The selected type survives a reload through model-selection. Put it back
+  // into this table's row state too, so the Object types row is highlighted,
+  // not only the Type attributes title.
+  useEffect(() => {
+    const restore = () => {
+      const selection = getModelSelection()
+      if (selection?.kind !== 'type') return
+      if (!rows.some((item) => item.id === selection.typeKey || item.key === selection.typeKey)) return
+      setActiveRowId(selection.typeKey)
+    }
+    restore()
+    return subscribeModelSelection(restore)
+  }, [rows])
 
   useEffect(() => {
     const open = () => {
