@@ -30,8 +30,8 @@ import {
   isSelectSourceRoot,
   parseSelectSourceChoice,
   resolveSourceTarget,
+  selectSourceMenuRows,
   selectSourceRootItem,
-  selectSourceSubmenuRows,
   type PeerSourceOption,
 } from './palette-select-source'
 import {
@@ -292,7 +292,6 @@ export function CommandPalette({
     () => resolveSourceTarget(views, sourceTargetViewId, focusViewId),
     [views, focusViewId, sourceTargetViewId],
   )
-  const sourceTargetId = sourceTarget?.id
   const peerSourceOptions = useMemo<PeerSourceOption[]>(() => {
     const options: PeerSourceOption[] = []
     for (const sourceView of views) {
@@ -324,10 +323,10 @@ export function CommandPalette({
         const rows = readSelection(sourceView.id).filter((row) =>
           !row.type || row.type === bound.id || row.type === bound.key,
         )
-        // A view that already follows a peer source stays choosable even before
-        // it has a selected row, so chains A -> B -> C can be built in order.
-        // The target itself stays visible so a self-source can be shown disabled.
-        if (rows.length === 0 && !peerSourceByView.has(sourceView.id) && sourceView.id !== sourceTargetId) continue
+        // Every table that can reach a target type is a source, even before it
+        // has a selected row: choosing it shows "Select a row in {view}" and
+        // then follows the first row picked. The target itself stays visible so
+        // a self-source can be shown disabled.
         const links = linkedTypeLinks(bound.id, defs.data)
         if (links.length === 0) continue
         const typeIds = [...new Set(links.map((link) => link.typeId))]
@@ -344,7 +343,7 @@ export function CommandPalette({
     return options
     // selectionVersion re-reads the live registry; the other inputs shape the list.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [views, types, defs.data, sourceTargetId, selectedKey, selectionVersion, peerSourceByView])
+  }, [views, types, defs.data, selectedKey, selectionVersion])
   const currentSource = useMemo(() => {
     if (!sourceTarget) return null
     const bound = typeOfView(sourceTarget, types)
@@ -503,7 +502,7 @@ export function CommandPalette({
     if (!startSelectSource) return
     setStack([{
       label: `${copy.dataSource} ›`,
-      rows: selectSourceSubmenuRows(types, peerSourceOptions, currentSource, sourceCycle, currentSource?.typeId),
+      rows: selectSourceMenuRows({ types, peerOptions: peerSourceOptions, current: currentSource, cycleCheck: sourceCycle, targetView: sourceTarget }),
     }])
     setActive(0)
     // Mount-only: dock menu Select source opens the submenu immediately.
@@ -703,7 +702,7 @@ export function CommandPalette({
     if (isSelectSourceRoot(id)) {
       setStack((current) => [...current, {
         label: item.title,
-        rows: selectSourceSubmenuRows(types, peerSourceOptions, currentSource, sourceCycle, currentSource?.typeId),
+        rows: selectSourceMenuRows({ types, peerOptions: peerSourceOptions, current: currentSource, cycleCheck: sourceCycle, targetView: sourceTarget }),
       }])
       setQuery('')
       setActive(0)

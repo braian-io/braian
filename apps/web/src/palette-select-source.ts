@@ -1,5 +1,6 @@
+import type { Json } from './api'
 import { copy } from './i18n'
-import type { TypeName } from './type-labels'
+import { typeOfView, type TypeName } from './type-labels'
 import type { PaletteItem } from './palette-model'
 import { wouldCreateCycle, type PeerSelection } from './view-source'
 
@@ -49,6 +50,22 @@ export function resolveSourceTarget<T extends { id: string; type: string }>(
     ? views.find((view) => view.id === focusViewId && view.type === 'object_table')
     : undefined
   return focused ?? views.find((view) => view.type === 'object_table')
+}
+
+/**
+ * The entity type whose records a view lists. The picker must offer sources
+ * for this type, never for whatever source the view follows today.
+ * A link-bound view lists its link source entity; link types are not records.
+ */
+export function targetTypeIdForView(
+  view: { state?: Json } | null | undefined,
+  types: TypeName[],
+): string {
+  if (!view) return ''
+  const bound = typeOfView(view, types)
+  if (!bound) return ''
+  if (bound.kind === 'link') return bound.linkFrom?.id ?? ''
+  return bound.id
 }
 
 function linkTypesFor(option: PeerSourceOption, type: TypeName): string[] {
@@ -160,6 +177,27 @@ export function selectSourceSubmenuRows(
     }
   }
   return rows
+}
+
+/**
+ * Menu rows for the view the picker will change. The target view owns the type
+ * filter, so a panel that already follows another type still offers every
+ * source that can yield its own type.
+ */
+export function selectSourceMenuRows(input: {
+  types: TypeName[]
+  peerOptions?: PeerSourceOption[]
+  current?: CurrentSource | null
+  cycleCheck?: SourceCycleCheck
+  targetView?: { state?: Json } | null
+}): PaletteItem[] {
+  return selectSourceSubmenuRows(
+    input.types,
+    input.peerOptions,
+    input.current,
+    input.cycleCheck,
+    targetTypeIdForView(input.targetView, input.types),
+  )
 }
 
 export function isSelectSourceRoot(id: string) {
