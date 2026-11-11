@@ -10,9 +10,7 @@ import { copy, uiLanguage } from './i18n'
 import { openSharedContextMenu, prefersNativeContextMenu } from './shared-context-menu'
 import { registerCommandRunner } from './command-registry'
 import { reportWriteError, writeErrorMessage } from './write-error'
-import { LinkCreateDialog, type LinkEndpoint } from './link-create-dialog'
-import { LinkObjectPicker } from './link-object-picker'
-import { submitLink } from './link-write'
+import { LinkAddFlow, type LinkAddRequest } from './link-add'
 import { dispatchLinkDrop, endLinkDrag, linkDragActive, linkDragMime, linkDragPayload, linkDropDecision, linkDropFromSection, readLinkDrag, setLinkDragHint } from './link-drag'
 
 type LinkItem = {
@@ -30,6 +28,8 @@ type LinkSide = {
   link_type: string
   label: string
   direction: 'out' | 'in'
+  /** Type keys the peer must have for this side. */
+  targetTypes?: string[]
   links: LinkItem[]
 }
 
@@ -69,7 +69,7 @@ export function LinkSections({
   onOpen: (id: string) => void
 }) {
   const queryClient = useQueryClient()
-  const [adding, setAdding] = useState<LinkSide | null>(null)
+  const [request, setRequest] = useState<LinkAddRequest | null>(null)
   const [dropKey, setDropKey] = useState<string | null>(null)
   const [denyKey, setDenyKey] = useState<string | null>(null)
   useEffect(() => {
@@ -80,7 +80,6 @@ export function LinkSections({
     window.addEventListener('braian-link-dragend', clear)
     return () => window.removeEventListener('braian-link-dragend', clear)
   }, [])
-  const [target, setTarget] = useState<LinkEndpoint | null>(null)
   const opener = useRef<HTMLElement | null>(null)
   const [confirm, setConfirm] = useState<Removal | null>(null)
   const [confirmError, setConfirmError] = useState('')
@@ -186,8 +185,7 @@ export function LinkSections({
         sections[0]
       if (section) {
         opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-        setTarget(null)
-        setAdding(section)
+        setRequest({ linkType: section.link_type, direction: section.direction })
       }
     }
     const drop = () => {
@@ -308,8 +306,7 @@ export function LinkSections({
             data-testid="add-link"
             onClick={(event) => {
               opener.current = event.currentTarget
-              setTarget(null)
-              setAdding(section)
+              setRequest({ linkType: section.link_type, direction: section.direction })
             }}
           >
             {copy.addLink}
@@ -317,38 +314,19 @@ export function LinkSections({
         </section>
         )
       })}
-      {adding && !target ? (
-        <LinkObjectPicker
-          sourceId={objectId}
+      {request ? (
+        <LinkAddFlow
+          objectId={objectId}
+          typeKey={typeKey}
           defs={defs}
+          request={request}
+          source={{ key: objectKey, name: objectName }}
+          links={links}
           onClose={() => {
-            setAdding(null)
+            setRequest(null)
             restoreFocus(opener.current)
           }}
-          onChoose={setTarget}
-        />
-      ) : null}
-      {adding && target ? (
-        <LinkCreateDialog
-          source={{ id: objectId, typeKey }}
-          target={target}
-          defs={defs}
-          preferred={{ linkType: adding.link_type, direction: adding.direction }}
-          onClose={() => {
-            setTarget(null)
-            setAdding(null)
-            restoreFocus(opener.current)
-          }}
-          onConfirm={async (request) => {
-            const outcome = await submitLink({
-              type: request.type,
-              from_id: request.fromId,
-              to_id: request.toId,
-              values: request.values,
-            })
-            if (outcome === 'created') refresh()
-          }}
-          onReplaced={() => refresh()}
+          onChanged={(peerId) => refresh(peerId)}
         />
       ) : null}
       {confirm ? (
@@ -392,6 +370,7 @@ export function linkChoices(defs: Json | undefined, typeKey: string) {
     key: section.link_type,
     label: section.label,
     direction: section.direction,
+    targetTypes: section.targetTypes ?? [],
   }))
 }
 
@@ -406,18 +385,24 @@ function sectionsFor(defs: Json | undefined, typeKey: string, links: LinkSide[])
     const key = String(item.key ?? '')
     const spec = item.link as Json | undefined
     if (idList(defs, spec?.from_types).includes(typeKey)) {
-      rows.push(existing(links, key, 'out', labelOf(spec?.to_label, key)))
+      rows.push(existing(links, key, 'out', labelOf(spec?.to_label, key), idList(defs, spec?.to_types)))
     }
     if (idList(defs, spec?.to_types).includes(typeKey)) {
-      rows.push(existing(links, key, 'in', labelOf(spec?.from_label, key)))
+      rows.push(existing(links, key, 'in', labelOf(spec?.from_label, key), idList(defs, spec?.from_types)))
     }
   }
   return rows
 }
 
-function existing(links: LinkSide[], linkType: string, direction: 'out' | 'in', label: string): LinkSide {
+function existing(
+  links: LinkSide[],
+  linkType: string,
+  direction: 'out' | 'in',
+  label: string,
+  targetTypes: string[],
+): LinkSide {
   const found = links.find((item) => item.link_type === linkType && item.direction === direction)
-  return found ? { ...found, label } : { link_type: linkType, label, direction, links: [] }
+  return found ? { ...found, label, targetTypes } : { link_type: linkType, label, direction, targetTypes, links: [] }
 }
 
 function idList(defs: Json | undefined, ids: unknown) {

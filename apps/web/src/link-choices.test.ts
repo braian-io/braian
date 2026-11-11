@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { allowedLinks, choiceLabel, linkCardinalityMessage, linkDragDenial, linkEndsSummary, linkFieldErrors, linkFieldValues, linkPairExplanation, linkPickerRows, linksForEnds, preferredChoice, type LinkHit } from './link-choices'
+import { allowedLinks, choiceLabel, existingLinkPeerIds, filterLinkCandidates, linkCardinalityMessage, linkDragDenial, linkEndsSummary, linkFieldErrors, linkFieldValues, linkHitFromDocument, linkPaletteItem, linkPairExplanation, linkPickerRows, linksForEnds, preferredChoice, visibleText, type LinkHit } from './link-choices'
 import type { Json } from './api'
 
 const defs: Json = {
@@ -58,7 +58,9 @@ describe('allowed link types', () => {
     expect(choices).toHaveLength(1)
     expect(choices[0]?.linkType).toBe('product_articles')
     expect(choices[0]?.direction).toBe('out')
+    expect(choices[0]?.targetTypes).toEqual(['article'])
     expect(choices[0]?.fields.map((field) => field.label)).toEqual(['Sort order'])
+    expect(allowedLinks(defs, 'article', 'product')[0]?.targetTypes).toEqual(['product'])
   })
 
   it('has no link type between a product and a supplier', () => {
@@ -73,13 +75,58 @@ describe('allowed link types', () => {
     )
   })
 
-  it('shows both ends, and stops the list after five', () => {
+  it('shows both named ends with the relation, and stops the list after five', () => {
     expect(linkEndsSummary(
       { id: 'p', key: 'PROD-CHEDDAR', name: 'Mature cheddar' },
       [{ id: 'a', key: 'ART-CHED-400', name: 'Mature cheddar 400 g' }],
-    )).toBe('PROD-CHEDDAR Mature cheddar ← ART-CHED-400 Mature cheddar 400 g')
+      'Product',
+    )).toBe('PROD-CHEDDAR · Mature cheddar — Product — ART-CHED-400 · Mature cheddar 400 g')
     const peers = ['a', 'b', 'c', 'd', 'e', 'f'].map((id) => ({ id, key: id, name: id }))
-    expect(linkEndsSummary({ id: 'p', key: 'P', name: 'Product' }, peers)).toBe('P Product ← a, b, c, d, e +1 more')
+    expect(linkEndsSummary({ id: 'p', key: 'P', name: 'Product' }, peers, 'Product'))
+      .toBe('P · Product — Product — a, b, c, d, e +1 more')
+  })
+
+  it('never shows a UUID when an end has no human key or name', () => {
+    expect(linkEndsSummary({ id: '018f1000-0000-7000-8000-000000000025' }, [
+      { id: '018f1000-0000-7000-8000-000000000001', key: 'SUP-NORTH', name: 'Northmill Foods' },
+    ], 'Supplier')).toBe(' — Supplier — SUP-NORTH · Northmill Foods')
+    expect(visibleText('018f1000-0000-7000-8000-000000000025')).toBe('')
+    expect(visibleText('ART-CHOC-100')).toBe('ART-CHOC-100')
+  })
+
+  it('keeps only candidates of the relation target type and drops existing peers', () => {
+    const rows = [
+      { id: 'sup-1', typeKey: 'supplier' },
+      { id: 'sup-2', typeKey: 'supplier' },
+      { id: 'prod-1', typeKey: 'product' },
+      { id: 'art-1', typeKey: 'article' },
+    ]
+    expect(filterLinkCandidates(rows, ['supplier'], new Set(['sup-2'])).map((row) => row.id)).toEqual(['sup-1'])
+    expect(filterLinkCandidates(rows, [], new Set())).toEqual(rows)
+  })
+
+  it('keeps an upstream UUID out of the picker title and subtitle', () => {
+    const hit = linkHitFromDocument({
+      id: '018f1000-0000-7000-8000-000000000099',
+      type_key: 'article',
+      key: '018f1000-0000-7000-8000-000000000099',
+      display_name: '018f1000-0000-7000-8000-000000000099',
+    })
+    expect(hit?.key).toBe('')
+    expect(hit?.name).toBe('')
+    const row = linkPaletteItem(hit!, defs)
+    expect(row.title).not.toMatch(/018f1000/)
+    expect(row.subtitle).not.toMatch(/018f1000/)
+  })
+
+  it('lists existing peers only for the exact relation and direction', () => {
+    const sides = [
+      { link_type: 'supplier_articles', direction: 'in', links: [{ peer_id: 'sup-1' }, { peer_id: 'sup-2' }] },
+      { link_type: 'supplier_articles', direction: 'out', links: [{ peer_id: 'wrong-side' }] },
+      { link_type: 'product_articles', direction: 'in', links: [{ peer_id: 'wrong-type' }] },
+    ]
+    expect(existingLinkPeerIds(sides, 'supplier_articles', 'in')).toEqual(['sup-1', 'sup-2'])
+    expect(existingLinkPeerIds(sides, undefined, 'in')).toEqual([])
   })
 
   it('keeps only the link type every dragged object can use', () => {

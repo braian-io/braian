@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { Button } from './components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
 import { copy } from './i18n'
@@ -36,6 +36,45 @@ export type LinkCreateRequest = {
   values: Json
 }
 
+export type LinkRect = { left: number; top: number; right: number; bottom: number }
+
+/**
+ * The Graph dialog docks to the corner opposite the clicked node so the node
+ * circle and its label stay visible. Detail passes no avoid and stays centred.
+ */
+export function graphDialogStyle(avoid: LinkRect | undefined, stage: LinkRect | undefined): CSSProperties | undefined {
+  if (!avoid) return undefined
+  if (typeof window === 'undefined') return undefined
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  const bounds = stage ?? { left: 0, top: 0, right: vw, bottom: vh }
+  const centerX = (avoid.left + avoid.right) / 2
+  const centerY = (avoid.top + avoid.bottom) / 2
+  const stageCenterX = (bounds.left + bounds.right) / 2
+  const stageCenterY = (bounds.top + bounds.bottom) / 2
+  const margin = 24
+  const style: CSSProperties = { translate: 'none' }
+  if (centerX >= stageCenterX) {
+    style.left = `${margin}px`
+    style.right = 'auto'
+    const room = avoid.left - margin * 2
+    style.maxWidth = `${Math.max(160, Math.min(640, room, vw - margin * 2))}px`
+  } else {
+    style.right = `${margin}px`
+    style.left = 'auto'
+    const room = vw - avoid.right - margin * 2
+    style.maxWidth = `${Math.max(160, Math.min(640, room, vw - margin * 2))}px`
+  }
+  if (centerY >= stageCenterY) {
+    style.top = `${margin}px`
+    style.bottom = 'auto'
+  } else {
+    style.bottom = `${margin}px`
+    style.top = 'auto'
+  }
+  return style
+}
+
 /**
  * Shared confirm step for a link whose ends are already known.
  * Drag-and-drop passes the drop anchor as `source` and every dragged object as `targets`.
@@ -47,6 +86,8 @@ export function LinkCreateDialog({
   targets,
   defs,
   preferred,
+  avoid,
+  stage,
   onClose,
   onConfirm,
   onConfirmMany,
@@ -58,6 +99,10 @@ export function LinkCreateDialog({
   targets?: LinkEndpoint[]
   defs?: Json
   preferred?: { linkType: string; direction: LinkDirection }
+  /** Graph only: the clicked node's circle + label. */
+  avoid?: LinkRect
+  /** Graph only: the stage the dialog docks inside. */
+  stage?: LinkRect
   onClose: () => void
   /** Resolves when the link is saved or filed. Throw to keep the dialog open. */
   onConfirm: (request: LinkCreateRequest) => Promise<void>
@@ -93,6 +138,8 @@ export function LinkCreateDialog({
       choices={choices}
       defs={defs}
       preferred={preferred}
+      avoid={avoid}
+      stage={stage}
       onClose={onClose}
       onConfirm={onConfirm}
       onConfirmMany={onConfirmMany}
@@ -107,6 +154,8 @@ function LinkFields({
   choices,
   defs,
   preferred,
+  avoid,
+  stage,
   onClose,
   onConfirm,
   onConfirmMany,
@@ -117,6 +166,8 @@ function LinkFields({
   choices: LinkChoice[]
   defs?: Json
   preferred?: { linkType: string; direction: LinkDirection }
+  avoid?: LinkRect
+  stage?: LinkRect
   onClose: () => void
   onConfirm: (request: LinkCreateRequest) => Promise<void>
   onConfirmMany?: (requests: LinkCreateRequest[]) => Promise<LinkSubmitResult>
@@ -139,7 +190,8 @@ function LinkFields({
     setError('')
   }, [selected])
   if (!choice) return null
-  const summary = linkEndsSummary(source, pending)
+  const summary = linkEndsSummary(source, pending, choice.label)
+  const dialogStyle = graphDialogStyle(avoid, stage)
   const updateField = (key: string, value: string, invalid = false) => {
     setDraft((state) => ({ ...state, [key]: value }))
     setFieldErrors((state) => {
@@ -289,7 +341,7 @@ function LinkFields({
       })
   }
   return (
-    <LinkDialog testId="link-create-dialog" title={copy.addLink} onClose={onClose}>
+    <LinkDialog testId="link-create-dialog" title={copy.addLink} onClose={onClose} style={dialogStyle}>
       <form
         className="dialog-form create-form"
         onSubmit={(event) => {
@@ -304,7 +356,7 @@ function LinkFields({
               <>
                 <span className="link-end">{linkEndLabel(source)}</span>
                 {pending.slice(0, 5).map((peer) => (
-                  <span className="link-end" key={peer.id}>← {linkEndLabel(peer)}</span>
+                  <span className="link-end" key={peer.id}>— {choice.label} — {linkEndLabel(peer)}</span>
                 ))}
                 {pending.length > 5 ? <span className="link-end">{copy.linkMore.replace('{count}', String(pending.length - 5))}</span> : null}
               </>
@@ -424,7 +476,7 @@ function partialMessage(
     .replace('{done}', String(result.created.length))
     .replace('{total}', String(total))
     .replace('{failed}', '1')
-    .replace('{name}', peer ? linkEndLabel(peer) : id)
+    .replace('{name}', peer ? linkEndLabel(peer) : copy.nodeObject)
     .replace('{reason}', result.failed.message)
 }
 
@@ -432,11 +484,13 @@ function LinkDialog({
   testId,
   title,
   onClose,
+  style,
   children,
 }: {
   testId: string
   title: string
   onClose: () => void
+  style?: CSSProperties
   children: ReactNode
 }) {
   useEffect(() => pushLinkUi(), [])
@@ -445,6 +499,7 @@ function LinkDialog({
       <DialogContent
         className="create-dialog"
         data-testid={testId}
+        style={style}
         aria-label={title}
         onEscapeKeyDown={(event) => event.stopPropagation()}
         onCloseAutoFocus={(event) => {

@@ -69,6 +69,8 @@ function renderFlow(
         typeKey={overrides.typeKey ?? 'article'}
         defs={defs}
         request={request}
+        source={{ key: 'ART-1', name: 'Mature cheddar' }}
+        links={[]}
         onClose={() => undefined}
       />
     </QueryClientProvider>,
@@ -106,6 +108,7 @@ describe('LinkAddFlow', () => {
 
     expect(screen.getByTestId('link-picker')).toBeTruthy()
     expect(screen.getByTestId('link-picker-relation').textContent).toBe('Supplier · To this object')
+    expect(screen.getByTestId('link-picker-source').textContent).toBe('ART-1 · Mature cheddar')
     expect(screen.getByRole('dialog').getAttribute('aria-label')).toBe('Add link… Supplier')
   })
 
@@ -139,7 +142,12 @@ describe('LinkAddFlow', () => {
       expect(screen.getByTestId('link-type-single').getAttribute('data-choice')).toBe('supplier_articles:in'),
     )
     expect(screen.getByTestId('link-type-single').textContent).toBe('Supplier')
-    expect(screen.getByTestId('link-ends').textContent).toContain('SUP-1')
+    expect(screen.getByTestId('link-ends').textContent).toBe(
+      'ART-1 · Mature cheddar — Supplier — SUP-1 · Supplier one',
+    )
+    expect(screen.getByTestId('link-ends').textContent).not.toMatch(
+      /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i,
+    )
   })
 
   it('renders nothing when the type has no relation at all', () => {
