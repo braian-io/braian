@@ -10,7 +10,7 @@ import {
   type SimulationLinkDatum,
   type SimulationNodeDatum,
 } from 'd3-force'
-import { ChevronDown, Link2, List, PinOff, X } from 'lucide-react'
+import { ChevronDown, Link2, List, Pin, PinOff, X } from 'lucide-react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import { api, catalogName, searchQuery, textValue, type Json } from './api'
 import { Button } from './components/ui/button'
@@ -69,9 +69,16 @@ type SimLink = SimulationLinkDatum<SimNode> & { id: string; label: string }
 type Marker = { x: number; y: number; r: number; label: Rect }
 const NO_GRAPH: Json = {}
 
-/** Object and model-type nodes carry a type key and can open the graph node menu. */
+/** Object, model-type and attribute value nodes can open their own graph menu. */
 export function canOpenGraphNodeMenu(node: Pick<SceneNode, 'kind' | 'typeKey'>) {
-  return (node.kind === 'object' || node.kind === 'type') && Boolean(node.typeKey)
+  return ((node.kind === 'object' || node.kind === 'type') && Boolean(node.typeKey)) || node.kind === 'value'
+}
+
+/** The owning object of a `value:<objectId>:<attribute>` node. */
+export function valueNodeObjectId(node: Pick<SceneNode, 'id' | 'kind'>) {
+  if (node.kind !== 'value') return ''
+  const parts = node.id.split(':')
+  return parts.length > 2 && parts[0] === 'value' ? parts[1] ?? '' : ''
 }
 
 /**
@@ -84,6 +91,17 @@ export function graphNodeMenuExtras(
   defs: Json | undefined,
   node: Pick<SceneNode, 'kind' | 'typeKey' | 'caption'>,
 ): RegistryCommand[] {
+  if (node.kind === 'value') {
+    return [
+      {
+        id: 'graph:value:open',
+        title: copy.openValue,
+        contexts: ['graph-node'],
+        group: 'object',
+        palette: false,
+      },
+    ]
+  }
   if (node.kind === 'type') {
     return [
       {
@@ -131,6 +149,14 @@ export function graphNodeTarget(
     properties?: SceneNode['properties']
   },
 ): CommandTarget {
+  if (node.kind === 'value') {
+    const objectId = valueNodeObjectId({ id: node.id, kind: node.kind })
+    return {
+      ...(objectId ? { objectId } : {}),
+      ...(node.typeKey ? { typeKey: node.typeKey } : {}),
+      ...(node.caption ? { sourceName: node.caption } : {}),
+    }
+  }
   if (node.kind !== 'object') return { typeKey: node.typeKey }
   const key = graphNodeKey(node)
   return {
@@ -231,6 +257,14 @@ export function runGraphNodeCommand(
     if (target.typeKey) requestOpenModelType(String(target.typeKey))
     return
   }
+  if (id === 'graph:value:open') {
+    if (target.objectId) {
+      window.dispatchEvent(
+        new CustomEvent('braian:command', { detail: { id: 'object:open', target } }),
+      )
+    }
+    return
+  }
   if (!id.startsWith('graph:add-link:')) return
   const request = graphLinkRequest(id, target)
   if (onAddLink) {
@@ -316,6 +350,7 @@ export function GraphMap({
   const [known, setKnown] = useState<Record<string, KnownObject>>({})
   const [selected, setSelected] = useState(focusKey)
   const [focused, setFocused] = useState('')
+  const menuFocusRef = useRef('')
   const [hidden, setHidden] = useState<Set<string>>(() => new Set())
   const [full, setFull] = useState(false)
   const [markers, setMarkers] = useState<Record<string, Marker>>({})
@@ -378,6 +413,7 @@ export function GraphMap({
   const knownRef = useRef(known)
   knownRef.current = known
   const fitAfterRef = useRef(true)
+  const movedRef = useRef(false)
 
   useEffect(() => {
     const ids = pendingNames.split(',').filter(Boolean)
@@ -536,7 +572,6 @@ export function GraphMap({
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     const transform = { x: 0, y: 0, k: 1 }
     const hoverRef = { id: '' }
-    const movedRef = { current: false }
     const paletteRef: { current: Palette | null } = { current: null }
     const markerSerial = { current: '' }
     let alive = true
@@ -610,7 +645,16 @@ export function GraphMap({
       const button = root
         .closest('.graph-wrap')
         ?.querySelector<HTMLElement>(`[data-node-id="${CSS.escape(id)}"]`)
-      button?.focus({ preventScroll: true })
+      if (!button) return
+      button.focus({ preventScroll: true })
+      // Keep the node selected in the a11y layer too: a menu close or a
+      // browser focus steal must not lose the ring or the next Shift+F10.
+      setFocused(id)
+      if (document.activeElement !== button) {
+        requestAnimationFrame(() => {
+          if (button.isConnected && document.activeElement !== button) button.focus({ preventScroll: true })
+        })
+      }
     }
 
     const hitTest = (ox: number, oy: number) => {
@@ -1080,6 +1124,9 @@ export function GraphMap({
     const onPointerDown = (event: PointerEvent) => {
       // Right-click opens the context menu; it must not select, drag or refit the graph.
       if (event.button !== 0) return
+      // A fresh pointer interaction owns focus again (a menu ring may linger
+      // after Esc until then).
+      menuFocusRef.current = ''
       canvas.focus()
       const hit = hitTest(event.offsetX, event.offsetY)
       lastX = event.offsetX
@@ -1094,6 +1141,7 @@ export function GraphMap({
         dragNode = hit
       } else {
         mode = 'pan'
+        setFocused('')
         canvas.classList.add('panning')
       }
       if (typeof event.pointerId === 'number') canvas.setPointerCapture(event.pointerId)
@@ -1144,6 +1192,10 @@ export function GraphMap({
           dragNode.fy = null
         }
         selectRef.current(dragNode.id)
+        // A plain click is also the keyboard focus: the next Shift+F10 must
+        // open this node's menu, not the last node reached with Tab. A drag is
+        // not a click: it keeps the camera and the label set as they were.
+        if (travel <= 3) focusNodeButton(dragNode.id, canvas)
         sim.alphaTarget(0)
         if (!modelMode) pinRef.current((tick) => tick + 1)
         draw(true)
@@ -1183,18 +1235,28 @@ export function GraphMap({
     // The a11y node buttons are off-screen, so a real right-click lands on the
     // canvas. Hit-test it and open the same node menu the buttons open.
     const onContextMenu = (event: MouseEvent) => {
-      const hit = hitTest(event.offsetX, event.offsetY)
-      if (!hit || !canOpenGraphNodeMenu(hit) || prefersNativeContextMenu(event.target)) return
+      if (prefersNativeContextMenu(event.target)) return
+      // Never let Chrome own the graph surface. A node gets its own menu;
+      // empty canvas gets Fit / Re-layout or nothing, but never the native one.
       event.preventDefault()
+      const hit = hitTest(event.offsetX, event.offsetY)
+      const stage = stageRect()
+      if (!hit || !canOpenGraphNodeMenu(hit)) {
+        canvas.focus({ preventScroll: true })
+        openGraphCanvasMenu(event.clientX, event.clientY, stage)
+        return
+      }
       // Anchor on the live node position at event time, not a published marker.
       const rect = canvas.getBoundingClientRect()
       const point = screenOf(hit.x ?? 0, hit.y ?? 0)
       const radius = nodeRadius(hit.kind, hit.degree ?? 0) * transform.k
       const marker = { x: rect.left + point.x, y: rect.top + point.y, r: radius }
+      // The circle + caption union is the node's edge: the menu stays outside
+      // the text too, and the dialog anchor uses the same rect.
       const avoid = nodeMenuAvoid(marker, hit.caption)
-      const circle = { left: marker.x - radius, top: marker.y - radius, right: marker.x + radius, bottom: marker.y + radius }
-      const stage = stageRect()
-      const anchor = nodeMenuAnchor(marker, { x: event.clientX, y: event.clientY })
+      const anchor = avoid
+        ? { x: avoid.right, y: avoid.top }
+        : nodeMenuAnchor(marker, { x: event.clientX, y: event.clientY })
       const obstacles = [
         ...nodeObstacles({
           ...markersRef.current,
@@ -1202,10 +1264,9 @@ export function GraphMap({
         }),
         ...Object.values(edgeLabelRectsRef.current),
       ]
-      // The menu hugs the circle; the label below it stays an obstacle and the
-      // dialog anchor still uses the circle + caption union.
+      menuFocusRef.current = hit.id
       focusNodeButton(hit.id, canvas)
-      openGraphNodeMenu(hit, defsRef.current, anchor.x, anchor.y, (request) => setAdd(request), circle, stage, obstacles, stage, avoid)
+      openGraphNodeMenu(hit, defsRef.current, anchor.x, anchor.y, (request) => setAdd(request), avoid, stage, obstacles, stage, avoid)
     }
 
     let sawPointer = 0
@@ -1247,12 +1308,15 @@ export function GraphMap({
     canvas.addEventListener('wheel', onWheel, { passive: false })
     canvas.addEventListener('dblclick', onDouble)
     canvas.addEventListener('contextmenu', onContextMenu)
-    // A resize (inspector growth, fullscreen toggle, pane split) must never move
-    // the camera once it exists. It only repaints at the current transform; the
-    // first fit happens when the simulation settles and on the toolbar buttons.
+    // A resize (inspector growth, fullscreen toggle, pane split) refits while
+    // the camera is still untouched. Once the user has zoomed or panned, the
+    // camera belongs to them: only repaint at the current transform.
     const observer = new ResizeObserver(() => {
-      // Publish the new client rects too: the camera does not move, but the a11y
-      // nodes and menu anchors must follow the resized canvas.
+      if (!movedRef.current && !canvas.dataset.dragging) {
+        if (fit()) return
+      }
+      // Publish the new client rects too: the a11y nodes and menu anchors must
+      // follow the resized canvas.
       draw(true)
     })
     observer.observe(canvas)
@@ -1395,6 +1459,21 @@ export function GraphMap({
     return () => observer.disconnect()
   }, [])
 
+  useEffect(() => {
+    // Full size re-lays out the whole chrome. Refit after that pass, once the
+    // pane and its measured chrome have their new size, and only while the
+    // camera is still the system's rather than the user's.
+    const fitIfIdle = () => {
+      if (!movedRef.current) apiRef.current.fit()
+    }
+    const frame = requestAnimationFrame(fitIfIdle)
+    const timer = setTimeout(fitIfIdle, 60)
+    return () => {
+      cancelAnimationFrame(frame)
+      clearTimeout(timer)
+    }
+  }, [full])
+
   const selectedNode = scene.nodes.find((node) => node.id === selected) ?? null
   const density: GraphDensity = pane == null ? 'wide' : graphDensity(pane.width)
   densityRef.current = density
@@ -1405,7 +1484,8 @@ export function GraphMap({
     pinTick >= 0 && simRef.current?.nodes().some((node) => node.id === selected && node.fx != null && node.fy != null),
   )
   const shown = placed.nodes.filter((node) => !isLegendHidden(hidden, node))
-  const focusedNode = focused ? shown.find((node) => node.id === focused) : undefined
+  const shownFocus = focused || menuFocusRef.current
+  const focusedNode = shownFocus ? shown.find((node) => node.id === shownFocus) : undefined
   const focusMarker = focusedNode ? markers[focusedNode.id] : undefined
   const canvasBox = focusMarker ? canvasRef.current?.getBoundingClientRect() : undefined
   const focusRing = focusMarker && canvasBox
@@ -1422,6 +1502,21 @@ export function GraphMap({
     const rect = stageRef.current?.getBoundingClientRect()
     return rect ? { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom } : undefined
   }
+  const openGraphCanvasMenu = (x: number, y: number, stage: Rect | undefined) => {
+    registerCommandRunner('graph:canvas:fit', () => apiRef.current.fit())
+    registerCommandRunner('graph:canvas:relayout', () => apiRef.current.relayout())
+    openSharedContextMenu({
+      context: 'graph-node',
+      x,
+      y,
+      extraOnly: true,
+      extra: [
+        { id: 'graph:canvas:fit', title: copy.fitGraph, contexts: ['graph-node'], group: 'object', palette: false },
+        { id: 'graph:canvas:relayout', title: copy.relayout, contexts: ['graph-node'], group: 'object', palette: false },
+      ],
+      ...(stage ? { bounds: stage } : {}),
+    })
+  }
   const openMenuForNode = (node: SceneNode) => {
     const rect = canvasRef.current?.getBoundingClientRect()
     const fallback = rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : { x: 8, y: 8 }
@@ -1435,12 +1530,10 @@ export function GraphMap({
           ...(stored && Math.abs(stored.x - live.x) <= 2 && Math.abs(stored.y - live.y) <= 2 ? { label: stored.label } : {}),
         }
       : stored
-    const anchor = nodeMenuAnchor(marker, fallback)
+    // The circle + caption union is the node's edge; see the pointer path.
     const avoid = nodeMenuAvoid(marker, node.caption)
+    const anchor = avoid ? { x: avoid.right, y: avoid.top } : nodeMenuAnchor(marker, fallback)
     const radius = marker?.r ?? 0
-    const circle = marker
-      ? { left: marker.x - radius, top: marker.y - radius, right: marker.x + radius, bottom: marker.y + radius }
-      : undefined
     const obstacles = [
       ...nodeObstacles(
         marker
@@ -1450,6 +1543,7 @@ export function GraphMap({
       ...Object.values(edgeLabelRectsRef.current),
     ]
     // A mouse-opened menu must leave a visible focus ring after Esc.
+    menuFocusRef.current = node.id
     const button = stageRef.current?.querySelector<HTMLElement>(`[data-node-id="${CSS.escape(node.id)}"]`)
     button?.focus({ preventScroll: true })
     const stage = stageRect()
@@ -1459,7 +1553,7 @@ export function GraphMap({
       anchor.x,
       anchor.y,
       (request) => setAdd(request),
-      circle ?? avoid,
+      avoid,
       stage,
       obstacles,
       stage,
@@ -1506,6 +1600,16 @@ export function GraphMap({
     if (event.key !== 'Escape' || event.target === canvasRef.current) return
     if (density !== 'narrow' || sheet === 'dismissed' || !selected) return
     setSheet('dismissed')
+  }
+
+  const pin = () => {
+    const node = simRef.current?.nodes().find((item) => item.id === selected)
+    if (!node || node.x == null || node.y == null) return
+    // Pin in place: the control stays on the card and can toggle back.
+    node.fx = node.x
+    node.fy = node.y
+    setPinTick((tick) => tick + 1)
+    drawRef.current(true)
   }
 
   const unpin = () => {
@@ -1606,6 +1710,7 @@ export function GraphMap({
             onCollapse={() => setSheet('chip')}
             onReveal={() => setSheet('compact')}
             onSwipe={(deltaY) => setSheet((mode) => sheetAfterGesture(mode, deltaY))}
+            onPin={pin}
             onUnpin={unpin}
           />
         </div>
@@ -1635,7 +1740,8 @@ export function GraphMap({
               const id = node.id
               requestAnimationFrame(() => {
                 const active = document.activeElement
-                if (active instanceof Element && active.closest('[data-testid="context-menu"]')) return
+                const menuOpen = Boolean(document.querySelector('[data-testid="context-menu"]'))
+                if (menuOpen || (active instanceof Element && active.closest('[data-testid="context-menu"]'))) return
                 setFocused((current) => (current === id ? '' : current))
               })
             }}
@@ -1717,6 +1823,7 @@ function GraphInspector({
   onCollapse,
   onReveal,
   onSwipe,
+  onPin,
   onUnpin,
 }: {
   node: SceneNode | null
@@ -1732,6 +1839,7 @@ function GraphInspector({
   onCollapse: () => void
   onReveal: () => void
   onSwipe: (deltaY: number) => void
+  onPin: () => void
   onUnpin: () => void
 }) {
   const drag = useRef({ y: 0, id: -1 })
@@ -1870,11 +1978,18 @@ function GraphInspector({
           {openObjectLabel(node.typeName)}
         </Button>
       ) : null}
-      {pinned && !readOnly ? (
-        <Button type="button" variant="ghost" className="graph-action" data-testid="graph-unpin" onClick={onUnpin}>
-          <PinOff size={14} aria-hidden="true" />
-          {copy.unpin}
-        </Button>
+      {!readOnly ? (
+        pinned ? (
+          <Button type="button" variant="ghost" className="graph-action" data-testid="graph-unpin" onClick={onUnpin}>
+            <PinOff size={14} aria-hidden="true" />
+            {copy.unpin}
+          </Button>
+        ) : (
+          <Button type="button" variant="ghost" className="graph-action" data-testid="graph-pin" onClick={onPin}>
+            <Pin size={14} aria-hidden="true" />
+            {copy.pin}
+          </Button>
+        )
       ) : null}
       {busy ? <p className="hint">{copy.loading}</p> : null}
     </aside>

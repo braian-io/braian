@@ -147,10 +147,21 @@ function placeBesideMenu(
     for (let x = area.left + margin; x + menuWidth <= area.right - margin; x += step) grid.push({ x, y })
   }
   const all = [...unique, ...grid]
-  const zero = all
-    .filter((point) => fits(point) && overlap(point) === 0)
+  const zero = (points: Array<{ x: number; y: number }>) =>
+    points.filter((point) => fits(point) && overlap(point) === 0).sort((a, b) => distance(a) - distance(b))
+  // The hug wins: a free spot inside 16 px beats a clear spot far away.
+  const nearZero = zero(all.filter((point) => distance(point) <= 16))
+  if (nearZero[0]) return nearZero[0]
+  // A crowded graph may leave no spot that clears every caption. The menu
+  // still belongs to this node: cover another label if we must, but never the
+  // node's own circle or caption, and never leave the 16 px hug.
+  const anchorClear = (point: { x: number; y: number }) => overlapArea(boxAt(point), anchor) === 0
+  const nearOwnNode = all
+    .filter((point) => fits(point) && anchorClear(point) && distance(point) <= 16)
     .sort((a, b) => distance(a) - distance(b))
-  if (zero[0]) return zero[0]
+  if (nearOwnNode[0]) return nearOwnNode[0]
+  const anyZero = zero(all)
+  if (anyZero[0]) return anyZero[0]
   const fitting = all.filter(fits)
   if (fitting.length > 0) {
     return fitting.reduce((best, point) =>
@@ -228,6 +239,7 @@ export function SharedContextMenuHost({
   feedbackEnabled?: boolean
 } = {}) {
   const [request, setRequest] = useState<OpenMenuRequest | null>(null)
+  const [placed, setPlaced] = useState<{ x: number; y: number } | null>(null)
   const restoreFocus = useRef<HTMLElement | null>(null)
   const menuRef = useRef<HTMLDivElement | null>(null)
   const submenuRef = useRef<HTMLDivElement | null>(null)
@@ -249,6 +261,7 @@ export function SharedContextMenuHost({
       setSubmenuPos(null)
       const target = { ...(detail.target ?? {}), feedbackEnabled: Boolean(feedbackRef.current) }
       // Keep the raw anchor; placeContextMenu runs for paint and after measure.
+      setPlaced(null)
       setRequest({ ...detail, target, x: detail.x, y: detail.y })
     }
     const onOpen = (event: Event) => {
@@ -271,6 +284,7 @@ export function SharedContextMenuHost({
   // trigger behind the modal.
   const close = (restore = true) => {
     setRequest(null)
+    setPlaced(null)
     setTypeahead('')
     setHighlighted(null)
     setOpenSubmenu(null)
@@ -319,6 +333,9 @@ export function SharedContextMenuHost({
       )
       menu.style.left = `${next.x}px`
       menu.style.top = `${next.y}px`
+      // Focus moves between items after this effect; keep the measured spot so
+      // a re-render cannot snap the menu back to the coarse fallback.
+      setPlaced((current) => (current && current.x === next.x && current.y === next.y ? current : next))
     }
     menu?.querySelector<HTMLElement>('[role="menuitem"]')?.focus()
     const onPointer = (event: PointerEvent) => {
@@ -497,7 +514,7 @@ export function SharedContextMenuHost({
   }
 
   if (!request || items.length === 0) return null
-  const point = clamp(request.x, request.y, request.avoid, request.obstacles, request.bounds)
+  const point = placed ?? clamp(request.x, request.y, request.avoid, request.obstacles, request.bounds)
   const marked = highlighted ?? items[0]?.id ?? null
 
   const renderItem = (
