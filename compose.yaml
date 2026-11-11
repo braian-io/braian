@@ -20,7 +20,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:?sätt i .env}
       POSTGRES_READONLY_PASSWORD: ${POSTGRES_READONLY_PASSWORD:?sätt i .env}
     ports:
-      - "${POSTGRES_HOST_PORT:-5433}:5432"
+      - "${POSTGRES_BIND:-127.0.0.1}:${POSTGRES_HOST_PORT:-5433}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql
       - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
@@ -37,7 +37,7 @@ services:
       - --api-key=${TYPESENSE_API_KEY:?sätt i .env}
       - --enable-cors
     ports:
-      - "${TYPESENSE_HOST_PORT:-8108}:8108"
+      - "${TYPESENSE_BIND:-127.0.0.1}:${TYPESENSE_HOST_PORT:-8108}:8108"
     volumes:
       - typesense-data:/data
 

@@ -24,8 +24,14 @@ inte via `Start-Process` med en annan arbetskatalog. OneDrive-synkade klones kan
 
 | Tjänst | Från värddatorn | Från devcontainern |
 | --- | --- | --- |
-| Postgres | `localhost:5433` (`POSTGRES_HOST_PORT`) | `postgres:5432` |
-| Typesense | `localhost:8108` | `typesense:8108` |
+| Postgres | `localhost:5433` (`POSTGRES_HOST_PORT`, bind `POSTGRES_BIND`) | `postgres:5432` |
+| Typesense | `localhost:8108` (`TYPESENSE_HOST_PORT`, bind `TYPESENSE_BIND`) | `typesense:8108` |
+
+Portarna publiceras som standard bara på `127.0.0.1` (`POSTGRES_BIND` och
+`TYPESENSE_BIND`), så en lokal `just up` inte nås utifrån. `HOST_PORT` är bara
+ett portnummer: sätt inte `127.0.0.1:` i det när `BIND` är satt, då blir
+bindningsspecen ogiltig. Sätt `BIND=0.0.0.0` om tjänsterna ska nås från en
+annan värd; det är inte standard.
 
 ## Kommandon
 
