@@ -1,27 +1,82 @@
+# Status 2026-11-11
+
+## Rad 224 — landningssidan beskriver produkten på main, och docs/guide finns
+
+Grenen `junior/224-landing-update` utgår från `origin/main` `e70184f8f9d8901f34c4db2b5c737e55a63509b4` (#301, rad 216) och är **inte mergad, deployad eller accepterad**. Arbetet ligger i worktreen `/home/administrator/dev/wt-224-landing-20261111-2303`; ingen PR öppnades, ingen merge gjordes och demon rördes inte.
+
+Acceptanskriterierna från `brief.md` (Braian Test grindar bara på dessa):
+
+1. **Kopian stämmer med produkten.** `apps/landing` beskriver arbetsytor och paneler, objekttyper och relationer, datakällor/Select source (#300), Ctrl+K-paletten, grafen, raderingsflödet från #301, feedback och self-hosting. Varje påstående är kontrollerat mot koden eller mot `docs/guide` i samma gren.
+2. **Inaktuella påståenden borta.** "It can do exactly what you can, nothing more" är ersatt: agenten kan inte radera objekt eller länkar, inte acceptera sina egna förslag och inte köra merge. "Nothing is saved until you press Save" är ersatt: mänskliga celländringar är utkast, men en mänsklig objektradering skrivs direkt efter bekräftelse. Även "Every command shows its shortcut", "Ctrl+K reaches all of them", "sit side by side" och nio fasta arbetsytor är omskrivna till det som gäller.
+3. **Trackaton, sitemap och robots är byte-identiska.** `apps/landing/index.html` (queue-stubben och `track.js`-taggen), `apps/landing/public/sitemap.xml` och `apps/landing/public/robots.txt` är orörda. `git diff origin/main --` de tre sökvägarna är tom (0 byte). `apps/landing/scripts/check-frozen.mjs` (ny, `pnpm --dir apps/landing check:frozen`) pinnar sha256 för Trackaton-utsnittet, sitemap och robots och exit 0.
+4. **docs/guide skrivs i samma gren och landningen bygger på den.** Nya sidor: `index.md`, `getting-started.md`, `workspaces-and-panels.md`, `object-types-and-relations.md`, `data-sources.md`, `command-palette-and-shortcuts.md`, `deleting-and-restore.md` (den korta raderingsnoten som #216 sköt upp), `graph.md`, `feedback.md` och `self-hosting.md`. De sex första använder de stabila slugs som row 225 väntas använda. Ingen `/docs`-renderer lades till och inga `/docs`-URL:er lades i sitemap.
+5. **Engelska, skyddade filer, ingen deploy.** Landnings- och guidekopian är engelsk; `scripts/check-english.py` exit 0. `apps/web/src/data-model.tsx` och `product_suppliers`-etiketterna är orörda. `pnpm --dir apps/landing typecheck` och `pnpm --dir apps/landing build` (med prerender-kontrollerna) exit 0. Inga skrivningar under `/var/www/braian`, `/opt/braian` eller någon VPS-webroot; ingen demodatamutation.
+6. **En PR-redo gren.** Endast ordinär commit och `git push -u origin junior/224-landing-update` när allt är grönt; ingen amend, force, rebase, reset eller `--no-verify`. `REVIEW.md`, `pr-body.md` och `result.md` ligger i scratch-katalogen.
+
+Vad som ändrades:
+
+- `apps/landing/src/content.ts`: nav och sektioner är Workspaces, Model, Sources, Graph, Agent, Delete, Feedback, Architecture, Performance, Open source. Nya sektioner för arbetsytor/paneler, typer/relationer, datakällor, graf, radering/restore och feedback. Agent-, arkitektur- och open source-copyn är rättad. `docsUrl` pekar nu på `docs/guide` i repot.
+- `apps/landing/src/App.tsx`: renderar de nya sektionerna med samma DisclosureList/sheet-komponenter som resten av sidan. Inga nya beroenden.
+- `apps/landing/scripts/check-frozen.mjs` + `check:frozen` i `apps/landing/package.json`: hash-kontroll av de frysta artefakterna.
+- `docs/guide/*`: tio korta sidor enligt ovan. Guiden beskriver bland annat att en vy kan följa typ, länkad rad eller strukturnod; att trädvalet är exakt placerad grupp och att nodvalet inte återställs från URL:en vid reload; att grafens API ger ett hopp per anrop och att scenen stannar vid 400 noder; att feedback bara finns för admin när en webhook är konfigurerad; samt att agenten saknar raderingsverktyg.
+- `docs/status.md`: denna rad.
+
+Bevis (inga databaser eller containrar behövdes):
+
+- `pnpm --dir apps/landing typecheck` exit 0.
+- `pnpm --dir apps/landing build` exit 0; prerender-kontrollerna (CTA, prestandafotnot, minst 10 kollapsade kort, "Moving between them is instant", ingen "chatbot") passerade.
+- `node apps/landing/scripts/check-frozen.mjs` exit 0.
+- `python3 scripts/check-english.py` exit 0.
+- `git diff origin/main -- apps/landing/index.html apps/landing/public/sitemap.xml apps/landing/public/robots.txt` gav 0 byte.
+- Ingen compose startades, ingen databas lästes eller ändrades, ingen E2E och ingen Rust-testkörning gjordes (inte nödvändigt för copy/docs).
+- Ärlig avgränsning: `docs/guide` är Markdown i repot och renderas inte av landningsappen; landningen länkar till katalogen på GitHub. Den äldre statusposten för rad 103 säger "inte mergad", men #300 ligger på main och det är den beteendet landningen beskriver. Rad 217–223 och Track A (row 225) rördes inte.
+
+## Rad 225 — guiden publiceras som statisk HTML under /docs, med graph-sidan
+
+Grenen `junior/225-docs-foundation` utgår från `origin/main` `59ba66f` (row 128g, #302) och är **inte mergad eller deployad**. Den har nu ordinary-mergat `junior/224-landing-update` (`d0e9a56`, bas `e70184f`/#301) så att 224:s `docs/guide`-träd är basen; 225 lägger till den statiska `/docs`-publiceringen som 224 saknade och uppdaterar graph-sidan.
+
+Vad som ändrades:
+
+- `docs/guide/`: 224:s tio sidor behålls (index, getting-started, workspaces-and-panels, object-types-and-relations, data-sources, command-palette-and-shortcuts, deleting-and-restore, graph, feedback, self-hosting). 225:s kortare sex sidor är inte kopierade; deras konkreta användardetaljer är inflätade i 224:s sidor. Alla länkar i guiden pekar nu på byggda `/docs/...`-sidor eller GitHub-dokument.
+- `docs/guide/graph.md`: skriven mot nuvarande kod (`apps/web/src/graph-map.tsx`, `shared-context-menu.tsx`, `i18n.ts`) och 128g: menyn öppnas vid nodens högra kant (cirkel + etikett), inom 16 px när panelen har plats, med legenderna synliga; ett musklick flyttar tangentbordsfokus så nästa `Shift+F10` öppnar samma nod; Pin sitter kvar på kortet och växlar Pin/Unpin; Fit skiljs från Re-layout; tom canvas ger Fit/Re-layout; kameran passar vid första laddning, Re-layout och resize/fullskärm tills användaren zoomar, panorerar eller drar en nod. Ingen row 226-funktion beskrivs eller utlovas. Den gamla platshållaren "graph guide will follow" är borta; index länkar `/docs/graph`.
+- `apps/landing/scripts/guide.mjs`: `GUIDE_PAGES` kräver nu alla tio sidor (inte de sex ursprungliga), bygger delad navigering och varje sida under `dist/docs`; länkkontrollen kräver att varje `/docs`-länk resolverar. En saknad sida får bygget att avbryta.
+- `apps/landing/scripts/prerender.mjs` behåller ordningen: homepage-prerender och dess CTA-kontroller körs först, därefter `buildGuide`. `pnpm --dir apps/landing build` skriver `/docs`, `/docs/graph` och övriga åtta sidor.
+- `apps/landing/public/sitemap.xml`: listar nu alla `/docs`-sidor (inklusive graph, deleting-and-restore, feedback, self-hosting) så guiden blir upptäckbar. Det är en medveten sitemapändring; `apps/landing/scripts/check-frozen.mjs` har uppdaterad sha256 för sitemap. Trackaton-scriptet i `apps/landing/index.html` och `robots.txt` är orörda (samma hash).
+
+Bevis: `pnpm --dir apps/landing exec tsc --noEmit` exit 0; `pnpm --dir apps/landing build` exit 0 med `prerendered 10 guide pages under dist/docs` och homepage-kontrollerna intakta; `pnpm --dir apps/landing check:frozen` exit 0 efter sitemap-uppdateringen; `python3 scripts/check-english.py` exit 0. En saknad guidesida får bygget att falla (verifierat). Ingen compose, databas eller E2E behövdes. `apps/web/src/data-model.tsx` och produktbeteendet är orörda. Ärlig avgränsning: guiden beskriver nuvarande webbapp; den publiceras som statisk HTML av landningsbygget, inte av en separat docs-tjänst. Ingen PR öppnades eller mergades.
+
 # Status 2026-11-09
 
-## Rad 225 — användarguide på /docs som statisk del av apps/landing
+## Rad 216 — radera ett objekt från fyra ytor, en dialog och återställ kaskadlänkar
 
-Grenen `junior/225-docs-foundation` utgår från `origin/main` `59ba66f` (row 128g, #302) och är **inte mergad, deployad eller accepterad**. Row 224 hade ingen `docs/guide`-katalog, gren eller PR vid start, så ingen befintlig guide återanvändes.
+Grenen `junior/216-delete-object` utgår från `origin/main` `41ce09fb8be0187d4e29b7b853ad2f50561baa11` (#300) och är **inte mergad, deployad eller accepterad**. Arbetet ligger i worktreen `/home/administrator/dev/wt-216-delete-20261110-1935`; ingen PR öppnades, ingen merge gjordes och demon rördes inte.
 
-Guiden ligger i `docs/guide/` med sex Markdown-sidor och publiceras som statisk HTML av den befintliga `apps/landing`-bygget:
+De sju acceptanskriterierna från `brief.md` (Braian Test grindar bara på dessa):
 
-- `index.md` → `/docs` och `/docs/`
-- `getting-started.md` → `/docs/getting-started`
-- `workspaces-and-panels.md` → `/docs/workspaces-and-panels`
-- `object-types-and-relations.md` → `/docs/object-types-and-relations`
-- `data-sources.md` → `/docs/data-sources`
-- `command-palette-and-shortcuts.md` → `/docs/command-palette-and-shortcuts`
+1. **Four entry points, one dialog, one API.** From a selected catalog object, Delete is available in (a) the row/cell right-click menu, (b) the Detail panel (a header/action on `[data-testid=object-detail]` and/or the Detail pane's View menu when Detail is the active view and an object is open — not in unrelated View menus), (c) the Ctrl+K palette, findable by typing "Delete", and (d) the Delete key on selected row(s) in an object table when no cell editor or text input is focused. All four open the same confirm dialog and, after confirm, write through the existing `DELETE /v1/objects/{id}` (one request per selected id). No new draft/Review/Save flow.
+2. **Confirm dialog: counts, Cancel focus, Escape cancels.** The dialog shows how many objects and links will disappear, from `?dry_run=1` (reuse the server `sentence` / `detail` when present). Cancel is focused by default. Escape or overlay dismiss cancels and writes nothing. The primary action is a danger **Delete**. Stable test ids (suggest `delete-object-dialog`, `delete-object-counts`, `confirm-delete-object`). English copy only.
+3. **Multi-select.** Marked rows are deleted together after one confirm. Prefer unique object+link counts (a link touched by two selected objects is not counted twice). Sequential existing DELETEs after one confirm is the default; do not add a public bulk-delete endpoint unless sequential DELETE is genuinely insufficient. If a later id fails, stop, surface the error, and leave already-deleted rows in Trash (honest status.md note).
+4. **Gone from tables and search.** After confirm, the deleted rows disappear from object tables and from search (existing indexer / Typesense `deleted:true` behaviour). Relevant React Query keys are invalidated (`objects`, `object`, search, trash, links).
+5. **Trash Restore also restores same-event cascade links.** Restore / undelete of that object (`POST /v1/trash/object/{id}/undelete`) brings back the object **and** the link rows / link objects that were cascade-deleted in the same deletion event (prefer the shared `batch_id` and `{link_removed:true}`; migrate only if that is not enough). Links deleted separately earlier, or in a different batch, stay deleted. The Trash button label stays **Restore** (`copy.trashRestore`); do not rename it to Undelete in the UI.
+6. **Agents still cannot delete.** `DELETE /v1/objects/{id}` remains 403 `agent_cannot_delete` for agents/imports. Do not add an agent tool that deletes. Hide or no-op the UI command in an agent session if one exists; the API stays the source of truth.
+7. **Delete is ignored while typing.** The Delete key does not fire this flow when the user is typing in an input, textarea, contenteditable, or when a cell editor is open (`isEditingCell`). Do not steal Delete/Backspace from the structure tree or import mapping.
 
-`apps/landing/scripts/guide.mjs` renderar Markdown till statiska sidor med en delad guidenavigering och skriver både `dist/docs/<slug>/index.html` och `dist/docs/<slug>.html`. `scripts/prerender.mjs` anropar den efter den befintliga homepage-prerendern. Ingen ny tjänst, Worker, CMS, docs-host eller runtime-Markdown-server infördes; inget under `/var/www`, `/opt/braian`, Caddy eller `demo.braian.io` rördes.
+Vad som ändrades:
 
-Bygget kontrollerar att källmängden är exakt de sex sidorna (ingen graph-sida), att varje sida har rätt `h1`, att index länkar till alla sidor, att delad navigering finns och att varje `/docs`-länk pekar på en byggd sida. En saknad guidesida får bygget att avbryta; det verifierades genom att tillfälligt ta bort `data-sources.md` och se `pnpm --dir apps/landing build` fallera med `guide sources do not match the required pages`.
-
-Den befintliga homepage-prerendern och dess CTA-kontroller (Try the demo, View on GitHub, ingen "chatbot", hårdvarufotnot, kollapsade disclosures) är oförändrade liksom Trackaton-scriptet i `apps/landing/index.html` och `robots.txt`. `apps/landing/public/sitemap.xml` listar nu även `/docs`-sidorna så att guiden blir upptäckbar; inga andra sitemapändringar gjordes.
-
-Innehållet är en användarguide för nuvarande produkt och bygger på `apps/web/src` (bland annat `shortcuts.ts`, `palette*.ts`, `command-registry.ts`, `view-source.ts`, `templates.ts`, `model-*` och `catalogs/`) samt `crates/server/src/seed.rs`. Planerat eller trasigt beteende är inte dokumenterat som levererat: ingen `/docs/graph`-sida, ingen påstådd fungerande share-route, ingen länkkardinalitet i UI-dialogen och ingen självbetjäning för konto. En kort platshållare på index säger att en graph-guide kommer när arbetet är godkänt.
-
-Bevis: `pnpm --dir apps/landing exec tsc --noEmit` exit 0; `pnpm --dir apps/landing build` exit 0 med `prerendered 6 guide pages under dist/docs`; `python3 scripts/check-english.py` exit 0. Ingen compose startades och ingen databas behövdes. `apps/web/src/data-model.tsx` är orörd. Ärlig avgränsning: guiden beskriver den nuvarande webbappen, men den grafiska guiden för graf-vyn är inte skriven i denna omgång.
+- `crates/store/src/ops.rs`: `restore_object` läser objektets senaste `delete`-ändring, tar `batch_id` och hittar samma batchs `{link_removed:true}`-ändringar. Objektet återställs först; därefter återställs varje kaskadlänk som fortfarande är soft-deleted (version +1, `links.deleted_at = NULL`, ny `update`-ändring `{"undeleted":true}` så indexeraren lägger tillbaka den). Länkar som raderats separat eller i en annan batch har ingen sådan ändring och förblir raderade. Ingen migration behövdes. Samma transaktion gör att ett kardinalitets- eller nyckelkonflikt rullar tillbaka hela återställningen.
+- `crates/api/src/objects.rs`: `DELETE /v1/objects/{id}` dokumenterar nu den redan existerande `dry_run`-parametern i OpenAPI, med `ConsequenceReport` som 200-svar. Ingen beteendeändring; agent/import ger fortfarande 403 `agent_cannot_delete`.
+- `apps/web/src/delete-objects.ts` + `delete-objects-dialog.tsx`: en global händelsebuss och en enda `DeleteObjectsHost`. Dialogen hämtar `?dry_run=1` för varje valt id (och objektets live-länkar) och visar serverns `sentence`/`detail` för ett objekt. Flera objekt slås ihop via delade länkobjekt-id:n, så en länk som två markerade objekt delar räknas en gång. Cancel är autofokuserad; Escape och overlay stänger utan skrivning. Bekräfta kör sekventiella `DELETE /v1/objects/{id}`; vid första fel stannar loppet, felet visas och dialogen står kvar medan redan raderade objekt ligger i Trash. Efter lyckad körning invalideras `objects`, `object`, `search`, `trash` och `links`.
+- `apps/web/src/command-registry.ts` + `row-context-menu.ts`: `object:delete` (danger, `Delete…`) finns i row- och cellmenyn via den delade registret. `apps/web/src/shell.tsx` registrerar körningen och monterar dialogen; i en agentsession är kommandot no-op.
+- `apps/web/src/panes.tsx`: Delete-tangenten på en markerad rad (eller flera) öppnar dialogen, men bara efter `isEditingCell`-vakten, så input, textarea, contenteditable och öppen celleditor behåller tangenten. Detail-panelen har en `delete-object-detail`-åtgärd i headern; den döljs i agentsession. Strukturträdet och importmappningen har egna tangenthanterare och rörs inte.
+- `apps/web/src/palette.tsx`: Ctrl+K får en `object:delete`-rad när en tabell har markerade rader eller Detail har ett öppet objekt, med engelsk subtitle och sökorden `delete`, `remove`, `trash`. Trash-knappen heter fortfarande **Restore** (`copy.trashRestore`).
+- `apps/web/src/i18n.ts`: engelsk copy för dialogtitel, beskrivning, räknarstatus och fel. `scripts/check-english.py` exit 0.
+- Enheter: ny `delete-objects.test.ts` (4) för serverrad, delad länk, valt länkobjekt och svarsläsning; ny `delete-objects-dialog.test.tsx` (3) för dry-run-räkning, Cancel-fokus, Escape utan skrivning, sekventiell multi-delete, invalidering och stopp vid fel; `command-registry-session.test.ts` (+2) för kommando och row-meny. Hela vitest-sviten: **162 filer / 958 tester** gröna.
+- Rust: `crates/store/tests/soft_delete.rs` har ett nytt test (7/7 gröna i filen) där en kaskadlänk från samma radering återställs medan en länk som raderats i en tidigare batch förblir raderad. `crates/api/tests/http.rs` har ett nytt test för dry_run-siffror, agent-403 och `POST /v1/trash/object/{id}/undelete` som tar tillbaka både objektet och kaskadlänken. Hela API-sviten: **54/54** gröna.
+- E2E: ny `apps/web/e2e/row216-delete-object.spec.ts` (registrerad i `scripts/e2e.mjs`, `measuredSeconds: 75`) med två tester: (1) row/cell-meny, Detail-headern, Ctrl+K "Delete" och Delete-tangenten öppnar samma dialog; Cancel fokuseras och Escape lämnar objektet orört. (2) två markerade produkter med en delad länk ger `Removes 3 objects and 1 links` efter en bekräftelse, raderna försvinner, sökningen ger noll träffar, och Trash **Restore** tar tillbaka objektet och länken medan det andra objektet (annan händelse) stannar i Trash. Båda testen städar egna fixtures.
+- Post-merge demo: `apps/web/e2e/row216-demo-delete.spec.ts` är förberedd men **inte registrerad** i standardlistan och **inte körd** mot `https://demo.braian.io` i den här uppgiften.
+- Bevis i isolerad compose `row216b` (Postgres 18 på `127.0.0.1:25461`, Typesense 30.2 på `127.0.0.1:28161`, syntetiska värden ur worktreens gitignorerade `.env`; inga Track A-portar, ingen `row103`/`row129e-keep`, ingen demo): Rust byggdes och testades i `docker run --rm` på nätverket `row216b_default` med named volume `row216b-cargo-home` (aldrig `~/.cargo`). `cargo clippy -p braian-store -p braian-api --all-targets -- -D warnings` exit 0; `cargo fmt --all --check` exit 0; `pnpm --dir apps/web typecheck` exit 0; `scripts/check-english.py` exit 0; hela vitest 162/958; nya E2E-specen 2/2 (37,0 s).
+- Skärmbilder ligger i specens `test-results` och i uppgiftens scratch `shots/` (`row216-row-menu-dialog`, `row216-detail-dialog`, `row216-palette-dialog`, `row216-key-dialog`, `row216-multi-counts`, `row216-trash-restore`). `apps/web/src/data-model.tsx` är orörd (`sha256 2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`). Inga `product_suppliers`-etiketter, demolabels, `/opt/braian`, Caddy, Track A-containrar eller demo-data rördes.
+- Ärlig avgränsning: multi-select-räkningen använder `dry_run` per objekt och dedupliserar delade länkobjekt via objektets `links`-lista; en vald länkpost som inte är en tabellrad kan därför falla tillbaka på sin egen dry_run-rad. Ett fel mitt i en sekventiell multi-delete lämnar tidigare objekt i Trash, enligt kriteriet, och dialogen visar felet i stället för att stänga. Ingen publik bulk-endpoint lades till.
 
 ## Rad 103-uppföljning — Select source listar varje källa som kan ge vyns typ
 

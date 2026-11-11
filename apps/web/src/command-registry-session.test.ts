@@ -37,3 +37,21 @@ describe('view:select-source (Notion 103 PR 1)', () => {
     expect(other).not.toContain('view:select-source')
   })
 })
+
+describe('object:delete', () => {
+  it('is one danger command for row, cell and Detail', () => {
+    const commands = registryCommands.filter((command) => command.id === 'object:delete')
+    expect(commands).toHaveLength(1)
+    const command = commands[0]
+    expect(command.danger).toBe(true)
+    expect(command.contexts).toEqual(expect.arrayContaining(['row', 'cell', 'object-detail']))
+    expect(command.when?.({ objectId: 'o1' })).toBe(true)
+    expect(command.when?.({ objects: [{ id: 'o1' }] })).toBe(true)
+    expect(command.when?.({})).toBe(false)
+  })
+
+  it('is offered in the row menu for a selected object', () => {
+    const ids = commandsForContext('row', { objectId: 'o1' }).map((command) => command.id)
+    expect(ids).toContain('object:delete')
+  })
+})

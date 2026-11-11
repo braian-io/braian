@@ -456,6 +456,7 @@ const dialogIds = new Set([
   'workspace:delete',
   'feedback:send',
   'selection:delete',
+  'object:delete',
   'model:delete-type',
   'model:delete-link-type',
   'model:delete-structure',

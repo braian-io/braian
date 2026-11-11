@@ -254,6 +254,126 @@ async fn a_soft_deleted_link_side_can_be_reused() {
 }
 
 #[tokio::test]
+async fn restore_brings_back_links_cascade_deleted_in_the_same_event() {
+    let (db, who, mut defs, from) = setup().await;
+    let extra: Vec<_> = objects_iter(&defs, Tier::Light, 7, 1..4).take(2).collect();
+    let to = extra[0].clone();
+    let other = extra[1].clone();
+    db.store()
+        .write_batch(
+            &who,
+            vec![
+                ObjectOp::Create(to.clone()),
+                ObjectOp::Create(other.clone()),
+            ],
+        )
+        .await
+        .unwrap();
+    braian_model::apply_all(
+        &mut defs,
+        &[braian_model::ModelChange::CreateLinkType {
+            key: "links_to".into(),
+            label: "Links to".into(),
+            from_types: vec!["item".into()],
+            to_types: vec!["item".into()],
+            from_key: "links_to".into(),
+            from_label: "Links to".into(),
+            to_key: "linked_from".into(),
+            to_label: "Links from".into(),
+            from_cardinality: "many".into(),
+            to_cardinality: "many".into(),
+            attributes: vec![],
+        }],
+    )
+    .unwrap();
+    defs.model_revision += 1;
+    db.store().put_definitions(&who, &defs).await.unwrap();
+    let link_type = defs
+        .types
+        .iter()
+        .find(|item| item.key == "links_to")
+        .unwrap()
+        .id;
+    let link_object = |_to_id| braian_model::Object {
+        id: ObjectId::from_uuid(Uuid::now_v7()),
+        type_id: link_type,
+        model_revision: defs.model_revision,
+        groups: Default::default(),
+        values: Default::default(),
+    };
+    let same_event = link_object(to.id);
+    let removed_earlier = link_object(other.id);
+    for link in [&same_event, &removed_earlier] {
+        db.store()
+            .write_batch(
+                &who,
+                vec![ObjectOp::CreateLink {
+                    object: (*link).clone(),
+                    from_id: from.id,
+                    to_id: if link.id == same_event.id {
+                        to.id
+                    } else {
+                        other.id
+                    },
+                }],
+            )
+            .await
+            .unwrap();
+    }
+    db.store()
+        .write_batch(
+            &who,
+            vec![ObjectOp::Delete {
+                id: removed_earlier.id,
+                base_version: None,
+            }],
+        )
+        .await
+        .unwrap();
+
+    db.store()
+        .write_batch(
+            &who,
+            vec![ObjectOp::Delete {
+                id: from.id,
+                base_version: None,
+            }],
+        )
+        .await
+        .unwrap();
+    assert!(
+        db.store()
+            .get_object(same_event.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .deleted_at
+            .is_some()
+    );
+
+    db.store().restore_object(&who, from.id).await.unwrap();
+    let restored = db.store().get_object(same_event.id).await.unwrap().unwrap();
+    assert!(restored.deleted_at.is_none(), "{restored:?}");
+    assert!(
+        db.store()
+            .links_for(from.id)
+            .await
+            .unwrap()
+            .iter()
+            .any(|link| link.id == same_event.id)
+    );
+    assert!(
+        db.store()
+            .get_object(removed_earlier.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .deleted_at
+            .is_some()
+    );
+}
+
+#[tokio::test]
 async fn workspace_share_token_is_reusable_until_undelete() {
     let db = TestDb::create().await;
     let user = db
