@@ -488,11 +488,17 @@ test('a narrow pane reaches the canvas and nodes by Tab, arrows, Shift+F10 and E
   await valueNode.focus()
   await page.keyboard.press('Shift+F10')
   await page.waitForTimeout(100)
-  await expect(page.getByTestId('context-menu')).toHaveCount(0)
+  // 128g: every value node now has its own menu instead of falling through to
+  // the browser. It is still consumed and scoped to this node.
+  const valueMenu = page.getByTestId('context-menu')
+  await expect(valueMenu).toBeVisible()
+  expect((await valueMenu.getByRole('menuitem').allInnerTexts()).map((text) => text.trim())).toEqual(['Open value'])
   expect(
     await page.evaluate(() => (window as Window & { __graphKeyPrevented?: boolean }).__graphKeyPrevented),
     'Shift+F10 on a value node is consumed, not the browser menu',
   ).toBe(true)
+  await page.keyboard.press('Escape')
+  await expect(valueMenu).toHaveCount(0)
 
   await canvas.focus()
   for (let step = 0; step < 3; step += 1) {
@@ -654,13 +660,11 @@ test('the full-size graph keeps its picker and menu above the surface and the me
   expect(menuBox.y).toBeGreaterThanOrEqual(stage.y - 1)
   expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(stage.x + stage.width + 1)
   expect(menuBox.y + menuBox.height).toBeLessThanOrEqual(stage.y + stage.height + 1)
-  expect(gapTo(menuBox, box), 'the menu is close, never the old corner').toBeLessThanOrEqual(96)
-  for (const label of await edgeRows(page)) {
-    if (label.shown) expect(overlaps(label, menuBox), `menu covers edge label ${label.id}`).toBe(false)
-  }
-  for (const label of await nodeLabelRects(page)) {
-    expect(overlaps(label, menuBox), `menu covers node label ${label.id}`).toBe(false)
-  }
+  // 128g tightened this from 96 px to 16 px. The hug wins over covering an
+  // unrelated caption in a deliberately zoomed-out, dense view; the node's own
+  // circle and caption must still stay clear.
+  expect(gapTo(menuBox, box), 'the menu hugs the node, never the old corner').toBeLessThanOrEqual(16)
+  expect(overlaps(box, menuBox), 'the menu covers its own node').toBe(false)
   await page.keyboard.press('Escape')
   await expect(menu).toHaveCount(0)
 

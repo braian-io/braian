@@ -14,6 +14,7 @@ import {
   nodeObstacles,
   openGraphNodeMenu,
   runGraphNodeCommand,
+  valueNodeObjectId,
 } from './graph-map'
 import { SharedContextMenuHost } from './shared-context-menu'
 
@@ -105,13 +106,14 @@ afterEach(() => {
 })
 
 describe('graph node menu gate', () => {
-  it('allows object and model type nodes that carry a type key', () => {
+  it('allows object, model type and value nodes', () => {
     expect(canOpenGraphNodeMenu({ kind: 'object', typeKey: 'product' })).toBe(true)
     expect(canOpenGraphNodeMenu({ kind: 'type', typeKey: 'product' })).toBe(true)
+    expect(canOpenGraphNodeMenu({ kind: 'value' })).toBe(true)
   })
 
-  it('rejects other kinds and nodes without a type key', () => {
-    for (const kind of ['class', 'group', 'value', 'structure'] as const) {
+  it('rejects other kinds and object/type nodes without a type key', () => {
+    for (const kind of ['class', 'group', 'structure'] as const) {
       expect(canOpenGraphNodeMenu({ kind, typeKey: 'product' })).toBe(false)
     }
     expect(canOpenGraphNodeMenu({ kind: 'object' })).toBe(false)
@@ -171,6 +173,13 @@ describe('graph node menu extras', () => {
     expect(titles(product)).not.toEqual(titles(supplier))
     expect(titles(article)).not.toEqual(titles(supplier))
     expect(titles(supplier).some((title) => /supplier of product/i.test(title))).toBe(false)
+  })
+
+  it('gives a value node its own open-value action, not Product links', () => {
+    const value = graphNodeMenuExtras(defs, { kind: 'value', typeKey: 'product', caption: 'Storage' })
+    expect(value.map((extra) => extra.id)).toEqual(['graph:value:open'])
+    expect(value[0]?.title).toBe('Open value')
+    expect(value.every((extra) => extra.contexts.includes('graph-node'))).toBe(true)
   })
 
   it('leaves object nodes without link choices empty', () => {
@@ -233,6 +242,14 @@ describe('graph node menu target', () => {
       objectId: 'obj-1',
       typeKey: 'product',
     })
+  })
+
+  it('maps a value node to the object that owns the attribute', () => {
+    expect(
+      graphNodeTarget({ kind: 'value', id: 'value:obj-1:storage', typeKey: 'product', caption: 'Storage' }),
+    ).toEqual({ objectId: 'obj-1', typeKey: 'product', sourceName: 'Storage' })
+    expect(valueNodeObjectId({ kind: 'value', id: 'value:obj-1:storage' })).toBe('obj-1')
+    expect(valueNodeObjectId({ kind: 'object', id: 'object:obj-1' })).toBe('')
   })
 
   it('carries the node key and caption so the dialog can name both ends', () => {

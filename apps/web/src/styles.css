@@ -1620,7 +1620,8 @@ canvas.graph {
   touch-action: none;
   background: var(--bg);
 }
-canvas.graph:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+canvas.graph:focus-visible,
+canvas.graph:focus { outline: 2px solid var(--accent); outline-offset: -2px; }
 canvas.graph.panning { cursor: grabbing; }
 /* Visible focus ring for the a11y node button, drawn around the canvas node. */
 .graph-focus-ring {

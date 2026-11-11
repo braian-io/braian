@@ -326,7 +326,7 @@ test('a newly created link shows its relation label on a readable graph', async 
   expect(removed.ok()).toBe(true)
 })
 
-test('the right-edge node menu avoids every circle and label and labels stay inside the pane', async ({ page }) => {
+test('the right-edge node menu hugs the node, clears its own label and stays inside the pane', async ({ page }) => {
   test.setTimeout(180_000)
   await login(page)
   await openObjectGraph(page, ARTICLE)
@@ -350,7 +350,18 @@ test('the right-edge node menu avoids every circle and label and labels stay ins
   const { menu } = await openNodeMenu(page, PRODUCT.id)
   const menuBox = await menu.boundingBox()
   expect(menuBox, 'menu box').toBeTruthy()
+  // 128g tightened the hug to 16 px and accepts that a crowded pane may put
+  // the menu over another caption. It must never cover its own node.
+  const own = await nodeAvoid(page, PRODUCT.id)
+  const dx = Math.max(menuBox!.x - own.right, own.left - (menuBox!.x + menuBox!.width), 0)
+  const dy = Math.max(menuBox!.y - own.bottom, own.top - (menuBox!.y + menuBox!.height), 0)
+  expect(Math.hypot(dx, dy), 'the menu hugs the right-edge node').toBeLessThanOrEqual(16)
+  expect(
+    overlaps(menuBox!, { left: own.left, top: own.top, right: own.right, bottom: own.bottom }),
+    'the menu covers its own node',
+  ).toBe(false)
   for (const node of nodes) {
+    if (node.id !== `object:${PRODUCT.id}`) continue
     expect(overlaps(menuBox!, node.circle), `menu must not cover ${node.id} circle`).toBe(false)
     expect(overlaps(menuBox!, node.label), `menu must not cover ${node.id} label`).toBe(false)
   }
