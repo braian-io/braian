@@ -35,10 +35,11 @@ describe('allowed-tree layout', () => {
     expect(locked).toContain('cursor: default')
   })
 
-  it('keeps the checkbox focus ring visible on the dark background', () => {
+  it('draws a stronger double focus ring on the dark background', () => {
     const focus = rule("[data-testid='allowed-trees'] input[type='checkbox']:focus-visible")
     expect(focus).toContain('outline: 2px solid var(--text)')
-    expect(focus).toContain('outline-offset: 2px')
+    expect(focus).toContain('outline-offset: 3px')
+    expect(focus).toContain('box-shadow: 0 0 0 3px var(--accent)')
   })
 })
 

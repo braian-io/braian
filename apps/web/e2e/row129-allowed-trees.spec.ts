@@ -296,7 +296,7 @@ test('an allowed-tree toggle reviews before it saves, and Cancel discards only t
   }
 })
 
-test('overlay dismiss reverts only the allowed-tree step and keeps unrelated draft work', async ({ page }) => {
+test('Cancel reverts only the allowed-tree step and keeps unrelated draft work', async ({ page }) => {
   test.setTimeout(180_000)
   const unrelatedKey = `unrelated_${Date.now().toString().slice(-6)}`
   let fixture: Fixture | undefined
@@ -320,7 +320,11 @@ test('overlay dismiss reverts only the allowed-tree step and keeps unrelated dra
     await expect(page.getByTestId('review-save')).toBeDisabled()
     await expect(page.getByTestId('discard-draft')).toBeDisabled()
 
+    // Row 129f: the allowed-tree review ignores outside clicks while the
+    // structure step is pending. It is decided with Cancel, Save, X or Escape.
     await page.locator('.overlay').click({ position: { x: 10, y: 10 } })
+    await expect(dialog).toBeVisible()
+    await dialog.getByRole('button', { name: 'Cancel' }).click()
     await expect(dialog).toHaveCount(0)
     await expect.poll(async () => (await draft(page)).count ?? 0, { timeout: 10_000 }).toBe(1)
     const remaining = await draft(page)
@@ -329,7 +333,7 @@ test('overlay dismiss reverts only the allowed-tree step and keeps unrelated dra
     expect(remaining.steps?.[0]?.key).toBe(unrelatedKey)
     expect(await productStructures(page)).toEqual(fixture.baseline)
     await expect(page.getByTestId('unsaved-changes')).toBeVisible()
-    await page.screenshot({ path: `${shots}/row129-06-overlay-revert-kept-draft.png` })
+    await page.screenshot({ path: `${shots}/row129-06-cancel-revert-kept-draft.png` })
   } finally {
     if (loggedIn && fixture) {
       try {

@@ -473,6 +473,8 @@ export const copy = {
   closeFull: 'Close full size',
   reviewChange: 'Review the change before it is saved.',
   reviewChangeTitle: 'Review change',
+  noValuesDeleted: 'No values will be deleted',
+  allowedTreesLinkRemoved: 'The Allowed trees link on {types} is removed too.',
   allowedTreesFor: 'Allowed trees for',
   objectType: 'object type',
   none: 'none',

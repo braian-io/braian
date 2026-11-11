@@ -111,6 +111,7 @@ const specs = [
   'e2e/row129c-allowed-trees-review.spec.ts',
   'e2e/row129d-allowed-trees-polish.spec.ts',
   'e2e/row129e-allowed-trees-input.spec.ts',
+  'e2e/row129f-allowed-trees-state-lock.spec.ts',
 ]
 
 // Explicit compose targeting. The default keeps `just up` and CI on the
@@ -256,6 +257,7 @@ const measuredSeconds = {
   'e2e/row129c-allowed-trees-review.spec.ts': 90,
   'e2e/row129d-allowed-trees-polish.spec.ts': 300,
   'e2e/row129e-allowed-trees-input.spec.ts': 300,
+  'e2e/row129f-allowed-trees-state-lock.spec.ts': 420,
 }
 
 const reseedSeconds = 4

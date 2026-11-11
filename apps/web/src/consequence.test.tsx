@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Json } from './api'
-import { ConsequenceHost } from './consequence'
+import { ConsequenceHost, typesLosingAllowedTree } from './consequence'
 import { copy } from './i18n'
 import { publishProposal } from './proposal-bus'
 
@@ -38,12 +38,12 @@ const proposal: Json = {
   },
 }
 
-function Host() {
+function Host({ push = () => undefined }: { push?: (line: string) => void }) {
   const [client] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: false } } }))
   return (
     <QueryClientProvider client={client}>
       <button type="button" data-testid="open-delete">Delete</button>
-      <ConsequenceHost session={{ setProposalId: () => undefined, push: () => undefined }} />
+      <ConsequenceHost session={{ setProposalId: () => undefined, push }} />
     </QueryClientProvider>
   )
 }
@@ -197,5 +197,94 @@ describe('consequence dialog', () => {
       .toBe('Delete structure Food')
     expect(screen.getByTestId('impact-result')).toBeTruthy()
     expect(screen.queryByTestId('model-diff')).toBeNull()
+  })
+})
+
+describe('empty delete wording', () => {
+  afterEach(() => {
+    cleanup()
+  })
+
+  it('says "No values will be deleted" once and names the types that lose the tree', async () => {
+    const structureProposal: Json = {
+      ...proposal,
+      title: 'Delete structure qa129r_0516',
+      rows: [{
+        id: 'row-1',
+        position: 0,
+        status: 'pending',
+        conflict: false,
+        type_key: 'model',
+        patch: { op: 'delete_structure', structure: 'structure-food' },
+      }],
+      consequence: {
+        ...(proposal.consequence as Json),
+        lines: ['Delete structure qa129r_0516'],
+        detail: ['0 values on 0 objects will be deleted'],
+        sentence: '0 values on 0 objects will be deleted',
+        values: 0,
+        objects: 0,
+        links: 0,
+        selections: 0,
+        affected_objects: 0,
+      },
+    }
+    mock.use((path) => {
+      if (path === '/v1/definitions') {
+        return Promise.resolve({
+          languages: ['en'],
+          types: [
+            { id: 'type-product', key: 'product', singular: { en: 'Product' }, structures: ['structure-food'] },
+            { id: 'type-article', key: 'article', singular: { en: 'Article' }, structures: [] },
+          ],
+          structures: [
+            { id: 'structure-food', key: 'food', labels: { en: 'Food' }, groups: [] },
+          ],
+        })
+      }
+      if (path.startsWith('/v1/proposals/')) return Promise.resolve(structureProposal)
+      return Promise.resolve({})
+    })
+    render(<Host />)
+    publishProposal('proposal-empty')
+
+    const dialog = await screen.findByRole('dialog')
+    await waitFor(() => expect(screen.getByTestId('delete-counts').textContent).toBe(copy.noValuesDeleted))
+    expect(dialog.textContent).not.toContain('0 values on 0 objects')
+    expect(dialog.textContent).not.toContain('Affected objects: 0')
+    expect(screen.getByTestId('allowed-trees-unlink').textContent)
+      .toBe(copy.allowedTreesLinkRemoved.replace('{types}', 'Product'))
+  })
+
+  it('finds only the types whose allowed trees still contain the deleted structure', () => {
+    const defs: Json = {
+      types: [
+        { id: 'type-product', key: 'product', singular: { en: 'Product' }, structures: ['structure-food'] },
+        { id: 'type-article', key: 'article', singular: { en: 'Article' }, structures: ['structure-market'] },
+      ],
+      structures: [
+        { id: 'structure-food', key: 'food' },
+        { id: 'structure-market', key: 'market' },
+      ],
+    }
+    expect(typesLosingAllowedTree(defs, [{ op: 'delete_structure', structure: 'food' }])).toEqual(['Product'])
+    expect(typesLosingAllowedTree(defs, [{ op: 'delete_structure', structure: 'structure-market' }])).toEqual(['Article'])
+    expect(typesLosingAllowedTree(defs, [{ op: 'delete_type', key: 'product' }])).toEqual([])
+  })
+
+  it('does not push a stale Confirm line after a delete', async () => {
+    const push = vi.fn()
+    mock.use((path) => {
+      if (path === '/v1/definitions') return Promise.resolve({ languages: ['en'], types: [] })
+      if (path.startsWith('/v1/proposals/')) return Promise.resolve(proposal)
+      if (path.endsWith('/accept')) return Promise.resolve({ ok: true })
+      return Promise.resolve({})
+    })
+    render(<Host push={push} />)
+    publishProposal('proposal-confirm')
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(dialog.querySelector('[data-testid="confirm-delete"]') as HTMLElement)
+    await waitFor(() => expect(screen.queryByTestId('consequence')).toBeNull())
+    expect(push).not.toHaveBeenCalledWith(copy.confirm)
   })
 })

@@ -3197,11 +3197,13 @@ button.primary[aria-disabled='true'] {
   accent-color: var(--accent);
 }
 /* The global accent ring is easy to miss around a 16px box on the dark
-   background. Use the high-contrast text colour, offset so the ring does not
-   blend into the checkbox itself. */
+   background. Draw a double ring: a 3px accent halo around the box, then a
+   2px high-contrast text ring outside it. The gap keeps both rings readable
+   against both themes without blending into the checkbox itself. */
 [data-testid='allowed-trees'] input[type='checkbox']:focus-visible {
   outline: 2px solid var(--text);
-  outline-offset: 2px;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 3px var(--accent);
 }
 /* The shell must be usable from the first frame: X and Cancel stay available
    while the draft is loading. */

@@ -632,3 +632,50 @@ describe('review dialog', () => {
     expect(screen.getByRole('button', { name: 'Close' })).toBeTruthy()
   })
 })
+
+describe('allowed-tree state lock', () => {
+  afterEach(() => {
+    cleanup()
+  })
+
+  it('ignores box clicks while the same type has a set_structures step pending', async () => {
+    let release: ((value: unknown) => void) | undefined
+    const pending = new Promise((resolve) => {
+      release = resolve
+    })
+    let stagePosts = 0
+    mock.use((path, init) => {
+      if (path === '/v1/model/draft') return Promise.resolve({ ...allowedTrees, count: 0, steps: [] })
+      if (path === '/v1/model/draft/steps') {
+        const body = (init as { body?: { remove?: number } } | undefined)?.body
+        if (typeof body?.remove === 'number') return Promise.resolve({ count: 0, steps: [] })
+        stagePosts += 1
+        return pending
+      }
+      return Promise.resolve({})
+    })
+    const fieldset = document.createElement('fieldset')
+    fieldset.setAttribute('data-testid', 'allowed-trees')
+    const input = document.createElement('input')
+    input.type = 'checkbox'
+    fieldset.appendChild(input)
+    document.body.appendChild(fieldset)
+    render(<Host />)
+    await waitFor(() => expect(mock.methods.get).toHaveBeenCalledWith('/v1/model/draft'))
+
+    const staged = stageModel('model.set_structures', { type_key: 'recipe', structures: ['structure-food'] })
+    staged.catch(() => undefined)
+    await waitFor(() => expect(fieldset.getAttribute('data-locked')).toBe('true'))
+    expect(input.getAttribute('aria-disabled')).toBe('true')
+
+    fireEvent.click(input)
+    fireEvent.pointerDown(input)
+    fireEvent.keyDown(input, { key: ' ' })
+    expect(stagePosts).toBe(1)
+    expect(input.checked).toBe(false)
+
+    release?.({ ...allowedTrees, count: 1, steps: allowedTrees.steps })
+    await staged
+    fieldset.remove()
+  })
+})
