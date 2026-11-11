@@ -1394,3 +1394,180 @@ html body #root {
   max-height: none;
   overflow: visible;
 }
+
+/* User guide (static pages under /docs) */
+
+.guide-layout {
+  display: grid;
+  grid-template-columns: 238px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.guide-sidebar {
+  position: sticky;
+  top: 72px;
+  padding: 12px;
+  background: var(--panel);
+  border-radius: var(--panel-r);
+  box-shadow: var(--inset);
+}
+
+.guide-sidebar-title {
+  margin: 0 0 6px;
+  padding: 0 10px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.guide-nav { display: grid; gap: 2px; }
+
+.guide-nav a {
+  display: block;
+  padding: 7px 10px;
+  border-radius: var(--chip-r);
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.35;
+  text-decoration: none;
+}
+
+.guide-nav a:hover { background: var(--hover); color: var(--text); }
+
+.guide-nav a[aria-current='page'] {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.guide-main {
+  min-width: 0;
+  padding: clamp(24px, 4vw, 48px) clamp(20px, 4vw, 52px);
+  background: var(--panel);
+  border-radius: var(--panel-r);
+  box-shadow: var(--inset);
+}
+
+.guide-article { max-width: 760px; }
+.guide-article > :first-child { margin-top: 0; }
+
+.guide-article h1 {
+  margin: 0 0 20px;
+  font-size: clamp(30px, 4vw, 42px);
+  line-height: 1.08;
+  letter-spacing: -0.035em;
+}
+
+.guide-article h2 {
+  margin: 40px 0 12px;
+  font-size: clamp(21px, 2.4vw, 26px);
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.guide-article h3 {
+  margin: 28px 0 10px;
+  font-size: 18px;
+  line-height: 1.25;
+  letter-spacing: -0.012em;
+}
+
+.guide-article p,
+.guide-article li { color: var(--text-2); font-size: 15px; line-height: 1.65; }
+.guide-article p { margin: 0 0 14px; }
+.guide-article ul,
+.guide-article ol { display: grid; gap: 6px; margin: 0 0 18px; padding-left: 22px; }
+.guide-article li::marker { color: var(--muted); }
+.guide-article strong { color: var(--text); font-weight: 600; }
+
+.guide-article a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  text-underline-offset: 2px;
+}
+
+.guide-article a:hover { color: var(--text); text-decoration-color: var(--text); }
+
+.guide-article code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--surface);
+  box-shadow: var(--inset);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+}
+
+.guide-article pre {
+  margin: 0 0 18px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  border-radius: var(--control-r);
+  background: var(--surface);
+  box-shadow: var(--inset);
+}
+
+.guide-article pre code {
+  padding: 0;
+  background: none;
+  box-shadow: none;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.guide-article hr {
+  margin: 32px 0;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
+}
+
+.guide-article blockquote {
+  margin: 0 0 18px;
+  padding: 2px 0 2px 16px;
+  border-left: 2px solid var(--accent);
+  color: var(--text-2);
+}
+
+.guide-article blockquote p { margin: 0; }
+
+.guide-table {
+  margin: 0 0 20px;
+  overflow-x: auto;
+  border-radius: var(--control-r);
+  box-shadow: var(--inset);
+}
+
+.guide-table table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+
+.guide-table th,
+.guide-table td {
+  padding: 9px 12px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 35%, transparent);
+}
+
+.guide-table th {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.guide-table td { color: var(--text-2); }
+.guide-table tr:last-child td { border-bottom: 0; }
+
+@media (max-width: 860px) {
+  .guide-layout { grid-template-columns: 1fr; }
+  .guide-sidebar { position: static; }
+  .guide-nav { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 520px) {
+  .guide-nav { grid-template-columns: 1fr; }
+  .guide-main { padding: 22px 16px; }
+}

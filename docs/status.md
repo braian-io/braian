@@ -1,5 +1,28 @@
 # Status 2026-11-09
 
+## Rad 225 — användarguide på /docs som statisk del av apps/landing
+
+Grenen `junior/225-docs-foundation` utgår från `origin/main` `59ba66f` (row 128g, #302) och är **inte mergad, deployad eller accepterad**. Row 224 hade ingen `docs/guide`-katalog, gren eller PR vid start, så ingen befintlig guide återanvändes.
+
+Guiden ligger i `docs/guide/` med sex Markdown-sidor och publiceras som statisk HTML av den befintliga `apps/landing`-bygget:
+
+- `index.md` → `/docs` och `/docs/`
+- `getting-started.md` → `/docs/getting-started`
+- `workspaces-and-panels.md` → `/docs/workspaces-and-panels`
+- `object-types-and-relations.md` → `/docs/object-types-and-relations`
+- `data-sources.md` → `/docs/data-sources`
+- `command-palette-and-shortcuts.md` → `/docs/command-palette-and-shortcuts`
+
+`apps/landing/scripts/guide.mjs` renderar Markdown till statiska sidor med en delad guidenavigering och skriver både `dist/docs/<slug>/index.html` och `dist/docs/<slug>.html`. `scripts/prerender.mjs` anropar den efter den befintliga homepage-prerendern. Ingen ny tjänst, Worker, CMS, docs-host eller runtime-Markdown-server infördes; inget under `/var/www`, `/opt/braian`, Caddy eller `demo.braian.io` rördes.
+
+Bygget kontrollerar att källmängden är exakt de sex sidorna (ingen graph-sida), att varje sida har rätt `h1`, att index länkar till alla sidor, att delad navigering finns och att varje `/docs`-länk pekar på en byggd sida. En saknad guidesida får bygget att avbryta; det verifierades genom att tillfälligt ta bort `data-sources.md` och se `pnpm --dir apps/landing build` fallera med `guide sources do not match the required pages`.
+
+Den befintliga homepage-prerendern och dess CTA-kontroller (Try the demo, View on GitHub, ingen "chatbot", hårdvarufotnot, kollapsade disclosures) är oförändrade liksom Trackaton-scriptet i `apps/landing/index.html` och `robots.txt`. `apps/landing/public/sitemap.xml` listar nu även `/docs`-sidorna så att guiden blir upptäckbar; inga andra sitemapändringar gjordes.
+
+Innehållet är en användarguide för nuvarande produkt och bygger på `apps/web/src` (bland annat `shortcuts.ts`, `palette*.ts`, `command-registry.ts`, `view-source.ts`, `templates.ts`, `model-*` och `catalogs/`) samt `crates/server/src/seed.rs`. Planerat eller trasigt beteende är inte dokumenterat som levererat: ingen `/docs/graph`-sida, ingen påstådd fungerande share-route, ingen länkkardinalitet i UI-dialogen och ingen självbetjäning för konto. En kort platshållare på index säger att en graph-guide kommer när arbetet är godkänt.
+
+Bevis: `pnpm --dir apps/landing exec tsc --noEmit` exit 0; `pnpm --dir apps/landing build` exit 0 med `prerendered 6 guide pages under dist/docs`; `python3 scripts/check-english.py` exit 0. Ingen compose startades och ingen databas behövdes. `apps/web/src/data-model.tsx` är orörd. Ärlig avgränsning: guiden beskriver den nuvarande webbappen, men den grafiska guiden för graf-vyn är inte skriven i denna omgång.
+
 ## Rad 103-uppföljning — Select source listar varje källa som kan ge vyns typ
 
 Grenen `junior/103-derivable-sources` utgår från `origin/main` `ab7951d` (#297, inklusive #298) och är **inte mergad, deployad eller accepterad**. Den sista 103-omgången rättar menyn Select source: den använder nu **målvyns bundna typ** (inte den nuvarande källans typ), listar alla öppna tabeller och träd som kan härleda typen, och utelämnar källor som saknar väg till typen.
