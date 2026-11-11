@@ -5,14 +5,19 @@ import {
   agent,
   agentSession,
   architecture,
+  deleteFlows,
   demoUrl,
   docsUrl,
+  feedback,
+  graph,
   hero,
   licenseUrl,
+  model,
   nav,
   openSource,
   repoUrl,
-  speed,
+  sources,
+  workspaces,
 } from '@/content'
 import { performanceFootnote, primaryFigures, secondaryFigures, type Figure } from '@/data/measurements'
 import { HeroDemo } from '@/demo/hero-demo'
@@ -51,8 +56,13 @@ export function App() {
         </header>
         <main id="content">
           <Hero />
-          <Speed />
+          <Workspaces />
+          <Model />
+          <Sources />
+          <Graph />
           <Agent />
+          <DeleteFlow />
+          <Feedback />
           <Architecture />
           <Performance />
           <OpenSource />
@@ -128,11 +138,48 @@ function SectionHead({ id, eyebrow, title, lede }: { id: string; eyebrow?: strin
   )
 }
 
-function Speed() {
+function Workspaces() {
   return (
-    <section className="section" id="speed" aria-labelledby="speed-title">
-      <SectionHead id="speed-title" eyebrow={speed.eyebrow} title={speed.title} lede={speed.lede} />
-      <DisclosureList items={speed.points} idPrefix="speed" columns="4" numbered />
+    <section className="section" id="workspaces" aria-labelledby="workspaces-title">
+      <SectionHead
+        id="workspaces-title"
+        eyebrow={workspaces.eyebrow}
+        title={workspaces.title}
+        lede={workspaces.lede}
+      />
+      <DisclosureList items={workspaces.points} idPrefix="workspaces" columns="4" numbered />
+    </section>
+  )
+}
+
+function Model() {
+  return (
+    <section className="section" id="model" aria-labelledby="model-title">
+      <SectionHead id="model-title" eyebrow={model.eyebrow} title={model.title} lede={model.lede} />
+      <DisclosureList items={model.points} idPrefix="model" columns="4" numbered />
+    </section>
+  )
+}
+
+function Sources() {
+  return (
+    <section className="section" id="sources" aria-labelledby="sources-title">
+      <SectionHead
+        id="sources-title"
+        eyebrow={sources.eyebrow}
+        title={sources.title}
+        lede={sources.lede}
+      />
+      <DisclosureList items={sources.points} idPrefix="sources" columns="4" numbered />
+    </section>
+  )
+}
+
+function Graph() {
+  return (
+    <section className="section" id="graph" aria-labelledby="graph-title">
+      <SectionHead id="graph-title" eyebrow={graph.eyebrow} title={graph.title} lede={graph.lede} />
+      <DisclosureList items={graph.points} idPrefix="graph" columns="4" numbered />
     </section>
   )
 }
@@ -204,6 +251,34 @@ function Check() {
     <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" className="step-check">
       <path d="M3.5 8.5 6.5 11.5 12.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
+  )
+}
+
+function DeleteFlow() {
+  return (
+    <section className="section" id="delete" aria-labelledby="delete-title">
+      <SectionHead
+        id="delete-title"
+        eyebrow={deleteFlows.eyebrow}
+        title={deleteFlows.title}
+        lede={deleteFlows.lede}
+      />
+      <DisclosureList items={deleteFlows.points} idPrefix="delete" columns="3" numbered />
+    </section>
+  )
+}
+
+function Feedback() {
+  return (
+    <section className="section" id="feedback" aria-labelledby="feedback-title">
+      <SectionHead
+        id="feedback-title"
+        eyebrow={feedback.eyebrow}
+        title={feedback.title}
+        lede={feedback.lede}
+      />
+      <DisclosureList items={feedback.points} idPrefix="feedback" columns="3" />
+    </section>
   )
 }
 

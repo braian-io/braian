@@ -1,6 +1,7 @@
 import { cpSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { buildGuide } from './guide.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const serverEntry = resolve(root, 'dist/server/entry-server.js')
@@ -35,7 +36,11 @@ if (!markup.includes('Moving between them is instant')) {
   throw new Error('disclosure body copy is missing')
 }
 
+const guideTemplate = html
 writeFileSync(indexPath, html.replace(placeholder, `<div id="root">${markup}</div>`))
+
+const guide = buildGuide(root, guideTemplate)
+console.log(`prerendered ${guide.pages.length} guide pages under dist/docs`)
 
 const brandDest = resolve(root, 'dist/brand')
 rmSync(brandDest, { recursive: true, force: true })
