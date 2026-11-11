@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from './api'
 import { copy } from './i18n'
 import { allowedTreeStepIndexes, allowedTreesSentence, draftHasForcedReview, draftSaveGate, ModelDraftHost } from './model-draft-ui'
-import { openModelDialog, requestReview } from './model-stage'
+import { openModelDialog, requestReview, stageModel } from './model-stage'
 
 const mock = vi.hoisted(() => {
   const methods = { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() }
@@ -165,7 +165,7 @@ describe('review dialog', () => {
     expect(saves()).toEqual([])
   })
 
-  it('names the latest allowed-tree set per type and keeps step indexes', () => {
+  it('names the latest allowed-tree set per type', () => {
     expect(allowedTreesSentence(allowedTrees)).toBe('Allowed trees for Recipe: Food')
     expect(allowedTreesSentence({
       ...allowedTrees,
@@ -175,21 +175,61 @@ describe('review dialog', () => {
         { op: 'set_structures', type_key: 'recipe', structures: [] },
       ],
     })).toBe('Allowed trees for Recipe: none')
-    expect(allowedTreeStepIndexes(allowedTrees)).toEqual([0])
-    expect(allowedTreeStepIndexes({
+  })
+
+  it('removes only the steps this dialog created, never an earlier set for the same type', () => {
+    const body = {
       ...allowedTrees,
       steps: [
-        { op: 'create_type', key: 'unrelated' },
+        { op: 'set_structures', type_key: 'recipe', structures: ['structure-market'] },
         { op: 'set_structures', type_key: 'recipe', structures: ['structure-food'] },
-      ],
-    })).toEqual([1])
-    expect(allowedTreeStepIndexes({
-      ...allowedTrees,
-      steps: [
         { op: 'set_structures', type_key: 'article', structures: ['structure-food'] },
+      ],
+    }
+    expect(allowedTreeStepIndexes(body, [
+      { index: 1, typeKey: 'recipe', structures: ['structure-food'] },
+      { index: 2, typeKey: 'article', structures: ['structure-food'] },
+    ])).toEqual([1, 2])
+    // The recorded index no longer holds what this dialog staged.
+    expect(allowedTreeStepIndexes(body, [
+      { index: 1, typeKey: 'article', structures: ['structure-food'] },
+    ])).toEqual([])
+    // A missing type key must not widen the removal to every set_structures step.
+    expect(allowedTreeStepIndexes({
+      ...body,
+      steps: [
+        { op: 'set_structures', structures: ['structure-market'] },
+        { op: 'set_structures', structures: ['structure-food'] },
+      ],
+    }, [
+      { index: 1, typeKey: '', structures: ['structure-food'] },
+    ])).toEqual([])
+  })
+
+  it('lists every pending step with display names and highlights the allowed-tree change', async () => {
+    const body = {
+      ...allowedTrees,
+      count: 2,
+      steps: [
+        { op: 'update_type', key: 'recipe', plural: 'RecipesX' },
         { op: 'set_structures', type_key: 'recipe', structures: ['structure-food'] },
       ],
-    })).toEqual([1])
+    }
+    mock.use((path) => {
+      if (path === '/v1/model/draft') return Promise.resolve(body)
+      return Promise.resolve({})
+    })
+    render(<Host />)
+    fireEvent.click(await screen.findByTestId('review-save'))
+    const dialog = await screen.findByTestId('review-dialog')
+    const steps = dialog.querySelectorAll('[data-testid="review-step"]')
+    expect([...steps].map((step) => step.textContent)).toEqual([
+      'Set the plural name of Recipe to RecipesX',
+      'Allowed trees for Recipe: Food',
+    ])
+    expect(steps[1]?.getAttribute('data-highlight')).toBe('true')
+    expect(dialog.textContent).not.toContain('recipe')
+    expect(dialog.textContent).not.toContain('structure-food')
   })
 
   it('shows a loading state before the review dialog and disables the draft bar', async () => {
@@ -220,10 +260,9 @@ describe('review dialog', () => {
     expect((screen.getByTestId('discard-draft') as HTMLButtonElement).disabled).toBe(true)
   })
 
-  it('cancels only the allowed-tree step and keeps another draft step', async () => {
+  it('cancels only the step the dialog created and keeps another draft step', async () => {
     let steps: Array<{ op: string } & Record<string, unknown>> = [
       { op: 'create_type', key: 'unrelated' },
-      { op: 'set_structures', type_key: 'recipe', structures: ['structure-food'] },
     ]
     let current = { ...allowedTrees, count: steps.length, steps }
     mock.use((path, init) => {
@@ -232,14 +271,18 @@ describe('review dialog', () => {
         const body = (init as { body?: { remove?: number } } | undefined)?.body
         if (typeof body?.remove === 'number') {
           steps = steps.filter((_, index) => index !== body.remove)
-          current = { ...allowedTrees, count: steps.length, steps }
+        } else {
+          steps = [...steps, { op: 'set_structures', type_key: 'recipe', structures: ['structure-food'] }]
         }
+        current = { ...allowedTrees, count: steps.length, steps }
         return Promise.resolve(current)
       }
       return Promise.resolve({})
     })
     render(<Host />)
-    fireEvent.click(await screen.findByTestId('review-save'))
+    await screen.findByTestId('review-save')
+    await stageModel('model.set_structures', { type_key: 'recipe', structures: ['structure-food'] })
+    requestReview()
     await screen.findByTestId('review-dialog')
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     await waitFor(() => expect(mock.methods.post).toHaveBeenCalledWith('/v1/model/draft/steps', { body: { remove: 1 } }))
@@ -250,10 +293,38 @@ describe('review dialog', () => {
     expect(steps).toEqual([{ op: 'create_type', key: 'unrelated' }])
   })
 
-  it('Escape removes only the allowed-tree step and keeps another draft step', async () => {
+  it('Escape removes only the step the dialog created', async () => {
+    let steps: Array<{ op: string } & Record<string, unknown>> = []
+    let current = { ...allowedTrees, count: 0, steps }
+    mock.use((path, init) => {
+      if (path === '/v1/model/draft') return Promise.resolve(current)
+      if (path === '/v1/model/draft/steps') {
+        const body = (init as { body?: { remove?: number } } | undefined)?.body
+        if (typeof body?.remove === 'number') {
+          steps = steps.filter((_, index) => index !== body.remove)
+        } else {
+          steps = [...steps, { op: 'set_structures', type_key: 'recipe', structures: ['structure-food'] }]
+        }
+        current = { ...allowedTrees, count: steps.length, steps }
+        return Promise.resolve(current)
+      }
+      return Promise.resolve({})
+    })
+    render(<Host />)
+    await stageModel('model.set_structures', { type_key: 'recipe', structures: ['structure-food'] })
+    requestReview()
+    const dialog = await screen.findByTestId('review-dialog')
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+    await waitFor(() => expect(mock.methods.post).toHaveBeenCalledWith('/v1/model/draft/steps', { body: { remove: 0 } }))
+    expect(mock.methods.delete).not.toHaveBeenCalled()
+    expect(saves()).toEqual([])
+    await waitFor(() => expect(screen.queryByTestId('review-dialog')).toBeNull())
+    expect(steps).toEqual([])
+  })
+
+  it('keeps an earlier set_structures step for the same type when the dialog is cancelled', async () => {
     let steps: Array<{ op: string } & Record<string, unknown>> = [
-      { op: 'create_type', key: 'unrelated' },
-      { op: 'set_structures', type_key: 'recipe', structures: ['structure-food'] },
+      { op: 'set_structures', type_key: 'recipe', structures: ['structure-market'] },
     ]
     let current = { ...allowedTrees, count: steps.length, steps }
     mock.use((path, init) => {
@@ -262,22 +333,58 @@ describe('review dialog', () => {
         const body = (init as { body?: { remove?: number } } | undefined)?.body
         if (typeof body?.remove === 'number') {
           steps = steps.filter((_, index) => index !== body.remove)
-          current = { ...allowedTrees, count: steps.length, steps }
+        } else {
+          steps = [...steps, { op: 'set_structures', type_key: 'recipe', structures: ['structure-food'] }]
         }
+        current = { ...allowedTrees, count: steps.length, steps }
         return Promise.resolve(current)
       }
       return Promise.resolve({})
     })
     render(<Host />)
-    fireEvent.click(await screen.findByTestId('review-save'))
-    const dialog = await screen.findByTestId('review-dialog')
-    fireEvent.keyDown(dialog, { key: 'Escape' })
+    await screen.findByTestId('review-save')
+    await stageModel('model.set_structures', { type_key: 'recipe', structures: ['structure-food'] })
+    requestReview()
+    await screen.findByTestId('review-dialog')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     await waitFor(() => expect(mock.methods.post).toHaveBeenCalledWith('/v1/model/draft/steps', { body: { remove: 1 } }))
-    expect(mock.methods.delete).not.toHaveBeenCalled()
-    expect(saves()).toEqual([])
-    await waitFor(() => expect(screen.queryByTestId('review-dialog')).toBeNull())
-    await waitFor(() => expect(screen.getByTestId('unsaved-changes').textContent?.startsWith('1 ')).toBe(true))
-    expect(steps).toEqual([{ op: 'create_type', key: 'unrelated' }])
+    await waitFor(() => expect(steps).toEqual([
+      { op: 'set_structures', type_key: 'recipe', structures: ['structure-market'] },
+    ]))
+    expect(mock.methods.post.mock.calls.filter((call) => String(call[0]).includes('/v1/model/draft/steps') && (call[1] as { body?: { remove?: number } })?.body?.remove === 0)).toEqual([])
+  })
+
+  it('drops the unsaved count before the remove request settles and restores it on failure', async () => {
+    let steps: Array<{ op: string } & Record<string, unknown>> = [
+      { op: 'create_type', key: 'unrelated' },
+    ]
+    let current = { ...allowedTrees, count: steps.length, steps }
+    let rejectRemove: ((reason: unknown) => void) | undefined
+    mock.use((path, init) => {
+      if (path === '/v1/model/draft') return Promise.resolve(current)
+      if (path === '/v1/model/draft/steps') {
+        const body = (init as { body?: { remove?: number } } | undefined)?.body
+        if (typeof body?.remove === 'number') {
+          return new Promise((_, reject) => {
+            rejectRemove = reject
+          })
+        }
+        steps = [...steps, { op: 'set_structures', type_key: 'recipe', structures: ['structure-food'] }]
+        current = { ...allowedTrees, count: steps.length, steps }
+        return Promise.resolve(current)
+      }
+      return Promise.resolve({})
+    })
+    render(<Host />)
+    await screen.findByTestId('review-save')
+    await stageModel('model.set_structures', { type_key: 'recipe', structures: ['structure-food'] })
+    requestReview()
+    await screen.findByTestId('review-dialog')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.getByTestId('unsaved-changes').textContent?.startsWith('1 ')).toBe(true)
+    rejectRemove?.(new ApiError(422, 'Unprocessable Entity', { detail: 'the step could not be removed' }))
+    await waitFor(() => expect(screen.getByTestId('unsaved-changes').textContent?.startsWith('2 ')).toBe(true))
+    expect(await screen.findByText('the step could not be removed')).toBeTruthy()
   })
 
   it('saves a forced allowed-tree review once and closes the dialog', async () => {

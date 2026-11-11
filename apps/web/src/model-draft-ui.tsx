@@ -7,7 +7,8 @@ import { writeErrorMessage } from './write-error'
 import { formatCount, formatTimestamp } from './format'
 import { copy, uiLanguage } from './i18n'
 import { attributeKey } from './model-view'
-import { onDraftChange, removeDraftSteps, requestDiscardDraft, setModelFocus, stageModel } from './model-stage'
+import { onDraftChange, removeDraftSteps, requestDiscardDraft, setModelFocus, stageModel, takeStagedStructures, clearStagedStructures, type StagedStructures } from './model-stage'
+import { describeModelSteps } from './model-step-text'
 import { StateNote } from './states'
 
 export type DraftSaveGate = 'idle' | 'direct' | 'confirm' | 'blocked'
@@ -57,17 +58,70 @@ function confirmLead(body: Json): string {
   return lines[0] || copy.destructiveSave
 }
 
-/** Indices of the allowed-tree steps that belong to the last changed type. */
-export function allowedTreeStepIndexes(body: Json): number[] {
+/**
+ * Indices of the allowed-tree steps this dialog created. Older set_structures
+ * steps on the same type (staged before the toggle) are never returned.
+ */
+export function allowedTreeStepIndexes(body: Json, staged: StagedStructures[] = []): number[] {
   const steps = Array.isArray(body.steps) ? body.steps : []
-  const last = [...steps].reverse().map(asRecord).find((step) => step?.op === 'set_structures')
-  const typeKey = String(last?.type_key ?? '')
-  return steps.flatMap((step, index) => {
-    const record = asRecord(step)
-    if (record?.op !== 'set_structures') return []
-    if (typeKey && String(record.type_key ?? '') !== typeKey) return []
+  return [...new Set(staged.flatMap(({ index, typeKey, structures }) => {
+    if (!typeKey) return []
+    const step = asRecord(steps[index])
+    if (step?.op !== 'set_structures') return []
+    if (String(step.type_key ?? '') !== typeKey) return []
+    const now = Array.isArray(step.structures) ? step.structures.map(String) : []
+    if (now.join('\u0000') !== structures.join('\u0000')) return []
     return [index]
-  })
+  }))].sort((left, right) => left - right)
+}
+
+/** The last set_structures step for one type, in draft order. */
+function lastStructures(steps: Json[], typeKey: string): string[] | undefined {
+  let found: string[] | undefined
+  for (const step of steps) {
+    if (String(step.op ?? '') !== 'set_structures') continue
+    if (String(step.type_key ?? '') !== typeKey) continue
+    found = Array.isArray(step.structures) ? step.structures.map(String) : []
+  }
+  return found
+}
+
+function committedStructures(defs: Json | undefined, typeKey: string): string[] | undefined {
+  const objectType = ((defs?.types as Json[] | undefined) ?? []).find(
+    (item) => String(item.key ?? '') === typeKey || String(item.id ?? '') === typeKey,
+  )
+  return objectType && Array.isArray(objectType.structures)
+    ? objectType.structures.map(String)
+    : undefined
+}
+
+/**
+ * Cached draft after removing these steps. The definitions preview is patched
+ * too, so the checkbox and the count change before the server answers.
+ */
+function revertedDraft(body: Json, indexes: number[], committed: Json | undefined): Json | undefined {
+  const steps = (Array.isArray(body.steps) ? body.steps : []).map(asRecord).filter((step): step is Json => Boolean(step))
+  const remove = new Set(indexes)
+  const remaining = steps.filter((_, index) => !remove.has(index))
+  const removed = [...remove].flatMap((index) => steps[index] ? [steps[index]] : [])
+  const types = [...new Set(removed.flatMap((step) =>
+    String(step.op ?? '') === 'set_structures' ? [String(step.type_key ?? '')] : []))].filter(Boolean)
+  const next: Json = { ...body, count: remaining.length, steps: remaining }
+  const definitions = asRecord(body.definitions)
+  if (!definitions || types.length === 0) return next
+  const rows = Array.isArray(definitions.types) ? definitions.types.map(asRecord) : []
+  next.definitions = {
+    ...definitions,
+    types: rows.map((row) => {
+      if (!row) return row
+      const key = String(row.key ?? '')
+      const id = String(row.id ?? '')
+      if (!types.includes(key) && !types.includes(id)) return row
+      const structures = lastStructures(remaining, key) ?? lastStructures(remaining, id) ?? committedStructures(committed, key) ?? committedStructures(committed, id)
+      return structures ? { ...row, structures } : row
+    }),
+  }
+  return next
 }
 
 function typeLabel(defs: Json | undefined, key: string): string {
@@ -114,6 +168,7 @@ export function ModelDraftHost() {
   const queryClient = useQueryClient()
   const draft = useQuery({ queryKey: ['model-draft'], queryFn: () => api.get('/v1/model/draft') })
   const [review, setReview] = useState(false)
+  const [reviewCreated, setReviewCreated] = useState<StagedStructures[]>([])
   const [reviewLoading, setReviewLoading] = useState(false)
   const [dialog, setDialog] = useState<DialogKind | null>(null)
   const [error, setError] = useState('')
@@ -137,10 +192,18 @@ export function ModelDraftHost() {
     void queryClient.invalidateQueries({ queryKey: ['model-draft'] })
     void queryClient.invalidateQueries({ queryKey: ['definitions'] })
   }
-  // Cancel removes only the allowed-tree step, so other draft work survives.
+  // Cancel removes only the steps this dialog created, so other draft work survives.
+  // The cached draft is reverted first; the server call follows.
   const revertReviewSteps = (indexes: number[]) => {
     if (indexes.length === 0) return
+    const cached = queryClient.getQueryData<Json>(['model-draft'])
+    const committed = queryClient.getQueryData<Json>(['definitions'])
+    if (cached) {
+      const next = revertedDraft(cached, indexes, committed)
+      if (next) queryClient.setQueryData(['model-draft'], next)
+    }
     void removeDraftSteps(indexes).catch((reason: unknown) => {
+      if (cached) queryClient.setQueryData(['model-draft'], cached)
       const message = writeErrorMessage(reason)
       if (message) setError(message)
     })
@@ -156,6 +219,7 @@ export function ModelDraftHost() {
     if (showProgress) setReviewLoading(true)
     setError('')
     let posted = ''
+    const created = takeStagedStructures()
     try {
       do {
         again.current = false
@@ -166,6 +230,7 @@ export function ModelDraftHost() {
         const gate = draftSaveGate(body)
         if ((gate === 'confirm' || gate === 'blocked') && body) {
           setReviewLoading(false)
+          setReviewCreated(created)
           setReview(true)
           if (!again.current) return
           continue
@@ -195,6 +260,7 @@ export function ModelDraftHost() {
       void decideRef.current(true)
     }
     const discard = () => {
+      clearStagedStructures()
       void api.delete('/v1/model/draft').then(() => {
         setError('')
         void queryClient.invalidateQueries({ queryKey: ['model-draft'] })
@@ -257,10 +323,12 @@ export function ModelDraftHost() {
       {review && draft.data ? (
         <ReviewDialog
           body={draft.data}
+          created={reviewCreated}
           onClose={closeReview}
           onRevert={revertReviewSteps}
           onSaved={() => {
             setReview(false)
+            setReviewCreated([])
             refresh()
           }}
         />
@@ -272,11 +340,13 @@ export function ModelDraftHost() {
 
 function ReviewDialog({
   body,
+  created,
   onClose,
   onRevert,
   onSaved,
 }: {
   body: Json
+  created: StagedStructures[]
   onClose: () => void
   onRevert: (indexes: number[]) => void
   onSaved: () => void
@@ -284,17 +354,18 @@ function ReviewDialog({
   const blocked = draftSaveGate(body) === 'blocked'
   const destructive = asRecord(body.consequence)?.destructive === true
   // A non-destructive allowed-tree change is reviewed too. Cancel removes only
-  // that step, so unrelated draft work stays.
-  const forced = !blocked && !destructive && draftHasForcedReview(body)
+  // the steps this dialog created, so earlier and unrelated draft work stays.
   const lead = !blocked && !destructive && draftHasForcedReview(body)
     ? allowedTreesSentence(body) ?? confirmLead(body)
     : confirmLead(body)
   const warnings = (body.warnings as string[] | undefined) ?? []
+  const steps = describeModelSteps(body.steps, asRecord(body.definitions))
+  const createdIndexes = allowedTreeStepIndexes(body, created)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const saving = useRef(false)
   const close = () => {
-    if (forced) onRevert(allowedTreeStepIndexes(body))
+    onRevert(createdIndexes)
     onClose()
   }
   const save = () => {
@@ -325,6 +396,21 @@ function ReviewDialog({
           <DialogTitle asChild><strong>{copy.reviewChangeTitle}</strong></DialogTitle>
         </div>
         <DialogDescription asChild><p className="hint">{lead}</p></DialogDescription>
+        {steps.length > 0 ? (
+          <ul className="review-steps" data-testid="review-steps">
+            {steps.map((step) => (
+              <li
+                key={step.key}
+                className={step.allowedTrees ? 'review-step allowed-trees-step' : 'review-step'}
+                data-testid="review-step"
+                data-op={step.op}
+                data-highlight={step.allowedTrees ? 'true' : undefined}
+              >
+                {step.sentence}
+              </li>
+            ))}
+          </ul>
+        ) : null}
         {blocked ? <p className="error" role="alert">{String(body.error)}</p> : null}
         {warnings.map((warning) => <p key={warning} className="error">{warning}</p>)}
         {error ? <p className="error" role="alert">{error}</p> : null}

@@ -590,6 +590,8 @@ export const copy = {
   sortByType: 'Sort by type',
   attributeName: 'Name',
   attributeType: 'Type',
+  attribute: 'Attribute',
+  valueOption: 'Option',
   attributeDefinitions: 'Attribute definitions',
   usedIn: 'Used in',
   unitFamily: 'Unit family',

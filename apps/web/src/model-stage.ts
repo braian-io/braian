@@ -36,6 +36,37 @@ export function modelDeletes(name: string) {
   return name.includes('delete')
 }
 
+/** A set_structures step this UI created, and where the server put it. */
+export type StagedStructures = { index: number; typeKey: string; structures: string[] }
+
+let stagedStructures: StagedStructures[] = []
+
+/** Review cancellations remove these steps only, never older ones on the same type. */
+export function takeStagedStructures(): StagedStructures[] {
+  const taken = stagedStructures
+  stagedStructures = []
+  return taken
+}
+
+export function clearStagedStructures() {
+  stagedStructures = []
+}
+
+function rememberStructures(result: unknown, name: string, args: Json) {
+  if (name !== 'model.set_structures') return
+  const record = jsonRecord(result)
+  const steps = Array.isArray(record?.steps) ? record.steps : []
+  const index = steps.length - 1
+  const step = jsonRecord(steps[index])
+  const typeKey = String(step?.type_key ?? args.type_key ?? '')
+  if (index < 0 || step?.op !== 'set_structures' || !typeKey) return
+  stagedStructures.push({
+    index,
+    typeKey,
+    structures: Array.isArray(step?.structures) ? step.structures.map(String) : [],
+  })
+}
+
 /** A person's edit joins the draft. A delete opens the consequence dialog. */
 export async function stageModel(name: string, args: Json = {}) {
   if (modelDeletes(name)) {
@@ -46,6 +77,7 @@ export async function stageModel(name: string, args: Json = {}) {
     return result
   }
   const draft = await api.post('/v1/model/draft/steps', { body: { operation: name, args } })
+  rememberStructures(draft, name, args)
   emitDraft()
   return draft
 }
