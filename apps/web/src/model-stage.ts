@@ -52,19 +52,176 @@ export function clearStagedStructures() {
   stagedStructures = []
 }
 
-function rememberStructures(result: unknown, name: string, args: Json) {
-  if (name !== 'model.set_structures') return
+/** A toggle keeps its checkbox locked until the review dialog is decided. */
+export type StructuresLock = { token: number; typeKey: string }
+
+let structuresLock: StructuresLock | null = null
+let nextStructuresToken = 1
+const lockListeners = new Set<() => void>()
+
+function emitStructuresLock() {
+  for (const listen of lockListeners) listen()
+}
+
+/** The type whose allowed-tree checkbox is locked, or null. */
+export function lockedStructuresType(): string | null {
+  return structuresLock?.typeKey ?? null
+}
+
+export function onStructuresLockChange(listen: () => void) {
+  lockListeners.add(listen)
+  return () => {
+    lockListeners.delete(listen)
+  }
+}
+
+/** Releases the lock, but only for the token that owns it. */
+export function releaseStructuresLock(token?: number) {
+  if (!structuresLock) return
+  if (token !== undefined && structuresLock.token !== token) return
+  structuresLock = null
+  emitStructuresLock()
+}
+
+type StructuresStage = {
+  token: number
+  typeKey: string
+  cancelled: boolean
+  settled: boolean
+  promise: Promise<unknown>
+}
+
+let structuresStage: StructuresStage | null = null
+
+/** True while a set_structures request is on its way and can still be cancelled. */
+export function structuresStageInFlight(): boolean {
+  return Boolean(structuresStage && !structuresStage.settled)
+}
+
+/**
+ * Marks the in-flight set_structures request as cancelled. The request itself
+ * is not aborted (the step may already exist), but its result is removed again
+ * and the caller's promise rejects with `StructuresCancelled`.
+ */
+export function cancelStructuresStage(): boolean {
+  if (!structuresStage || structuresStage.settled) return false
+  structuresStage.cancelled = true
+  return true
+}
+
+export class StructuresCancelled extends Error {
+  constructor() {
+    super('')
+    this.name = 'StructuresCancelled'
+  }
+}
+
+function cancelledError() {
+  return new StructuresCancelled()
+}
+
+function sameStructures(left: string[], right: string[]) {
+  return left.length === right.length && left.every((item, index) => item === right[index])
+}
+
+/**
+ * The step this call created, found by its type and structures rather than by
+ * assuming it is the last step in the draft. Other components may have added
+ * steps before the response arrives.
+ */
+function rememberStructures(result: unknown, name: string, args: Json): StagedStructures | undefined {
+  if (name !== 'model.set_structures') return undefined
   const record = jsonRecord(result)
   const steps = Array.isArray(record?.steps) ? record.steps : []
-  const index = steps.length - 1
-  const step = jsonRecord(steps[index])
-  const typeKey = String(step?.type_key ?? args.type_key ?? '')
-  if (index < 0 || step?.op !== 'set_structures' || !typeKey) return
-  stagedStructures.push({
-    index,
-    typeKey,
-    structures: Array.isArray(step?.structures) ? step.structures.map(String) : [],
+  const typeKey = String(args.type_key ?? '')
+  const structures = Array.isArray(args.structures) ? args.structures.map(String) : []
+  if (!typeKey) return undefined
+  let found: StagedStructures | undefined
+  steps.forEach((raw, index) => {
+    const step = jsonRecord(raw)
+    if (!step || step.op !== 'set_structures') return
+    if (String(step.type_key ?? '') !== typeKey) return
+    const now = Array.isArray(step.structures) ? step.structures.map(String) : []
+    if (!sameStructures(now, structures)) return
+    found = { index, typeKey, structures: now }
   })
+  return found
+}
+
+function dispatch(name: string) {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new Event(name))
+}
+
+/**
+ * Stages one allowed-tree change. A repeated click while the same change is
+ * still in flight returns that request instead of posting a second identical
+ * step. A different set for a type replaces the step this UI staged earlier.
+ */
+async function stageStructures(name: string, args: Json): Promise<unknown> {
+  const typeKey = String(args.type_key ?? '')
+  const inFlight = structuresStage
+  if (inFlight && !inFlight.settled) {
+    // A double click lands here before the first response. Coalesce instead of
+    // creating a second set_structures step for the same type.
+    return inFlight.promise
+  }
+
+  const token = nextStructuresToken++
+  const stage: StructuresStage = {
+    token,
+    typeKey,
+    cancelled: false,
+    settled: false,
+    promise: Promise.resolve(),
+  }
+  structuresStage = stage
+  structuresLock = { token, typeKey }
+  emitStructuresLock()
+  // The review shell must appear on the click, before the draft is fetched.
+  dispatch('braian-review-pending')
+
+  const work = (async () => {
+    try {
+      // Replace, never append twice, when this UI already staged a set for the
+      // same type. Foreign steps on the type are not in this list.
+      const previous = stagedStructures.filter((item) => item.typeKey === typeKey)
+      if (previous.length > 0) {
+        stagedStructures = stagedStructures.filter((item) => item.typeKey !== typeKey)
+        await removeDraftSteps(previous.map((item) => item.index))
+      }
+      if (stage.cancelled) throw cancelledError()
+
+      const draft = await api.post('/v1/model/draft/steps', { body: { operation: name, args } })
+      const record = rememberStructures(draft, name, args)
+      if (record) stagedStructures = [...stagedStructures.filter((item) => item.typeKey !== typeKey), record]
+
+      if (stage.cancelled) {
+        if (record) {
+          stagedStructures = stagedStructures.filter((item) => item !== record)
+          await removeDraftSteps([record.index])
+        }
+        throw cancelledError()
+      }
+      emitDraft()
+      return draft
+    } catch (reason) {
+      if (reason instanceof StructuresCancelled) throw reason
+      // The request failed: nothing is waiting for review, so unlock the box.
+      releaseStructuresLock(token)
+      dispatch('braian-review-pending-end')
+      throw reason
+    } finally {
+      stage.settled = true
+      if (structuresStage === stage) structuresStage = null
+      if (stage.cancelled) {
+        releaseStructuresLock(token)
+        dispatch('braian-review-pending-end')
+      }
+    }
+  })()
+  stage.promise = work
+  return work
 }
 
 /** A person's edit joins the draft. A delete opens the consequence dialog. */
@@ -76,8 +233,8 @@ export async function stageModel(name: string, args: Json = {}) {
     if (id) publishProposal(id)
     return result
   }
+  if (name === 'model.set_structures') return stageStructures(name, args)
   const draft = await api.post('/v1/model/draft/steps', { body: { operation: name, args } })
-  rememberStructures(draft, name, args)
   emitDraft()
   return draft
 }

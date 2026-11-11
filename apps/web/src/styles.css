@@ -2380,6 +2380,11 @@ kbd {
   font-size: var(--text-base);
 }
 .consequence { width: min(720px, 94vw); max-height: 72vh; overflow: auto; }
+/* The title owns the row; a source chip wraps below it instead of covering
+   the text at narrow widths. The X keeps its own corner. */
+.consequence-title { align-items: flex-start; padding-right: 32px; row-gap: var(--space-1); }
+.consequence-title > strong { min-width: 0; overflow-wrap: anywhere; }
+.consequence-title > .chip { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 [data-testid='proposal'] {
   display: flex;
   flex-direction: column;
@@ -3184,7 +3189,16 @@ button.primary[aria-disabled='true'] {
   box-shadow: none;
   accent-color: var(--accent);
 }
-[data-testid='review-loading'] .dialog-close { display: none; }
+/* The shell must be usable from the first frame: X and Cancel stay available
+   while the draft is loading. */
+[data-testid='review-loading'] .dialog-close { display: flex; }
+
+/* A locked allowed-tree toggle ignores clicks until its review is decided. */
+[data-testid='allowed-trees'][data-locked='true'] input[type='checkbox'] {
+  pointer-events: none;
+  cursor: default;
+  opacity: 0.55;
+}
 
 /* The review lists every pending step. The allowed-tree change is the reason
    the dialog opened, so it keeps the accent rail. */
@@ -3220,7 +3234,7 @@ button.primary[aria-disabled='true'] {
   flex: 2 1 220px;
   min-width: 180px;
 }
-[data-testid='attribute-table'] .standard-grid-cell[data-column='key'] { min-width: 96px; }
+[data-testid='attribute-table'] .standard-grid-cell[data-column='key'] { min-width: 120px; }
 [data-testid='attribute-table'] .standard-grid-cell[data-column='kind'] { min-width: 96px; }
 [data-testid='attribute-table'] .standard-grid-cell[data-column='unit'] { min-width: 88px; }
 [data-testid='attribute-table'] .standard-grid-cell[data-column='from'] { min-width: 140px; }

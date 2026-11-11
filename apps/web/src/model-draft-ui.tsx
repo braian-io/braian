@@ -7,7 +7,20 @@ import { writeErrorMessage } from './write-error'
 import { formatCount, formatTimestamp } from './format'
 import { copy, uiLanguage } from './i18n'
 import { attributeKey } from './model-view'
-import { onDraftChange, removeDraftSteps, requestDiscardDraft, setModelFocus, stageModel, takeStagedStructures, clearStagedStructures, type StagedStructures } from './model-stage'
+import {
+  onDraftChange,
+  onStructuresLockChange,
+  cancelStructuresStage,
+  clearStagedStructures,
+  lockedStructuresType,
+  releaseStructuresLock,
+  removeDraftSteps,
+  requestDiscardDraft,
+  setModelFocus,
+  stageModel,
+  takeStagedStructures,
+  type StagedStructures,
+} from './model-stage'
 import { describeModelSteps } from './model-step-text'
 import { StateNote } from './states'
 
@@ -73,6 +86,15 @@ export function allowedTreeStepIndexes(body: Json, staged: StagedStructures[] = 
     if (now.join('\u0000') !== structures.join('\u0000')) return []
     return [index]
   }))].sort((left, right) => left - right)
+}
+
+/** Keep the newest record per type when a save loop collects more than once. */
+function mergeStaged(current: StagedStructures[], fresh: StagedStructures[]): StagedStructures[] {
+  let next = current
+  for (const item of fresh) {
+    next = [...next.filter((old) => old.typeKey !== item.typeKey), item]
+  }
+  return next
 }
 
 /** The last set_structures step for one type, in draft order. */
@@ -176,79 +198,203 @@ export function ModelDraftHost() {
   const opener = useRef<HTMLElement | null>(null)
   const saving = useRef(false)
   const again = useRef(false)
+  const reviewToken = useRef(0)
+  const activeCreated = useRef<StagedStructures[]>([])
+  const revertSeq = useRef(0)
+  const patching = useRef(false)
+  const pendingReverts = useRef(new Map<number, { created: StagedStructures[]; committed: Json | undefined }>())
   const rememberOpener = () => {
+    // The loading shell opens on the same click. Keep the real opener (the
+    // checkbox) when it was captured before that dialog mounted.
+    if (opener.current) return
     opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
   }
-  const closeReview = () => {
-    setReview(false)
+  const restoreOpener = () => {
     const target = opener.current
     opener.current = null
     if (target?.isConnected) queueMicrotask(() => target.focus())
   }
+  const closeReview = () => {
+    setReview(false)
+    setReviewCreated([])
+    releaseStructuresLock()
+    restoreOpener()
+  }
   useEffect(() => onDraftChange(() => {
     void queryClient.invalidateQueries({ queryKey: ['model-draft'] })
   }), [queryClient])
+  // While a remove is in flight a parallel GET may still return the step. Keep
+  // the optimistic revert applied to whatever the cache now holds, so the box
+  // and the count never flash back. The patch only touches the steps this
+  // revert created; later edits are left alone.
+  useEffect(() => {
+    return queryClient.getQueryCache().subscribe((event) => {
+      if (patching.current || pendingReverts.current.size === 0) return
+      if (event.query.queryKey[0] !== 'model-draft') return
+      const data = event.query.state.data as Json | undefined
+      if (!data) return
+      let next = data
+      for (const revert of pendingReverts.current.values()) {
+        const indexes = allowedTreeStepIndexes(next, revert.created)
+        if (indexes.length === 0) continue
+        const patched = revertedDraft(next, indexes, revert.committed)
+        if (patched) next = patched
+      }
+      if (next === data) return
+      patching.current = true
+      queryClient.setQueryData(['model-draft'], next)
+      patching.current = false
+    })
+  }, [queryClient])
+  // The checkbox must ignore clicks from the click that starts the change until
+  // the review is decided. The control lives in a protected component, so lock
+  // it at the DOM boundary instead of adding a prop there.
+  useEffect(() => {
+    const applyLock = () => {
+      const locked = lockedStructuresType() !== null
+      for (const fieldset of document.querySelectorAll<HTMLElement>("[data-testid='allowed-trees']")) {
+        if (locked) fieldset.setAttribute('data-locked', 'true')
+        else fieldset.removeAttribute('data-locked')
+        for (const input of fieldset.querySelectorAll<HTMLInputElement>("input[type='checkbox']")) {
+          if (locked) input.setAttribute('aria-disabled', 'true')
+          else input.removeAttribute('aria-disabled')
+        }
+      }
+    }
+    const guard = (event: Event) => {
+      if (lockedStructuresType() === null) return
+      const target = event.target
+      if (!(target instanceof Element)) return
+      const input = target.closest("input[type='checkbox']")
+      if (input && input.closest("[data-testid='allowed-trees']")) {
+        event.preventDefault()
+        event.stopPropagation()
+      }
+    }
+    applyLock()
+    document.addEventListener('click', guard, true)
+    document.addEventListener('keydown', guard, true)
+    const off = onStructuresLockChange(applyLock)
+    return () => {
+      off()
+      document.removeEventListener('click', guard, true)
+      document.removeEventListener('keydown', guard, true)
+    }
+  }, [])
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ['model-draft'] })
     void queryClient.invalidateQueries({ queryKey: ['definitions'] })
   }
   // Cancel removes only the steps this dialog created, so other draft work survives.
-  // The cached draft is reverted first; the server call follows.
-  const revertReviewSteps = (indexes: number[]) => {
-    if (indexes.length === 0) return
+  // The cached draft is reverted first; the server call follows. On failure the
+  // truth comes from a refetch, never from the snapshot taken at click time.
+  const revertReviewSteps = (created: StagedStructures[]) => {
+    if (created.length === 0) return
     const cached = queryClient.getQueryData<Json>(['model-draft'])
     const committed = queryClient.getQueryData<Json>(['definitions'])
-    if (cached) {
-      const next = revertedDraft(cached, indexes, committed)
+    // Remove the steps that still match this dialog's record. When the cache
+    // does not have the freshly staged step yet (a delayed GET), the index the
+    // server returned is the only handle; a failure is reconciled by refetch.
+    const matched = cached ? allowedTreeStepIndexes(cached, created) : []
+    const remove = matched.length > 0 ? matched : created.map((item) => item.index)
+    const id = ++revertSeq.current
+    pendingReverts.current.set(id, { created, committed })
+    if (cached && matched.length > 0) {
+      patching.current = true
+      const next = revertedDraft(cached, matched, committed)
       if (next) queryClient.setQueryData(['model-draft'], next)
+      patching.current = false
     }
-    void removeDraftSteps(indexes).catch((reason: unknown) => {
-      if (cached) queryClient.setQueryData(['model-draft'], cached)
+    // A GET that started before this click must not put the step back.
+    void queryClient.cancelQueries({ queryKey: ['model-draft'] })
+    void removeDraftSteps(remove).then(() => {
+      pendingReverts.current.delete(id)
+      refresh()
+    }).catch((reason: unknown) => {
+      pendingReverts.current.delete(id)
+      refresh()
       const message = writeErrorMessage(reason)
       if (message) setError(message)
     })
+  }
+  const cancelReview = () => {
+    reviewToken.current += 1
+    setReview(false)
+    setReviewCreated([])
+    setReviewLoading(false)
+    setError('')
+    const staging = cancelStructuresStage()
+    if (saving.current) {
+      // A save loop is already running and holds the staged record. Revert it
+      // now so the checkbox and the count respond to Cancel immediately.
+      const created = activeCreated.current
+      activeCreated.current = []
+      if (created.length > 0) revertReviewSteps(created)
+    } else if (!staging) {
+      const created = takeStagedStructures()
+      if (created.length > 0) revertReviewSteps(created)
+    }
+    releaseStructuresLock()
+    restoreOpener()
   }
   const decide = async (showProgress = false) => {
     if (saving.current) {
       again.current = true
       return
     }
+    const token = ++reviewToken.current
     saving.current = true
     rememberOpener()
     setBusy(true)
     if (showProgress) setReviewLoading(true)
     setError('')
     let posted = ''
-    const created = takeStagedStructures()
     try {
       do {
         again.current = false
+        // A second stage can land while this loop is running. Collect it rather
+        // than dropping it, and replace an older record for the same type.
+        activeCreated.current = mergeStaged(activeCreated.current, takeStagedStructures())
         // Steps can be staged right before the request, so the cached count may
         // still be zero. Read the draft again before saving or confirming.
         const result = await draft.refetch()
+        if (token !== reviewToken.current) {
+          // Cancelled while the draft was loading: remove what this loop created.
+          const created = activeCreated.current
+          activeCreated.current = []
+          revertReviewSteps(created)
+          return
+        }
         const body = result.data
         const gate = draftSaveGate(body)
         if ((gate === 'confirm' || gate === 'blocked') && body) {
           setReviewLoading(false)
-          setReviewCreated(created)
+          setReviewCreated(activeCreated.current)
+          activeCreated.current = []
           setReview(true)
           if (!again.current) return
           continue
         }
         if (gate !== 'direct' || !body) continue
-        const token = JSON.stringify(body.steps ?? body.updated_at ?? body.count)
-        if (token === posted) break
+        const change = JSON.stringify(body.steps ?? body.updated_at ?? body.count)
+        if (change === posted) break
         await api.post('/v1/model/draft/save', { body: draftSaveBody(body) })
-        posted = token
+        posted = change
         setReview(false)
+        setReviewCreated([])
         setReviewLoading(false)
+        releaseStructuresLock()
         refresh()
       } while (again.current)
     } catch (reason: unknown) {
-      const message = writeErrorMessage(reason)
-      if (message) setError(message)
+      // A cancel aborts the in-flight refetch; that is not a write error.
+      if (token === reviewToken.current) {
+        const message = writeErrorMessage(reason)
+        if (message) setError(message)
+      }
     } finally {
       saving.current = false
+      activeCreated.current = []
       setBusy(false)
       setReviewLoading(false)
     }
@@ -261,6 +407,7 @@ export function ModelDraftHost() {
     }
     const discard = () => {
       clearStagedStructures()
+      releaseStructuresLock()
       void api.delete('/v1/model/draft').then(() => {
         setError('')
         void queryClient.invalidateQueries({ queryKey: ['model-draft'] })
@@ -269,12 +416,23 @@ export function ModelDraftHost() {
         if (message) setError(message)
       })
     }
+    const pending = () => {
+      rememberOpener()
+      setError('')
+      setReview(false)
+      setReviewLoading(true)
+    }
+    const pendingEnd = () => setReviewLoading(false)
     const ask = (event: Event) => setDialog((event as CustomEvent<DialogKind>).detail)
     window.addEventListener('braian-review-save', open)
+    window.addEventListener('braian-review-pending', pending)
+    window.addEventListener('braian-review-pending-end', pendingEnd)
     window.addEventListener('braian-discard-draft', discard)
     window.addEventListener('braian-model-dialog', ask)
     return () => {
       window.removeEventListener('braian-review-save', open)
+      window.removeEventListener('braian-review-pending', pending)
+      window.removeEventListener('braian-review-pending-end', pendingEnd)
       window.removeEventListener('braian-discard-draft', discard)
       window.removeEventListener('braian-model-dialog', ask)
     }
@@ -319,7 +477,7 @@ export function ModelDraftHost() {
           {error ? <span className="error">{error}</span> : null}
         </div>
       ) : null}
-      {reviewLoading && !review ? <ReviewLoadingDialog /> : null}
+      {reviewLoading && !review ? <ReviewLoadingDialog onCancel={cancelReview} /> : null}
       {review && draft.data ? (
         <ReviewDialog
           body={draft.data}
@@ -329,6 +487,8 @@ export function ModelDraftHost() {
           onSaved={() => {
             setReview(false)
             setReviewCreated([])
+            releaseStructuresLock()
+            opener.current = null
             refresh()
           }}
         />
@@ -348,24 +508,25 @@ function ReviewDialog({
   body: Json
   created: StagedStructures[]
   onClose: () => void
-  onRevert: (indexes: number[]) => void
+  onRevert: (created: StagedStructures[]) => void
   onSaved: () => void
 }) {
   const blocked = draftSaveGate(body) === 'blocked'
   const destructive = asRecord(body.consequence)?.destructive === true
-  // A non-destructive allowed-tree change is reviewed too. Cancel removes only
-  // the steps this dialog created, so earlier and unrelated draft work stays.
+  // The highlighted step already names the allowed-tree change. Keep the lead
+  // neutral so the dialog does not repeat the same sentence above the list.
+  // Cancel removes only the steps this dialog created, so earlier and
+  // unrelated draft work stays.
   const lead = !blocked && !destructive && draftHasForcedReview(body)
-    ? allowedTreesSentence(body) ?? confirmLead(body)
+    ? copy.reviewChange
     : confirmLead(body)
   const warnings = (body.warnings as string[] | undefined) ?? []
   const steps = describeModelSteps(body.steps, asRecord(body.definitions))
-  const createdIndexes = allowedTreeStepIndexes(body, created)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const saving = useRef(false)
   const close = () => {
-    onRevert(createdIndexes)
+    onRevert(created)
     onClose()
   }
   const save = () => {
@@ -433,19 +594,21 @@ function ReviewDialog({
   )
 }
 
-function ReviewLoadingDialog() {
+function ReviewLoadingDialog({ onCancel }: { onCancel: () => void }) {
   return (
-    <Dialog open onOpenChange={() => undefined}>
+    <Dialog open onOpenChange={(next) => { if (!next) onCancel() }}>
       <DialogContent
         className="consequence review-loading"
         data-testid="review-loading"
-        onEscapeKeyDown={(event) => event.stopPropagation()}
       >
         <div className="toolbar">
           <DialogTitle asChild><strong>{copy.reviewChangeTitle}</strong></DialogTitle>
         </div>
         <DialogDescription asChild><p className="hint">{copy.reviewChange}</p></DialogDescription>
         <StateNote tone="loading" title={copy.loadingModel} />
+        <div className="toolbar">
+          <Button type="button" variant="ghost" data-testid="review-loading-cancel" onClick={onCancel}>{copy.cancel}</Button>
+        </div>
       </DialogContent>
     </Dialog>
   )

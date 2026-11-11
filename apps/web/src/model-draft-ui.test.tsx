@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from './api'
@@ -155,7 +155,8 @@ describe('review dialog', () => {
     const title = document.getElementById(dialog.getAttribute('aria-labelledby') ?? '')
     const description = document.getElementById(dialog.getAttribute('aria-describedby') ?? '')
     expect(title?.textContent).toBe('Review change')
-    expect(description?.textContent).toBe('Allowed trees for Recipe: Food')
+    expect(description?.textContent).toBe(copy.reviewChange)
+    expect(dialog.textContent?.match(/Allowed trees for Recipe: Food/g)).toHaveLength(1)
     expect(dialog.textContent).not.toContain('recipe')
     expect(dialog.textContent).not.toContain('structure-food')
     const save = screen.getByTestId('confirm-review')
@@ -291,6 +292,37 @@ describe('review dialog', () => {
     await waitFor(() => expect(screen.queryByTestId('review-dialog')).toBeNull())
     await waitFor(() => expect(screen.getByTestId('unsaved-changes').textContent?.startsWith('1 ')).toBe(true))
     expect(steps).toEqual([{ op: 'create_type', key: 'unrelated' }])
+  })
+
+  it('removes the staged step when Cancel lands before the draft cache has it', async () => {
+    let gets = 0
+    let release: (() => void) | undefined
+    const pending = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    mock.use((path, init) => {
+      if (path === '/v1/model/draft') {
+        gets += 1
+        if (gets === 1) return Promise.resolve({ count: 0, conflict: false, steps: [] })
+        return pending.then(() => allowedTrees)
+      }
+      if (path === '/v1/model/draft/steps') {
+        const body = (init as { body?: { remove?: number } } | undefined)?.body
+        if (typeof body?.remove === 'number') return Promise.resolve({ count: 0, conflict: false, steps: [] })
+        return Promise.resolve(allowedTrees)
+      }
+      return Promise.resolve({})
+    })
+    render(<Host />)
+    await waitFor(() => expect(mock.methods.get).toHaveBeenCalledWith('/v1/model/draft'))
+    await stageModel('model.set_structures', { type_key: 'recipe', structures: ['structure-food'] })
+    requestReview()
+    const loading = await screen.findByTestId('review-loading')
+    fireEvent.click(within(loading).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(mock.methods.post).toHaveBeenCalledWith('/v1/model/draft/steps', { body: { remove: 0 } }))
+    release?.()
+    await waitFor(() => expect(screen.queryByTestId('review-loading')).toBeNull())
+    expect(saves()).toEqual([])
   })
 
   it('Escape removes only the step the dialog created', async () => {
