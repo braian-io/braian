@@ -3,8 +3,10 @@ import {
   isSelectSourceRoot,
   parseSelectSourceChoice,
   resolveSourceTarget,
+  selectSourceMenuRows,
   selectSourceRootItem,
   selectSourceSubmenuRows,
+  targetTypeIdForView,
   SELECT_SOURCE_ROOT_ID,
 } from './palette-select-source'
 import { copy } from './i18n'
@@ -278,5 +280,144 @@ describe('palette peer sources (Notion 103 PR 2)', () => {
       { viewId: 'v', viewTitle: 'Food', selection: 'node', label: 'Cheese', typeIds: ['t-link'] },
     ])
     expect(rows.some((row) => row.id.includes(':peer:'))).toBe(false)
+  })
+})
+
+describe('Select source lists every source that can yield the view type (row 103 follow-up)', () => {
+  const demoTypes: TypeName[] = [
+    { id: 't-article', key: 'article', singular: 'Article', plural: 'Articles', kind: 'entity', structures: ['s-food'] },
+    { id: 't-product', key: 'product', singular: 'Product', plural: 'Products', kind: 'entity', structures: ['s-food'] },
+    { id: 't-supplier', key: 'supplier', singular: 'Supplier', plural: 'Suppliers', kind: 'entity', structures: [] },
+    {
+      id: 't-link',
+      key: 'product_articles',
+      singular: 'Product–Article',
+      plural: 'Product–Article',
+      kind: 'link',
+      linkFrom: { id: 't-product', key: 'product' },
+    },
+  ]
+
+  const peerOptions = [
+    {
+      viewId: 'view-products',
+      viewTitle: 'Products',
+      selection: 'row' as const,
+      label: '',
+      typeIds: ['t-article'],
+      links: [{ typeId: 't-article', linkType: 'product_articles' }],
+    },
+    {
+      viewId: 'view-suppliers',
+      viewTitle: 'Suppliers',
+      selection: 'row' as const,
+      label: '',
+      typeIds: ['t-article'],
+    },
+    {
+      viewId: 'view-other-products',
+      viewTitle: 'Other products',
+      selection: 'row' as const,
+      label: '',
+      typeIds: ['t-product'],
+    },
+    {
+      viewId: 'view-food',
+      viewTitle: 'Food',
+      selection: 'node' as const,
+      label: 'Cheese',
+      typeIds: ['t-article', 't-product'],
+    },
+  ]
+
+  it('takes the bound type from the target view, not the current source', () => {
+    expect(targetTypeIdForView({ state: { object_type: 't-article' } }, demoTypes)).toBe('t-article')
+    expect(targetTypeIdForView({ state: {} }, demoTypes)).toBe('')
+    // Link-bound tables list their source entity.
+    expect(targetTypeIdForView({ state: { object_type: 't-link' } }, demoTypes)).toBe('t-product')
+  })
+
+  it('offers Article sources on an Articles view that already follows Products', () => {
+    const rows = selectSourceMenuRows({
+      types: demoTypes,
+      peerOptions,
+      // The stale source type must not narrow the menu.
+      current: { typeId: 't-product' },
+      targetView: { state: { object_type: 't-article', type_key: 'article' } },
+    })
+    expect(rows.map((row) => row.id)).toEqual([
+      'select-source:type:t-article',
+      'select-source:peer:t-article:view-products:row',
+      'select-source:peer:t-article:view-suppliers:row',
+      'select-source:peer:t-article:view-food:node',
+    ])
+    expect(rows.map((row) => row.title)).toEqual([
+      'All Articles',
+      'Articles from Products',
+      'Articles from Suppliers',
+      'Articles from Food',
+    ])
+  })
+
+  it('offers Product sources on a Products view and omits underivable ones', () => {
+    const rows = selectSourceMenuRows({
+      types: demoTypes,
+      peerOptions,
+      current: { typeId: 't-article' },
+      targetView: { state: { object_type: 't-product', type_key: 'product' } },
+    })
+    expect(rows.map((row) => row.id)).toEqual([
+      'select-source:type:t-product',
+      'select-source:peer:t-product:view-other-products:row',
+      'select-source:peer:t-product:view-food:node',
+    ])
+    expect(rows.map((row) => row.title)).toEqual([
+      'All Products',
+      'Products from Other products',
+      'Products from Food',
+    ])
+  })
+
+  it('omits a tree and a type with no derivation path to the target', () => {
+    const rows = selectSourceMenuRows({
+      types: demoTypes,
+      peerOptions: [
+        { viewId: 'view-suppliers', viewTitle: 'Suppliers', selection: 'row', label: '', typeIds: ['t-article'] },
+        { viewId: 'view-food', viewTitle: 'Food', selection: 'node', label: 'Cheese', typeIds: ['t-article'] },
+      ],
+      targetView: { state: { object_type: 't-product' } },
+    })
+    expect(rows.map((row) => row.id)).toEqual(['select-source:type:t-product'])
+  })
+
+  it('keeps every type for a generic view', () => {
+    const rows = selectSourceMenuRows({
+      types: demoTypes,
+      peerOptions: [],
+      targetView: { state: {} },
+    })
+    expect(rows.map((row) => row.id)).toEqual([
+      'select-source:type:t-article',
+      'select-source:type:t-product',
+      'select-source:type:t-supplier',
+    ])
+  })
+
+  it('still disables a cycle with the follows label', () => {
+    const rows = selectSourceMenuRows({
+      types: demoTypes,
+      peerOptions: [{
+        viewId: 'view-children',
+        viewTitle: 'Articles',
+        selection: 'row',
+        label: '',
+        typeIds: ['t-article'],
+      }],
+      cycleCheck: { targetViewId: 'view-articles', sourceOf: () => 'view-articles' },
+      targetView: { state: { object_type: 't-article' } },
+    })
+    const cycle = rows.find((row) => row.id === 'select-source:peer:t-article:view-children:row')
+    expect(cycle?.disabled).toBe(true)
+    expect(cycle?.subtitle).toBe('Would create a cycle (Articles follows Articles)')
   })
 })
