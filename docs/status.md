@@ -1,3 +1,36 @@
+# Status 2026-11-11
+
+## Rad 224 — landningssidan beskriver produkten på main, och docs/guide finns
+
+Grenen `junior/224-landing-update` utgår från `origin/main` `e70184f8f9d8901f34c4db2b5c737e55a63509b4` (#301, rad 216) och är **inte mergad, deployad eller accepterad**. Arbetet ligger i worktreen `/home/administrator/dev/wt-224-landing-20261111-2303`; ingen PR öppnades, ingen merge gjordes och demon rördes inte.
+
+Acceptanskriterierna från `brief.md` (Braian Test grindar bara på dessa):
+
+1. **Kopian stämmer med produkten.** `apps/landing` beskriver arbetsytor och paneler, objekttyper och relationer, datakällor/Select source (#300), Ctrl+K-paletten, grafen, raderingsflödet från #301, feedback och self-hosting. Varje påstående är kontrollerat mot koden eller mot `docs/guide` i samma gren.
+2. **Inaktuella påståenden borta.** "It can do exactly what you can, nothing more" är ersatt: agenten kan inte radera objekt eller länkar, inte acceptera sina egna förslag och inte köra merge. "Nothing is saved until you press Save" är ersatt: mänskliga celländringar är utkast, men en mänsklig objektradering skrivs direkt efter bekräftelse. Även "Every command shows its shortcut", "Ctrl+K reaches all of them", "sit side by side" och nio fasta arbetsytor är omskrivna till det som gäller.
+3. **Trackaton, sitemap och robots är byte-identiska.** `apps/landing/index.html` (queue-stubben och `track.js`-taggen), `apps/landing/public/sitemap.xml` och `apps/landing/public/robots.txt` är orörda. `git diff origin/main --` de tre sökvägarna är tom (0 byte). `apps/landing/scripts/check-frozen.mjs` (ny, `pnpm --dir apps/landing check:frozen`) pinnar sha256 för Trackaton-utsnittet, sitemap och robots och exit 0.
+4. **docs/guide skrivs i samma gren och landningen bygger på den.** Nya sidor: `index.md`, `getting-started.md`, `workspaces-and-panels.md`, `object-types-and-relations.md`, `data-sources.md`, `command-palette-and-shortcuts.md`, `deleting-and-restore.md` (den korta raderingsnoten som #216 sköt upp), `graph.md`, `feedback.md` och `self-hosting.md`. De sex första använder de stabila slugs som row 225 väntas använda. Ingen `/docs`-renderer lades till och inga `/docs`-URL:er lades i sitemap.
+5. **Engelska, skyddade filer, ingen deploy.** Landnings- och guidekopian är engelsk; `scripts/check-english.py` exit 0. `apps/web/src/data-model.tsx` och `product_suppliers`-etiketterna är orörda. `pnpm --dir apps/landing typecheck` och `pnpm --dir apps/landing build` (med prerender-kontrollerna) exit 0. Inga skrivningar under `/var/www/braian`, `/opt/braian` eller någon VPS-webroot; ingen demodatamutation.
+6. **En PR-redo gren.** Endast ordinär commit och `git push -u origin junior/224-landing-update` när allt är grönt; ingen amend, force, rebase, reset eller `--no-verify`. `REVIEW.md`, `pr-body.md` och `result.md` ligger i scratch-katalogen.
+
+Vad som ändrades:
+
+- `apps/landing/src/content.ts`: nav och sektioner är Workspaces, Model, Sources, Graph, Agent, Delete, Feedback, Architecture, Performance, Open source. Nya sektioner för arbetsytor/paneler, typer/relationer, datakällor, graf, radering/restore och feedback. Agent-, arkitektur- och open source-copyn är rättad. `docsUrl` pekar nu på `docs/guide` i repot.
+- `apps/landing/src/App.tsx`: renderar de nya sektionerna med samma DisclosureList/sheet-komponenter som resten av sidan. Inga nya beroenden.
+- `apps/landing/scripts/check-frozen.mjs` + `check:frozen` i `apps/landing/package.json`: hash-kontroll av de frysta artefakterna.
+- `docs/guide/*`: tio korta sidor enligt ovan. Guiden beskriver bland annat att en vy kan följa typ, länkad rad eller strukturnod; att trädvalet är exakt placerad grupp och att nodvalet inte återställs från URL:en vid reload; att grafens API ger ett hopp per anrop och att scenen stannar vid 400 noder; att feedback bara finns för admin när en webhook är konfigurerad; samt att agenten saknar raderingsverktyg.
+- `docs/status.md`: denna rad.
+
+Bevis (inga databaser eller containrar behövdes):
+
+- `pnpm --dir apps/landing typecheck` exit 0.
+- `pnpm --dir apps/landing build` exit 0; prerender-kontrollerna (CTA, prestandafotnot, minst 10 kollapsade kort, "Moving between them is instant", ingen "chatbot") passerade.
+- `node apps/landing/scripts/check-frozen.mjs` exit 0.
+- `python3 scripts/check-english.py` exit 0.
+- `git diff origin/main -- apps/landing/index.html apps/landing/public/sitemap.xml apps/landing/public/robots.txt` gav 0 byte.
+- Ingen compose startades, ingen databas lästes eller ändrades, ingen E2E och ingen Rust-testkörning gjordes (inte nödvändigt för copy/docs).
+- Ärlig avgränsning: `docs/guide` är Markdown i repot och renderas inte av landningsappen; landningen länkar till katalogen på GitHub. Den äldre statusposten för rad 103 säger "inte mergad", men #300 ligger på main och det är den beteendet landningen beskriver. Rad 217–223 och Track A (row 225) rördes inte.
+
 # Status 2026-11-09
 
 ## Rad 216 — radera ett objekt från fyra ytor, en dialog och återställ kaskadlänkar

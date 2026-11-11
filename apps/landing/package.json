@@ -9,6 +9,7 @@
     "preview": "vite preview --host 127.0.0.1 --port 4173 --strictPort",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
+    "check:frozen": "node scripts/check-frozen.mjs",
     "og": "node scripts/og.mjs"
   },
   "dependencies": {
