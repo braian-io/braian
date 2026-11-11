@@ -81,6 +81,8 @@ import { registryColumnMovePaletteRows, registryLayoutFocusPaletteRows, registry
 import { FieldsMode, type FieldsPaletteOpen } from './fields/fields-mode'
 import { readFieldsHost, subscribeFieldsHost } from './fields-host'
 import { makeViewColumn, parseColumnId } from './fields/columns'
+import { requestDeleteObjects } from './delete-objects'
+import { viewingAgentRunId } from './agent-session'
 
 type SessionLike = {
   objectId: string | null
@@ -280,6 +282,12 @@ export function CommandPalette({
   const selectedKey = String(selectedObject.data?.type ?? '')
   // Live selections in other views become peer sources (Notion 103 PR 2).
   const selectionVersion = useSyncExternalStore(subscribeUiSelections, uiSelectionVersion, uiSelectionVersion)
+  // Delete follows the focused table's marked rows, else the object open in Detail.
+  const deleteIds = (() => {
+    const marked = focusViewId ? readSelection(focusViewId).map((row) => row.id) : []
+    if (marked.length > 0) return marked
+    return selectedObject.data?.id ? [String(selectedObject.data.id)] : []
+  })()
   const peerSourceByView = useMemo(() => {
     const next = new Map<string, string>()
     for (const view of views) {
@@ -421,6 +429,17 @@ export function CommandPalette({
         subtitle: copy.assortments,
         keywords: ['assortment', 'selection', 'delete', 'remove'],
       },
+      ...(deleteIds.length > 0 && !viewingAgentRunId()
+        ? [{
+            id: 'object:delete',
+            group: 'object' as const,
+            title: copy.deleteMenu,
+            subtitle: deleteIds.length > 1
+              ? `Move ${deleteIds.length} objects to Trash`
+              : 'Move the selected object to Trash',
+            keywords: ['delete', 'remove', 'trash'],
+          }]
+        : []),
       ...columnEntries(moveColumns, moveTarget.column ?? null),
       ...(session.group
         ? [{
@@ -463,7 +482,7 @@ export function CommandPalette({
           ]),
       { id: 'attr:new', group: 'model' as const, title: copy.newAttribute, subtitle: copy.attributeDefinitions, keywords: ['attribute', 'create'] },
     ],
-    [workspaces, views, session.group, types, selectedKey, suggestionTotal, feedbackEnabled, theme, moveColumns, moveTarget, defs.data, operationRecords, focusViewId],
+    [workspaces, views, session.group, types, selectedKey, suggestionTotal, feedbackEnabled, theme, moveColumns, moveTarget, defs.data, operationRecords, focusViewId, deleteIds.join(',')],
   )
   const hits: PaletteItem[] = objectPaletteRows((found.data?.hits as Json[] | undefined) ?? [], defs.data)
   useEffect(() => {
@@ -1125,6 +1144,12 @@ export function CommandPalette({
     }
     if (id === 'import:file') {
       window.dispatchEvent(new Event('braian-import-open'))
+      onClose()
+      return
+    }
+    if (id === 'object:delete') {
+      if (viewingAgentRunId()) return
+      requestDeleteObjects(deleteIds)
       onClose()
       return
     }

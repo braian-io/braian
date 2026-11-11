@@ -10,6 +10,8 @@ import { ChevronDown, ChevronRight, File, Folder, FolderOpen } from 'lucide-reac
 import { StatusBar, useOnline } from './status-bar'
 import { isConnected, type LiveState } from './status-message'
 import { TrashDialog } from './trash-dialog'
+import { DeleteObjectsHost } from './delete-objects-dialog'
+import { requestDeleteObjects } from './delete-objects'
 import { UserMenu } from './user-menu'
 import { CatalogSelector } from './catalog-selector'
 import { api, freeObject, jsonRecord, keepaliveJsonPut, operationId, recordTitle, textValue, type Json } from './api'
@@ -534,6 +536,15 @@ export function Shell() {
       }),
       registerCommandRunner('layout:reset_layout', () => applyRef.current('reset_layout', {})),
       registerCommandRunner('workspace:delete', () => { requestDeleteActiveRef.current() }),
+      registerCommandRunner('object:delete', (target) => {
+        if (viewingAgentRunId()) return
+        const rows = Array.isArray(target.objects) ? target.objects : []
+        const ids = rows
+          .map((row) => (row && typeof row === 'object' ? String((row as Record<string, unknown>).id ?? '') : ''))
+          .filter(Boolean)
+        if (ids.length === 0 && target.objectId) ids.push(String(target.objectId))
+        requestDeleteObjects(ids)
+      }),
 
       registerCommandRunner('layout:focus:left', () => applyRef.current('focus', { direction: 'left' })),
       registerCommandRunner('layout:focus:right', () => applyRef.current('focus', { direction: 'right' })),
@@ -2126,6 +2137,7 @@ export function Shell() {
         </Dialog>
       ) : null}
       <TrashDialog open={trashOpen} onClose={() => setTrashOpen(false)} />
+      <DeleteObjectsHost />
       <ImportScreen />
       {help ? <HelpDialog onClose={() => setHelp(false)} placeholder={commandPlaceholder(typeCatalog)} /> : null}
       <Toaster theme={theme} />

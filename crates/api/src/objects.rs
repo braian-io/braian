@@ -455,10 +455,11 @@ pub async fn patch_object(
     tag = "objects",
     params(
         ("id" = Uuid, Path, description = "Object id"),
+        ("dry_run" = Option<bool>, Query, description = "Return the consequence analysis and change nothing"),
         ("If-Match" = Option<u64>, Header, description = "When set, any newer change is a conflict")
     ),
     responses(
-        (status = 200, description = "Deleted", body = DeletedResponse),
+        (status = 200, description = "Deleted, or the consequence analysis when dry_run is set", body = DeletedResponse),
         (status = 403, description = "An agent or import cannot delete", body = crate::problem::Problem),
         (status = 409, description = "Conflict", body = crate::problem::Problem),
         (status = 410, description = "Already deleted", body = crate::problem::Problem)

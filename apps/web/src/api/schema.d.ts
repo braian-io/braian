@@ -5861,7 +5861,10 @@ export interface operations {
     };
     delete_object: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Return the consequence analysis and change nothing */
+                dry_run?: boolean;
+            };
             header?: {
                 /** @description When set, any newer change is a conflict */
                 "If-Match"?: number | null;
@@ -5874,7 +5877,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Deleted */
+            /** @description Deleted, or the consequence analysis when dry_run is set */
             200: {
                 headers: {
                     [name: string]: unknown;

@@ -3640,6 +3640,15 @@
             }
           },
           {
+            "name": "dry_run",
+            "in": "query",
+            "description": "Return the consequence analysis and change nothing",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "If-Match",
             "in": "header",
             "description": "When set, any newer change is a conflict",
@@ -3656,7 +3665,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Deleted",
+            "description": "Deleted, or the consequence analysis when dry_run is set",
             "content": {
               "application/json": {
                 "schema": {
