@@ -4336,8 +4336,13 @@ async fn restoring_an_object_also_restores_the_links_its_delete_cascaded() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{dry}");
-    assert_eq!(dry["objects"], 2, "{dry}");
+    assert_eq!(dry["objects"], 1, "{dry}");
     assert_eq!(dry["links"], 1, "{dry}");
+    assert_eq!(dry["sentence"], "Removes 1 object and 1 link", "{dry}");
+    assert!(
+        dry["detail"].as_array().is_none_or(Vec::is_empty),
+        "the one-line count must not be repeated as detail: {dry}"
+    );
     let (status, _, agent_dry) = call(
         &app,
         "DELETE",
@@ -4360,7 +4365,7 @@ async fn restoring_an_object_also_restores_the_links_its_delete_cascaded() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{deleted}");
-    let (status, _, gone) = call(
+    let (status, headers, gone) = call(
         &app,
         "GET",
         &format!("/v1/objects/{link_id}"),
@@ -4370,6 +4375,11 @@ async fn restoring_an_object_also_restores_the_links_its_delete_cascaded() {
     )
     .await;
     assert_eq!(status, StatusCode::GONE, "{gone}");
+    assert_eq!(
+        headers.get("cache-control").map(String::as_str),
+        Some("no-store"),
+        "a reload must not keep a restored object deleted from a cached 410"
+    );
 
     let (status, _, restored) = call(
         &app,
@@ -4409,6 +4419,144 @@ async fn restoring_an_object_also_restores_the_links_its_delete_cascaded() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{link_back}");
+}
+
+#[tokio::test]
+async fn restoring_a_product_keeps_a_previously_deleted_article_link_gone() {
+    let (_db, app) = app().await;
+    let make = |sku: &str| format!(r#"{{"type":"item","values":{{"sku":"{sku}","active":true}}}}"#);
+    let mut ids = Vec::new();
+    for sku in ["RESTORE-P", "RESTORE-A1", "RESTORE-A2"] {
+        let (status, _, body) = call(
+            &app,
+            "POST",
+            "/v1/objects",
+            Some(HUMAN),
+            &[("content-type", "application/json")],
+            Some(&make(sku)),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        ids.push(body["id"].as_str().unwrap().to_owned());
+    }
+    let product = &ids[0];
+    let first_article = &ids[1];
+    let second_article = &ids[2];
+    let (status, _, created) = call(
+        &app,
+        "POST",
+        "/v1/link-types",
+        Some(HUMAN),
+        &[("content-type", "application/json")],
+        Some(
+            r#"{"key":"cascade_articles","label":"Articles","from_types":["item"],"to_types":["item"],"from_key":"cascade_articles","from_label":"Articles","to_key":"cascade_products","to_label":"Products","from_cardinality":"many","to_cardinality":"one","attributes":[]}"#,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{created}");
+    let mut link_ids = Vec::new();
+    for article in [first_article, second_article] {
+        let body =
+            format!(r#"{{"type":"cascade_articles","from_id":"{product}","to_id":"{article}"}}"#);
+        let (status, _, link) = call(
+            &app,
+            "POST",
+            "/v1/links",
+            Some(HUMAN),
+            &[("content-type", "application/json")],
+            Some(&body),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{link}");
+        link_ids.push(link["id"].as_str().unwrap().to_owned());
+    }
+    let (first_link, second_link) = (&link_ids[0], &link_ids[1]);
+
+    let (status, _, _) = call(
+        &app,
+        "DELETE",
+        &format!("/v1/objects/{second_article}"),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _, _) = call(
+        &app,
+        "DELETE",
+        &format!("/v1/objects/{product}"),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, _, _) = call(
+        &app,
+        "POST",
+        &format!("/v1/trash/object/{product}/undelete"),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (status, _, back) = call(
+        &app,
+        "GET",
+        &format!("/v1/objects/{product}"),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "detail load after restore: {back}");
+    let (status, _, graph) = call(
+        &app,
+        "GET",
+        &format!("/v1/objects/{product}/graph"),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "graph load after restore: {graph}");
+    let graph_links = graph["links"].as_array().unwrap();
+    assert_eq!(graph_links.len(), 1, "{graph}");
+    assert_eq!(graph_links[0]["id"], *first_link, "{graph}");
+    let (status, _, same_event) = call(
+        &app,
+        "GET",
+        &format!("/v1/objects/{first_link}"),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{same_event}");
+    let (status, _, earlier) = call(
+        &app,
+        "GET",
+        &format!("/v1/objects/{second_link}"),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::GONE, "{earlier}");
+    let (status, _, gone_article) = call(
+        &app,
+        "GET",
+        &format!("/v1/objects/{second_article}"),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::GONE, "{gone_article}");
 }
 
 #[tokio::test]

@@ -2,7 +2,7 @@ import { isValidElement, useMemo, useEffect, useLayoutEffect, useRef, useState, 
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { History as HistoryIcon } from 'lucide-react'
-import { api, catalogName, failureLines, freeObject, jsonRecord, recordNumber, recordTitle, searchQuery, textValue, type Json } from './api'
+import { ApiError, api, catalogName, failureLines, freeObject, jsonRecord, recordNumber, recordTitle, searchQuery, textValue, type Json } from './api'
 import { AutoResizeTextarea } from './auto-resize-textarea'
 import { messageFromErrorBody, reportWriteError, writeErrorMessage } from './write-error'
 import { catalogKeyOf, inCatalog, workspaceCatalogRef } from './catalog-scope'
@@ -2685,6 +2685,11 @@ export function ClassAttributes({ session }: { session: PanesSession }) {
   )
 }
 
+/** A soft-deleted object is gone from reads, not a broken graph or validation. */
+function objectGone(error: unknown) {
+  return error instanceof ApiError && error.status === 410
+}
+
 export function ObjectDetail({ session }: { session: PanesSession }) {
   const queryClient = useQueryClient()
   const object = useQuery({
@@ -2745,6 +2750,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       </div>
     )
   }
+  if (objectGone(object.error)) return <StateNote tone="empty" title={copy.objectDeleted} detail={copy.objectDeletedHint} testId="detail-deleted" />
   if (object.isError) return <StateNote tone="error" title={copy.graphError} detail={copy.validation} testId="detail-error" />
   if (!object.data || !session.objectId) return <StateNote tone="loading" title={copy.loading} />
   const objectId = session.objectId
@@ -3349,6 +3355,7 @@ export function GraphView({ session, view }: { session: PanesSession; view?: Pan
     return <GraphMap key="data-model" defs={defs.data} model={{ defs: defs.data, stats: stats.data }} />
   }
   if (!session.objectId) return <StateNote tone="empty" title={emptyGraph(typeNames(defs.data, uiLanguage), session.listType)} testId="graph" />
+  if (objectGone(object.error)) return <StateNote tone="empty" title={copy.objectDeleted} detail={copy.objectDeletedHint} testId="graph" />
   if (graph.isError || object.isError) return <StateNote tone="error" title={copy.graphError} testId="graph" />
   if (!graph.data || !object.data) return <StateNote tone="loading" title={copy.graphLoading} testId="graph" />
   return (

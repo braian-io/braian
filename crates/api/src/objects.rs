@@ -479,22 +479,28 @@ pub async fn delete_object(
     let id = ObjectId::from_uuid(id);
     if query.dry_run {
         let stored = load_object(&state, id).await?;
-        let (rows, extra) = state
+        // A cascade-deleted link is a link, not another object: count the
+        // object itself and the live link rows it takes with it.
+        let (links, _link_objects) = state
             .store
             .link_delete_counts(id)
             .await
             .map_err(store_status)?;
-        let objects = 1 + extra;
-        let sentence = format!("Removes {objects} objects and {rows} links");
+        let objects = 1;
+        let sentence = format!(
+            "Removes {objects} {} and {links} {}",
+            plural(objects, "object"),
+            plural(links, "link")
+        );
         let report = crate::deletes::ConsequenceReport {
             objects,
-            links: rows,
+            links,
             values: 0,
             selections: 0,
             destructive: true,
             confirm_name: stored.key,
-            sentence: sentence.clone(),
-            detail: vec![sentence],
+            sentence,
+            detail: Vec::new(),
         };
         return Ok(Json(report).into_response());
     }
@@ -534,6 +540,14 @@ pub async fn delete_object(
         seq: receipt.last_seq,
     })
     .into_response())
+}
+
+fn plural(count: i64, noun: &str) -> String {
+    if count == 1 {
+        noun.to_owned()
+    } else {
+        format!("{noun}s")
+    }
 }
 
 /// Business key shown on a create suggestion.

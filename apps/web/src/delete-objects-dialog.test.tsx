@@ -20,7 +20,7 @@ vi.mock('./api', () => ({
 
 type Init = { params?: { path?: { id?: string }; query?: { dry_run?: boolean } } }
 
-function dryRun(id: string, objects = 2, links = 1) {
+function dryRun(id: string, objects = 1, links = 1) {
   return {
     objects,
     links,
@@ -56,7 +56,8 @@ describe('delete object dialog', () => {
     mount()
     act(() => requestDeleteObjects(['a']))
 
-    expect((await screen.findByTestId('delete-object-counts')).textContent).toContain('Removes 2 objects and 1 links')
+    expect((await screen.findByTestId('delete-object-counts')).textContent).toContain('Removes 1 object and 1 link')
+    expect(screen.getByTestId('delete-object-counts').textContent?.match(/Removes/g)?.length).toBe(1)
     const cancel = screen.getByTestId('cancel-delete-object')
     expect(document.activeElement).toBe(cancel)
     fireEvent.keyDown(screen.getByTestId('delete-object-dialog'), { key: 'Escape' })
@@ -80,7 +81,8 @@ describe('delete object dialog', () => {
     act(() => requestDeleteObjects(['a', 'b']))
 
     const counts = await screen.findByTestId('delete-object-counts')
-    expect(counts.textContent).toContain('Removes 3 objects and 1 links')
+    expect(counts.textContent).toContain('Removes 2 objects and 1 link')
+    expect(counts.textContent?.match(/Removes/g)?.length).toBe(1)
     fireEvent.click(screen.getByTestId('confirm-delete-object'))
 
     await waitFor(() => {
