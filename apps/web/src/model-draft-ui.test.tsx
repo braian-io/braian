@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from './api'
 import { copy } from './i18n'
-import { draftHasForcedReview, draftSaveGate, ModelDraftHost } from './model-draft-ui'
+import { allowedTreeStepIndexes, allowedTreesSentence, draftHasForcedReview, draftSaveGate, ModelDraftHost } from './model-draft-ui'
 import { openModelDialog, requestReview } from './model-stage'
 
 const mock = vi.hoisted(() => {
@@ -52,11 +52,27 @@ const blocked = {
   consequence: { destructive: false, lines: [] },
 }
 
+const allowedTreeDefinitions = {
+  types: [
+    {
+      id: 'type-recipe',
+      key: 'recipe',
+      singular: { en: 'Recipe' },
+      labels: { en: 'Recipe' },
+      structures: ['structure-food'],
+    },
+  ],
+  structures: [
+    { id: 'structure-food', key: 'structure-food', labels: { en: 'Food' } },
+  ],
+}
+
 const allowedTrees = {
   ...draft,
   lines: ['Type recipe may use food'],
   steps: [{ op: 'set_structures', type_key: 'recipe', structures: ['structure-food'] }],
   consequence: { destructive: false, lines: ['Type recipe may use food'] },
+  definitions: allowedTreeDefinitions,
 }
 
 function Host({ client: provided }: { client?: QueryClient } = {}) {
@@ -128,7 +144,7 @@ describe('review dialog', () => {
     expect(draftHasForcedReview(destructive)).toBe(false)
   })
 
-  it('opens a primary Save review for an allowed-tree change without saving', async () => {
+  it('describes an allowed-tree change with display names and a Review change title', async () => {
     mock.use((path) => {
       if (path === '/v1/model/draft') return Promise.resolve(allowedTrees)
       return Promise.resolve({})
@@ -136,7 +152,12 @@ describe('review dialog', () => {
     render(<Host />)
     fireEvent.click(await screen.findByTestId('review-save'))
     const dialog = await screen.findByTestId('review-dialog')
-    expect(dialog.textContent).toContain('Type recipe may use food')
+    const title = document.getElementById(dialog.getAttribute('aria-labelledby') ?? '')
+    const description = document.getElementById(dialog.getAttribute('aria-describedby') ?? '')
+    expect(title?.textContent).toBe('Review change')
+    expect(description?.textContent).toBe('Allowed trees for Recipe: Food')
+    expect(dialog.textContent).not.toContain('recipe')
+    expect(dialog.textContent).not.toContain('structure-food')
     const save = screen.getByTestId('confirm-review')
     expect(save.textContent).toBe(copy.save)
     expect(save.className).toContain('btn-accent')
@@ -144,47 +165,119 @@ describe('review dialog', () => {
     expect(saves()).toEqual([])
   })
 
-  it('discards the staged draft when a forced allowed-tree review is cancelled', async () => {
-    let discarded = false
+  it('names the latest allowed-tree set per type and keeps step indexes', () => {
+    expect(allowedTreesSentence(allowedTrees)).toBe('Allowed trees for Recipe: Food')
+    expect(allowedTreesSentence({
+      ...allowedTrees,
+      steps: [
+        { op: 'create_type', key: 'unrelated' },
+        { op: 'set_structures', type_key: 'recipe', structures: ['structure-food'] },
+        { op: 'set_structures', type_key: 'recipe', structures: [] },
+      ],
+    })).toBe('Allowed trees for Recipe: none')
+    expect(allowedTreeStepIndexes(allowedTrees)).toEqual([0])
+    expect(allowedTreeStepIndexes({
+      ...allowedTrees,
+      steps: [
+        { op: 'create_type', key: 'unrelated' },
+        { op: 'set_structures', type_key: 'recipe', structures: ['structure-food'] },
+      ],
+    })).toEqual([1])
+    expect(allowedTreeStepIndexes({
+      ...allowedTrees,
+      steps: [
+        { op: 'set_structures', type_key: 'article', structures: ['structure-food'] },
+        { op: 'set_structures', type_key: 'recipe', structures: ['structure-food'] },
+      ],
+    })).toEqual([1])
+  })
+
+  it('shows a loading state before the review dialog and disables the draft bar', async () => {
     mock.use((path) => {
-      if (path === '/v1/model/draft') {
-        return Promise.resolve(discarded ? { count: 0, conflict: false, steps: [] } : allowedTrees)
-      }
+      if (path === '/v1/model/draft') return Promise.resolve(allowedTrees)
       return Promise.resolve({})
     })
-    mock.methods.delete.mockImplementation(() => {
-      discarded = true
+    render(<Host />)
+    await screen.findByTestId('review-save')
+    let release: (() => void) | undefined
+    const pending = new Promise<typeof allowedTrees>((resolve) => {
+      release = () => resolve(allowedTrees)
+    })
+    mock.methods.get.mockImplementation((path: string) =>
+      path === '/v1/model/draft' ? pending : Promise.resolve({}))
+
+    requestReview()
+    const loading = await screen.findByTestId('review-loading')
+    expect(loading.textContent).toContain(copy.loadingModel)
+    expect(screen.queryByTestId('review-dialog')).toBeNull()
+    expect((screen.getByTestId('review-save') as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByTestId('discard-draft') as HTMLButtonElement).disabled).toBe(true)
+
+    release?.()
+    await screen.findByTestId('review-dialog')
+    expect(screen.queryByTestId('review-loading')).toBeNull()
+    expect((screen.getByTestId('review-save') as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByTestId('discard-draft') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('cancels only the allowed-tree step and keeps another draft step', async () => {
+    let steps: Array<{ op: string } & Record<string, unknown>> = [
+      { op: 'create_type', key: 'unrelated' },
+      { op: 'set_structures', type_key: 'recipe', structures: ['structure-food'] },
+    ]
+    let current = { ...allowedTrees, count: steps.length, steps }
+    mock.use((path, init) => {
+      if (path === '/v1/model/draft') return Promise.resolve(current)
+      if (path === '/v1/model/draft/steps') {
+        const body = (init as { body?: { remove?: number } } | undefined)?.body
+        if (typeof body?.remove === 'number') {
+          steps = steps.filter((_, index) => index !== body.remove)
+          current = { ...allowedTrees, count: steps.length, steps }
+        }
+        return Promise.resolve(current)
+      }
       return Promise.resolve({})
     })
     render(<Host />)
     fireEvent.click(await screen.findByTestId('review-save'))
     await screen.findByTestId('review-dialog')
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
-    await waitFor(() => expect(mock.methods.delete).toHaveBeenCalledWith('/v1/model/draft'))
+    await waitFor(() => expect(mock.methods.post).toHaveBeenCalledWith('/v1/model/draft/steps', { body: { remove: 1 } }))
+    expect(mock.methods.delete).not.toHaveBeenCalled()
     expect(saves()).toEqual([])
     await waitFor(() => expect(screen.queryByTestId('review-dialog')).toBeNull())
-    await waitFor(() => expect(screen.queryByTestId('unsaved-changes')).toBeNull())
+    await waitFor(() => expect(screen.getByTestId('unsaved-changes').textContent?.startsWith('1 ')).toBe(true))
+    expect(steps).toEqual([{ op: 'create_type', key: 'unrelated' }])
   })
 
-  it('discards the staged draft when a forced allowed-tree review is closed with Escape', async () => {
-    let discarded = false
-    mock.use((path) => {
-      if (path === '/v1/model/draft') {
-        return Promise.resolve(discarded ? { count: 0, conflict: false, steps: [] } : allowedTrees)
+  it('Escape removes only the allowed-tree step and keeps another draft step', async () => {
+    let steps: Array<{ op: string } & Record<string, unknown>> = [
+      { op: 'create_type', key: 'unrelated' },
+      { op: 'set_structures', type_key: 'recipe', structures: ['structure-food'] },
+    ]
+    let current = { ...allowedTrees, count: steps.length, steps }
+    mock.use((path, init) => {
+      if (path === '/v1/model/draft') return Promise.resolve(current)
+      if (path === '/v1/model/draft/steps') {
+        const body = (init as { body?: { remove?: number } } | undefined)?.body
+        if (typeof body?.remove === 'number') {
+          steps = steps.filter((_, index) => index !== body.remove)
+          current = { ...allowedTrees, count: steps.length, steps }
+        }
+        return Promise.resolve(current)
       }
-      return Promise.resolve({})
-    })
-    mock.methods.delete.mockImplementation(() => {
-      discarded = true
       return Promise.resolve({})
     })
     render(<Host />)
     fireEvent.click(await screen.findByTestId('review-save'))
     const dialog = await screen.findByTestId('review-dialog')
     fireEvent.keyDown(dialog, { key: 'Escape' })
-    await waitFor(() => expect(mock.methods.delete).toHaveBeenCalledWith('/v1/model/draft'))
+    await waitFor(() => expect(mock.methods.post).toHaveBeenCalledWith('/v1/model/draft/steps', { body: { remove: 1 } }))
+    expect(mock.methods.delete).not.toHaveBeenCalled()
     expect(saves()).toEqual([])
     await waitFor(() => expect(screen.queryByTestId('review-dialog')).toBeNull())
+    await waitFor(() => expect(screen.getByTestId('unsaved-changes').textContent?.startsWith('1 ')).toBe(true))
+    expect(steps).toEqual([{ op: 'create_type', key: 'unrelated' }])
   })
 
   it('saves a forced allowed-tree review once and closes the dialog', async () => {
@@ -231,12 +324,11 @@ describe('review dialog', () => {
     const opener = await screen.findByTestId('review-save')
     opener.focus()
     fireEvent.click(opener)
-    const dialog = await screen.findByRole('dialog')
-    expect(screen.getByTestId('review-dialog')).toBeTruthy()
+    const dialog = await screen.findByTestId('review-dialog')
     expect(dialog.querySelector('input')).toBeNull()
     const title = document.getElementById(dialog.getAttribute('aria-labelledby') ?? '')
     const description = document.getElementById(dialog.getAttribute('aria-describedby') ?? '')
-    expect(title?.textContent).toBe(copy.save)
+    expect(title?.textContent).toBe(copy.reviewChangeTitle)
     expect(description?.textContent).toBe('2 values on 1 object will be deleted')
     const remove = screen.getByTestId('confirm-review')
     expect(remove.textContent).toBe(copy.delete)

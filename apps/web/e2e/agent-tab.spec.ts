@@ -40,8 +40,23 @@ async function ensureDistinctName(page: Page, row: Locator): Promise<string> {
   await editor.press('Enter')
   await expect(page.getByTestId('cell-editor-name')).toHaveCount(0)
   await expect(cell).toContainText('Mature cheddar')
+  const save = page.waitForResponse((response) => {
+    const request = response.request()
+    return request.method() === 'PATCH' && /\/v1\/objects\/[^/]+$/.test(new URL(response.url()).pathname)
+  })
   await page.getByTestId('review-and-save').first().click()
+  const saved = await save
+  expect(saved.ok(), `save object ${saved.status()}`).toBeTruthy()
+  // The click resolves before the table query refetches. The activity log is
+  // pushed after that invalidated query settles, so it is the signal that the
+  // selected row carries the saved version. A following run snapshots the
+  // selection version, and asking while the row still had the edit's base
+  // version left the mock proposal instantly stale with Save disabled.
+  await expect(page.getByTestId('activity-log')).toContainText(/Saved/, { timeout: 30_000 })
   await expect(cell).toContainText('Mature cheddar')
+  // Re-publish the selection from the refreshed row before the next prompt.
+  await row.click()
+  await expect(row).toHaveAttribute('aria-selected', 'true')
   return 'Mature cheddar'
 }
 
@@ -300,8 +315,23 @@ test('an agent tab in another workspace is announced', async ({ page }) => {
       await route.continue()
       return
     }
-    const response = await route.fetch()
-    const body = (await response.json()) as { runs: Array<Record<string, unknown>> }
+    // The reload can abort an in-flight run-list request from the page that was
+    // just replaced; its response is disposed before it can be read. Only the
+    // live request after reload carries the assertion.
+    let response
+    try {
+      response = await route.fetch()
+    } catch {
+      await route.continue().catch(() => undefined)
+      return
+    }
+    let body: { runs: Array<Record<string, unknown>> }
+    try {
+      body = (await response.json()) as { runs: Array<Record<string, unknown>> }
+    } catch {
+      await route.continue().catch(() => undefined)
+      return
+    }
     body.runs.push({
       id: '018f2000-0000-7000-8000-0000000000aa',
       title: 'agent in another workspace',
@@ -314,7 +344,11 @@ test('an agent tab in another workspace is announced', async ({ page }) => {
       created_at: '2026-11-04T18:00:00Z',
       updated_at: '2026-11-04T18:00:00Z',
     })
-    await route.fulfill({ response, json: body })
+    try {
+      await route.fulfill({ response, json: body })
+    } catch {
+      await route.continue().catch(() => undefined)
+    }
   })
   await page.reload()
   await expect(page.locator('[data-sonner-toast]')).toContainText('another workspace', { timeout: 60_000 })
