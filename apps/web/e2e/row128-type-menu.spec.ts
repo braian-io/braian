@@ -186,7 +186,7 @@ test('Open Product and Open Supplier select that type in Object types', async ({
   await shot(page, 'supplier-open-effect')
 })
 
-test('empty canvas right-click does not open a Braian menu', async ({ page }) => {
+test('empty canvas right-click opens only our Fit / Re-layout menu', async ({ page }) => {
   test.setTimeout(120_000)
   await login(page)
   await openModelGraph(page)
@@ -194,9 +194,16 @@ test('empty canvas right-click does not open a Braian menu', async ({ page }) =>
   const stage = page.getByTestId('graph-stage')
   const box = await stage.boundingBox()
   expect(box, 'graph stage box').toBeTruthy()
-  await page.mouse.click(box!.x + 24, box!.y + 24, { button: 'right' })
-  await expect(page.getByTestId('context-menu')).toHaveCount(0)
+  // Bottom-left is canvas: the compact legend sits at the top in this pane.
+  await page.mouse.click(box!.x + 24, box!.y + box!.height - 24, { button: 'right' })
+  // 128g tightened this: the empty canvas may show Fit / Re-layout, never
+  // Chrome's menu. It never shows a node menu.
+  const menu = page.getByTestId('context-menu')
+  await expect(menu).toBeVisible()
+  expect(await menuEntries(menu)).toEqual(['Fit', 'Re-layout'])
   await shot(page, 'empty-canvas-right-click')
+  await page.keyboard.press('Escape')
+  await expect(menu).toHaveCount(0)
 })
 
 test('object graph node menu still opens without globals', async ({ page }) => {

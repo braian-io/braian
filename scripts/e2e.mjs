@@ -36,6 +36,7 @@ const specs = [
   'e2e/row128d-link-flow-polish.spec.ts',
   'e2e/row128e-picker-on-top.spec.ts',
   'e2e/row128f-graph-camera.spec.ts',
+  'e2e/row128g-graph-menu-fit.spec.ts',
   'e2e/history.spec.ts',
   'e2e/import.spec.ts',
   'e2e/structure.spec.ts',
@@ -191,6 +192,7 @@ const measuredSeconds = {
   'e2e/row128d-link-flow-polish.spec.ts': 300,
   'e2e/row128e-picker-on-top.spec.ts': 300,
   'e2e/row128f-graph-camera.spec.ts': 480,
+  'e2e/row128g-graph-menu-fit.spec.ts': 480,
   'e2e/history.spec.ts': 6,
   'e2e/import.spec.ts': 4,
   'e2e/structure.spec.ts': 6,
@@ -489,10 +491,15 @@ function apiEnvFor(db, apiPort, alias) {
   return apiEnv
 }
 
+// Parallel rows on one host must not fight over the fixed 8095/3010 pair.
+// Track A keeps its API and Vite inside its own 2545x range.
+const apiBasePort = positiveInt('BRAIAN_E2E_API_PORT', '8095')
+const webBasePort = positiveInt('BRAIAN_E2E_WEB_PORT', '3010')
+
 const slots = groups.map((files, index) => {
   const db = groups.length === 1 ? 'braian_e2e' : `braian_e2e_${index}`
-  const apiPort = 8095 + index
-  const webPort = 3010 + index
+  const apiPort = apiBasePort + index
+  const webPort = webBasePort + index
   const alias = groups.length === 1 ? 'braian_e2e' : `braian_e2e_${index}`
   const web = spawnLogged(pnpm, viteDevArgs(webPort, groups.length > 1), {
     ...process.env,

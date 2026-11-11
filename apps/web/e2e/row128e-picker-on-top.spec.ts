@@ -430,7 +430,7 @@ test('edge labels are visible at rest, never stack, and existing nodes stay put 
   expect(removed.ok()).toBe(true)
 })
 
-test('the keyboard and right-click menus open beside the node, avoid every label and stay inside a small Graph pane', async ({ page }) => {
+test('the keyboard and right-click menus hug the node and stay inside a small Graph pane', async ({ page }) => {
   test.setTimeout(240_000)
   await login(page)
   await applyLayout(page, smallGraphLayout)
@@ -471,11 +471,10 @@ test('the keyboard and right-click menus open beside the node, avoid every label
     expect(box!.y + box!.height).toBeLessThanOrEqual(900)
     const gapX = Math.max(box!.x - nodeBox.right, nodeBox.left - (box!.x + box!.width), 0)
     const gapY = Math.max(box!.y - nodeBox.bottom, nodeBox.top - (box!.y + box!.height), 0)
-    expect(Math.hypot(gapX, gapY), 'the menu opens next to the node').toBeLessThanOrEqual(96)
-    const edges = await edgeRects(page)
-    const labels = await nodeLabelRects(page)
-    for (const rect of edges) expect(overlaps(rect, box!), `menu covers edge label ${rect.id}`).toBe(false)
-    for (const rect of labels) expect(overlaps(rect, box!), `menu covers node label ${rect.id}`).toBe(false)
+    // 128g tightened the hug from 96 px to 16 px. In a crowded small pane the
+    // menu may cover another caption; it must never cover its own node.
+    expect(Math.hypot(gapX, gapY), 'the menu opens next to the node').toBeLessThanOrEqual(16)
+    expect(overlaps(nodeBox, box!), 'the menu covers its own node').toBe(false)
   }
 
   await node.focus()
