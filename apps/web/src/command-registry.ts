@@ -193,6 +193,17 @@ export const registryCommands: RegistryCommand[] = [
     when: (target) => Boolean(target.objectId),
   },
   {
+    id: 'object:delete',
+    title: copy.deleteMenu,
+    contexts: ['row', 'cell', 'object-detail'],
+    group: 'object',
+    keywords: ['delete', 'remove', 'trash'],
+    danger: true,
+    when: (target) =>
+      Boolean(target.objectId)
+      || (Array.isArray(target.objects) && target.objects.length > 0),
+  },
+  {
     id: 'columns:hide',
     title: copy.hideColumn,
     contexts: ['table-header', 'cell', 'row'],

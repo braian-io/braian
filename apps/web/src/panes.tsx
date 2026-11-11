@@ -75,6 +75,7 @@ import { viewingAgentRunId } from './agent-session'
 import { copy, uiLanguage } from './i18n'
 import { openSharedContextMenu, prefersNativeContextMenu } from './shared-context-menu'
 import { buildRowContextMenu } from './row-context-menu'
+import { requestDeleteObjects } from './delete-objects'
 import { StandardTableChrome } from './standard-table'
 import { StandardEditableTable, type StandardColumn } from './standard-editable-table'
 import { registerCommandRunner, runCommand } from './command-registry'
@@ -1183,6 +1184,11 @@ export function ObjectTable({
   const onTableKey = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     // While a cell editor is open, leave every key to the input (caret / selection / typing).
     if (isEditingCell(event, editingCell)) return
+    if (event.key === 'Delete' && !event.ctrlKey && !event.altKey && !event.metaKey && selected.length > 0) {
+      event.preventDefault()
+      requestDeleteObjects(selected)
+      return
+    }
     if (event.ctrlKey || event.altKey || event.metaKey) return
     if ((event.key === 'F10' && event.shiftKey) || event.key === 'ContextMenu') {
       event.preventDefault()
@@ -2852,6 +2858,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   const status = textValue(values.status)
   const number = recordNumber(values)
   const name = recordTitle(values, uiLanguage)
+  const inAgentSession = Boolean(viewingAgentRunId())
   const dirty = localCells.length > 0 || proposalCells.length > 0
   const typeDef = ((defs.data?.types as Json[]) ?? []).find((item) => item.key === object.data?.type)
   const typeIds = new Set(((typeDef?.attributes as unknown[]) ?? []).map(String))
@@ -2952,6 +2959,18 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
             updatedAt={typeof object.data.updated_at === 'string' ? object.data.updated_at : ''}
             updatedBy={object.data.updated_by}
           />
+          {inAgentSession ? null : (
+            <div className="detail-actions">
+              <Button
+                type="button"
+                variant="danger"
+                data-testid="delete-object-detail"
+                onClick={() => requestDeleteObjects([objectId])}
+              >
+                {copy.delete}
+              </Button>
+            </div>
+          )}
           <div className="field-chips">
             <MetaChip>{typeLabel(defs.data, String(object.data.type), uiLanguage)}</MetaChip>
             <MetaChip tone={status ? statusTone(status) : 'neutral'}>

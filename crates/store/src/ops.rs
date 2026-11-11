@@ -1354,6 +1354,37 @@ impl Store {
         if deleted_at.is_none() {
             return Err(Error::RestoreBlocked("This object is not deleted.".into()));
         }
+        // Links cascade-deleted in the same event carry the deletion batch id on
+        // their `delete` change and `{link_removed:true}` in the diff. Restore
+        // those too; links removed separately keep their deleted_at.
+        let cascade_batch: Option<Uuid> = tx
+            .query_opt(
+                "SELECT batch_id FROM changes
+                 WHERE object_id = $1 AND op = $2
+                 ORDER BY seq DESC LIMIT 1",
+                &[&id.as_uuid(), &ChangeOp::Delete.as_str()],
+            )
+            .await?
+            .map(|change| change.get(0));
+        let cascade_links: Vec<Uuid> = match cascade_batch {
+            Some(batch_id) => tx
+                .query(
+                    "SELECT DISTINCT object_id FROM changes
+                     WHERE batch_id = $1 AND op = $2 AND object_id IS NOT NULL
+                       AND object_id <> $3 AND diff @> $4::jsonb",
+                    &[
+                        &batch_id,
+                        &ChangeOp::Delete.as_str(),
+                        &id.as_uuid(),
+                        &serde_json::json!({ "link_removed": true }),
+                    ],
+                )
+                .await?
+                .iter()
+                .map(|change| change.get(0))
+                .collect(),
+            None => Vec::new(),
+        };
         let type_id = TypeId::from_uuid(row.get("type_id"));
         let key: String = row.get::<_, Option<String>>("key").unwrap_or_default();
         if let Some(link) = tx
@@ -1414,7 +1445,7 @@ impl Store {
             });
         }
         let version = u64_from_i64(version_row.get(0))?;
-        let seq = insert_change(
+        let mut last_seq = insert_change(
             &tx,
             batch,
             Some(id),
@@ -1424,11 +1455,75 @@ impl Store {
             &serde_json::json!({ "undeleted": true }),
         )
         .await?;
+        let mut versions = vec![(id, version)];
+        for link_id in cascade_links {
+            let link_row = tx
+                .query_opt(
+                    "SELECT version, deleted_at, key, type_id FROM objects WHERE id = $1 FOR UPDATE",
+                    &[&link_id],
+                )
+                .await?;
+            let Some(link_row) = link_row else {
+                continue;
+            };
+            let link_deleted_at: Option<chrono::DateTime<chrono::Utc>> = link_row.get("deleted_at");
+            if link_deleted_at.is_none() {
+                continue;
+            }
+            let link_version_row = match tx
+                .query_one(
+                    "UPDATE objects
+                     SET version = version + 1, updated_at = now(), deleted_at = NULL, updated_by = $2
+                     WHERE id = $1
+                     RETURNING version",
+                    &[&link_id, &actor.actor.as_uuid()],
+                )
+                .await
+            {
+                Ok(row) => row,
+                Err(error) => {
+                    let link_type = TypeId::from_uuid(link_row.get("type_id"));
+                    let link_key: String = link_row.get::<_, Option<String>>("key").unwrap_or_default();
+                    return Err(match map_unique(error, link_type, &link_key) {
+                        Error::DuplicateKey { key, .. } => {
+                            Error::RestoreBlocked(format!("A live object already uses the key {key}."))
+                        }
+                        other => other,
+                    });
+                }
+            };
+            if let Err(error) = tx
+                .execute(
+                    "UPDATE links SET deleted_at = NULL WHERE object_id = $1",
+                    &[&link_id],
+                )
+                .await
+            {
+                return Err(match crate::links::map_cardinality(error, "link") {
+                    Error::LinkCardinality(_) => {
+                        Error::RestoreBlocked("A live link already uses that side.".into())
+                    }
+                    other => other,
+                });
+            }
+            let link_version = u64_from_i64(link_version_row.get(0))?;
+            last_seq = insert_change(
+                &tx,
+                batch,
+                Some(ObjectId::from_uuid(link_id)),
+                Some(as_i64(link_version)?),
+                ChangeOp::Update,
+                actor,
+                &serde_json::json!({ "undeleted": true }),
+            )
+            .await?;
+            versions.push((ObjectId::from_uuid(link_id), link_version));
+        }
         tx.commit().await?;
         Ok(WriteReceipt {
             batch_id: batch,
-            last_seq: seq,
-            versions: vec![(id, version)],
+            last_seq,
+            versions,
         })
     }
 

@@ -4281,6 +4281,137 @@ async fn links_round_trip_and_an_agent_cannot_delete_them() {
 }
 
 #[tokio::test]
+async fn restoring_an_object_also_restores_the_links_its_delete_cascaded() {
+    let (_db, app) = app().await;
+    let make = |sku: &str| format!(r#"{{"type":"item","values":{{"sku":"{sku}","active":true}}}}"#);
+    let mut ids = Vec::new();
+    for sku in ["RESTORE-A", "RESTORE-B"] {
+        let (status, _, body) = call(
+            &app,
+            "POST",
+            "/v1/objects",
+            Some(HUMAN),
+            &[("content-type", "application/json")],
+            Some(&make(sku)),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        ids.push(body["id"].as_str().unwrap().to_owned());
+    }
+    let (status, _, created) = call(
+        &app,
+        "POST",
+        "/v1/link-types",
+        Some(HUMAN),
+        &[("content-type", "application/json")],
+        Some(
+            r#"{"key":"restores_with","label":"Restores with","from_types":["item"],"to_types":["item"],"from_key":"restores_with","from_label":"Restores with","to_key":"restored_from","to_label":"Restored from","from_cardinality":"many","to_cardinality":"many","attributes":[]}"#,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{created}");
+    let body = format!(
+        r#"{{"type":"restores_with","from_id":"{}","to_id":"{}"}}"#,
+        ids[0], ids[1]
+    );
+    let (status, _, link) = call(
+        &app,
+        "POST",
+        "/v1/links",
+        Some(HUMAN),
+        &[("content-type", "application/json")],
+        Some(&body),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{link}");
+    let link_id = link["id"].as_str().unwrap();
+
+    let (status, _, dry) = call(
+        &app,
+        "DELETE",
+        &format!("/v1/objects/{}?dry_run=true", ids[0]),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{dry}");
+    assert_eq!(dry["objects"], 2, "{dry}");
+    assert_eq!(dry["links"], 1, "{dry}");
+    let (status, _, agent_dry) = call(
+        &app,
+        "DELETE",
+        &format!("/v1/objects/{}?dry_run=true", ids[0]),
+        Some(AGENT),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{agent_dry}");
+    assert_eq!(agent_dry["code"], "agent_cannot_delete", "{agent_dry}");
+
+    let (status, _, deleted) = call(
+        &app,
+        "DELETE",
+        &format!("/v1/objects/{}", ids[0]),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{deleted}");
+    let (status, _, gone) = call(
+        &app,
+        "GET",
+        &format!("/v1/objects/{link_id}"),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::GONE, "{gone}");
+
+    let (status, _, restored) = call(
+        &app,
+        "POST",
+        &format!("/v1/trash/object/{}/undelete", ids[0]),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{restored}");
+    let (status, _, back) = call(
+        &app,
+        "GET",
+        &format!("/v1/objects/{}", ids[0]),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{back}");
+    let links = back["links"].as_array().unwrap();
+    assert!(
+        links
+            .iter()
+            .flat_map(|side| side["links"].as_array().unwrap())
+            .any(|item| item["id"] == link_id),
+        "{back}"
+    );
+    let (status, _, link_back) = call(
+        &app,
+        "GET",
+        &format!("/v1/objects/{link_id}"),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{link_back}");
+}
+
+#[tokio::test]
 async fn rest_upserts_match_the_draft_and_land_in_history() {
     let (db, app) = app().await;
     let principal = db
