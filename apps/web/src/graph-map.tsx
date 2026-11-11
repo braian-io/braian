@@ -58,6 +58,7 @@ import { chooseModelSelection } from './model-selection'
 import { openObjectLabel } from './type-labels'
 import { copy, uiLanguage } from './i18n'
 import { linkChoices } from './link-section'
+import { LinkAddFlow, type LinkAddRequest } from './link-add'
 import { openSharedContextMenu, prefersNativeContextMenu } from './shared-context-menu'
 import { registerCommandRunner, type CommandTarget, type RegistryCommand } from './command-registry'
 import { requestOpenModelType } from './model-type-open'
@@ -75,7 +76,8 @@ export function canOpenGraphNodeMenu(node: Pick<SceneNode, 'kind' | 'typeKey'>) 
 /**
  * Node-scoped items for the graph menu. A model type is not an object: its
  * entries are type actions (open it in Object types), never object links.
- * Object nodes keep their link choices; the runner opens the add-link dialog.
+ * Object nodes get one verb per relation and direction; the runner opens the
+ * shared add-link picker for exactly that relation.
  */
 export function graphNodeMenuExtras(
   defs: Json | undefined,
@@ -92,50 +94,93 @@ export function graphNodeMenuExtras(
       },
     ]
   }
-  return linkChoices(defs, node.typeKey ?? '').map((choice) => ({
-    id: `graph:add-link:${choice.key}`,
-    title: choice.label,
+  const choices = linkChoices(defs, node.typeKey ?? '')
+  return choices.map((choice) => ({
+    id: `graph:add-link:${choice.key}:${choice.direction}`,
+    title: graphLinkMenuTitle(choice, choices),
     contexts: ['graph-node'],
     group: 'object',
     palette: false,
   }))
 }
 
-/** A model type is not an object: never hand its node id to an object command. */
-export function graphNodeTarget(node: Pick<SceneNode, 'kind' | 'id' | 'typeKey'>): CommandTarget {
-  return node.kind === 'object' ? { objectId: node.id, typeKey: node.typeKey } : { typeKey: node.typeKey }
+/** Verb first, and the side when two directions share the same relation label. */
+export function graphLinkMenuTitle(
+  choice: { label: string; direction: 'out' | 'in' },
+  all: Array<{ label: string; direction: 'out' | 'in' }>,
+) {
+  const shared = all.filter((item) => item.label === choice.label).length > 1
+  const label = shared
+    ? `${choice.label} · ${choice.direction === 'out' ? copy.linkFromHere : copy.linkToHere}`
+    : choice.label
+  return copy.linkMenuVerb.replace('{label}', label)
 }
 
-/** The visible node is the menu anchor; the off-screen a11y button never is. */
+/** A model type is not an object: never hand its node id to an object command. */
+export function graphNodeTarget(
+  node: Pick<SceneNode, 'kind' | 'id' | 'typeKey'> & { objectId?: string },
+): CommandTarget {
+  if (node.kind !== 'object') return { typeKey: node.typeKey }
+  return { objectId: node.objectId ?? node.id, typeKey: node.typeKey }
+}
+
+/** The menu opens beside the visible node so it never covers the node label. */
 export function nodeMenuAnchor(marker: Pick<Marker, 'x' | 'y'> & { r?: number } | undefined, fallback: { x: number; y: number }) {
   if (marker && Number.isFinite(marker.x) && Number.isFinite(marker.y)) {
     const radius = Number.isFinite(marker.r) ? Number(marker.r) : 0
-    return { x: marker.x + radius, y: marker.y + radius }
+    return { x: marker.x + radius + 8, y: marker.y - radius }
   }
   return fallback
 }
 
-function runGraphNodeCommand(id: string, target: CommandTarget) {
+/** `graph:add-link:<key>:<direction>`; the direction is what the picker must use. */
+export function graphLinkRequest(id: string, target: CommandTarget): LinkAddRequest {
+  const value = id.slice('graph:add-link:'.length)
+  const split = value.lastIndexOf(':')
+  const linkType = split < 0 ? value : value.slice(0, split)
+  const rawDirection = split < 0 ? '' : value.slice(split + 1)
+  const direction = rawDirection === 'out' || rawDirection === 'in' ? rawDirection : undefined
+  return {
+    ...(linkType ? { linkType } : {}),
+    ...(direction ? { direction } : {}),
+    ...(target.objectId ? { objectId: String(target.objectId) } : {}),
+    ...(target.typeKey ? { typeKey: String(target.typeKey) } : {}),
+  }
+}
+
+export function runGraphNodeCommand(
+  id: string,
+  target: CommandTarget,
+  onAddLink?: (request: LinkAddRequest) => void,
+) {
   if (id === 'graph:type:view') {
     if (target.typeKey) requestOpenModelType(String(target.typeKey))
     return
   }
-  if (id.startsWith('graph:add-link:')) {
-    const linkType = id.slice('graph:add-link:'.length)
-    window.dispatchEvent(new CustomEvent('braian-add-link', { detail: linkType ? { linkType } : {} }))
+  if (!id.startsWith('graph:add-link:')) return
+  const request = graphLinkRequest(id, target)
+  if (onAddLink) {
+    onAddLink(request)
+    return
   }
+  window.dispatchEvent(
+    new CustomEvent('braian-add-link', {
+      detail: { ...(request.linkType ? { linkType: request.linkType } : {}), ...(request.direction ? { direction: request.direction } : {}) },
+    }),
+  )
 }
 
 /** Node-scoped shared menu for a graph node, anchored at the pointer or node. */
 export function openGraphNodeMenu(
-  node: Pick<SceneNode, 'kind' | 'id' | 'typeKey' | 'caption'>,
+  node: Pick<SceneNode, 'kind' | 'id' | 'typeKey' | 'caption'> & { objectId?: string },
   defs: Json | undefined,
   x: number,
   y: number,
+  onAddLink?: (request: LinkAddRequest) => void,
 ) {
   const extra = graphNodeMenuExtras(defs, node)
   for (const command of extra) {
-    registerCommandRunner(command.id, (target) => runGraphNodeCommand(command.id, target))
+    registerCommandRunner(command.id, (target) => runGraphNodeCommand(command.id, target, onAddLink))
   }
   openSharedContextMenu({
     context: 'graph-node',
@@ -146,6 +191,7 @@ export function openGraphNodeMenu(
     extra,
   })
 }
+
 type Palette = {
   fill: Record<NodeKind, string>
   text: string
@@ -185,6 +231,7 @@ export function GraphMap({
   const [markers, setMarkers] = useState<Record<string, Marker>>({})
   const [pinTick, setPinTick] = useState(0)
   const [busy, setBusy] = useState('')
+  const [add, setAdd] = useState<LinkAddRequest | null>(null)
   const [sheet, setSheet] = useState<SheetMode>('compact')
   const [pane, setPane] = useState<{ width: number; height: number } | null>(null)
   const expandedRef = useRef(new Set<string>([focusKey]))
@@ -199,6 +246,7 @@ export function GraphMap({
     setSelected(focusKey)
     setHidden(new Set())
     setFull(false)
+    setAdd(null)
     setSheet('compact')
     expandedRef.current = new Set([focusKey])
   }
@@ -849,7 +897,15 @@ export function GraphMap({
       const hit = hitTest(event.offsetX, event.offsetY)
       if (!hit || !canOpenGraphNodeMenu(hit) || prefersNativeContextMenu(event.target)) return
       event.preventDefault()
-      openGraphNodeMenu(hit, defsRef.current, event.clientX, event.clientY)
+      // Anchor on the live node position at event time, not a published marker.
+      const rect = canvas.getBoundingClientRect()
+      const point = screenOf(hit.x ?? 0, hit.y ?? 0)
+      const radius = nodeRadius(hit.kind, hit.degree ?? 0) * transform.k
+      const anchor = nodeMenuAnchor(
+        { x: rect.left + point.x, y: rect.top + point.y, r: radius },
+        { x: event.clientX, y: event.clientY },
+      )
+      openGraphNodeMenu(hit, defsRef.current, anchor.x, anchor.y, (request) => setAdd(request))
     }
 
     let sawPointer = 0
@@ -1053,7 +1109,7 @@ export function GraphMap({
     const rect = canvasRef.current?.getBoundingClientRect()
     const fallback = rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : { x: 8, y: 8 }
     const anchor = nodeMenuAnchor(markers[node.id], fallback)
-    openGraphNodeMenu(node, defsRef.current, anchor.x, anchor.y)
+    openGraphNodeMenu(node, defsRef.current, anchor.x, anchor.y, (request) => setAdd(request))
   }
   const opensNodeMenu = (event: { key: string; ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean }) =>
     ((event.ctrlKey || event.metaKey) && event.key === 'Enter') ||
@@ -1248,6 +1304,15 @@ export function GraphMap({
             </p>
           ))}
       </div>
+      {add?.objectId && add.typeKey ? (
+        <LinkAddFlow
+          objectId={add.objectId}
+          typeKey={add.typeKey}
+          defs={activeDefs}
+          request={add}
+          onClose={() => setAdd(null)}
+        />
+      ) : null}
     </div>
   )
 }
