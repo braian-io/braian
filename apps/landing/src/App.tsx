@@ -191,7 +191,7 @@ function Agent() {
       <div className="agent-board">
         <figure className="agent-stage">
           <AgentPanel />
-          <figcaption className="caption">Demo catalog</figcaption>
+          <figcaption className="caption">Illustration: agent session</figcaption>
         </figure>
         <DisclosureList items={agent.points} idPrefix="agent" columns="side" />
       </div>

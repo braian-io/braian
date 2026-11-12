@@ -24,7 +24,7 @@ export const hero = {
     { value: '64 ms', label: 'save to searchable, p50' },
     { value: '20 ms', label: 'save to every open session, p50' },
   ],
-  caption: 'Demo workspace',
+  caption: 'Illustration: workspace',
 } as const
 
 export const workspaces = {
@@ -58,7 +58,7 @@ export const model = {
   points: [
     {
       title: 'Types from scratch',
-      body: 'Entity types and link types. Each type names its key attribute and the attributes it uses. There is no built-in article or product type.',
+      body: 'Entity types and link types. Each type names its key attribute and the attributes it uses. The engine ships no built-in article or product type; the demo’s Product and Article types are seed data you can edit or remove.',
     },
     {
       title: 'Attributes carry the rules',
@@ -83,7 +83,7 @@ export const sources = {
   points: [
     {
       title: 'Select source',
-      body: 'From the view menu or Ctrl+K › Data source. The list is filtered by the view’s bound type, not by the source it happens to use today.',
+      body: 'From the view menu’s Select source or Ctrl+K › Data source. The list is filtered by the view’s bound type, not by the source it happens to use today.',
       code: 'Ctrl+K › Data source',
     },
     {
@@ -120,7 +120,7 @@ export const graph = {
     },
     {
       title: 'Built to stay readable',
-      body: 'Force layout, Fit and Re-layout, pinned nodes, and labels that avoid stacking. The scene stops at 400 nodes with a visible hint.',
+      body: 'Force layout, Fit and Re-layout, and pinned nodes; a click on a pinned node releases it. Labels can overlap in a crowded scene. The scene stops at 400 nodes with a visible hint.',
     },
   ],
 } as const
@@ -132,7 +132,7 @@ export const agent = {
   points: [
     {
       title: 'Works where you are',
-      body: 'It opens views, filters, selects rows and places panes in your workspace. You see each step as it happens. There is no separate chat window.',
+      body: 'It opens views, filters, selects rows and places panes in your workspace. You see each step in the agent palette (Ctrl+J) or the agent tab, and Ctrl+K can ask the agent with the current query. There is no separate chat window.',
     },
     {
       title: 'Acts as you, except delete',
@@ -169,16 +169,16 @@ export const agentSession = {
 
 export const deleteFlows = {
   eyebrow: 'Delete and restore',
-  title: 'Delete is deliberate. Restore puts it back.',
-  lede: 'Four ways in, one confirmation, and a Trash that also returns cascade-deleted links.',
+  title: 'Delete is deliberate. Trash keeps the way back.',
+  lede: 'Four ways in, one confirmation, and a Trash for what you remove.',
   points: [
     {
       title: 'Four entry points',
       body: 'Delete from the row or cell menu, the Detail header, Ctrl+K, or the Delete key on selected rows. All four open the same dialog.',
     },
     {
-      title: 'Counts first',
-      body: 'The dialog asks the server for a dry run and shows how many objects and links will disappear. Cancel has focus; Escape writes nothing.',
+      title: 'Dry run first',
+      body: 'The dialog asks the server for a dry run before anything is removed. Cancel has focus; Escape writes nothing.',
       code: '?dry_run=1',
     },
     {
@@ -186,8 +186,8 @@ export const deleteFlows = {
       body: 'A human delete is immediate after confirmation. It does not wait for Save. Multi-select deletes after one confirm and stops at the first error.',
     },
     {
-      title: 'Trash restores the cascade',
-      body: 'Restore brings back the object and the links that were removed in the same event. Links deleted separately stay deleted.',
+      title: 'Trash and Restore',
+      body: 'Deleted objects appear in Trash, where Restore is the button that brings an object back.',
     },
     {
       title: 'Agents cannot delete',
@@ -240,7 +240,7 @@ export const architecture = {
     },
     {
       title: 'Transformation is code',
-      body: 'Imports and exports are programs you own and version, not mappings locked inside an import tool. The API validates every write either way.',
+      body: 'Imports and exports are programs you own and version. The built-in import keeps its saved column mappings in the Import mappings view, and the API validates every write either way.',
       code: 'type · length · value list · unit',
     },
     {
@@ -250,7 +250,7 @@ export const architecture = {
     },
     {
       title: 'Fast by default',
-      body: 'A PATCH answers in 17.5 ms at p50. The same validation rules compile to WebAssembly, so the browser checks a field before it is sent.',
+      body: 'A PATCH answers in 17.5 ms at p50. The API checks type, length, value lists and units on every write, and the same rules crate compiles to WebAssembly.',
       code: 'crates/rules → wasm32',
     },
   ],
