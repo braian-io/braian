@@ -86,8 +86,61 @@ vikter, så redan för lätta filer förblev för lätta och samlades i samma sh
 åtta shards) och, där båda mätte samma fil, max mot körning 966 shard 7.
 Packaren är oförändrad (längst-först, åtta bins). Med `reseedSeconds` 4 s
 blir prediktionen 251–259 s Playwright per shard (spridning 8 s) och cirka
-5m30s vägg, under 7m56s. Efter-siffran för den här kalibreringen mäts på
-samma sätt på nästa gröna fulla PR-körningar.
+5m30s vägg, under 7m56s. Prediktionen träffade inte: faktisk Playwright-
+spridning i efter-körningarna var 194–319 s och väggklockan 6m20s–7m10s.
+
+## Efter: andra packningen (per-fil-vikter, den som mergades)
+
+Två gröna fulla `pull_request`-körningar plus den efterföljande
+`push`-körningen på `main`, alla `mode=full` (`load` success). Vägg =
+`updated_at - run_started_at` (UTC från GitHub API). 972 har samma träd som
+squash `bcc7e2b`. Första packningen ovan (965/966/967, median 8m07s) mergades
+inte.
+
+| Run | SHA | Event | Start (UTC) | Vägg | Långsammaste e2e |
+| ---: | --- | --- | --- | ---: | --- |
+| 970 | `5a74d8b` | pull_request | 2026-11-12 03:56:56 | 7m10s (430s) | e2e (5) 385s, Playwright 319s (spann 194–319s) |
+| 972 | `3400e88` | pull_request | 2026-11-12 04:05:59 | 6m20s (380s) | e2e (7) 356s; långsammaste Playwright e2e (0) 304s (spann 237–304s) |
+| 973 | `bcc7e2b` | push `main` | 2026-11-12 04:14:44 | 6m23s (383s) | Playwright 202–308s |
+
+Median av de två PR-körningarna 970/972: **6m45s (405s)**. Båda, och push 973,
+ligger under målet 7m56s.
+
+## Jämförelser: push mot push och PR mot PR
+
+Baslinjen **9m20s (560s)** kommer från de tio senaste gröna **push**-körningarna
+på `main` (923–955, tabellen ovan). Den rättvisa jämförelsen med samma typ av
+körning är därför push 973 (6m23s / 383s) mot 9m20s: **−31,6 %**
+((560 − 383) / 560).
+
+Efter-mätningen 970/972 är PR-körningar, som ofta är något snabbare än push
+till `main`. En PR-mot-PR-baslinje tas från de tio senaste gröna
+`pull_request`-körningarna i intervallet 947–968 som inte är docs/landing-only
+(de korta körningarna 946/945/939/937, ca 1–2 min, utesluts) och inte 77:s
+egna efter-körningar 965–967 (första packningen, redan efter ändringen). De tio
+körningarna är:
+
+| Körning | SHA | Gren / rad | Vägg |
+| ---: | --- | --- | ---: |
+| 968 | `99e8697` | junior/51a-reset-maximized | 7m31s (451s) |
+| 962 | `e838be4` | junior/51a-reset-to-default | 7m48s (468s) |
+| 960 | `66ebf9c` | junior/51a-reset-to-default | 7m36s (456s) |
+| 959 | `e9ff2a8` | junior/61b-selection-fixes | 8m03s (483s) |
+| 958 | `4027c8e` | junior/51a-reset-to-default | 10m37s (637s) |
+| 956 | `045d8ea` | junior/61-selection-draft | 8m40s (520s) |
+| 954 | `77b1d4c` | junior/61-selection-draft | 7m55s (475s) |
+| 953 | `ecdfdb2` | junior/137b-fields-focus | 7m53s (473s) |
+| 951 | `2c2ddee` | junior/137b-fields-focus | 9m49s (589s) |
+| 947 | `0c88d40` | junior/196-link-field-replace | 8m56s (536s) |
+
+Sorterade väggar: 451, 456, 468, 473, 475, 483, 520, 536, 589, 637. Median
+**(475 + 483) / 2 = 479s = 7m59s**. Medianen av 970/972 (6m45s / 405s) är
+**15,4 %** under den PR-baslinjen ((479 − 405) / 479). Några av de tio kan ha
+kört `mode=web` (till exempel 959, där `load` hoppades över); `load` ligger
+utanför den kritiska vägen, så väggklockorna är ändå jämförbara. Det är alltså
+inte en uppskattning utan en beräkning från GitHub API, men det är en annan
+urvalsregel än push-baslinjen, och den officiella 15 %-grinden för #312 mättes
+mot push-baslinjen.
 
 ## Avgränsning
 
