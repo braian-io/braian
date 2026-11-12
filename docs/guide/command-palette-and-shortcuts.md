@@ -125,7 +125,9 @@ Some keys belong to a view rather than to the app:
   palette returns focus to the control that opened it, including when it is dismissed
   by clicking the backdrop. The list includes the type's attributes and the
   attributes from allowed structures (nested groups and older class lists). Group
-  and class fields show their group name, and typing that name finds them.
+  and class fields show their group name, and typing that name finds them. A
+  measured number field can be added as the combined column or as separate value
+  and unit columns.
 - **Import.** `Ctrl+Z` and `Ctrl+Shift+Z` undo and redo a mapping, `Delete` or
   `Backspace` removes a column mapping, and `Escape` closes the import or its
   confirmation.

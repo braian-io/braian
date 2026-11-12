@@ -1,8 +1,8 @@
 # Status 2026-11-12
 
-## Rad 51b — taxonomi- och gruppfält i Select fields (inte mergad)
+## Rad 51b — taxonomi- och gruppfält i Select fields (mergad som #314, `0513ee9`)
 
-Grenen `junior/51b-taxonomy-fields` utgår från `origin/main` `5949cb1` (#310), har guidecommiten `efefeb5` och har ordinary-mergat `origin/main` `8367722` (rad 51a-fix, PR #313) som `a47f262` därefter `origin/main` `bcc7e2b` (rad 77, PR #312) och sedan `origin/main` `76d96f0` (rad 77:s status- och mätuppföljning). Grenen är **inte mergad, inte deployad och inte accepterad**; inget i det här avsnittet ska läsas som att 51b är live. Rad 51a-fixen är mergad som PR #313 (squash `8367722`) och live på demon med buildId `8367722`. Rad 77 är mergad som PR #312 (squash `bcc7e2b`).
+Grenen `junior/51b-taxonomy-fields` utgick från `origin/main` `5949cb1` (#310), hade guidecommiten `efefeb5` och ordinary-mergade `origin/main` `8367722` (rad 51a-fix, PR #313) som `a47f262`, därefter `origin/main` `bcc7e2b` (rad 77, PR #312) och sedan `origin/main` `76d96f0` (rad 77:s status- och mätuppföljning). Den är **mergad till `main` som PR #314 (squash `0513ee9`) och live på demon med buildId `0513ee9`**. Rad 51a är mergad som PR #310 (squash `5949cb1`), 51a-fixen som PR #313 (squash `8367722`) och rad 77 som PR #312 (squash `bcc7e2b`).
 
 Den här skivan gör `Select fields` till en ärlig och testad katalog över typens egna attribut plus attribut från typens tillåtna strukturer: alla grupper, inklusive nästlade grupper, och äldre klasslistor. Värdearv, separata värde/enhet-kolumner (51c) och skrivning till länkade/hop-fält är utanför omfattningen.
 
@@ -10,7 +10,7 @@ Acceptanskriterierna (Braian Test grindar bara på dessa):
 
 1. **Select fields listar typens egna attribut och gruppattribut från alla tillåtna strukturer, inklusive nästlade grupper.** På seed/demoträdet för livsmedel innehåller Product Fat content (dairy), Caffeine (coffee_tea, under beverages) och Cocoa content (chocolate, under snacks), och de kan slås på som kolumner. En typ som inte tillåter en struktur ser inte den strukturens gruppattribut.
 2. **Äldre klasslistor ingår på samma sätt.** `structure.classes` som är bundna till en grupp ingår för typer som tillåter strukturen. Om en payload fortfarande nästlar klasser under `group.classes` ingår de också. Detta påverkar bara vilka fält som kan väljas som kolumner; värden ärvs aldrig.
-3. **Katalogens nycklar för typens egna attribut följer `GET /v1/types/{id}/attribute-paths`.** Varje löv för typens egna attribut som API:t listar erbjuds som fält med samma attributnyckel. Delar som `.unit` / `.label` är fortsatt kvalificerare, inte egna kolumner (51c, utanför omfattningen).
+3. **Katalogens nycklar för typens egna attribut följer `GET /v1/types/{id}/attribute-paths`.** Varje löv för typens egna attribut som API:t listar erbjöds som fält med samma attributnyckel. I 51b var delar som `.unit` / `.label` fortsatt kvalificerare, inte egna kolumner; 51c lägger senare till `.value` / `.unit` som egna kolumner för måttfält.
 4. **Grupp- och klassfält syns och går att hitta.** Väljaren visar en källhint för dessa fält (gruppens visningsnamn, till exempel `Dairy & eggs` eller `Chocolate`), och att skriva gruppnamnet i Select fields-sökningen hittar fältet.
 5. **Guidesidorna är redan uppdaterade i `efefeb5`.** `workspaces-and-panels.md` har avsnittet Select fields och `object-types-and-relations.md` samt `command-palette-and-shortcuts.md` har meningarna om grupp- och klassfält. De är oförändrade här och beskriver det som koden nu gör.
 6. **Automatiska tester täcker kriterium 1–4.** Ny enhetstest `apps/web/src/fields/catalog-taxonomy.test.ts` med fixture för typattribut, nästlade grupper, en äldre klass och en typ som inte tillåter strukturen, plus kontroll mot `crates/server/demo/definitions.json` för Product. Ny komponenttest `apps/web/src/fields/fields-mode-source.test.tsx` täcker källhinten och sökning på gruppnamn. Befintliga Select fields-, hide- och Reset to default-tester är fortsatt gröna.
@@ -31,6 +31,41 @@ Bevis (lokalt i worktreen, utan demo- eller produktionsskrivningar):
 - `python3 scripts/check-english.py` exit 0. `sha256sum apps/web/src/data-model.tsx` är oförändrad.
 - Ingen e2e-körning gjordes lokalt; kriterium 1–4 täcks av enhets- och komponenttesterna samt demo-definitionerna. Ingen demo-mutation, ingen deploy, ingen PR och ingen merge.
 
+
+## Rad 51c — värde och enhet som separata kolumner (inte mergad)
+
+Grenen `junior/51c-value-unit-columns` utgår från `origin/main` `0513ee9` (#314, rad 51b). Den är **inte mergad, inte deployad och inte accepterad**; inget i det här avsnittet ska läsas som att 51c är live. Rad 51b är mergad som PR #314 (squash `0513ee9`) och live på demon med buildId `0513ee9`. Rad 51a är mergad som PR #310 (squash `5949cb1`), rättningen som PR #313 (squash `8367722`) och båda är live.
+
+Den här skivan låter `Select fields` erbjuda värde och enhet som två egna kolumner för måttfält (nummer med enhetsfamilj), samtidigt som den kombinerade kolumnen och dess visningsenhet finns kvar.
+
+Acceptanskriterierna (Braian Test grindar bara på dessa):
+
+1. **Värde och enhet kan vara separata kolumner.** På Product i seed/demoträdet för livsmedel kan ett måttfält läggas till som `Fat content (value)` och `Fat content (unit)`. Båda kan vara synliga samtidigt, även efter omladdning. Sökvägarna är `fat_content.value` och `fat_content.unit`, samma text som `GET /v1/types/{id}/attribute-paths` listar. Värdekolumnen visar bara värdet och enhetskolumnen bara enhetskoden.
+2. **Kombinerade kolumnen och visningsenheten fungerar fortfarande.** `Fat content` utan ändelse finns kvar och visar värde och enhet tillsammans (till exempel `35 g`). En visningsenhet på den kolumnen konverterar det visade värdet och gömmer eller ersätter inte värde- och enhetskolumnerna.
+3. **Sökning och källhint fungerar.** Ett gruppkällt måttfält går fortfarande att hitta på gruppnamnet, och värde- och enhetskolumnerna syns som `(value)` / `(unit)`.
+4. **Länkade/hop-fält är skrivskyddade.** Om ett hop-fält har en enhetsfamilj kan dess värde/enhet listas ett hopp bort, men de förblir skrivskyddade. Inga skrivningar till länkade/hop-fält läggs till.
+5. **Guidesidorna är uppdaterade i samma gren.** `docs/guide/workspaces-and-panels.md` beskriver att ett måttfält kan läggas till som kombinerad kolumn och/eller som separata värde- och enhetskolumner, och att en visningsenhet på den kombinerade kolumnen bara ändrar hur värdet visas. Gruppnamnen är `Dairy & eggs` och `Coffee & tea`.
+6. **Automatiska tester täcker kriterium 1–3**, inklusive katalog/sökvägstest mot fixture och Product i `crates/server/demo/definitions.json`, samt picker/cell-test där båda kolumnerna kan vara på och visningskonverteringen på hela kolumnen är oförändrad. Befintliga Select fields-, hide-, Reset-, taxonomi- och kvalificerartester är fortsatt gröna.
+7. **Endast engelska, skyddade filer orörda.** Ingen ändring av `data-model.tsx`, `product_suppliers`-etiketter eller skrivning till hop/länkade fält.
+
+Vad som ändrades:
+
+- `apps/web/src/fields/catalog.ts`: ett måttfält (`shape: 'unit'`) får två syskonfält med id `{key}.value` och `{key}.unit`, namnen `{name} (value)` / `{name} (unit)` och källan från föräldern. Samma gäller fält ett hopp bort, som fortsatt är skrivskyddade.
+- `apps/web/src/fields/columns.ts`: en lagrad kolumns sökväg behåller `.value` / `.unit` när katalogen har ett sådant löv, annars faller den tillbaka på den gamla kvalificerar-delningen (`.code`, `.label`, `.min`, `.max`).
+- `apps/web/src/panes.tsx`: kolumnrubriken och återuppbyggnaden från personliga kolumnval använder samma sökvägsuppslag, så båda kolumnerna finns kvar efter omladdning.
+- `apps/web/src/path-cell.ts`: den kombinerade måttkolumnen läser det indexerade värdet och enhetsfältet och visar dem tillsammans (`35 g`) när ingen visningsenhet är vald. `.value` läser värdet och `.unit` enhetskoden.
+- `crates/server/demo/definitions.json`, `crates/server/demo/objects.json` och `crates/server/src/seed.rs`: `fat_content` blir ett måttfält i massfamiljen, och demo-/seedvärden anger enheten `g`.
+- Tester: `apps/web/src/fields/catalog-value-unit.test.ts`, `apps/web/src/fields/fields-mode-value-unit.test.tsx`, `apps/web/src/value-unit-columns.test.tsx` och utökade `apps/web/src/path-cell.test.tsx` samt `apps/web/src/cell-edit.test.ts`; ett kort e2e-fall i `apps/web/e2e/field-picker.spec.ts` slår på Fat content som kolumn.
+- `docs/guide/workspaces-and-panels.md` och `docs/guide/command-palette-and-shortcuts.md`: Select fields-avsnittet beskriver värde- och enhetskolumnerna och de exakta gruppnamnen.
+
+Ärlig avgränsning: att redigera en separat värde- eller enhetscell inline skulle behöva skriva ett måttobjekt med både värde och enhet, vilket är en större skrivväg än den här skivan. De separata kolumnerna är därför visningskolumner och inline-redigering för dem är avstängd; måttfältets redigering i övrigt är oförändrad. Ingen deploy, ingen PR och ingen merge gjordes från grenen.
+
+Bevis (lokalt i worktreen, utan demo- eller produktionsskrivningar):
+
+- `pnpm --filter ./apps/web exec tsc --noEmit` exit 0.
+- `pnpm --filter ./apps/web exec vitest run` gav **171 filer / 1001 tester** gröna, inklusive de nya `catalog-value-unit.test.ts`, `fields-mode-value-unit.test.tsx` och `value-unit-columns.test.tsx` samt befintliga Select fields-, hide-, Reset-, taxonomi- och kvalificerartester.
+- `python3 scripts/check-english.py` exit 0. `sha256sum apps/web/src/data-model.tsx` är `2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`, oförändrad.
+- Det korta e2e-fallet i `field-picker.spec.ts` är typkontrollerat men inte kört lokalt; hela e2e-sviten kördes inte. Ingen demo-mutation, ingen deploy, ingen PR och ingen merge gjordes från grenen.
 
 ## Rad 77 — snabbare CI: färska e2e-vikter och åtta shards (mergad som #312, `bcc7e2b`)
 
@@ -81,7 +116,7 @@ Bevis (lokalt i worktreen, utan demo- eller produktionsskrivningar):
 
 ## Rad 51a — Reset to default för personliga kolumnval (mergad som #310, `5949cb1`)
 
-Grenen `junior/51a-reset-to-default` är **mergad till `main` som PR #310 (squash `5949cb1`) och live på demon med buildId `5949cb1`**. Test godkände kriterium 1 och 3–7 men underkände kriterium 2 i en maximerad panel; rättningen är uppföljningen ovan, som **är mergad som PR #313 (squash `8367722`) och live på demon med buildId `8367722`**. Detta är den första skivan av Notion-rad 51 (välja fält per vy). Hide column, Select fields, en hop av länkade fält (skrivskyddade) och personliga `column-prefs` v2 finns redan på main. HTTP `DELETE /v1/views/{view_id}/column-prefs` fanns redan och raderar bara anroparens egen rad. Senare skivor, inte i denna PR: **51b** taxonomi-/grupp-fält i fältväljaren, **51c** kvalificerade fält som egna värde- och enhetskolumner. Skrivning till länkade/hop-fält är utanför omfattningen.
+Grenen `junior/51a-reset-to-default` är **mergad till `main` som PR #310 (squash `5949cb1`) och live på demon med buildId `5949cb1`**. Test godkände kriterium 1 och 3–7 men underkände kriterium 2 i en maximerad panel; rättningen är uppföljningen ovan, som **är mergad som PR #313 (squash `8367722`) och live på demon med buildId `8367722`**. Detta är den första skivan av Notion-rad 51 (välja fält per vy). Hide column, Select fields, en hop av länkade fält (skrivskyddade) och personliga `column-prefs` v2 finns redan på main. HTTP `DELETE /v1/views/{view_id}/column-prefs` fanns redan och raderar bara anroparens egen rad. Senare skivor som låg utanför den PR:en: **51b** taxonomi-/gruppfält i fältväljaren (nu mergad som #314, `0513ee9`) och **51c** värde- och enhetskolumner för måttfält (egen gren, inte mergad). Skrivning till länkade/hop-fält är utanför omfattningen.
 
 Acceptanskriterierna (Braian Test grindar bara på dessa):
 
