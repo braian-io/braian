@@ -4,7 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from './api'
 import { copy } from './i18n'
 import { LinkCreateDialog, placeDialog, type LinkCreateRequest } from './link-create-dialog'
+import { statusMessage } from './status-message'
 import type { LinkSubmitResult } from './link-write'
+import { resetWriteStatus, writeSettled, writeStatus } from './write-status'
 import type { Json } from './api'
 
 vi.mock('sonner', () => ({ toast: vi.fn() }))
@@ -41,10 +43,12 @@ const patch = vi.spyOn(api, 'patch')
 
 beforeEach(() => {
   vi.clearAllMocks()
+  resetWriteStatus()
 })
 
 afterEach(() => {
   cleanup()
+  resetWriteStatus()
 })
 
 function distanceFromCentre(
@@ -182,5 +186,112 @@ describe('link create dialog validation', () => {
       body: { from_id: 'new-product', to_id: 'article-1', values: {} },
     })
     expect(onReplaced).toHaveBeenCalledTimes(1)
+  })
+
+  it('re-validates the current draft and replaces with the values on screen', async () => {
+    const result: LinkSubmitResult = {
+      outcome: 'partial',
+      created: [],
+      failed: {
+        body: {
+          type: 'product_articles',
+          from_id: 'new-product',
+          to_id: 'article-1',
+          values: { sort_order: { value: '5' } },
+        },
+        message: 'link type product_articles allows one link on that side',
+        status: 422,
+        code: 'link_cardinality',
+      },
+    }
+    get.mockImplementation(async (path) => {
+      if (path === '/v1/links') {
+        return [{ link_type: 'product_articles', links: [{ id: 'old-link', peer_id: 'old-product' }] }] as never
+      }
+      return { version: 3 } as never
+    })
+    patch.mockResolvedValue({ version: 4 } as never)
+    const onClose = vi.fn()
+    const onReplaced = vi.fn()
+    render(
+      <LinkCreateDialog
+        source={source}
+        target={target}
+        defs={defs}
+        onClose={onClose}
+        onConfirm={async () => undefined}
+        onConfirmMany={async () => result}
+        onReplaced={onReplaced}
+      />,
+    )
+    const field = screen.getByTestId('link-field-sort_order') as HTMLInputElement
+    fireEvent.change(field, { target: { value: '5' } })
+    fireEvent.click(screen.getByTestId('link-create-confirm'))
+    await screen.findByTestId('link-cardinality')
+
+    fireEvent.change(field, { target: { value: 'test' } })
+    await waitFor(() => expect((screen.getByTestId('link-replace') as HTMLButtonElement).disabled).toBe(true))
+    expect(screen.getByTestId('link-field-error-sort_order').textContent).toBe(copy.linkFieldNumber)
+    fireEvent.click(screen.getByTestId('link-replace'))
+    expect(patch).not.toHaveBeenCalled()
+
+    fireEvent.change(field, { target: { value: '7' } })
+    await waitFor(() => expect((screen.getByTestId('link-replace') as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(screen.getByTestId('link-replace'))
+    await waitFor(() => expect(onReplaced).toHaveBeenCalledTimes(1))
+    expect(patch).toHaveBeenCalledWith('/v1/links/{id}', {
+      params: { path: { id: 'old-link' }, header: { 'If-Match': 3 } },
+      body: { from_id: 'new-product', to_id: 'article-1', values: { sort_order: { value: '7' } } },
+    })
+    expect(onReplaced.mock.calls[0]?.[0]).toMatchObject({
+      fromId: 'new-product',
+      toId: 'article-1',
+      values: { sort_order: { value: '7' } },
+    })
+    expect(onClose).toHaveBeenCalled()
+  })
+
+  it('keeps a handled cardinality failure out of the status footer', async () => {
+    const result: LinkSubmitResult = {
+      outcome: 'partial',
+      created: [],
+      failed: {
+        body: { type: 'product_articles', from_id: 'new-product', to_id: 'article-1', values: {} },
+        message: 'link type product_articles allows one link on that side',
+        status: 422,
+        code: 'link_cardinality',
+      },
+    }
+    get.mockImplementation(async (path) => {
+      if (path === '/v1/links') {
+        return [{ link_type: 'product_articles', links: [{ id: 'old-link', peer_id: 'old-product' }] }] as never
+      }
+      return { version: 3 } as never
+    })
+    render(
+      <LinkCreateDialog
+        source={source}
+        target={target}
+        defs={defs}
+        onClose={() => undefined}
+        onConfirm={async () => undefined}
+        onConfirmMany={async () => result}
+      />,
+    )
+    writeSettled('422 Unprocessable Entity')
+    expect(writeStatus().error).toBe('422 Unprocessable Entity')
+    fireEvent.click(screen.getByTestId('link-create-confirm'))
+    await screen.findByTestId('link-cardinality')
+    await waitFor(() => expect(writeStatus().error).toBeNull())
+    expect(statusMessage(
+      { saving: false, online: true, live: 'open', saveError: writeStatus().error, locked: false, update: null },
+      { reconnecting: '', saving: '', saveFailed: copy.saveFailed, locked: '' },
+    )).toBeNull()
+
+    writeSettled('500 Internal Server Error')
+    expect(statusMessage(
+      { saving: false, online: true, live: 'open', saveError: writeStatus().error, locked: false, update: null },
+      { reconnecting: '', saving: '', saveFailed: copy.saveFailed, locked: '' },
+    )).toMatchObject({ kind: 'error', text: 'Save failed: 500 Internal Server Error' })
   })
 })
