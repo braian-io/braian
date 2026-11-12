@@ -515,6 +515,7 @@ jobs:
           BRAIAN_DEMO_PASSWORD: braian-demo
           BRAIAN_DEMO_TOKEN: braian-demo-token
           BRAIAN_AGENT_MOCK: "1"
+          # Weights recalibrated 2026-11-12 from per-file after-run times; still eight shards.
           BRAIAN_E2E_SHARDS: "8"
           BRAIAN_E2E_SHARD: ${{ matrix.shard }}
           BRAIAN_E2E_WORKERS: "1"
