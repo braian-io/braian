@@ -56,6 +56,8 @@ export type FieldDef = {
   rangeParts?: Array<'min' | 'max'>
   /** Suffix appended to range cell values (e.g. °C). */
   rangeUnit?: string
+  /** Group display name when the attribute came from an allowed structure. */
+  source?: string
 }
 
 const CARDINALITY_STEP: QualifierStep = {

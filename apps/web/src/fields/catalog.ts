@@ -111,41 +111,69 @@ function shapeOf(attr: Json, defs: DefsJson): { shape: FieldValueShape; extra: P
   return { shape: 'text', extra: {} }
 }
 
-function attributeField(defs: DefsJson, attr: Json): FieldDef {
+function attributeField(defs: DefsJson, attr: Json, source?: string): FieldDef {
   const { shape, extra } = shapeOf(attr, defs)
-  return {
+  const field: FieldDef = {
     id: String(attr.key),
     name: labelOf(attr.labels) || String(attr.key),
     typeLabel: kindType(attr.kind),
     shape,
     ...extra,
   }
+  if (source) field.source = source
+  return field
 }
 
-function attributesForType(defs: DefsJson, typeObj: Json): Json[] {
-  const ids = new Set<string>()
-  for (const id of (typeObj.attributes as unknown[] | undefined) ?? []) {
-    ids.add(String(id))
+type SourcedAttribute = { attr: Json; source?: string }
+
+function groupLabel(group: Json): string {
+  return labelOf(group.labels) || String(group.key ?? group.id ?? '')
+}
+
+/**
+ * Same walk as `attributes_for_type` in crates/model/src/path.rs:
+ * own attributes, then every group in each allowed structure, then legacy
+ * classes bound to those groups. Missing `structures` means all; an empty
+ * list means none. Values are never inherited, only the column choice.
+ */
+function attributesForType(defs: DefsJson, typeObj: Json): SourcedAttribute[] {
+  const out: SourcedAttribute[] = []
+  const seen = new Set<string>()
+  function add(rawId: unknown, source?: string) {
+    const attr = attrById(defs, String(rawId))
+    if (!attr) return
+    const key = String(attr.id ?? attr.key)
+    if (seen.has(key)) return
+    seen.add(key)
+    out.push(source ? { attr, source } : { attr })
   }
-  // Structure attributes
+
+  for (const id of (typeObj.attributes as unknown[] | undefined) ?? []) {
+    add(id)
+  }
+
   const structures = (defs.structures as Json[] | undefined) ?? []
   const allowed = typeObj.structures as unknown[] | undefined
+  const allowedIds = allowed ? new Set(allowed.map(String)) : null
   for (const structure of structures) {
-    if (allowed && !allowed.map(String).includes(String(structure.id))) continue
-    for (const group of (structure.groups as Json[] | undefined) ?? []) {
-      for (const id of (group.attributes as unknown[] | undefined) ?? []) ids.add(String(id))
+    if (allowedIds && !allowedIds.has(String(structure.id))) continue
+    const groups = (structure.groups as Json[] | undefined) ?? []
+    for (const group of groups) {
+      const source = groupLabel(group)
+      for (const id of (group.attributes as unknown[] | undefined) ?? []) add(id, source)
+      // Older revisions may still nest class lists under the group.
       for (const cls of (group.classes as Json[] | undefined) ?? []) {
-        // classes may be top-level under structure
+        for (const id of (cls.attributes as unknown[] | undefined) ?? []) add(id, source)
       }
     }
     for (const cls of (structure.classes as Json[] | undefined) ?? []) {
-      for (const id of (cls.attributes as unknown[] | undefined) ?? []) ids.add(String(id))
+      const group = groups.find(
+        (item) => String(item.id) === String(cls.group) || String(item.key) === String(cls.group),
+      )
+      if (!group) continue
+      const source = groupLabel(group)
+      for (const id of (cls.attributes as unknown[] | undefined) ?? []) add(id, source)
     }
-  }
-  const out: Json[] = []
-  for (const id of ids) {
-    const attr = attrById(defs, id)
-    if (attr) out.push(attr)
   }
   return out
 }
@@ -160,11 +188,11 @@ export function fieldCatalogForType(defs: DefsJson, typeKey: string): FieldDef[]
   const fields: FieldDef[] = []
   const seen = new Set<string>()
 
-  for (const attr of attributesForType(defs, typeObj)) {
+  for (const { attr, source } of attributesForType(defs, typeObj)) {
     const key = String(attr.key)
     if (seen.has(key)) continue
     seen.add(key)
-    fields.push(attributeField(defs, attr))
+    fields.push(attributeField(defs, attr, source))
   }
 
   const types = (defs.types as Json[] | undefined) ?? []
@@ -187,11 +215,11 @@ export function fieldCatalogForType(defs: DefsJson, typeKey: string): FieldDef[]
       for (const peerId of toTypes) {
         const peer = typeByKey(defs, peerId)
         if (!peer) continue
-        for (const attr of attributesForType(defs, peer)) {
+        for (const { attr, source } of attributesForType(defs, peer)) {
           const key = String(attr.key)
           if (peerSeen.has(key)) continue
           peerSeen.add(key)
-          peerFields.push(attributeField(defs, attr))
+          peerFields.push(attributeField(defs, attr, source))
         }
       }
       if (!seen.has(labelKey)) {
@@ -216,11 +244,11 @@ export function fieldCatalogForType(defs: DefsJson, typeKey: string): FieldDef[]
       for (const peerId of fromTypes) {
         const peer = typeByKey(defs, peerId)
         if (!peer) continue
-        for (const attr of attributesForType(defs, peer)) {
+        for (const { attr, source } of attributesForType(defs, peer)) {
           const key = String(attr.key)
           if (peerSeen.has(key)) continue
           peerSeen.add(key)
-          peerFields.push(attributeField(defs, attr))
+          peerFields.push(attributeField(defs, attr, source))
         }
       }
       if (!seen.has(labelKey)) {

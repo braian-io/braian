@@ -75,6 +75,11 @@ type Row = {
   run: () => void
 }
 
+/** Search text for a field, including the group source when it comes from a structure. */
+function fieldHaystack(field: FieldDef): string {
+  return `${field.name} ${field.typeLabel} ${field.source ?? ''}`.toLowerCase()
+}
+
 type Props = {
   open: FieldsPaletteOpen
   columns: ViewColumn[]
@@ -338,7 +343,7 @@ export function FieldsMode({ open, columns, fields: catalog, onClose, onToggleCo
 
     if (top.kind === 'fields') {
       return top.fields
-        .filter((field) => !needle || `${field.name} ${field.typeLabel}`.toLowerCase().includes(needle))
+        .filter((field) => !needle || fieldHaystack(field).includes(needle))
         .map((field) => {
           const isLink = field.shape === 'link'
           const needsQualify = nextQualifierSteps(field, top.linkQualifiers).length > 0
@@ -350,7 +355,7 @@ export function FieldsMode({ open, columns, fields: catalog, onClose, onToggleCo
           return {
             id: field.id,
             title: field.name,
-            subtitle: choice || field.typeLabel,
+            subtitle: choice || field.source || field.typeLabel,
             drill,
             checked,
             run: () => activateField(field, top),
@@ -594,7 +599,7 @@ export function FieldsMode({ open, columns, fields: catalog, onClose, onToggleCo
       // (Re-adding still appends last in the table — Glenn's rule — but the list stays put.)
       const needle = query.trim().toLowerCase()
       const filtered = frame.fields.filter(
-        (item) => !needle || `${item.name} ${item.typeLabel}`.toLowerCase().includes(needle),
+        (item) => !needle || fieldHaystack(item).includes(needle),
       )
       const at = filtered.findIndex((item) => item.id === field.id)
       setActive(at >= 0 ? at : 0)

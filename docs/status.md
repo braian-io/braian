@@ -1,10 +1,41 @@
 # Status 2026-11-12
 
-## Rad 51a-uppföljning — Reset to default i maximerad panel (inte mergad)
+## Rad 51b — taxonomi- och gruppfält i Select fields (inte mergad)
+
+Grenen `junior/51b-taxonomy-fields` utgår från `origin/main` `5949cb1` (#310), har guidecommiten `efefeb5` och har ordinary-mergat `origin/main` `8367722` (rad 51a-fix, PR #313) som `a47f262`. Grenen är **inte mergad, inte deployad och inte accepterad**; inget i det här avsnittet ska läsas som att 51b är live. Rad 51a-fixen är däremot mergad som PR #313 (squash `8367722`) och live på demon med buildId `8367722`.
+
+Den här skivan gör `Select fields` till en ärlig och testad katalog över typens egna attribut plus attribut från typens tillåtna strukturer: alla grupper, inklusive nästlade grupper, och äldre klasslistor. Värdearv, separata värde/enhet-kolumner (51c) och skrivning till länkade/hop-fält är utanför omfattningen.
+
+Acceptanskriterierna (Braian Test grindar bara på dessa):
+
+1. **Select fields listar typens egna attribut och gruppattribut från alla tillåtna strukturer, inklusive nästlade grupper.** På seed/demoträdet för livsmedel innehåller Product Fat content (dairy), Caffeine (coffee_tea, under beverages) och Cocoa content (chocolate, under snacks), och de kan slås på som kolumner. En typ som inte tillåter en struktur ser inte den strukturens gruppattribut.
+2. **Äldre klasslistor ingår på samma sätt.** `structure.classes` som är bundna till en grupp ingår för typer som tillåter strukturen. Om en payload fortfarande nästlar klasser under `group.classes` ingår de också. Detta påverkar bara vilka fält som kan väljas som kolumner; värden ärvs aldrig.
+3. **Katalogens nycklar för typens egna attribut följer `GET /v1/types/{id}/attribute-paths`.** Varje löv för typens egna attribut som API:t listar erbjuds som fält med samma attributnyckel. Delar som `.unit` / `.label` är fortsatt kvalificerare, inte egna kolumner (51c, utanför omfattningen).
+4. **Grupp- och klassfält syns och går att hitta.** Väljaren visar en källhint för dessa fält (gruppens visningsnamn, till exempel `Dairy & eggs` eller `Chocolate`), och att skriva gruppnamnet i Select fields-sökningen hittar fältet.
+5. **Guidesidorna är redan uppdaterade i `efefeb5`.** `workspaces-and-panels.md` har avsnittet Select fields och `object-types-and-relations.md` samt `command-palette-and-shortcuts.md` har meningarna om grupp- och klassfält. De är oförändrade här och beskriver det som koden nu gör.
+6. **Automatiska tester täcker kriterium 1–4.** Ny enhetstest `apps/web/src/fields/catalog-taxonomy.test.ts` med fixture för typattribut, nästlade grupper, en äldre klass och en typ som inte tillåter strukturen, plus kontroll mot `crates/server/demo/definitions.json` för Product. Ny komponenttest `apps/web/src/fields/fields-mode-source.test.tsx` täcker källhinten och sökning på gruppnamn. Befintliga Select fields-, hide- och Reset to default-tester är fortsatt gröna.
+7. **Endast engelska i UI, skyddade filer orörda.** Ingen ändring av `data-model.tsx`, `product_suppliers`-etiketter, värde/enhet som separata kolumner eller skrivning till hop-fält.
+
+Vad som ändrades:
+
+- `apps/web/src/fields/catalog.ts`: `attributesForType` följer nu `attributes_for_type` i `crates/model/src/path.rs`: typens egna attribut först, därefter varje grupp i varje tillåten struktur (saknad lista = alla, tom lista = inga), därefter `structure.classes` vars grupp matchar och även `group.classes` om den finns. Fält från grupp eller klass får gruppens visningsnamn som `source`; typens egna fält får ingen källa. Länkade fält behåller ett hopp och är skrivskyddade.
+- `apps/web/src/fields/qualifiers.ts`: `FieldDef` har ett valfritt `source`.
+- `apps/web/src/fields/fields-mode.tsx`: källan används som radens underrubrik när ingen annan valunderrubrik gäller, och ingår i sökunderlaget (både vid filtrering och efter aktivering).
+- `apps/web/src/fields/catalog-taxonomy.test.ts` och `apps/web/src/fields/fields-mode-source.test.tsx` (nya) enligt kriterium 6.
+- `docs/status.md`: den här statusraden. Inga guideändringar i den här skivan.
+
+Bevis (lokalt i worktreen, utan demo- eller produktionsskrivningar):
+
+- `pnpm --filter ./apps/web exec tsc --noEmit` exit 0.
+- `pnpm --filter ./apps/web exec vitest run` gav **168 filer / 991 tester** gröna, inklusive de nya `catalog-taxonomy.test.ts` och `fields-mode-source.test.tsx` samt befintliga `field-picker.test.tsx`, `catalog-system.test.ts` och `language-toggle.test.tsx`.
+- `python3 scripts/check-english.py` exit 0. `sha256sum apps/web/src/data-model.tsx` är oförändrad.
+- Ingen e2e-körning gjordes lokalt; kriterium 1–4 täcks av enhets- och komponenttesterna samt demo-definitionerna. Ingen demo-mutation, ingen deploy, ingen PR och ingen merge.
+
+## Rad 51a-uppföljning — Reset to default i maximerad panel (mergad som #313, `8367722`)
 
 Rad 51a är mergad till `main` som PR #310 (squash `5949cb1`) och live på demon med buildId `5949cb1`. Test underkände kriterium 2 i en maximerad panel: Ctrl+K visade `Reset to default`, men körningen gjorde inget. `zoomView` sätter bara `doc.zoom`; `doc.focus` kan ligga kvar på en dold syskonvy som Detail. `publishFrame` remappar fokus till zoomtabellen, men paletten skickade rå `doc.focus` till kommandot, så `ui.reset_columns` träffade Detail i stället för Products: ingen DELETE och den dolda kolumnen kom inte tillbaka.
 
-Uppföljningen ligger i grenen `junior/51a-reset-maximized`, utgår från `origin/main` `5949cb1` (#310) och är **inte mergad, deployad eller accepterad**. Kriterium 1 och 3–7 från 51a är oförändrade och fortsatt uppfyllda.
+Uppföljningen ligger i grenen `junior/51a-reset-maximized`, utgår från `origin/main` `5949cb1` (#310) och är **mergad till `main` som PR #313 (squash `8367722`) och live på demon med buildId `8367722`**. Kriterium 1 och 3–7 från 51a är oförändrade och fortsatt uppfyllda.
 
 - `apps/web/src/palette.tsx`: Ctrl+K-kommandot `columns:reset` skickar nu den publicerade fokusvyn (`readUiContext().focused`, redan remappad till zoomtabellen) i stället för palettens råa `focusViewId` (`doc.focus`). Kolumnmenyn är oförändrad och skickar fortfarande sin egen `view.id`.
 - `apps/web/src/palette-column-reset.test.tsx` (ny): publicerar en ram där fokus är Products (som `publishFrame` gör när `doc.zoom` är satt) medan paletten får `doc.focus` = Detail, kör `Reset to default` och kräver att `ui.reset_columns` får Products, inte Detail.
@@ -20,7 +51,7 @@ Bevis (lokalt i worktreen, utan demo- eller produktionsskrivningar):
 
 ## Rad 51a — Reset to default för personliga kolumnval (mergad som #310, `5949cb1`)
 
-Grenen `junior/51a-reset-to-default` är **mergad till `main` som PR #310 (squash `5949cb1`) och live på demon med buildId `5949cb1`**. Test godkände kriterium 1 och 3–7 men underkände kriterium 2 i en maximerad panel; rättningen är uppföljningen ovan, som **inte är mergad, deployad eller accepterad**. Detta är den första skivan av Notion-rad 51 (välja fält per vy). Hide column, Select fields, en hop av länkade fält (skrivskyddade) och personliga `column-prefs` v2 finns redan på main. HTTP `DELETE /v1/views/{view_id}/column-prefs` fanns redan och raderar bara anroparens egen rad. Senare skivor, inte i denna PR: **51b** taxonomi-/grupp-fält i fältväljaren, **51c** kvalificerade fält som egna värde- och enhetskolumner. Skrivning till länkade/hop-fält är utanför omfattningen.
+Grenen `junior/51a-reset-to-default` är **mergad till `main` som PR #310 (squash `5949cb1`) och live på demon med buildId `5949cb1`**. Test godkände kriterium 1 och 3–7 men underkände kriterium 2 i en maximerad panel; rättningen är uppföljningen ovan, som **är mergad som PR #313 (squash `8367722`) och live på demon med buildId `8367722`**. Detta är den första skivan av Notion-rad 51 (välja fält per vy). Hide column, Select fields, en hop av länkade fält (skrivskyddade) och personliga `column-prefs` v2 finns redan på main. HTTP `DELETE /v1/views/{view_id}/column-prefs` fanns redan och raderar bara anroparens egen rad. Senare skivor, inte i denna PR: **51b** taxonomi-/grupp-fält i fältväljaren, **51c** kvalificerade fält som egna värde- och enhetskolumner. Skrivning till länkade/hop-fält är utanför omfattningen.
 
 Acceptanskriterierna (Braian Test grindar bara på dessa):
 
