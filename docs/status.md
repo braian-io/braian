@@ -1,11 +1,11 @@
 # Status 2026-11-12
 
 
-## Rad 77 — snabbare CI: färska e2e-vikter och åtta shards (inte mergad)
+## Rad 77 — snabbare CI: färska e2e-vikter och åtta shards (mergad som #312, `bcc7e2b`)
 
-Grenen `junior/77-faster-ci` utgick från `origin/main` `f8d0cb6aabe2b8b187f79ef6366427be357b268b` (#311, rad 61b) och har därefter ordinärmergat `origin/main` `5949cb1d0e2d9b1eebb17be17e0f7b0b4a4e3f56` (#310, rad 51a) och `83677224b43619f4b587fd5f812d2621232e7d01` (#313, rad 51a-uppföljning). Den är **inte mergad, deployad eller accepterad**. Arbetet rör bara CI, testskript och docs; ingen produktkod, ingen demo och inget autodeploy. Rad 61 / #309 / `0aaf71f` och rad 61b / #311 / `f8d0cb6` är mergade och live.
+Grenen `junior/77-faster-ci` är **mergad till `main` som PR #312 (squash `bcc7e2bed0fffc6e3ea510f47ec34311bd3722f8`) och live på demon med buildId `bcc7e2b`**. Test godkände raden 2026-11-12. Den exakta gröna toppen som pinades vid mergen var `3400e88b834da3fd906413c6293c05e5ee9bae33`. Arbetet rörde bara CI, testskript och docs; ingen produktkod. Rad 61 / #309 / `0aaf71f` och rad 61b / #311 / `f8d0cb6` är mergade och live.
 
-Acceptanskriterierna från `brief.md`:
+Acceptanskriterierna från briefen (uppfyllda):
 
 1. **Median tid till grönt minskar minst 15 %.** Baslinjen är de tio senaste gröna `push`-körningarna på `main`: median **9m20s (560s)**. Målet är **≤ 7m56s (476s)** på en full körning, mätt som `updated_at - run_started_at`.
 2. **Alla jobb gröna under samma namn.** `rust`, `phase-1`, `bins`, `web`, `licenses`, `e2e`-shards och `stack`; `load` när `mode=full`. Fortfarande gratis `ubuntu-latest`.
@@ -14,19 +14,19 @@ Acceptanskriterierna från `brief.md`:
 5. **Inga nya secrets eller inställningar.** Inga secrets, variabler, miljöer eller repo-inställningar tillkom; ingen tredjeparts-cache kräver credentials.
 6. **Docs i samma PR, demo orörd.** `docs/dev.md` har en CI-sektion, mätningen ligger i `docs/measurements/2026-11-12-ci-wall-clock.md`, och `data-model.tsx` samt `product_suppliers`-etiketterna är orörda. Ingen guide-sida lades till.
 
-Vad som ändrades:
+Vad som ändrades i #312:
 
 - `.github/workflows/ci.yml`: e2e-matrisen går från sex till åtta shards (`0..7`) och `BRAIAN_E2E_SHARDS` är `8`. Inga jobbnamn, behov, path-filter eller secrets ändrades.
-- `scripts/e2e.mjs`: första kalibreringen av `measuredSeconds` 2026-11-12 delade varje shards totaltid i de tio gröna baslinjekörningarna proportionellt mot gamla vikter. Tre gröna fulla PR-körningar (965/966/967) gav median **8m07s (487s)**, 11 s över målet 7m56s, för att shard 7 bar under-viktade tunga filer (`column-move-race` 6 s mot 1,7–1,8 min, `layout` 15 s mot 1,1–1,3 min). En andra kalibrering sätter vikterna till `ceil` av faktiska per-fil-tider från körning 967 (alla shards) och max mot 966 för shard 7. Packaren, `reseedSeconds` (4 s) och åtta shards är oförändrade. Fallback för en framtida spec utan vikt är fortfarande 4 s per test.
-- `docs/dev.md`, `docs/measurements/2026-11-12-ci-wall-clock.md` och den här sektionen uppdaterades med efter-tabellen och den andra kalibreringen.
+- `scripts/e2e.mjs`: första kalibreringen av `measuredSeconds` 2026-11-12 delade varje shards totaltid i de tio gröna baslinjekörningarna proportionellt mot gamla vikter. Tre gröna fulla PR-körningar (965/966/967) gav median **8m07s (487s)**, 11 s över målet 7m56s, för att shard 7 bar under-viktade tunga filer (`column-move-race` 6 s mot 1,7–1,8 min, `layout` 15 s mot 1,1–1,3 min). En andra kalibrering sätter vikterna till `ceil` av faktiska per-fil-tider från körning 967 (alla shards) och max mot 966 för shard 7. Packaren, `reseedSeconds` (4 s) och åtta shards är oförändrade. Före PR:en var fallback för en spec utan vikt **12 s per test** (`tests * 12 + reseedSeconds` på `8367722`); #312 sänkte den till **4 s per test**. Det är inte så att fallback redan var 4 s före ändringen.
+- `docs/dev.md`, `docs/measurements/2026-11-12-ci-wall-clock.md` och den här sektionen beskriver nu mergen och efter-tabellen.
 
-Bevis (lokalt, utan databas eller compose):
+Bevis (lokalt, utan databas eller compose, plus GitHub API):
 
-- Första packningen: `BRAIAN_E2E_PLAN=1 BRAIAN_E2E_SHARDS=8` gav åtta shards, 93 unika filer, inga dubbletter, prediktion 267–268 s. Efter-körningarna 965 (6m17s), 966 (8m39s) och 967 (8m07s) var alla `mode=full` och gröna under samma jobbnamn; 964 failade på en `field-picker`-flake och räknas inte.
-- Andra packningen: `BRAIAN_E2E_PLAN=1 BRAIAN_E2E_SHARDS=8` gav åtta shards, 93 unika filer, inga dubbletter, prediktion 251–259 s. `node --check scripts/e2e.mjs` exit 0; alla fem `scripts/ci-*.test.sh` gröna; `python3 scripts/check-english.py` exit 0.
+- Första packningen: `BRAIAN_E2E_PLAN=1 BRAIAN_E2E_SHARDS=8` gav åtta shards, 93 unika filer, inga dubbletter, prediktion 267–268 s. Efter-körningarna 965 (6m17s), 966 (8m39s) och 967 (8m07s) var alla `mode=full` och gröna under samma jobbnamn; 964 failade på en `field-picker`-flake och räknas inte. Den packningen mergades inte.
+- Andra packningen: `BRAIAN_E2E_PLAN=1 BRAIAN_E2E_SHARDS=8` gav åtta shards, 93 unika filer, inga dubbletter, prediktion 251–259 s. Efter-körningarna är PR 970 på `5a74d8b` **7m10s (430s)** och PR 972 på `3400e88` **6m20s (380s)**, båda `mode=full` (`load` success). Median **6m45s (405s)**, under målet 7m56s. Push till `main` 973 på `bcc7e2b` var **6m23s (383s)**, `mode=full` och grön.
 - `sha256sum apps/web/src/data-model.tsx` = `2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`.
 
-Ärlig avgränsning: den första efter-medianen missade målet, så raden mergas inte på den packningen. Den andra kalibreringens första fulla PR-körning (970 på `5a74d8b`) var grön på 7m10s (430s), under 7m56s; medianen av 2–3 körningar är ännu inte klar. En andra körning följer den här ordinära mergen av #313. `sccache` lämnades utanför. Ingen skrivning gjordes mot demo, `/opt/braian`, `/var/www/braian`, Caddy eller Track A (51a-sektionen i den här filen lämnades orörd).
+Ärlig avgränsning: den första efter-medianen missade målet, så den packningen mergades inte. Den andra kalibreringen uppfyllde ≤ 7m56s och är den som mergades. Baslinjen 9m20s kommer från push-körningar, så den rättvisa jämförelsen är push 973 mot 9m20s (**−31,6 %**). PR mot PR är **15,4 %** under en median på 7m59s (479s) från de tio senaste gröna PR-körningarna i 947–968 som inte är docs/landing-only och inte 77:s egna 965–967; detaljerna står i mätfilen. Prediktionen 251–259 s / ~5m30s vägg träffade inte (faktisk Playwright-spridning 194–319 s, vägg 6m20s–7m10s). `sccache` lämnades utanför. Ingen automatisk omkalibrering av vikter och ingen kortare autodeploy-poll byggdes i #312. Ingen skrivning gjordes mot demo, `/opt/braian`, `/var/www/braian`, Caddy eller Track A (51a-sektionerna i den här filen lämnades orörda).
 
 ## Rad 51a-uppföljning — Reset to default i maximerad panel (inte mergad)
 

@@ -235,14 +235,15 @@ Import skapar alltid ett förslag (draft) som granskas och godkänns; inget skri
 
 `.github/workflows/ci.yml` kör på gratis `ubuntu-latest`. Jobben är `rust`,
 `phase-1`, `bins`, `web`, `licenses`, `e2e` (åtta shards) och `stack`; `load`
-körs bara när `mode=full`. `stack` är den required check som sammanfattar
-`bins`, alla e2e-shards och `load`, så en shard som failar eller avbryts blir
-röd även om de andra är gröna.
+körs bara när `mode=full`. `stack` är det sammanfattande jobbet som aggregerar
+`bins`, alla e2e-shards och `load`, så en shard som failar eller avbryts gör
+`stack` rött även om de andra är gröna. `main` har ingen branch protection,
+så `stack` är inte en GitHub required check.
 
 `scripts/ci-changes.sh` klassar diffen. `skip`: docs, markdown och landningen
-(`apps/landing`). `web`: `apps/web`, `packages`, `pnpm-lock.yaml` och
-`scripts/e2e.mjs`; Playwright kör då mot ett cachat `profile.ci`-binär utan att
-kompilera Rust. `full`: Rust, SQL, workflows, `docs/api` och allt annat. Push
+(`apps/landing`). `web`: `apps/web`, `packages`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`,
+`package.json` och `scripts/e2e.mjs`; Playwright kör då mot ett cachat
+`profile.ci`-binär utan att kompilera Rust. `full`: Rust, SQL, workflows, `docs/api` och allt annat. Push
 till `main` kör alltid `full` så att cachen fylls för nästa pull request.
 Ändringar i workflow-filen är `full`.
 
