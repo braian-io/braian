@@ -86,7 +86,20 @@ function SelectionDraftDetail({
   const identity = draft ? `${draft.mode}:${draft.id ?? 'new'}` : ''
 
   useEffect(() => {
-    if (identity) nameRef.current?.focus()
+    if (!identity) return
+    const focusName = () => nameRef.current?.focus()
+    focusName()
+    // The shared context menu restores focus to the trigger in a microtask,
+    // and ui.open_view focuses the pane on the next animation frame. Land on
+    // the name field after both of those.
+    let later = 0
+    const frame = requestAnimationFrame(() => {
+      later = requestAnimationFrame(focusName)
+    })
+    return () => {
+      cancelAnimationFrame(frame)
+      cancelAnimationFrame(later)
+    }
   }, [identity])
 
   useEffect(() => {

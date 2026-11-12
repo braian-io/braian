@@ -833,7 +833,14 @@ export function Shell() {
       // A selection draft lives in the Selections view, so re-open it if the
       // user closed the tab. Other draft links only focus a view already open.
       if (wanted === 'assortment_list') {
-        applyRef.current('ui.open_view', { id: view.id })
+        // Re-open the tab if it was closed. If it is already open, skip
+        // ui.open_view: that focuses the pane on the next frame and steals
+        // the name field in the selection draft.
+        if (layoutViews(current.layout).includes(view.id)) {
+          if (current.focus !== view.id) setDoc(focusView(current, view.id))
+        } else {
+          applyRef.current('ui.open_view', { id: view.id })
+        }
         return
       }
       setDoc(focusView(current, view.id))
