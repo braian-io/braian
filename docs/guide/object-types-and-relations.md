@@ -39,7 +39,9 @@ live on the attribute definition, not on a type. Applicability can come from an
 ancestor group; the same attribute is then shown once with all its sources. Values are
 never inherited, copied or overwritten. Older class lists are still read for
 compatibility and appear as sections in Detail, but the editor writes group
-attributes.
+attributes. The same group and class attributes also appear in `Select fields`
+on an object table for any type that is allowed to use the structure, including
+attributes on nested groups.
 
 ## Object types
 

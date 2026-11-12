@@ -78,6 +78,28 @@ Double-clicking a view tab also maximizes it, and double-clicking again restores
 layout. Closing the last view leaves an empty pane with the message `Nothing to
 show`; add a view from the palette to fill it again.
 
+## Select fields
+
+`Select fields` chooses which columns an object table shows, and in which order.
+Open it from `Ctrl+K`, the table toolbar, or the column header menu. The choice is
+a personal preference; `Reset to default` clears it and restores the type's default
+columns.
+
+The picker lists:
+
+- The type's own attributes, plus system columns such as Type and Version.
+- Attributes from every group in the structures the type is allowed to use,
+  including nested groups. On the seed food tree that includes Fat content from
+  Dairy, Caffeine from Coffee and tea, and Cocoa content from Chocolate.
+- Attributes from older class lists on those structures, when a revision still
+  stores them. The editor writes group attributes instead, but the picker still
+  offers the class-list fields so existing models keep them.
+
+A group or class attribute can be added as a column even when not every row has a
+value. In the picker, those fields show the group name as a source hint, and
+typing the group name finds them. Linked fields are listed one hop away and stay
+read-only. Choosing a separate column for a unit is not covered here.
+
 ## Switching workspaces
 
 The top bar lists the workspaces in a stable order: the data model first, then type
