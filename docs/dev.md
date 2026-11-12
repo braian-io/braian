@@ -247,10 +247,13 @@ till `main` kör alltid `full` så att cachen fylls för nästa pull request.
 Ändringar i workflow-filen är `full`.
 
 E2e delas i åtta viktade shards. Vikterna i `scripts/e2e.mjs` är varje specs
-andel av `Playwright shard`-steget i sekunder, kalibrerade 2026-11-12 mot de
-tio senaste gröna körningarna. Packaren lägger den längsta filen först och
-varje registrerad spec körs exakt en gång; shardsen delar inte filer. Varje
-shard har egen Postgres, Typesense, seed, API och webbserver. `load` ligger
+faktiska `Playwright shard`-tid i sekunder, kalibrerade 2026-11-12 första
+gången mot de tio senaste gröna körningarna (andel av shard-totalen) och
+därefter om mot per-fil-tiderna i PR #312:s efter-körningar 966 och 967,
+efter att den första packningen missade målet när `column-move-race` och
+`layout` var för lätta. Packaren lägger den längsta filen först och varje
+registrerad spec körs exakt en gång; shardsen delar inte filer. Varje shard
+har egen Postgres, Typesense, seed, API och webbserver. `load` ligger
 utanför e2e-kritiska vägen.
 
 Väggklockan mäts som `updated_at - run_started_at` för en grön `ci.yml`-körning

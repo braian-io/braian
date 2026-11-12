@@ -2,7 +2,7 @@
 
 ## Rad 77 — snabbare CI: färska e2e-vikter och åtta shards (inte mergad)
 
-Grenen `junior/77-faster-ci` utgick från `origin/main` `f8d0cb6aabe2b8b187f79ef6366427be357b268b` (#311, rad 61b) och har därefter ordinärmergat `origin/main` `5949cb1d0e2d9b1eebb17be17e0f7b0b4a4e3f56` (#310, rad 51a). Den är **inte mergad, deployad eller accepterad**. Arbetet rör bara CI, testskript och docs; ingen produktkod, ingen demo och inget autodeploy.
+Grenen `junior/77-faster-ci` utgick från `origin/main` `f8d0cb6aabe2b8b187f79ef6366427be357b268b` (#311, rad 61b) och har därefter ordinärmergat `origin/main` `5949cb1d0e2d9b1eebb17be17e0f7b0b4a4e3f56` (#310, rad 51a). Den är **inte mergad, deployad eller accepterad**. Arbetet rör bara CI, testskript och docs; ingen produktkod, ingen demo och inget autodeploy. Rad 61 / #309 / `0aaf71f` och rad 61b / #311 / `f8d0cb6` är mergade och live.
 
 Acceptanskriterierna från `brief.md`:
 
@@ -15,20 +15,17 @@ Acceptanskriterierna från `brief.md`:
 
 Vad som ändrades:
 
-- `scripts/e2e.mjs`: `measuredSeconds` är omkalibrerat 2026-11-12 mot `Playwright shard`-stegen i de tio gröna körningarna. Varje shards uppmätta tid fördelades på dess filer i proportion till de gamla vikterna och medianen över körningarna användes, så vikterna motsvarar ungefär varje fils andel av Playwright-steget i sekunder. Sju specar som saknade vikt (`column-move-race`, `agent-tab`, `status-select-cell-edit`, `persist-active-workspace`, `peer-source-chain`, `link-source-repair`, `row129-allowed-trees`) har fått en. Fallback för en framtida spec utan vikt är 4 s per test i stället för 12 s. `reseedSeconds` (4 s) ligger kvar som ett separat påslag. Packaren och dess längst-först-algoritm är oförändrade.
-- `.github/workflows/ci.yml`: e2e-matrisen går från sex till åtta shards (`0..7`) och `BRAIAN_E2E_SHARDS` är `8`. Kommentaren beskriver åtta runners. Inga jobbnamn, behov, path-filter eller secrets ändrades.
-- `docs/dev.md`: ny kort CI-sektion om jobben, path-filtren, de viktade shardsen, hur väggklockan mäts och att autodeploy/demo är orörda.
-- `docs/measurements/2026-11-12-ci-wall-clock.md`: baslinjetabellen, jobbfördelningen för körning 955, kalibreringsmetoden och den ännu inte mätta prediktionen.
+- `.github/workflows/ci.yml`: e2e-matrisen går från sex till åtta shards (`0..7`) och `BRAIAN_E2E_SHARDS` är `8`. Inga jobbnamn, behov, path-filter eller secrets ändrades.
+- `scripts/e2e.mjs`: första kalibreringen av `measuredSeconds` 2026-11-12 delade varje shards totaltid i de tio gröna baslinjekörningarna proportionellt mot gamla vikter. Tre gröna fulla PR-körningar (965/966/967) gav median **8m07s (487s)**, 11 s över målet 7m56s, för att shard 7 bar under-viktade tunga filer (`column-move-race` 6 s mot 1,7–1,8 min, `layout` 15 s mot 1,1–1,3 min). En andra kalibrering sätter vikterna till `ceil` av faktiska per-fil-tider från körning 967 (alla shards) och max mot 966 för shard 7. Packaren, `reseedSeconds` (4 s) och åtta shards är oförändrade. Fallback för en framtida spec utan vikt är fortfarande 4 s per test.
+- `docs/dev.md`, `docs/measurements/2026-11-12-ci-wall-clock.md` och den här sektionen uppdaterades med efter-tabellen och den andra kalibreringen.
 
 Bevis (lokalt, utan databas eller compose):
 
-- `BRAIAN_E2E_PLAN=1 BRAIAN_E2E_SHARDS=8 node scripts/e2e.mjs` gav åtta shards med 93 unika filer, inga dubbletter och inga saknade; packarens vikter blev 267–268 s per shard (mot långsammaste uppmätta shard 422 s i körning 955).
-- `node --check scripts/e2e.mjs` exit 0.
-- `scripts/ci-changes.test.sh`, `scripts/ci-aggregate.test.sh`, `scripts/ci-hurl.test.sh`, `scripts/ci-dirty-rust.test.sh` och `scripts/ci-guard-bins.test.sh` är alla gröna (samma skript som `rust`-jobbet kör).
-- `python3 scripts/check-english.py` exit 0 och `git diff --check` är rent.
+- Första packningen: `BRAIAN_E2E_PLAN=1 BRAIAN_E2E_SHARDS=8` gav åtta shards, 93 unika filer, inga dubbletter, prediktion 267–268 s. Efter-körningarna 965 (6m17s), 966 (8m39s) och 967 (8m07s) var alla `mode=full` och gröna under samma jobbnamn; 964 failade på en `field-picker`-flake och räknas inte.
+- Andra packningen: `BRAIAN_E2E_PLAN=1 BRAIAN_E2E_SHARDS=8` gav åtta shards, 93 unika filer, inga dubbletter, prediktion 251–259 s. `node --check scripts/e2e.mjs` exit 0; alla fem `scripts/ci-*.test.sh` gröna; `python3 scripts/check-english.py` exit 0.
 - `sha256sum apps/web/src/data-model.tsx` = `2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`.
 
-Ärlig avgränsning: ingen full Playwright-svit och ingen CI-körning gjordes lokalt, så efter-siffran är ännu inte mätt. Koordinatorn mäter 2–3 fulla PR-körningar (och första gröna push till `main`) på samma sätt som baslinjen. `sccache` lämnades utanför: det kräver egna jämförande körningar för att bevisa nytta och påverkar inte PR-kritiska vägen när `bins` har cache-hit. Ingen skrivning gjordes mot demo, `/opt/braian`, `/var/www/braian`, Caddy eller Track A; ingen PR öppnades och inget mergades eller deployades.
+Ärlig avgränsning: den första efter-medianen missade målet, så raden mergas inte på den packningen. Den andra kalibreringens efter-siffra är ännu inte mätt. `sccache` lämnades utanför. Ingen skrivning gjordes mot demo, `/opt/braian`, `/var/www/braian`, Caddy eller Track A (51a-sektionen i den här filen lämnades orörd).
 
 ## Rad 51a — Reset to default för personliga kolumnval (mergad som #310, `5949cb1`)
 

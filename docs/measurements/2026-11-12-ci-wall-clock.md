@@ -58,17 +58,36 @@ cirka 45 s per shard. Vikterna var gamla: `row128f`/`row128g` stod kvar på
 - Inga tester togs bort, inga path-filter ändrades och inga nya secrets eller
   inställningar användes.
 
-## Prediktion (ännu inte mätt)
+## Efter: första packningen (åtta shards, proportionella vikter)
 
-Packarens egna vikter för de åtta shardsen är 267, 267, 268, 267, 267, 267,
-267 och 267 s. Med samma setup som i baslinjen (cirka 45 s per shard) blir
-`Playwright shard`-jobbet omkring 5m12s och hela körningen omkring 5m30s–6m,
-mot 7m53s/8m12s för den långsammaste sharden i körning 955.
+Tre gröna fulla `pull_request`-körningar, alla `mode=full` (`load` success).
+Vägg = `updated_at - run_started_at`. Körning 964 på `17232ec` failade i
+`e2e (1)` på en `field-picker`-flake och räknas inte.
 
-Detta är en modellprediktion, inte en mätning. Den riktiga efter-siffran tas
-från den här grenens gröna `pull_request`-körningar (minst två) och första
-gröna `push` till `main`, mätt på samma sätt som baslinjen. Målet är median
-**≤ 7m56s (476s)**.
+| Run | SHA | Started (UTC) | Wall | Slowest e2e job | Slowest Playwright |
+| ---: | --- | --- | ---: | --- | --- |
+| 965 | `c99c8aa166f6fc2749716540fdcfe90f94953cc1` | 2026-11-12 03:22:05 | 6m17s (377s) | e2e (7) 356s | e2e (7) 299s |
+| 966 | `e882eebd6649515ade5f352bff8883d68625982b` | 2026-11-12 03:31:30 | 8m39s (519s) | e2e (7) 494s | e2e (7) 444s |
+| 967 | `758bedcdce7fb5330b2bec147f73c38680385919` | 2026-11-12 03:41:08 | 8m07s (487s) | e2e (7) 468s | e2e (7) 419s |
+
+Median **8m07s (487s)** mot mål **≤ 7m56s (476s)** och baslinje **9m20s
+(560s)**. Det är 13 % snabbare, 11 s över målet. Medelvärdet är 7m41s (461s)
+men kriteriet är medianen. Två av tre körningar låg över 7m56s.
+
+Orsaken var shard 7: packaren trodde 267 s, men Playwright tog 299/444/419 s.
+`column-move-race.spec.ts` var viktad till 6 s och tog 1,7–1,8 minuter;
+`layout.spec.ts` var viktad till 15 s och tog 1,1–1,3 minuter. Den första
+kalibreringen hade fördelat varje shards totaltid proportionellt mot gamla
+vikter, så redan för lätta filer förblev för lätta och samlades i samma shard.
+
+## Andra kalibreringen (per-fil-tider, fortfarande åtta shards)
+
+`measuredSeconds` räknades om från faktiska fil-tider i körning 967 (alla
+åtta shards) och, där båda mätte samma fil, max mot körning 966 shard 7.
+Packaren är oförändrad (längst-först, åtta bins). Med `reseedSeconds` 4 s
+blir prediktionen 251–259 s Playwright per shard (spridning 8 s) och cirka
+5m30s vägg, under 7m56s. Efter-siffran för den här kalibreringen mäts på
+samma sätt på nästa gröna fulla PR-körningar.
 
 ## Avgränsning
 
