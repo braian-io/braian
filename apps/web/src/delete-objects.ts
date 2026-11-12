@@ -63,9 +63,10 @@ export function linkedObjectIds(body: unknown): string[] {
 }
 
 /**
- * One object can reuse the server's sentence and detail. Several objects are
- * merged through the link object ids they share, so a link touched by two
- * selected objects is counted once.
+ * Selected objects are objects. Links they cascade-delete are links, never a
+ * second object, and a link shared by two selected objects is counted once.
+ * The sentence is built here so singular and plural stay correct whichever
+ * surface opened the dialog.
  */
 export function mergeDeleteCounts(
   ids: string[],
@@ -73,23 +74,30 @@ export function mergeDeleteCounts(
   links: Map<string, string[]>,
 ): DeleteCounts {
   const selected = [...new Set(ids)]
-  if (selected.length === 1) {
-    const run = dryRuns.get(selected[0])
-    if (run) return { objects: run.objects, links: run.links, sentence: run.sentence, detail: run.detail }
-  }
   const chosen = new Set(selected)
   const linkIds = new Set<string>()
+  let everyObjectLoaded = true
   for (const id of selected) {
-    for (const linkId of links.get(id) ?? []) {
+    const linked = links.get(id)
+    if (!linked) everyObjectLoaded = false
+    for (const linkId of linked ?? []) {
       if (!chosen.has(linkId)) linkIds.add(linkId)
     }
   }
-  const objects = chosen.size + linkIds.size
-  const linkCount = linkIds.size
+  // A single object's dry run already counted its live links. Use it only when
+  // the object body could not supply the link ids, so a shared link is never
+  // counted twice in a multi-selection.
+  let linkCount = linkIds.size
+  if (linkCount === 0 && selected.length === 1) {
+    linkCount = dryRuns.get(selected[0])?.links ?? 0
+  } else if (linkCount === 0 && !everyObjectLoaded) {
+    linkCount = Math.max(0, ...selected.map((id) => dryRuns.get(id)?.links ?? 0))
+  }
+  const objects = selected.length
   return {
     objects,
     links: linkCount,
-    sentence: `Removes ${objects} objects and ${linkCount} links`,
+    sentence: `Removes ${objects} ${objects === 1 ? 'object' : 'objects'} and ${linkCount} ${linkCount === 1 ? 'link' : 'links'}`,
     detail: [],
   }
 }
