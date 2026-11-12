@@ -505,6 +505,33 @@ test.describe('field picker on Products', () => {
     ).toEqual(expected)
   })
 
+  test('Select fields adds a measured value and unit as two columns that survive reload', async ({ page }) => {
+    await login(page)
+    await openProducts(page)
+    await expect(page.getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
+
+    await openFieldsPalette(page)
+    await page.getByTestId('fields-mode-input').fill('fat content')
+    await enterOn(page, 'fields-row-fat_content.value')
+    const saved = page.waitForResponse(
+      (response) => response.url().includes('/column-prefs') && response.request().method() === 'PUT',
+    )
+    await enterOn(page, 'fields-row-fat_content.unit')
+    await saved
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('fields-mode')).toHaveCount(0)
+
+    const headers = () => mainTable(page).locator('.head [data-testid^="col-fat_content"]')
+    await expect(headers().filter({ hasText: 'Fat content (value)' })).toBeVisible()
+    await expect(headers().filter({ hasText: 'Fat content (unit)' })).toBeVisible()
+
+    await page.reload()
+    await expect(mainTable(page)).toBeVisible({ timeout: 60_000 })
+    await expect(page.getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
+    await expect(headers().filter({ hasText: 'Fat content (value)' })).toBeVisible()
+    await expect(headers().filter({ hasText: 'Fat content (unit)' })).toBeVisible()
+  })
+
   test('right-click header with palette open closes palette then shows Hide column', async ({ page }) => {
     await login(page)
     await openProducts(page)

@@ -1674,6 +1674,7 @@
       "multiple": false,
       "kind": {
         "type": "number",
+        "unit_family": "018f0000-0000-7000-8000-000000000011",
         "min": "0",
         "max": "100"
       },

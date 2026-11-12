@@ -39,7 +39,7 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core'
 import { SortableContext, arrayMove, horizontalListSortingStrategy } from '@dnd-kit/sortable'
-import { columnTitle, defaultColumnIdsForType, makeViewColumn, parseColumnId, type ViewColumn } from './fields/columns'
+import { columnTitle, defaultColumnIdsForType, fieldPathForPath, makeViewColumn, parseColumnId, type ViewColumn } from './fields/columns'
 import { EMPTY_CELL } from './fields/qualifiers'
 import { columnPrefsHasOverride, fetchColumnPrefs, isHopPath, orderHiddenToDocument, ensureSystemColumns,
   prefsToOrderHidden, saveColumnPrefsKeepalive, type ColumnPrefsDocument, type SystemViewColumn } from './column-prefs'
@@ -774,10 +774,9 @@ export function ObjectTable({
       ?? pathList.find((item) => item.text === path)?.label
       ?? path
     // Prefer qualifier-aware title when we can rebuild the column from the catalog.
-    const leafToken = (path.split('>').pop() ?? path).split('.')[0]?.split('@')[0] ?? path
-    const via = path.includes('>') ? path.split('>')[0] : null
-    const fieldPath = via ? [via, leafToken] : [leafToken]
-    const rebuilt = makeViewColumn(fieldPath, qualifiers, fieldCatalogForType(defs.data ?? {}, typeKey))
+    const catalog = fieldCatalogForType(defs.data ?? {}, typeKey)
+    const fieldPath = fieldPathForPath(path, catalog)
+    const rebuilt = makeViewColumn(fieldPath, qualifiers, catalog)
     const header = rebuilt ? columnTitle(rebuilt) : pathLabel
     const wide = path.includes('>') || qualifiers.length > 0
     return { id, header, size: wide ? 260 : 160, sort }
@@ -1709,10 +1708,8 @@ export function ObjectTable({
     const cols: ViewColumn[] = []
     for (const id of shown) {
       const { path, qualifiers } = parseColumnId(id)
-      // Rebuild from catalog when possible
-      const parts = path.split('>')
-      const leafToken = (parts[parts.length - 1] ?? path).split('.')[0]?.split('@')[0] ?? path
-      const fieldPath = parts.length > 1 ? [parts[0]!, leafToken] : [leafToken]
+      // Rebuild from catalog when possible, keeping a measured value/unit part.
+      const fieldPath = fieldPathForPath(path, catalog)
       const col = makeViewColumn(fieldPath, qualifiers, catalog)
       if (col) {
         // Keep the prefs/order id so Edit field → replace matches setOrder entries.
@@ -1724,7 +1721,12 @@ export function ObjectTable({
           fieldPath,
           pathNames: fieldPath,
           qualifiers,
-          leaf: { id: leafToken, name: leafToken, typeLabel: 'text', shape: 'text' },
+          leaf: {
+            id: fieldPath[fieldPath.length - 1] ?? path,
+            name: fieldPath[fieldPath.length - 1] ?? path,
+            typeLabel: 'text',
+            shape: 'text',
+          },
           viaManyLink: path.includes('>'),
         })
       }

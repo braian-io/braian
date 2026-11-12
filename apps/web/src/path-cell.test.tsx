@@ -45,6 +45,24 @@ describe('path cell helpers', () => {
     expect(readPathFromDoc({ [field]: 500, [`${field}__unit`]: 'g' }, defs, 'weight')).toBe('500')
     expect(readPathFromDoc({}, defs, 'product>brand')).toBe('')
   })
+
+  it('shows the unit on the combined measured column and only the part in value/unit columns', () => {
+    const weightId = '018f0000-0000-7000-8000-000000000102'
+    const defs = {
+      attributes: [
+        {
+          id: weightId,
+          key: 'weight',
+          kind: { type: 'number', unit_family: '018f0000-0000-7000-8000-000000000011' },
+        },
+      ],
+    }
+    const field = `a_${weightId.replaceAll('-', '_')}`
+    const doc = { [field]: 35, [`${field}__unit`]: 'g' }
+    expect(readPathFromDoc(doc, defs, 'weight')).toBe('35 g')
+    expect(readPathFromDoc(doc, defs, 'weight.value')).toBe('35')
+    expect(readPathFromDoc(doc, defs, 'weight.unit')).toBe('g')
+  })
 })
 
 const product = '018f0000-0000-7000-8000-000000000200'

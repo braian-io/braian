@@ -1626,7 +1626,7 @@ fn fill_group_measures(
             model,
             values,
             "fat_content",
-            json!({ "value": format!("{}", 1 + (index % 40)) }),
+            json!({ "value": format!("{}", 1 + (index % 40)), "unit": "g" }),
         )?;
     }
     if group == "chocolate" {

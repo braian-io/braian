@@ -139,6 +139,12 @@ describe('isEditableColumn', () => {
     expect(isEditableColumn('brand', new Set(['brand']))).toBe(false)
     expect(isEditableColumn('name', new Set(['brand']))).toBe(true)
   })
+
+  it('keeps measured value and unit parts display-only', () => {
+    expect(isEditableColumn('fat_content.value')).toBe(false)
+    expect(isEditableColumn('fat_content.unit')).toBe(false)
+    expect(isEditableColumn('allergens.code')).toBe(true)
+  })
 })
 
 describe('valueListKeyForColumn', () => {
