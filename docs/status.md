@@ -1,5 +1,34 @@
 # Status 2026-11-12
 
+## Rad 196-uppföljning — länkfel och Replace använder aktuellt utkast
+
+Grenen `junior/196-link-field-replace` utgår från `origin/main` `45ea113` (#305) och är **inte mergad, deployad eller accepterad**. Detta är Test-avvisningen av #223 / `fc24906`, inte en ny rad 223: efter en kardinalitetskonflikt återanvände `replace()` de gamla värdena i `conflict.request.values`, Replace-knappen gick att använda efter att Sort order ändrats till ett ogiltigt värde, och statusfoten kunde visa `Save failed: 422` för en konflikt som dialogen redan förklarat.
+
+Acceptanskriterierna från `brief.md` (Braian Test grindar bara på dessa):
+
+1. **Ogiltig Sort order stannar i dialogen.** Ett icke-numeriskt värde visar `Enter a number.` vid fältet (`link-field-error-sort_order`), Sort order är ett nummerfält, dialogen stannar öppen och ingen länk skrivs.
+2. **Kardinalitet förklaras och Replace flyttar länken.** En artikel som redan har en produkt får en begriplig ett-länk-förklaring och `Replace link`; Replace flyttar länken till den valda produkten.
+3. **Första giltiga länken fungerar.** Numerisk Sort order sparas som förut och toasten behåller Undo.
+4. **Replace validerar aktuellt utkast.** Efter konflikten gör ett ogiltigt värde att Replace är avstängt och fältfelet syns; ett giltigt värde skriver **utkastets** värden, inte de sparade `conflict.request.values`.
+5. **Ingen rå footer för hanterad konflikt.** Statusfoten visar inte `Save failed: 422` när dialogen tagit över konflikten; riktiga ohanterade skrivfel visas fortfarande.
+6. **Guide, tester och skyddade filer.** Endast den befintliga sektionen “Add and remove links” i `docs/guide/object-types-and-relations.md` uppdateras, utan ny guidesida. Isolerade tester täcker kriterium 1, 2, 4 och 5 och kriterium 3 är fortsatt grönt. `apps/web/src/data-model.tsx` är orörd (`sha256 2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`) och `product_suppliers`-etiketterna är orörda.
+
+Vad som ändrades:
+
+- `apps/web/src/link-create-dialog.tsx`: `replace()` räknar om `linkFieldErrors` mot det aktuella utkastet, skriver inget när fältet är ogiltigt, och bygger `values` med `linkFieldValues(choice.fields, draft)` i stället för `conflict.request.values`. Replace-knappen är avstängd så länge utkastet eller ett fältfel är ogiltigt. `onReplaced` får den aktuella requesten.
+- `apps/web/src/write-status.ts` och `apps/web/src/link-create-dialog.tsx`: ny `acknowledgeWriteError(status)` tar bort just den hanterade skrivningen från statusfoten, men lämnar en annan eller nyare felkod kvar. Dialogen anropar den när den visar kardinalitetskonflikten eller mappar serverfältfel.
+- `apps/web/src/link-create-dialog.test.tsx`: nya tester för att Replace är avstängt vid ogiltigt utkast, att det giltiga Replace-anropet skickar `{sort_order: {value: '7'}}` i stället för det gamla `5`, och att en hanterad 422 inte blir `Save failed` i foten medan en ohanterad 500 fortfarande visas. Det befintliga testet för första länk, kardinalitet och Replace är kvar.
+- `apps/web/src/write-status.test.ts`: enhetstest för att en hanterad felkod rensas utan att en annan kod göms.
+- `docs/guide/object-types-and-relations.md`: sektionen “Add and remove links” beskriver nu fältfelet vid fältet, att Sort order är ett nummer, att Replace erbjuds vid ett-länk-konflikt, att Replace är avstängt medan utkastet är ogiltigt, att det sparar värdena på skärmen och att konflikten inte lämnar en rå spara-fel-rad i statusfoten.
+- `apps/web/e2e/row196-demo-link-errors.spec.ts`: förberedd men **inte registrerad** i `scripts/e2e.mjs` och **inte körd** mot `https://demo.braian.io`. Den använder egna `DEMO196-*`-objekt för kriterium 1–5 och städar dem.
+
+Bevis (endast `docker run --rm`, inga databaser behövdes för enhetstesten):
+
+- `pnpm --dir apps/web exec vitest run src/link-create-dialog.test.tsx src/write-status.test.ts src/link-add.test.tsx src/link-write.test.ts src/link-section.test.tsx` gav 5 filer / 32 tester gröna.
+- Hela vitest-sviten: **162 filer / 966 tester** gröna.
+- `pnpm --dir apps/web exec tsc --noEmit` exit 0; `python3 scripts/check-english.py` exit 0.
+- Ärlig avgränsning: ingen isolerad compose, databas eller Playwright-körning gjordes; webbläsarbeviset för kriterium 1–5 ligger i den oregistrerade demo-specen och ska köras av koordinatorn efter merge. Ingen skrivning gjordes mot demo, `/opt/braian`, `/var/www/braian`, Caddy, Track A eller någon annan rad.
+
 ## Rad 216b — rättade antal och återställningsfel efter Test på e70184f
 
 Grenen `junior/216b-delete-fixes` utgår från `origin/main` `e70184f` (#301), har ordinary-mergat `5f2402e` (row 225, #303) och `7eaee05` (row 225b, #304) och är **inte mergad, deployad eller accepterad**. Den rättar Test-avvisningen: antalet objekt räknade kaskadlänkar som objekt, singular saknades och samma rad visades två gånger; efter Trash Restore visade Detail och Graph fortfarande "The graph could not be loaded. Validation stopped the save.", även efter F5.

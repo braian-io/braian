@@ -129,8 +129,16 @@ Links between objects are edited on the object's `Detail` view:
 - Each link type has a section with a count and an `Add link…` button.
 - The `Add link…` dialog asks you to choose a link type when several apply, fills any
   link attributes the type defines, and confirms with `Confirm`.
-- If the other side allows only one link and one already exists, Braian explains the
-  replacement and offers `Replace link`.
+- A number attribute such as `Sort order` is entered as a number. An invalid value
+  stays in the dialog: the field itself shows `Enter a number.`, the dialog remains
+  open, and nothing is written.
+- If the other side allows only one link and one already exists, Braian explains that
+  the link type allows only one and offers `Replace link`. Replace moves the existing
+  link to the object you chose. It is disabled while a field in the current draft is
+  invalid and, once enabled, saves the values currently on screen rather than the
+  values from the first attempt.
+- A cardinality conflict is explained inside the dialog, so the status bar does not
+  show a raw save failure for it.
 - Select a link row and press `Ctrl+Enter` for the link menu, which contains `Edit link
   attributes` and `Remove link`.
 - In an object table you can also drag a row onto another table to create a link.

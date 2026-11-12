@@ -32,6 +32,17 @@ export function writeSettled(failure?: string) {
   }
 }
 
+/**
+ * A caller has taken a write failure it knows how to show. Drop that failure
+ * from the status bar, but keep a newer unrelated failure and pending writes.
+ */
+export function acknowledgeWriteError(status?: number) {
+  if (!state.error) return
+  if (status !== undefined && !state.error.startsWith(String(status))) return
+  if (clearTimer) clearTimeout(clearTimer)
+  set({ ...state, error: null })
+}
+
 export function writeStatus(): WriteStatus {
   return state
 }
