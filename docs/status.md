@@ -31,7 +31,7 @@ Bevis (endast `docker run --rm`, inga databaser behövdes):
 
 ## Rad 196-uppföljning — länkfel och Replace använder aktuellt utkast
 
-Grenen `junior/196-link-field-replace` utgår från `origin/main` `45ea113` (#305) och är **inte mergad, deployad eller accepterad**. Detta är Test-avvisningen av #223 / `fc24906`, inte en ny rad 223: efter en kardinalitetskonflikt återanvände `replace()` de gamla värdena i `conflict.request.values`, Replace-knappen gick att använda efter att Sort order ändrats till ett ogiltigt värde, och statusfoten kunde visa `Save failed: 422` för en konflikt som dialogen redan förklarat.
+Rad 196-uppföljningen är mergad till `main` som PR #307 (squash `c8fb0af26d50f1dcb36d67742387448df3b29e1a`) och live på demon med buildId `c8fb0af`. Test har godkänt den. Grenen `junior/196-link-field-replace` utgick från `origin/main` `45ea113` (#305). Detta är Test-avvisningen av #223 / `fc24906`, inte en ny rad 223: efter en kardinalitetskonflikt återanvände `replace()` de gamla värdena i `conflict.request.values`, Replace-knappen gick att använda efter att Sort order ändrats till ett ogiltigt värde, och statusfoten kunde visa `Save failed: 422` för en konflikt som dialogen redan förklarat.
 
 Acceptanskriterierna från `brief.md` (Braian Test grindar bara på dessa):
 
