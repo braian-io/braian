@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
-import { focusMainTable, mainTable } from './ui'
+import { focusMainTable, mainTable, paneWithTab } from './ui'
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -16,7 +16,7 @@ async function openProducts(page: Page) {
   await expect(mainTable(page)).toBeVisible()
 }
 
-async function seedProductsColumnPrefs(page: Page) {
+async function seedProductsColumnPrefs(page: Page, { brandVisible = true }: { brandVisible?: boolean } = {}) {
   const listed = await page.request.get('/v1/workspaces')
   if (!listed.ok()) throw new Error(`workspaces: HTTP ${listed.status()}`)
   const { workspaces } = (await listed.json()) as {
@@ -48,8 +48,8 @@ async function seedProductsColumnPrefs(page: Page) {
     view.title === 'Products'
   const table = views.find((view) => isTable(view) && isProduct(view)) ?? views.find(isTable)
   if (!table) throw new Error('missing Products object table')
-  // Seed Brand visible instead of relying on default columns. Defaults are
-  // derived from /v1/definitions, and the table can apply prefs before that
+  // Seed a personal document instead of relying on default columns. Defaults
+  // are derived from /v1/definitions, and the table can apply prefs before that
   // GET lands, which seeds the builtin chrome (no Brand) and keeps it.
   const seeded = await page.request.put(
     `/v1/views/${table.id}/column-prefs?environment=default`,
@@ -61,7 +61,7 @@ async function seedProductsColumnPrefs(page: Page) {
           columns: [
             { path: 'number', visible: true },
             { path: 'name', visible: true },
-            { path: 'brand', visible: true },
+            { path: 'brand', visible: brandVisible },
             { path: 'status', visible: true },
           ],
         },
@@ -69,6 +69,7 @@ async function seedProductsColumnPrefs(page: Page) {
     },
   )
   if (!seeded.ok()) throw new Error(`column prefs seed: HTTP ${seeded.status()}`)
+  return table.id
 }
 
 async function openFieldsPalette(page: Page) {
@@ -256,5 +257,68 @@ test.describe('column prefs reset', () => {
     await expect(mainTable(page).locator('.head [data-testid="col-brand"]').first()).toBeVisible({
       timeout: 30_000,
     })
+  })
+
+  test('Reset to default in a maximized Products panel targets the zoomed table', async ({ page }) => {
+    await login(page)
+    const viewId = await seedProductsColumnPrefs(page, { brandVisible: false })
+    await page.reload()
+    await expect(page.getByTestId('workspace')).toBeVisible()
+    await openProducts(page)
+    await expect(mainTable(page).getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
+    await expect(mainTable(page).locator('.head [data-testid="col-brand"]').first()).toHaveCount(0)
+
+    const dock = page.getByTestId('dock')
+    if (await dock.getAttribute('data-zoom')) {
+      await page.getByTestId('pane-maximize').click()
+      await expect(dock).toHaveAttribute('data-zoom', '')
+    }
+
+    // Put document focus on Detail first, then maximize Products. zoomView only
+    // sets doc.zoom, so doc.focus stays on the hidden sibling.
+    await page.locator('.pane-tab-open', { hasText: 'Detail' }).first().click()
+    const detailFocus = await dock.getAttribute('data-focus')
+    expect(detailFocus).toBeTruthy()
+    expect(detailFocus).not.toBe(viewId)
+
+    await paneWithTab(page, 'Products').getByTestId('pane-maximize').click()
+    await expect(dock).toHaveAttribute('data-zoom', viewId)
+    await expect(dock).toHaveAttribute('data-focus', detailFocus ?? '')
+    await expect(page.locator('section.pane')).toHaveCount(1)
+
+    await mainTable(page).getByTestId('object-row').first().click()
+    await page.keyboard.press('Control+k')
+    const palette = page.getByTestId('command-palette')
+    await expect(palette).toBeVisible()
+    await page.getByTestId('palette-input').fill('Reset to default')
+    const reset = page.waitForResponse(
+      (res) =>
+        res.url().includes('/column-prefs') &&
+        res.request().method() === 'DELETE' &&
+        res.status() === 204,
+      { timeout: 30_000 },
+    )
+    await page.keyboard.press('Enter')
+    await reset
+
+    // The hidden Brand column comes back immediately.
+    await expect(mainTable(page).locator('.head [data-testid="col-brand"]').first()).toBeVisible({
+      timeout: 30_000,
+    })
+
+    // Defaults and a null document survive a reload.
+    await page.reload()
+    await expect(mainTable(page)).toBeVisible({ timeout: 60_000 })
+    await expect(mainTable(page).locator('.head [data-testid="col-brand"]').first()).toBeVisible({
+      timeout: 30_000,
+    })
+    const prefs = await page.request.get(`/v1/views/${viewId}/column-prefs?environment=default`)
+    expect(prefs.ok()).toBe(true)
+    expect(((await prefs.json()) as { document?: unknown }).document).toBeNull()
+
+    if ((await dock.getAttribute('data-zoom')) === viewId) {
+      await page.getByTestId('pane-maximize').click()
+      await expect(dock).toHaveAttribute('data-zoom', '')
+    }
   })
 })
