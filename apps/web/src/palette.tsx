@@ -775,7 +775,10 @@ export function CommandPalette({
       return
     }
     if (id === 'columns:reset') {
-      void runCommand(id, { viewId: focusViewId ?? undefined, columnPrefsOverride })
+      // The published frame already remaps focus to the zoomed table; doc.focus
+      // may still point at a hidden sibling such as Detail.
+      const viewId = readUiContext().focused ?? focusViewId ?? undefined
+      void runCommand(id, { viewId, columnPrefsOverride })
       onClose()
       return
     }

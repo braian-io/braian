@@ -164,7 +164,7 @@ function SelectionDraftDetail({
       <p className="hint">
         {editing
           ? 'Change the name and filter. The kind and object type stay locked.'
-          : 'Name a saved selection and choose whether it follows a filter or is filled by hand.'}
+          : 'Name a saved selection and choose whether it follows a filter or stores the group and label filters active at creation. There is no separate add/remove-object picker yet.'}
       </p>
       <form
         className="form"
