@@ -42,6 +42,14 @@ export function App() {
               </a>
             ))}
           </nav>
+          <nav className="section-nav section-nav-mobile" aria-label="Sections">
+            <a className="nav-link" href="#top">
+              Home
+            </a>
+            <a className="nav-link" href={docsUrl}>
+              Docs
+            </a>
+          </nav>
           <div className="spacer" />
           <Button type="button" variant="ghost" className="theme-toggle" data-theme-toggle aria-label="Switch color theme">
             <span className="when-dark">Light</span>

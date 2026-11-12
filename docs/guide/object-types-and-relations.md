@@ -155,11 +155,11 @@ person saves; the agent can propose model changes but cannot delete definitions.
   or enter many objects.
 - Use groups for shared fields that should apply across types.
 - Use a value list for fixed choices and a unit family for measures.
-- Open [Data sources](/docs/data-sources) next to learn how a table follows another
+- Open [Data sources](/docs/data-sources/) next to learn how a table follows another
   table through a link type.
 
 ## Related
 
-- [Data sources](/docs/data-sources)
-- [Graph](/docs/graph)
-- [Deleting and restore](/docs/deleting-and-restore)
+- [Data sources](/docs/data-sources/)
+- [Graph](/docs/graph/)
+- [Deleting and restore](/docs/deleting-and-restore/)

@@ -54,5 +54,5 @@ recreated. See the [change log contract](https://github.com/braian-io/braian/blo
 
 ## Related
 
-- [Getting started](/docs/getting-started)
-- [Feedback](/docs/feedback)
+- [Getting started](/docs/getting-started/)
+- [Feedback](/docs/feedback/)

@@ -1328,8 +1328,21 @@ button.disclose:hover { background: transparent; }
 }
 
 @media (max-width: 860px) {
-  .section-nav { display: none; }
+  .wrap:not(.guide-wrap) .section-nav:not(.section-nav-mobile) { display: none; }
   .topbar .spacer { flex: 1; }
+}
+
+.section-nav-mobile { display: none; }
+
+@media (max-width: 860px) {
+  .wrap:not(.guide-wrap) .section-nav-mobile { display: flex; }
+}
+
+@media (max-width: 520px) {
+  .topbar { gap: 2px; }
+  .topbar .brand { margin-right: 4px; }
+  .nav-link { padding: 0 6px; }
+  .topbar .theme-toggle { display: none; }
 }
 
 @media (max-width: 800px) {
@@ -1380,7 +1393,8 @@ button.disclose:hover { background: transparent; }
 }
 
 @media (max-width: 420px) {
-  .topbar-github { display: none; }
+  .guide-wrap .topbar { gap: 2px; }
+  .guide-wrap .nav-link { padding: 0 6px; }
 }
 
 /* The imported product shell sizes html, body, and #root to the viewport.
@@ -1421,6 +1435,43 @@ html body #root {
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.guide-nav-toggle {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+}
+
+.guide-nav-label { display: block; cursor: pointer; }
+
+.guide-nav-label::after {
+  content: '+';
+  float: right;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.guide-nav-toggle:checked + .guide-nav-label::after { content: '-'; }
+
+.guide-nav-toggle:focus-visible + .guide-nav-label {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.guide-nav-toggle:not(:checked) ~ .guide-nav { display: none; }
+
+@media (min-width: 861px) {
+  .guide-nav-label { cursor: default; }
+  .guide-nav-label::after { content: none; }
+  .guide-nav-toggle:not(:checked) ~ .guide-nav { display: grid; }
 }
 
 .guide-nav { display: grid; gap: 2px; }

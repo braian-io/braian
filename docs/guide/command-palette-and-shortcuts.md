@@ -55,7 +55,7 @@ turns are shown as clickable chips; send with `Enter` and close with `Escape`.
 
 The agent runs in the context you are looking at: the focused view, the selected rows
 and the current filter. It proposes changes; a person reviews and saves them. See
-[Deleting and restore](/docs/deleting-and-restore) for what the agent may not do.
+[Deleting and restore](/docs/deleting-and-restore/) for what the agent may not do.
 
 AI replies require a model to be configured on the server. If it is not, the answer is
 `AI isn't set up for this workspace`, and the agent tab explains that an administrator
@@ -69,7 +69,7 @@ shortcut in the app except `Escape` and `Ctrl+K` itself. Close it with `Close` o
 
 `Ctrl+Shift+B` sends feedback, but only when feedback is enabled for the deployment.
 It does not appear in the UI otherwise, although the help dialog always lists the
-shortcut. See [Feedback](/docs/feedback).
+shortcut. See [Feedback](/docs/feedback/).
 
 ## Shortcuts
 
@@ -127,5 +127,5 @@ In the table grid, `Escape` does nothing.
 
 ## Related
 
-- [Workspaces and panels](/docs/workspaces-and-panels)
-- [Data sources](/docs/data-sources)
+- [Workspaces and panels](/docs/workspaces-and-panels/)
+- [Data sources](/docs/data-sources/)

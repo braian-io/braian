@@ -34,5 +34,5 @@ not their contents. Sending is rate-limited per user.
 
 ## Related
 
-- [Command palette and shortcuts](/docs/command-palette-and-shortcuts)
-- [Self-hosting](/docs/self-hosting)
+- [Command palette and shortcuts](/docs/command-palette-and-shortcuts/)
+- [Self-hosting](/docs/self-hosting/)
