@@ -1,8 +1,26 @@
 # Status 2026-11-12
 
-## Rad 51a — Reset to default för personliga kolumnval
+## Rad 51a-uppföljning — Reset to default i maximerad panel (inte mergad)
 
-Grenen `junior/51a-reset-to-default` (PR #310, head efter denna statusrad) utgår från `origin/main` `f8d0cb6` (#311, rad 61b) via en ordinär merge och är **inte mergad, deployad eller accepterad**. Detta är den första skivan av Notion-rad 51 (välja fält per vy). Hide column, Select fields, en hop av länkade fält (skrivskyddade) och personliga `column-prefs` v2 finns redan på main. HTTP `DELETE /v1/views/{view_id}/column-prefs` fanns redan och raderar bara anroparens egen rad. Senare skivor, inte i denna PR: **51b** taxonomi-/grupp-fält i fältväljaren, **51c** kvalificerade fält som egna värde- och enhetskolumner. Skrivning till länkade/hop-fält är utanför omfattningen.
+Rad 51a är mergad till `main` som PR #310 (squash `5949cb1`) och live på demon med buildId `5949cb1`. Test underkände kriterium 2 i en maximerad panel: Ctrl+K visade `Reset to default`, men körningen gjorde inget. `zoomView` sätter bara `doc.zoom`; `doc.focus` kan ligga kvar på en dold syskonvy som Detail. `publishFrame` remappar fokus till zoomtabellen, men paletten skickade rå `doc.focus` till kommandot, så `ui.reset_columns` träffade Detail i stället för Products: ingen DELETE och den dolda kolumnen kom inte tillbaka.
+
+Uppföljningen ligger i grenen `junior/51a-reset-maximized`, utgår från `origin/main` `5949cb1` (#310) och är **inte mergad, deployad eller accepterad**. Kriterium 1 och 3–7 från 51a är oförändrade och fortsatt uppfyllda.
+
+- `apps/web/src/palette.tsx`: Ctrl+K-kommandot `columns:reset` skickar nu den publicerade fokusvyn (`readUiContext().focused`, redan remappad till zoomtabellen) i stället för palettens råa `focusViewId` (`doc.focus`). Kolumnmenyn är oförändrad och skickar fortfarande sin egen `view.id`.
+- `apps/web/src/palette-column-reset.test.tsx` (ny): publicerar en ram där fokus är Products (som `publishFrame` gör när `doc.zoom` är satt) medan paletten får `doc.focus` = Detail, kör `Reset to default` och kräver att `ui.reset_columns` får Products, inte Detail.
+- `apps/web/e2e/column-prefs-multitab.spec.ts`: nytt fall seedar Brand dold, sätter dokumentfokus på Detail, maximerar Products, kör Ctrl+K → `Reset to default`, kräver DELETE 204, att Brand syns direkt och att standardkolumner plus `document: null` finns kvar efter omladdning. Layouten återställs efter testet.
+- `docs/status.md`: den här statusraden. Inga guideändringar; de befintliga guiderna beskriver redan kommandot.
+
+Bevis (lokalt i worktreen, utan demo- eller produktionsskrivningar):
+
+- `pnpm --filter ./apps/web exec tsc --noEmit` exit 0.
+- `pnpm --filter ./apps/web exec vitest run` gav **166 filer / 981 tester** gröna, inklusive den nya `palette-column-reset.test.tsx` och de befintliga reset-, hide/show- och Select fields-testerna.
+- `python3 scripts/check-english.py` exit 0. `sha256sum apps/web/src/data-model.tsx` är oförändrad.
+- Den utökade `column-prefs-multitab.spec.ts` är typkontrollerad men inte körd lokalt i den här rundan; den befintliga reset-specen är utökad, inte ersatt.
+
+## Rad 51a — Reset to default för personliga kolumnval (mergad som #310, `5949cb1`)
+
+Grenen `junior/51a-reset-to-default` är **mergad till `main` som PR #310 (squash `5949cb1`) och live på demon med buildId `5949cb1`**. Test godkände kriterium 1 och 3–7 men underkände kriterium 2 i en maximerad panel; rättningen är uppföljningen ovan, som **inte är mergad, deployad eller accepterad**. Detta är den första skivan av Notion-rad 51 (välja fält per vy). Hide column, Select fields, en hop av länkade fält (skrivskyddade) och personliga `column-prefs` v2 finns redan på main. HTTP `DELETE /v1/views/{view_id}/column-prefs` fanns redan och raderar bara anroparens egen rad. Senare skivor, inte i denna PR: **51b** taxonomi-/grupp-fält i fältväljaren, **51c** kvalificerade fält som egna värde- och enhetskolumner. Skrivning till länkade/hop-fält är utanför omfattningen.
 
 Acceptanskriterierna (Braian Test grindar bara på dessa):
 
@@ -31,7 +49,7 @@ Bevis (lokalt före PR, plus CI 13/13 grön på `4027c8e` och på `66ebf9c` för
 
 ## Rad 61 — skapa och redigera selection genom det delade utkastet (mergad som #309, `0aaf71f`)
 
-Grenen `junior/61-selection-draft` utgick från `origin/main` `c8fb0af` och är **mergad till `main` som PR #309 (squash `0aaf71f54e1fdc1a5ff854b684a47cc8422527f5`)** samt live på demon med buildId `0aaf71f`. Test godkände kriterium 1, 2, 3, 5 och 6 men underkände kriterium 4; rättningen är 61b nedan, som **inte är mergad, deployad eller accepterad**. Detta är Test-avvisningen av #154 / #158, inte en ny rad 154 eller 158: skapa och redigera en selection gjordes i en fristående dialog som skrev `POST`/`PUT` direkt i stället för i `Selections`-vyn och dess `Detail` med det delade utkastet från rad 212.
+Grenen `junior/61-selection-draft` utgick från `origin/main` `c8fb0af` och är **mergad till `main` som PR #309 (squash `0aaf71f54e1fdc1a5ff854b684a47cc8422527f5`)** samt live på demon med buildId `0aaf71f`. Test godkände kriterium 1, 2, 3, 5 och 6 men underkände kriterium 4; rättningen är 61b nedan, som är **mergad till `main` som PR #311 (squash `f8d0cb6`) och live på demon med buildId `f8d0cb6`**. Detta är Test-avvisningen av #154 / #158, inte en ny rad 154 eller 158: skapa och redigera en selection gjordes i en fristående dialog som skrev `POST`/`PUT` direkt i stället för i `Selections`-vyn och dess `Detail` med det delade utkastet från rad 212.
 
 Acceptanskriterierna från `brief.md` (Braian Test grindar bara på dessa):
 
@@ -58,9 +76,9 @@ Bevis (endast `docker run --rm`, inga databaser behövdes):
 - `sha256sum apps/web/src/data-model.tsx` = `2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`; `product_suppliers`-etiketterna är orörda.
 - Ärlig avgränsning: ingen isolerad compose eller Playwright-körning gjordes, eftersom kriterium 1–5 kunde täckas med jsdom-tester och befintliga Rust-tester för sparande, låst kind/typ och delete-fallback. De uppdaterade E2E-specarna är typkontrollerade och registrerade men inte körda mot demo. Ingen skrivning gjordes mot demo, `/opt/braian`, `/var/www/braian`, Caddy eller Track A; ingen PR öppnades och inget mergades eller deployades.
 
-## Rad 61b-uppföljning — delete-fallback, tom manuell, användningstext och guide (inte mergad)
+## Rad 61b-uppföljning — delete-fallback, tom manuell, användningstext och guide (mergad som #311, `f8d0cb6`)
 
-Grenen `junior/61b-selection-fixes` utgår från `origin/main` `0aaf71f` (#309, rad 61) och är **inte mergad, deployad eller accepterad**. Den rättar Test-avvisningen av `0aaf71f` på kriterium 4: efter delete av den aktiva filterchippen låg tabellen kvar på den gamla frågan (24 rader i stället för alla 407), en tom `Manual`-selection visade alla objekt i stället för noll, delete-dialogen sa `Not used anywhere.` trots att chippen var aktiv, och guiden lovade en hand-fyllningsväg som inte fanns.
+Grenen `junior/61b-selection-fixes` utgick från `origin/main` `0aaf71f` (#309, rad 61) och är **mergad till `main` som PR #311 (squash `f8d0cb6`) samt live på demon med buildId `f8d0cb6`**. Den rättar Test-avvisningen av `0aaf71f` på kriterium 4: efter delete av den aktiva filterchippen låg tabellen kvar på den gamla frågan (24 rader i stället för alla 407), en tom `Manual`-selection visade alla objekt i stället för noll, delete-dialogen sa `Not used anywhere.` trots att chippen var aktiv, och guiden lovade en hand-fyllningsväg som inte fanns.
 
 Acceptanskriterierna för den här rundan (Braian Test grindar bara på dessa):
 
@@ -84,7 +102,7 @@ Bevis (endast `docker run --rm`, ingen databas behövdes):
 - `pnpm --dir apps/web exec vitest run` gav **164 filer / 975 tester** gröna, inklusive de nya selectionstesterna.
 - `pnpm --dir apps/web exec tsc --noEmit` exit 0; `python3 scripts/check-english.py` exit 0.
 - `sha256sum apps/web/src/data-model.tsx` = `2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`; `product_suppliers`-etiketterna är orörda.
-- Ärlig avgränsning: ingen isolerad compose, databas eller Playwright-körning gjordes. Befintliga E2E-specar är oförändrade; den nya chip-fallbacken är täckt av jsdom-testet i `selections.test.tsx`, inte av en demokörning. Ingen skrivning gjordes mot demo, `/opt/braian`, `/var/www/braian`, Caddy eller Track A. Ingen PR öppnades och inget mergades eller deployades.
+- Ärlig avgränsning: ingen isolerad compose, databas eller Playwright-körning gjordes. Befintliga E2E-specar är oförändrade; den nya chip-fallbacken är täckt av jsdom-testet i `selections.test.tsx`, inte av en demokörning. Ingen skrivning gjordes mot demo, `/opt/braian`, `/var/www/braian`, Caddy eller Track A. PR #311 öppnades och mergades efter denna körning.
 
 ## Rad 196-uppföljning — länkfel och Replace använder aktuellt utkast
 
