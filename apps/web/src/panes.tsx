@@ -103,7 +103,7 @@ import { LinkSections } from './link-section'
 import { DetailMeta } from './detail-meta'
 import { splitDetailKeys } from './detail-fields'
 import { beginLinkDrag, dispatchLinkDrop, endLinkDrag, linkDragActive, linkDragContains, linkDragLabel, linkDragMime, linkDragObjects, linkDragPayload, linkDropDecision, readLinkDrag, setLinkDragHint } from './link-drag'
-import { groupKeyOf, labelCodes, labelSearchFilter, publishSelectionLabels, SELECTION_APPLIED_EVENT, selectionFilterText, selectionMatchesType } from './assortment-filter'
+import { EMPTY_MANUAL_FILTER, groupKeyOf, isEmptyManualQuery, labelCodes, labelSearchFilter, publishSelectionLabels, SELECTION_APPLIED_EVENT, selectionFilterText, selectionMatchesType } from './assortment-filter'
 import { appendPathFilter, objectTableFilter } from './table-filter'
 import { dispatchUi, onUi } from './ui-bus'
 import { columnMoveAppliesTo } from './column-move'
@@ -206,6 +206,7 @@ export function ObjectTable({
   const initial = savedTable(view)
   const [filter, setFilter] = useState(initial.filter)
   const [selectionFilter, setSelectionFilter] = useState('')
+  const [activeSelectionId, setActiveSelectionId] = useState('')
   const [labelFilter, setLabelFilter] = useState('')
   const [pathFilters, setPathFilters] = useState<string[]>([])
   const [exportPaths, setExportPaths] = useState<Array<{ id: string; header: string }>>([])
@@ -371,6 +372,18 @@ export function ObjectTable({
     selectionMatchesType(item, typeKey, bound?.id ?? ''),
   )
   useEffect(() => {
+    if (!activeSelectionId || !assortments.isSuccess) return
+    if (selectionRows.some((item) => String(item.id) === activeSelectionId)) return
+    // The applied chip was deleted (or no longer belongs to this type): fall
+    // back to All at once instead of leaving the table on the stale filter.
+    setActiveSelectionId('')
+    setFilter('')
+    setQueryText('')
+    setSelectionFilter('')
+    session.setGroup(null)
+    setLabelFilter('')
+  }, [activeSelectionId, assortments.isSuccess, selectionRows, session])
+  useEffect(() => {
     session.setListType?.(typeKey || null)
   }, [session, typeKey])
   useEffect(() => {
@@ -389,10 +402,12 @@ export function ObjectTable({
       if (!item || !selectionMatchesType(item, typeKey, bound?.id ?? '')) return
       const query = (item.query as Json) ?? {}
       const dynamicFilter = selectionFilterText(query)
+      const emptyManual = !dynamicFilter && isEmptyManualQuery(query)
+      setActiveSelectionId(String(item.id ?? ''))
       setFilter('')
-      setSelectionFilter(dynamicFilter)
-      session.setGroup(dynamicFilter ? null : query.group ? String(query.group) : null)
-      setLabelFilter(dynamicFilter ? '' : labelSearchFilter(query, defs.data))
+      setSelectionFilter(dynamicFilter || (emptyManual ? EMPTY_MANUAL_FILTER : ''))
+      session.setGroup(dynamicFilter || emptyManual ? null : query.group ? String(query.group) : null)
+      setLabelFilter(dynamicFilter || emptyManual ? '' : labelSearchFilter(query, defs.data))
     }
     window.addEventListener(SELECTION_APPLIED_EVENT, onApply)
     return () => window.removeEventListener(SELECTION_APPLIED_EVENT, onApply)
@@ -1768,7 +1783,7 @@ export function ObjectTable({
   }
 
   const newRowLabel = newObjectLabel(bound?.singular)
-  const queryLabel = (queryText || filter || labelFilter || selectionFilter).trim()
+  const queryLabel = (queryText || filter || labelFilter || (selectionFilter === EMPTY_MANUAL_FILTER ? '' : selectionFilter)).trim()
   const hasActiveFilter = Boolean(queryLabel || pathFilters.length > 0)
   const probeLoading = !peerEmpty && found === 0 && (probe.isPending || !probe.isFetched) && !probe.isError
   const probeEmpty = !peerEmpty && probe.isFetched && found === 0
@@ -1781,6 +1796,7 @@ export function ObjectTable({
     setFilter('')
     setQueryText('')
     setSelectionFilter('')
+    setActiveSelectionId('')
     setLabelFilter('')
     setPathFilters([])
   }
@@ -1908,6 +1924,8 @@ export function ObjectTable({
           activeGroup={session.group}
           activeLabelFilter={labelFilter}
           activeSelectionFilter={selectionFilter}
+          activeSelectionId={activeSelectionId}
+          setActiveSelectionId={setActiveSelectionId}
           activeFilter={filter}
           assortments={selectionRows}
           defs={defs.data}
@@ -2438,6 +2456,8 @@ function TableFilters({
   activeGroup,
   activeLabelFilter,
   activeSelectionFilter,
+  activeSelectionId,
+  setActiveSelectionId,
   activeFilter,
   assortments,
   defs,
@@ -2451,6 +2471,8 @@ function TableFilters({
   activeGroup: string | null
   activeLabelFilter: string
   activeSelectionFilter: string
+  activeSelectionId: string
+  setActiveSelectionId: (value: string) => void
   activeFilter: string
   assortments: Json[]
   defs?: Json
@@ -2461,24 +2483,36 @@ function TableFilters({
     setGroup(null)
     setLabelFilter('')
     setSelectionFilter('')
+    setActiveSelectionId('')
   }
   const applyAssortment = (item: Json) => {
     const query = (item.query as Json) ?? {}
     const dynamicFilter = selectionFilterText(query)
+    const emptyManual = !dynamicFilter && isEmptyManualQuery(query)
     const nextGroup = query.group ? String(query.group) : null
     const nextLabels = labelSearchFilter(query, defs)
     // Toggle off when the same selection is already active.
     const same = dynamicFilter
       ? dynamicFilter === activeSelectionFilter
-      : (nextGroup ?? '') === (activeGroup ?? '') && nextLabels === activeLabelFilter && !activeSelectionFilter
+      : emptyManual
+        ? activeSelectionFilter === EMPTY_MANUAL_FILTER
+        : (nextGroup ?? '') === (activeGroup ?? '') && nextLabels === activeLabelFilter && !activeSelectionFilter
     if (same) {
       setGroup(null)
       setLabelFilter('')
       setSelectionFilter('')
       setFilter('')
+      setActiveSelectionId('')
       return
     }
     setFilter('')
+    setActiveSelectionId(String(item.id ?? ''))
+    if (emptyManual) {
+      setSelectionFilter(EMPTY_MANUAL_FILTER)
+      setGroup(null)
+      setLabelFilter('')
+      return
+    }
     setSelectionFilter(dynamicFilter)
     setGroup(dynamicFilter ? null : nextGroup)
     setLabelFilter(dynamicFilter ? '' : nextLabels)
@@ -2487,6 +2521,7 @@ function TableFilters({
     const query = (item.query as Json) ?? {}
     const dynamicFilter = selectionFilterText(query)
     if (dynamicFilter) return dynamicFilter === activeSelectionFilter || dynamicFilter === activeFilter
+    if (!dynamicFilter && isEmptyManualQuery(query)) return activeSelectionFilter === EMPTY_MANUAL_FILTER
     if (activeSelectionFilter) return false
     const wantGroup = query.group ? String(query.group) : ''
     const wantLabels = labelSearchFilter(query, defs)
@@ -2496,7 +2531,7 @@ function TableFilters({
       if (a === b || wantGroup === activeGroup) return wantLabels === activeLabelFilter
     }
     if (!wantGroup && wantLabels && wantLabels === activeLabelFilter && !activeGroup) return true
-    return false
+    return Boolean(activeSelectionId && String(item.id ?? '') === activeSelectionId)
   }
   const selectionOn = Boolean(activeGroup || activeLabelFilter || activeSelectionFilter)
   return (

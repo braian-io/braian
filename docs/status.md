@@ -1,15 +1,15 @@
 # Status 2026-11-12
 
-## Rad 61-uppföljning — skapa och redigera selection genom det delade utkastet
+## Rad 61 — skapa och redigera selection genom det delade utkastet (mergad som #309, `0aaf71f`)
 
-Grenen `junior/61-selection-draft` utgår från `origin/main` `c8fb0af` och är **inte mergad, deployad eller accepterad**. Detta är Test-avvisningen av #154 / #158, inte en ny rad 154 eller 158: skapa och redigera en selection gjordes i en fristående dialog som skrev `POST`/`PUT` direkt i stället för i `Selections`-vyn och dess `Detail` med det delade utkastet från rad 212.
+Grenen `junior/61-selection-draft` utgick från `origin/main` `c8fb0af` och är **mergad till `main` som PR #309 (squash `0aaf71f54e1fdc1a5ff854b684a47cc8422527f5`)** samt live på demon med buildId `0aaf71f`. Test godkände kriterium 1, 2, 3, 5 och 6 men underkände kriterium 4; rättningen är 61b nedan, som **inte är mergad, deployad eller accepterad**. Detta är Test-avvisningen av #154 / #158, inte en ny rad 154 eller 158: skapa och redigera en selection gjordes i en fristående dialog som skrev `POST`/`PUT` direkt i stället för i `Selections`-vyn och dess `Detail` med det delade utkastet från rad 212.
 
 Acceptanskriterierna från `brief.md` (Braian Test grindar bara på dessa):
 
 1. **Skapa skriver inget före Save.** `Ctrl+K` → `New selection` eller `New selection` i `Selections`-vyn öppnar `Selections` och dess `Detail`, inte en fristående dialog. Namn, `Type`, `Kind` och, för `Dynamic`, filterfrågan kan sättas. `Discard` och `Escape` skriver inget; `Save` i det delade utkastfältet skapar selectionen, som sedan syns i listan och som filterchip.
 2. **Redigera använder samma utkast.** Namn och, för `Dynamic`, filterfrågan ändras i `Detail`. `Kind` och objekttyp är låsta som förut. Inget skrivs före `Save` (`PUT` bara på `Save`), och `Discard` återställer föregående namn och fråga.
 3. **Save filter as selection förfyller fortfarande.** `Ctrl+K` → `Save filter as selection` öppnar samma `Detail` med `Kind = Dynamic` och vyfiltret ifyllt, men skriver inget före `Save`; `Discard` skriver inget.
-4. **Delete, fallback och manuella selectioner fungerar som förut.** Delete bekräftar användning, vyer faller tillbaka till `All …`, och en manuell selection skapas och fylls för hand utan att den dynamiska frågan blandas in.
+4. **Delete, fallback och manuella selectioner fungerar som förut.** Delete bekräftar användning, vyer faller tillbaka till `All …`, och en manuell selection skapas utan att den dynamiska frågan blandas in. Test fann ingen fungerande hand-fyllningsväg; 61b rättar den guiden ärligt.
 5. **Dynamisk fråga räknas om.** Efter `Save` visar selectionen de objekt som matchar frågan nu, och en sparad ändrad fråga visar den nya mängden. Detta täcks av isolerade tester med egna selectioner, inte seeddata.
 6. **Guide, tester, engelska, skyddade filer.** Endast den befintliga `Saved selections`-sektionen i `docs/guide/data-sources.md` uppdateras. Isolerade tester täcker kriterium 1–5; de gamla `dynamic-selection`, `edit-selection-click`- och `new-selection-dialog`-specarna är uppdaterade eller omdöpta så de inte kräver den gamla dialogen som sparar direkt. `apps/web/src/data-model.tsx` (`sha256 2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`) och `product_suppliers`-etiketterna är orörda. Ingen demo-mutation, ingen PR, ingen merge och ingen deploy.
 
@@ -28,6 +28,34 @@ Bevis (endast `docker run --rm`, inga databaser behövdes):
 - `pnpm --dir apps/web exec tsc --noEmit` exit 0; `python3 scripts/check-english.py` exit 0.
 - `sha256sum apps/web/src/data-model.tsx` = `2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`; `product_suppliers`-etiketterna är orörda.
 - Ärlig avgränsning: ingen isolerad compose eller Playwright-körning gjordes, eftersom kriterium 1–5 kunde täckas med jsdom-tester och befintliga Rust-tester för sparande, låst kind/typ och delete-fallback. De uppdaterade E2E-specarna är typkontrollerade och registrerade men inte körda mot demo. Ingen skrivning gjordes mot demo, `/opt/braian`, `/var/www/braian`, Caddy eller Track A; ingen PR öppnades och inget mergades eller deployades.
+
+## Rad 61b-uppföljning — delete-fallback, tom manuell, användningstext och guide (inte mergad)
+
+Grenen `junior/61b-selection-fixes` utgår från `origin/main` `0aaf71f` (#309, rad 61) och är **inte mergad, deployad eller accepterad**. Den rättar Test-avvisningen av `0aaf71f` på kriterium 4: efter delete av den aktiva filterchippen låg tabellen kvar på den gamla frågan (24 rader i stället för alla 407), en tom `Manual`-selection visade alla objekt i stället för noll, delete-dialogen sa `Not used anywhere.` trots att chippen var aktiv, och guiden lovade en hand-fyllningsväg som inte fanns.
+
+Acceptanskriterierna för den här rundan (Braian Test grindar bara på dessa):
+
+1. **Skapa skriver inget före Save.** Oförändrat från 61: `Ctrl+K` → `New selection` och `New selection` i `Selections`-vyn öppnar `Selections`/`Detail`, inte en dialog som sparar direkt. `Discard` och `Escape` skriver inget; `Save` skapar selectionen.
+2. **Redigera använder samma utkast.** Oförändrat från 61: `Edit selection` öppnar samma `Detail`, `Kind` och `Type` är låsta, `Discard` återställer namn och fråga och endast `Save` skriver.
+3. **Save filter as selection förfyller och går via utkastet.** Oförändrat från 61: kommandot öppnar ett `Dynamic`-utkast med vyfiltret ifyllt och skriver inget före `Save`.
+4. **Delete-fallback, tom manuell, användningstext och hand-fyllning.** (a) Delete av den aktiva filterchippen väljer `All` direkt och visar alla objekt av typen; ingen `POST /v1/views` behövs. (b) En tom `Manual`-selection matchar noll objekt i `assortment-open`, som chip och i sökningen. (c) Delete-dialogen säger att listan bara omfattar sparade vyer, jobb och webhooks, inte en aktiv filterchip. (d) Hand-fyllning av enskilda objekt är uttryckligen utanför den här rundan; guiden lovar den inte längre och beskriver i stället att en manuell selection tar med sig de grupp- och etikettfilter som är aktiva när den skapas, samt att en tom manuell selection inte matchar något.
+5. **Dynamisk fråga räknas om.** Oförändrat från 61 och fortsatt täckt av isolerat test.
+6. **Guide, tester, engelska, skyddade filer.** `docs/guide/data-sources.md` `Saved selections` är uppdaterad på plats utan ny guidesida. Isolerade tester täcker (a)–(c) och regressionsfallen 1, 2, 3 och 5. `apps/web/src/data-model.tsx` (`sha256 2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`) och `product_suppliers`-etiketterna är orörda.
+
+Vad som ändrades:
+
+- `apps/web/src/assortment-filter.ts`: `EMPTY_MANUAL_FILTER` och `isEmptyManualQuery` gör en manuell selection utan grupp och etiketter till ett filter som matchar noll objekt (`id:=__braian_empty_manual__`), i stället för att `assortmentSearchFilter` bara lämnade typen kvar och därmed matchade allt.
+- `apps/web/src/panes.tsx`: `ObjectTable`/`TableFilters` håller reda på vilken selection som är applicerad. När listan inte längre innehåller den valda selectionen (till exempel efter delete) nollställs selection-, grupp-, etikett- och snabbfiltret, så `All` blir vald direkt. Tom manuell appliceras som nollmatchningsfiltret, och snabbfiltrets etikett visar inte den interna markören.
+- `apps/web/src/i18n.ts`: `noSelectionUsage` säger `Not used by a saved view, job, or webhook.` i stället för `Not used anywhere.`
+- `docs/guide/data-sources.md`: `Saved selections` beskriver delete-fallbacken till `All`, att en tom manuell selection matchar noll, vilka användningar delete-listan omfattar, och att det inte finns någon separat hand-fyllningsväljare ännu.
+- `apps/web/src/assortment-filter.test.ts`, `apps/web/src/selection-draft.test.tsx` och `apps/web/src/selections.test.tsx`: nya isolerade tester för tom manuell (både förhandsvisning och chip/sök), delete av aktiv chip med `All`-fallback och den ärliga användningstexten. Befintliga tester för kriterium 1, 2, 3 och 5 är oförändrade och fortsatt gröna.
+
+Bevis (endast `docker run --rm`, ingen databas behövdes):
+
+- `pnpm --dir apps/web exec vitest run` gav **164 filer / 975 tester** gröna, inklusive de nya selectionstesterna.
+- `pnpm --dir apps/web exec tsc --noEmit` exit 0; `python3 scripts/check-english.py` exit 0.
+- `sha256sum apps/web/src/data-model.tsx` = `2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`; `product_suppliers`-etiketterna är orörda.
+- Ärlig avgränsning: ingen isolerad compose, databas eller Playwright-körning gjordes. Befintliga E2E-specar är oförändrade; den nya chip-fallbacken är täckt av jsdom-testet i `selections.test.tsx`, inte av en demokörning. Ingen skrivning gjordes mot demo, `/opt/braian`, `/var/www/braian`, Caddy eller Track A. Ingen PR öppnades och inget mergades eller deployades.
 
 ## Rad 196-uppföljning — länkfel och Replace använder aktuellt utkast
 

@@ -298,7 +298,7 @@ export const copy = {
   filterQuery: 'Filter query',
   filterQueryHint: 'Same filter syntax as a view, for example type_key:=product && groups:=food:cheese.',
   filterQueryRequired: 'Enter a filter query.',
-  noSelectionUsage: 'Not used anywhere.',
+  noSelectionUsage: 'Not used by a saved view, job, or webhook.',
   noAssortments: 'No selections.',
   matchingObjects: 'matching objects',
   newGroup: 'New group',

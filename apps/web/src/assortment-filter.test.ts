@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   assortmentSearchFilter,
   dynamicSelectionFilter,
+  isEmptyManualQuery,
   labelSearchFilter,
   selectionFilterText,
   selectionMatchesType,
@@ -71,6 +72,18 @@ describe('dynamic selections', () => {
     expect(selectionQueryValue('manual', 'ignored', { group: 'food:cheese' })).toEqual({
       group: 'food:cheese',
     })
+  })
+
+  it('treats an empty manual selection as zero objects, not all of them', () => {
+    expect(isEmptyManualQuery({})).toBe(true)
+    expect(isEmptyManualQuery({ labels: [] })).toBe(true)
+    expect(isEmptyManualQuery({ group: 'food:cheese' })).toBe(false)
+    expect(isEmptyManualQuery({ labels: 'organic_eu' })).toBe(false)
+    expect(isEmptyManualQuery({ filter: 'groups:=food:cheese' })).toBe(false)
+    expect(assortmentSearchFilter({}, 'product')).toBe(
+      'type_key:=product && id:=__braian_empty_manual__',
+    )
+    expect(assortmentSearchFilter({}, '')).toBe('id:=__braian_empty_manual__')
   })
 
   it('lists the views, jobs and webhooks that use a selection', () => {

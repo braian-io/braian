@@ -153,11 +153,21 @@ only saved when you press `Save`.
 
 A dynamic selection recalculates from its filter whenever it is applied, so the table
 shows the objects that match now, not a snapshot from when the selection was saved.
-A manual selection is filled by hand and does not take a dynamic filter query.
 
-Selections are listed with an `Edit selection` and `Delete selection` action for each
-row. `Delete selection` first shows where the selection is used. After it is deleted,
-views that used it fall back to `All …`.
+A manual selection stores the group and label filters that are active when you create
+it, and it does not take a dynamic filter query. There is no separate picker yet for
+adding or removing individual objects by hand, and a query combined with manual
+additions is still out of scope. To choose what a manual selection contains, create it
+while the group or label filter you want is active. A manual selection with no group
+or labels matches no objects, not every object of the type.
+
+Selecting a selection chip applies it to the table, and clicking the active chip
+clears it. Selections are listed with an `Edit selection` and `Delete selection`
+action for each row. `Delete selection` first shows the saved views, jobs, and webhooks
+that use the selection; an active filter chip is not part of that list. Deleting a
+selection that is the active chip makes the table fall back to `All` at once, with the
+`All` chip selected and every object of the type shown. Views that were saved with the
+selection fall back to `All …` as well.
 
 ## Which one do I need?
 

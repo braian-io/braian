@@ -227,6 +227,29 @@ describe('selection drafts', () => {
     expect(docs).toHaveLength(0)
   })
 
+  it('previews an empty manual selection as zero matches, not every object', async () => {
+    docs = [{
+      id: 'm1',
+      name: 'Empty manual',
+      type: 'product',
+      type_id: product,
+      kind: 'manual',
+      query: {},
+    }]
+    render(<Harness />)
+    const row = await screen.findByTestId('assortment-row')
+    fireEvent.click(within(row).getAllByRole('button')[0])
+    await waitFor(() => {
+      const urls = vi.mocked(fetch).mock.calls
+        .map(([input]) => decodeURIComponent(String(input)))
+        .filter((url) => url.includes('/v1/search'))
+      expect(urls.some((url) => url.includes('id:=__braian_empty_manual__'))).toBe(true)
+    })
+    const open = await screen.findByTestId('assortment-open')
+    expect(open.textContent).toContain('0')
+    expect(open.textContent).toContain('matching objects')
+  })
+
   it('creates a manual selection without a dynamic query and still previews delete usage', async () => {
     usage = { views: [{ id: 'v1', title: 'Products' }] }
     render(<Harness />)
