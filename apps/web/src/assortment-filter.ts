@@ -1,5 +1,17 @@
 import type { Json } from './api'
 
+/** A manual selection with no members must match nothing, not every object. */
+export const EMPTY_MANUAL_FILTER = 'id:=__braian_empty_manual__'
+
+/** True when a stored query has neither a dynamic filter nor manual members. */
+export function isEmptyManualQuery(query: unknown): boolean {
+  if (!query || typeof query !== 'object') return false
+  if (selectionFilterText(query)) return false
+  const item = query as { group?: unknown; labels?: unknown }
+  if (typeof item.group === 'string' && item.group) return false
+  return labelCodes(item.labels).length === 0
+}
+
 /** Typesense filter for a saved selection.
  *
  * `type` on the query is ignored. The selection's type is passed in, so a
@@ -14,6 +26,10 @@ export function assortmentSearchFilter(query: unknown, typeKey = '', defs?: Json
     const type = typeKey ? `type_key:=${typeKeyOf(typeKey, defs)}` : ''
     if (!type || hasTypeClause(filter)) return filter
     return `${type} && (${filter})`
+  }
+  if (isEmptyManualQuery(query)) {
+    const type = typeKey ? `type_key:=${typeKeyOf(typeKey, defs)}` : ''
+    return type ? `${type} && ${EMPTY_MANUAL_FILTER}` : EMPTY_MANUAL_FILTER
   }
   const item = query as { group?: unknown; labels?: unknown }
   const parts: string[] = []
