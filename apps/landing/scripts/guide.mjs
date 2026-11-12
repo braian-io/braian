@@ -308,7 +308,7 @@ function pageHtml(template, page) {
   </header>
   <div class="guide-layout">
     <aside class="guide-sidebar">
-      <input class="guide-nav-toggle" type="checkbox" id="guide-nav-toggle" aria-controls="guide-nav" />
+      <input class="guide-nav-toggle" type="checkbox" id="guide-nav-toggle" aria-controls="guide-nav" aria-expanded="false" />
       <label class="guide-sidebar-title guide-nav-label" for="guide-nav-toggle">Guide</label>
       <nav class="guide-nav" id="guide-nav" aria-label="Guide pages">${navigation}</nav>
     </aside>
@@ -328,6 +328,19 @@ function pageHtml(template, page) {
       <a href="https://github.com/braian-io/braian/blob/main/LICENSE">Apache-2.0</a>
     </nav>
   </footer>
+  <script>
+    (function () {
+      var toggle = document.getElementById('guide-nav-toggle')
+      if (!toggle) return
+      var desktop = window.matchMedia('(min-width: 861px)')
+      function sync() {
+        toggle.setAttribute('aria-expanded', desktop.matches || toggle.checked ? 'true' : 'false')
+      }
+      toggle.addEventListener('change', sync)
+      if (desktop.addEventListener) desktop.addEventListener('change', sync)
+      sync()
+    })()
+  </script>
 </div>`,
   )
 

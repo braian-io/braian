@@ -140,7 +140,7 @@ export const agent = {
     },
     {
       title: 'Suggests, never saves',
-      body: 'Agent edits arrive as suggested changes you review as a diff and save. Human cell edits are drafts too. A delete is the exception: once you confirm, it is written immediately.',
+      body: 'Agent edits arrive as suggested changes you review as a diff and save. A confirmed table-cell edit is staged as a draft, the same draft Detail shows, and is written when you Save. A delete is the exception: once you confirm, it is written immediately.',
     },
     {
       title: 'A person behind every change',

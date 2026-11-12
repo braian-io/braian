@@ -2,7 +2,7 @@
 
 ## Rad 216b — rättade antal och återställningsfel efter Test på e70184f
 
-Grenen `junior/216b-delete-fixes` utgår från `origin/main` `e70184f` (#301), har ordinary-mergat `5f2402e` (row 225, #303) och `7eaee05` (row 225b, #304) och är **inte mergad, deployad eller accepterad**. Den rättar Test-avvisningen: antalet objekt räknade kaskadlänkar som objekt, singular saknades och samma rad visades två gånger; efter Trash Restore visade Detail och Graph fortfarande "The graph could not be loaded. Validation stopped the save.", även efter F5.
+Rad 216b är mergad till `main` som PR #305 (squash `45ea1132d8e2d124864a43d6cbee0142ef3e6b92`) och live på demon med buildId `45ea113`. Grenen `junior/216b-delete-fixes` utgick från `origin/main` `e70184f` (#301) och ordinary-mergade `5f2402e` (row 225, #303) och `7eaee05` (row 225b, #304). Den rättade Test-avvisningen: antalet objekt räknade kaskadlänkar som objekt, singular saknades och samma rad visades två gånger; efter Trash Restore visade Detail och Graph fortfarande "The graph could not be loaded. Validation stopped the save.", även efter F5.
 
 De sex acceptanskriterierna från `brief.md` (Braian Test grindar bara på dessa):
 
@@ -11,7 +11,7 @@ De sex acceptanskriterierna från `brief.md` (Braian Test grindar bara på dessa
 3. **K3 Flera val.** Valda objekt plus unika live-länkar; en delad länk räknas en gång och en länk som A har till ART1 ger minst 1 länk.
 4. **K1, K4 och K7 håller.** Fyra ytor, samma `DeleteObjectsHost`, `dry_run` för antal, Cancel fokuserad, Escape/overlay skriver inget, `DELETE /v1/objects/{id}` per id, rader borta från tabeller och sök, och Delete-tangenten öppnar inte dialogen medan en editor, ett textfält eller quick-filtret har fokus.
 5. **Guide.** Efter ordinary-merge av `origin/main` `5f2402e` (#303) och `7eaee05` (#304) uppdateras den befintliga `docs/guide/deleting-and-restore.md` så att den beskriver de rättade antalen och restore-beteendet (en mening, `Removes 1 object and N links` med rätt singular/plural, länkobjekt räknas som länkar, unika live-länkar vid flerval, ärligt raderat tillstånd i Detail/Graph, återställt objekt öppnas även efter F5). 225b:s tillfälliga demonot om att räkningar/Restore rättas i 216b tas bort, så sidan som autodeployas från main stämmer med den rättade produkten vid merge. Ingen ny `docs/guide/deleting.md`.
-6. **Tester och skyddade filer.** Isolerade regressionstester för K5 och K2/K3; engelsk copy; `apps/web/src/data-model.tsx` (`sha256 2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`) och `product_suppliers`-etiketterna orörda. Ingen demo-mutation, ingen PR, ingen merge.
+6. **Tester och skyddade filer.** Isolerade regressionstester för K5 och K2/K3; engelsk copy; `apps/web/src/data-model.tsx` (`sha256 2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`) och `product_suppliers`-etiketterna orörda. Ingen demo-mutation gjordes; arbetet öppnades som PR #305 och mergades.
 
 Vad som ändrades:
 
