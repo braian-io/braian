@@ -39,24 +39,38 @@ export function readPathFromDoc(doc: Json | undefined, defs: Json | undefined, p
   const attribute = attributeByKey(defs, key)
   const id = String(attribute?.id ?? '')
   const part = rest[0] ?? ''
-  const fields: string[] = []
-  if (id) {
-    const base = attributeIndexField(id, language)
-    if (part === 'unit') fields.push(`${base}__unit`)
-    else if (part === 'min') fields.push(`${base}__min`)
-    else if (part === 'max') fields.push(`${base}__max`)
-    else {
-      fields.push(base, attributeIndexField(id), attributeIndexField(id, 'en'), attributeIndexField(id, 'sv'))
-    }
-  }
+  const kind = attribute?.kind && typeof attribute.kind === 'object' ? (attribute.kind as Json) : undefined
+  const measured = String(kind?.type ?? '') === 'number' && Boolean(kind?.unit_family)
+  const base = id ? attributeIndexField(id, language) : ''
   const legacyBase = language ? `a_${key}__${language.replaceAll('-', '_')}` : `a_${key}`
-  if (part === 'unit') fields.push(`${legacyBase}__unit`, `a_${key}__unit`)
-  else if (part === 'min') fields.push(`${legacyBase}__min`, `a_${key}__min`)
-  else if (part === 'max') fields.push(`${legacyBase}__max`, `a_${key}__max`)
-  else fields.push(legacyBase, `a_${key}`, `a_${key}__en`, `a_${key}__sv`)
-  for (const field of fields) {
-    const text = textValue(doc[field])
-    if (text) return text
+  const readFields = (fields: string[]) => {
+    for (const field of fields) {
+      const text = textValue(doc[field])
+      if (text) return text
+    }
+    return ''
   }
-  return ''
+  if (part === 'unit' || part === 'min' || part === 'max') {
+    const fields: string[] = []
+    if (base) fields.push(`${base}__${part}`)
+    fields.push(`${legacyBase}__${part}`, `a_${key}__${part}`)
+    return readFields(fields)
+  }
+  const valueFields: string[] = []
+  if (id) {
+    if (part === 'value') valueFields.push(base, attributeIndexField(id))
+    else valueFields.push(base, attributeIndexField(id), attributeIndexField(id, 'en'), attributeIndexField(id, 'sv'))
+  }
+  if (part === 'value') valueFields.push(legacyBase, `a_${key}`)
+  else valueFields.push(legacyBase, `a_${key}`, `a_${key}__en`, `a_${key}__sv`)
+  const value = readFields(valueFields)
+  if (!value) return ''
+  if (measured && part === '') {
+    const unitFields: string[] = []
+    if (id) unitFields.push(`${attributeIndexField(id)}__unit`)
+    unitFields.push(`${legacyBase}__unit`, `a_${key}__unit`)
+    const unit = readFields(unitFields)
+    return unit ? `${value} ${unit}` : value
+  }
+  return value
 }

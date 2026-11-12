@@ -90,7 +90,7 @@ The picker lists:
 - The type's own attributes, plus system columns such as Type and Version.
 - Attributes from every group in the structures the type is allowed to use,
   including nested groups. On the seed food tree that includes Fat content from
-  Dairy, Caffeine from Coffee and tea, and Cocoa content from Chocolate.
+  Dairy & eggs, Caffeine from Coffee & tea, and Cocoa content from Chocolate.
 - Attributes from older class lists on those structures, when a revision still
   stores them. The editor writes group attributes instead, but the picker still
   offers the class-list fields so existing models keep them.
@@ -98,7 +98,14 @@ The picker lists:
 A group or class attribute can be added as a column even when not every row has a
 value. In the picker, those fields show the group name as a source hint, and
 typing the group name finds them. Linked fields are listed one hop away and stay
-read-only. Choosing a separate column for a unit is not covered here.
+read-only.
+
+A measured number field can be added as the combined column, as separate value and
+unit columns, or as all three. The separate columns are labelled `Name (value)` and
+`Name (unit)`; the value column shows only the number and the unit column only the
+unit code. The separate value and unit columns are display-only. A display unit
+chosen on the combined column only changes how the number is shown there, and leaves
+the value and unit columns alone.
 
 ## Switching workspaces
 

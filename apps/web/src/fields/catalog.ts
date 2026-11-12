@@ -4,8 +4,8 @@
  *
  * Own attributes become leaves (with qualifier steps from kind).
  * Link labels become link-shaped fields that drill into the peer type.
- * Parts such as `.unit` / `.label` are not listed as separate fields —
- * they are chosen as qualifiers after the leaf is selected.
+ * Measured number attributes also list their value and unit parts as sibling
+ * fields (`key.value` / `key.unit`); other parts such as `.label` stay qualifiers.
  */
 import type { Json } from '../api'
 import type { FieldDef, FieldValueShape } from './qualifiers'
@@ -124,6 +124,23 @@ function attributeField(defs: DefsJson, attr: Json, source?: string): FieldDef {
   return field
 }
 
+/** One attribute as one field, plus the value/unit siblings of a measured number. */
+function attributeFields(defs: DefsJson, attr: Json, source?: string): FieldDef[] {
+  const field = attributeField(defs, attr, source)
+  if (field.shape !== 'unit') return [field]
+  const sibling = (suffix: 'value' | 'unit', shape: FieldValueShape): FieldDef => {
+    const part: FieldDef = {
+      id: `${field.id}.${suffix}`,
+      name: `${field.name} (${suffix})`,
+      typeLabel: suffix === 'value' ? 'number' : 'text',
+      shape,
+    }
+    if (source) part.source = source
+    return part
+  }
+  return [field, sibling('value', 'number'), sibling('unit', 'text')]
+}
+
 type SourcedAttribute = { attr: Json; source?: string }
 
 function groupLabel(group: Json): string {
@@ -192,7 +209,7 @@ export function fieldCatalogForType(defs: DefsJson, typeKey: string): FieldDef[]
     const key = String(attr.key)
     if (seen.has(key)) continue
     seen.add(key)
-    fields.push(attributeField(defs, attr, source))
+    fields.push(...attributeFields(defs, attr, source))
   }
 
   const types = (defs.types as Json[] | undefined) ?? []
@@ -219,7 +236,7 @@ export function fieldCatalogForType(defs: DefsJson, typeKey: string): FieldDef[]
           const key = String(attr.key)
           if (peerSeen.has(key)) continue
           peerSeen.add(key)
-          peerFields.push(attributeField(defs, attr, source))
+          peerFields.push(...attributeFields(defs, attr, source))
         }
       }
       if (!seen.has(labelKey)) {
@@ -248,7 +265,7 @@ export function fieldCatalogForType(defs: DefsJson, typeKey: string): FieldDef[]
           const key = String(attr.key)
           if (peerSeen.has(key)) continue
           peerSeen.add(key)
-          peerFields.push(attributeField(defs, attr, source))
+          peerFields.push(...attributeFields(defs, attr, source))
         }
       }
       if (!seen.has(labelKey)) {
