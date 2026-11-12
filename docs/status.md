@@ -1,5 +1,34 @@
 # Status 2026-11-12
 
+## Rad 61-uppföljning — skapa och redigera selection genom det delade utkastet
+
+Grenen `junior/61-selection-draft` utgår från `origin/main` `c8fb0af` och är **inte mergad, deployad eller accepterad**. Detta är Test-avvisningen av #154 / #158, inte en ny rad 154 eller 158: skapa och redigera en selection gjordes i en fristående dialog som skrev `POST`/`PUT` direkt i stället för i `Selections`-vyn och dess `Detail` med det delade utkastet från rad 212.
+
+Acceptanskriterierna från `brief.md` (Braian Test grindar bara på dessa):
+
+1. **Skapa skriver inget före Save.** `Ctrl+K` → `New selection` eller `New selection` i `Selections`-vyn öppnar `Selections` och dess `Detail`, inte en fristående dialog. Namn, `Type`, `Kind` och, för `Dynamic`, filterfrågan kan sättas. `Discard` och `Escape` skriver inget; `Save` i det delade utkastfältet skapar selectionen, som sedan syns i listan och som filterchip.
+2. **Redigera använder samma utkast.** Namn och, för `Dynamic`, filterfrågan ändras i `Detail`. `Kind` och objekttyp är låsta som förut. Inget skrivs före `Save` (`PUT` bara på `Save`), och `Discard` återställer föregående namn och fråga.
+3. **Save filter as selection förfyller fortfarande.** `Ctrl+K` → `Save filter as selection` öppnar samma `Detail` med `Kind = Dynamic` och vyfiltret ifyllt, men skriver inget före `Save`; `Discard` skriver inget.
+4. **Delete, fallback och manuella selectioner fungerar som förut.** Delete bekräftar användning, vyer faller tillbaka till `All …`, och en manuell selection skapas och fylls för hand utan att den dynamiska frågan blandas in.
+5. **Dynamisk fråga räknas om.** Efter `Save` visar selectionen de objekt som matchar frågan nu, och en sparad ändrad fråga visar den nya mängden. Detta täcks av isolerade tester med egna selectioner, inte seeddata.
+6. **Guide, tester, engelska, skyddade filer.** Endast den befintliga `Saved selections`-sektionen i `docs/guide/data-sources.md` uppdateras. Isolerade tester täcker kriterium 1–5; de gamla `dynamic-selection`, `edit-selection-click`- och `new-selection-dialog`-specarna är uppdaterade eller omdöpta så de inte kräver den gamla dialogen som sparar direkt. `apps/web/src/data-model.tsx` (`sha256 2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`) och `product_suppliers`-etiketterna är orörda. Ingen demo-mutation, ingen PR, ingen merge och ingen deploy.
+
+Vad som ändrades:
+
+- `apps/web/src/selection-draft.ts` (ny): en liten global utkaststore för skapa/redigera. Den håller namn, typ, kind, fråga och den sparade manuella frågan, och har `startNewSelection`, `startEditSelection`, `updateSelectionDraft` och `discardSelectionDraft`.
+- `apps/web/src/assortments.tsx`: den fristående `NewSelectionDialog` som `POST`ade/`PUT`ade i `save()` är borta. `SelectionDraftDetail` renderas i `Selections`-vyns `Detail` och använder `ObjectDraftBar` (`review-and-save`, `discard-draft`) som objekt- och modelutkasten. `SelectionHost` startar utkastet från `NEW_SELECTION_EVENT`/`EDIT_SELECTION_EVENT` och fokuserar `Selections`-vyn via `braian-open-draft`. `Escape` kastar utkastet. Skrivning sker bara i Save, och för redigering skickas `PUT` med `id`. Delete-dialogen, `All …`-fallbacken och den manuella frågan är oförändrade.
+- `docs/guide/data-sources.md`: `Saved selections` beskriver nu `Selections`-vyn/`Detail`, det delade utkastfältets `Save`/`Discard`, att typ och kind är låsta vid redigering, att `Save filter as selection` förfyller ett dynamiskt utkast, samt att delete bekräftar användning och faller tillbaka till `All …`. Ingen ny guidesida och ingen ny `index.md`.
+- `apps/web/src/selection-draft.test.tsx` (ny): isolerade tester för kriterium 1–4: skapa skriver inget före Save och listas efter, `Discard`/`Escape` skriver inget, redigering `PUT`:ar bara på Save och har låst typ/kind, filterförfyllnad väntar på Save, manuell selection tar ingen dynamisk fråga, och delete-preview listar användning.
+- `apps/web/src/selection-recalculate.test.tsx` (ny): kriterium 5. En egen dynamisk selection öppnas, dess fråga ändras och sparas, och `Detail` kör den nya frågan mot sökningen i stället för att visa den gamla träffmängden.
+- `apps/web/e2e/new-selection-draft.spec.ts` (omdöpt från `new-selection-dialog.spec.ts`), `apps/web/e2e/edit-selection-click.spec.ts` och `apps/web/e2e/dynamic-selections.spec.ts`: använder `selection-detail`, `review-and-save` och `discard-draft` i stället för den gamla dialogen, `Save selection` och `Cancel`; `scripts/e2e.mjs` pekar på det nya specnamnet. Den gamla close-X-coverage är ersatt av `Discard`/`Escape`.
+
+Bevis (endast `docker run --rm`, inga databaser behövdes):
+
+- `pnpm --dir apps/web exec vitest run` gav **164 filer / 971 tester** gröna, inklusive de fem nya selectionstesterna.
+- `pnpm --dir apps/web exec tsc --noEmit` exit 0; `python3 scripts/check-english.py` exit 0.
+- `sha256sum apps/web/src/data-model.tsx` = `2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`; `product_suppliers`-etiketterna är orörda.
+- Ärlig avgränsning: ingen isolerad compose eller Playwright-körning gjordes, eftersom kriterium 1–5 kunde täckas med jsdom-tester och befintliga Rust-tester för sparande, låst kind/typ och delete-fallback. De uppdaterade E2E-specarna är typkontrollerade och registrerade men inte körda mot demo. Ingen skrivning gjordes mot demo, `/opt/braian`, `/var/www/braian`, Caddy eller Track A; ingen PR öppnades och inget mergades eller deployades.
+
 ## Rad 196-uppföljning — länkfel och Replace använder aktuellt utkast
 
 Rad 196-uppföljningen är mergad till `main` som PR #307 (squash `c8fb0af26d50f1dcb36d67742387448df3b29e1a`) och live på demon med buildId `c8fb0af`. Test har godkänt den. Grenen `junior/196-link-field-replace` utgick från `origin/main` `45ea113` (#305). Detta är Test-avvisningen av #223 / `fc24906`, inte en ny rad 223: efter en kardinalitetskonflikt återanvände `replace()` de gamla värdena i `conflict.request.values`, Replace-knappen gick att använda efter att Sort order ändrats till ett ogiltigt värde, och statusfoten kunde visa `Save failed: 422` för en konflikt som dialogen redan förklarat.

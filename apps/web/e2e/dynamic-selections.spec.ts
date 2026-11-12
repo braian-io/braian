@@ -25,6 +25,10 @@ async function selectionRow(page: Page, name: string) {
   return page.getByTestId('assortment-list').getByTestId('assortment-row').filter({ hasText: name })
 }
 
+async function selectionDraft(page: Page) {
+  return page.getByTestId('selection-detail')
+}
+
 async function bindSelectionToProductsView(page: Page, selectionId: string) {
   const workspaces = await (await page.request.get('/v1/workspaces')).json()
   const workspace = (workspaces.workspaces as Array<{ id: string; name: string }>).find(
@@ -65,13 +69,14 @@ test('dynamic selections can be created, edited and deleted with usage', async (
   await palette.getByTestId('palette-input').fill('New selection')
   await page.keyboard.press('Enter')
 
-  const dialog = page.getByTestId('new-selection')
-  await expect(dialog).toBeVisible()
+  const draft = await selectionDraft(page)
+  await expect(draft).toBeVisible()
+  await expect(page.getByTestId('assortment-list')).toBeVisible()
   await page.getByTestId('assortment-name').fill('Fresh cheese')
   await page.getByTestId('selection-kind').selectOption('dynamic')
   await page.getByTestId('selection-query').fill('type_key:=product && groups:=food:cheese')
-  await dialog.getByRole('button', { name: 'Save selection' }).click()
-  await expect(dialog).toBeHidden()
+  await draft.getByTestId('review-and-save').click()
+  await expect(draft).toHaveCount(0)
 
   await openSelections(page)
   await expect(await selectionRow(page, 'Fresh cheese')).toBeVisible()
@@ -93,15 +98,15 @@ test('dynamic selections can be created, edited and deleted with usage', async (
   await expect(menu).toBeVisible()
   await menu.getByRole('menuitem', { name: 'Edit selection' }).click()
 
-  const edit = page.getByTestId('new-selection')
+  const edit = await selectionDraft(page)
   await expect(edit.getByRole('heading', { name: 'Edit selection' })).toBeVisible()
   await expect(page.getByTestId('selection-type')).toHaveAttribute('data-locked', 'true')
   await expect(page.getByTestId('selection-kind')).toHaveAttribute('data-locked', 'true')
   await expect(edit.locator('select')).toHaveCount(0)
   await page.getByTestId('assortment-name').fill('Aged cheese')
   await page.getByTestId('selection-query').fill('type_key:=product && groups:=food:cheese && a_labels:=organic_eu')
-  await edit.getByRole('button', { name: 'Save selection' }).click()
-  await expect(edit).toBeHidden()
+  await edit.getByTestId('review-and-save').click()
+  await expect(edit).toHaveCount(0)
   await expect(await selectionRow(page, 'Aged cheese')).toBeVisible()
   await expect(await selectionRow(page, 'Fresh cheese')).toHaveCount(0)
 
@@ -143,14 +148,14 @@ test('Ctrl+K saves the current view filter as a dynamic selection', async ({ pag
   await expect(palette.locator('.hit').filter({ hasText: 'Save filter as selection' }).first()).toBeVisible()
   await page.keyboard.press('Enter')
 
-  const dialog = page.getByTestId('new-selection')
-  await expect(dialog).toBeVisible()
+  const draft = await selectionDraft(page)
+  await expect(draft).toBeVisible()
   await expect(page.getByTestId('selection-kind')).toHaveValue('dynamic')
   await expect(page.getByTestId('selection-query')).toHaveValue(/type_key:=product/)
   await expect(page.getByTestId('selection-query')).toHaveValue(/groups:=food:cheese/)
   await page.getByTestId('assortment-name').fill('Cheese filter')
-  await dialog.getByRole('button', { name: 'Save selection' }).click()
-  await expect(dialog).toBeHidden()
+  await draft.getByTestId('review-and-save').click()
+  await expect(draft).toHaveCount(0)
 
   await openSelections(page)
   const row = await selectionRow(page, 'Cheese filter')
