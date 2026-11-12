@@ -2,7 +2,7 @@
 
 ## Rad 77 — snabbare CI: färska e2e-vikter och åtta shards (inte mergad)
 
-Grenen `junior/77-faster-ci` utgår från `origin/main` `f8d0cb6aabe2b8b187f79ef6366427be357b268b` (#311, row 61b) och är **inte mergad, deployad eller accepterad**. Arbetet rör bara CI, testskript och docs; ingen produktkod, ingen demo och inget autodeploy.
+Grenen `junior/77-faster-ci` utgick från `origin/main` `f8d0cb6aabe2b8b187f79ef6366427be357b268b` (#311, rad 61b) och har därefter ordinärmergat `origin/main` `5949cb1d0e2d9b1eebb17be17e0f7b0b4a4e3f56` (#310, rad 51a). Den är **inte mergad, deployad eller accepterad**. Arbetet rör bara CI, testskript och docs; ingen produktkod, ingen demo och inget autodeploy.
 
 Acceptanskriterierna från `brief.md`:
 
@@ -29,6 +29,35 @@ Bevis (lokalt, utan databas eller compose):
 - `sha256sum apps/web/src/data-model.tsx` = `2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`.
 
 Ärlig avgränsning: ingen full Playwright-svit och ingen CI-körning gjordes lokalt, så efter-siffran är ännu inte mätt. Koordinatorn mäter 2–3 fulla PR-körningar (och första gröna push till `main`) på samma sätt som baslinjen. `sccache` lämnades utanför: det kräver egna jämförande körningar för att bevisa nytta och påverkar inte PR-kritiska vägen när `bins` har cache-hit. Ingen skrivning gjordes mot demo, `/opt/braian`, `/var/www/braian`, Caddy eller Track A; ingen PR öppnades och inget mergades eller deployades.
+
+## Rad 51a — Reset to default för personliga kolumnval (mergad som #310, `5949cb1`)
+
+Grenen `junior/51a-reset-to-default` utgick från `origin/main` `f8d0cb6` (#311, rad 61b) via en ordinär merge och är **mergad till `main` som PR #310 (squash `5949cb1d0e2d9b1eebb17be17e0f7b0b4a4e3f56`)**. Detta är den första skivan av Notion-rad 51 (välja fält per vy). Hide column, Select fields, en hop av länkade fält (skrivskyddade) och personliga `column-prefs` v2 finns redan på main. HTTP `DELETE /v1/views/{view_id}/column-prefs` fanns redan och raderar bara anroparens egen rad. Senare skivor, inte i denna PR: **51b** taxonomi-/grupp-fält i fältväljaren, **51c** kvalificerade fält som egna värde- och enhetskolumner. Skrivning till länkade/hop-fält är utanför omfattningen.
+
+Acceptanskriterierna (Braian Test grindar bara på dessa):
+
+1. **Reset to default tar bort den personliga överstyrningen.** Efter dölja, visa, ordna om eller lägga till ett fält återställer kommandot vyn till typens standardkolumner (`defaultColumnIdsForType` + systemkolumner) genom `DELETE /v1/views/{view_id}/column-prefs` för den inloggade användaren, inte genom att skriva ett dokument som råkar se ut som standard. Efter omladdning syns fortfarande standardkolumnerna.
+2. **Samma kommando i kolumnmenyn och Ctrl+K.** Det finns i kolumnhuvudets/vyns snabbmeny (`Shift+F10` eller context-menu-tangenten på ett huvud) och i Ctrl+K, avgränsat till den fokuserade objekttabellen. Den engelska etiketten är exakt `Reset to default`.
+3. **Kommandot visas bara när en överstyrning finns.** Utan personligt prefs-dokument är det dolt. Ett anrop utan överstyrning ska inte ge fel (HTTP DELETE och agentoperationen är no-op med 204/200).
+4. **Agenten kan nollställa bara anroparens egna prefs.** Kommandot finns i registret som `delete_view_column_prefs` och är anropbart som de befintliga get/put-operationerna. Det är en personlig inställning, inte ett delat vy-förslag, och kan inte radera en annan användares prefs.
+5. **Guiden är uppdaterad i samma gren.** `docs/guide/workspaces-and-panels.md` (avsnittet “What is saved, and for whom”) och `docs/guide/command-palette-and-shortcuts.md` beskriver att personlig kolumnordning och synlighet nollställs till vyns standard med `Reset to default` från menyn eller Ctrl+K. `deleting-and-restore.md` och landningsfiler är orörda.
+6. **Tester täcker återställning och omladdning.** Efter dölja/omordning återställer Reset standard-id:n, och en omladdning visar fortfarande standard. Befintligt hide/show/Select fields-beteende förblir grönt.
+7. **Engelska bara, skyddade filer orörda.** Ingen ändring av taxonomikatalogen, värde/enhet-kolumndelar, skrivning till hop-fält, `apps/web/src/data-model.tsx` (`sha256 2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`) eller `product_suppliers`-etiketter.
+
+Vad som ändrades:
+
+- `apps/web/src/column-prefs.ts` och `column-prefs-mutation.ts`: `deleteColumnPrefs`, `columnPrefsHasOverride` och `resetColumnPrefs` som gör DELETE, sätter cachen till `document: null` och invaliderar query-nyckeln.
+- `apps/web/src/panes.tsx`: `ui.reset_columns` målar standardkolumnerna, riktar in snapshoten så att ingen lookalike-PUT skrivs, och publicerar överstyrningsflaggan till menyn.
+- `apps/web/src/command-registry.ts`, `palette.tsx`, `shell.tsx`, `ui-context.ts` och `i18n.ts`: kommandot `columns:reset` med etiketten `Reset to default`, i kolumnmenyn och Ctrl+K bara när en överstyrning finns.
+- `crates/api/src/column_prefs.rs` och `platform.rs`: agentoperationen `delete_view_column_prefs` (alltid anroparens egen rad). Den är undantagen från det generella agent-delete-skyddet eftersom den bara tar bort anroparens egen UI-rad.
+- Guiden som i kriterium 5.
+
+Bevis (lokalt före PR, plus CI 13/13 grön på `4027c8e` och på `66ebf9c` före merge av `f8d0cb6`):
+
+- `pnpm --filter ./apps/web typecheck` och `pnpm --filter ./apps/web exec vitest run` (163 filer / 971 tester) gröna, inklusive `command-registry-column-reset.test.ts`, utökad `column-prefs-mutation.test.ts` och `field-picker.test.tsx` (DELETE, ingen lookalike-PUT, standard efter omladdning).
+- E2E `apps/web/e2e/column-prefs-multitab.spec.ts` täcker Ctrl+K-reset och att standard överlever omladdning; den kördes i CI.
+- `cargo fmt --check`, `cargo check -p braian-api`, `cargo clippy -p braian-api --all-targets -- -D warnings`, `cargo test -p braian-api --test column_prefs` (10 tester mot en tillfällig `postgres:18`-container som togs bort) och `cargo test -p braian-api --lib platform::tests` (25 tester).
+- `sha256sum apps/web/src/data-model.tsx` oförändrad. Ingen demo-mutation, ingen deploy, ingen ändring av `/opt/braian` eller `/var/www/braian`.
 
 ## Rad 61 — skapa och redigera selection genom det delade utkastet (mergad som #309, `0aaf71f`)
 

@@ -13,11 +13,17 @@ Common root commands include:
 - `Open view`, `Open workspace`, and `Open object`, plus one `Open {type}` row per
   object type.
 - `Add view`, `New from template`, and `Switch catalog`.
-- `Data source`, `Select fields`, `Filter by`, `Export columns`, and `Hide column`.
+- `Data source`, `Select fields`, `Filter by`, `Export columns`, `Hide column`, and
+  `Reset to default`.
 - `Selections`, `Link to`, `New type`, `New link type`, `New value list`, `New unit
   family`, and `New tree`.
 - `Reset layout`, `Delete workspace…`, and the model draft commands.
 - Theme, feedback, sign-out, and the `Ask AI` row at the bottom.
+
+`Reset to default` appears when the focused object table has a personal column
+override. It clears the current user's column order and visibility for that view and
+restores the view's default columns. The same command is in the column header menu,
+opened with `Shift+F10` or the context-menu key.
 
 ## Keys inside the palette
 

@@ -212,6 +212,14 @@ export const registryCommands: RegistryCommand[] = [
     when: (target) => Boolean(target.column),
   },
   {
+    id: 'columns:reset',
+    title: copy.resetToDefault,
+    contexts: ['table-header', 'cell', 'row'],
+    group: 'views',
+    keywords: ['column', 'reset', 'default', 'visibility', 'order'],
+    when: (target) => Boolean(target.viewId) && target.columnPrefsOverride === true,
+  },
+  {
     id: 'column:move-left',
     title: (target) =>
       target.columnHeader ? `${copy.moveColumnLeft} · ${target.columnHeader}` : copy.moveColumnLeft,

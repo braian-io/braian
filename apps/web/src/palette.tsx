@@ -375,6 +375,7 @@ export function CommandPalette({
     () => (moveTarget.viewId ? readColumns(moveTarget.viewId) : tableColumns),
     [moveTarget.viewId, tableColumns],
   )
+  const columnPrefsOverride = useMemo(() => readUiContext().columnPrefsOverride, [focusViewId])
   const catalogsList = useCatalogsQuery()
   const catalogOptions = (catalogsList.data ?? []).map((row) => ({
     id: row.id || MASTER_CATALOG_ID,
@@ -440,7 +441,7 @@ export function CommandPalette({
             keywords: ['delete', 'remove', 'trash'],
           }]
         : []),
-      ...columnEntries(moveColumns, moveTarget.column ?? null),
+      ...columnEntries(moveColumns, moveTarget.column ?? null, columnPrefsOverride),
       ...(session.group
         ? [{
             id: 'model:delete-group',
@@ -771,6 +772,11 @@ export function CommandPalette({
       setStack((current) => [...current, { label: item.title, rows: columnRows(tableColumns, true) }])
       setQuery('')
       setActive(0)
+      return
+    }
+    if (id === 'columns:reset') {
+      void runCommand(id, { viewId: focusViewId ?? undefined, columnPrefsOverride })
+      onClose()
       return
     }
     if (id === 'fields:select') {
@@ -1645,12 +1651,15 @@ function buildCatalog(
 }
 
 // Field and column commands for the open table.
-function columnEntries(columns: UiColumn[], activeColumn: string | null): PaletteItem[] {
+function columnEntries(columns: UiColumn[], activeColumn: string | null, columnPrefsOverride = false): PaletteItem[] {
   const items: PaletteItem[] = [
     { id: 'fields:select', group: 'views', title: `${copy.selectFields} ›`, subtitle: 'Choose and reorder columns', keywords: ['field', 'column', 'select', 'show', 'hide', 'reorder'] },
     { id: 'filter:by', group: 'views', title: `${copy.filterBy} ›`, subtitle: 'Attribute, part or link', keywords: ['filter', 'path', 'unit'] },
     { id: 'export:columns', group: 'views', title: `${copy.exportColumns} ›`, subtitle: 'Add a column to the next export', keywords: ['export', 'path', 'column'] },
   ]
+  if (columnPrefsOverride) {
+    items.push({ id: 'columns:reset', group: 'views', title: copy.resetToDefault, subtitle: 'Restore the view default columns', keywords: ['column', 'reset', 'default', 'visibility', 'order'] })
+  }
   if (columns.some((column) => !column.hidden)) {
     items.push({ id: 'columns:hide', group: 'views', title: `${copy.hideColumn} ›`, subtitle: 'Pick a column in the open table', keywords: ['column'] })
   }
