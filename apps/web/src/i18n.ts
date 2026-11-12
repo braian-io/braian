@@ -391,6 +391,7 @@ export const copy = {
   resetLayout: 'Reset layout',
   newTab: 'New tab',
   hideColumn: 'Hide column',
+  resetToDefault: 'Reset to default',
   showColumn: 'Show column',
   moveColumnLeft: 'Move column left',
   moveColumnRight: 'Move column right',

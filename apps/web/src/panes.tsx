@@ -41,9 +41,9 @@ import {
 import { SortableContext, arrayMove, horizontalListSortingStrategy } from '@dnd-kit/sortable'
 import { columnTitle, defaultColumnIdsForType, makeViewColumn, parseColumnId, type ViewColumn } from './fields/columns'
 import { EMPTY_CELL } from './fields/qualifiers'
-import { fetchColumnPrefs, isHopPath, orderHiddenToDocument, ensureSystemColumns,
+import { columnPrefsHasOverride, fetchColumnPrefs, isHopPath, orderHiddenToDocument, ensureSystemColumns,
   prefsToOrderHidden, saveColumnPrefsKeepalive, type ColumnPrefsDocument, type SystemViewColumn } from './column-prefs'
-import { columnPrefsMutationKey, columnPrefsQueryKey, useSaveColumnPrefs } from './column-prefs-mutation'
+import { columnPrefsMutationKey, columnPrefsQueryKey, resetColumnPrefs, useSaveColumnPrefs } from './column-prefs-mutation'
 import { readPathFromDoc, summarizePathValues } from './path-cell'
 import { cellPathValues, fetchPathValues } from './path-values'
 import { applyObjectWrite, currentSearchWaitSeq, reconcileObjectWrite } from './object-write'
@@ -112,6 +112,7 @@ import {
   enrichSelection,
   publishActiveColumn,
   publishColumns,
+  publishColumnPrefsOverride,
   publishSelection,
   publishTable,
   readMarkedSelection,
@@ -327,6 +328,7 @@ export function ObjectTable({
     // Concurrent optimistic saves invalidate on settle; refetch after stale / focus.
     staleTime: 30_000,
   })
+  const hasColumnOverride = columnPrefsHasOverride(prefs.data)
 
   const idToKey = useCatalogIdToKey()
   const catalogKey = catalogKeyOf(view.state, workspaceCatalogRef(workspace), idToKey)
@@ -797,6 +799,9 @@ export function ObjectTable({
   useEffect(() => {
     publishColumns(view.id, all.map((id) => ({ id, header: columnHeader(id), hidden: hidden.includes(id) })))
   }, [columnStamp, view.id])
+  useEffect(() => {
+    publishColumnPrefsOverride(view.id, hasColumnOverride)
+  }, [view.id, hasColumnOverride])
   // Record every activation directly, in the event that caused it. Publishing
   // from a passive effect here would land after the next pane's header click
   // when a body click and a Detail open commit later, and the stale publish
@@ -851,8 +856,41 @@ export function ObjectTable({
     },
   })
 
+  /**
+   * Reset to the type default: drop the personal prefs row and paint defaults
+   * optimistically. The snapshot is aligned first so the diff effect does not
+   * save a lookalike default document on the way out.
+   */
+  const resetColumnsToDefault = () => {
+    const viewOrder = (view.state as { table?: { order?: unknown } } | undefined)?.table?.order
+    const defaults = typeKey
+      ? defaultColumnIdsForType(typeKey, defs.data)
+      : Array.isArray(viewOrder)
+        ? viewOrder.map(String)
+        : columns.map((column) => column.id)
+    const ensured = ensureSystemColumns(defaults, [], systemColumns)
+    if (prefsSaveTimer.current != null) {
+      clearTimeout(prefsSaveTimer.current)
+      prefsSaveTimer.current = null
+    }
+    prefsDirtyRef.current = false
+    latestPrefsDocument.current = null
+    prefsSnapshot.current = JSON.stringify([ensured.order, ensured.hidden])
+    setOrder(ensured.order)
+    setHidden(ensured.hidden)
+    void resetColumnPrefs(queryClient, view.id).catch((reason: unknown) => {
+      reportWriteError(reason)
+    })
+  }
+
   useEffect(() => onUi((event) => {
     const args = event.args
+    if (event.name === 'ui.reset_columns') {
+      const target = String(args.view ?? args.view_id ?? '')
+      if (target && target !== view.id) return
+      resetColumnsToDefault()
+      return
+    }
     if (event.name === 'ui.filter') setFilter(String(args.q ?? args.text ?? args.filter ?? ''))
     if (event.name === 'ui.group') setGroupBy(String(args.group ?? args.by ?? ''))
     if (event.name === 'ui.sort' && args.sort) setSort(String(args.sort))
@@ -899,7 +937,7 @@ export function ObjectTable({
       })
     }
     if (event.name === 'ui.export') exportVisible()
-  }), [exportPaths, filterBy, hidden, order, queryText, selected, session, sort])
+  }), [exportPaths, filterBy, hidden, order, queryText, resetColumnsToDefault, selected, session, sort])
   useEffect(() => {
     const onFilter = (event: Event) => {
       const detail = (event as CustomEvent<{ text?: string; label?: string }>).detail
@@ -1060,6 +1098,7 @@ export function ObjectTable({
         hiddenColumns,
         typeKey: session.listType ?? undefined,
         viewId: view.id,
+        columnPrefsOverride: hasColumnOverride,
         objects: chosen.flatMap((id) => {
           const item = known.get(id)
           return item ? [item] : []
@@ -1097,6 +1136,7 @@ export function ObjectTable({
         typeKey: session.listType ?? undefined,
         singular: session.listType ? singularOf(defs.data, session.listType, uiLanguage) || undefined : undefined,
         viewId: view.id,
+        columnPrefsOverride: hasColumnOverride,
       },
     })
   }
@@ -1121,6 +1161,7 @@ export function ObjectTable({
           typeKey: session.listType ?? undefined,
           singular: session.listType ? singularOf(defs.data, session.listType, uiLanguage) || undefined : undefined,
           viewId: view.id,
+          columnPrefsOverride: hasColumnOverride,
         },
       })
       return

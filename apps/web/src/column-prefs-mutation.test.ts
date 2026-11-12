@@ -9,6 +9,7 @@ import {
   columnPrefsMutationOptions,
   columnPrefsMutationScopeId,
   columnPrefsQueryKey,
+  resetColumnPrefs,
   useSaveColumnPrefs,
 } from './column-prefs-mutation'
 
@@ -83,6 +84,37 @@ describe('columnPrefsMutationOptions', () => {
       return 1
     })
     await opts.onSettled?.(null, null, { document: doc('sku', false) }, undefined, {} as never)
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: key })
+  })
+})
+
+describe('resetColumnPrefs', () => {
+  it('DELETEs the caller prefs and invalidates the query key', async () => {
+    const calls: Array<{ url: string; method: string }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        calls.push({
+          url: String(input),
+          method: (init?.method ?? 'GET').toUpperCase(),
+        })
+        return new Response(null, { status: 204 })
+      }),
+    )
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const key = columnPrefsQueryKey(viewId)
+    client.setQueryData(key, { document: doc('sku', false), updated_at: 't0' })
+    const invalidate = vi.spyOn(client, 'invalidateQueries')
+
+    await resetColumnPrefs(client, viewId)
+
+    expect(calls).toEqual([
+      {
+        url: expect.stringContaining(`/v1/views/${viewId}/column-prefs`),
+        method: 'DELETE',
+      },
+    ])
+    expect(client.getQueryData(key)).toMatchObject({ document: null })
     expect(invalidate).toHaveBeenCalledWith({ queryKey: key })
   })
 })

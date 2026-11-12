@@ -490,6 +490,34 @@ pub async fn get_view_column_prefs_op(
     .0)
 }
 
+/// Agent / operations entry for DELETE. Always the caller's own user row.
+pub async fn delete_view_column_prefs_op(
+    state: &AppState,
+    identity: &Identity,
+    args: &Value,
+) -> Result<Value, Problem> {
+    let view_id = args
+        .get("view")
+        .or_else(|| args.get("view_id"))
+        .and_then(Value::as_str)
+        .and_then(|id| Uuid::parse_str(id).ok())
+        .ok_or_else(|| Problem::new(StatusCode::BAD_REQUEST, "view", "view id is required"))?;
+    let query = PrefsQuery {
+        environment: args
+            .get("environment")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+    };
+    delete_column_prefs(
+        State(state.clone()),
+        Auth(identity.clone()),
+        Path(view_id),
+        Query(query),
+    )
+    .await?;
+    Ok(json!({ "deleted": true }))
+}
+
 /// Agent / operations entry for PUT. Always the caller's own user row.
 pub async fn put_view_column_prefs_op(
     state: &AppState,

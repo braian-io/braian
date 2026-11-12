@@ -801,6 +801,13 @@ fn registry() -> &'static [Operation] {
             params: &[],
         },
         Operation {
+            name: "delete_view_column_prefs",
+            title: "Reset view column preferences",
+            permission: Role::Viewer,
+            needs_approval: false,
+            params: &[],
+        },
+        Operation {
             name: "put_view_column_prefs",
             title: "Save view column preferences",
             permission: Role::Viewer,
@@ -1145,6 +1152,10 @@ fn exposed_to_agent(op: &Operation) -> bool {
 
 /// True when the operation removes data or a definition that data hangs on.
 pub(crate) fn operation_deletes(name: &str) -> bool {
+    // A personal column-prefs reset only drops the caller's own UI state.
+    if name == "delete_view_column_prefs" {
+        return false;
+    }
     name.split(['.', '_'])
         .any(|part| matches!(part, "delete" | "remove" | "discard" | "detach"))
 }
@@ -6514,6 +6525,9 @@ pub(crate) async fn run_operation(
         }
         "get_view_column_prefs" => {
             crate::column_prefs::get_view_column_prefs_op(state, identity, args).await
+        }
+        "delete_view_column_prefs" => {
+            crate::column_prefs::delete_view_column_prefs_op(state, identity, args).await
         }
         "put_view_column_prefs" => {
             crate::column_prefs::put_view_column_prefs_op(state, identity, args).await
