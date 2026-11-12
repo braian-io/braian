@@ -132,13 +132,32 @@ the table filter bar next to `All`, `Type`, and `Status`. Selecting a chip appli
 filter; clicking the active chip clears it.
 
 Create one from the `Selections` view with `New selection`, or from `Ctrl+K` and `New
-selection`. The dialog has `Selection`, `Type`, `Kind` (`Dynamic` or `Manual`), and
-`Filter query`. The filter query uses the same syntax as a view filter, for example
-`type_key:=product && groups:=food:cheese`. The button is `Save selection`.
+selection`. Both open the `Selections` view and its `Detail`, where you set `Selection`,
+`Type`, `Kind` (`Dynamic` or `Manual`), and, for a dynamic selection, `Filter query`.
+The filter query uses the same syntax as a view filter, for example
+`type_key:=product && groups:=food:cheese`.
 
-A dynamic selection follows its filter. A manual selection is filled by hand.
+Creating and editing a selection uses the same draft bar as objects and model changes.
+Nothing is written until you press `Save`; `Discard` or `Escape` throws the draft away,
+and no selection is created or changed.
+
+Edit a selection with the `Edit selection` action on its row or through `Ctrl+K` and
+`Edit selection`. The `Detail` then lets you change the name and, for a dynamic
+selection, the filter query. `Kind` and object `Type` stay locked after creation.
+`Discard` restores the previous name and query. `Save` is the only action that stores
+the change.
+
+`Ctrl+K` and `Save filter as selection` opens the same draft `Detail` with `Kind` set to
+`Dynamic` and the current view filter already filled in. It is still a draft: it is
+only saved when you press `Save`.
+
+A dynamic selection recalculates from its filter whenever it is applied, so the table
+shows the objects that match now, not a snapshot from when the selection was saved.
+A manual selection is filled by hand and does not take a dynamic filter query.
+
 Selections are listed with an `Edit selection` and `Delete selection` action for each
-row.
+row. `Delete selection` first shows where the selection is used. After it is deleted,
+views that used it fall back to `All …`.
 
 ## Which one do I need?
 
