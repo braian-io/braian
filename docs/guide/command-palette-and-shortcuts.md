@@ -115,7 +115,9 @@ Some keys belong to a view rather than to the app:
 - **Model and definition tables.** `Enter` or `F2` edits a cell, `Escape` cancels, `Tab`
   moves to the next cell, and `Shift+F10` or the context-menu key opens the row menu.
 - **Field picker.** Arrow keys move, `Enter` toggles or opens, `→` drills in, `←` or
-  `Backspace` goes back, and `Escape` closes the picker.
+  `Backspace` goes back, and `Escape` closes the picker. Closing the Select fields
+  palette returns focus to the control that opened it, including when it is dismissed
+  by clicking the backdrop.
 - **Import.** `Ctrl+Z` and `Ctrl+Shift+Z` undo and redo a mapping, `Delete` or
   `Backspace` removes a column mapping, and `Escape` closes the import or its
   confirmation.

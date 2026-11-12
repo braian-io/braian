@@ -179,6 +179,27 @@ test.describe('field picker on Products', () => {
   })
 
 
+  test('Select fields returns focus to the button on Escape and backdrop', async ({ page }) => {
+    await login(page)
+    await openProducts(page)
+    await expect(page.getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
+
+    const opener = mainTable(page).getByTestId('table-select-fields')
+    await opener.click()
+    await expect(page.getByTestId('command-palette')).toHaveAttribute('data-fields-mode', 'true')
+    await expect(page.getByTestId('fields-mode-input')).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('fields-mode')).toHaveCount(0)
+    await expect(opener).toBeFocused()
+
+    await opener.click()
+    await expect(page.getByTestId('command-palette')).toHaveAttribute('data-fields-mode', 'true')
+    await page.waitForTimeout(150)
+    await page.mouse.click(2, 2)
+    await expect(page.getByTestId('fields-mode')).toHaveCount(0)
+    await expect(opener).toBeFocused()
+  })
+
   test('typing in fields palette does not open New Product', async ({ page }) => {
     await login(page)
     await openProducts(page)

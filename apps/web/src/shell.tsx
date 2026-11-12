@@ -227,9 +227,13 @@ export function Shell() {
   /** Bumped on every Ctrl+K / palette:search so list opens at root even if mode was already list. */
   const [paletteEpoch, setPaletteEpoch] = useState(0)
   const [fieldsEditColumnId, setFieldsEditColumnId] = useState<string | null>(null)
+  const fieldsOpenerRef = useRef<HTMLElement | null>(null)
   useEffect(() => {
     setAiMode(paletteMode === 'ai')
     return () => setAiMode(false)
+  }, [paletteMode])
+  useEffect(() => {
+    if (paletteMode !== 'fields') fieldsOpenerRef.current = null
   }, [paletteMode])
   useEffect(() => {
     const close = () => setPaletteMode(null)
@@ -239,6 +243,7 @@ export function Shell() {
   useEffect(() => {
     const onFields = (event: Event) => {
       const detail = (event as CustomEvent<{ editColumnId?: string | null }>).detail
+      fieldsOpenerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
       setFieldsEditColumnId(detail?.editColumnId ?? null)
       setPaletteMode('fields')
       window.setTimeout(() => {
@@ -2069,6 +2074,13 @@ export function Shell() {
             setPaletteSourceTargetViewId(null)
             setPaletteStartNewFromTemplate(false)
             setPaletteStartSwitchCatalog(false)
+            const opener = fieldsOpenerRef.current
+            fieldsOpenerRef.current = null
+            if (paletteModeRef.current === 'fields' && opener) {
+              queueMicrotask(() => {
+                if (opener.isConnected) opener.focus()
+              })
+            }
             setPaletteMode(null)
           }}
         />
