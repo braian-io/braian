@@ -32,7 +32,7 @@ Bevis (lokalt, utan databas eller compose):
 
 ## Rad 61 — skapa och redigera selection genom det delade utkastet (mergad som #309, `0aaf71f`)
 
-Grenen `junior/61-selection-draft` utgick från `origin/main` `c8fb0af` och är **mergad till `main` som PR #309 (squash `0aaf71f54e1fdc1a5ff854b684a47cc8422527f5`)** samt live på demon med buildId `0aaf71f`. Test godkände kriterium 1, 2, 3, 5 och 6 men underkände kriterium 4; rättningen är 61b nedan, som **inte är mergad, deployad eller accepterad**. Detta är Test-avvisningen av #154 / #158, inte en ny rad 154 eller 158: skapa och redigera en selection gjordes i en fristående dialog som skrev `POST`/`PUT` direkt i stället för i `Selections`-vyn och dess `Detail` med det delade utkastet från rad 212.
+Grenen `junior/61-selection-draft` utgick från `origin/main` `c8fb0af` och är **mergad till `main` som PR #309 (squash `0aaf71f54e1fdc1a5ff854b684a47cc8422527f5`)** samt var live på demon med buildId `0aaf71f`. Test godkände kriterium 1, 2, 3, 5 och 6 men underkände kriterium 4; rättningen är 61b nedan, som är **mergad till `main` som PR #311 (squash `f8d0cb6aabe2b8b187f79ef6366427be357b268b`)** och live på demon med buildId `f8d0cb6`. Detta är Test-avvisningen av #154 / #158, inte en ny rad 154 eller 158: skapa och redigera en selection gjordes i en fristående dialog som skrev `POST`/`PUT` direkt i stället för i `Selections`-vyn och dess `Detail` med det delade utkastet från rad 212.
 
 Acceptanskriterierna från `brief.md` (Braian Test grindar bara på dessa):
 
@@ -59,9 +59,9 @@ Bevis (endast `docker run --rm`, inga databaser behövdes):
 - `sha256sum apps/web/src/data-model.tsx` = `2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`; `product_suppliers`-etiketterna är orörda.
 - Ärlig avgränsning: ingen isolerad compose eller Playwright-körning gjordes, eftersom kriterium 1–5 kunde täckas med jsdom-tester och befintliga Rust-tester för sparande, låst kind/typ och delete-fallback. De uppdaterade E2E-specarna är typkontrollerade och registrerade men inte körda mot demo. Ingen skrivning gjordes mot demo, `/opt/braian`, `/var/www/braian`, Caddy eller Track A; ingen PR öppnades och inget mergades eller deployades.
 
-## Rad 61b-uppföljning — delete-fallback, tom manuell, användningstext och guide (inte mergad)
+## Rad 61b-uppföljning — delete-fallback, tom manuell, användningstext och guide (mergad som #311, `f8d0cb6`)
 
-Grenen `junior/61b-selection-fixes` utgår från `origin/main` `0aaf71f` (#309, rad 61) och är **inte mergad, deployad eller accepterad**. Den rättar Test-avvisningen av `0aaf71f` på kriterium 4: efter delete av den aktiva filterchippen låg tabellen kvar på den gamla frågan (24 rader i stället för alla 407), en tom `Manual`-selection visade alla objekt i stället för noll, delete-dialogen sa `Not used anywhere.` trots att chippen var aktiv, och guiden lovade en hand-fyllningsväg som inte fanns.
+Grenen `junior/61b-selection-fixes` utgick från `origin/main` `0aaf71f` (#309, rad 61) och är **mergad till `main` som PR #311 (squash `f8d0cb6aabe2b8b187f79ef6366427be357b268b`)** samt live på demon med buildId `f8d0cb6`. Test har fått raden för granskning men har ännu inte accepterat den. Den rättar Test-avvisningen av `0aaf71f` på kriterium 4: efter delete av den aktiva filterchippen låg tabellen kvar på den gamla frågan (24 rader i stället för alla 407), en tom `Manual`-selection visade alla objekt i stället för noll, delete-dialogen sa `Not used anywhere.` trots att chippen var aktiv, och guiden lovade en hand-fyllningsväg som inte fanns.
 
 Acceptanskriterierna för den här rundan (Braian Test grindar bara på dessa):
 
