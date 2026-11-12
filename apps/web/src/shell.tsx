@@ -830,6 +830,12 @@ export function Shell() {
       const rows = viewRows(surface.views)
       const view = rows.find((item) => item.type === wanted) ?? rows.find((item) => item.type === 'object_table')
       if (!view) return
+      // A selection draft lives in the Selections view, so re-open it if the
+      // user closed the tab. Other draft links only focus a view already open.
+      if (wanted === 'assortment_list') {
+        applyRef.current('ui.open_view', { id: view.id })
+        return
+      }
       setDoc(focusView(current, view.id))
     }
     window.addEventListener('braian-open-draft', onOpen)
