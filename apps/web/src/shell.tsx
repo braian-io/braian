@@ -2077,9 +2077,11 @@ export function Shell() {
             const opener = fieldsOpenerRef.current
             fieldsOpenerRef.current = null
             if (paletteModeRef.current === 'fields' && opener) {
-              queueMicrotask(() => {
+              // A backdrop mousedown tears the overlay down before the click lands
+              // on the page underneath; restore after that click or it steals focus.
+              window.setTimeout(() => {
                 if (opener.isConnected) opener.focus()
-              })
+              }, 0)
             }
             setPaletteMode(null)
           }}

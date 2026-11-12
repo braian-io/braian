@@ -195,7 +195,7 @@ test.describe('field picker on Products', () => {
     await opener.click()
     await expect(page.getByTestId('command-palette')).toHaveAttribute('data-fields-mode', 'true')
     await page.waitForTimeout(150)
-    await page.mouse.click(2, 2)
+    await page.getByTestId('fields-mode').click({ position: { x: 2, y: 2 } })
     await expect(page.getByTestId('fields-mode')).toHaveCount(0)
     await expect(opener).toBeFocused()
   })
