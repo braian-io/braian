@@ -246,6 +246,8 @@ export const copy = {
   deleteObjectDescription: 'The objects move to Trash. Links removed with them can be restored from Trash.',
   deleteObjectCounting: 'Counting objects and links…',
   deleteObjectFailed: 'Could not delete the object',
+  objectDeleted: 'This object is deleted.',
+  objectDeletedHint: 'Restore it from Trash to see it here again.',
   unsavedChanges: 'unsaved changes',
   openDraftInTable: 'Open in the table',
   reviewAndSave: 'Save',

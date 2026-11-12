@@ -156,7 +156,7 @@ test.describe('row 216 delete object', () => {
 
       const dialog = page.getByTestId('delete-object-dialog')
       await expect(dialog).toBeVisible()
-      await expect(dialog.getByTestId('delete-object-counts')).toContainText('Removes 3 objects and 1 links')
+      await expect(dialog.getByTestId('delete-object-counts')).toContainText('Removes 2 objects and 1 link')
       await expect(page.getByTestId('cancel-delete-object')).toBeFocused()
       await page.screenshot({ path: testInfo.outputPath('row216-multi-counts.png') })
       await dialog.getByTestId('confirm-delete-object').click()

@@ -9,31 +9,63 @@ const run = (objects: number, links: number, sentence = ''): DeleteDryRun => ({
 })
 
 describe('delete object counts', () => {
-  it('reuses the server sentence and detail for one object', () => {
-    const counts = mergeDeleteCounts(['a'], new Map([['a', run(2, 1, 'Removes 2 objects and 1 links')]]), new Map())
+  it('names one object and one link once, in the singular', () => {
+    const counts = mergeDeleteCounts(
+      ['a'],
+      new Map([['a', run(1, 1, 'Removes 1 object and 1 link')]]),
+      new Map([['a', ['link-1']]]),
+    )
     expect(counts).toEqual({
-      objects: 2,
+      objects: 1,
       links: 1,
-      sentence: 'Removes 2 objects and 1 links',
-      detail: ['Removes 2 objects and 1 links'],
+      sentence: 'Removes 1 object and 1 link',
+      detail: [],
     })
+  })
+
+  it('does not reuse a server sentence that counted a link object as an object', () => {
+    const counts = mergeDeleteCounts(['a'], new Map([['a', run(2, 1)]]), new Map([['a', ['link-1']]]))
+    expect(counts).toEqual({
+      objects: 1,
+      links: 1,
+      sentence: 'Removes 1 object and 1 link',
+      detail: [],
+    })
+  })
+
+  it('falls back to the dry-run link count when the object body has no links', () => {
+    const counts = mergeDeleteCounts(['a'], new Map([['a', run(1, 3)]]), new Map())
+    expect(counts).toMatchObject({ objects: 1, links: 3, sentence: 'Removes 1 object and 3 links' })
   })
 
   it('counts a link touched by two selected objects once', () => {
     const counts = mergeDeleteCounts(
       ['a', 'b'],
-      new Map([['a', run(2, 1)], ['b', run(2, 1)]]),
+      new Map([['a', run(1, 1)], ['b', run(1, 1)]]),
       new Map([['a', ['link-1']], ['b', ['link-1']]]),
     )
     expect(counts).toEqual({
-      objects: 3,
+      objects: 2,
       links: 1,
-      sentence: 'Removes 3 objects and 1 links',
+      sentence: 'Removes 2 objects and 1 link',
       detail: [],
     })
   })
 
-  it('ignores a selected link object in the shared link set', () => {
+  it('counts merged unique links across a multi-selection', () => {
+    const counts = mergeDeleteCounts(
+      ['a', 'b'],
+      new Map([['a', run(1, 1)], ['b', run(1, 1)]]),
+      new Map([['a', ['link-1', 'link-2']], ['b', ['link-2', 'link-3']]]),
+    )
+    expect(counts).toMatchObject({
+      objects: 2,
+      links: 3,
+      sentence: 'Removes 2 objects and 3 links',
+    })
+  })
+
+  it('keeps a selected link id out of the link count', () => {
     const counts = mergeDeleteCounts(
       ['a', 'b'],
       new Map([['a', run(2, 1)], ['b', run(1, 1)]]),

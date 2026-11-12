@@ -110,6 +110,10 @@ impl IntoResponse for Problem {
             header::CONTENT_TYPE,
             HeaderValue::from_static("application/problem+json"),
         );
+        // A cached 410 would keep a restored object "deleted" after a reload.
+        response
+            .headers_mut()
+            .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
         response
     }
 }

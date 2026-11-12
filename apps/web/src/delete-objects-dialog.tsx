@@ -103,6 +103,9 @@ export function DeleteObjectsHost() {
   }
 
   const counts = loaded?.counts
+  const detailLines = counts
+    ? [...new Set(counts.detail.filter((line) => line && line !== counts.sentence))]
+    : []
   return (
     <Dialog open onOpenChange={(next) => { if (!next) close() }}>
       <DialogContent className="delete-objects" data-testid="delete-object-dialog">
@@ -112,9 +115,9 @@ export function DeleteObjectsHost() {
         <p data-testid="delete-object-counts">
           {counts ? counts.sentence : copy.deleteObjectCounting}
         </p>
-        {counts && counts.detail.length > 0 ? (
+        {detailLines.length > 0 ? (
           <ul className="hint">
-            {counts.detail.map((line) => <li key={line}>{line}</li>)}
+            {detailLines.map((line) => <li key={line}>{line}</li>)}
           </ul>
         ) : null}
         <div className="dialog-actions">
