@@ -38,7 +38,7 @@ async function backToRoot(page: Page) {
 
 async function enterOn(page: Page, rowTestId: string) {
   await expect(page.getByTestId(rowTestId)).toBeVisible()
-  for (let i = 0; i < 40; i += 1) {
+  for (let i = 0; i < 120; i += 1) {
     const active = page.locator('[data-testid="fields-mode"] [data-active="true"]')
     const activeId = await active.getAttribute('data-testid')
     if (activeId === rowTestId) {
@@ -58,7 +58,7 @@ async function enterOn(page: Page, rowTestId: string) {
 
 async function drillRight(page: Page, rowTestId: string) {
   await expect(page.getByTestId(rowTestId)).toBeVisible()
-  for (let i = 0; i < 40; i += 1) {
+  for (let i = 0; i < 120; i += 1) {
     const active = page.locator('[data-testid="fields-mode"] [data-active="true"]')
     const activeId = await active.getAttribute('data-testid')
     if (activeId === rowTestId) {
@@ -508,7 +508,7 @@ test.describe('field picker on Products', () => {
   test('Select fields adds a group field as a column', async ({ page }) => {
     await login(page)
     await openProducts(page)
-    await expect(page.getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
+    await expect(mainTable(page).getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
 
     await openFieldsPalette(page)
     await page.getByTestId('fields-mode-input').fill('Fat content')
@@ -531,7 +531,7 @@ test.describe('field picker on Products', () => {
   test('Select fields adds a measured value and unit as two columns that survive reload', async ({ page }) => {
     await login(page)
     await openProducts(page)
-    await expect(page.getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
+    await expect(mainTable(page).getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
 
     await openFieldsPalette(page)
     await page.getByTestId('fields-mode-input').fill('fat content')
@@ -550,7 +550,7 @@ test.describe('field picker on Products', () => {
 
     await page.reload()
     await expect(mainTable(page)).toBeVisible({ timeout: 60_000 })
-    await expect(page.getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
+    await expect(mainTable(page).getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
     await expect(headers().filter({ hasText: 'Fat content (value)' })).toBeVisible()
     await expect(headers().filter({ hasText: 'Fat content (unit)' })).toBeVisible()
   })
