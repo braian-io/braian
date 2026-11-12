@@ -78,7 +78,7 @@ Bevis: `pnpm --dir apps/landing exec tsc --noEmit` exit 0; `pnpm --dir apps/land
 Rad 225b är mergad till `main` som #304 (squash `7eaee05e56cbf0bbc29bfc4d046d5c41e4506f67`) och publicerad på https://braian.io/docs/ från 00:32 Europe/Stockholm den 12 november 2026. Test gav GODKÄND efter omtestet av 225b. Grenen `junior/225b-docs-truth` utgick från `origin/main` `5f2402e` (#303) och rättade guiden mot demon på buildId `5f2402e` utan att ändra produktbeteende.
 
 - `docs/guide/graph.md`: menyn beskrivs som intill noden utan avståndslöfte; Fit körs vid Re-layout och när full storlek öppnas, inte efter F5 eller när full storlek stängs; ett klick på en pinnad nod släpper pinnen; gruppnoder får canvasmenyn Fit/Re-layout; inget påstående att etiketter undviker varandra.
-- `docs/guide/deleting-and-restore.md`: en kort not sade att räkningarna och Restore är under rättning i 216b, med demon `5f2402e` som exempel. Den noten tas bort i 216b när rättningen landar, så den inte autodeployas vidare.
+- `docs/guide/deleting-and-restore.md`: en kort not sade att räkningarna och Restore var under rättning i 216b, med demon `5f2402e` som exempel. Den noten togs bort i 216b när rättningen landade (PR #305), så den inte autodeployas vidare.
 - `apps/landing/src/content.ts`: `docsUrl` pekar på `https://braian.io/docs/`, så footerns Documentation-länk gör detsamma.
 - `apps/landing/public/sitemap.xml` och `apps/landing/scripts/guide.mjs`: `/docs/<slug>/` med avslutande snedstreck i sitemap samt i canonical och `og:url`; index är kvar på `/docs/`. Endast sitemap-hashen i `check-frozen.mjs` är uppdaterad.
 
