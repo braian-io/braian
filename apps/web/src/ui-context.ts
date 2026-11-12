@@ -17,6 +17,8 @@ export type UiContextSnapshot = {
   columns: UiColumn[]
   /** Header the user last clicked in the focused table (for Move column left/right). */
   activeColumn: string | null
+  /** The focused table has a personal column-prefs override that can be reset. */
+  columnPrefsOverride: boolean
   language: string
 }
 
@@ -34,6 +36,7 @@ let markedId: string | null = null
 let markedObject: SelectedObject | null = null
 const tables = new Map<string, { filter: string; sort: string; filterExpression: string }>()
 const tableColumns = new Map<string, UiColumn[]>()
+const columnPrefsOverrides = new Map<string, boolean>()
 const activeColumns = new Map<string, string>()
 let lastActiveColumnViewId: string | null = null
 const selections = new Map<string, SelectedObject[]>()
@@ -78,6 +81,7 @@ export function resetUiContext() {
   markedObject = null
   tables.clear()
   tableColumns.clear()
+  columnPrefsOverrides.clear()
   activeColumns.clear()
   lastActiveColumnViewId = null
   selections.clear()
@@ -119,6 +123,11 @@ export function publishTable(viewId: string, filter: string, sort: string, filte
 
 export function publishColumns(viewId: string, columns: UiColumn[]) {
   tableColumns.set(viewId, columns)
+}
+
+/** Publish whether this view currently has a personal column override. */
+export function publishColumnPrefsOverride(viewId: string, hasOverride: boolean) {
+  columnPrefsOverrides.set(viewId, hasOverride)
 }
 
 export function publishActiveColumn(viewId: string, columnId: string | null) {
@@ -216,6 +225,7 @@ export function readUiContext(): UiContextSnapshot {
   const columns = (focused && tableColumns.get(focused)) || [...tableColumns.values()][0] || []
   const activeColumn =
     (focused && activeColumns.get(focused)) || [...activeColumns.values()][0] || null
+  const columnPrefsOverride = focused ? columnPrefsOverrides.get(focused) === true : false
   const chosen = (focused && selections.get(focused)) || [...selections.values()].find((rows) => rows.length > 0) || []
   let selection = chosen.map(mergeObject)
   if (selection.length === 0 && markedId) {
@@ -233,6 +243,7 @@ export function readUiContext(): UiContextSnapshot {
     sort: table?.sort ?? '',
     columns: columns.map((column) => ({ ...column })),
     activeColumn,
+    columnPrefsOverride,
     language: frame.language || 'en',
   }
 }

@@ -178,6 +178,19 @@ export function saveColumnPrefsKeepalive(viewId: string, document: ColumnPrefsDo
   keepaliveJsonPut(columnPrefsUrl(viewId), { environment: LAYOUT_ENVIRONMENT, document })
 }
 
+export function deleteColumnPrefs(viewId: string) {
+  return api.delete('/v1/views/{view_id}/column-prefs', {
+    params: { path: { view_id: viewId }, query: { environment: LAYOUT_ENVIRONMENT } },
+  })
+}
+
+/** A v2 document with at least one column is a personal override worth resetting. */
+export function columnPrefsHasOverride(response: ColumnPrefsResponse | null | undefined): boolean {
+  const document = record(response?.document)
+  if (!document || Number(document.version ?? 0) !== 2) return false
+  return Array.isArray(document.columns) && document.columns.length > 0
+}
+
 export function isHopPath(pathOrId: string) {
   const path = parseColumnId(pathOrId).path
   return path.includes('>')

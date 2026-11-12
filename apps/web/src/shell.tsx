@@ -636,6 +636,10 @@ export function Shell() {
       registerCommandRunner('columns:hide', (target) => {
         if (target.column) dispatchUi('ui.hide_column', { column: String(target.column) })
       }),
+      registerCommandRunner('columns:reset', (target) => {
+        const viewId = typeof target.viewId === 'string' ? target.viewId : readUiContext().focused
+        if (viewId) dispatchUi('ui.reset_columns', { view: viewId })
+      }),
       registerCommandRunner('column:move-left', (target) => {
         dispatchColumnMove('left', target)
       }),

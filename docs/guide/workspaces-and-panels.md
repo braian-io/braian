@@ -109,7 +109,8 @@ cannot be deleted.
   shared workspace keeps layout edits personal.
 - Table filters, sorting, grouping and column widths are saved on the view row and
   therefore shared in the workspace. Column order and hidden columns are personal
-  preferences.
+  preferences. `Reset to default` in the column menu or `Ctrl+K` clears that personal
+  override and restores the view's default columns.
 - An object selection is not part of the saved view state.
 
 The layout is saved automatically per workspace and per user. Local changes are

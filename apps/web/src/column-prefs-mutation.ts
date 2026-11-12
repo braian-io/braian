@@ -10,6 +10,7 @@ import {
   type UseMutationOptions,
 } from '@tanstack/react-query'
 import {
+  deleteColumnPrefs,
   saveColumnPrefs,
   saveColumnPrefsKeepalive,
   type ColumnPrefsDocument,
@@ -29,6 +30,22 @@ export function columnPrefsMutationKey(viewId: string) {
 /** Serial mutation scope: one in-flight PUT chain per user + environment + view. */
 export function columnPrefsMutationScopeId(userId: string, viewId: string) {
   return `column-prefs:${userId || 'anon'}:${LAYOUT_ENVIRONMENT}:${viewId}`
+}
+
+/**
+ * Reset to the view default by deleting this user's prefs row, never by writing
+ * a lookalike default document. The next GET returns `document: null`, which
+ * makes the table fall back to the type defaults.
+ */
+export async function resetColumnPrefs(queryClient: QueryClient, viewId: string): Promise<void> {
+  await deleteColumnPrefs(viewId)
+  queryClient.setQueryData<ColumnPrefsResponse>(columnPrefsQueryKey(viewId), {
+    environment: LAYOUT_ENVIRONMENT,
+    document: null,
+    updated_at: null,
+    stale_paths: [],
+  })
+  await queryClient.invalidateQueries({ queryKey: columnPrefsQueryKey(viewId) })
 }
 
 export type SaveColumnPrefsVars = {

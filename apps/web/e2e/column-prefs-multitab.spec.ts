@@ -207,3 +207,54 @@ test.describe('column prefs multitab', () => {
     await context.close()
   })
 })
+
+test.describe('column prefs reset', () => {
+  test('Reset to default deletes the personal override and restores defaults', async ({ page }) => {
+    await login(page)
+    await seedProductsColumnPrefs(page)
+    await page.reload()
+    await expect(page.getByTestId('workspace')).toBeVisible()
+    await openProducts(page)
+    await expect(mainTable(page).getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
+    await expect(mainTable(page).locator('.head [data-testid="col-brand"]').first()).toBeVisible()
+
+    // Hide Brand: a personal override now exists, so the reset command is offered.
+    const hidePut = page.waitForResponse(
+      (res) =>
+        res.url().includes('/column-prefs') &&
+        res.request().method() === 'PUT' &&
+        res.ok(),
+      { timeout: 30_000 },
+    )
+    await toggleBrand(page)
+    await expect(mainTable(page).locator('.head [data-testid="col-brand"]').first()).toHaveCount(0)
+    await hidePut
+
+    await focusMainTable(page)
+    await page.keyboard.press('Control+k')
+    const palette = page.getByTestId('command-palette')
+    await expect(palette).toBeVisible()
+    await page.getByTestId('palette-input').fill('Reset to default')
+    const reset = page.waitForResponse(
+      (res) =>
+        res.url().includes('/column-prefs') &&
+        res.request().method() === 'DELETE' &&
+        res.status() === 204,
+      { timeout: 30_000 },
+    )
+    await page.keyboard.press('Enter')
+    await reset
+
+    // Brand is part of the product defaults, so the hide is gone immediately.
+    await expect(mainTable(page).locator('.head [data-testid="col-brand"]').first()).toBeVisible({
+      timeout: 30_000,
+    })
+
+    // Defaults survive a reload: no lookalike personal document was written.
+    await page.reload()
+    await expect(mainTable(page)).toBeVisible({ timeout: 60_000 })
+    await expect(mainTable(page).locator('.head [data-testid="col-brand"]').first()).toBeVisible({
+      timeout: 30_000,
+    })
+  })
+})
