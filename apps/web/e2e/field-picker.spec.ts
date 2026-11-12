@@ -505,6 +505,29 @@ test.describe('field picker on Products', () => {
     ).toEqual(expected)
   })
 
+  test('Select fields adds a group field as a column', async ({ page }) => {
+    await login(page)
+    await openProducts(page)
+    await expect(page.getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
+
+    await openFieldsPalette(page)
+    await page.getByTestId('fields-mode-input').fill('Fat content')
+    await enterOn(page, 'fields-row-fat_content')
+    const saved = page.waitForResponse(
+      (response) => response.url().includes('/column-prefs') && response.request().method() === 'PUT',
+    )
+    await enterOn(page, 'fields-row-g')
+    await saved
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('fields-mode')).toHaveCount(0)
+
+    const header = mainTable(page).locator('.head [data-testid="col-fat_content#unit:g"]')
+    await expect(header).toBeVisible()
+    await expect(header).toContainText('Fat content')
+    await expect(header).not.toContainText('(value)')
+    await expect(header).not.toContainText('(unit)')
+  })
+
   test('Select fields adds a measured value and unit as two columns that survive reload', async ({ page }) => {
     await login(page)
     await openProducts(page)
