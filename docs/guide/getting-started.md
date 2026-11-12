@@ -29,7 +29,7 @@ otherwise. No customer data is used for development.
 
 Development ports, commands and reset rules are in
 [the developer notes](https://github.com/braian-io/braian/blob/main/docs/dev.md).
-Production has its own shape: see [Self-hosting](/docs/self-hosting).
+Production has its own shape: see [Self-hosting](/docs/self-hosting/).
 
 ## Sign in
 
@@ -83,7 +83,7 @@ model. Without `OPENAI_API_KEY`, the agent panel says that no model is connected
 proposals, bulk edits and undo still work.
 
 For a list of every shortcut, press `F1` or read
-[Command palette and shortcuts](/docs/command-palette-and-shortcuts).
+[Command palette and shortcuts](/docs/command-palette-and-shortcuts/).
 
 ## Move around
 
@@ -104,8 +104,8 @@ index can be rebuilt with `braian reindex`.
 
 ## Where to go next
 
-- Read [Workspaces and panels](/docs/workspaces-and-panels) to shape the layout.
-- Read [Object types and relations](/docs/object-types-and-relations) before you add
+- Read [Workspaces and panels](/docs/workspaces-and-panels/) to shape the layout.
+- Read [Object types and relations](/docs/object-types-and-relations/) before you add
   types or attributes.
-- Read [Data sources](/docs/data-sources) to connect a table to another table or
+- Read [Data sources](/docs/data-sources/) to connect a table to another table or
   switch catalog.

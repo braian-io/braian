@@ -13,7 +13,7 @@ export const GUIDE_PAGES = [
   {
     source: 'getting-started.md',
     slug: 'getting-started',
-    path: '/docs/getting-started',
+    path: '/docs/getting-started/',
     title: 'Getting started',
     nav: 'Getting started',
     description: 'Sign in to Braian, meet the first screen, and open your first object.',
@@ -21,7 +21,7 @@ export const GUIDE_PAGES = [
   {
     source: 'workspaces-and-panels.md',
     slug: 'workspaces-and-panels',
-    path: '/docs/workspaces-and-panels',
+    path: '/docs/workspaces-and-panels/',
     title: 'Workspaces and panels',
     nav: 'Workspaces and panels',
     description: 'Switch workspaces, arrange panes and view tabs, and save the layout in Braian.',
@@ -29,7 +29,7 @@ export const GUIDE_PAGES = [
   {
     source: 'object-types-and-relations.md',
     slug: 'object-types-and-relations',
-    path: '/docs/object-types-and-relations',
+    path: '/docs/object-types-and-relations/',
     title: 'Object types and relations',
     nav: 'Object types and relations',
     description: 'Build structures, object types, attributes, and link types in Braian.',
@@ -37,7 +37,7 @@ export const GUIDE_PAGES = [
   {
     source: 'data-sources.md',
     slug: 'data-sources',
-    path: '/docs/data-sources',
+    path: '/docs/data-sources/',
     title: 'Data sources',
     nav: 'Data sources',
     description: 'Use all-of-type and peer table sources, switch catalogs, import files, and save selections in Braian.',
@@ -45,7 +45,7 @@ export const GUIDE_PAGES = [
   {
     source: 'command-palette-and-shortcuts.md',
     slug: 'command-palette-and-shortcuts',
-    path: '/docs/command-palette-and-shortcuts',
+    path: '/docs/command-palette-and-shortcuts/',
     title: 'Command palette and shortcuts',
     nav: 'Command palette and shortcuts',
     description: 'Open the Braian command palette and use the keyboard shortcuts.',
@@ -53,7 +53,7 @@ export const GUIDE_PAGES = [
   {
     source: 'deleting-and-restore.md',
     slug: 'deleting-and-restore',
-    path: '/docs/deleting-and-restore',
+    path: '/docs/deleting-and-restore/',
     title: 'Deleting and restore',
     nav: 'Deleting and restore',
     description: 'Delete objects from four entry points, confirm the counts, and restore from Trash in Braian.',
@@ -61,7 +61,7 @@ export const GUIDE_PAGES = [
   {
     source: 'graph.md',
     slug: 'graph',
-    path: '/docs/graph',
+    path: '/docs/graph/',
     title: 'Graph',
     nav: 'Graph',
     description: 'Read the Braian object graph and model graph: pinning, fit, re-layout, node menus and the camera.',
@@ -69,7 +69,7 @@ export const GUIDE_PAGES = [
   {
     source: 'feedback.md',
     slug: 'feedback',
-    path: '/docs/feedback',
+    path: '/docs/feedback/',
     title: 'Feedback',
     nav: 'Feedback',
     description: 'Send an in-app feedback report when an operator enables feedback in Braian.',
@@ -77,7 +77,7 @@ export const GUIDE_PAGES = [
   {
     source: 'self-hosting.md',
     slug: 'self-hosting',
-    path: '/docs/self-hosting',
+    path: '/docs/self-hosting/',
     title: 'Self-hosting',
     nav: 'Self-hosting',
     description: 'Run Braian yourself: the binary roles, Postgres, Typesense, configuration and upgrades.',
@@ -107,7 +107,12 @@ function inline(text) {
   let html = escapeHtml(text)
   html = html.replace(/`([^`]+)`/g, (_match, code) => `<code>${code}</code>`)
   html = html.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_match, label, href) => {
-    const target = href.replace(/&amp;/g, '&')
+    let target = href.replace(/&amp;/g, '&')
+    const docs = target.match(/^(\/docs(?:\/[^#?]*)?)([#?].*)?$/)
+    if (docs) {
+      const path = docs[1].endsWith('/') ? docs[1] : `${docs[1]}/`
+      target = path + (docs[2] ?? '')
+    }
     return `<a href="${escapeHtml(target)}">${label}</a>`
   })
   html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
@@ -303,8 +308,9 @@ function pageHtml(template, page) {
   </header>
   <div class="guide-layout">
     <aside class="guide-sidebar">
-      <p class="guide-sidebar-title">Guide</p>
-      <nav class="guide-nav" aria-label="Guide pages">${navigation}</nav>
+      <input class="guide-nav-toggle" type="checkbox" id="guide-nav-toggle" aria-controls="guide-nav" aria-expanded="false" />
+      <label class="guide-sidebar-title guide-nav-label" for="guide-nav-toggle">Guide</label>
+      <nav class="guide-nav" id="guide-nav" aria-label="Guide pages">${navigation}</nav>
     </aside>
     <main id="content" class="guide-main">
       <article class="guide-article">{{GUIDE_BODY}}</article>
@@ -322,6 +328,19 @@ function pageHtml(template, page) {
       <a href="https://github.com/braian-io/braian/blob/main/LICENSE">Apache-2.0</a>
     </nav>
   </footer>
+  <script>
+    (function () {
+      var toggle = document.getElementById('guide-nav-toggle')
+      if (!toggle) return
+      var desktop = window.matchMedia('(min-width: 861px)')
+      function sync() {
+        toggle.setAttribute('aria-expanded', desktop.matches || toggle.checked ? 'true' : 'false')
+      }
+      toggle.addEventListener('change', sync)
+      if (desktop.addEventListener) desktop.addEventListener('change', sync)
+      sync()
+    })()
+  </script>
 </div>`,
   )
 
@@ -388,13 +407,16 @@ export function buildGuide(root, template) {
     }
   }
 
-  const builtPages = new Set(GUIDE_PAGES.map((page) => (page.slug ? `/docs/${page.slug}` : '/docs')))
+  const builtPages = new Set(GUIDE_PAGES.map((page) => page.path))
   for (const page of GUIDE_PAGES) {
     const built = readFileSync(guideOutput(root, page), 'utf8')
     for (const match of built.matchAll(/href="(\/docs[^"#?]*)/g)) {
-      const target = match[1].replace(/\/+$/, '') || '/docs'
+      const target = match[1]
+      if (!target.endsWith('/')) {
+        throw new Error(`guide link ${target} on ${page.source} is missing a trailing slash`)
+      }
       if (!builtPages.has(target)) {
-        throw new Error(`guide link ${match[1]} on ${page.source} does not resolve to a built page`)
+        throw new Error(`guide link ${target} on ${page.source} does not resolve to a built page`)
       }
     }
   }

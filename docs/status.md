@@ -231,7 +231,7 @@ Bevis (endast `docker run --rm`, inga databaser behövdes för enhetstesten):
 
 ## Rad 216b — rättade antal och återställningsfel efter Test på e70184f
 
-Grenen `junior/216b-delete-fixes` utgår från `origin/main` `e70184f` (#301), har ordinary-mergat `5f2402e` (row 225, #303) och `7eaee05` (row 225b, #304) och är **inte mergad, deployad eller accepterad**. Den rättar Test-avvisningen: antalet objekt räknade kaskadlänkar som objekt, singular saknades och samma rad visades två gånger; efter Trash Restore visade Detail och Graph fortfarande "The graph could not be loaded. Validation stopped the save.", även efter F5.
+Rad 216b är mergad till `main` som PR #305 (squash `45ea1132d8e2d124864a43d6cbee0142ef3e6b92`) och live på demon med buildId `45ea113`. Grenen `junior/216b-delete-fixes` utgick från `origin/main` `e70184f` (#301) och ordinary-mergade `5f2402e` (row 225, #303) och `7eaee05` (row 225b, #304). Den rättade Test-avvisningen: antalet objekt räknade kaskadlänkar som objekt, singular saknades och samma rad visades två gånger; efter Trash Restore visade Detail och Graph fortfarande "The graph could not be loaded. Validation stopped the save.", även efter F5.
 
 De sex acceptanskriterierna från `brief.md` (Braian Test grindar bara på dessa):
 
@@ -240,7 +240,7 @@ De sex acceptanskriterierna från `brief.md` (Braian Test grindar bara på dessa
 3. **K3 Flera val.** Valda objekt plus unika live-länkar; en delad länk räknas en gång och en länk som A har till ART1 ger minst 1 länk.
 4. **K1, K4 och K7 håller.** Fyra ytor, samma `DeleteObjectsHost`, `dry_run` för antal, Cancel fokuserad, Escape/overlay skriver inget, `DELETE /v1/objects/{id}` per id, rader borta från tabeller och sök, och Delete-tangenten öppnar inte dialogen medan en editor, ett textfält eller quick-filtret har fokus.
 5. **Guide.** Efter ordinary-merge av `origin/main` `5f2402e` (#303) och `7eaee05` (#304) uppdateras den befintliga `docs/guide/deleting-and-restore.md` så att den beskriver de rättade antalen och restore-beteendet (en mening, `Removes 1 object and N links` med rätt singular/plural, länkobjekt räknas som länkar, unika live-länkar vid flerval, ärligt raderat tillstånd i Detail/Graph, återställt objekt öppnas även efter F5). 225b:s tillfälliga demonot om att räkningar/Restore rättas i 216b tas bort, så sidan som autodeployas från main stämmer med den rättade produkten vid merge. Ingen ny `docs/guide/deleting.md`.
-6. **Tester och skyddade filer.** Isolerade regressionstester för K5 och K2/K3; engelsk copy; `apps/web/src/data-model.tsx` (`sha256 2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`) och `product_suppliers`-etiketterna orörda. Ingen demo-mutation, ingen PR, ingen merge.
+6. **Tester och skyddade filer.** Isolerade regressionstester för K5 och K2/K3; engelsk copy; `apps/web/src/data-model.tsx` (`sha256 2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`) och `product_suppliers`-etiketterna orörda. Ingen demo-mutation gjordes; arbetet öppnades som PR #305 och mergades.
 
 Vad som ändrades:
 
@@ -290,7 +290,7 @@ Bevis (inga databaser eller containrar behövdes):
 
 ## Rad 225 — guiden publiceras som statisk HTML under /docs, med graph-sidan
 
-Rad 225 är mergad till `main` som #303 (squash `5f2402e`) och publicerad på https://braian.io/docs/. Grenen `junior/225-docs-foundation` utgick från `origin/main` `59ba66f` (row 128g, #302) och ordinary-mergade `junior/224-landing-update` (`d0e9a56`, bas `e70184f`/#301), så att 224:s `docs/guide`-träd blev basen; 225 lade till den statiska `/docs`-publiceringen som 224 saknade och uppdaterade graph-sidan.
+Rad 225 är mergad till `main` som #303 (squash `5f2402e`) och publicerad på https://braian.io/docs/. Grenen `junior/225-docs-foundation` utgick från `origin/main` `59ba66f` (row 128g, #302) och ordinary-mergade `junior/224-landing-update` (`d0e9a56`, bas `e70184f`/#301), så att 224:s `docs/guide`-träd blev basen; 225 lade till den statiska `/docs`-publiceringen som 224 saknade och uppdaterade graph-sidan. Test gav GODKÄND för 225 efter omtestet av 225b; båda ligger live på https://braian.io/docs/ sedan 225b publicerades 00:32 Europe/Stockholm den 12 november 2026.
 
 Vad som ändrades:
 
@@ -302,12 +302,12 @@ Vad som ändrades:
 
 Bevis: `pnpm --dir apps/landing exec tsc --noEmit` exit 0; `pnpm --dir apps/landing build` exit 0 med `prerendered 10 guide pages under dist/docs` och homepage-kontrollerna intakta; `pnpm --dir apps/landing check:frozen` exit 0 efter sitemap-uppdateringen; `python3 scripts/check-english.py` exit 0. En saknad guidesida får bygget att falla (verifierat). Ingen compose, databas eller E2E behövdes. `apps/web/src/data-model.tsx` och produktbeteendet är orörda. Ärlig avgränsning: guiden beskriver nuvarande webbapp; den publiceras som statisk HTML av landningsbygget, inte av en separat docs-tjänst. 225 öppnades som PR #303 och mergades; uppgiften deployade inte själv, utan publiceringen på https://braian.io/docs/ följde av mergen.
 
-## Rad 225b — docs-sanning efter Test-avslag på rad 225
+## Rad 225b — docs-sanning, mergad och live efter Test-godkännande
 
-Grenen `junior/225b-docs-truth` utgår från `origin/main` `5f2402e` (#303). Den rättar guiden mot demon på buildId `5f2402e` utan att ändra produktbeteende.
+Rad 225b är mergad till `main` som #304 (squash `7eaee05e56cbf0bbc29bfc4d046d5c41e4506f67`) och publicerad på https://braian.io/docs/ från 00:32 Europe/Stockholm den 12 november 2026. Test gav GODKÄND efter omtestet av 225b. Grenen `junior/225b-docs-truth` utgick från `origin/main` `5f2402e` (#303) och rättade guiden mot demon på buildId `5f2402e` utan att ändra produktbeteende.
 
 - `docs/guide/graph.md`: menyn beskrivs som intill noden utan avståndslöfte; Fit körs vid Re-layout och när full storlek öppnas, inte efter F5 eller när full storlek stängs; ett klick på en pinnad nod släpper pinnen; gruppnoder får canvasmenyn Fit/Re-layout; inget påstående att etiketter undviker varandra.
-- `docs/guide/deleting-and-restore.md`: en kort not sade att räkningarna och Restore är under rättning i 216b, med demon `5f2402e` som exempel. Den noten tas bort i 216b när rättningen landar, så den inte autodeployas vidare.
+- `docs/guide/deleting-and-restore.md`: en kort not sade att räkningarna och Restore var under rättning i 216b, med demon `5f2402e` som exempel. Den noten togs bort i 216b när rättningen landade (PR #305), så den inte autodeployas vidare.
 - `apps/landing/src/content.ts`: `docsUrl` pekar på `https://braian.io/docs/`, så footerns Documentation-länk gör detsamma.
 - `apps/landing/public/sitemap.xml` och `apps/landing/scripts/guide.mjs`: `/docs/<slug>/` med avslutande snedstreck i sitemap samt i canonical och `og:url`; index är kvar på `/docs/`. Endast sitemap-hashen i `check-frozen.mjs` är uppdaterad.
 
