@@ -19,6 +19,7 @@ import {
 } from './link-choices'
 import { linkFailure, replaceConflictingLink, type LinkSubmitResult, type LinkWrite, type LinkWriteFailure } from './link-write'
 import { pushLinkUi } from './link-ui'
+import { acknowledgeWriteError } from './write-status'
 import type { Json } from './api'
 
 export type LinkEndpoint = {
@@ -205,6 +206,8 @@ function LinkFields({
   }, [selected])
   if (!choice) return null
   const summary = linkEndsSummary(source, pending, choice.label)
+  const draftFieldErrors = linkFieldErrors(choice.fields, draft)
+  const draftInvalid = Object.keys(draftFieldErrors).length > 0 || Object.keys(fieldErrors).length > 0
   const updateField = (key: string, value: string, invalid = false) => {
     setDraft((state) => ({ ...state, [key]: value }))
     setFieldErrors((state) => {
@@ -230,6 +233,7 @@ function LinkFields({
     setFieldErrors(mapped)
     setConflict(null)
     setError(rest.join(' '))
+    acknowledgeWriteError(failure.status)
     return true
   }
   const requestFor = (body: LinkWrite): LinkCreateRequest => {
@@ -250,6 +254,7 @@ function LinkFields({
       request,
     })
     setError('')
+    acknowledgeWriteError(failure.status)
   }
   const isCardinality = (failure: LinkWriteFailure) => {
     if (failure.code === 'link_cardinality') return true
@@ -321,7 +326,13 @@ function LinkFields({
   }
   const replace = () => {
     if (!conflict || replacing) return
-    const request = conflict.request
+    const errors = linkFieldErrors(choice.fields, draft)
+    if (Object.keys(errors).length > 0 || Object.keys(fieldErrors).length > 0) {
+      setFieldErrors((state) => ({ ...state, ...errors }))
+      setError('')
+      return
+    }
+    const request: LinkCreateRequest = { ...conflict.request, values: linkFieldValues(choice.fields, draft) }
     const body: LinkWrite = {
       type: request.type,
       from_id: request.fromId,
@@ -461,7 +472,7 @@ function LinkFields({
         <div className="dialog-actions">
           <Button type="button" variant="default" onClick={onClose}>{copy.cancel}</Button>
           {conflict ? (
-            <Button type="button" variant="primary" data-testid="link-replace" disabled={replacing} onClick={replace}>
+            <Button type="button" variant="primary" data-testid="link-replace" disabled={replacing || draftInvalid} onClick={replace}>
               {replacing ? copy.linkReplacing : copy.linkReplace}
             </Button>
           ) : (
