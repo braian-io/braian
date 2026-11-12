@@ -440,10 +440,11 @@ jobs:
           TYPESENSE_URL: http://localhost:8108
           TYPESENSE_API_KEY: ci
 
-  # Six runners, each with its own Postgres, Typesense and seed. Four bins
-  # still put about three minutes of measured spec time on the heaviest one
-  # (field-picker plus the next longest files). fail-fast is off so one
-  # failure does not cancel the others into a skipped-looking green.
+  # Eight runners, each with its own Postgres, Typesense and seed. The packer
+  # in scripts/e2e.mjs assigns the longest files first, so every spec runs in
+  # exactly one shard and the heaviest bin stays close to the mean. fail-fast
+  # is off so one failure does not cancel the others into a skipped-looking
+  # green.
   e2e:
     needs: bins
     if: needs.bins.outputs.mode != 'skip'
@@ -452,7 +453,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3, 4, 5]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
     steps:
       - uses: actions/checkout@v4
       - name: Restore release binaries
@@ -514,7 +515,8 @@ jobs:
           BRAIAN_DEMO_PASSWORD: braian-demo
           BRAIAN_DEMO_TOKEN: braian-demo-token
           BRAIAN_AGENT_MOCK: "1"
-          BRAIAN_E2E_SHARDS: "6"
+          # Weights recalibrated 2026-11-12 from per-file after-run times; still eight shards.
+          BRAIAN_E2E_SHARDS: "8"
           BRAIAN_E2E_SHARD: ${{ matrix.shard }}
           BRAIAN_E2E_WORKERS: "1"
           BRAIAN_E2E_ISOLATE: "1"

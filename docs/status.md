@@ -2,7 +2,7 @@
 
 ## Rad 51b — taxonomi- och gruppfält i Select fields (inte mergad)
 
-Grenen `junior/51b-taxonomy-fields` utgår från `origin/main` `5949cb1` (#310), har guidecommiten `efefeb5` och har ordinary-mergat `origin/main` `8367722` (rad 51a-fix, PR #313) som `a47f262`. Grenen är **inte mergad, inte deployad och inte accepterad**; inget i det här avsnittet ska läsas som att 51b är live. Rad 51a-fixen är däremot mergad som PR #313 (squash `8367722`) och live på demon med buildId `8367722`.
+Grenen `junior/51b-taxonomy-fields` utgår från `origin/main` `5949cb1` (#310), har guidecommiten `efefeb5` och har ordinary-mergat `origin/main` `8367722` (rad 51a-fix, PR #313) som `a47f262` och därefter `origin/main` `bcc7e2b` (rad 77, PR #312). Grenen är **inte mergad, inte deployad och inte accepterad**; inget i det här avsnittet ska läsas som att 51b är live. Rad 51a-fixen är mergad som PR #313 (squash `8367722`) och live på demon med buildId `8367722`. Rad 77 är mergad som PR #312 (squash `bcc7e2b`).
 
 Den här skivan gör `Select fields` till en ärlig och testad katalog över typens egna attribut plus attribut från typens tillåtna strukturer: alla grupper, inklusive nästlade grupper, och äldre klasslistor. Värdearv, separata värde/enhet-kolumner (51c) och skrivning till länkade/hop-fält är utanför omfattningen.
 
@@ -30,6 +30,33 @@ Bevis (lokalt i worktreen, utan demo- eller produktionsskrivningar):
 - `pnpm --filter ./apps/web exec vitest run` gav **168 filer / 991 tester** gröna, inklusive de nya `catalog-taxonomy.test.ts` och `fields-mode-source.test.tsx` samt befintliga `field-picker.test.tsx`, `catalog-system.test.ts` och `language-toggle.test.tsx`.
 - `python3 scripts/check-english.py` exit 0. `sha256sum apps/web/src/data-model.tsx` är oförändrad.
 - Ingen e2e-körning gjordes lokalt; kriterium 1–4 täcks av enhets- och komponenttesterna samt demo-definitionerna. Ingen demo-mutation, ingen deploy, ingen PR och ingen merge.
+
+## Rad 77 — snabbare CI: färska e2e-vikter och åtta shards (mergad som #312, `bcc7e2b`)
+
+Grenen `junior/77-faster-ci` utgick från `origin/main` `f8d0cb6aabe2b8b187f79ef6366427be357b268b` (#311, rad 61b) och har därefter ordinärmergat `origin/main` `5949cb1d0e2d9b1eebb17be17e0f7b0b4a4e3f56` (#310, rad 51a) och `83677224b43619f4b587fd5f812d2621232e7d01` (#313, rad 51a-uppföljning). Den är **mergad till `main` som PR #312 (squash `bcc7e2b`)**. Arbetet rör bara CI, testskript och docs; ingen produktkod, ingen demo och inget autodeploy. Rad 61 / #309 / `0aaf71f` och rad 61b / #311 / `f8d0cb6` är mergade och live.
+
+Acceptanskriterierna från `brief.md`:
+
+1. **Median tid till grönt minskar minst 15 %.** Baslinjen är de tio senaste gröna `push`-körningarna på `main`: median **9m20s (560s)**. Målet är **≤ 7m56s (476s)** på en full körning, mätt som `updated_at - run_started_at`.
+2. **Alla jobb gröna under samma namn.** `rust`, `phase-1`, `bins`, `web`, `licenses`, `e2e`-shards och `stack`; `load` när `mode=full`. Fortfarande gratis `ubuntu-latest`.
+3. **Samma testtäckning.** Ingen spec, inget testfall och ingen kontroll tas bort eller stängs av. Alla 93 registrerade e2e-specar körs exakt en gång per full/web-körning.
+4. **Path-filtren intakta.** `skip`, `web` och `full` i `scripts/ci-changes.sh` är oförändrade; push till `main` kör fortfarande `mode=full` för att fylla cache.
+5. **Inga nya secrets eller inställningar.** Inga secrets, variabler, miljöer eller repo-inställningar tillkom; ingen tredjeparts-cache kräver credentials.
+6. **Docs i samma PR, demo orörd.** `docs/dev.md` har en CI-sektion, mätningen ligger i `docs/measurements/2026-11-12-ci-wall-clock.md`, och `data-model.tsx` samt `product_suppliers`-etiketterna är orörda. Ingen guide-sida lades till.
+
+Vad som ändrades:
+
+- `.github/workflows/ci.yml`: e2e-matrisen går från sex till åtta shards (`0..7`) och `BRAIAN_E2E_SHARDS` är `8`. Inga jobbnamn, behov, path-filter eller secrets ändrades.
+- `scripts/e2e.mjs`: första kalibreringen av `measuredSeconds` 2026-11-12 delade varje shards totaltid i de tio gröna baslinjekörningarna proportionellt mot gamla vikter. Tre gröna fulla PR-körningar (965/966/967) gav median **8m07s (487s)**, 11 s över målet 7m56s, för att shard 7 bar under-viktade tunga filer (`column-move-race` 6 s mot 1,7–1,8 min, `layout` 15 s mot 1,1–1,3 min). En andra kalibrering sätter vikterna till `ceil` av faktiska per-fil-tider från körning 967 (alla shards) och max mot 966 för shard 7. Packaren, `reseedSeconds` (4 s) och åtta shards är oförändrade. Fallback för en framtida spec utan vikt är fortfarande 4 s per test.
+- `docs/dev.md`, `docs/measurements/2026-11-12-ci-wall-clock.md` och den här sektionen uppdaterades med efter-tabellen och den andra kalibreringen.
+
+Bevis (lokalt, utan databas eller compose):
+
+- Första packningen: `BRAIAN_E2E_PLAN=1 BRAIAN_E2E_SHARDS=8` gav åtta shards, 93 unika filer, inga dubbletter, prediktion 267–268 s. Efter-körningarna 965 (6m17s), 966 (8m39s) och 967 (8m07s) var alla `mode=full` och gröna under samma jobbnamn; 964 failade på en `field-picker`-flake och räknas inte.
+- Andra packningen: `BRAIAN_E2E_PLAN=1 BRAIAN_E2E_SHARDS=8` gav åtta shards, 93 unika filer, inga dubbletter, prediktion 251–259 s. `node --check scripts/e2e.mjs` exit 0; alla fem `scripts/ci-*.test.sh` gröna; `python3 scripts/check-english.py` exit 0.
+- `sha256sum apps/web/src/data-model.tsx` = `2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`.
+
+Ärlig avgränsning: den första efter-medianen missade målet, så raden mergades inte på den packningen. Den andra kalibreringens första fulla PR-körning (970 på `5a74d8b`) var grön på 7m10s (430s), under 7m56s. Rad 77 mergades därefter som PR #312 (squash `bcc7e2b`). `sccache` lämnades utanför. Ingen skrivning gjordes mot demo, `/opt/braian`, `/var/www/braian` eller Caddy.
 
 ## Rad 51a-uppföljning — Reset to default i maximerad panel (mergad som #313, `8367722`)
 

@@ -230,3 +230,35 @@ Import skapar alltid ett förslag (draft) som granskas och godkänns; inget skri
 - `off`: ingen AI, bara regelbaserad mappning.
 - `headers`: bara kolumnrubriker och filnamn skickas, inga cellvärden (mappningen tappar värdebaserade ledtrådar).
 - `samples` (standard): rubriker plus några exempelvärden per kolumn.
+
+## CI
+
+`.github/workflows/ci.yml` kör på gratis `ubuntu-latest`. Jobben är `rust`,
+`phase-1`, `bins`, `web`, `licenses`, `e2e` (åtta shards) och `stack`; `load`
+körs bara när `mode=full`. `stack` är den required check som sammanfattar
+`bins`, alla e2e-shards och `load`, så en shard som failar eller avbryts blir
+röd även om de andra är gröna.
+
+`scripts/ci-changes.sh` klassar diffen. `skip`: docs, markdown och landningen
+(`apps/landing`). `web`: `apps/web`, `packages`, `pnpm-lock.yaml` och
+`scripts/e2e.mjs`; Playwright kör då mot ett cachat `profile.ci`-binär utan att
+kompilera Rust. `full`: Rust, SQL, workflows, `docs/api` och allt annat. Push
+till `main` kör alltid `full` så att cachen fylls för nästa pull request.
+Ändringar i workflow-filen är `full`.
+
+E2e delas i åtta viktade shards. Vikterna i `scripts/e2e.mjs` är varje specs
+faktiska `Playwright shard`-tid i sekunder, kalibrerade 2026-11-12 första
+gången mot de tio senaste gröna körningarna (andel av shard-totalen) och
+därefter om mot per-fil-tiderna i PR #312:s efter-körningar 966 och 967,
+efter att den första packningen missade målet när `column-move-race` och
+`layout` var för lätta. Packaren lägger den längsta filen först och varje
+registrerad spec körs exakt en gång; shardsen delar inte filer. Varje shard
+har egen Postgres, Typesense, seed, API och webbserver. `load` ligger
+utanför e2e-kritiska vägen.
+
+Väggklockan mäts som `updated_at - run_started_at` för en grön `ci.yml`-körning
+via GitHub API (`list_workflow_runs`). Jobb- och stegtider kommer från
+`list_workflow_run_jobs`. Baslinje, jobbfördelning och mätmetod står i
+[docs/measurements/2026-11-12-ci-wall-clock.md](measurements/2026-11-12-ci-wall-clock.md).
+Autodeploy, systemd, `/opt`, `/var/www/braian` och demovärden ändras inte av
+CI-arbetet.
