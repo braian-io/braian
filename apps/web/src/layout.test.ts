@@ -270,6 +270,15 @@ describe('placeView and ensureInLayout', () => {
     expect(added.layout).toEqual(splitPair('horizontal', 0.5, tabs(['a']), tabs(['b'])))
     expect(ensureInLayout(doc(tabs([])), 'a').layout).toEqual(tabs(['a']))
   })
+
+  it('focuses an open view in place when ui.open_view has no zone', () => {
+    const layout = splitPair('horizontal', 0.5, tabs(['a']), tabs(['b']))
+    const result = applyLayoutCommand(doc(layout, { focus: 'a' }), 'ui.open_view', { id: 'b' }, { views: catalog })
+    expect(result.handled).toBe(true)
+    expect(result.doc.layout).toEqual(layout)
+    expect(result.doc.focus).toBe('b')
+    expect(leaves(result.doc.layout).map((leaf) => leaf.views)).toEqual([['a'], ['b']])
+  })
 })
 
 describe('close, focus, zoom, reset', () => {
