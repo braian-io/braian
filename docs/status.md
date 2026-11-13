@@ -19,6 +19,7 @@ Local evidence in the worktree:
 - `pnpm --filter ./apps/web exec vitest run` gave **172 files / 1025 tests** green.
 - `python3 scripts/check-english.py` exit 0. `sha256sum apps/web/src/data-model.tsx` is `2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`, unchanged.
 - The new Playwright spec was written and registered but **not run in this session**. Disk was at 89 %, so no isolated Postgres/Typesense API stack was started. CI is the e2e gate; results for `row226b-graph-fit`, `row226-graph-fixes`, `row128e`, `row128f` and `row128g` are not claimed here.
+- CI **#994** on head `5c9baf0` then failed only in e2e shard 7: both `row226b-graph-fit` tests timed out at `openGraph` because the custom layout wrote Products view ids (`...301/310/303/304`) into the Articles workspace. Those views belong to Products, so the Articles document dropped the table pane and the quick-filter never appeared. The spec now resolves the Articles workspace and its live view ids from `GET /v1/workspaces/{id}` and builds the narrow layout from them; `openGraph` fails within 30 s with a clear message if the table pane or quick-filter is missing. No fit assertions were loosened: the real `page.reload()`, `getBoundingClientRect` label boxes, ~230 px pane, bottom-sheet `data-placement="sheet"`, zoom `toBeCloseTo(..., 2)` and Food/Dark chocolate checks are unchanged. This follow-up fixes the spec setup only; row 226b is still **not merged** and no new CI result is claimed here.
 
 ## Rad 226 — graph-uppföljningen från 128g (inte mergad)
 

@@ -7,12 +7,8 @@ import { paneWithTab } from './ui'
 
 const ARTICLE = { key: 'ART-CHOC-100', id: '018f1000-0000-7000-8000-000000000025' }
 
-const VIEW = {
-  tree: '018f2000-0000-7000-8000-000000000301',
-  articles: '018f2000-0000-7000-8000-000000000310',
-  detail: '018f2000-0000-7000-8000-000000000303',
-  graph: '018f2000-0000-7000-8000-000000000304',
-}
+type WorkspaceView = { id: string; type: string; title: string }
+type Workspace = { id: string; name: string; views: WorkspaceView[] }
 
 type Rect = { left: number; top: number; right: number; bottom: number }
 type LayoutNode =
@@ -27,13 +23,28 @@ const split = (dir: 'horizontal' | 'vertical', ratios: number[], children: Layou
   children,
 })
 
+function requiredView(workspace: Workspace, type: string, title?: string): string {
+  const found = workspace.views.find(
+    (view) => view.type === type && (title === undefined || view.title === title),
+  )
+  if (!found) {
+    const wanted = title ? `${type} "${title}"` : type
+    throw new Error(`workspace ${workspace.name} has no ${wanted} view`)
+  }
+  return found.id
+}
+
 /** Left tree, article list, detail, and a graph pane about 230 px wide. */
-const narrowGraphLayout = split('horizontal', [0.15, 0.28, 0.41, 0.16], [
-  tabs(VIEW.tree),
-  tabs(VIEW.articles),
-  tabs(VIEW.detail),
-  tabs(VIEW.graph),
-])
+function narrowGraphLayout(workspace: Workspace): LayoutNode {
+  const articles = tabs(requiredView(workspace, 'object_table', 'Articles'))
+  const detail = tabs(requiredView(workspace, 'object_detail'))
+  const graph = tabs(requiredView(workspace, 'graph'))
+  const tree = workspace.views.find((view) => view.type === 'structure_tree')
+  if (tree) {
+    return split('horizontal', [0.15, 0.28, 0.41, 0.16], [tabs(tree.id), articles, detail, graph])
+  }
+  return split('horizontal', [0.43, 0.41, 0.16], [articles, detail, graph])
+}
 
 const shots = process.env.BRAIAN_ROW226B_SHOTS
   ? resolve(process.env.BRAIAN_ROW226B_SHOTS)
@@ -53,14 +64,23 @@ async function login(page: Page) {
   await expect(page.getByTestId('dock')).toBeVisible()
 }
 
-async function applyLayout(page: Page, layout: LayoutNode, workspaceName: string) {
-  const me = (await (await page.request.get('/v1/me')).json()) as { user_id?: string; id?: string }
-  const userId = me.user_id ?? me.id ?? ''
+async function resolveWorkspace(page: Page, workspaceName: string): Promise<Workspace> {
   const listed = (await (await page.request.get('/v1/workspaces')).json()) as {
     workspaces: Array<{ id: string; name: string }>
   }
-  const workspace = listed.workspaces.find((item) => item.name === workspaceName)
-  if (!workspace) throw new Error(`missing ${workspaceName} workspace`)
+  const row = listed.workspaces.find((item) => item.name === workspaceName)
+  if (!row) throw new Error(`missing ${workspaceName} workspace`)
+  const detail = await page.request.get(`/v1/workspaces/${row.id}`)
+  if (!detail.ok()) throw new Error(`cannot load ${workspaceName} workspace: ${detail.status()}`)
+  const body = (await detail.json()) as { views?: WorkspaceView[] }
+  const views = body.views ?? []
+  if (views.length === 0) throw new Error(`workspace ${workspaceName} has no views`)
+  return { id: row.id, name: row.name, views }
+}
+
+async function applyLayout(page: Page, workspace: Workspace, layout: LayoutNode) {
+  const me = (await (await page.request.get('/v1/me')).json()) as { user_id?: string; id?: string }
+  const userId = me.user_id ?? me.id ?? ''
   await page.evaluate(
     ({ user, id, name, next: node }) => {
       sessionStorage.setItem('braian.layout.suppressFlush', '1')
@@ -77,7 +97,7 @@ async function applyLayout(page: Page, layout: LayoutNode, workspaceName: string
   await page.reload()
   await page.evaluate(() => sessionStorage.removeItem('braian.layout.suppressFlush'))
   await expect(page.getByTestId('dock')).toBeVisible()
-  await page.locator('nav.tabs').getByRole('button', { name: new RegExp(`^${workspaceName}`) }).click()
+  await page.locator('nav.tabs').getByRole('button', { name: new RegExp(`^${workspace.name}`) }).click()
   await expect(page.getByTestId('dock')).toBeVisible()
 }
 
@@ -95,7 +115,10 @@ async function waitGraph(page: Page) {
 async function openGraph(page: Page, title: string, key: string) {
   await page.locator('nav.tabs').getByRole('button', { name: new RegExp(`^${title}`) }).click()
   const pane = paneWithTab(page, title)
-  await pane.getByTestId('quick-filter').fill(key)
+  await expect(pane, `${title} object table pane is in the layout`).toBeVisible({ timeout: 30_000 })
+  const filter = pane.getByTestId('quick-filter')
+  await expect(filter, `${title} quick-filter is visible before filtering`).toBeVisible({ timeout: 30_000 })
+  await filter.fill(key)
   const row = pane.getByTestId('object-row').filter({ hasText: key }).first()
   await expect(row).toBeVisible()
   await row.click()
@@ -108,6 +131,12 @@ async function openGraph(page: Page, title: string, key: string) {
   await expect(page.getByTestId('graph-inspector')).toBeVisible()
   await expect.poll(async () => (await labelBoxes(page)).length, { timeout: 30_000 }).toBeGreaterThan(0)
   await page.waitForTimeout(700)
+}
+
+async function loadNarrowArticles(page: Page) {
+  const articles = await resolveWorkspace(page, 'Articles')
+  await applyLayout(page, articles, narrowGraphLayout(articles))
+  await openGraph(page, 'Articles', ARTICLE.key)
 }
 
 async function previewZoom(page: Page) {
@@ -202,8 +231,7 @@ function findLabel(labels: LabelBox[], match: (text: string) => boolean) {
 test('a real reload and leaving full size fit every caption in a 230 px pane with the card open', async ({ page }) => {
   test.setTimeout(300_000)
   await login(page)
-  await applyLayout(page, narrowGraphLayout, 'Articles')
-  await openGraph(page, 'Articles', ARTICLE.key)
+  await loadNarrowArticles(page)
 
   const stage = (await page.getByTestId('graph-stage').boundingBox())!
   expect(stage.width, 'the graph pane is about 230 px wide').toBeGreaterThan(200)
@@ -256,8 +284,7 @@ test('a real reload and leaving full size fit every caption in a 230 px pane wit
 test('a user zoom is remapped into full size instead of being parked in the corner', async ({ page }) => {
   test.setTimeout(300_000)
   await login(page)
-  await applyLayout(page, narrowGraphLayout, 'Articles')
-  await openGraph(page, 'Articles', ARTICLE.key)
+  await loadNarrowArticles(page)
 
   const before = await previewZoom(page)
   await zoomOut(page, 3)
