@@ -190,6 +190,7 @@ test('Open view does not list old agent runs', async ({ page }) => {
   await expect(open.getByRole('option', { name: new RegExp(title) })).toHaveCount(0)
   await open.getByTestId('palette-input').fill('Products')
   await expect(open.getByRole('option', { name: /^Products/ }).first()).toBeVisible()
+  await open.getByTestId('palette-input').fill('Graph')
   await expect(open.getByRole('option', { name: /^Graph/ }).first()).toBeVisible()
   await page.screenshot({ path: `${shots}/row213-06-open-view-without-agent.png` })
 
