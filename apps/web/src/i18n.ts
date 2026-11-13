@@ -445,6 +445,7 @@ export const copy = {
   references: 'References',
   other: 'Other',
   expand: 'Expand',
+  showMembers: 'Show members',
   collapse: 'Collapse',
   group: 'Group',
   send: 'Send',

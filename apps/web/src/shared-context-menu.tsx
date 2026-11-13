@@ -102,8 +102,28 @@ function placeBesideMenu(
     const middleY = (rect.top + rect.bottom) / 2 - menuHeight / 2
     // Slide along each side: an edge label below the node must not force the
     // whole menu away when the same side is free a little higher or lower.
-    const rows = [rect.top, rect.top - menuHeight / 2, middleY, rect.bottom - menuHeight / 2, rect.bottom - menuHeight, rect.top - menuHeight, rect.bottom]
-    const columns = [rect.left, rect.left - menuWidth / 2, middleX, rect.right - menuWidth / 2, rect.right - menuWidth, rect.left - menuWidth, rect.right]
+    // Eight-pixel steps keep a hug available even when a wide caption leaves
+    // only a narrow free band beside the circle.
+    const steps = (from: number, to: number) => {
+      const count = Math.max(1, Math.ceil(Math.abs(to - from) / 8))
+      return Array.from({ length: count + 1 }, (_, index) => from + ((to - from) * index) / count)
+    }
+    const rows = [
+      ...steps(rect.top, rect.bottom),
+      rect.top - menuHeight / 2,
+      middleY,
+      rect.bottom - menuHeight / 2,
+      rect.top - menuHeight,
+      rect.bottom,
+    ]
+    const columns = [
+      ...steps(rect.left, rect.right),
+      rect.left - menuWidth / 2,
+      middleX,
+      rect.right - menuWidth / 2,
+      rect.left - menuWidth,
+      rect.right,
+    ]
     return gaps.flatMap((gapAt) => [
       ...rows.map((y) => ({ x: rect.right + gapAt, y })),
       ...rows.map((y) => ({ x: rect.left - menuWidth - gapAt, y })),

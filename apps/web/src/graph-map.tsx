@@ -69,9 +69,13 @@ type SimLink = SimulationLinkDatum<SimNode> & { id: string; label: string }
 type Marker = { x: number; y: number; r: number; label: Rect }
 const NO_GRAPH: Json = {}
 
-/** Object, model-type and attribute value nodes can open their own graph menu. */
+/**
+ * Object, model-type, attribute value and structure nodes can open their own
+ * graph menu. Group, class and structure nodes expand from their own menu.
+ */
 export function canOpenGraphNodeMenu(node: Pick<SceneNode, 'kind' | 'typeKey'>) {
-  return ((node.kind === 'object' || node.kind === 'type') && Boolean(node.typeKey)) || node.kind === 'value'
+  if (node.kind === 'object' || node.kind === 'type') return Boolean(node.typeKey)
+  return node.kind === 'value' || node.kind === 'group' || node.kind === 'class' || node.kind === 'structure'
 }
 
 /** The owning object of a `value:<objectId>:<attribute>` node. */
@@ -107,6 +111,17 @@ export function graphNodeMenuExtras(
       {
         id: 'graph:type:view',
         title: openObjectLabel(node.caption),
+        contexts: ['graph-node'],
+        group: 'object',
+        palette: false,
+      },
+    ]
+  }
+  if (node.kind === 'group' || node.kind === 'class' || node.kind === 'structure') {
+    return [
+      {
+        id: 'graph:node:expand',
+        title: node.kind === 'group' ? copy.showMembers : copy.expand,
         contexts: ['graph-node'],
         group: 'object',
         palette: false,
@@ -229,6 +244,17 @@ export function nodeObstacles(
   return rects
 }
 
+/**
+ * Whether a node is still pinned after pointer-up. A click never releases an
+ * existing pin; a drag pins the node where it is dropped (set while moving).
+ * The model graph keeps its old drag behaviour and only preserves pins it
+ * already had.
+ */
+export function staysPinnedAfterPointerUp(wasPinned: boolean, dragged: boolean, modelMode = false) {
+  if (wasPinned) return true
+  return !modelMode && dragged
+}
+
 /** `graph:add-link:<key>:<direction>`; the direction is what the picker must use. */
 export function graphLinkRequest(id: string, target: CommandTarget): LinkAddRequest {
   const value = id.slice('graph:add-link:'.length)
@@ -252,7 +278,12 @@ export function runGraphNodeCommand(
   id: string,
   target: CommandTarget,
   onAddLink?: (request: LinkAddRequest) => void,
+  onExpand?: () => void,
 ) {
+  if (id === 'graph:node:expand') {
+    onExpand?.()
+    return
+  }
   if (id === 'graph:type:view') {
     if (target.typeKey) requestOpenModelType(String(target.typeKey))
     return
@@ -293,6 +324,7 @@ export function openGraphNodeMenu(
   obstacles?: Rect[],
   bounds?: Rect,
   dialogAnchor?: Rect,
+  onExpand?: () => void,
 ) {
   const extra = graphNodeMenuExtras(defs, node)
   const target = {
@@ -301,7 +333,7 @@ export function openGraphNodeMenu(
     ...(stage ? { stage } : {}),
   }
   for (const command of extra) {
-    registerCommandRunner(command.id, (next) => runGraphNodeCommand(command.id, { ...target, ...next }, onAddLink))
+    registerCommandRunner(command.id, (next) => runGraphNodeCommand(command.id, { ...target, ...next }, onAddLink, onExpand))
   }
   openSharedContextMenu({
     context: 'graph-node',
@@ -414,6 +446,8 @@ export function GraphMap({
   knownRef.current = known
   const fitAfterRef = useRef(true)
   const movedRef = useRef(false)
+  const idleIdsRef = useRef<string | null>(null)
+  const idleCaptionsRef = useRef('')
 
   useEffect(() => {
     const ids = pendingNames.split(',').filter(Boolean)
@@ -641,6 +675,14 @@ export function GraphMap({
       y: transform.y + y * transform.k,
     })
 
+    // Mouse coordinates local to the canvas. A fixed full-size graph can make
+    // `offsetX` disagree with the drawn position, so context-menu hit testing
+    // uses the client rect instead.
+    const localPoint = (event: { clientX: number; clientY: number }) => {
+      const rect = canvas.getBoundingClientRect()
+      return { x: event.clientX - rect.left, y: event.clientY - rect.top }
+    }
+
     const focusNodeButton = (id: string, root: Element = canvas) => {
       const button = root
         .closest('.graph-wrap')
@@ -661,27 +703,58 @@ export function GraphMap({
       const wx = (ox - transform.x) / transform.k
       const wy = (oy - transform.y) / transform.k
       const nodes = sim.nodes()
-      const slop = 6 / transform.k
-      for (let index = nodes.length - 1; index >= 0; index -= 1) {
-        const node = nodes[index]
+      const slop = 10 / transform.k
+      let best: SimNode | undefined
+      let bestDistance = Infinity
+      for (const node of nodes) {
         if (!node || isLegendHidden(hiddenRef.current, node) || node.x == null || node.y == null) continue
         const reach = nodeRadius(node.kind, node.degree ?? 0) + slop
-        if ((node.x - wx) ** 2 + (node.y - wy) ** 2 <= reach ** 2) return node
+        const distance = (node.x - wx) ** 2 + (node.y - wy) ** 2
+        // The closest node inside the slop wins, so an exactly centred click
+        // on the hub still hits it when a neighbour overlaps the slop ring.
+        if (distance <= reach ** 2 && distance < bestDistance) {
+          best = node
+          bestDistance = distance
+        }
       }
-      return undefined
+      return best
+    }
+
+    const highlightedIds = () => {
+      const highlight = new Set<string>()
+      const hover = hoverRef.id
+      if (!hover) return highlight
+      highlight.add(hover)
+      const links = sim.force<ForceLink<SimNode, SimLink>>('link')?.links() ?? []
+      for (const link of links) {
+        const source = endId(link.source)
+        const target = endId(link.target)
+        if (source === hover) highlight.add(target)
+        if (target === hover) highlight.add(source)
+      }
+      return highlight
     }
 
     const publish = () => {
       const rect = canvas.getBoundingClientRect()
       const next: Record<string, Marker> = {}
+      const highlight = highlightedIds()
+      const current = selectedRef.current
       context.save()
       context.font = '12px "Inter Variable", Inter, sans-serif'
       for (const node of sim.nodes()) {
         if (isLegendHidden(hiddenRef.current, node) || node.x == null || node.y == null) continue
         const point = screenOf(node.x, node.y)
-        const radius = Math.round(nodeRadius(node.kind, node.degree ?? 0) * transform.k)
+        const labelRadius = nodeRadius(node.kind, node.degree ?? 0) * transform.k
+        const radius = Math.round(labelRadius)
         const textWidth = context.measureText(node.caption).width
-        const placement = placeNodeLabel(point.y, radius, canvas.clientHeight)
+        const active = node.id === current || highlight.has(node.id)
+        const placement = placeNodeLabel(
+          point.y,
+          labelRadius,
+          canvas.clientHeight,
+          active && Boolean(node.subtitle) && transform.k >= 0.6,
+        )
         const tooWide = textWidth + 8 > canvas.clientWidth - 2
         const centerX = clampLabelCenter(point.x, textWidth, canvas.clientWidth)
         const label = tooWide
@@ -754,16 +827,7 @@ export function GraphMap({
       const hiddenNow = hiddenRef.current
       const hover = hoverRef.id
       const current = selectedRef.current
-      const highlight = new Set<string>()
-      if (hover) {
-        highlight.add(hover)
-        for (const link of links) {
-          const source = endId(link.source)
-          const target = endId(link.target)
-          if (source === hover) highlight.add(target)
-          if (target === hover) highlight.add(source)
-        }
-      }
+      const highlight = highlightedIds()
       const labelFocus = new Set<string>()
       if (hover) labelFocus.add(hover)
       if (focusedRef.current) labelFocus.add(focusedRef.current)
@@ -918,6 +982,11 @@ export function GraphMap({
 
       const placedEdgeLabels: EdgeLabelBox[] = []
       const placedLabelTypes = new Set<string>()
+      // Captions that are visible at rest are obstacles for an edge label, so a
+      // selected or hovered edge moves aside instead of covering text.
+      const captionObstacles: EdgeLabelBox[] = captionBoxes
+        .filter((box) => labels.has(box.id))
+        .map((box) => ({ x: box.left, y: box.top, width: box.right - box.left, height: box.bottom - box.top }))
       context.font = '11px "Inter Variable", Inter, sans-serif'
       labelCandidates
         .slice()
@@ -925,6 +994,7 @@ export function GraphMap({
         .forEach((candidate) => {
           const { link, geometry, emphasized, typeKey } = candidate
           if (typeKey && placedLabelTypes.has(typeKey)) return
+          const activeEndpoint = candidate.priority > 1
           const widthText = context.measureText(link.label).width
           const boxW = widthText + 12
           const boxH = 16
@@ -935,6 +1005,9 @@ export function GraphMap({
             { width: boxW, height: boxH },
             labelNodes,
             placedEdgeLabels,
+            // A selected or hovered label is never dropped to spare a caption:
+            // it wins the space and the caption beneath it is hidden below.
+            activeEndpoint ? [] : captionObstacles,
           )
           const box: EdgeLabelBox = { x: mid.x - boxW / 2, y: mid.y - boxH / 2, width: boxW, height: boxH }
           // Hide the lower-priority label instead of stacking it on a neighbour.
@@ -1187,7 +1260,9 @@ export function GraphMap({
       if (mode === 'node') canvas.dataset.dragging = 'false'
       if (mode === 'node' && dragNode) {
         const travel = Math.hypot(event.offsetX - startX, event.offsetY - startY)
-        if (modelMode || !dragged || travel <= 3) {
+        const wasPinned = dragNode.fx != null && dragNode.fy != null
+        // A click keeps an existing pin; only Unpin or Re-layout releases it.
+        if (!staysPinnedAfterPointerUp(wasPinned, dragged, modelMode)) {
           dragNode.fx = null
           dragNode.fy = null
         }
@@ -1227,7 +1302,8 @@ export function GraphMap({
     }
     const onDouble = (event: MouseEvent) => {
       if (dragged) return
-      const hit = hitTest(event.offsetX, event.offsetY)
+      const point = localPoint(event)
+      const hit = hitTest(point.x, point.y)
       if (!hit) return
       selectRef.current(hit.id)
       expandRef.current(hit)
@@ -1239,7 +1315,8 @@ export function GraphMap({
       // Never let Chrome own the graph surface. A node gets its own menu;
       // empty canvas gets Fit / Re-layout or nothing, but never the native one.
       event.preventDefault()
-      const hit = hitTest(event.offsetX, event.offsetY)
+      const point = localPoint(event)
+      const hit = hitTest(point.x, point.y)
       const stage = stageRect()
       if (!hit || !canOpenGraphNodeMenu(hit)) {
         canvas.focus({ preventScroll: true })
@@ -1248,9 +1325,9 @@ export function GraphMap({
       }
       // Anchor on the live node position at event time, not a published marker.
       const rect = canvas.getBoundingClientRect()
-      const point = screenOf(hit.x ?? 0, hit.y ?? 0)
+      const screen = screenOf(hit.x ?? 0, hit.y ?? 0)
       const radius = nodeRadius(hit.kind, hit.degree ?? 0) * transform.k
-      const marker = { x: rect.left + point.x, y: rect.top + point.y, r: radius }
+      const marker = { x: rect.left + screen.x, y: rect.top + screen.y, r: radius }
       // The circle + caption union is the node's edge: the menu stays outside
       // the text too, and the dialog anchor uses the same rect.
       const avoid = nodeMenuAvoid(marker, hit.caption)
@@ -1266,7 +1343,19 @@ export function GraphMap({
       ]
       menuFocusRef.current = hit.id
       focusNodeButton(hit.id, canvas)
-      openGraphNodeMenu(hit, defsRef.current, anchor.x, anchor.y, (request) => setAdd(request), avoid, stage, obstacles, stage, avoid)
+      openGraphNodeMenu(
+        hit,
+        defsRef.current,
+        anchor.x,
+        anchor.y,
+        (request) => setAdd(request),
+        avoid,
+        stage,
+        obstacles,
+        stage,
+        avoid,
+        () => expandRef.current(hit),
+      )
     }
 
     let sawPointer = 0
@@ -1312,7 +1401,7 @@ export function GraphMap({
     // the camera is still untouched. Once the user has zoomed or panned, the
     // camera belongs to them: only repaint at the current transform.
     const observer = new ResizeObserver(() => {
-      if (!movedRef.current && !canvas.dataset.dragging) {
+      if (!movedRef.current && canvas.dataset.dragging !== 'true') {
         if (fit()) return
       }
       // Publish the new client rects too: the a11y nodes and menu anchors must
@@ -1467,12 +1556,31 @@ export function GraphMap({
       if (!movedRef.current) apiRef.current.fit()
     }
     const frame = requestAnimationFrame(fitIfIdle)
-    const timer = setTimeout(fitIfIdle, 60)
+    const timer = setTimeout(fitIfIdle, 120)
     return () => {
       cancelAnimationFrame(frame)
       clearTimeout(timer)
     }
   }, [full])
+
+  useEffect(() => {
+    // Captions that resolve after the first paint (a reload, F5) change no node
+    // ids, so they get an idle refit. Freeze the id set from the first
+    // observation: once the graph grows (add-link, expand group) this effect
+    // must never fit again, even as the new node's caption arrives later.
+    const ids = scene.nodes
+      .map((node) => node.id)
+      .sort()
+      .join('|')
+    const captions = scene.nodes
+      .map((node) => `${node.id}\u0000${node.caption}\u0000${node.subtitle}`)
+      .join('|')
+    const previousCaptions = idleCaptionsRef.current
+    idleCaptionsRef.current = captions
+    if (idleIdsRef.current == null) idleIdsRef.current = ids
+    if (ids !== idleIdsRef.current || previousCaptions === captions) return
+    if (!movedRef.current) apiRef.current.fit()
+  }, [scene])
 
   const selectedNode = scene.nodes.find((node) => node.id === selected) ?? null
   const density: GraphDensity = pane == null ? 'wide' : graphDensity(pane.width)
@@ -1558,6 +1666,7 @@ export function GraphMap({
       obstacles,
       stage,
       avoid,
+      () => expandRef.current(node),
     )
   }
   const opensNodeMenu = (event: { key: string; ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean }) =>

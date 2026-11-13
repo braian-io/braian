@@ -61,4 +61,18 @@ describe('edge label placement', () => {
     expect(point).not.toEqual(defaultPoint)
     expect(distanceToBox(nodes[0]!, labelBox(point))).toBeGreaterThanOrEqual(30)
   })
+
+  it('moves away from a node caption covering the default mid', () => {
+    const defaultPoint = curvePoint(from, control, to, 0.68)
+    const caption = { x: defaultPoint.x - 40, y: defaultPoint.y - 8, width: 80, height: 16 }
+    const point = placeEdgeLabel(from, control, to, size, [], [], [caption])
+    const box = labelBox(point)
+    const overlaps =
+      box.x < caption.x + caption.width &&
+      box.x + box.width > caption.x &&
+      box.y < caption.y + caption.height &&
+      box.y + box.height > caption.y
+    expect(point).not.toEqual(defaultPoint)
+    expect(overlaps).toBe(false)
+  })
 })
