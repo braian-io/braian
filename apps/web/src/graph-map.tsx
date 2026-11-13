@@ -446,7 +446,7 @@ export function GraphMap({
   knownRef.current = known
   const fitAfterRef = useRef(true)
   const movedRef = useRef(false)
-  const idleIdsRef = useRef('')
+  const idleIdsRef = useRef<string | null>(null)
   const idleCaptionsRef = useRef('')
 
   useEffect(() => {
@@ -745,12 +745,13 @@ export function GraphMap({
       for (const node of sim.nodes()) {
         if (isLegendHidden(hiddenRef.current, node) || node.x == null || node.y == null) continue
         const point = screenOf(node.x, node.y)
-        const radius = Math.round(nodeRadius(node.kind, node.degree ?? 0) * transform.k)
+        const labelRadius = nodeRadius(node.kind, node.degree ?? 0) * transform.k
+        const radius = Math.round(labelRadius)
         const textWidth = context.measureText(node.caption).width
         const active = node.id === current || highlight.has(node.id)
         const placement = placeNodeLabel(
           point.y,
-          radius,
+          labelRadius,
           canvas.clientHeight,
           active && Boolean(node.subtitle) && transform.k >= 0.6,
         )
@@ -1560,21 +1561,24 @@ export function GraphMap({
       cancelAnimationFrame(frame)
       clearTimeout(timer)
     }
-  }, [full, pane])
+  }, [full])
 
   useEffect(() => {
     // Captions that resolve after the first paint (a reload, F5) change no node
-    // ids, so they get an idle refit. A node set that grows (add-link, expand
-    // group) never does: those nodes must keep every existing screen position.
-    const ids = scene.nodes.map((node) => node.id).join('|')
+    // ids, so they get an idle refit. Freeze the id set from the first
+    // observation: once the graph grows (add-link, expand group) this effect
+    // must never fit again, even as the new node's caption arrives later.
+    const ids = scene.nodes
+      .map((node) => node.id)
+      .sort()
+      .join('|')
     const captions = scene.nodes
       .map((node) => `${node.id}\u0000${node.caption}\u0000${node.subtitle}`)
       .join('|')
-    const previousIds = idleIdsRef.current
     const previousCaptions = idleCaptionsRef.current
-    idleIdsRef.current = ids
     idleCaptionsRef.current = captions
-    if (previousIds !== ids || previousCaptions === captions) return
+    if (idleIdsRef.current == null) idleIdsRef.current = ids
+    if (ids !== idleIdsRef.current || previousCaptions === captions) return
     if (!movedRef.current) apiRef.current.fit()
   }, [scene])
 
