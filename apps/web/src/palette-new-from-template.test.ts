@@ -14,6 +14,7 @@ import {
   type SavedWorkspaceTemplate,
 } from './palette-new-from-template'
 import { workspaceTemplates } from './templates'
+import { typeShareToken } from './type-workspaces'
 import type { TypeName } from './type-labels'
 
 const types: TypeName[] = [
@@ -81,13 +82,29 @@ describe('new from template palette helpers', () => {
     expect(
       templatePaletteItem(review!, [{ id: 'w1', name: 'Review', share_token: 'braian-review' }]).subtitle,
     ).toMatch(/^Open existing · /)
+    const model = workspaceTemplates(types).find((item) => item.id === 'model')!
+    expect(
+      templatePaletteItem(model, [{ id: 'w3', name: 'Data model', share_token: 'braian-model' }]).subtitle,
+    ).toMatch(/^Open existing · /)
+    const product = workspaceTemplates(types).find((item) => item.id === 'type:product')!
+    expect(product).toBeTruthy()
+    expect(templatePaletteItem(product).subtitle).toMatch(/^Create · /)
+    expect(
+      templatePaletteItem(product, [
+        { id: 'w2', name: 'Products', share_token: typeShareToken('product') },
+      ]).subtitle,
+    ).toMatch(/^Create · /)
     const rows = newFromTemplateSubmenuRows(types, [
       { id: 'w1', name: 'Review', share_token: 'braian-review' },
+      { id: 'w2', name: 'Products', share_token: typeShareToken('product') },
     ])
     const reviewRow = rows.find((row) => row.id === 'template:review')
     expect(reviewRow?.subtitle).toMatch(/^Open existing · /)
     const modelRow = rows.find((row) => row.id === 'template:model')
     expect(modelRow?.subtitle).toMatch(/^Create · /)
+    const productRow = rows.find((row) => row.id === 'template:type:product')
+    expect(productRow?.subtitle).toMatch(/^Create · /)
+    expect(productRow?.subtitle).not.toMatch(/Open existing/)
   })
 
   it('builds a fresh workspace template from a saved layout definition', () => {

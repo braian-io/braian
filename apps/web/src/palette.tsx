@@ -55,7 +55,7 @@ import { ProposalBulkActions } from './proposal-actions'
 import { publishProposal } from './proposal-bus'
 import { modelFocus, openModelDialog, requestDiscardDraft, requestReview, stageModel } from './model-stage'
 import { isStandardAttribute, queueViewType, requestAttributeAction } from './attribute-actions'
-import { createWorkspaceFromTemplate, workspaceTemplates } from './templates'
+import { createWorkspaceFromTemplate, isTypeWorkspaceTemplate, workspaceTemplates } from './templates'
 import {
   commandPlaceholder,
   displayViewTitle,
@@ -1127,9 +1127,8 @@ export function CommandPalette({
     if (id.startsWith('template:')) {
       const template = workspaceTemplates(types).find((item) => item.id === id.slice('template:'.length))
       if (!template) return
-      void createWorkspaceFromTemplate(template).then((workspaceId) => {
+      void createWorkspaceFromTemplate(template, { forceNew: isTypeWorkspaceTemplate(template) }).then((workspaceId) => {
         dispatchUi('ui.open_template', { template: template.id, id: workspaceId })
-        session.openWorkspace(workspaceId)
         session.push(`Workspace ${template.name}`)
         onClose()
       }).catch((error: unknown) => {
@@ -1143,7 +1142,6 @@ export function CommandPalette({
       if (!template) return
       void createWorkspaceFromSavedTemplate(template).then((workspaceId) => {
         dispatchUi('ui.open_template', { template: `saved:${template.key}`, id: workspaceId })
-        session.openWorkspace(workspaceId)
         session.push(`Workspace ${template.name}`)
         onClose()
       }).catch((error: unknown) => {

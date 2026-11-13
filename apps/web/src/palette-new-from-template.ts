@@ -11,6 +11,7 @@ import type { PaletteItem } from './palette-model'
 import {
   createWorkspaceFromTemplate,
   canonicalShareToken,
+  isTypeWorkspaceTemplate,
   workspaceTemplates,
   type WorkspaceTemplate,
 } from './templates'
@@ -98,7 +99,9 @@ export function templatePaletteItem(
   workspaces: ListedTemplateWorkspace[] = [],
 ): PaletteItem {
   const token = canonicalShareToken(template)
-  const open = token ? workspaces.some((row) => row.share_token === token) : false
+  // Object-type templates always create a copy. Only model and Review reopen.
+  const canReopen = Boolean(token) && !isTypeWorkspaceTemplate(template)
+  const open = canReopen && workspaces.some((row) => row.share_token === token)
   const summary = template.summary
   return {
     id: `template:${template.id}`,

@@ -41,6 +41,20 @@ export function defaultActiveWorkspaceId(
 }
 
 /**
+ * Activate a freshly created workspace only after the list that the shell
+ * resolves against has been refetched. Otherwise the new id is not listed yet
+ * and the active-workspace effect immediately falls back to the old tab.
+ */
+export async function openWorkspaceAfterRefetch(
+  workspaceId: string,
+  invalidateWorkspaces: () => Promise<unknown>,
+  openWorkspace: (id: string) => void,
+): Promise<void> {
+  await invalidateWorkspaces()
+  openWorkspace(workspaceId)
+}
+
+/**
  * Pick the active workspace after load or when the list changes.
  * Keep `current` if still listed; else restore `stored` if listed; else default.
  */

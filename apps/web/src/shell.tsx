@@ -77,6 +77,7 @@ import { registerModelCommandRunners } from './model-commands'
 import { createWorkspaceFromTemplate, typeWorkspaceTemplate, workspaceTemplates } from './templates'
 import { missingTypeWorkspaces, orderWorkspaces, typeKeyFromShare, typeShareToken } from './type-workspaces'
 import {
+  openWorkspaceAfterRefetch,
   readActiveWorkspaceId,
   resolveActiveWorkspaceId,
   writeActiveWorkspaceId,
@@ -1221,8 +1222,11 @@ export function Shell() {
       if (event.name === 'ui.open_workspace' && typeof event.args.id === 'string') setWorkspaceId(event.args.id)
       if (event.name === 'ui.open_changes') applyRef.current('ui.open_view', { title: 'Changes', zone: 'center' })
       if (event.name === 'ui.open_template' && typeof event.args.id === 'string') {
-        setWorkspaceId(event.args.id)
-        void queryClient.invalidateQueries({ queryKey: ['workspaces'] })
+        void openWorkspaceAfterRefetch(
+          event.args.id,
+          () => queryClient.invalidateQueries({ queryKey: ['workspaces'] }),
+          setWorkspaceId,
+        )
       }
       if (layoutCommand(event.name)) applyRef.current(event.name, event.args)
     })
