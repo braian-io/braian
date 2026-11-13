@@ -30,30 +30,34 @@ Use full size when the pane is too small to read the scene.
 - Drag a node to pin it where you drop it. The selected node's inspector card keeps a
   **Pin** / **Unpin** control that stays on the card and toggles: **Pin** fixes the node
   at its current position, **Unpin** releases it. Unpin does not re-run the layout.
-  A click on a pinned node releases the pin.
+  A click on a pinned node does not release the pin; only **Unpin** or **Re-layout**
+  does.
 - Right-click, `Ctrl/Cmd+Enter`, `Shift+F10` or the context-menu key opens a node
   menu. Object nodes offer one **Link <relation>…** item per relation and direction.
   A value node offers **Open value**, which opens the owning object. In the model
   graph a type node opens that type in Object types.
 - The menu opens next to the node, just outside the circle and its caption, so it
-  does not cover its own node. A crowded pane can push the menu away from the node,
-  and it may then cover another label.
-- A group node has no node menu of its own. Right-clicking it opens the canvas menu
-  with **Fit** and **Re-layout**, the same actions as the toolbar.
+  does not cover its own node. Whenever there is room, the gap to the node's edge is
+  at most 16 px. A crowded pane can still push the menu further away, and it may then
+  cover another label.
+- A group node has its own menu with **Show members**, the same expansion as `Enter`
+  or a double-click. A class or structure node offers **Expand**. The canvas menu with
+  **Fit** and **Re-layout** belongs to empty canvas, not to a group node.
 - Opening a node menu with the mouse also moves keyboard focus to that node, so the
   next `Shift+F10` opens the same node's menu rather than the last node reached with
   Tab. `Escape` closes the menu and leaves a visible focus ring.
 - Right-click on empty canvas never shows the browser menu. It opens the graph menu
   with **Fit** and **Re-layout**, the same actions as the toolbar.
-- Zoom, pan and node drag belong to the user. **Fit** runs on **Re-layout**. Opening
-  full size fits the scene while the camera is still untouched; the camera does not
-  refit after a reload (F5) or after full size is closed. After you have zoomed,
-  panned or dragged a node, the camera stays where you put it until you use **Fit**
-  or **Re-layout**.
+- Zoom, pan and node drag belong to the user. Opening the graph, including after a
+  reload (F5), fits the scene so nodes and their captions stay inside the stage.
+  Entering and leaving **Open full size** also refits while the camera is still
+  untouched. After you have zoomed, panned or dragged a node, the camera stays where
+  you put it until you use **Fit** or **Re-layout**.
 
 Labels are drawn when the graph is settled. A small graph labels every edge; a larger
-one labels the selected, hovered or focused node's edges. Labels in a crowded scene
-can overlap.
+or zoomed-out one labels the selected, hovered or focused node's edges at rest. Edge
+labels never overlap each other or node captions: a label that cannot find a free
+spot is hidden, and a caption that would sit under a shown label is hidden too.
 
 ## Model graph
 
