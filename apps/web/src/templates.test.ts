@@ -1,8 +1,15 @@
-import { describe, expect, it } from 'vitest'
-import type { Json } from './api'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { api, type Json } from './api'
 import { leaves } from './layout'
 import { typeNames } from './type-labels'
-import { canonicalShareToken, typeWorkspaceTemplate, workspaceTemplates } from './templates'
+import {
+  canonicalShareToken,
+  createWorkspaceFromTemplate,
+  isTypeWorkspaceTemplate,
+  nextWorkspaceName,
+  typeWorkspaceTemplate,
+  workspaceTemplates,
+} from './templates'
 import { typeShareToken } from './type-workspaces'
 
 const defs: Json = {
@@ -22,6 +29,77 @@ describe('canonicalShareToken', () => {
     expect(canonicalShareToken(templates.find((t) => t.id === 'model')!)).toBe('braian-model')
     expect(canonicalShareToken(templates.find((t) => t.id === 'review')!)).toBe('braian-review')
     expect(canonicalShareToken(templates.find((t) => t.id === 'type:product')!)).toBe(typeShareToken('product'))
+  })
+})
+
+describe('nextWorkspaceName', () => {
+  it('starts at 2 and takes the next free numbered name', () => {
+    expect(nextWorkspaceName('Products', ['Products'])).toBe('Products 2')
+    expect(nextWorkspaceName('Products', ['Products', 'Products 2'])).toBe('Products 3')
+    expect(nextWorkspaceName('Products', ['Products', 'Products 2', 'Products 4'])).toBe('Products 3')
+    expect(nextWorkspaceName('Products', ['Products', 'Products 20'])).toBe('Products 2')
+    expect(nextWorkspaceName('Products', ['Articles'])).toBe('Products 2')
+  })
+})
+
+describe('createWorkspaceFromTemplate forceNew', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  type Row = { id: string; name: string; share_token?: string | null }
+
+  function productTemplate() {
+    const type = typeNames(defs, 'en').find((item) => item.key === 'product')!
+    return typeWorkspaceTemplate(type, defs)
+  }
+
+  function mockApi(rows: Row[]) {
+    vi.spyOn(api, 'get').mockImplementation(async (path) => {
+      if (path === '/v1/definitions') return defs as never
+      if (path === '/v1/workspaces') return { workspaces: rows } as never
+      return {} as never
+    })
+    return { post: vi.spyOn(api, 'post').mockResolvedValue({} as never) }
+  }
+
+  function createdBody(post: ReturnType<typeof mockApi>['post']) {
+    const call = post.mock.calls.find((entry) => entry[0] === '/v1/workspaces')
+    return (call?.[1] as { body?: { name?: string; share_token?: string } } | undefined)?.body
+  }
+
+  it('creates a uniquely named personal copy when the canonical workspace exists', async () => {
+    const { post } = mockApi([
+      { id: 'w-products', name: 'Products', share_token: typeShareToken('product') },
+      { id: 'w-articles', name: 'Articles', share_token: typeShareToken('article') },
+    ])
+    const template = productTemplate()
+    await expect(createWorkspaceFromTemplate(template, { forceNew: true })).resolves.not.toBe('w-products')
+    expect(createdBody(post)?.name).toBe('Products 2')
+    expect(createdBody(post)?.share_token).toMatch(/^user-/)
+    expect(post.mock.calls.filter((entry) => entry[0] === '/v1/views')).toHaveLength(template.views.length)
+  })
+
+  it('keeps the canonical name and share token when no canonical workspace exists', async () => {
+    const { post } = mockApi([
+      { id: 'w-articles', name: 'Articles', share_token: typeShareToken('article') },
+    ])
+    await expect(createWorkspaceFromTemplate(productTemplate(), { forceNew: true })).resolves.not.toBe('w-articles')
+    expect(createdBody(post)?.name).toBe('Products')
+    expect(createdBody(post)?.share_token).toBe(typeShareToken('product'))
+  })
+
+  it('reopens the canonical workspace without forceNew', async () => {
+    const { post } = mockApi([
+      { id: 'w-products', name: 'Products', share_token: typeShareToken('product') },
+    ])
+    await expect(createWorkspaceFromTemplate(productTemplate())).resolves.toBe('w-products')
+    expect(post).not.toHaveBeenCalled()
+  })
+
+  it('recognises object-type templates', () => {
+    expect(isTypeWorkspaceTemplate(productTemplate())).toBe(true)
+    expect(isTypeWorkspaceTemplate(workspaceTemplates([]).find((item) => item.id === 'model')!)).toBe(false)
   })
 })
 
