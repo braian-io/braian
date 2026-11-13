@@ -28,9 +28,9 @@ Bevis (lokalt i worktreen, utan demo- eller produktionsskrivningar):
 - `python3 scripts/check-english.py` exit 0. `sha256sum apps/web/src/data-model.tsx` är `2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`, oförändrad.
 - E2e-specen är typkontrollerad och registrerad men inte körd lokalt; ingen isolerad compose-stack startades och hela e2e-sviten kördes inte. Ingen demo-mutation, ingen deploy, ingen PR och ingen merge gjordes från grenen.
 
-## Rad 211 — New from template skapar en ny workspace (inte mergad)
+## Rad 211 — New from template skapar en ny workspace (mergad som #317, `7b18f18`)
 
-Grenen `junior/211-new-from-template` utgår från `origin/main` `b4d4d62` (PR #316, rad 51c). Den är **inte mergad, inte deployad och inte accepterad**; inget i det här avsnittet ska läsas som att beteendet är live. Rad 51c är mergad som PR #316 (squash `b4d4d62`).
+Grenen `junior/211-new-from-template` utgår från `origin/main` `b4d4d62` (PR #316, rad 51c). Den är **mergad till `main` som PR #317 (squash `7b18f18`)**. Rad 51c är mergad som PR #316 (squash `b4d4d62`).
 
 Buggen: Ctrl+K → New from template → Products öppnade bara den befintliga Products-workspacen i stället för att skapa en ny. `createWorkspaceFromTemplate` återanvände workspacen med typens kanoniska `share_token`, och palettraden sa Open existing.
 
