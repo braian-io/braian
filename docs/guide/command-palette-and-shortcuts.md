@@ -11,8 +11,11 @@ headings such as `Recent`, `Navigation`, `Create`, `Data model`, `Links`, and
 Common root commands include:
 
 - `Open view`, `Open workspace`, and `Open object`, plus one `Open {type}` row per
-  object type.
-- `Add view`, `New from template`, and `Switch catalog`.
+  object type. `Open view` focuses a view in place; it never moves one into the
+  focused pane and never lists old agent-run tabs.
+- `Add view`, `New from template`, and `Switch catalog`. `Add view` is the way to
+  bring an existing view into the focused pane or to open a second copy of a type's
+  object table.
 - `Data source`, `Select fields`, `Filter by`, `Export columns`, `Hide column`, and
   `Reset to default`.
 - `Selections`, `Link to`, `New type`, `New link type`, `New value list`, `New unit
