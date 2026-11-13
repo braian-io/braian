@@ -1,8 +1,38 @@
 # Status 2026-11-13
 
-## Rad 213 — Open view fokuserar på plats och rör inte strukturen (inte mergad)
+## Rad 213b — Add view klonar alltid till en ny panel till höger (inte mergad)
 
-Grenen `junior/213-open-view` utgår från `origin/main` `7b18f18` (PR #317, rad 211). Den är **inte mergad, inte deployad och inte accepterad**; inget i det här avsnittet ska läsas som att beteendet är live.
+Grenen `junior/213b-add-view-clone` utgår från `origin/main` `03b207b` (PR #318, rad 213). Den innehåller guidecommiten `3836785` och kod-/testcommiten `d7a8a95`. Den är **inte mergad, inte deployad och inte accepterad**; inget i det här avsnittet ska läsas som att beteendet är live.
+
+Buggen: på den delade demon öppnade Add view → Products view en gammal **stängd** Products-objekttabell som en flik i den fokuserade panelen. `objectTableViewForType` föredrog en stängd träff, och `openTypeView` öppnade den med `zone: 'center'`. Move right kunde dessutom lägga kopian som flik i en befintlig granne, och Ctrl+Alt+→ snappas ofta av operativsystemet. K3 underkändes därför.
+
+Beteendet nu:
+
+- `objectTableViewForType` returnerar bara en typstabell som redan ligger i layouten. Stängda vyer ignoreras som mål. En stängd (eller öppen) mall används bara för att kopiera tabellstate till ett **nytt** id.
+- Add view → typrad skapar alltid en ny vy och placerar den med `placeView`/`insert` och `zone: 'right'` intill den öppna typstabellen, annars till höger om fokuserad panel. Den använder inte `moveDir`, återöppnar aldrig en stängd kopia och lägger aldrig en andra typflik i samma panel.
+- Open view för sparade `view:`-rader är oförändrat: den fokuserar vyn på plats. Move right behövs inte för att få en andra typstabell.
+- K5-testet i `row213-open-view.spec.ts` stänger nu den agentflik som testet själv skapade (UI-knappen PATCH:ar `tab_open: false`), laddar om och verifierar att körningen finns kvar men fliken inte kommer tillbaka.
+
+Vad som ändrades:
+
+- `apps/web/src/open-type-view.ts`: `objectTableViewForType` returnerar endast öppna träffar; ny `objectTableTemplateForType` hittar en stängd eller öppen mall enbart för klonstate.
+- `apps/web/src/shell.tsx`: `openTypeView` klonar alltid till nytt id och placerar med `zone: 'right'` (mål = öppen typstabell när den finns).
+- `apps/web/src/open-type-view.test.ts`: testerna dokumenterar att stängd träff aldrig väljs som mål men kan användas som mall.
+- `apps/web/e2e/row213b-add-view-clone.spec.ts` (ny) och `scripts/e2e.mjs` (registrering och vikt 35): K3 börjar med en icke-tom demoyta, skapar en Products-kopia, stänger fliken så vyn ligger kvar i katalogen, fokuserar trädet och kräver sedan en ny `data-pane` till höger. Ett andra fall stänger alla öppna Products-tabeller och kräver en helt ny vy i stället för den stängda.
+- `apps/web/e2e/row213-open-view.spec.ts`: K5-testet stänger agentfliken och verifierar efter omladdning att körningen finns kvar.
+- `docs/guide/workspaces-and-panels.md` och `docs/guide/command-palette-and-shortcuts.md`: Add view → typrad beskrivs som en ny panel till höger som aldrig återöppnar en stängd kopia; Open view fokuserar fortfarande på plats.
+
+Bevis (lokalt i worktreen, utan skrivningar mot delad demo eller produktion):
+
+- `pnpm --filter ./apps/web exec tsc --noEmit` exit 0.
+- `pnpm --filter ./apps/web exec vitest run` gav **172 filer / 1011 tester** gröna, inklusive de uppdaterade `open-type-view.test.ts`-fallen.
+- `python3 scripts/check-english.py` exit 0. `sha256sum apps/web/src/data-model.tsx` är `2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`, oförändrad.
+- Playwright kördes i isolerad compose (`braian-e2e-213b`) med API/Vite bundna till `127.0.0.1` på track A-portarna 25452/28150 och Postgres/Typesense på 25450/25451. Resultat: `row213-open-view.spec.ts` 3 godkända, `row213b-add-view-clone.spec.ts` 2 godkända, `open-type-view-ready.spec.ts` 1 godkänd och `duplicate-type-views.spec.ts` 1 godkänd. Skärmbilder skrivs under `apps/web/test-results/row213-shots` och `row213b-shots` (ignorerade av git).
+- Ingen deploy, PR eller merge gjordes från grenen, och den isolerade stacken togs ner utan att röra delade volymer.
+
+## Rad 213 — Open view fokuserar på plats och rör inte strukturen (mergad som #318, `03b207b`)
+
+Grenen `junior/213-open-view` utgick från `origin/main` `7b18f18` (PR #317, rad 211) och är **mergad till `main` som PR #318 (squash `03b207b`)**. Acceptanstestet underkände K3 på grund av den stängda Products-kopian; rättningen är rad 213b ovan. Avsnittet nedan beskriver vad #318 innehöll.
 
 Buggen: Ctrl+K → Open view → Products flyttade den redan öppna Products-vyn in i den fokuserade panelen. Stod strukturen (Food/Selections) i fokus hamnade Products som aktiv flik där, så trädet försvann ur synhåll och det såg ut som att det stängdes eller ersattes. Paletten listade dessutom gamla agentkörningar som vyer.
 
