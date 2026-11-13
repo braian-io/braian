@@ -19,13 +19,24 @@ function isObjectTableViewFor(view: TypeViewRow, type: ObjectTypeRef) {
     && (String(view.state.object_type ?? '') === type.id || String(view.state.type_key ?? '') === type.key)
 }
 
+/**
+ * The object table for `type` that is already in the layout. Closed views are
+ * deliberately ignored: Add view must never reopen an old copy.
+ */
 export function objectTableViewForType(
   views: TypeViewRow[],
   type: ObjectTypeRef,
   openIds: string[],
 ): TypeViewRow | undefined {
-  const matches = views.filter((view) => isObjectTableViewFor(view, type))
-  return matches.find((view) => !openIds.includes(view.id)) ?? matches[0]
+  return views.find((view) => isObjectTableViewFor(view, type) && openIds.includes(view.id))
+}
+
+/** Any object table for `type`, open or closed, used only as clone state. */
+export function objectTableTemplateForType(
+  views: TypeViewRow[],
+  type: ObjectTypeRef,
+): TypeViewRow | undefined {
+  return views.find((view) => isObjectTableViewFor(view, type))
 }
 
 export function cloneObjectTableView(view: TypeViewRow, id: string, position: number): TypeViewRow {
