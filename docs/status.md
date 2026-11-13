@@ -2,7 +2,7 @@
 
 ## Rad 213b — Add view klonar alltid till en ny panel till höger (inte mergad)
 
-Grenen `junior/213b-add-view-clone` utgår från `origin/main` `03b207b` (PR #318, rad 213). Den innehåller guidecommiten `3836785` och kod-/testcommiten `d7a8a95`. Den är **inte mergad, inte deployad och inte accepterad**; inget i det här avsnittet ska läsas som att beteendet är live.
+Grenen `junior/213b-add-view-clone` utgår från `origin/main` `03b207b` (PR #318, rad 213). Den innehåller guidecommiten `3836785`, kod-/testcommiten `d7a8a95` och testförstärkningen `fc87d4c`. Den är **inte mergad, inte deployad och inte accepterad**; inget i det här avsnittet ska läsas som att beteendet är live.
 
 Buggen: på den delade demon öppnade Add view → Products view en gammal **stängd** Products-objekttabell som en flik i den fokuserade panelen. `objectTableViewForType` föredrog en stängd träff, och `openTypeView` öppnade den med `zone: 'center'`. Move right kunde dessutom lägga kopian som flik i en befintlig granne, och Ctrl+Alt+→ snappas ofta av operativsystemet. K3 underkändes därför.
 
@@ -18,7 +18,7 @@ Vad som ändrades:
 - `apps/web/src/open-type-view.ts`: `objectTableViewForType` returnerar endast öppna träffar; ny `objectTableTemplateForType` hittar en stängd eller öppen mall enbart för klonstate.
 - `apps/web/src/shell.tsx`: `openTypeView` klonar alltid till nytt id och placerar med `zone: 'right'` (mål = öppen typstabell när den finns).
 - `apps/web/src/open-type-view.test.ts`: testerna dokumenterar att stängd träff aldrig väljs som mål men kan användas som mall.
-- `apps/web/e2e/row213b-add-view-clone.spec.ts` (ny) och `scripts/e2e.mjs` (registrering och vikt 35): K3 börjar med en icke-tom demoyta, skapar en Products-kopia, stänger fliken så vyn ligger kvar i katalogen, fokuserar trädet och kräver sedan en ny `data-pane` till höger. Ett andra fall stänger alla öppna Products-tabeller och kräver en helt ny vy i stället för den stängda.
+- `apps/web/e2e/row213b-add-view-clone.spec.ts` (ny) och `scripts/e2e.mjs` (registrering och vikt 35): K3 börjar med en icke-tom demoyta, skapar en Products-kopia, stänger fliken så vyn ligger kvar i katalogen, fokuserar trädet och kräver sedan en ny `data-pane` till höger. Ett andra fall stänger alla öppna Products-tabeller och kräver en helt ny vy i stället för den stängda. Förstärkningen `fc87d4c` kontrollerar också att Graph och Detail behåller sina paneler.
 - `apps/web/e2e/row213-open-view.spec.ts`: K5-testet stänger agentfliken och verifierar efter omladdning att körningen finns kvar.
 - `docs/guide/workspaces-and-panels.md` och `docs/guide/command-palette-and-shortcuts.md`: Add view → typrad beskrivs som en ny panel till höger som aldrig återöppnar en stängd kopia; Open view fokuserar fortfarande på plats.
 
