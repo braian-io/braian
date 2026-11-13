@@ -21,9 +21,9 @@ Bevis lokalt i worktreen:
 - `python3 scripts/check-english.py` exit 0. `sha256sum apps/web/src/data-model.tsx` är `2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`, oförändrad. `product_suppliers`-etiketterna, landing och `crates/` är orörda.
 - Playwright-specen är skriven och registrerad men **kördes inte i den här sessionen**; ingen isolerad Postgres/Typesense/API-stack startades, så resultatet från `row226-graph-fixes.spec.ts` och regressionerna `row128f`/`row128g` saknas här. 16 px- och kameraassertionerna i de äldre specarna är inte ändrade.
 
-## Rad 213b — Add view klonar alltid till en ny panel till höger (inte mergad)
+## Rad 213b — Add view klonar alltid till en ny panel till höger (mergad som #319, `669c84b`)
 
-Grenen `junior/213b-add-view-clone` utgår från `origin/main` `03b207b` (PR #318, rad 213). Den innehåller guidecommiten `3836785`, kod-/testcommiten `d7a8a95`, statusnotisen `41f0521`, testförstärkningen `fc87d4c` och statusnotisen `85223b8`. Den är **inte mergad, inte deployad och inte accepterad**; inget i det här avsnittet ska läsas som att beteendet är live.
+Grenen `junior/213b-add-view-clone` utgick från `origin/main` `03b207b` (PR #318, rad 213) och är **mergad till `main` som PR #319 (squash `669c84b`)**. CI-körning #988 var grön på head `9ca0c02`. Demo Playwright mot https://demo.braian.io kördes efter autodeploy när `version.json` visade `669c84b`. Avsnittet nedan beskriver vad #319 innehöll.
 
 Buggen: på den delade demon öppnade Add view → Products view en gammal **stängd** Products-objekttabell som en flik i den fokuserade panelen. `objectTableViewForType` föredrog en stängd träff, och `openTypeView` öppnade den med `zone: 'center'`. Move right kunde dessutom lägga kopian som flik i en befintlig granne, och Ctrl+Alt+→ snappas ofta av operativsystemet. K3 underkändes därför.
 
