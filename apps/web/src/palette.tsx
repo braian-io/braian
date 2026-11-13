@@ -1115,7 +1115,9 @@ export function CommandPalette({
     }
     if (id.startsWith('view:')) {
       if (blockUntilWorkspace(id)) return
-      dispatchUi('ui.open_view', { id: id.slice(5), zone: 'center' })
+      // Open view focuses an open view in place; only Add view moves one into
+      // the focused pane.
+      dispatchUi('ui.open_view', { id: id.slice(5) })
       onClose()
       return
     }
@@ -1612,12 +1614,14 @@ function buildCatalog(
       shortcut: index < 9 ? `Ctrl+${index + 1}` : undefined,
     })),
     ...typeViewPaletteItems(types),
-    ...views.map((view) => ({
-      id: `view:${view.id}`,
-      group: 'views' as const,
-      title: displayViewTitle(view, types, openTypeKey),
-      subtitle: 'Open view',
-    })),
+    ...views
+      .filter((view) => view.type !== 'agent')
+      .map((view) => ({
+        id: `view:${view.id}`,
+        group: 'views' as const,
+        title: displayViewTitle(view, types, openTypeKey),
+        subtitle: 'Open view',
+      })),
     newFromTemplateRootItem(),
     { id: 'import:file', group: 'views', title: copy.importFile, subtitle: 'Drop an Excel or CSV file' },
     ...(!views.some((view) => view.type === 'attribute_definitions')

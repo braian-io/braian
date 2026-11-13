@@ -1,8 +1,36 @@
 # Status 2026-11-13
 
-## Rad 211 — New from template skapar en ny workspace (inte mergad)
+## Rad 213 — Open view fokuserar på plats och rör inte strukturen (inte mergad)
 
-Grenen `junior/211-new-from-template` utgår från `origin/main` `b4d4d62` (PR #316, rad 51c). Den är **inte mergad, inte deployad och inte accepterad**; inget i det här avsnittet ska läsas som att beteendet är live. Rad 51c är mergad som PR #316 (squash `b4d4d62`).
+Grenen `junior/213-open-view` utgår från `origin/main` `7b18f18` (PR #317, rad 211). Den är **inte mergad, inte deployad och inte accepterad**; inget i det här avsnittet ska läsas som att beteendet är live.
+
+Buggen: Ctrl+K → Open view → Products flyttade den redan öppna Products-vyn in i den fokuserade panelen. Stod strukturen (Food/Selections) i fokus hamnade Products som aktiv flik där, så trädet försvann ur synhåll och det såg ut som att det stängdes eller ersattes. Paletten listade dessutom gamla agentkörningar som vyer.
+
+Den här skivan delar kommandona så här:
+
+- **Open view** fokuserar och aktiverar en vy som redan finns i layouten på dess plats. Den flyttar inte vyn, stänger inte strukturen och rör inte Graph. Palettens `view:`-rader skickar inte längre `zone: 'center'`, så layouten går genom `ensureInLayout` i stället för `moveView`.
+- **Add view** är kvar som vägen till den fokuserade panelen. En rad för en befintlig vy skickar fortfarande `zone: 'center'` plus `target` och flyttar in vyn dit. En typrad (`Products view`) går fortfarande genom `openTypeView`, som kopierar en redan öppen typ-tabell och placerar kopian till höger.
+- Open view döljer vyer vars typ är `agent`. Agentkörningarna och deras flikar finns kvar; det är bara destinationslistan som inte erbjuder dem.
+
+Vad som ändrades:
+
+- `apps/web/src/palette.tsx`: `view:`-raden dispatchar `ui.open_view` utan `zone`, och rotkatalogens `view:`-rader filtrerar bort `type === 'agent'`.
+- `apps/web/src/palette-views.ts`: Open view-listan filtrerar bort `type === 'agent'` innan raderna byggs.
+- `apps/web/src/layout.test.ts`: enhetstest för att `ui.open_view` utan `zone` aktiverar en öppen vy på plats och lämnar layouten orörd.
+- `apps/web/src/palette-views.test.ts` (ny): enhetstest för att agentkörningar inte blir Open view-destinationer och att typraden döljs när en vy med samma titel redan finns.
+- `apps/web/e2e/row213-open-view.spec.ts` (ny) och `scripts/e2e.mjs` (registrering och vikt 30): Playwright täcker kriterium 1–5 med skärmbilder under `apps/web/test-results/row213-shots` (inom worktreen, så CI kan skriva dem).
+- `docs/guide/workspaces-and-panels.md` och `docs/guide/command-palette-and-shortcuts.md`: avsnittet Open a view beskriver fokus på plats, att strukturen och Graph står kvar, att listan inte tar med agentkörningar, och att Add view är vägen till fokuserad panel eller en andra typkopia.
+
+Bevis (lokalt i worktreen, utan demo- eller produktionsskrivningar):
+
+- `pnpm --filter ./apps/web exec tsc --noEmit` exit 0.
+- `pnpm --filter ./apps/web exec vitest run` gav **172 filer / 1010 tester** gröna, inklusive de nya layout- och palette-views-testerna.
+- `python3 scripts/check-english.py` exit 0. `sha256sum apps/web/src/data-model.tsx` är `2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`, oförändrad.
+- E2e-specen är typkontrollerad och registrerad men inte körd lokalt; ingen isolerad compose-stack startades och hela e2e-sviten kördes inte. Ingen demo-mutation, ingen deploy, ingen PR och ingen merge gjordes från grenen.
+
+## Rad 211 — New from template skapar en ny workspace (mergad som #317, `7b18f18`)
+
+Grenen `junior/211-new-from-template` utgår från `origin/main` `b4d4d62` (PR #316, rad 51c). Den är **mergad till `main` som PR #317 (squash `7b18f18`)**. Rad 51c är mergad som PR #316 (squash `b4d4d62`).
 
 Buggen: Ctrl+K → New from template → Products öppnade bara den befintliga Products-workspacen i stället för att skapa en ny. `createWorkspaceFromTemplate` återanvände workspacen med typens kanoniska `share_token`, och palettraden sa Open existing.
 

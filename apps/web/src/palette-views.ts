@@ -5,13 +5,15 @@ import { displayViewTitle, typeViewPaletteItems, type SavedView, type TypeName }
 export function viewPaletteRows(views: SavedView[], types: TypeName[], openTypeKey = ''): PaletteItem[] {
   return withoutDuplicateDestinations([
     ...typeViewPaletteItems(types).map((row) => ({ ...row, entity: false })),
-    ...views.map((view) => ({
-      id: `view:${view.id}`,
-      group: 'views' as const,
-      title: displayViewTitle(view, types, openTypeKey),
-      subtitle: 'Open view',
-      entity: true,
-      keywords: [view.type, view.title],
-    })),
+    ...views
+      .filter((view) => view.type !== 'agent')
+      .map((view) => ({
+        id: `view:${view.id}`,
+        group: 'views' as const,
+        title: displayViewTitle(view, types, openTypeKey),
+        subtitle: 'Open view',
+        entity: true,
+        keywords: [view.type, view.title],
+      })),
   ])
 }

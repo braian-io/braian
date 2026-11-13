@@ -35,6 +35,14 @@ Drag a tab to another pane to move the view. Drag a divider to resize a split. T
 layout is tiled; panels are not floating windows and cannot be detached from the
 browser tab.
 
+## Open a view
+
+Press `Ctrl+K` and choose `Open view` to list the views in the workspace by title.
+Choosing one focuses and activates that view where it already sits in the layout. It
+does not move the view into the focused pane, and it does not close or replace the
+structure tree or the graph. Use it to bring an open view back into focus; it never
+creates a copy. The list leaves out old agent-run tabs, so it only offers real views.
+
 ## Add a view
 
 There are two places to add a view to the focused pane:
