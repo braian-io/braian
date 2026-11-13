@@ -2,15 +2,17 @@
 
 ## Rad 226 — graph-uppföljningen från 128g (inte mergad)
 
-Grenen `junior/226-graph-fixes` utgår från `origin/main` i den här worktreen (`669c84b`, PR #319) som bygger på den begärda basen `03b207b` (PR #318). Den innehåller guide-/statuscommiten, kod-/testcommiten och den här statusnotisen. Den är **inte mergad, inte deployad och inte accepterad**; inget här ska läsas som att beteendet är live.
+Grenen `junior/226-graph-fixes` utgår från `origin/main` i den här worktreen (`669c84b`, PR #319) som bygger på den begärda basen `03b207b` (PR #318). Den innehåller guide-/statuscommiten, kod-/testcommitarna och den här statusnotisen. Den är **inte mergad, inte deployad och inte accepterad**; inget här ska läsas som att beteendet är live.
+
+CI-körning **#990 på head `4c0c79e` föll** på riktiga regressioner från rad 226: `row128e-picker-on-top` (en befintlig nods `data-x` flyttades 34 px efter add-link, och en object-caption kunde krocka med `value:created_at` i en liten pane), `row128g-graph-menu-fit` och `row226-graph-fixes` (den valda artikeln tappade `Supplier`-etiketten). Den här uppföljningen rättar dem; 16 px-, kamera-, stay-put- och överlappsassertionerna i de äldre specarna är fortfarande orörda.
 
 Bara de fem acceptanskriterierna från `ACCEPTANCE.md` är byggda:
 
 - **Pin överlever klick.** `onPointerUp` rensar inte längre `fx`/`fy` när `travel <= 3`; en ny `staysPinnedAfterPointerUp` behåller en befintlig pin genom både klick och drag, medan drag fortfarande pinnar där noden släpps. Endast **Unpin** och **Re-layout** släpper pinnen. Model graph behåller sitt gamla dragbeteende men tappar inte en pin som redan finns.
-- **Kameran passar om vid laddning/F5 och när full storlek stängs.** Den befintliga `[full]`-passningen triggas nu även av `placed`/`pane`, och canvas-`ResizeObserver` kontrollerar `dataset.dragging !== 'true'` i stället för att en kvarlämnad sträng `'false'` blockerar alla omfit. Efter användarens zoom, pan eller nodrag är `movedRef` fortfarande satt och kameran står kvar.
+- **Kameran passar om vid laddning/F5, full storlek och orörd resize.** `[full, pane]`-passningen och canvas-`ResizeObserver` (som kontrollerar `dataset.dragging !== 'true'`) passar om så länge `movedRef` är falsk. Captions som löses ut efter första målningen (F5) ger en ny omfit **bara när nod-id-mängden är oförändrad**; när nodmängden växer (add-link, expand group) ritas grafen om utan att kameran rör sig. Efter användarens zoom, pan eller nodrag är `movedRef` fortfarande satt och kameran står kvar.
 - **Menyn håller sig inom 16 px.** `placeBesideMenu` provar nu 8 px-steg längs varje sida av nodens cirkel + mätta caption, så en ledig närplats hittas innan rutnätet väljs. Den egna noden täcks aldrig; i en trång pane får menyn fortfarande täcka en annan etikett.
 - **Gruppnoder får egen meny.** `canOpenGraphNodeMenu` släpper igenom `group`, `class` och `structure`. Deras meny har `graph:node:expand` (`Show members` för grupp, `Expand` för klass/struktur) som kör samma expansion som `Enter`/dubbelklick. Högerklick på hubben i full storlek hit-testas med canvasens klientrektangel och väljer närmaste nod, så en centrerad träff öppnar nodmenyn.
-- **Kantetiketter krockar inte med captions.** `placeEdgeLabel` tar emot synliga caption-rektanglar som hinder och flyttar etiketten innan den väljs; etiketter som ändå inte får plats döljs, och en caption under en visad etikett döljs som förut.
+- **Kantetiketter krockar inte med captions.** `placeEdgeLabel` tar emot synliga caption-rektanglar som hinder för etiketter som bara visas i vila; en vald eller hovrad (aktiv-endpoint) etikett hoppar över caption-hindren, flyttas bara undan från nodcirklar och andra etiketter och **får aldrig kastas för en captions skull**. Om den enda platsen ligger över en caption behålls etiketten och captionen döljs. Etiketter som ändå inte får plats döljs som förut.
 
 Filer: `apps/web/src/graph-map.tsx`, `apps/web/src/shared-context-menu.tsx`, `apps/web/src/graph-edge-label.ts`, `apps/web/src/i18n.ts` (engelsk `Show members`), `apps/web/src/graph-map.test.tsx`, `apps/web/src/graph-edge-label.test.ts`, nya `apps/web/e2e/row226-graph-fixes.spec.ts` samt registrering i `scripts/e2e.mjs` (vikt 70 s). Skärmbilder skrivs till den relativa katalogen `apps/web/test-results/row226-shots`.
 
@@ -19,7 +21,7 @@ Bevis lokalt i worktreen:
 - `pnpm --filter ./apps/web exec tsc --noEmit` exit 0.
 - `pnpm --filter ./apps/web exec vitest run` gav **172 filer / 1017 tester** gröna.
 - `python3 scripts/check-english.py` exit 0. `sha256sum apps/web/src/data-model.tsx` är `2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`, oförändrad. `product_suppliers`-etiketterna, landing och `crates/` är orörda.
-- Playwright-specen är skriven och registrerad men **kördes inte i den här sessionen**; ingen isolerad Postgres/Typesense/API-stack startades, så resultatet från `row226-graph-fixes.spec.ts` och regressionerna `row128f`/`row128g` saknas här. 16 px- och kameraassertionerna i de äldre specarna är inte ändrade.
+- Playwright-specen är skriven och registrerad men **kördes inte i den här sessionen**; ingen isolerad Postgres/Typesense/API-stack startades, så resultatet från `row226-graph-fixes.spec.ts` och regressionerna `row128e`/`row128f`/`row128g` saknas här. Följden verifieras av CI på den här grenen, inte av lokala enhetstester.
 
 ## Rad 213b — Add view klonar alltid till en ny panel till höger (mergad som #319, `669c84b`)
 

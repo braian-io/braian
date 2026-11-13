@@ -446,6 +446,8 @@ export function GraphMap({
   knownRef.current = known
   const fitAfterRef = useRef(true)
   const movedRef = useRef(false)
+  const idleIdsRef = useRef('')
+  const idleCaptionsRef = useRef('')
 
   useEffect(() => {
     const ids = pendingNames.split(',').filter(Boolean)
@@ -718,9 +720,26 @@ export function GraphMap({
       return best
     }
 
+    const highlightedIds = () => {
+      const highlight = new Set<string>()
+      const hover = hoverRef.id
+      if (!hover) return highlight
+      highlight.add(hover)
+      const links = sim.force<ForceLink<SimNode, SimLink>>('link')?.links() ?? []
+      for (const link of links) {
+        const source = endId(link.source)
+        const target = endId(link.target)
+        if (source === hover) highlight.add(target)
+        if (target === hover) highlight.add(source)
+      }
+      return highlight
+    }
+
     const publish = () => {
       const rect = canvas.getBoundingClientRect()
       const next: Record<string, Marker> = {}
+      const highlight = highlightedIds()
+      const current = selectedRef.current
       context.save()
       context.font = '12px "Inter Variable", Inter, sans-serif'
       for (const node of sim.nodes()) {
@@ -728,7 +747,13 @@ export function GraphMap({
         const point = screenOf(node.x, node.y)
         const radius = Math.round(nodeRadius(node.kind, node.degree ?? 0) * transform.k)
         const textWidth = context.measureText(node.caption).width
-        const placement = placeNodeLabel(point.y, radius, canvas.clientHeight)
+        const active = node.id === current || highlight.has(node.id)
+        const placement = placeNodeLabel(
+          point.y,
+          radius,
+          canvas.clientHeight,
+          active && Boolean(node.subtitle) && transform.k >= 0.6,
+        )
         const tooWide = textWidth + 8 > canvas.clientWidth - 2
         const centerX = clampLabelCenter(point.x, textWidth, canvas.clientWidth)
         const label = tooWide
@@ -801,16 +826,7 @@ export function GraphMap({
       const hiddenNow = hiddenRef.current
       const hover = hoverRef.id
       const current = selectedRef.current
-      const highlight = new Set<string>()
-      if (hover) {
-        highlight.add(hover)
-        for (const link of links) {
-          const source = endId(link.source)
-          const target = endId(link.target)
-          if (source === hover) highlight.add(target)
-          if (target === hover) highlight.add(source)
-        }
-      }
+      const highlight = highlightedIds()
       const labelFocus = new Set<string>()
       if (hover) labelFocus.add(hover)
       if (focusedRef.current) labelFocus.add(focusedRef.current)
@@ -977,6 +993,7 @@ export function GraphMap({
         .forEach((candidate) => {
           const { link, geometry, emphasized, typeKey } = candidate
           if (typeKey && placedLabelTypes.has(typeKey)) return
+          const activeEndpoint = candidate.priority > 1
           const widthText = context.measureText(link.label).width
           const boxW = widthText + 12
           const boxH = 16
@@ -987,7 +1004,9 @@ export function GraphMap({
             { width: boxW, height: boxH },
             labelNodes,
             placedEdgeLabels,
-            captionObstacles,
+            // A selected or hovered label is never dropped to spare a caption:
+            // it wins the space and the caption beneath it is hidden below.
+            activeEndpoint ? [] : captionObstacles,
           )
           const box: EdgeLabelBox = { x: mid.x - boxW / 2, y: mid.y - boxH / 2, width: boxW, height: boxH }
           // Hide the lower-priority label instead of stacking it on a neighbour.
@@ -1531,9 +1550,7 @@ export function GraphMap({
   useEffect(() => {
     // Full size re-lays out the whole chrome. Refit after that pass, once the
     // pane and its measured chrome have their new size, and only while the
-    // camera is still the system's rather than the user's. A graph that loads
-    // or resolves captions after the first paint gets the same idle refit, so
-    // a reload (F5) never clips a node or caption at the stage edge.
+    // camera is still the system's rather than the user's.
     const fitIfIdle = () => {
       if (!movedRef.current) apiRef.current.fit()
     }
@@ -1543,7 +1560,23 @@ export function GraphMap({
       cancelAnimationFrame(frame)
       clearTimeout(timer)
     }
-  }, [full, placed, pane])
+  }, [full, pane])
+
+  useEffect(() => {
+    // Captions that resolve after the first paint (a reload, F5) change no node
+    // ids, so they get an idle refit. A node set that grows (add-link, expand
+    // group) never does: those nodes must keep every existing screen position.
+    const ids = scene.nodes.map((node) => node.id).join('|')
+    const captions = scene.nodes
+      .map((node) => `${node.id}\u0000${node.caption}\u0000${node.subtitle}`)
+      .join('|')
+    const previousIds = idleIdsRef.current
+    const previousCaptions = idleCaptionsRef.current
+    idleIdsRef.current = ids
+    idleCaptionsRef.current = captions
+    if (previousIds !== ids || previousCaptions === captions) return
+    if (!movedRef.current) apiRef.current.fit()
+  }, [scene])
 
   const selectedNode = scene.nodes.find((node) => node.id === selected) ?? null
   const density: GraphDensity = pane == null ? 'wide' : graphDensity(pane.width)
