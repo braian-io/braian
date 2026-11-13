@@ -26,6 +26,7 @@ import {
   labelPriority,
   legendEntries,
   mergeScene,
+  NAMED_CAPTION_PRIORITY,
   nodeMark,
   nodeRadius,
   parseTypedId,
@@ -1088,6 +1089,13 @@ export function GraphMap({
       const captionObstacles: EdgeLabelBox[] = captionBoxes
         .filter((box) => labels.has(box.id))
         .map((box) => ({ x: box.left, y: box.top, width: box.right - box.left, height: box.bottom - box.top }))
+      // An active edge label may use a hidden value chip's space, but it moves
+      // aside from a shown object/type/active name when a legal slot exists.
+      // It is never dropped for a name: if every slot covers one, the label is
+      // still painted and `visibleCaptionIds` hides that caption below (K5).
+      const namedCaptionObstacles: EdgeLabelBox[] = captionBoxes
+        .filter((box) => labels.has(box.id) && box.priority >= NAMED_CAPTION_PRIORITY)
+        .map((box) => ({ x: box.left, y: box.top, width: box.right - box.left, height: box.bottom - box.top }))
       context.font = '11px "Inter Variable", Inter, sans-serif'
       labelCandidates
         .slice()
@@ -1106,9 +1114,10 @@ export function GraphMap({
             { width: boxW, height: boxH },
             labelNodes,
             placedEdgeLabels,
-            // A selected or hovered label is never dropped to spare a caption:
-            // it wins the space and the caption beneath it is hidden below.
-            activeEndpoint ? [] : captionObstacles,
+            // A selected or hovered label wins space from a hidden value chip,
+            // but it still moves aside from a shown object/type/active name.
+            // With no legal slot it keeps its space and the caption hides.
+            activeEndpoint ? namedCaptionObstacles : captionObstacles,
           )
           const box: EdgeLabelBox = { x: mid.x - boxW / 2, y: mid.y - boxH / 2, width: boxW, height: boxH }
           // Hide the lower-priority label instead of stacking it on a neighbour.

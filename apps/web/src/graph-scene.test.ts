@@ -100,6 +100,12 @@ describe('graph marks', () => {
     expect(shown.has('value'), 'a 240 px chip is clipped by the pane').toBe(false)
   })
 
+  it('keeps a 229 px name in a 230 px pane when no edge label covers it', () => {
+    const name = { id: 'article', priority: 5, left: 0.5, top: 10, right: 229.5, bottom: 26 }
+    const shown = visibleCaptionIds([name], 1, { paneWidth: 230 })
+    expect(shown.has('article'), 'the hair-width pane does not drop the clamped name').toBe(true)
+  })
+
   it('hides a caption under a painted edge label so the label keeps the space', () => {
     const article = { id: 'article', priority: 5, left: 10, top: 10, right: 60, bottom: 26 }
     const value = { id: 'value', priority: 0, left: 70, top: 10, right: 110, bottom: 26 }

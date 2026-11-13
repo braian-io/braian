@@ -274,7 +274,8 @@ test('a real reload and leaving full size fit every caption in a 230 px pane wit
   await expect(page.getByTestId('graph-inspector')).toHaveAttribute('data-placement', 'sheet')
   const closed = await expectLabelsInside(page, 'after Close full size')
   const closedDark = findLabel(closed.labels, (text) => /Dark chocolate/i.test(text))
-  expect(closedDark, 'the long caption returns with the pane fit').toBeTruthy()
+  const closedShown = closed.labels.map((label) => label.text).join(' | ')
+  expect(closedDark, `the long caption returns with the pane fit; shown labels: ${closedShown}`).toBeTruthy()
   expect(closedDark!.right, 'the long caption is not clipped after Close full size').toBeLessThanOrEqual(
     closed.frame.right + 2,
   )
