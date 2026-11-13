@@ -172,7 +172,7 @@ test('Add view → Products view opens a second table and keeps the tree', async
   await expect(treePane(page).getByTestId('structure-tree')).toBeVisible()
 })
 
-test('Open view does not list old agent runs', async ({ page }) => {
+test('Open view does not list old agent runs, and closing its tab keeps the run', async ({ page }) => {
   test.setTimeout(120_000)
   await login(page)
   await resetProductsLayout(page)
@@ -194,10 +194,26 @@ test('Open view does not list old agent runs', async ({ page }) => {
   await expect(open.getByRole('option', { name: /^Graph/ }).first()).toBeVisible()
   await page.screenshot({ path: `${shots}/row213-06-open-view-without-agent.png` })
 
-  // The agent tab and its run are still there; only the destination list hides it.
+  // The destination list hides the agent run, but its tab and run still exist.
   await page.keyboard.press('Escape')
   await expect(open).toHaveCount(0)
-  await expect(page.locator('.pane-tab[data-view-type="agent"]').filter({ hasText: title })).toBeVisible()
+  await expect(tab).toBeVisible()
+  const runs = (await (await page.request.get('/v1/agent/runs')).json()) as { runs: Array<{ id: string; title: string }> }
+  const run = runs.runs.find((item) => item.title === title)
+  if (!run) throw new Error('missing agent run')
+
+  // Actually close the tab this test created; the run itself stays in the catalog.
+  await tab.hover()
+  await tab.getByRole('button', { name: 'Close tab' }).click()
+  await expect(page.locator('.pane-tab[data-view-type="agent"]').filter({ hasText: title })).toHaveCount(0)
+  const patched = await page.request.patch(`/v1/agent/runs/${run.id}`, { data: { tab_open: false } })
+  expect(patched.ok()).toBeTruthy()
+  await page.reload()
+  await expect(page.getByTestId('dock')).toBeVisible({ timeout: 60_000 })
+  await expect(page.locator('.pane-tab[data-view-type="agent"]').filter({ hasText: title })).toHaveCount(0)
+  const after = (await (await page.request.get('/v1/agent/runs')).json()) as { runs: Array<{ id: string; title: string }> }
+  expect(after.runs.some((item) => item.id === run.id)).toBeTruthy()
+  await page.screenshot({ path: `${shots}/row213-07-agent-tab-closed-run-kept.png` })
 })
 
 async function dragOver(page: Page, source: Locator, target: Locator) {

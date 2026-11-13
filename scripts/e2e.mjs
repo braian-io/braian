@@ -117,6 +117,7 @@ const specs = [
   'e2e/row129f-allowed-trees-state-lock.spec.ts',
   'e2e/row211-new-from-template.spec.ts',
   'e2e/row213-open-view.spec.ts',
+  'e2e/row213b-add-view-clone.spec.ts',
   'e2e/row216-delete-object.spec.ts',
   'e2e/row216b-delete-fixes.spec.ts',
 ]
@@ -284,6 +285,7 @@ const measuredSeconds = {
   'e2e/row129f-allowed-trees-state-lock.spec.ts': 16,
   'e2e/row211-new-from-template.spec.ts': 40,
   'e2e/row213-open-view.spec.ts': 30,
+  'e2e/row213b-add-view-clone.spec.ts': 35,
   'e2e/row216-delete-object.spec.ts': 8,
   'e2e/row216b-delete-fixes.spec.ts': 21,
 }
