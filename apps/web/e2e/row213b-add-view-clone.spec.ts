@@ -124,6 +124,9 @@ test('Add view clones Products into a new pane right of the open table despite a
   await tree.locator('.pane-tab[data-view-type="structure_tree"]').first().click()
   const treeViews = await tree.getAttribute('data-views')
   const treePaneId = await tree.getAttribute('data-pane')
+  const graphPane = page.locator('section.pane').filter({ has: page.locator('.pane-tab', { hasText: 'Graph' }) })
+  await expect(graphPane.locator('.pane-tab', { hasText: 'Graph' })).toHaveCount(1)
+  const graphViews = await graphPane.getAttribute('data-views')
 
   await addProductsView(page)
   const panes = productPanes(page)
@@ -147,6 +150,11 @@ test('Add view clones Products into a new pane right of the open table despite a
   await expect(tree.getByTestId('structure-tree')).toBeVisible()
   await expect(tree).toHaveAttribute('data-views', treeViews ?? '')
   await expect(tree).toHaveAttribute('data-pane', treePaneId ?? '')
+  await expect(tree.locator(`[data-tab="${newId}"]`)).toHaveCount(0)
+  await expect(graphPane.locator('.pane-tab', { hasText: 'Graph' })).toHaveCount(1)
+  await expect(graphPane).toHaveAttribute('data-views', graphViews ?? '')
+  await expect(newPane.locator('.pane-tab', { hasText: 'Graph' })).toHaveCount(0)
+  await expect(newPane.locator('.pane-tab', { hasText: 'Detail' })).toHaveCount(0)
 
   const boxes = await Promise.all([originalPane.boundingBox(), newPane.boundingBox()])
   if (!boxes[0] || !boxes[1]) throw new Error('missing pane boxes')
