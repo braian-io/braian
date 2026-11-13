@@ -2,7 +2,7 @@
 
 ## Rad 213b — Add view klonar alltid till en ny panel till höger (inte mergad)
 
-Grenen `junior/213b-add-view-clone` utgår från `origin/main` `03b207b` (PR #318, rad 213). Den innehåller guidecommiten `3836785`, kod-/testcommiten `d7a8a95` och testförstärkningen `fc87d4c`. Den är **inte mergad, inte deployad och inte accepterad**; inget i det här avsnittet ska läsas som att beteendet är live.
+Grenen `junior/213b-add-view-clone` utgår från `origin/main` `03b207b` (PR #318, rad 213). Den innehåller guidecommiten `3836785`, kod-/testcommiten `d7a8a95`, statusnotisen `41f0521`, testförstärkningen `fc87d4c` och statusnotisen `85223b8`. Den är **inte mergad, inte deployad och inte accepterad**; inget i det här avsnittet ska läsas som att beteendet är live.
 
 Buggen: på den delade demon öppnade Add view → Products view en gammal **stängd** Products-objekttabell som en flik i den fokuserade panelen. `objectTableViewForType` föredrog en stängd träff, och `openTypeView` öppnade den med `zone: 'center'`. Move right kunde dessutom lägga kopian som flik i en befintlig granne, och Ctrl+Alt+→ snappas ofta av operativsystemet. K3 underkändes därför.
 
@@ -51,12 +51,10 @@ Vad som ändrades:
 - `apps/web/e2e/row213-open-view.spec.ts` (ny) och `scripts/e2e.mjs` (registrering och vikt 30): Playwright täcker kriterium 1–5 med skärmbilder under `apps/web/test-results/row213-shots` (inom worktreen, så CI kan skriva dem).
 - `docs/guide/workspaces-and-panels.md` och `docs/guide/command-palette-and-shortcuts.md`: avsnittet Open a view beskriver fokus på plats, att strukturen och Graph står kvar, att listan inte tar med agentkörningar, och att Add view är vägen till fokuserad panel eller en andra typkopia.
 
-Bevis (lokalt i worktreen, utan demo- eller produktionsskrivningar):
+Bevis efter merge av #318 (historiskt för den här skivan; K3 underkändes sedan på demon):
 
-- `pnpm --filter ./apps/web exec tsc --noEmit` exit 0.
-- `pnpm --filter ./apps/web exec vitest run` gav **172 filer / 1010 tester** gröna, inklusive de nya layout- och palette-views-testerna.
-- `python3 scripts/check-english.py` exit 0. `sha256sum apps/web/src/data-model.tsx` är `2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`, oförändrad.
-- E2e-specen är typkontrollerad och registrerad men inte körd lokalt; ingen isolerad compose-stack startades och hela e2e-sviten kördes inte. Ingen demo-mutation, ingen deploy, ingen PR och ingen merge gjordes från grenen.
+- CI-körning #987 var grön på head `e81ccad`. Squash-mergad till `main` som PR #318 (`03b207b`). Demo Playwright mot https://demo.braian.io kördes efter autodeploy när `version.json` visade `03b207b`.
+- Acceptanstestet underkände därefter K3 på den delade demon: Add view återöppnade en stängd Products-vy som flik i samma panel. Rättningen är rad 213b ovan; avsnittet ovan ska inte läsas som att K3 är löst i `03b207b`.
 
 ## Rad 211 — New from template skapar en ny workspace (mergad som #317, `7b18f18`)
 
