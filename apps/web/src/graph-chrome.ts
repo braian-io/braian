@@ -218,3 +218,97 @@ export function fitCamera(input: {
     y: input.frame.y + pad + viewH / 2 - cy * k,
   }
 }
+
+export type CaptionExtent = {
+  /** Node centre in world coordinates. */
+  x: number
+  y: number
+  /** Node circle radius in world coordinates. */
+  radius: number
+  /** Measured caption width in screen pixels (the caption does not scale with k). */
+  captionWidth: number
+}
+
+const CAPTION_SIDE_PAD_PX = 4
+const CAPTION_VERTICAL_PAD_PX = 20
+
+/**
+ * Fit the camera around the circles and their measured captions. Captions are
+ * drawn at a fixed screen size, so their world extent is `width / k`; iterate a
+ * few times because k itself is what we are solving for. A long caption on the
+ * left or right edge widens the bounds instead of being clipped by the old
+ * `length * 3.6` estimate.
+ */
+export function fitCameraWithLabels(input: {
+  frame: GraphFrame
+  nodes: CaptionExtent[]
+  pad?: number
+  minScale?: number
+  maxScale?: number
+}): { k: number; x: number; y: number } | undefined {
+  if (input.nodes.length === 0) return undefined
+  const pad = input.pad ?? 16
+  const circles = circleBounds(input.nodes)
+  let bounds = circles
+  let camera = fitCamera({ frame: input.frame, bounds, pad, minScale: input.minScale, maxScale: input.maxScale })
+  for (let pass = 0; pass < 6; pass += 1) {
+    const k = Math.max(1e-6, camera.k)
+    const next = { ...circles }
+    for (const node of input.nodes) {
+      if (node.captionWidth > 0) {
+        const half = (node.captionWidth / 2 + CAPTION_SIDE_PAD_PX) / k
+        next.minX = Math.min(next.minX, node.x - half)
+        next.maxX = Math.max(next.maxX, node.x + half)
+      }
+      const vertical = CAPTION_VERTICAL_PAD_PX / k
+      next.minY = Math.min(next.minY, node.y - node.radius - vertical)
+      next.maxY = Math.max(next.maxY, node.y + node.radius + vertical)
+    }
+    const nextCamera = fitCamera({
+      frame: input.frame,
+      bounds: next,
+      pad,
+      minScale: input.minScale,
+      maxScale: input.maxScale,
+    })
+    bounds = next
+    const settled = Math.abs(nextCamera.k - camera.k) < 0.001
+    camera = nextCamera
+    if (settled) break
+  }
+  return camera
+}
+
+function circleBounds(nodes: CaptionExtent[]): Bounds {
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  for (const node of nodes) {
+    minX = Math.min(minX, node.x - node.radius)
+    maxX = Math.max(maxX, node.x + node.radius)
+    minY = Math.min(minY, node.y - node.radius)
+    maxY = Math.max(maxY, node.y + node.radius)
+  }
+  return { minX, minY, maxX, maxY }
+}
+
+/**
+ * Keep the user's zoom and the world point at the old frame centre, then put
+ * that point at the new frame centre. Used when a resize or a full-size toggle
+ * changes the viewport while the camera belongs to the user.
+ */
+export function remapCamera(input: {
+  camera: { k: number; x: number; y: number }
+  from: GraphFrame
+  to: GraphFrame
+}): { k: number; x: number; y: number } {
+  const k = input.camera.k
+  const fromX = input.from.x + input.from.width / 2
+  const fromY = input.from.y + input.from.height / 2
+  const toX = input.to.x + input.to.width / 2
+  const toY = input.to.y + input.to.height / 2
+  const worldX = (fromX - input.camera.x) / k
+  const worldY = (fromY - input.camera.y) / k
+  return { k, x: toX - worldX * k, y: toY - worldY * k }
+}

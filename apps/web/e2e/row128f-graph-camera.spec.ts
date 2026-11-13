@@ -355,10 +355,18 @@ test('the camera stays put through drag, select, hover, focus, unpin, fullscreen
   expect(await previewZoom(page), 'opening full size keeps the camera').toBeCloseTo(zoomBeforeFull, 2)
   const fullCanvas = (await graphCanvas(page).boundingBox())!
   const fullPositions = await localNodePositions(page)
+  // Row 226b remaps the same world view into the new free frame, so screen
+  // positions may move; the user's zoom and every relative node offset stay.
+  const anchor = Object.keys(beforeFull).find((id) => fullPositions[id])
+  expect(anchor, 'a node survives full size').toBeTruthy()
   for (const id of Object.keys(beforeFull)) {
-    if (!fullPositions[id]) continue
-    expect(Math.abs(fullPositions[id]!.x - beforeFull[id]!.x), `${id} x in fullscreen`).toBeLessThanOrEqual(1)
-    expect(Math.abs(fullPositions[id]!.y - beforeFull[id]!.y), `${id} y in fullscreen`).toBeLessThanOrEqual(1)
+    if (!fullPositions[id] || id === anchor) continue
+    const beforeDx = beforeFull[id]!.x - beforeFull[anchor!]!.x
+    const beforeDy = beforeFull[id]!.y - beforeFull[anchor!]!.y
+    const afterDx = fullPositions[id]!.x - fullPositions[anchor!]!.x
+    const afterDy = fullPositions[id]!.y - fullPositions[anchor!]!.y
+    expect(Math.abs(afterDx - beforeDx), `${id} relative x in fullscreen`).toBeLessThanOrEqual(1)
+    expect(Math.abs(afterDy - beforeDy), `${id} relative y in fullscreen`).toBeLessThanOrEqual(1)
   }
   expect(fullCanvas.width).toBeGreaterThan(canvasBox.width)
 

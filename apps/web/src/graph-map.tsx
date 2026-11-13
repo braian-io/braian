@@ -39,7 +39,7 @@ import {
 } from './graph-scene'
 import {
   detailPlacement,
-  fitCamera,
+  fitCameraWithLabels,
   graphDensity,
   inspectorChrome,
   legendLayout,
@@ -47,10 +47,12 @@ import {
   placeNodeLabel,
   propertiesOpen,
   readGraphFrame,
+  remapCamera,
   sheetAfterGesture,
   type Box,
   type DetailPlacement,
   type GraphDensity,
+  type GraphFrame,
   type SheetMode,
 } from './graph-chrome'
 import { buildModelScene, expandModelType, mergeModelScene } from './graph-model-scene'
@@ -66,7 +68,15 @@ import { requestOpenModelType } from './model-type-open'
 
 type SimNode = SimulationNodeDatum & SceneNode & { degree: number }
 type SimLink = SimulationLinkDatum<SimNode> & { id: string; label: string }
-type Marker = { x: number; y: number; r: number; label: Rect }
+type Marker = {
+  x: number
+  y: number
+  r: number
+  label: Rect
+  /** The same label rectangle in canvas-local coordinates, for the DOM mirror. */
+  localLabel: Rect
+  shown: boolean
+}
 const NO_GRAPH: Json = {}
 
 /**
@@ -253,6 +263,29 @@ export function nodeObstacles(
 export function staysPinnedAfterPointerUp(wasPinned: boolean, dragged: boolean, modelMode = false) {
   if (wasPinned) return true
   return !modelMode && dragged
+}
+
+/**
+ * Decide whether a scene change may idle-refit the camera. During the initial
+ * load (settled=false) nodes and captions that arrive a moment after the first
+ * paint may fit again. Once the initial load has settled the id baseline is
+ * frozen, so add-link / expand growth never idle-fits; a caption that resolves
+ * for the same ids still may.
+ */
+export function idleRefitPlan(input: {
+  settled: boolean
+  baselineIds: string | null
+  ids: string
+  captions: string
+  previousCaptions: string
+  moved: boolean
+}): { fit: boolean; baselineIds: string | null } {
+  const changed = input.previousCaptions !== input.captions
+  if (input.moved) return { fit: false, baselineIds: input.baselineIds }
+  if (!input.settled) return { fit: changed, baselineIds: input.baselineIds }
+  const baseline = input.baselineIds ?? input.ids
+  if (input.ids !== baseline) return { fit: false, baselineIds: baseline }
+  return { fit: changed, baselineIds: baseline }
 }
 
 /** `graph:add-link:<key>:<direction>`; the direction is what the picker must use. */
@@ -448,6 +481,15 @@ export function GraphMap({
   const movedRef = useRef(false)
   const idleIdsRef = useRef<string | null>(null)
   const idleCaptionsRef = useRef('')
+  // The initial load may refit repeatedly while nodes, captions and chrome
+  // arrive. It settles only after the simulation has ended, no object name is
+  // still pending, the chrome has been measured and the scene stayed quiet.
+  const initialSettledRef = useRef(false)
+  const initialEndedRef = useRef(false)
+  const chromeMeasuredRef = useRef(false)
+  const pendingNamesRef = useRef('')
+  const currentIdsRef = useRef('')
+  pendingNamesRef.current = pendingNames
 
   useEffect(() => {
     const ids = pendingNames.split(',').filter(Boolean)
@@ -491,10 +533,11 @@ export function GraphMap({
   const drawRef = useRef<(shouldPublish: boolean) => void>(() => {})
   const apiRef = useRef<{
     fit: () => void
+    remap: () => void
     relayout: () => void
     refocus: () => void
     markerOf: (id: string) => { x: number; y: number; r: number } | undefined
-  }>({ fit: () => {}, relayout: () => {}, refocus: () => {}, markerOf: () => undefined })
+  }>({ fit: () => {}, remap: () => {}, relayout: () => {}, refocus: () => {}, markerOf: () => undefined })
   const hiddenRef = useRef(hidden)
   const selectedRef = useRef(selected)
   const focusedRef = useRef(focused)
@@ -513,8 +556,23 @@ export function GraphMap({
   }
   pinRef.current = setPinTick
 
+  // Once the user grows the graph (expand or add-link), stop treating later
+  // scene changes as part of the initial load. Freeze the pre-growth ids so the
+  // new arrivals never idle-refit, even if the initial timer has not fired.
+  const freezeIdleForUser = () => {
+    if (initialSettledRef.current) return
+    if (idleIdsRef.current == null) idleIdsRef.current = currentIdsRef.current
+    initialSettledRef.current = true
+  }
+
+  const openAddLink = (request: LinkAddRequest) => {
+    freezeIdleForUser()
+    setAdd(request)
+  }
+
   const expand = async (node: SceneNode) => {
     if (!node || expandedRef.current.has(node.id) || inflightRef.current.has(node.id)) return
+    freezeIdleForUser()
     if (node.kind === 'value') {
       expandedRef.current.add(node.id)
       return
@@ -609,6 +667,8 @@ export function GraphMap({
     const paletteRef: { current: Palette | null } = { current: null }
     const markerSerial = { current: '' }
     let alive = true
+    let lastFrame: GraphFrame | null = null
+    let settleTimer: ReturnType<typeof setTimeout> | undefined
 
     const sim = forceSimulation<SimNode, SimLink>([])
       .force(
@@ -668,6 +728,43 @@ export function GraphMap({
         transform.x = width / 2
         transform.y = height / 2
       }
+    }
+
+    const currentFrame = () => {
+      const stage = { width: canvas.clientWidth, height: canvas.clientHeight }
+      return readGraphFrame(
+        stage,
+        measureChromeBoxes(canvas, [inspectorRef.current, legendRef.current]),
+        densityRef.current,
+      )
+    }
+
+    // Freeze the idle-refit baseline only after the first load has genuinely
+    // settled. Until then Food and other late nodes/captions may still fit.
+    const scheduleInitialSettle = () => {
+      if (initialSettledRef.current || movedRef.current) return
+      if (!initialEndedRef.current || pendingNamesRef.current !== '' || !chromeMeasuredRef.current) return
+      if (settleTimer !== undefined) clearTimeout(settleTimer)
+      settleTimer = setTimeout(() => {
+        settleTimer = undefined
+        if (movedRef.current || !initialEndedRef.current) return
+        if (pendingNamesRef.current !== '' || !chromeMeasuredRef.current) return
+        initialSettledRef.current = true
+        if (idleIdsRef.current == null) idleIdsRef.current = currentIdsRef.current
+      }, 500)
+    }
+
+    const remap = () => {
+      resize()
+      const next = currentFrame()
+      if (lastFrame && movedRef.current) {
+        const camera = remapCamera({ camera: transform, from: lastFrame, to: next })
+        transform.k = camera.k
+        transform.x = camera.x
+        transform.y = camera.y
+      }
+      lastFrame = next
+      draw(true)
     }
 
     const screenOf = (x: number, y: number) => ({
@@ -735,7 +832,7 @@ export function GraphMap({
       return highlight
     }
 
-    const publish = () => {
+    const publish = (shown: Set<string>) => {
       const rect = canvas.getBoundingClientRect()
       const next: Record<string, Marker> = {}
       const highlight = highlightedIds()
@@ -775,6 +872,13 @@ export function GraphMap({
           y: Math.round(rect.top + point.y),
           r: radius,
           label,
+          localLabel: {
+            left: label.left - rect.left,
+            top: label.top - rect.top,
+            right: label.right - rect.left,
+            bottom: label.bottom - rect.top,
+          },
+          shown: shown.has(node.id),
         }
         next[node.id] = marker
         const button = document.querySelector<HTMLElement>(`[data-node-id="${CSS.escape(node.id)}"]`)
@@ -1101,7 +1205,7 @@ export function GraphMap({
           shownEdgesRef.current = edgeSerial
           if (alive) setShownEdges(drawnEdges)
         }
-        publish()
+        publish(shownCaptionIds)
       }
     }
 
@@ -1111,25 +1215,33 @@ export function GraphMap({
       const width = canvas.clientWidth
       const height = canvas.clientHeight
       if (!nodes.length || width < 20 || height < 20) return false
-      let minX = Infinity
-      let minY = Infinity
-      let maxX = -Infinity
-      let maxY = -Infinity
-      for (const node of nodes) {
-        const radius = nodeRadius(node.kind, node.degree ?? 0)
-        const half = Math.min(150, Math.max(radius + 12, node.caption.length * 3.6 + 12))
-        minX = Math.min(minX, node.x! - half)
-        maxX = Math.max(maxX, node.x! + half)
-        minY = Math.min(minY, node.y! - radius - 8)
-        maxY = Math.max(maxY, node.y! + radius + 32)
-      }
-      const stage = { width, height }
-      const frame = readGraphFrame(stage, measureChromeBoxes(canvas, [inspectorRef.current, legendRef.current]), densityRef.current)
-      const camera = fitCamera({ frame, bounds: { minX, minY, maxX, maxY } })
+      context.save()
+      context.font = '12px "Inter Variable", Inter, sans-serif'
+      const extents = nodes.map((node) => {
+        const measured = context.measureText(node.caption).width
+        // Draw hides a caption wider than the pane, so it must not shrink the
+        // fit just to reserve room for a label that is never painted.
+        const captionWidth = measured + 8 > width ? 0 : measured
+        return {
+          x: node.x!,
+          y: node.y!,
+          radius: nodeRadius(node.kind, node.degree ?? 0),
+          captionWidth,
+        }
+      })
+      context.restore()
+      const frame = currentFrame()
+      chromeMeasuredRef.current = true
+      // A narrow pane with long article captions can need less than the old
+      // 0.35 floor to keep the measured labels inside the frame.
+      const camera = fitCameraWithLabels({ frame, nodes: extents, minScale: 0.1 })
+      if (!camera) return false
       transform.k = camera.k
       transform.x = camera.x
       transform.y = camera.y
+      lastFrame = frame
       draw(true)
+      scheduleInitialSettle()
       return true
     }
 
@@ -1154,6 +1266,7 @@ export function GraphMap({
 
     apiRef.current = {
       fit,
+      remap,
       relayout,
       refocus: () => {
         movedRef.current = false
@@ -1181,8 +1294,10 @@ export function GraphMap({
       if (!alive || sim.nodes().length === 0) return
       sim.alphaTarget(0)
       canvas.dataset.settled = 'true'
+      initialEndedRef.current = true
       if (fitAfterRef.current && fit()) fitAfterRef.current = false
       else draw(true)
+      scheduleInitialSettle()
       sim.stop()
     })
 
@@ -1348,7 +1463,7 @@ export function GraphMap({
         defsRef.current,
         anchor.x,
         anchor.y,
-        (request) => setAdd(request),
+        openAddLink,
         avoid,
         stage,
         obstacles,
@@ -1399,9 +1514,14 @@ export function GraphMap({
     canvas.addEventListener('contextmenu', onContextMenu)
     // A resize (inspector growth, fullscreen toggle, pane split) refits while
     // the camera is still untouched. Once the user has zoomed or panned, the
-    // camera belongs to them: only repaint at the current transform.
+    // camera belongs to them: remap the same world view into the new free
+    // frame instead of reusing screen pixels from the old canvas.
     const observer = new ResizeObserver(() => {
-      if (!movedRef.current && canvas.dataset.dragging !== 'true') {
+      if (canvas.dataset.dragging !== 'true') {
+        if (movedRef.current) {
+          remap()
+          return
+        }
         if (fit()) return
       }
       // Publish the new client rects too: the a11y nodes and menu anchors must
@@ -1418,6 +1538,7 @@ export function GraphMap({
 
     return () => {
       alive = false
+      if (settleTimer !== undefined) clearTimeout(settleTimer)
       sim.on('tick', null)
       sim.on('end', null)
       sim.stop()
@@ -1444,7 +1565,16 @@ export function GraphMap({
     if (!sim || !canvas) return
     const reuse = layoutFocus.current === focusId
     layoutFocus.current = focusId
-    if (!reuse) apiRef.current.refocus()
+    if (!reuse) {
+      // A new focus object starts a new load: allow idle refits again until its
+      // own nodes, captions and chrome have settled.
+      apiRef.current.refocus()
+      initialSettledRef.current = false
+      initialEndedRef.current = false
+      chromeMeasuredRef.current = false
+      idleIdsRef.current = null
+      idleCaptionsRef.current = ''
+    }
     const tally = new Map<string, number>()
     for (const edge of placed.edges) {
       tally.set(edge.source, (tally.get(edge.source) ?? 0) + 1)
@@ -1550,13 +1680,15 @@ export function GraphMap({
 
   useEffect(() => {
     // Full size re-lays out the whole chrome. Refit after that pass, once the
-    // pane and its measured chrome have their new size, and only while the
-    // camera is still the system's rather than the user's.
-    const fitIfIdle = () => {
-      if (!movedRef.current) apiRef.current.fit()
+    // pane and its measured chrome have their new size, while the camera is
+    // still the system's; a user camera is remapped into the new free frame
+    // instead of keeping pixels from the old canvas.
+    const apply = () => {
+      if (movedRef.current) apiRef.current.remap()
+      else apiRef.current.fit()
     }
-    const frame = requestAnimationFrame(fitIfIdle)
-    const timer = setTimeout(fitIfIdle, 120)
+    const frame = requestAnimationFrame(apply)
+    const timer = setTimeout(apply, 120)
     return () => {
       cancelAnimationFrame(frame)
       clearTimeout(timer)
@@ -1564,10 +1696,10 @@ export function GraphMap({
   }, [full])
 
   useEffect(() => {
-    // Captions that resolve after the first paint (a reload, F5) change no node
-    // ids, so they get an idle refit. Freeze the id set from the first
-    // observation: once the graph grows (add-link, expand group) this effect
-    // must never fit again, even as the new node's caption arrives later.
+    // Nodes and captions that resolve after the first paint (a reload, F5)
+    // still get an idle refit while the initial load settles. After that the
+    // id baseline is frozen so add-link / expand growth never idle-fits, even
+    // when the new node's caption arrives later.
     const ids = scene.nodes
       .map((node) => node.id)
       .sort()
@@ -1577,9 +1709,17 @@ export function GraphMap({
       .join('|')
     const previousCaptions = idleCaptionsRef.current
     idleCaptionsRef.current = captions
-    if (idleIdsRef.current == null) idleIdsRef.current = ids
-    if (ids !== idleIdsRef.current || previousCaptions === captions) return
-    if (!movedRef.current) apiRef.current.fit()
+    currentIdsRef.current = ids
+    const plan = idleRefitPlan({
+      settled: initialSettledRef.current,
+      baselineIds: idleIdsRef.current,
+      ids,
+      captions,
+      previousCaptions,
+      moved: movedRef.current,
+    })
+    idleIdsRef.current = plan.baselineIds
+    if (plan.fit) apiRef.current.fit()
   }, [scene])
 
   const selectedNode = scene.nodes.find((node) => node.id === selected) ?? null
@@ -1588,6 +1728,27 @@ export function GraphMap({
   const placement = detailPlacement(density, sheet, Boolean(selectedNode))
   const showProperties = propertiesOpen(density, sheet)
   const chrome = inspectorChrome(placement, pane?.height ?? 0)
+
+  const chromeKeyRef = useRef('')
+  useEffect(() => {
+    // A bottom sheet is an overlay: it can appear without resizing the canvas,
+    // so the canvas ResizeObserver never sees the smaller free frame. Fit (or
+    // remap a user camera) once the chrome has its new size.
+    const key = placement
+    const previous = chromeKeyRef.current
+    chromeKeyRef.current = key
+    if (previous === '' || previous === key) return
+    const apply = () => {
+      if (movedRef.current) apiRef.current.remap()
+      else apiRef.current.fit()
+    }
+    const frame = requestAnimationFrame(apply)
+    const timer = setTimeout(apply, 120)
+    return () => {
+      cancelAnimationFrame(frame)
+      clearTimeout(timer)
+    }
+  }, [placement, selectedNode?.id])
   const pinned = Boolean(
     pinTick >= 0 && simRef.current?.nodes().some((node) => node.id === selected && node.fx != null && node.fy != null),
   )
@@ -1660,7 +1821,7 @@ export function GraphMap({
       defsRef.current,
       anchor.x,
       anchor.y,
-      (request) => setAdd(request),
+      openAddLink,
       avoid,
       stage,
       obstacles,
@@ -1764,6 +1925,20 @@ export function GraphMap({
               tabIndex={0}
               onKeyDown={onKey}
             />
+            <div className="graph-labels" data-testid="graph-labels" aria-hidden="true">
+              {Object.entries(markers).map(([id, marker]) =>
+                marker.shown && marker.localLabel ? (
+                  <span
+                    key={id}
+                    className="graph-label"
+                    data-graph-label={id}
+                    style={{ left: marker.localLabel.left + 4, top: marker.localLabel.top }}
+                  >
+                    {scene.nodes.find((node) => node.id === id)?.caption ?? ''}
+                  </span>
+                ) : null,
+              )}
+            </div>
             {focusedNode && focusRing ? (
               <span
                 className="graph-focus-ring"

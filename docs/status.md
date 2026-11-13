@@ -1,5 +1,25 @@
 # Status 2026-11-13
 
+## Row 226b — graph fit after K2 on #320 (in progress, not merged)
+
+Branch `junior/226b-graph-fit` starts from `4fcbe4c` (row 226, merged as PR #320) and works in worktree `wt-226b-graph-fit-20261113`. This row is **in progress on the branch and not merged**; nothing here is deployed or accepted, and no CI or demo Playwright result was produced in this session.
+
+What changed in the code:
+
+- `fit()` now measures each caption with the same 12 px font that draw uses and fits the real label boxes (plus a small screen-space pad) instead of the old `min(150, length * 3.6 + 12)` heuristic. The camera frame still comes from `readGraphFrame`/`measureChromeBoxes`, so a narrow pane with the open bottom card fits above the card.
+- The idle-refit baseline is no longer frozen on the first paint. The initial load may refit while the simulation has ended, object names have resolved, the chrome has been measured and the scene stays quiet; after that the id set is frozen so add-link and expand never idle-fit. Expanding or starting add-link freezes the pre-growth ids immediately.
+- A canvas or frame change while `movedRef` is true now remaps the camera: `k` is kept and the world point at the old free-frame centre is placed at the new free-frame centre. It does not call `fit()` and does not reuse old canvas pixels, so a zoomed narrow pane is not parked in the top-left of full size. Closing full size maps the same view back.
+- A DOM mirror of each shown caption (`data-testid="graph-labels"`, `data-graph-label`) is laid out at the painted label rectangle so Playwright can assert real `getBoundingClientRect` boxes; the canvas remains the source of the pixels.
+
+Files: `docs/guide/graph.md`, `apps/web/src/graph-map.tsx`, `apps/web/src/graph-chrome.ts`, `apps/web/src/styles.css`, `apps/web/src/graph-map.test.tsx`, `apps/web/src/graph-chrome.test.ts`, new `apps/web/e2e/row226b-graph-fit.spec.ts`, registration in `scripts/e2e.mjs` (weight 50 s), and `apps/web/e2e/row128f-graph-camera.spec.ts` (the full-size step now asserts the kept zoom and unchanged relative node offsets instead of unchanged screen-local coordinates, because row 226b remaps the view; the `toBeCloseTo(..., 2)` zoom checks are unchanged).
+
+Local evidence in the worktree:
+
+- `pnpm --filter ./apps/web exec tsc --noEmit` exit 0.
+- `pnpm --filter ./apps/web exec vitest run` gave **172 files / 1025 tests** green.
+- `python3 scripts/check-english.py` exit 0. `sha256sum apps/web/src/data-model.tsx` is `2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`, unchanged.
+- The new Playwright spec was written and registered but **not run in this session**. Disk was at 89 %, so no isolated Postgres/Typesense API stack was started. CI is the e2e gate; results for `row226b-graph-fit`, `row226-graph-fixes`, `row128e`, `row128f` and `row128g` are not claimed here.
+
 ## Rad 226 — graph-uppföljningen från 128g (inte mergad)
 
 Grenen `junior/226-graph-fixes` utgår från `origin/main` i den här worktreen (`669c84b`, PR #319) som bygger på den begärda basen `03b207b` (PR #318). Den innehåller guide-/statuscommiten, kod-/testcommitarna och den här statusnotisen. Den är **inte mergad, inte deployad och inte accepterad**; inget här ska läsas som att beteendet är live.

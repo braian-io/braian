@@ -7,6 +7,7 @@ import {
   clampSheetBoxes,
   detailPlacement,
   fitCamera,
+  fitCameraWithLabels,
   graphDensity,
   inspectorChrome,
   legendLayout,
@@ -14,6 +15,7 @@ import {
   placeNodeLabel,
   propertiesOpen,
   readGraphFrame,
+  remapCamera,
   sheetAfterGesture,
   sheetMaxHeight,
   visibleGraphFrame,
@@ -223,6 +225,84 @@ describe('visible graph frame', () => {
     const camera = fitCamera({ frame, bounds: { minX: -50, minY: -20, maxX: 50, maxY: 20 } })
     expect(camera.x).toBeCloseTo(frame.x + 16 + (frame.width - 32) / 2)
     expect(camera.y).toBeCloseTo(frame.y + 16 + (frame.height - 32) / 2)
+  })
+})
+
+describe('fitting measured captions', () => {
+  it('uses the measured caption boxes, not a per-character estimate', () => {
+    const frame = { x: 0, y: 0, width: 600, height: 400 }
+    const camera = fitCameraWithLabels({
+      frame,
+      nodes: [
+        { x: -140, y: 0, radius: 20, captionWidth: 40 },
+        { x: 140, y: 0, radius: 20, captionWidth: 220 },
+      ],
+    })!
+    // "Dark chocolate 70%" is wider than length * 3.6 / 2 would reserve.
+    const right = camera.x + 140 * camera.k + 220 / 2
+    const left = camera.x - 140 * camera.k - 40 / 2
+    expect(right).toBeLessThanOrEqual(frame.x + frame.width - 16)
+    expect(left).toBeGreaterThanOrEqual(frame.x + 16)
+    expect(camera.k).toBeGreaterThan(0)
+  })
+
+  it('reserves room for a caption below a node in a short frame', () => {
+    const frame = { x: 0, y: 0, width: 400, height: 220 }
+    const camera = fitCameraWithLabels({
+      frame,
+      nodes: [{ x: 0, y: 0, radius: 24, captionWidth: 120 }],
+    })!
+    const labelBottom = camera.y + 24 * camera.k + 20
+    const labelTop = camera.y - 24 * camera.k - 20
+    expect(labelBottom).toBeLessThanOrEqual(frame.y + frame.height - 16)
+    expect(labelTop).toBeGreaterThanOrEqual(frame.y + 16)
+  })
+
+  it('fits labels above a bottom inspector in a narrow pane', () => {
+    const stage = { width: 230, height: 420 }
+    const frame = readGraphFrame(stage, [{ x: 8, y: 280, width: 214, height: 132 }], 'narrow')
+    expect(frame.height).toBeLessThan(stage.height - 100)
+    const camera = fitCameraWithLabels({
+      frame,
+      nodes: [
+        { x: -120, y: -20, radius: 18, captionWidth: 120 },
+        { x: 100, y: 30, radius: 18, captionWidth: 60 },
+      ],
+    })!
+    for (const node of [
+      { x: -120, y: -20, r: 18, w: 120 },
+      { x: 100, y: 30, r: 18, w: 60 },
+    ]) {
+      const center = camera.x + node.x * camera.k
+      expect(center - node.w / 2).toBeGreaterThanOrEqual(frame.x + 16)
+      expect(center + node.w / 2).toBeLessThanOrEqual(frame.x + frame.width - 16)
+      const bottom = camera.y + node.y * camera.k + node.r * camera.k + 20
+      expect(bottom).toBeLessThanOrEqual(frame.y + frame.height - 16)
+    }
+  })
+})
+
+describe('remapping a user camera', () => {
+  const from = { x: 0, y: 40, width: 220, height: 300 }
+  const to = { x: 0, y: 0, width: 1200, height: 800 }
+
+  it('keeps k and puts the old frame-centre world point at the new centre', () => {
+    const camera = { k: 1.7, x: 30, y: 210 }
+    const worldX = (from.x + from.width / 2 - camera.x) / camera.k
+    const worldY = (from.y + from.height / 2 - camera.y) / camera.k
+    const remapped = remapCamera({ camera, from, to })
+    expect(remapped.k).toBe(camera.k)
+    expect(remapped.x + worldX * remapped.k).toBeCloseTo(to.x + to.width / 2)
+    expect(remapped.y + worldY * remapped.k).toBeCloseTo(to.y + to.height / 2)
+  })
+
+  it('round-trips back to the original camera when the frame returns', () => {
+    const camera = { k: 0.8, x: 12, y: 90 }
+    const there = remapCamera({ camera, from, to })
+    const back = remapCamera({ camera: there, from: to, to: from })
+    expect(back.k).toBeCloseTo(camera.k)
+    expect(back.x).toBeCloseTo(camera.x)
+    expect(back.y).toBeCloseTo(camera.y)
   })
 })
 
