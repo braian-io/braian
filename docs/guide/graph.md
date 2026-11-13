@@ -49,10 +49,23 @@ Use full size when the pane is too small to read the scene.
 - Right-click on empty canvas never shows the browser menu. It opens the graph menu
   with **Fit** and **Re-layout**, the same actions as the toolbar.
 - Zoom, pan and node drag belong to the user. Opening the graph, including after a
-  reload (F5), fits the scene so nodes and their captions stay inside the stage.
-  Entering and leaving **Open full size** also refits while the camera is still
-  untouched. After you have zoomed, panned or dragged a node, the camera stays where
-  you put it until you use **Fit** or **Re-layout**.
+  real reload (F5), fits the scene so every visible node and every shown caption
+  stays inside the visible graph frame, measured from the real label boxes rather
+  than a short estimate. The frame excludes pane chrome, so a narrow pane with the
+  bottom inspector card open fits above the card. Entering and leaving **Open full
+  size** also fits while the camera is still untouched, and the first fit after
+  load keeps waiting for nodes and captions that arrive a moment after the first
+  paint and for the inspector chrome to be measured.
+- Once you have zoomed, panned or dragged a node, the camera belongs to you. It
+  stays where you put it until you use **Fit** or **Re-layout**, including through
+  **Open full size** and **Close full size** and through pane resizes. A viewport
+  change keeps the same zoom and the world point that sat in the centre of the old
+  free frame, and places that point in the centre of the new free frame, so the
+  view is remapped instead of parked in a corner and clipped.
+- Adding a link or expanding a group adds nodes without moving the camera and
+  without an idle refit once the initial load has settled. Only the first load,
+  **Fit**, **Re-layout**, and leaving or entering full size with an untouched
+  camera move it.
 
 Labels are drawn when the graph is settled. A small graph labels every edge; a larger
 or zoomed-out one labels the selected, hovered or focused node's edges at rest. Edge
