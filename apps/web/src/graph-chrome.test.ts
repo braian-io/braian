@@ -311,12 +311,16 @@ describe('fitting measured captions', () => {
     expect(article.right - article.left).toBeCloseTo(229)
     expect(article.left).toBeGreaterThanOrEqual(frame.x)
     expect(article.right).toBeLessThanOrEqual(frame.x + frame.width + 0.5)
-    const shown = visibleCaptionIds([article, value], camera.k, {
-      paneWidth: stage.width,
-      edgeLabels: [{ left: article.left + 2, top: article.top, right: article.right, bottom: article.bottom }],
-    })
+    const shown = visibleCaptionIds([article, value], camera.k, { paneWidth: stage.width })
     expect(shown.has('article'), 'the long object name stays painted').toBe(true)
     expect(shown.has('value'), 'the lower-priority neighbour still yields').toBe(false)
+    // K5: a painted edge label may keep its spot; the caption beneath it hides
+    // rather than forcing the label out (that is how Supplier used to vanish).
+    const underLabel = visibleCaptionIds([article, value], camera.k, {
+      paneWidth: stage.width,
+      edgeLabels: [{ left: article.left, top: article.top, right: article.right, bottom: article.bottom }],
+    })
+    expect(underLabel.has('article'), 'the caption under the edge label yields').toBe(false)
   })
 })
 

@@ -59,9 +59,6 @@ export function labelVisibleAtZoom(priority: number, zoom: number) {
 export type LabelBox = { id: string; priority: number; left: number; top: number; right: number; bottom: number }
 type OverlapBox = { left: number; top: number; right: number; bottom: number }
 
-/** Object and type captions are real names, not value chips. */
-export const NAMED_CAPTION_PRIORITY = 3
-
 export function visibleLabelIds(boxes: LabelBox[], zoom: number) {
   const sorted = [...boxes].sort((left, right) => right.priority - left.priority || left.id.localeCompare(right.id))
   const kept: LabelBox[] = []
@@ -76,11 +73,13 @@ export function visibleLabelIds(boxes: LabelBox[], zoom: number) {
 }
 
 /**
- * Decide which captions to paint after zoom culling. The camera fit reserves
- * screen space for every caption that fits the pane, so a name (object, type,
- * or the active node) is never dropped by a hair-width pane check or by an
- * edge label. Lower-priority value chips still yield to an edge label or to a
- * caption wider than the pane.
+ * Decide which captions to paint after zoom culling. A caption wider than the
+ * pane cannot be clamped, so it is not painted; the fit uses the same rule, so
+ * it never reserves room for it. A painted edge label wins the space it needs
+ * and the caption under it is hidden instead of stacking (K5): the placer asks
+ * active labels to avoid circles and other labels, not the captions they may
+ * cover. The pane check is `paneWidth` rather than `paneWidth - 2`, so a name
+ * the fit clamped inside the free frame is not dropped by a hair's width.
  */
 export function visibleCaptionIds(
   boxes: LabelBox[],
@@ -90,7 +89,7 @@ export function visibleCaptionIds(
   const shown = visibleLabelIds(boxes, zoom)
   const edgeLabels = options.edgeLabels ?? []
   for (const box of boxes) {
-    if (!shown.has(box.id) || box.priority >= NAMED_CAPTION_PRIORITY) continue
+    if (!shown.has(box.id)) continue
     if (box.right - box.left > options.paneWidth) shown.delete(box.id)
     else if (edgeLabels.some((other) => boxesOverlap(box, other))) shown.delete(box.id)
   }
@@ -99,14 +98,6 @@ export function visibleCaptionIds(
 
 function boxesOverlap(left: OverlapBox, right: OverlapBox) {
   return left.left < right.right && right.left < left.right && left.top < right.bottom && right.top < left.bottom
-}
-
-/** An edge label yields when its only remaining spot covers an object/type name. */
-export function edgeLabelCoversNamedCaption(
-  label: OverlapBox,
-  captions: Array<OverlapBox & { priority: number }>,
-) {
-  return captions.some((caption) => caption.priority >= NAMED_CAPTION_PRIORITY && boxesOverlap(label, caption))
 }
 
 export const SCENE_NODE_CAP = 400

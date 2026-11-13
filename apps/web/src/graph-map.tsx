@@ -31,8 +31,6 @@ import {
   parseTypedId,
   searchDocuments,
   visibleCaptionIds,
-  edgeLabelCoversNamedCaption,
-  NAMED_CAPTION_PRIORITY,
   type KnownObject,
   type LabelBox,
   type NodeKind,
@@ -981,15 +979,9 @@ export function GraphMap({
           bottom: placement.bottom,
         }
       })
-      // A name (object/type/active caption) the fit reserved space for stays
-      // painted even when the settled pane is only a hair wider than its box.
-      // Low-priority value chips still yield when they cannot fit the pane.
+      // The fit reserved room for every caption it measured, so a hair-width
+      // pane does not drop a name it clamped inside the frame.
       const labels = visibleCaptionIds(captionBoxes, transform.k, { paneWidth: canvas.clientWidth })
-      const namedCaptionIds = new Set(
-        captionBoxes
-          .filter((box) => labels.has(box.id) && box.priority >= NAMED_CAPTION_PRIORITY)
-          .map((box) => box.id),
-      )
       const graphRoot = canvas.closest('.graph-wrap') ?? document
       const drawnEdges = new Set<string>()
       const edgeRects: Record<string, Rect> = {}
@@ -1096,11 +1088,6 @@ export function GraphMap({
       const captionObstacles: EdgeLabelBox[] = captionBoxes
         .filter((box) => labels.has(box.id))
         .map((box) => ({ x: box.left, y: box.top, width: box.right - box.left, height: box.bottom - box.top }))
-      // An active edge label may use a value chip's space (the chip yields
-      // below), but it must never cover an object/type name.
-      const namedCaptionObstacles = captionBoxes
-        .filter((box) => namedCaptionIds.has(box.id))
-        .map((box) => ({ x: box.left, y: box.top, width: box.right - box.left, height: box.bottom - box.top }))
       context.font = '11px "Inter Variable", Inter, sans-serif'
       labelCandidates
         .slice()
@@ -1119,20 +1106,11 @@ export function GraphMap({
             { width: boxW, height: boxH },
             labelNodes,
             placedEdgeLabels,
-            // A selected or hovered label wins space from a value chip, but it
-            // still moves aside from a real object/type name.
-            activeEndpoint ? namedCaptionObstacles : captionObstacles,
+            // A selected or hovered label is never dropped to spare a caption:
+            // it wins the space and the caption beneath it is hidden below.
+            activeEndpoint ? [] : captionObstacles,
           )
           const box: EdgeLabelBox = { x: mid.x - boxW / 2, y: mid.y - boxH / 2, width: boxW, height: boxH }
-          // If no candidate clears a name, the edge label yields: the article
-          // and product captions must not vanish after a tighter refit.
-          if (
-            edgeLabelCoversNamedCaption(
-              { left: box.x, top: box.y, right: box.x + box.width, bottom: box.y + box.height },
-              captionBoxes,
-            )
-          )
-            return
           // Hide the lower-priority label instead of stacking it on a neighbour.
           if (placedEdgeLabels.some((other) => boxOverlap(box, other) > 0)) return
           if (labelNodes.some((node) => discOverlap(box, node) > 0)) return
@@ -1158,7 +1136,8 @@ export function GraphMap({
           context.fillText(link.label, mid.x, mid.y + 0.5)
           context.restore()
         })
-      // Value chips still yield to an edge label; object/type names do not.
+      // Edge labels win the space they need; a caption that would sit under one
+      // is hidden instead of stacking on top of it.
       const shownCaptionIds = visibleCaptionIds(captionBoxes, transform.k, {
         paneWidth: width,
         edgeLabels: placedEdgeLabels.map((box) => ({
@@ -1710,9 +1689,13 @@ export function GraphMap({
     }
     const frame = requestAnimationFrame(apply)
     const timer = setTimeout(apply, 120)
+    // The pane and the bottom sheet settle after the toggle; fit once more
+    // when both are measured instead of leaving a mid-transition camera.
+    const late = setTimeout(apply, 320)
     return () => {
       cancelAnimationFrame(frame)
       clearTimeout(timer)
+      clearTimeout(late)
     }
   }, [full])
 
@@ -1753,23 +1736,28 @@ export function GraphMap({
   const chromeKeyRef = useRef('')
   useEffect(() => {
     // A bottom sheet is an overlay: it can appear without resizing the canvas,
-    // so the canvas ResizeObserver never sees the smaller free frame. Fit (or
-    // remap a user camera) once the chrome has its new size.
-    const key = placement
+    // so the canvas ResizeObserver never sees the smaller free frame. The
+    // narrow pane and the sheet may also be measured only after F5's first
+    // paint. Refit once both are known, then once more after the sheet has
+    // settled, so the F5 camera and the post-Close-full-size camera use the
+    // same free frame. An untouched camera fits; a user camera is remapped.
+    const key = `${placement}:${pane?.width ?? 0}x${pane?.height ?? 0}:${selectedNode?.id ?? ''}`
     const previous = chromeKeyRef.current
     chromeKeyRef.current = key
-    if (previous === '' || previous === key) return
+    if (previous === key || !pane || placement === 'hidden') return
     const apply = () => {
       if (movedRef.current) apiRef.current.remap()
       else apiRef.current.fit()
     }
     const frame = requestAnimationFrame(apply)
     const timer = setTimeout(apply, 120)
+    const late = setTimeout(apply, 320)
     return () => {
       cancelAnimationFrame(frame)
       clearTimeout(timer)
+      clearTimeout(late)
     }
-  }, [placement, selectedNode?.id])
+  }, [placement, pane, selectedNode?.id])
   const pinned = Boolean(
     pinTick >= 0 && simRef.current?.nodes().some((node) => node.id === selected && node.fx != null && node.fy != null),
   )
