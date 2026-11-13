@@ -1129,7 +1129,6 @@ export function CommandPalette({
       if (!template) return
       void createWorkspaceFromTemplate(template, { forceNew: isTypeWorkspaceTemplate(template) }).then((workspaceId) => {
         dispatchUi('ui.open_template', { template: template.id, id: workspaceId })
-        session.openWorkspace(workspaceId)
         session.push(`Workspace ${template.name}`)
         onClose()
       }).catch((error: unknown) => {
@@ -1143,7 +1142,6 @@ export function CommandPalette({
       if (!template) return
       void createWorkspaceFromSavedTemplate(template).then((workspaceId) => {
         dispatchUi('ui.open_template', { template: `saved:${template.key}`, id: workspaceId })
-        session.openWorkspace(workspaceId)
         session.push(`Workspace ${template.name}`)
         onClose()
       }).catch((error: unknown) => {
