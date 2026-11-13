@@ -51,8 +51,14 @@ There are two places to add a view to the focused pane:
 - Open the `View menu` on the pane or right-click a view tab and choose `Add view`.
 
 The list contains every existing view by title plus one row per object type. An
-existing view is brought into the focused pane. A type row opens that type's object
-table; if the table is already open, a second copy is placed to the right.
+existing view row is brought into the focused pane.
+
+A type row always creates a new object table for that type in a new pane immediately
+to the right of the existing table of the same type. When no table of that type is
+open, the new table goes in a new pane to the right of the focused pane. It never
+reopens a closed copy, never adds a second tab in the same pane, and never folds the
+copy into an existing neighbour pane. Closed views stay closed, and you do not need
+`Move right` to get the second table beside the first.
 
 ## Arrange the layout
 

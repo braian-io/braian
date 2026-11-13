@@ -14,8 +14,10 @@ Common root commands include:
   object type. `Open view` focuses a view in place; it never moves one into the
   focused pane and never lists old agent-run tabs.
 - `Add view`, `New from template`, and `Switch catalog`. `Add view` is the way to
-  bring an existing view into the focused pane or to open a second copy of a type's
-  object table.
+  bring an existing view into the focused pane. A type row always creates a new copy
+  of that type's object table in a new pane immediately to the right of the open
+  table, even when a closed copy exists; it never reopens a closed view and never
+  adds a second tab in the same pane.
 - `Data source`, `Select fields`, `Filter by`, `Export columns`, `Hide column`, and
   `Reset to default`.
 - `Selections`, `Link to`, `New type`, `New link type`, `New value list`, `New unit
