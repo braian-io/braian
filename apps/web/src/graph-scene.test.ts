@@ -1,7 +1,7 @@
 import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation } from 'd3-force'
 import { describe, expect, it } from 'vitest'
 import type { Json } from './api'
-import { buildScene, capScene, mergeScene, nodeMark, nodeRadius, relationLabel, sentenceCaseLabel, structureCaption, visibleLabelIds } from './graph-scene'
+import { buildScene, capScene, edgeLabelCoversNamedCaption, mergeScene, nodeMark, nodeRadius, relationLabel, sentenceCaseLabel, structureCaption, visibleLabelIds } from './graph-scene'
 
 const defs: Json = {
   types: [{ key: 'article', labels: { en: 'Article' } }, { key: 'product', labels: { en: 'Product' } }],
@@ -90,6 +90,14 @@ describe('graph marks', () => {
       0.4,
     )
     expect([...zoomedOut]).toEqual(['object'])
+  })
+
+  it('makes an edge label yield to an object name but not to a value chip', () => {
+    const article = { priority: 5, left: 10, top: 10, right: 60, bottom: 26 }
+    const value = { priority: 0, left: 70, top: 10, right: 110, bottom: 26 }
+    expect(edgeLabelCoversNamedCaption({ left: 20, top: 12, right: 50, bottom: 24 }, [article])).toBe(true)
+    expect(edgeLabelCoversNamedCaption({ left: 80, top: 12, right: 100, bottom: 24 }, [article, value])).toBe(false)
+    expect(edgeLabelCoversNamedCaption({ left: 20, top: 12, right: 50, bottom: 24 }, [value])).toBe(false)
   })
 })
 

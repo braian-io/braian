@@ -30,7 +30,9 @@ import {
   nodeRadius,
   parseTypedId,
   searchDocuments,
-  visibleLabelIds,
+  visibleCaptionIds,
+  edgeLabelCoversNamedCaption,
+  NAMED_CAPTION_PRIORITY,
   type KnownObject,
   type LabelBox,
   type NodeKind,
@@ -979,12 +981,15 @@ export function GraphMap({
           bottom: placement.bottom,
         }
       })
-      const labels = visibleLabelIds(captionBoxes, transform.k)
-      // A caption wider than the pane cannot be clamped: hide it rather than
-      // paint a plate outside the frame.
-      for (const box of captionBoxes) {
-        if (box.right - box.left > canvas.clientWidth - 2) labels.delete(box.id)
-      }
+      // A name (object/type/active caption) the fit reserved space for stays
+      // painted even when the settled pane is only a hair wider than its box.
+      // Low-priority value chips still yield when they cannot fit the pane.
+      const labels = visibleCaptionIds(captionBoxes, transform.k, { paneWidth: canvas.clientWidth })
+      const namedCaptionIds = new Set(
+        captionBoxes
+          .filter((box) => labels.has(box.id) && box.priority >= NAMED_CAPTION_PRIORITY)
+          .map((box) => box.id),
+      )
       const graphRoot = canvas.closest('.graph-wrap') ?? document
       const drawnEdges = new Set<string>()
       const edgeRects: Record<string, Rect> = {}
@@ -1091,6 +1096,11 @@ export function GraphMap({
       const captionObstacles: EdgeLabelBox[] = captionBoxes
         .filter((box) => labels.has(box.id))
         .map((box) => ({ x: box.left, y: box.top, width: box.right - box.left, height: box.bottom - box.top }))
+      // An active edge label may use a value chip's space (the chip yields
+      // below), but it must never cover an object/type name.
+      const namedCaptionObstacles = captionBoxes
+        .filter((box) => namedCaptionIds.has(box.id))
+        .map((box) => ({ x: box.left, y: box.top, width: box.right - box.left, height: box.bottom - box.top }))
       context.font = '11px "Inter Variable", Inter, sans-serif'
       labelCandidates
         .slice()
@@ -1109,11 +1119,20 @@ export function GraphMap({
             { width: boxW, height: boxH },
             labelNodes,
             placedEdgeLabels,
-            // A selected or hovered label is never dropped to spare a caption:
-            // it wins the space and the caption beneath it is hidden below.
-            activeEndpoint ? [] : captionObstacles,
+            // A selected or hovered label wins space from a value chip, but it
+            // still moves aside from a real object/type name.
+            activeEndpoint ? namedCaptionObstacles : captionObstacles,
           )
           const box: EdgeLabelBox = { x: mid.x - boxW / 2, y: mid.y - boxH / 2, width: boxW, height: boxH }
+          // If no candidate clears a name, the edge label yields: the article
+          // and product captions must not vanish after a tighter refit.
+          if (
+            edgeLabelCoversNamedCaption(
+              { left: box.x, top: box.y, right: box.x + box.width, bottom: box.y + box.height },
+              captionBoxes,
+            )
+          )
+            return
           // Hide the lower-priority label instead of stacking it on a neighbour.
           if (placedEdgeLabels.some((other) => boxOverlap(box, other) > 0)) return
           if (labelNodes.some((node) => discOverlap(box, node) > 0)) return
@@ -1139,14 +1158,16 @@ export function GraphMap({
           context.fillText(link.label, mid.x, mid.y + 0.5)
           context.restore()
         })
-      // Edge labels win the space they need; a caption that would sit under one
-      // is hidden instead of stacking on top of it.
-      const shownCaptionIds = new Set(labels)
-      for (const box of captionBoxes) {
-        if (!shownCaptionIds.has(box.id)) continue
-        const captionBox = { x: box.left, y: box.top, width: box.right - box.left, height: box.bottom - box.top }
-        if (placedEdgeLabels.some((other) => boxOverlap(captionBox, other) > 0)) shownCaptionIds.delete(box.id)
-      }
+      // Value chips still yield to an edge label; object/type names do not.
+      const shownCaptionIds = visibleCaptionIds(captionBoxes, transform.k, {
+        paneWidth: width,
+        edgeLabels: placedEdgeLabels.map((box) => ({
+          left: box.x,
+          top: box.y,
+          right: box.x + box.width,
+          bottom: box.y + box.height,
+        })),
+      })
 
       for (const { node, point, radius } of placedNodes) {
         const emphasized = !hover || highlight.has(node.id)

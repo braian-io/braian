@@ -268,6 +268,7 @@ test('a real reload and leaving full size fit every caption in a 230 px pane wit
 
   await page.getByRole('button', { name: 'Close full size', exact: true }).click()
   await expect(page.getByTestId('graph-full')).toHaveCount(0)
+  await page.mouse.move(4, 4)
   await waitGraph(page)
   await page.waitForTimeout(700)
   await expect(page.getByTestId('graph-inspector')).toHaveAttribute('data-placement', 'sheet')

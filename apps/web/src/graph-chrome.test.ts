@@ -20,6 +20,7 @@ import {
   sheetMaxHeight,
   visibleGraphFrame,
 } from './graph-chrome'
+import { visibleCaptionIds } from './graph-scene'
 
 const bounds = { minX: -100, minY: -80, maxX: 100, maxY: 80 }
 
@@ -279,6 +280,43 @@ describe('fitting measured captions', () => {
       const bottom = camera.y + node.y * camera.k + node.r * camera.k + 20
       expect(bottom).toBeLessThanOrEqual(frame.y + frame.height - 16)
     }
+  })
+
+  it('keeps a long selected caption after a fit into a 230 px pane with a bottom sheet', () => {
+    const stage = { width: 230, height: 640 }
+    const frame = readGraphFrame(stage, [{ x: 8, y: 420, width: 214, height: 212 }], 'narrow')
+    const camera = fitCameraWithLabels({
+      frame,
+      nodes: [
+        { x: 0, y: 0, radius: 22, captionWidth: 221 },
+        { x: 70, y: 8, radius: 18, captionWidth: 30 },
+      ],
+    })!
+    const caption = (id: string, priority: number, x: number, y: number, radius: number, textWidth: number) => {
+      const centerX = camera.x + x * camera.k
+      const width = textWidth + 8
+      const placement = placeNodeLabel(camera.y + y * camera.k, radius * camera.k, stage.height)
+      return {
+        id,
+        priority,
+        left: centerX - width / 2,
+        right: centerX + width / 2,
+        top: placement.top,
+        bottom: placement.bottom,
+      }
+    }
+    const article = caption('article', 5, 0, 0, 22, 221)
+    const value = caption('value', 0, 70, 8, 18, 30)
+    // The old pane-minus-2 check dropped this 229 px box in a 230 px pane.
+    expect(article.right - article.left).toBeCloseTo(229)
+    expect(article.left).toBeGreaterThanOrEqual(frame.x)
+    expect(article.right).toBeLessThanOrEqual(frame.x + frame.width + 0.5)
+    const shown = visibleCaptionIds([article, value], camera.k, {
+      paneWidth: stage.width,
+      edgeLabels: [{ left: article.left + 2, top: article.top, right: article.right, bottom: article.bottom }],
+    })
+    expect(shown.has('article'), 'the long object name stays painted').toBe(true)
+    expect(shown.has('value'), 'the lower-priority neighbour still yields').toBe(false)
   })
 })
 

@@ -70,7 +70,9 @@ Use full size when the pane is too small to read the scene.
 Labels are drawn when the graph is settled. A small graph labels every edge; a larger
 or zoomed-out one labels the selected, hovered or focused node's edges at rest. Edge
 labels never overlap each other or node captions: a label that cannot find a free
-spot is hidden, and a caption that would sit under a shown label is hidden too.
+spot is hidden, and a value caption that would sit under a shown label yields too.
+An object or type name the fit reserved space for is kept instead; the edge label
+moves aside, or is dropped when no spot clears the name.
 
 ## Model graph
 
