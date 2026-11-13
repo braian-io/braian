@@ -121,8 +121,13 @@ New workspaces come from templates. Press `Ctrl+K` and choose `New from template
 - `Data model` creates a workspace for structures, object types, link types, value
   lists, units, and attribute definitions.
 - `Review` creates a workspace for proposals, batches, jobs, and import mappings.
-- An object type creates that type's standard workspace, or opens the existing one if
-  it is already there.
+- An object type (for example `Products`) creates a new workspace every time its
+  standard workspace already exists. The first copy is named `Products 2`, the next
+  `Products 3`, and so on. The original `Products` workspace keeps its name, share
+  token and layout. If the type has no workspace yet, the command still creates the
+  standard one, named after the type.
+- `Data model` and `Review` open their existing canonical workspace when they already
+  have one; they never create a second copy.
 - A saved workspace template creates a new workspace from that template.
 
 There is no blank workspace and no rename command in the current app. A workspace tab's

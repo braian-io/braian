@@ -1,4 +1,32 @@
-# Status 2026-11-12
+# Status 2026-11-13
+
+## Rad 211 — New from template skapar en ny workspace (inte mergad)
+
+Grenen `junior/211-new-from-template` utgår från `origin/main` `b4d4d62` (PR #316, rad 51c). Den är **inte mergad, inte deployad och inte accepterad**; inget i det här avsnittet ska läsas som att beteendet är live. Rad 51c är mergad som PR #316 (squash `b4d4d62`).
+
+Buggen: Ctrl+K → New from template → Products öppnade bara den befintliga Products-workspacen i stället för att skapa en ny. `createWorkspaceFromTemplate` återanvände workspacen med typens kanoniska `share_token`, och palettraden sa Open existing.
+
+Den här skivan skiljer den explicita New from template-vägen för objekttabeller från de andra anropare som fortfarande ska öppna-eller-skapa singletons:
+
+- Om typens kanoniska workspace redan finns skapar New from template en ny workspace med eget id, egen `user-…`-token och namn `Products 2`, sedan `Products 3`, och så vidare. Den använder typmallens layout (samma slags vyer som en färsk Products-workspace). Ingen namnpopup.
+- Om den kanoniska workspacen saknas skapas den som förut, med typens namn och typens `share_token`.
+- Data model och Review öppnar fortfarande sin befintliga kanoniska workspace (`Open existing`) och skapar ingen dubblett. Sparade workspace-mallar skapar fortfarande en ny workspace.
+- `shell.tsx` och andra anropare som ser till att en typworkspace finns är oförändrade och öppnar-eller-skapar fortfarande singeln.
+
+Vad som ändrades:
+
+- `apps/web/src/templates.ts`: `createWorkspaceFromTemplate` har fått `{ forceNew?: boolean }`, `nextWorkspaceName` räknar ut nästa lediga `"{name} {n}"` från 2, och `isTypeWorkspaceTemplate` identifierar `type:`-mallarna.
+- `apps/web/src/palette-new-from-template.ts` och `apps/web/src/palette.tsx`: endast objekttabeller skickar `forceNew`; deras rad säger Create medan Data model och Review säger Open existing.
+- `apps/web/src/templates.test.ts` och `apps/web/src/palette-new-from-template.test.ts`: enhetstester för unikt namn, force-new och underrubrikerna.
+- `docs/guide/workspaces-and-panels.md`: avsnittet Create a workspace beskriver kopiorna, det oförändrade originalet, att standardworkspacen skapas när den saknas, samt att Data model/Review och sparade mallar är oförändrade.
+- `apps/web/e2e/row211-new-from-template.spec.ts` (ny) och `scripts/e2e.mjs` (registrering och vikt 40): Playwright täcker kriterium 1–6 med skärmbilder under `apps/web/test-results/row211-shots` (inom worktreen, så CI kan skriva dem).
+
+Bevis (lokalt i worktreen, utan demo- eller produktionsskrivningar):
+
+- `pnpm --filter ./apps/web exec tsc --noEmit` exit 0.
+- `pnpm --filter ./apps/web exec vitest run` gav **171 filer / 1006 tester** gröna, inklusive de nya `templates.test.ts`- och `palette-new-from-template.test.ts`-fallen.
+- `python3 scripts/check-english.py` exit 0. `sha256sum apps/web/src/data-model.tsx` är `2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`, oförändrad.
+- E2e-specen är typkontrollerad och registrerad men inte körd lokalt; ingen isolerad compose-stack startades och hela e2e-sviten kördes inte. Ingen demo-mutation, ingen deploy, ingen PR och ingen merge gjordes från grenen.
 
 ## Rad 51b — taxonomi- och gruppfält i Select fields (mergad som #314, `0513ee9`)
 
@@ -32,9 +60,9 @@ Bevis (lokalt i worktreen, utan demo- eller produktionsskrivningar):
 - Ingen e2e-körning gjordes lokalt; kriterium 1–4 täcks av enhets- och komponenttesterna samt demo-definitionerna. Ingen demo-mutation, ingen deploy, ingen PR och ingen merge.
 
 
-## Rad 51c — värde och enhet som separata kolumner (inte mergad)
+## Rad 51c — värde och enhet som separata kolumner (mergad som #316, `b4d4d62`)
 
-Grenen `junior/51c-value-unit-columns` utgår från `origin/main` `0513ee9` (#314, rad 51b). Den är **inte mergad, inte deployad och inte accepterad**; inget i det här avsnittet ska läsas som att 51c är live. Rad 51b är mergad som PR #314 (squash `0513ee9`) och live på demon med buildId `0513ee9`. Rad 51a är mergad som PR #310 (squash `5949cb1`), rättningen som PR #313 (squash `8367722`) och båda är live.
+Grenen `junior/51c-value-unit-columns` utgår från `origin/main` `0513ee9` (#314, rad 51b). Den är **mergad till `main` som PR #316 (squash `b4d4d62`)**. Rad 51b är mergad som PR #314 (squash `0513ee9`) och live på demon med buildId `0513ee9`. Rad 51a är mergad som PR #310 (squash `5949cb1`), rättningen som PR #313 (squash `8367722`) och båda är live.
 
 Den här skivan låter `Select fields` erbjuda värde och enhet som två egna kolumner för måttfält (nummer med enhetsfamilj), samtidigt som den kombinerade kolumnen och dess visningsenhet finns kvar.
 
@@ -58,14 +86,14 @@ Vad som ändrades:
 - Tester: `apps/web/src/fields/catalog-value-unit.test.ts`, `apps/web/src/fields/fields-mode-value-unit.test.tsx`, `apps/web/src/value-unit-columns.test.tsx` och utökade `apps/web/src/path-cell.test.tsx` samt `apps/web/src/cell-edit.test.ts`; ett kort e2e-fall i `apps/web/e2e/field-picker.spec.ts` slår på Fat content som kolumn.
 - `docs/guide/workspaces-and-panels.md` och `docs/guide/command-palette-and-shortcuts.md`: Select fields-avsnittet beskriver värde- och enhetskolumnerna och de exakta gruppnamnen.
 
-Ärlig avgränsning: att redigera en separat värde- eller enhetscell inline skulle behöva skriva ett måttobjekt med både värde och enhet, vilket är en större skrivväg än den här skivan. De separata kolumnerna är därför visningskolumner och inline-redigering för dem är avstängd; måttfältets redigering i övrigt är oförändrad. Ingen deploy, ingen PR och ingen merge gjordes från grenen.
+Ärlig avgränsning: att redigera en separat värde- eller enhetscell inline skulle behöva skriva ett måttobjekt med både värde och enhet, vilket är en större skrivväg än den här skivan. De separata kolumnerna är därför visningskolumner och inline-redigering för dem är avstängd; måttfältets redigering i övrigt är oförändrad. Vid den lokala bevisningen gjordes ingen deploy; grenen är senare mergad som PR #316 (squash `b4d4d62`).
 
 Bevis (lokalt i worktreen, utan demo- eller produktionsskrivningar):
 
 - `pnpm --filter ./apps/web exec tsc --noEmit` exit 0.
 - `pnpm --filter ./apps/web exec vitest run` gav **171 filer / 1001 tester** gröna, inklusive de nya `catalog-value-unit.test.ts`, `fields-mode-value-unit.test.tsx` och `value-unit-columns.test.tsx` samt befintliga Select fields-, hide-, Reset-, taxonomi- och kvalificerartester.
 - `python3 scripts/check-english.py` exit 0. `sha256sum apps/web/src/data-model.tsx` är `2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`, oförändrad.
-- Det korta e2e-fallet i `field-picker.spec.ts` är typkontrollerat men inte kört lokalt; hela e2e-sviten kördes inte. Ingen demo-mutation, ingen deploy, ingen PR och ingen merge gjordes från grenen.
+- Det korta e2e-fallet i `field-picker.spec.ts` är typkontrollerat men inte kört lokalt; hela e2e-sviten kördes inte. Ingen demo-mutation eller deploy gjordes från grenen; den är senare mergad som PR #316 (squash `b4d4d62`).
 
 ## Rad 77 — snabbare CI: färska e2e-vikter och åtta shards (mergad som #312, `bcc7e2b`)
 
