@@ -3,54 +3,53 @@
 ## Row 239 — Detail and table share width (in progress, not merged)
 
 Branch `junior/239-detail-width` starts at `origin/main` `68e8fe4` (row 238 / PR #322)
-and keeps the docs-first commit as its first commit. The branch has no upstream until
-the push at the end of the work, and it is **not merged, not deployed and not
-accepted**. Nothing below describes live behavior.
+and is open as **PR #323**. It is **not merged, not deployed and not accepted**. Nothing
+below describes live behavior on main or the demo.
 
 The six acceptance criteria are implemented in the product, the guide and the tests:
 
 - **The table keeps a minimum width.** A split that contains `object_detail` marks
-  itself (`data-has-detail`). A direct table cell in that split gets
-  `min-width: 440px`, and only the split cell whose subtree contains Detail may shrink,
-  so Detail gives way instead of the table collapsing to the Number column. Every
-  other split cell keeps the default fixed basis, as before this branch.
+  itself with `data-has-detail`. In a split at least 640 px wide, an active
+  object-table cell that is not a nested split gets `min-width: 440px`. That floor is
+  **cancelled** when the table shares its split with a direct Detail pane, so the seed
+  Articles table next to Detail is not forced to 440 px (that had crushed Detail to
+  about 118 px). Every child of a split that contains Detail uses `flex: 0 1`. A Detail
+  leaf cell has `min-width: 220px`.
 - **The Detail title is fully readable.** The title wraps (`flex-wrap` plus
   `overflow-wrap: anywhere`) and carries the full name in its `title` tooltip.
 - **Field values are not clipped to one letter.** Single-line inputs and measured
-  values now carry the full value in `title`. In a Detail pane narrower than 360 px,
-  a container query stacks the label above the field and moves a language value below
-  its tag instead of leaving only `en` visible.
-- **The measure input can grow.** `.control .measure input` starts from 88 px and
-  grows with `flex: 1 1 88px`; it is no longer locked with `flex: none`.
-- **Light and dark theme match.** All changes are shared layout CSS and existing
+  values carry the full value in `title`. The language tag **stays beside** the value
+  rather than wrapping below it. When the measured Detail form is narrower than 360 px,
+  a `ResizeObserver` sets `data-narrow` and labels stack above their fields. This is not
+  a CSS container query.
+- **The measure input can grow.** `.control .measure input` starts from 88 px and grows
+  with `flex: 1 1 88px`; it is no longer locked with `flex: none`.
+- **Light and dark theme match.** All changes share the same layout CSS and existing
   tokens, with no theme-specific exceptions.
 
 Files: `apps/web/src/styles.css`, `apps/web/src/dock.tsx`, `apps/web/src/panes.tsx`,
-new `apps/web/src/detail-width-css.test.ts`, `docs/guide/workspaces-and-panels.md`,
-new `apps/web/e2e/row239-detail-width.spec.ts`, and its registration in
-`scripts/e2e.mjs` (weight 45 s). Screenshots go to `apps/web/test-results/row239-shots`
-(ignored by git).
+`apps/web/src/detail-width-css.test.ts`, `apps/web/src/dock.test.tsx`,
+`docs/guide/workspaces-and-panels.md`, `apps/web/e2e/row239-detail-width.spec.ts`, and
+its registration in `scripts/e2e.mjs` (weight 45 s). Screenshots go to
+`apps/web/test-results/row239-shots` (ignored by git).
 
-Evidence locally in this worktree:
+`sha256sum apps/web/src/data-model.tsx` is
+`2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`, unchanged.
 
-- `docker run --rm --network none` with `node:22-bookworm` and the real symlinked
-  `apps/web/node_modules`: `./node_modules/.bin/tsc --noEmit` exit 0.
-- Full vitest suite in the same container: **174 files / 1027 tests passed**, including
-  the new `detail-width-css.test.ts` (4 tests) and the `dock.test.tsx` split-cell case
-  that pins `flex: 0 0` everywhere except the Detail cell.
-- `python3 scripts/check-english.py` exit 0 and `git diff --check` exit 0.
-- `sha256sum apps/web/src/data-model.tsx` is
-  `2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`, unchanged.
+CI: on run **1013**
+(https://github.com/braian-io/braian/actions/runs/43557800618), head `df23362`, the
+official `row239-detail-width.spec.ts` passed, including the 900 px viewport. The same
+run failed only in e2e shard 5, where `link-types.spec.ts` timed out waiting for
+`data-testid="data-model"` after the command palette. This status update retriggers CI.
+Do not read it as a green full CI result; the branch is still not merged.
 
-Playwright was **written but not run locally**: the disk is at 89% and this session did
-not start an isolated Postgres/Typesense/API stack. The end-to-end gate is CI on this
-branch, not the local unit results.
+## Row 238 — Detail and table Save retry and in-flight state (merged as #322, `68e8fe4`)
 
-## Row 238 — Detail and table Save retry and in-flight state (in progress, not merged)
-
-Branch `junior/238-detail-save-flow` starts at `origin/main` `4fcbe4c` and keeps the
-docs-first commit `aea620b` first. The branch is local only, has no upstream yet and is
-**not merged, not deployed and not accepted**. Nothing below describes live behavior.
+Branch `junior/238-detail-save-flow` started at `origin/main` `4fcbe4c` and is **merged
+to `main` as PR #322 (squash `68e8fe40918c903e026c57850a6b21b06c9238a7`)**. Demo
+Playwright against https://demo.braian.io ran after autodeploy when `version.json` showed
+`68e8fe4`. Test has approved the row. The rest of this section describes what #322
+contained.
 
 The product WIP for the four acceptance criteria is finished and committed together with
 the tests and this status note:
@@ -92,9 +91,8 @@ Evidence locally in this worktree:
 - `sha256sum apps/web/src/data-model.tsx` is
   `2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`, unchanged.
 
-Playwright was **written but not run locally**: the disk is at 89% and this session did
-not start an isolated Postgres/Typesense/API stack. The end-to-end gate is CI on this
-branch, not the local unit results.
+Playwright ran against the demo after autodeploy as described above, and Test has
+approved the row.
 
 ## Rad 226 — graph-uppföljningen från 128g (inte mergad)
 
