@@ -439,6 +439,15 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
     min-width: 440px;
   }
 }
+/* A table that shares its split with a direct Detail pane gives way to it. */
+.split:has(> .split-cell > .pane .pane-tab[data-view-type='object_detail'])
+  > .split-cell:has(.pane-tab[data-view-type='object_table'].active):not(:has(.split)) {
+  min-width: 0;
+}
+/* The Detail leaf keeps enough room for a stacked label and the language tag. */
+.split > .split-cell:has(.pane-tab[data-view-type='object_detail'].active):not(:has(.split)) {
+  min-width: 220px;
+}
 .split-divider {
   flex: 0 0 6px;
   position: relative;

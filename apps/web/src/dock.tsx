@@ -208,7 +208,7 @@ function SplitNode({ frame, node, path }: { frame: Frame; node: Node; path: numb
           index={index}
           path={path}
           gaps={gaps}
-          hasDetail={views(child).some((id) => viewTypes.get(id) === 'object_detail')}
+          hasDetail={hasDetail}
         />
       ))}
     </div>

@@ -19,6 +19,15 @@ describe('Detail width layout (row 239)', () => {
     )
   })
 
+  it('does not floor a table beside a direct Detail pane', () => {
+    expect(css).toMatch(
+      /\.split:has\(> \.split-cell > \.pane \.pane-tab\[data-view-type='object_detail'\]\)\s*>\s*\.split-cell:has\(\.pane-tab\[data-view-type='object_table'\]\.active\):not\(:has\(\.split\)\)\s*\{[^}]*min-width:\s*0/,
+    )
+    expect(css).toMatch(
+      /\.split > \.split-cell:has\(\.pane-tab\[data-view-type='object_detail'\]\.active\):not\(:has\(\.split\)\)\s*\{[^}]*min-width:\s*220px/,
+    )
+  })
+
   it('wraps a long Detail title instead of clipping it', () => {
     expect(css).toMatch(/\.detail-title\s*\{[^}]*flex-wrap:\s*wrap/)
     expect(css).toMatch(/\.detail-title strong\s*\{[^}]*overflow-wrap:\s*anywhere/)

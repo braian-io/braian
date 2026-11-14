@@ -41,7 +41,7 @@ it('renders the tab close control as a keyboard-reachable button', () => {
   expect(views(onChange.mock.calls[0]?.[0].layout)).toEqual(['graph'])
 })
 
-it('shrinks only the split cell whose subtree contains Detail', () => {
+it('lets every cell give way in a split that contains Detail', () => {
   const layout: LayoutDoc = {
     id: 'ws',
     title: 'Workspace',
@@ -72,7 +72,7 @@ it('shrinks only the split cell whose subtree contains Detail', () => {
   )
 
   const cells = [...container.querySelectorAll<HTMLElement>('.split-cell')]
-  expect(cells.map((cell) => cell.style.flex.split(' ').slice(0, 2).join(' '))).toEqual(['0 0', '0 0', '0 1'])
+  expect(cells.map((cell) => cell.style.flex.split(' ').slice(0, 2).join(' '))).toEqual(['0 1', '0 1', '0 1'])
 })
 
 it('keeps the full tab title on the truncated tab button', () => {
