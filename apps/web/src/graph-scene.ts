@@ -146,6 +146,32 @@ export type SceneEdge = {
 
 export type Scene = { nodes: SceneNode[]; edges: SceneEdge[] }
 
+/**
+ * Nodes that join the force layout while object names resolve. The focus object
+ * and its direct link peers stay in the sim so the first fit can reserve room for
+ * their captions without pulling in every pending neighbour (which crowds narrow
+ * panes and hides labels such as Food).
+ */
+export function placedSceneNodes(scene: Scene, focusKey: string): Scene {
+  const focusLinked = new Set<string>()
+  for (const edge of scene.edges) {
+    if (edge.source === focusKey || edge.target === focusKey) {
+      focusLinked.add(edge.source)
+      focusLinked.add(edge.target)
+    }
+  }
+  const nodes = scene.nodes.filter((node) => {
+    if (!(node.kind === 'object' && node.rawCaption)) return true
+    if (node.id === focusKey) return true
+    return focusLinked.has(node.id)
+  })
+  const ids = new Set(nodes.map((node) => node.id))
+  return {
+    nodes,
+    edges: scene.edges.filter((edge) => ids.has(edge.source) && ids.has(edge.target)),
+  }
+}
+
 export type KnownObject = { name: string; typeKey: string; key?: string }
 
 /** Display name for a structure or group. Labels on the model win; otherwise the key. */

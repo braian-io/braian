@@ -30,6 +30,7 @@ import {
   nodeMark,
   nodeRadius,
   parseTypedId,
+  placedSceneNodes,
   searchDocuments,
   visibleCaptionIds,
   type KnownObject,
@@ -502,17 +503,7 @@ export function GraphMap({
     return capScene(merged)
   }, [modelMode, graph, values, activeDefs, known, extras, modelInput?.stats])
   const scene = model.scene
-  const placed = useMemo(() => {
-    // Keep nodes with pending names in the layout so the first fit measures
-    // every caption that will appear, including neighbours such as the product
-    // node beside an article after F5.
-    const nodes = scene.nodes
-    const ids = new Set(nodes.map((node) => node.id))
-    return {
-      nodes,
-      edges: scene.edges.filter((edge) => ids.has(edge.source) && ids.has(edge.target)),
-    }
-  }, [scene])
+  const placed = useMemo(() => placedSceneNodes(scene, focusKey), [scene, focusKey])
   const pendingNames = useMemo(
     () =>
       modelMode
@@ -1343,8 +1334,15 @@ export function GraphMap({
       if (!nodes.length || width < 20 || height < 20) return false
       context.save()
       context.font = '12px "Inter Variable", Inter, sans-serif'
+      const captionForFit = (node: SimNode) => {
+        if (node.kind === 'object' && node.objectId) {
+          const name = knownRef.current[node.objectId]?.name
+          if (name) return name
+        }
+        return node.caption
+      }
       const extents = nodes.map((node) => {
-        const measured = context.measureText(node.caption).width
+        const measured = context.measureText(captionForFit(node)).width
         // Draw hides a caption wider than the pane, so it must not shrink the
         // fit just to reserve room for a label that is never painted. Only
         // trust that measurement once the web font is ready: a fallback font

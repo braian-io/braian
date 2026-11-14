@@ -1,7 +1,19 @@
 import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation } from 'd3-force'
 import { describe, expect, it } from 'vitest'
 import type { Json } from './api'
-import { buildScene, capScene, mergeScene, nodeMark, nodeRadius, relationLabel, sentenceCaseLabel, structureCaption, visibleCaptionIds, visibleLabelIds } from './graph-scene'
+import {
+  buildScene,
+  capScene,
+  mergeScene,
+  nodeMark,
+  nodeRadius,
+  placedSceneNodes,
+  relationLabel,
+  sentenceCaseLabel,
+  structureCaption,
+  visibleCaptionIds,
+  visibleLabelIds,
+} from './graph-scene'
 
 const defs: Json = {
   types: [{ key: 'article', labels: { en: 'Article' } }, { key: 'product', labels: { en: 'Product' } }],
@@ -271,6 +283,24 @@ describe('graph scene', () => {
     expect(capped.capped).toBe(true)
     expect(capped.scene.nodes.map((node) => node.id)).toEqual(['n0', 'n1', 'n2', 'n3'])
     expect(capped.scene.edges.map((edge) => edge.id)).toEqual(['keep'])
+  })
+
+  it('keeps the focus and its direct link peers in the layout while names resolve', () => {
+    const scene = buildScene({
+      defs,
+      graph: {
+        id: 'article-1',
+        links: [{ object_id: 'product-1', label: 'Product', link_type: 'product_articles' }],
+      },
+      values: {},
+      known: {},
+    })
+    const focusKey = 'object:article-1'
+    const placed = placedSceneNodes(scene, focusKey)
+    const ids = placed.nodes.map((node) => node.id)
+    expect(ids).toContain(focusKey)
+    expect(ids).toContain('object:product-1')
+    expect(ids.filter((id) => id.startsWith('group:') || id.startsWith('value:'))).toEqual(ids.filter((id) => !id.startsWith('object:')))
   })
 
   it('ticks a few hundred nodes inside a second', () => {
