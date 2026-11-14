@@ -338,8 +338,8 @@ export function pendingPeerFitExtents(
     const degree = 2
     const dist = 72 + nodeRadius(node.kind, degree) + nodeRadius(anchor.kind, anchor.degree ?? 0)
     return {
-      x: anchor.x + Math.cos(angle) * dist,
-      y: anchor.y + Math.sin(angle) * dist,
+      x: anchor.x! + Math.cos(angle) * dist,
+      y: anchor.y! + Math.sin(angle) * dist,
       radius: nodeRadius(node.kind, degree),
       captionWidth: captionWidth(node),
     }
@@ -2101,14 +2101,24 @@ export function GraphMap({
     if (lastFullRef.current === full) return
     const closing = lastFullRef.current && !full
     lastFullRef.current = full
-    requestSystemFitRef.current('fullscreen')
-    if (
-      closing &&
-      deferInitialFitForSheet(densityRef.current, selectedRef.current, sheetRef.current, placementRef.current)
-    ) {
-      requestSystemFitRef.current('resize')
-      requestSystemFitRef.current('sheet')
+    const narrowSheet = deferInitialFitForSheet(
+      densityRef.current,
+      selectedRef.current,
+      sheetRef.current,
+      placementRef.current,
+    )
+    if (closing && narrowSheet && !movedRef.current) {
+      // Leaving full size restores the narrow pane on the next layout pass. A
+      // fullscreen fit here still sees the large canvas and leaves the wrong k.
+      sheetStableRef.current = false
+      chromeMeasuredRef.current = false
+      requestAnimationFrame(() => {
+        requestSystemFitRef.current('resize')
+        requestSystemFitRef.current('sheet')
+      })
+      return
     }
+    requestSystemFitRef.current('fullscreen')
   }, [full])
 
   useEffect(() => {
