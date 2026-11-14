@@ -1384,19 +1384,18 @@ export function GraphMap({
 
     const fit = () => {
       resize()
-      const nodes = sim.nodes().filter((node) => !isLegendHidden(hiddenRef.current, node) && node.x != null && node.y != null)
+      const simById = new Map(
+        sim
+          .nodes()
+          .filter((node) => node.x != null && node.y != null)
+          .map((node) => [node.id, node]),
+      )
+      const layoutNodes = placedRef.current.nodes.filter((node) => !isLegendHidden(hiddenRef.current, node))
       const width = canvas.clientWidth
       const height = canvas.clientHeight
-      if (!nodes.length || width < 20 || height < 20) return false
+      if (!layoutNodes.length || width < 20 || height < 20) return false
       context.save()
       context.font = '12px "Inter Variable", Inter, sans-serif'
-      const captionForFit = (node: SimNode) => {
-        if (node.kind === 'object' && node.objectId) {
-          const name = knownRef.current[node.objectId]?.name
-          if (name) return name
-        }
-        return node.caption
-      }
       const captionWidthForScene = (node: SceneNode) => {
         if (node.objectId) {
           const name = knownRef.current[node.objectId]?.name
@@ -1404,22 +1403,18 @@ export function GraphMap({
         }
         return context.measureText(node.caption).width
       }
-      const extents = nodes.map((node) => {
-        const measured = context.measureText(captionForFit(node)).width
-        // Draw hides a caption wider than the pane, so it must not shrink the
-        // fit just to reserve room for a label that is never painted. Only
-        // trust that measurement once the web font is ready: a fallback font
-        // can measure a long name like "Dark chocolate 70%" wider than the
-        // pane and drop a caption that actually fits (and is then culled from
-        // the paint). Until then keep the measured width rather than excluding
-        // the caption; a later fonts.ready fit remeasures it.
-        return {
-          x: node.x!,
-          y: node.y!,
-          radius: nodeRadius(node.kind, node.degree ?? 0),
-          captionWidth: measured,
-        }
-      })
+      const extents = layoutNodes
+        .map((sceneNode) => {
+          const simNode = simById.get(sceneNode.id)
+          if (!simNode || simNode.x == null || simNode.y == null) return null
+          return {
+            x: simNode.x,
+            y: simNode.y,
+            radius: nodeRadius(sceneNode.kind, simNode.degree ?? 0),
+            captionWidth: captionWidthForScene(sceneNode),
+          }
+        })
+        .filter((item): item is NonNullable<typeof item> => item != null)
       if (!initialSettledRef.current) {
         extents.push(
           ...pendingPeerFitExtents(sceneRef.current, focusKeyRef.current, sim.nodes(), captionWidthForScene),
