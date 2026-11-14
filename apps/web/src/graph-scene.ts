@@ -147,24 +147,14 @@ export type SceneEdge = {
 export type Scene = { nodes: SceneNode[]; edges: SceneEdge[] }
 
 /**
- * Nodes that join the force layout while object names resolve. The focus object
- * and its direct link peers stay in the sim so the first fit can reserve room for
- * their captions without pulling in every pending neighbour (which crowds narrow
- * panes and hides labels such as Food).
+ * Nodes in the force layout while object names resolve. Only the focus object
+ * keeps a pending caption in the sim; link peers join once their names are known
+ * so a narrow pane does not crowd out structure labels such as Food.
  */
 export function placedSceneNodes(scene: Scene, focusKey: string): Scene {
-  const focusLinked = new Set<string>()
-  for (const edge of scene.edges) {
-    if (edge.source === focusKey || edge.target === focusKey) {
-      focusLinked.add(edge.source)
-      focusLinked.add(edge.target)
-    }
-  }
-  const nodes = scene.nodes.filter((node) => {
-    if (!(node.kind === 'object' && node.rawCaption)) return true
-    if (node.id === focusKey) return true
-    return focusLinked.has(node.id)
-  })
+  const nodes = scene.nodes.filter(
+    (node) => !(node.kind === 'object' && node.rawCaption) || node.id === focusKey,
+  )
   const ids = new Set(nodes.map((node) => node.id))
   return {
     nodes,

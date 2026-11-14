@@ -55,7 +55,8 @@ Use full size when the pane is too small to read the scene.
   measured free frame: the pane and canvas size staying unchanged for a couple of
   animation frames, the measured inspector box when the bottom or side card is open,
   and the measured label boxes, including captions such as Food and long names on
-  the focus object and its direct link peers that resolve a moment after the first paint.
+  long names on the focus object and on direct link peers, including room reserved
+  for peers while their names resolve, that may arrive a moment after the first paint.
   The frame excludes pane chrome, so a narrow pane (around 230 px) with the bottom
   inspector card open fits above the card instead of clipping the scene. After you
   have zoomed, panned or dragged a node, the camera belongs to you. A viewport

@@ -45,6 +45,7 @@ import {
   createPaneSettleGate,
   createFitScheduler,
   detailPlacement,
+  type CaptionExtent,
   fitCameraWithLabels,
   graphDensity,
   inspectorChrome,
@@ -310,6 +311,41 @@ function captionSignature(nodes: Array<{ caption: string }>): string {
   return nodes.map((node) => node.caption).join('\u0000')
 }
 
+/** Reserve fit room for link peers that are not in the sim until their names resolve. */
+export function pendingPeerFitExtents(
+  scene: Scene,
+  focusKey: string,
+  simNodes: SimNode[],
+  captionWidth: (node: SceneNode) => number,
+): CaptionExtent[] {
+  const placed = new Map(
+    simNodes
+      .filter((node) => node.x != null && node.y != null)
+      .map((node) => [node.id, node]),
+  )
+  const anchor = placed.get(focusKey)
+  if (!anchor || anchor.x == null || anchor.y == null) return []
+  const peers: SceneNode[] = []
+  for (const edge of scene.edges) {
+    if (edge.source !== focusKey && edge.target !== focusKey) continue
+    const peerId = edge.source === focusKey ? edge.target : edge.source
+    if (placed.has(peerId)) continue
+    const node = scene.nodes.find((item) => item.id === peerId)
+    if (node?.kind === 'object' && node.rawCaption) peers.push(node)
+  }
+  return peers.map((node, index) => {
+    const angle = (index / Math.max(1, peers.length)) * Math.PI * 2
+    const degree = 2
+    const dist = 72 + nodeRadius(node.kind, degree) + nodeRadius(anchor.kind, anchor.degree ?? 0)
+    return {
+      x: anchor.x + Math.cos(angle) * dist,
+      y: anchor.y + Math.sin(angle) * dist,
+      radius: nodeRadius(node.kind, degree),
+      captionWidth: captionWidth(node),
+    }
+  })
+}
+
 /** Web fonts must not swap a caption after its box was measured for a fit. */
 function fontsReady(): boolean {
   const fonts = typeof document !== 'undefined' ? document.fonts : undefined
@@ -503,6 +539,10 @@ export function GraphMap({
     return capScene(merged)
   }, [modelMode, graph, values, activeDefs, known, extras, modelInput?.stats])
   const scene = model.scene
+  const sceneRef = useRef(scene)
+  sceneRef.current = scene
+  const focusKeyRef = useRef(focusKey)
+  focusKeyRef.current = focusKey
   const placed = useMemo(() => placedSceneNodes(scene, focusKey), [scene, focusKey])
   const pendingNames = useMemo(
     () =>
@@ -1341,6 +1381,13 @@ export function GraphMap({
         }
         return node.caption
       }
+      const captionWidthForScene = (node: SceneNode) => {
+        if (node.objectId) {
+          const name = knownRef.current[node.objectId]?.name
+          if (name) return context.measureText(name).width
+        }
+        return context.measureText(node.caption).width
+      }
       const extents = nodes.map((node) => {
         const measured = context.measureText(captionForFit(node)).width
         // Draw hides a caption wider than the pane, so it must not shrink the
@@ -1357,6 +1404,11 @@ export function GraphMap({
           captionWidth: measured,
         }
       })
+      if (!initialSettledRef.current) {
+        extents.push(
+          ...pendingPeerFitExtents(sceneRef.current, focusKeyRef.current, sim.nodes(), captionWidthForScene),
+        )
+      }
       context.restore()
       const frame = currentFrame()
       // Do not claim the chrome is measured while the open bottom sheet has no

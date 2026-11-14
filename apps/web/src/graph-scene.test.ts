@@ -285,7 +285,7 @@ describe('graph scene', () => {
     expect(capped.scene.edges.map((edge) => edge.id)).toEqual(['keep'])
   })
 
-  it('keeps the focus and its direct link peers in the layout while names resolve', () => {
+  it('keeps only the focus object in the layout while its name resolves', () => {
     const scene = buildScene({
       defs,
       graph: {
@@ -299,8 +299,7 @@ describe('graph scene', () => {
     const placed = placedSceneNodes(scene, focusKey)
     const ids = placed.nodes.map((node) => node.id)
     expect(ids).toContain(focusKey)
-    expect(ids).toContain('object:product-1')
-    expect(ids.filter((id) => id.startsWith('group:') || id.startsWith('value:'))).toEqual(ids.filter((id) => !id.startsWith('object:')))
+    expect(ids).not.toContain('object:product-1')
   })
 
   it('ticks a few hundred nodes inside a second', () => {
