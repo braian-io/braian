@@ -372,6 +372,16 @@ function bottomCardOpenAt(
   )
 }
 
+/** A narrow open bottom card needs its measured box before the first untouched fit. */
+function deferInitialFitForSheet(
+  density: GraphDensity,
+  selected: string,
+  sheet: SheetMode,
+  placement: DetailPlacement,
+): boolean {
+  return density === 'narrow' && (placement === 'sheet' || bottomCardOpenAt(density, selected, sheet, placement))
+}
+
 /** `graph:add-link:<key>:<direction>`; the direction is what the picker must use. */
 export function graphLinkRequest(id: string, target: CommandTarget): LinkAddRequest {
   const value = id.slice('graph:add-link:'.length)
@@ -1503,7 +1513,11 @@ export function GraphMap({
         // waits for resolved names and a complete free frame; the sheet box or
         // a late caption may request the next attempt.
         fitAfterRef.current = false
-        requestSystemFitRef.current(initialSettledRef.current ? 'resize' : 'initial')
+        if (deferInitialFitForSheet(densityRef.current, selectedRef.current, sheetRef.current, placementRef.current)) {
+          if (placementRef.current === 'sheet') requestSystemFitRef.current('sheet')
+        } else {
+          requestSystemFitRef.current(initialSettledRef.current ? 'resize' : 'initial')
+        }
       }
       scheduleInitialSettle()
       sim.stop()
@@ -2011,6 +2025,10 @@ export function GraphMap({
     let cancelled = false
     void fonts.ready.then(() => {
       if (cancelled || movedRef.current || initialSettledRef.current) return
+      if (deferInitialFitForSheet(densityRef.current, selectedRef.current, sheetRef.current, placementRef.current)) {
+        if (placementRef.current === 'sheet') requestSystemFitRef.current('sheet')
+        return
+      }
       requestSystemFitRef.current('initial')
     })
     return () => {
@@ -2027,7 +2045,15 @@ export function GraphMap({
     previousPaneRef.current = pane ? { width: pane.width, height: pane.height } : null
     if (!pane) return
     if (previous && previous.width === pane.width && previous.height === pane.height) return
-    requestSystemFitRef.current(previous ? 'resize' : 'initial')
+    if (!previous) {
+      if (
+        !deferInitialFitForSheet(densityRef.current, selectedRef.current, sheetRef.current, placementRef.current)
+      ) {
+        requestSystemFitRef.current('initial')
+      }
+      return
+    }
+    requestSystemFitRef.current('resize')
   }, [pane])
 
   useEffect(() => {
