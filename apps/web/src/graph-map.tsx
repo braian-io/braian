@@ -41,6 +41,7 @@ import {
 import {
   chromeMeasureReady,
   chromeSheetBoxSettled,
+  createPaneSettleGate,
   createFitScheduler,
   detailPlacement,
   fitCameraWithLabels,
@@ -603,6 +604,7 @@ export function GraphMap({
   const runSystemFitRef = useRef<(event: SystemFitEvent) => void>(() => {})
   const requestSystemFitRef = useRef<(event: SystemFitEvent) => void>(() => {})
   const fitSchedulerRef = useRef<FitScheduler | null>(null)
+  const paneSettleRef = useRef(createPaneSettleGate())
   if (fitSchedulerRef.current === null) {
     fitSchedulerRef.current = createFitScheduler((event) => runSystemFitRef.current(event))
   }
@@ -812,13 +814,19 @@ export function GraphMap({
 
     // A `sheet` placement without a measured, settled inspector box is not
     // settled chrome: the open bottom sheet still has to shrink the free frame.
+    const sideCardOpen = () =>
+      densityRef.current === 'wide' &&
+      Boolean(selectedRef.current) &&
+      propertiesOpen(densityRef.current, sheetRef.current)
     const chromeReady = () =>
       chromeMeasuredRef.current &&
       (!sheetExpected() || sheetStableRef.current) &&
+      paneSettleRef.current.settled &&
       chromeMeasureReady(
         placementRef.current,
         measureChromeBox(canvas, inspectorRef.current),
         bottomCardOpen(),
+        sideCardOpen(),
       )
 
     const labelsReady = () =>
@@ -1067,7 +1075,8 @@ export function GraphMap({
       })
       // The fit reserved room for every caption it measured, so a hair-width
       // pane does not drop a name it clamped inside the frame.
-      const labels = visibleCaptionIds(captionBoxes, transform.k, { paneWidth: canvas.clientWidth })
+      const labelPaneWidth = settledPaneWidthRef.current > 0 ? settledPaneWidthRef.current : canvas.clientWidth
+      const labels = visibleCaptionIds(captionBoxes, transform.k, { paneWidth: labelPaneWidth })
       // These are the real measured extents for the current captions. A system
       // fit may only reserve their room after this signature is current.
       labelsDrawnRef.current = captionSignature(nodes)
@@ -1321,10 +1330,6 @@ export function GraphMap({
       const width = canvas.clientWidth
       const height = canvas.clientHeight
       if (!nodes.length || width < 20 || height < 20) return false
-      // Caption fit is decided against the settled pane width, never a transient
-      // canvas.clientWidth mid-transition: a long article name that fits in a
-      // 230 px pane must not be dropped from the fit (and then the paint).
-      const captionPaneWidth = settledPaneWidthRef.current > 0 ? settledPaneWidthRef.current : width
       context.save()
       context.font = '12px "Inter Variable", Inter, sans-serif'
       const extents = nodes.map((node) => {
@@ -1336,12 +1341,11 @@ export function GraphMap({
         // pane and drop a caption that actually fits (and is then culled from
         // the paint). Until then keep the measured width rather than excluding
         // the caption; a later fonts.ready fit remeasures it.
-        const captionWidth = fontsReady() && measured + 8 > captionPaneWidth ? 0 : measured
         return {
           x: node.x!,
           y: node.y!,
           radius: nodeRadius(node.kind, node.degree ?? 0),
-          captionWidth,
+          captionWidth: measured,
         }
       })
       context.restore()
@@ -1353,6 +1357,7 @@ export function GraphMap({
           placementRef.current,
           measureChromeBox(canvas, inspectorRef.current),
           bottomCardOpen(),
+          densityRef.current === 'wide' && Boolean(selectedRef.current) && propertiesOpen(densityRef.current, sheetRef.current),
         )
       ) {
         chromeMeasuredRef.current = true
@@ -1426,7 +1431,7 @@ export function GraphMap({
         // waits for resolved names and a complete free frame; the sheet box or
         // a late caption may request the next attempt.
         fitAfterRef.current = false
-        requestSystemFitRef.current('initial')
+        requestSystemFitRef.current(initialSettledRef.current ? 'resize' : 'initial')
       }
       scheduleInitialSettle()
       sim.stop()
@@ -1709,6 +1714,9 @@ export function GraphMap({
       chromeMeasuredRef.current = false
       idleIdsRef.current = null
       idleCaptionsRef.current = ''
+      paneSettleRef.current.cancel()
+      const stage = stageRef.current
+      if (stage) paneSettleRef.current.observe(stage.clientWidth, stage.clientHeight)
     }
     const tally = new Map<string, number>()
     for (const edge of placed.edges) {
@@ -1780,7 +1788,7 @@ export function GraphMap({
         drawRef.current(true)
         if (fitAfterRef.current) {
           fitAfterRef.current = false
-          apiRef.current.fit()
+          requestSystemFitRef.current(initialSettledRef.current ? 'resize' : 'initial')
         }
       } else {
         // A link or name changed without adding nodes: redraw, never re-layout.
@@ -1800,8 +1808,10 @@ export function GraphMap({
   useLayoutEffect(() => {
     const stage = stageRef.current
     if (!stage) return
+    const gate = paneSettleRef.current
     const apply = (width: number, height: number) => {
       const next = { width: Math.floor(width), height: Math.floor(height) }
+      gate.observe(width, height)
       setPane((prev) => (prev && prev.width === next.width && prev.height === next.height ? prev : next))
     }
     apply(stage.clientWidth, stage.clientHeight)
@@ -1810,7 +1820,10 @@ export function GraphMap({
       apply(rect?.width ?? stage.clientWidth, rect?.height ?? stage.clientHeight)
     })
     observer.observe(stage)
-    return () => observer.disconnect()
+    return () => {
+      observer.disconnect()
+      gate.cancel()
+    }
   }, [])
 
   useEffect(() => {
@@ -1872,6 +1885,10 @@ export function GraphMap({
     const sheetExpected =
       placementRef.current === 'sheet' ||
       bottomCardOpenAt(densityRef.current, selectedRef.current, sheetRef.current, placementRef.current)
+    const sideOpen =
+      densityRef.current === 'wide' &&
+      Boolean(selectedRef.current) &&
+      propertiesOpen(densityRef.current, sheetRef.current)
     const action = requestSystemFit({
       event,
       placement: placementRef.current,
@@ -1882,8 +1899,10 @@ export function GraphMap({
         sheetRef.current,
         placementRef.current,
       ),
+      sideCardOpen: sideOpen,
       labelsReady: sim ? fontsReady() && labelsDrawnRef.current === captionSignature(sim.nodes()) : false,
       sheetStable: !sheetExpected || sheetStableRef.current,
+      paneSettled: paneSettleRef.current.settled,
       paneReady,
       moved: movedRef.current,
       baselineFrozen: initialSettledRef.current,
@@ -2010,6 +2029,10 @@ export function GraphMap({
       for (const element of [inspectorRef.current, legendRef.current]) {
         if (element) observer.observe(element)
       }
+    } else if (
+      bottomCardOpenAt(densityRef.current, selectedRef.current, sheetRef.current, placement)
+    ) {
+      sheetStableRef.current = false
     } else {
       sheetStableRef.current = true
     }

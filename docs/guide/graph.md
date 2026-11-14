@@ -51,9 +51,10 @@ Use full size when the pane is too small to read the scene.
 - Zoom, pan and node drag belong to the user. Opening the graph, including after a
   real reload (F5), fits the scene so every visible node and every shown caption
   stays inside the visible graph frame. Entering and leaving **Open full size** also
-  fits while the camera is still untouched. Both paths wait for the same complete
-  measured free frame: the settled pane and canvas size, the measured inspector box
-  when the bottom card is open, and the measured label boxes, including captions
+  fits while the camera is still untouched.   Both paths wait for the same complete
+  measured free frame: the pane and canvas size staying unchanged for a couple of
+  animation frames, the measured inspector box when the bottom or side card is open,
+  and the measured label boxes, including captions
   such as Food and a long article name that resolve a moment after the first paint.
   The frame excludes pane chrome, so a narrow pane (around 230 px) with the bottom
   inspector card open fits above the card instead of clipping the scene. After you

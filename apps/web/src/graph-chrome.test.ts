@@ -10,6 +10,7 @@ import {
   chromeSheetBoxStable,
   clampSheetBoxes,
   createFitScheduler,
+  createPaneSettleGate,
   detailPlacement,
   fitCamera,
   fitCameraWithLabels,
@@ -259,6 +260,8 @@ describe('fitting measured captions', () => {
     expect(chromeMeasureReady('sheet', { x: 8, y: 420, width: 0, height: 212 })).toBe(false)
     expect(chromeMeasureReady('sheet', { x: 8, y: 420, width: 214, height: 212 })).toBe(true)
     expect(chromeMeasureReady('side', null)).toBe(true)
+    expect(chromeMeasureReady('side', null, false, true), 'side card open, no box yet').toBe(false)
+    expect(chromeMeasureReady('side', { x: 400, y: 8, width: 240, height: 400 }, false, true)).toBe(true)
     expect(chromeMeasureReady('hidden', null)).toBe(true)
   })
 
@@ -397,6 +400,7 @@ describe('fitting measured captions', () => {
       inspector: { x: 8, y: 420, width: 214, height: 212 },
       bottomCardOpen: true,
       labelsReady: true,
+      paneSettled: true,
       paneReady: true,
       moved: false,
       baselineFrozen: false,
@@ -435,6 +439,7 @@ describe('fitting measured captions', () => {
       placement: 'hidden' as const,
       bottomCardOpen: true,
       labelsReady: true,
+      paneSettled: true,
       paneReady: true,
       moved: false,
       baselineFrozen: false,
@@ -476,6 +481,7 @@ describe('fitting measured captions', () => {
       inspector: { x: 8, y: 420, width: 214, height: 212 },
       bottomCardOpen: true,
       labelsReady: true,
+      paneSettled: true,
       paneReady: true,
       moved: false,
       baselineFrozen: false,
@@ -494,10 +500,30 @@ describe('fitting measured captions', () => {
     ).toBe('fit')
   })
 
+  it('waits for a settled pane width before any fit event runs', () => {
+    const complete = {
+      placement: 'sheet' as const,
+      inspector: { x: 8, y: 420, width: 214, height: 212 },
+      bottomCardOpen: true,
+      labelsReady: true,
+      paneSettled: false,
+      paneReady: true,
+      sheetStable: true,
+      moved: false,
+      baselineFrozen: false,
+      loadEnded: true,
+      namesPending: false,
+    }
+    for (const event of ['initial', 'fullscreen', 'resize', 'sheet'] as const) {
+      expect(requestSystemFit({ ...complete, event }), `${event} waits for pane settle`).toBe('none')
+    }
+  })
+
   it('does not fit a sheet placement without a real box, even for a resize', () => {
     const base = {
       event: 'resize' as const,
       placement: 'sheet' as const,
+      paneSettled: true,
       paneReady: true,
       moved: false,
       baselineFrozen: false,
@@ -519,6 +545,37 @@ describe('fitting measured captions', () => {
       }),
       'the first-sheet event only exists for a sheet placement',
     ).toBe('none')
+  })
+
+  it('waits for two quiet animation frames before a pane counts as settled', () => {
+    const frames: Array<{ handle: number; run: () => void }> = []
+    let handle = 1
+    const gate = createPaneSettleGate(2, {
+      frame: (callback) => {
+        const id = handle++
+        frames.push({ handle: id, run: callback })
+        return id
+      },
+      cancelFrame: (id) => {
+        const index = frames.findIndex((item) => item.handle === id)
+        if (index >= 0) frames.splice(index, 1)
+      },
+    })
+    expect(gate.settled, 'not settled before the first observe').toBe(false)
+    gate.observe(230, 400)
+    expect(gate.settled, 'one frame is not enough').toBe(false)
+    while (frames.length > 0 && !gate.settled) {
+      const next = frames.shift()
+      next?.run()
+    }
+    expect(gate.settled, 'two quiet frames settle the pane').toBe(true)
+    gate.observe(231, 400)
+    expect(gate.settled, 'a new size restarts the wait').toBe(false)
+    while (frames.length > 0 && !gate.settled) {
+      const next = frames.shift()
+      next?.run()
+    }
+    expect(gate.settled).toBe(true)
   })
 
   it('cancels a leftover fit pass when a newer event arrives or on cleanup', () => {

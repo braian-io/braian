@@ -98,10 +98,17 @@ export function chromeMeasureReady(
   placement: DetailPlacement,
   inspector: Box | null | undefined,
   bottomCardOpen = false,
+  /** Wide pane with the side inspector card visible. */
+  sideCardOpen = false,
 ): boolean {
   const needsSheetBox = placement === 'sheet' || (bottomCardOpen && placement === 'hidden')
-  if (!needsSheetBox) return true
-  return Boolean(inspector && inspector.width >= 1 && inspector.height >= 1)
+  if (needsSheetBox) {
+    return Boolean(inspector && inspector.width >= 1 && inspector.height >= 1)
+  }
+  if (placement === 'side' && sideCardOpen) {
+    return Boolean(inspector && inspector.width >= 1 && inspector.height >= 1)
+  }
+  return true
 }
 
 /**
@@ -129,10 +136,14 @@ export function requestSystemFit(input: {
   inspector: Box | null | undefined
   /** True while a narrow bottom inspector card is open or about to be a sheet. */
   bottomCardOpen?: boolean
+  /** Wide pane with the side inspector card visible. */
+  sideCardOpen?: boolean
   /** False until every current caption has a measured box. */
   labelsReady?: boolean
   /** False while an open bottom sheet is still settling to its final height. */
   sheetStable?: boolean
+  /** False until the pane size has been unchanged for a couple of animation frames. */
+  paneSettled?: boolean
   paneReady: boolean
   moved: boolean
   baselineFrozen: boolean
@@ -140,9 +151,10 @@ export function requestSystemFit(input: {
   namesPending?: boolean
 }): SystemFitAction {
   if (!input.paneReady) return 'none'
+  if (input.paneSettled === false) return 'none'
   if (input.labelsReady === false) return 'none'
   if (input.sheetStable === false) return 'none'
-  if (!chromeMeasureReady(input.placement, input.inspector, input.bottomCardOpen)) return 'none'
+  if (!chromeMeasureReady(input.placement, input.inspector, input.bottomCardOpen, input.sideCardOpen)) return 'none'
   if (input.event === 'sheet' && input.placement !== 'sheet') return 'none'
   if (input.event === 'initial') {
     if (input.baselineFrozen) return 'none'
@@ -224,6 +236,73 @@ export type FitScheduler = {
  * it runs (`requestSystemFit`), so it may no-op until the sheet box appears and
  * then run again for the next event.
  */
+/** After a pane resize, wait this many animation frames without a new size before fitting. */
+const PANE_SETTLE_FRAMES = 2
+
+/**
+ * True once `width`×`height` has stayed unchanged for `PANE_SETTLE_FRAMES`
+ * animation frames after the last observe() call. Cancelling drops any in-flight wait.
+ */
+export function createPaneSettleGate(
+  framesRequired = PANE_SETTLE_FRAMES,
+  env: {
+    frame: (callback: () => void) => number
+    cancelFrame: (handle: number) => void
+  } = {
+    frame: (callback) => requestAnimationFrame(callback),
+    cancelFrame: (handle) => cancelAnimationFrame(handle),
+  },
+) {
+  let lastWidth = -1
+  let lastHeight = -1
+  let settled = false
+  let generation = 0
+  let pending: number | null = null
+
+  const finish = (gen: number, remaining: number) => {
+    if (gen !== generation) return
+    if (remaining <= 1) {
+      settled = true
+      pending = null
+      return
+    }
+    pending = env.frame(() => finish(gen, remaining - 1))
+  }
+
+  return {
+    get settled() {
+      return settled
+    },
+    observe(width: number, height: number) {
+      const nextW = Math.floor(width)
+      const nextH = Math.floor(height)
+      if (nextW === lastWidth && nextH === lastHeight && settled) return
+      if (nextW !== lastWidth || nextH !== lastHeight) {
+        lastWidth = nextW
+        lastHeight = nextH
+        settled = false
+        generation += 1
+        if (pending !== null) {
+          env.cancelFrame(pending)
+          pending = null
+        }
+        const gen = generation
+        pending = env.frame(() => finish(gen, framesRequired))
+      }
+    },
+    cancel() {
+      generation += 1
+      if (pending !== null) {
+        env.cancelFrame(pending)
+        pending = null
+      }
+      settled = false
+      lastWidth = -1
+      lastHeight = -1
+    },
+  }
+}
+
 export function createFitScheduler(
   run: (event: SystemFitEvent) => void,
   env: {
