@@ -350,7 +350,7 @@ export function pendingPeerFitExtents(
 /** Web fonts must not swap a caption after its box was measured for a fit. */
 function fontsReady(): boolean {
   const fonts = typeof document !== 'undefined' ? document.fonts : undefined
-  return !fonts || fonts.status === 'loaded'
+  return !fonts || fonts.status !== 'loading'
 }
 
 /**
