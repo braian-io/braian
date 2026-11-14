@@ -96,6 +96,25 @@ export function chromeMeasureReady(
   return Boolean(inspector && inspector.width >= 1 && inspector.height >= 1)
 }
 
+/**
+ * A chrome ResizeObserver may only catch the first real box of an open bottom
+ * sheet for the current placement/pane key. Once that box is measured, later
+ * inspector growth (add-link, expand, a late name) is content, not a viewport
+ * change, and must never refit: that would move an untouched camera and break
+ * the row 128e stay-put promise. A new placement/pane/full-size change gets a
+ * fresh effect and therefore a fresh observer.
+ */
+export function chromeResizeNeedsFit(input: {
+  placement: DetailPlacement
+  inspector: Box | null | undefined
+  /** True once this placement/pane key already used its first sheet box. */
+  sheetMeasured: boolean
+}): boolean {
+  if (input.sheetMeasured) return false
+  if (input.placement !== 'sheet') return false
+  return chromeMeasureReady(input.placement, input.inspector)
+}
+
 export type InspectorChrome = {
   anchor: 'right' | 'bottom' | 'corner' | 'none'
   /** Content height, capped by maxHeightPx. Never stretch to the stage. */

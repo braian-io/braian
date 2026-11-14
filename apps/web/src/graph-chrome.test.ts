@@ -5,6 +5,7 @@ import {
   GRAPH_WIDE_MIN_PX,
   SHEET_SWIPE_PX,
   chromeMeasureReady,
+  chromeResizeNeedsFit,
   clampSheetBoxes,
   detailPlacement,
   fitCamera,
@@ -254,6 +255,45 @@ describe('fitting measured captions', () => {
     expect(chromeMeasureReady('sheet', { x: 8, y: 420, width: 214, height: 212 })).toBe(true)
     expect(chromeMeasureReady('side', null)).toBe(true)
     expect(chromeMeasureReady('hidden', null)).toBe(true)
+  })
+
+  it('requests one fit when the first sheet box becomes ready', () => {
+    expect(
+      chromeResizeNeedsFit({ placement: 'sheet', inspector: null, sheetMeasured: false }),
+      'a missing box is not the sheet measurement',
+    ).toBe(false)
+    expect(
+      chromeResizeNeedsFit({
+        placement: 'sheet',
+        inspector: { x: 8, y: 420, width: 0, height: 212 },
+        sheetMeasured: false,
+      }),
+      'a zero-width box is not the sheet measurement',
+    ).toBe(false)
+    expect(
+      chromeResizeNeedsFit({
+        placement: 'sheet',
+        inspector: { x: 8, y: 420, width: 214, height: 212 },
+        sheetMeasured: false,
+      }),
+      'the first measured sheet box fits the settled free frame',
+    ).toBe(true)
+  })
+
+  it('ignores inspector growth after the sheet was measured, including after settle', () => {
+    const inspector = { x: 8, y: 420, width: 214, height: 212 }
+    expect(
+      chromeResizeNeedsFit({ placement: 'sheet', inspector, sheetMeasured: true }),
+      'a grown sheet after the baseline is frozen must not refit',
+    ).toBe(false)
+    expect(
+      chromeResizeNeedsFit({
+        placement: 'side',
+        inspector: { x: 752, y: 8, width: 240, height: 400 },
+        sheetMeasured: false,
+      }),
+      'a wide side card is not observed for sheet measurement',
+    ).toBe(false)
   })
 
   it('fits a smaller camera when a sheet-sized chrome box is measured', () => {

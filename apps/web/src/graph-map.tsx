@@ -40,6 +40,7 @@ import {
 } from './graph-scene'
 import {
   chromeMeasureReady,
+  chromeResizeNeedsFit,
   detailPlacement,
   fitCameraWithLabels,
   graphDensity,
@@ -1760,6 +1761,46 @@ export function GraphMap({
   const chrome = inspectorChrome(placement, pane?.height ?? 0)
 
   const chromeKeyRef = useRef('')
+  // One fit schedule at a time. A [full] toggle and a pane/placement change can
+  // both ask for a refit in the same commit; a stale [full] or pre-sheet timer
+  // must not apply its camera after the newer pane and sheet have settled.
+  const fitFrameRef = useRef<number | null>(null)
+  const fitTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([])
+  const cancelPendingFit = () => {
+    if (fitFrameRef.current !== null) {
+      cancelAnimationFrame(fitFrameRef.current)
+      fitFrameRef.current = null
+    }
+    for (const timer of fitTimersRef.current) clearTimeout(timer)
+    fitTimersRef.current = []
+  }
+  const scheduleFitPass = (apply: () => void) => {
+    cancelPendingFit()
+    fitFrameRef.current = requestAnimationFrame(() => {
+      fitFrameRef.current = null
+      apply()
+    })
+    fitTimersRef.current = [setTimeout(apply, 120), setTimeout(apply, 320)]
+  }
+  useEffect(() => () => cancelPendingFit(), [])
+  useEffect(() => {
+    // Full size re-lays out the whole chrome. Refit after that pass, once the
+    // pane and its measured chrome have their new size, while the camera is
+    // still the system's; a user camera is remapped into the new free frame
+    // instead of keeping pixels from the old canvas.
+    const apply = () => {
+      const canvas = canvasRef.current
+      if (!canvas) return
+      // Never fit a sheet placement before its first real box: that would
+      // re-create the taller pre-sheet camera after Close full size.
+      if (!chromeMeasureReady(placementRef.current, measureChromeBox(canvas, inspectorRef.current))) return
+      if (movedRef.current) apiRef.current.remap()
+      else apiRef.current.fit()
+    }
+    scheduleFitPass(apply)
+    return () => cancelPendingFit()
+  }, [full])
+
   useEffect(() => {
     // A bottom sheet is an overlay: it can appear without resizing the canvas,
     // so the canvas ResizeObserver never sees the smaller free frame. The
@@ -1772,24 +1813,35 @@ export function GraphMap({
     chromeKeyRef.current = key
     if (previous === key || !pane || placement === 'hidden') return
     const apply = () => {
+      const canvas = canvasRef.current
+      if (!canvas) return
+      if (!chromeMeasureReady(placementRef.current, measureChromeBox(canvas, inspectorRef.current))) return
       if (movedRef.current) apiRef.current.remap()
       else apiRef.current.fit()
     }
-    const frame = requestAnimationFrame(apply)
-    const timer = setTimeout(apply, 120)
-    const late = setTimeout(apply, 320)
-    // A sheet can lay out after this effect ran. Observe the measured chrome,
-    // so the late sheet box triggers another untouched fit (or a user remap)
-    // instead of leaving the F5 camera on the taller pre-sheet frame.
-    const observer = new ResizeObserver(apply)
-    for (const element of [inspectorRef.current, legendRef.current]) {
-      if (element) observer.observe(element)
+    scheduleFitPass(apply)
+    // The observer may only catch the first measured box of this open bottom
+    // sheet. After that, inspector growth is content (add-link, expand, a late
+    // name), not a viewport change, and must not refit an untouched camera.
+    let observer: ResizeObserver | undefined
+    if (placement === 'sheet') {
+      let sheetMeasured = false
+      observer = new ResizeObserver(() => {
+        const canvas = canvasRef.current
+        if (!canvas || sheetMeasured) return
+        const box = measureChromeBox(canvas, inspectorRef.current)
+        if (!chromeResizeNeedsFit({ placement, inspector: box, sheetMeasured })) return
+        sheetMeasured = true
+        apply()
+        observer?.disconnect()
+      })
+      for (const element of [inspectorRef.current, legendRef.current]) {
+        if (element) observer.observe(element)
+      }
     }
     return () => {
-      cancelAnimationFrame(frame)
-      clearTimeout(timer)
-      clearTimeout(late)
-      observer.disconnect()
+      cancelPendingFit()
+      observer?.disconnect()
     }
   }, [placement, pane, selectedNode?.id])
   const pinned = Boolean(
