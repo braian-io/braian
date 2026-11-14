@@ -503,13 +503,18 @@ export function GraphMap({
   }, [modelMode, graph, values, activeDefs, known, extras, modelInput?.stats])
   const scene = model.scene
   const placed = useMemo(() => {
-    const nodes = scene.nodes.filter((node) => !(node.kind === 'object' && node.rawCaption))
+    // The focus object stays in the scene while its name resolves so the first
+    // fit measures the same nodes as after F5, not a smaller graph that refits
+    // when the long caption arrives.
+    const nodes = scene.nodes.filter(
+      (node) => !(node.kind === 'object' && node.rawCaption) || node.id === focusKey,
+    )
     const ids = new Set(nodes.map((node) => node.id))
     return {
       nodes,
       edges: scene.edges.filter((edge) => ids.has(edge.source) && ids.has(edge.target)),
     }
-  }, [scene])
+  }, [scene, focusKey])
   const pendingNames = useMemo(
     () =>
       modelMode
@@ -1786,10 +1791,12 @@ export function GraphMap({
           node.vy = 0
         }
         drawRef.current(true)
-        if (!movedRef.current) {
+        if (fitAfterRef.current) {
+          fitAfterRef.current = false
           requestSystemFitRef.current(initialSettledRef.current ? 'resize' : 'initial')
+        } else if (!movedRef.current && !initialSettledRef.current) {
+          requestSystemFitRef.current('initial')
         }
-        fitAfterRef.current = false
       } else {
         // A link or name changed without adding nodes: redraw, never re-layout.
         for (const node of next) {
