@@ -1257,7 +1257,7 @@ export function GraphMap({
             emphasized,
             priority: activeEndpoint ? 3 : 1,
             typeKey: activeEndpoint
-              ? `${sourceFocus ? geometry.source.id : geometry.target.id}|${link.label}`
+              ? `${sourceFocus ? geometry.source.id : geometry.target.id}|${link.id}`
               : '',
           })
         }
