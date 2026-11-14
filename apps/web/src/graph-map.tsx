@@ -1309,8 +1309,8 @@ export function GraphMap({
             size: { width: boxW, height: boxH },
             nodes: labelNodes,
             placed: placedEdgeLabels,
-            preferred: activeEndpoint ? namedCaptionObstacles : captionObstacles,
-            fallback: [],
+            preferred: namedCaptionObstacles,
+            fallback: activeEndpoint ? [] : captionObstacles,
             active: activeEndpoint,
           })
           if (placement.dropped) return
@@ -1977,7 +1977,13 @@ export function GraphMap({
       moved: movedRef.current,
     })
     idleIdsRef.current = plan.baselineIds
-    if (plan.fit) requestSystemFitRef.current('initial')
+    if (plan.fit) {
+      requestSystemFitRef.current(
+        deferInitialFitForSheet(densityRef.current, selectedRef.current, sheetRef.current, placementRef.current)
+          ? 'sheet'
+          : 'initial',
+      )
+    }
   }, [scene])
 
   const selectedNode = scene.nodes.find((node) => node.id === selected) ?? null
@@ -2085,6 +2091,13 @@ export function GraphMap({
     if (!deferInitialFitForSheet(densityRef.current, selectedRef.current, sheetRef.current, placementRef.current)) return
     requestSystemFitRef.current('sheet')
   }, [known])
+
+  const focusCaption = scene.nodes.find((node) => node.id === focusId)?.caption ?? ''
+  useEffect(() => {
+    if (movedRef.current || initialSettledRef.current || !focusCaption) return
+    if (!deferInitialFitForSheet(densityRef.current, selectedRef.current, sheetRef.current, placementRef.current)) return
+    requestSystemFitRef.current('sheet')
+  }, [focusCaption])
 
   useEffect(() => {
     // A caption measured before its web font finished loading is not a final
