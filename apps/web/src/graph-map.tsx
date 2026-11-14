@@ -1867,6 +1867,22 @@ export function GraphMap({
   useEffect(() => () => fitSchedulerRef.current?.cancel(), [])
 
   useEffect(() => {
+    // A caption measured before its web font finished loading is not a final
+    // label box. Retry the first-load fit once the font set is ready, unless
+    // the user already owns the camera or the load has settled.
+    const fonts = typeof document !== 'undefined' ? document.fonts : undefined
+    if (!fonts) return
+    let cancelled = false
+    void fonts.ready.then(() => {
+      if (cancelled || movedRef.current || initialSettledRef.current) return
+      requestSystemFitRef.current('initial')
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
     // The first pane measurement is event A's frame; every later size is a real
     // pane resize (event C). The system fit re-checks that the canvas still
     // matches the pane, so a resize during Close full size cannot fit a
