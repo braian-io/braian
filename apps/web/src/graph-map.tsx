@@ -1979,6 +1979,8 @@ export function GraphMap({
   const chromeKeyRef = useRef('')
   const previousPaneRef = useRef<{ width: number; height: number } | null>(null)
   const lastFullRef = useRef(full)
+  const fullRef = useRef(full)
+  fullRef.current = full
   const paneRef = useRef(pane)
   paneRef.current = pane
 
@@ -1989,6 +1991,17 @@ export function GraphMap({
   runSystemFitRef.current = (event) => {
     const canvas = canvasRef.current
     if (!canvas) return
+    const narrowUntouched =
+      deferInitialFitForSheet(
+        densityRef.current,
+        selectedRef.current,
+        sheetRef.current,
+        placementRef.current,
+      ) && !movedRef.current
+    if (event === 'fullscreen' && narrowUntouched && fullRef.current) {
+      apiRef.current.remap()
+      return
+    }
     const currentPane = paneRef.current
     const paneReady = Boolean(
       currentPane &&
@@ -2108,17 +2121,18 @@ export function GraphMap({
       placementRef.current,
     )
     if (closing && narrowSheet && !movedRef.current) {
-      // Leaving full size restores the narrow pane on the next layout pass. A
-      // fullscreen fit here still sees the large canvas and leaves the wrong k.
       sheetStableRef.current = false
       chromeMeasuredRef.current = false
-      window.setTimeout(() => {
+      const finish = () => {
         if (movedRef.current) return
+        if (!paneSettleRef.current.settled) {
+          requestAnimationFrame(finish)
+          return
+        }
         requestSystemFitRef.current('resize')
         requestSystemFitRef.current('sheet')
-        // Fall back to a direct fit once the sheet box and pane have settled.
-        apiRef.current.fit()
-      }, 480)
+      }
+      requestAnimationFrame(finish)
       return
     }
     requestSystemFitRef.current('fullscreen')
