@@ -912,31 +912,23 @@ export function GraphMap({
     }
     const objectNamesReady = () => !placedObjectNamesPending(placedRef.current.nodes)
 
+    const initialLoadReady = () =>
+      initialEndedRef.current &&
+      pendingNamesRef.current === '' &&
+      objectNamesReady() &&
+      simMatchesPlaced() &&
+      chromeReady() &&
+      labelsReady()
+
     // Freeze the idle-refit baseline only after the first load has genuinely
     // settled. Until then Food and other late nodes/captions may still fit.
     const scheduleInitialSettle = () => {
       if (initialSettledRef.current || movedRef.current) return
-      if (
-        !initialEndedRef.current ||
-        pendingNamesRef.current !== '' ||
-        !objectNamesReady() ||
-        !simMatchesPlaced() ||
-        !chromeReady() ||
-        !labelsReady()
-      )
-        return
+      if (!initialLoadReady()) return
       if (settleTimer !== undefined) clearTimeout(settleTimer)
       settleTimer = setTimeout(() => {
         settleTimer = undefined
-        if (movedRef.current || !initialEndedRef.current) return
-        if (
-          pendingNamesRef.current !== '' ||
-          !objectNamesReady() ||
-          !simMatchesPlaced() ||
-          !chromeReady() ||
-          !labelsReady()
-        )
-          return
+        if (movedRef.current || !initialLoadReady()) return
         initialSettledRef.current = true
         if (idleIdsRef.current == null) idleIdsRef.current = currentIdsRef.current
       }, 500)
@@ -1480,7 +1472,7 @@ export function GraphMap({
       transform.y = camera.y
       lastFrame = frame
       draw(true)
-      if (!initialSettledRef.current) releaseSettledHold()
+      if (!initialSettledRef.current && initialLoadReady()) releaseSettledHold()
       scheduleInitialSettle()
       return true
     }
@@ -1906,13 +1898,9 @@ export function GraphMap({
           node.vx = 0
           node.vy = 0
         }
+        fitAfterRef.current = false
+        if (reuse && initialEndedRef.current) freezeIdleForUser()
         drawRef.current(true)
-        if (fitAfterRef.current) {
-          fitAfterRef.current = false
-          if (!initialSettledRef.current) requestSystemFitRef.current('initial')
-        } else if (!movedRef.current && !initialSettledRef.current) {
-          requestSystemFitRef.current('initial')
-        }
       } else {
         // A link or name changed without adding nodes: redraw, never re-layout.
         for (const node of next) {
