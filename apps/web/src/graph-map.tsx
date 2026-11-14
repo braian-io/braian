@@ -780,6 +780,21 @@ export function GraphMap({
     let alive = true
     let lastFrame: GraphFrame | null = null
     let settleTimer: ReturnType<typeof setTimeout> | undefined
+    let settleHoldTimer: ReturnType<typeof setTimeout> | undefined
+    const releaseSettledHold = () => {
+      if (settleHoldTimer !== undefined) {
+        clearTimeout(settleHoldTimer)
+        settleHoldTimer = undefined
+      }
+      canvas.dataset.settled = 'true'
+      canvas.dataset.settling = 'false'
+    }
+    const holdSettledUntilFit = () => {
+      canvas.dataset.settled = 'false'
+      canvas.dataset.settling = 'true'
+      if (settleHoldTimer !== undefined) clearTimeout(settleHoldTimer)
+      settleHoldTimer = setTimeout(releaseSettledHold, 5000)
+    }
 
     const sim = forceSimulation<SimNode, SimLink>([])
       .force(
@@ -1453,6 +1468,7 @@ export function GraphMap({
       transform.y = camera.y
       lastFrame = frame
       draw(true)
+      if (!initialSettledRef.current) releaseSettledHold()
       scheduleInitialSettle()
       return true
     }
@@ -1502,10 +1518,16 @@ export function GraphMap({
       if (alive) draw(false)
     })
     sim.on('end', () => {
-      canvas.dataset.settling = 'false'
+      const waitForFit =
+        deferInitialFitForSheet(densityRef.current, selectedRef.current, sheetRef.current, placementRef.current) &&
+        !initialSettledRef.current
+      if (waitForFit) holdSettledUntilFit()
+      else {
+        canvas.dataset.settling = 'false'
+        canvas.dataset.settled = 'true'
+      }
       if (!alive || sim.nodes().length === 0) return
       sim.alphaTarget(0)
-      canvas.dataset.settled = 'true'
       initialEndedRef.current = true
       draw(true)
       if (fitAfterRef.current) {
@@ -1765,6 +1787,7 @@ export function GraphMap({
     return () => {
       alive = false
       if (settleTimer !== undefined) clearTimeout(settleTimer)
+      if (settleHoldTimer !== undefined) clearTimeout(settleHoldTimer)
       sim.on('tick', null)
       sim.on('end', null)
       sim.stop()
