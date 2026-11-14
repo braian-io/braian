@@ -114,7 +114,7 @@ export function visibleCaptionIds(
     else if (edgeLabels.some((other) => boxesOverlap(box, other))) {
       // Structure and group names stay visible at a narrow fitted zoom; passive
       // edge labels move aside instead of hiding Food (row 243).
-      if (box.priority < 2) shown.delete(box.id)
+      if (box.kind !== 'structure' && box.kind !== 'group') shown.delete(box.id)
     }
   }
   return shown
