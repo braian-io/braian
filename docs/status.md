@@ -1,5 +1,42 @@
 # Status 2026-11-14
 
+## Row 243 — graph camera fit after F5 and closed full size (in progress, not merged)
+
+Branch `junior/243-graph-fit` starts at `origin/main` `dc23e60` and is **not merged,
+not deployed and not accepted**. Nothing below describes live behavior on main or the
+demo.
+
+The remaining K2 gap from row 226 was that a real F5 and **Close full size** fitted
+different frames. A complete-frame gate now gives both paths the same settled free
+frame before computing `k`: the pane/canvas size matches, the open (or about to open)
+bottom inspector card has a measured box, and the current captions have measured label
+boxes from the DOM mirror. A transient `hidden` placement after F5 is not treated as
+complete while the card is open; it waits for the sheet box instead of fitting the
+taller frame first. Late names such as Food and “Dark chocolate 70%” are part of the
+same measurement. Only the initial load, full-size toggle, real pane resize and the
+first measured sheet box may move an untouched camera. A user camera is remapped into
+the new free frame, not refitted, and nothing idle-refits after the load settles.
+
+Files: `apps/web/src/graph-chrome.ts` and its unit tests, `apps/web/src/graph-map.tsx`
+and its unit tests, `apps/web/src/graph-scene.ts` / `graph-edge-label.ts` with their
+tests, `apps/web/src/styles.css` (hidden DOM label mirror), the new
+`apps/web/e2e/row243-graph-fit.spec.ts` registered in `scripts/e2e.mjs` (weight 55 s),
+and `docs/guide/graph.md`. The row 128f camera spec now compares relative node offsets
+because a user camera is remapped through full size; its zoom precision and the row
+128g/226 assertions (including the 16 px menu budget) are unchanged.
+
+Evidence locally in this worktree:
+
+- `./node_modules/.bin/tsc --noEmit` in `apps/web` exit 0.
+- Focused vitest on `graph-chrome`, `graph-map`, `graph-scene` and `graph-edge-label`
+  gave **4 files / 91 tests passed**, including the new F5/Close-full-size complete
+  frame and user-camera remap cases.
+- `sha256sum apps/web/src/data-model.tsx` is
+  `2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`, unchanged.
+- Playwright was **not** run on this host (no isolated API/Postgres/Typesense stack was
+  started). The new spec is written and registered; CI must verify it before the row
+  can be accepted.
+
 ## Row 239 — Detail and table share width (in progress, not merged)
 
 Branch `junior/239-detail-width` starts at `origin/main` `68e8fe4` (row 238 / PR #322)
