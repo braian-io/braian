@@ -1340,10 +1340,12 @@ export function GraphMap({
           if (placement.dropped) return
           const mid = placement.point
           const box = placement.box
-          if (protectCaptions && !activeEndpoint) {
+          if (protectCaptions) {
             const edgeRect = { left: box.x, top: box.y, right: box.x + box.width, bottom: box.y + box.height }
             for (const cap of captionBoxes) {
               if (!protectCaptions.has(cap.id) || !labels.has(cap.id)) continue
+              const structure = cap.kind === 'structure' || cap.kind === 'group'
+              if (!structure && activeEndpoint) continue
               if (
                 labelRectsOverlap(edgeRect, {
                   left: cap.left,
@@ -1384,6 +1386,7 @@ export function GraphMap({
       if (showProtect && placedEdgeLabels.length > 0) {
         for (const cap of captionBoxes) {
           if (!showProtect.has(cap.id)) continue
+          if (cap.kind === 'structure' || cap.kind === 'group') continue
           const capRect = {
             left: cap.left,
             top: cap.top,
