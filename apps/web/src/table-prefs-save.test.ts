@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { savedTable } from './panes'
 import {
   createTablePrefsSaver,
   tablePrefsBody,
@@ -20,7 +21,7 @@ function snapshot(source: string): TablePrefsSnapshot {
       },
     },
     workspaceId: 'workspace-1',
-    table: { filter: '', sort: 'a_number:asc', groupBy: '', sizes: {} },
+    table: { sort: 'a_number:asc', groupBy: '', sizes: {} },
   }
 }
 
@@ -65,6 +66,47 @@ describe('tablePrefsBody', () => {
     const body = tablePrefsBody(snapshot('products'))
     expect(sourceOf(body)).toBe('products')
     expect(body.state).toMatchObject({ object_type: 'article' })
+  })
+
+  it('writes an empty filter so a previously saved query cannot come back', () => {
+    const current = snapshot('products')
+    current.view.state = {
+      ...(current.view.state as Record<string, unknown>),
+      table: {
+        filter: 'DEMO208-6517112',
+        sort: 'a_name__en:desc',
+        groupBy: 'a_status',
+        sizes: { name: 320 },
+      },
+    }
+    current.table = { sort: 'a_name__en:desc', groupBy: 'a_status', sizes: { name: 320 } }
+
+    expect(tablePrefsBody(current).state).toMatchObject({
+      table: { filter: '', sort: 'a_name__en:desc', groupBy: 'a_status', sizes: { name: 320 } },
+    })
+  })
+})
+
+describe('savedTable', () => {
+  it('starts the free-text search empty even when the view row has a saved query', () => {
+    const initial = savedTable({
+      id: 'view-1',
+      type: 'object_table',
+      title: 'Products',
+      state: {
+        table: {
+          filter: 'DEMO208-6517112',
+          sort: 'a_name__en:desc',
+          groupBy: 'a_status',
+          sizes: { name: 320 },
+        },
+      },
+    })
+
+    expect(initial.filter).toBe('')
+    expect(initial.sort).toBe('a_name__en:desc')
+    expect(initial.groupBy).toBe('a_status')
+    expect(initial.sizes).toEqual({ name: 320 })
   })
 })
 
