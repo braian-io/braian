@@ -1,4 +1,48 @@
-# Status 2026-11-13
+# Status 2026-11-14
+
+## Row 239 — Detail and table share width (in progress, not merged)
+
+Branch `junior/239-detail-width` starts at `origin/main` `68e8fe4` (row 238 / PR #322)
+and keeps the docs-first commit as its first commit. The branch has no upstream until
+the push at the end of the work, and it is **not merged, not deployed and not
+accepted**. Nothing below describes live behavior.
+
+The six acceptance criteria are implemented in the product, the guide and the tests:
+
+- **The table keeps a minimum width.** A split that contains `object_detail` marks
+  itself (`data-has-detail`). A direct table cell in that split gets
+  `min-width: 440px`, and split cells may shrink, so Detail gives way instead of the
+  table collapsing to the Number column.
+- **The Detail title is fully readable.** The title wraps (`flex-wrap` plus
+  `overflow-wrap: anywhere`) and carries the full name in its `title` tooltip.
+- **Field values are not clipped to one letter.** Single-line inputs and measured
+  values now carry the full value in `title`. In a Detail pane narrower than 360 px,
+  a container query stacks the label above the field and moves a language value below
+  its tag instead of leaving only `en` visible.
+- **The measure input can grow.** `.control .measure input` starts from 88 px and
+  grows with `flex: 1 1 88px`; it is no longer locked with `flex: none`.
+- **Light and dark theme match.** All changes are shared layout CSS and existing
+  tokens, with no theme-specific exceptions.
+
+Files: `apps/web/src/styles.css`, `apps/web/src/dock.tsx`, `apps/web/src/panes.tsx`,
+new `apps/web/src/detail-width-css.test.ts`, `docs/guide/workspaces-and-panels.md`,
+new `apps/web/e2e/row239-detail-width.spec.ts`, and its registration in
+`scripts/e2e.mjs` (weight 45 s). Screenshots go to `apps/web/test-results/row239-shots`
+(ignored by git).
+
+Evidence locally in this worktree:
+
+- `docker run --rm --network none` with `node:22-bookworm` and the real symlinked
+  `apps/web/node_modules`: `./node_modules/.bin/tsc --noEmit` exit 0.
+- Full vitest suite in the same container: **174 files / 1026 tests passed**, including
+  the new `detail-width-css.test.ts` (4 tests).
+- `python3 scripts/check-english.py` exit 0 and `git diff --check` exit 0.
+- `sha256sum apps/web/src/data-model.tsx` is
+  `2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`, unchanged.
+
+Playwright was **written but not run locally**: the disk is at 89% and this session did
+not start an isolated Postgres/Typesense/API stack. The end-to-end gate is CI on this
+branch, not the local unit results.
 
 ## Row 238 — Detail and table Save retry and in-flight state (in progress, not merged)
 
