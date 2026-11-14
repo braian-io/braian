@@ -1453,6 +1453,10 @@ export function GraphMap({
       transform.y = camera.y
       lastFrame = frame
       draw(true)
+      if (!initialSettledRef.current) {
+        canvas.dataset.settled = 'true'
+        canvas.dataset.settling = 'false'
+      }
       scheduleInitialSettle()
       return true
     }
@@ -1502,10 +1506,13 @@ export function GraphMap({
       if (alive) draw(false)
     })
     sim.on('end', () => {
-      canvas.dataset.settling = 'false'
+      const waitForFit =
+        deferInitialFitForSheet(densityRef.current, selectedRef.current, sheetRef.current, placementRef.current) &&
+        !initialSettledRef.current
+      canvas.dataset.settling = waitForFit ? 'true' : 'false'
       if (!alive || sim.nodes().length === 0) return
       sim.alphaTarget(0)
-      canvas.dataset.settled = 'true'
+      canvas.dataset.settled = waitForFit ? 'false' : 'true'
       initialEndedRef.current = true
       draw(true)
       if (fitAfterRef.current) {
