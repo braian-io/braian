@@ -1321,7 +1321,7 @@ export function GraphMap({
                   size: { width: boxW, height: boxH },
                   nodes: labelNodes,
                   placed: placedEdgeLabels,
-                  preferred: namedCaptionObstacles,
+                  preferred: [],
                   fallback: [],
                   active: true,
                 }
@@ -1690,6 +1690,7 @@ export function GraphMap({
         // not a click: it keeps the camera and the label set as they were.
         if (travel <= 3) focusNodeButton(dragNode.id, canvas)
         sim.alphaTarget(0)
+        if (dragged) sim.stop()
         if (!modelMode) pinRef.current((tick) => tick + 1)
         draw(true)
         if (dragged) canvas.dataset.settling = 'false'
