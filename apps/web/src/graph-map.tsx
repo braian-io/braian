@@ -801,7 +801,7 @@ export function GraphMap({
         fitSchedulerRef.current?.request('sheet')
         attempts += 1
         if (attempts >= 150) {
-          releaseSettledHold()
+          if (initialLoadSettled()) releaseSettledHold()
           return
         }
         settleHoldTimer = setTimeout(schedule, attempts === 1 ? 0 : 400)
@@ -1279,7 +1279,11 @@ export function GraphMap({
       // It is never dropped for a name: if every slot covers one, the label is
       // still painted and `visibleCaptionIds` hides that caption below (K5).
       const namedCaptionObstacles: EdgeLabelBox[] = captionBoxes
-        .filter((box) => labels.has(box.id) && box.priority >= NAMED_CAPTION_PRIORITY)
+        .filter(
+          (box) =>
+            labels.has(box.id) &&
+            (box.priority >= NAMED_CAPTION_PRIORITY || box.kind === 'structure' || box.kind === 'group'),
+        )
         .map((box) => ({ x: box.left, y: box.top, width: box.right - box.left, height: box.bottom - box.top }))
       context.font = '11px "Inter Variable", Inter, sans-serif'
       labelCandidates
