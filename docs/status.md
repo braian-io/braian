@@ -28,9 +28,9 @@ because a user camera is remapped through full size; its zoom precision and the 
 Evidence locally in this worktree:
 
 - `./node_modules/.bin/tsc --noEmit` in `apps/web` exit 0.
-- Focused vitest on `graph-chrome`, `graph-map`, `graph-scene` and `graph-edge-label`
-  gave **4 files / 91 tests passed**, including the new F5/Close-full-size complete
-  frame and user-camera remap cases.
+- Full web vitest gave **175 files / 1066 tests passed**, including the new
+  F5/Close-full-size complete-frame and user-camera remap cases in `graph-chrome`
+  and `graph-map`.
 - `sha256sum apps/web/src/data-model.tsx` is
   `2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`, unchanged.
 - Playwright was **not** run on this host (no isolated API/Postgres/Typesense stack was
