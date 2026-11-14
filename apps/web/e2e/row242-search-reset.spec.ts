@@ -100,10 +100,13 @@ async function openClosedView(page: Page, title: string) {
   await expect(palette).toHaveCount(0)
 }
 
+function productsTable(workspace: WorkspaceDetail) {
+  return workspace.views.find((item) => item.type === 'object_table' && item.title === 'Products')
+}
+
 async function storedFilter(page: Page, workspaceId: string): Promise<string | undefined> {
   const workspace = await getWorkspace(page, workspaceId)
-  const view = workspace.views.find((item) => item.type === 'object_table')
-  return view?.state.table?.filter
+  return productsTable(workspace)?.state.table?.filter
 }
 
 test('Products search is not silently restored when the view is reopened', async ({ page }) => {
@@ -118,8 +121,8 @@ test('Products search is not silently restored when the view is reopened', async
     const quick = table.getByTestId('quick-filter')
     const rows = table.getByTestId('object-row')
     const empty = table.getByTestId('object-table-empty')
-    const view = (await getWorkspace(page, copy.id)).views.find((item) => item.type === 'object_table')
-    if (!view) throw new Error('copy has no object table view')
+    const view = productsTable(await getWorkspace(page, copy.id))
+    if (!view) throw new Error('copy has no Products object table view')
 
     // 1. An in-session query that matches nothing names itself and can be cleared.
     const noMatch = `ROW242-NO-MATCH-${Date.now()}`
@@ -147,7 +150,7 @@ test('Products search is not silently restored when the view is reopened', async
 
     // Close and reopen the view: the box starts empty and the rows come back.
     await page.getByTestId(`close-tab-${view.id}`).click()
-    await expect(page.locator('[data-testid="object-table"]')).toHaveCount(0)
+    await expect(page.locator(`[data-tab="${view.id}"]`)).toHaveCount(0)
     await openClosedView(page, view.title)
     const reopened = mainTable(page)
     await expect(reopened).toBeVisible({ timeout: 30_000 })
