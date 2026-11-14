@@ -10,9 +10,6 @@ mkdirSync(shots, { recursive: true })
 
 const WANTED = 'Hazelnut chocolate 439'
 
-type SearchDoc = Record<string, unknown>
-type SearchHit = { id?: string; key?: string; document?: SearchDoc }
-
 async function login(page: Page) {
   await page.addInitScript(() => {
     localStorage.setItem('braian.theme', JSON.stringify('dark'))
@@ -32,53 +29,69 @@ async function openProducts(page: Page) {
   await expect(mainTable(page)).toBeVisible()
 }
 
-async function searchProducts(
-  page: Page,
-  query: string,
-): Promise<Array<{ id: string; document: SearchDoc }>> {
-  const response = await page.request.get(
-    `/v1/search?q=${encodeURIComponent(query)}&filter=${encodeURIComponent('type_key:=product')}&lang=en&sort=a_number&per_page=100`,
-  )
-  if (!response.ok()) return []
-  const body = (await response.json()) as { hits?: SearchHit[] }
-  return (body.hits ?? [])
-    .map((hit) => {
-      const document = (hit.document ?? hit) as SearchDoc
-      return { id: String(hit.id ?? document.id ?? ''), document }
-    })
-    .filter((hit) => hit.id)
-}
-
 async function pickProduct(page: Page): Promise<{ id: string; key: string; name: string; brand: string }> {
-  const found = [...(await searchProducts(page, 'Hazelnut chocolate')), ...(await searchProducts(page, '*'))]
-  const unique = new Map<string, { id: string; document: SearchDoc }>()
-  for (const hit of found) unique.set(hit.id, hit)
-  const docs = [...unique.values()]
-  const nameOf = (doc: SearchDoc) => String(doc.a_name__en ?? doc.display_name ?? '')
-  const brandOf = (doc: SearchDoc) => String(doc.a_brand ?? doc.brand ?? '')
-  const keyOf = (doc: SearchDoc) => String(doc.key ?? doc.a_number ?? '')
-  const ranked = [
-    ...docs.filter((hit) => nameOf(hit.document) === WANTED),
-    ...docs.filter((hit) => nameOf(hit.document).length >= 16 && brandOf(hit.document)),
-    ...docs.filter((hit) => keyOf(hit.document) && nameOf(hit.document) && brandOf(hit.document)),
-    ...docs,
-  ]
-  const seen = new Set<string>()
-  for (const hit of ranked) {
-    if (seen.has(hit.id)) continue
-    seen.add(hit.id)
-    const loaded = await page.request.get(`/v1/objects/${hit.id}`)
-    if (!loaded.ok()) continue
-    const object = (await loaded.json()) as {
-      values?: { number?: string; brand?: string; name?: Record<string, string> }
+  const table = mainTable(page)
+  const rows = table.getByTestId('object-row')
+  await expect(rows.first()).toBeVisible({ timeout: 60_000 })
+
+  const visible = async (row: Locator) => row.isVisible().catch(() => false)
+  let target: Locator | undefined
+
+  const named = rows.filter({ has: page.locator('[data-column="name"]', { hasText: WANTED }) })
+  for (let index = 0; index < (await named.count()); index += 1) {
+    const row = named.nth(index)
+    const text = ((await row.locator('[data-column="name"]').textContent()) ?? '').trim()
+    if (text === WANTED && (await visible(row))) {
+      target = row
+      break
     }
-    const name = object.values?.name?.en ?? nameOf(hit.document)
-    const brand = object.values?.brand ?? brandOf(hit.document)
-    const number = object.values?.number ?? keyOf(hit.document)
-    if (!name || !brand || !number) continue
-    return { id: hit.id, key: number, name, brand }
   }
-  throw new Error('no product with a readable name and brand')
+
+  if (!target) {
+    const cheddar = rows.filter({ hasText: /PROD-CHEDDAR|Mature cheddar/ })
+    for (let index = 0; index < (await cheddar.count()); index += 1) {
+      const row = cheddar.nth(index)
+      if (await visible(row)) {
+        target = row
+        break
+      }
+    }
+  }
+
+  if (!target) {
+    for (let index = 0; index < (await rows.count()); index += 1) {
+      const row = rows.nth(index)
+      if (!(await visible(row))) continue
+      const key = ((await row.locator('[data-column="key"]').textContent()) ?? '').trim()
+      const name = ((await row.locator('[data-column="name"]').textContent()) ?? '').trim()
+      if (key && name) {
+        target = row
+        break
+      }
+    }
+  }
+
+  if (!target) throw new Error('no product row in the Products table')
+
+  const id = (await target.getAttribute('id'))?.replace(/^object-row-/, '')
+  if (!id) throw new Error('product row has no object id')
+
+  await target.click()
+  await expect(target).toHaveAttribute('aria-selected', 'true')
+  await page.locator('[data-view-type="object_detail"]').first().click()
+
+  const detail = page.getByTestId('object-detail')
+  await expect(detail).toBeVisible()
+
+  const name = ((await detail.locator('.detail-title strong').textContent()) ?? '').trim()
+  const numberInput = fieldByLabel(page, detail, 'Number').locator('.control input').first()
+  const brandInput = fieldByLabel(page, detail, 'Brand').locator('.control input').first()
+  await expect(numberInput).toBeVisible()
+  await expect(brandInput).toBeVisible()
+  const key = await numberInput.inputValue()
+  const brand = await brandInput.inputValue()
+
+  return { id, key, name, brand }
 }
 
 function productsPane(page: Page): Locator {
