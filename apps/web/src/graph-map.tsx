@@ -793,7 +793,7 @@ export function GraphMap({
       canvas.dataset.settled = 'false'
       canvas.dataset.settling = 'true'
       if (settleHoldTimer !== undefined) clearTimeout(settleHoldTimer)
-      settleHoldTimer = setTimeout(releaseSettledHold, 2500)
+      settleHoldTimer = setTimeout(releaseSettledHold, 5000)
     }
 
     const sim = forceSimulation<SimNode, SimLink>([])
