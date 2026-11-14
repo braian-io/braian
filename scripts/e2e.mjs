@@ -297,7 +297,7 @@ const measuredSeconds = {
   'e2e/row238-detail-save.spec.ts': 45,
   'e2e/row239-detail-width.spec.ts': 45,
   'e2e/row240-contrast.spec.ts': 45,
-  'e2e/row242-search-reset.spec.ts': 45,
+  'e2e/row242-search-reset.spec.ts': 200,
 }
 
 const reseedSeconds = 4

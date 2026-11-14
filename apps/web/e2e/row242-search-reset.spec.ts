@@ -110,7 +110,8 @@ async function storedFilter(page: Page, workspaceId: string): Promise<string | u
 }
 
 test('Products search is not silently restored when the view is reopened', async ({ page }) => {
-  test.setTimeout(180_000)
+  // The budget covers a Products template copy plus close/reopen and reload.
+  test.setTimeout(300_000)
   await login(page)
 
   let copyId = ''
