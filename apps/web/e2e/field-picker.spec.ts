@@ -262,6 +262,8 @@ test.describe('field picker on Products', () => {
     await page.getByTestId('context-menu').getByRole('menuitem', { name: /Edit field/i }).click()
     await expect(page.getByTestId('fields-mode')).toBeVisible()
     await expect(page.getByTestId('fields-mode-input')).toBeFocused({ timeout: 5_000 })
+    // Park the pointer away from the rows so a leftover context-menu cursor cannot hover.
+    await page.mouse.move(5, 5)
 
     // Exact repro: ←, back in, First, Net weight, kg, Enter
     await page.keyboard.press('ArrowLeft')
