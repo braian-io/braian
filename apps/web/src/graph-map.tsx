@@ -503,18 +503,16 @@ export function GraphMap({
   }, [modelMode, graph, values, activeDefs, known, extras, modelInput?.stats])
   const scene = model.scene
   const placed = useMemo(() => {
-    // The focus object stays in the scene while its name resolves so the first
-    // fit measures the same nodes as after F5, not a smaller graph that refits
-    // when the long caption arrives.
-    const nodes = scene.nodes.filter(
-      (node) => !(node.kind === 'object' && node.rawCaption) || node.id === focusKey,
-    )
+    // Keep nodes with pending names in the layout so the first fit measures
+    // every caption that will appear, including neighbours such as the product
+    // node beside an article after F5.
+    const nodes = scene.nodes
     const ids = new Set(nodes.map((node) => node.id))
     return {
       nodes,
       edges: scene.edges.filter((edge) => ids.has(edge.source) && ids.has(edge.target)),
     }
-  }, [scene, focusKey])
+  }, [scene])
   const pendingNames = useMemo(
     () =>
       modelMode
