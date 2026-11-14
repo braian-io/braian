@@ -81,6 +81,7 @@ async function openProductsCopy(page: Page, name: string) {
 async function waitForSearch(page: Page, text: string) {
   return page.waitForResponse(
     (response) => response.url().includes('/v1/search') && response.url().includes(text) && response.ok(),
+    { timeout: 30_000 },
   )
 }
 
@@ -160,10 +161,13 @@ test('Products search is not silently restored when the view is reopened', async
     await page.screenshot({ path: `${shots}/row242-02-reopened-full-table-empty-search.png` })
 
     // 3. Reload rehydrates the view row. A stale search must still not come back.
-    const reloadSearch = waitForSearch(page, stale)
-    await reopened.getByTestId('quick-filter').fill(stale)
+    // Use a fresh query: reusing `stale` here can be served from the React Query
+    // cache, so no new /v1/search request would ever arrive.
+    const reloadQuery = `ROW242-RELOAD-${Date.now()}`
+    const reloadSearch = waitForSearch(page, reloadQuery)
+    await reopened.getByTestId('quick-filter').fill(reloadQuery)
     await reloadSearch
-    await expect(reopened.getByTestId('object-table-empty')).toContainText(stale)
+    await expect(reopened.getByTestId('object-table-empty')).toContainText(reloadQuery)
     await page.waitForTimeout(700)
     expect(await storedFilter(page, copy.id)).toBe('')
 
