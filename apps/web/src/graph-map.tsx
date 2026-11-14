@@ -39,6 +39,7 @@ import {
   type SceneNode,
 } from './graph-scene'
 import {
+  chromeMeasureReady,
   detailPlacement,
   fitCameraWithLabels,
   graphDensity,
@@ -57,7 +58,7 @@ import {
   type SheetMode,
 } from './graph-chrome'
 import { buildModelScene, expandModelType, mergeModelScene } from './graph-model-scene'
-import { curvePoint, edgeLabelMode, placeEdgeLabel, type EdgeLabelBox, type EdgeLabelNode } from './graph-edge-label'
+import { curvePoint, edgeLabelMode, placeEdgeLabelWithFallback, type EdgeLabelBox } from './graph-edge-label'
 import { chooseModelSelection } from './model-selection'
 import { openObjectLabel } from './type-labels'
 import { copy, uiLanguage } from './i18n'
@@ -488,6 +489,7 @@ export function GraphMap({
   const initialSettledRef = useRef(false)
   const initialEndedRef = useRef(false)
   const chromeMeasuredRef = useRef(false)
+  const placementRef = useRef<DetailPlacement>('hidden')
   const pendingNamesRef = useRef('')
   const currentIdsRef = useRef('')
   pendingNamesRef.current = pendingNames
@@ -740,16 +742,22 @@ export function GraphMap({
       )
     }
 
+    // A `sheet` placement without a measured inspector box is not settled
+    // chrome: the open bottom sheet still has to shrink the free frame.
+    const chromeReady = () =>
+      chromeMeasuredRef.current &&
+      chromeMeasureReady(placementRef.current, measureChromeBox(canvas, inspectorRef.current))
+
     // Freeze the idle-refit baseline only after the first load has genuinely
     // settled. Until then Food and other late nodes/captions may still fit.
     const scheduleInitialSettle = () => {
       if (initialSettledRef.current || movedRef.current) return
-      if (!initialEndedRef.current || pendingNamesRef.current !== '' || !chromeMeasuredRef.current) return
+      if (!initialEndedRef.current || pendingNamesRef.current !== '' || !chromeReady()) return
       if (settleTimer !== undefined) clearTimeout(settleTimer)
       settleTimer = setTimeout(() => {
         settleTimer = undefined
         if (movedRef.current || !initialEndedRef.current) return
-        if (pendingNamesRef.current !== '' || !chromeMeasuredRef.current) return
+        if (pendingNamesRef.current !== '' || !chromeReady()) return
         initialSettledRef.current = true
         if (idleIdsRef.current == null) idleIdsRef.current = currentIdsRef.current
       }, 500)
@@ -1107,22 +1115,26 @@ export function GraphMap({
           const widthText = context.measureText(link.label).width
           const boxW = widthText + 12
           const boxH = 16
-          const mid = placeEdgeLabel(
-            geometry.from,
-            geometry.control,
-            geometry.to,
-            { width: boxW, height: boxH },
-            labelNodes,
-            placedEdgeLabels,
-            // A selected or hovered label wins space from a hidden value chip,
-            // but it still moves aside from a shown object/type/active name.
-            // With no legal slot it keeps its space and the caption hides.
-            activeEndpoint ? namedCaptionObstacles : captionObstacles,
-          )
-          const box: EdgeLabelBox = { x: mid.x - boxW / 2, y: mid.y - boxH / 2, width: boxW, height: boxH }
-          // Hide the lower-priority label instead of stacking it on a neighbour.
-          if (placedEdgeLabels.some((other) => boxOverlap(box, other) > 0)) return
-          if (labelNodes.some((node) => discOverlap(box, node) > 0)) return
+          // A selected or hovered label wins space from a hidden value chip,
+          // but it still prefers a slot beside a shown object/type/active name.
+          // If that aside slot hits a node or another label, retry without the
+          // name obstacles (the a7a9792 path): the label is painted and the
+          // covered caption hides in `visibleCaptionIds` (K5). Only stacking on
+          // another painted edge label can still drop it.
+          const placement = placeEdgeLabelWithFallback({
+            from: geometry.from,
+            control: geometry.control,
+            to: geometry.to,
+            size: { width: boxW, height: boxH },
+            nodes: labelNodes,
+            placed: placedEdgeLabels,
+            preferred: activeEndpoint ? namedCaptionObstacles : captionObstacles,
+            fallback: [],
+            active: activeEndpoint,
+          })
+          if (placement.dropped) return
+          const mid = placement.point
+          const box = placement.box
           if (typeKey) placedLabelTypes.add(typeKey)
           placedEdgeLabels.push(box)
           drawnEdges.add(link.id)
@@ -1240,7 +1252,11 @@ export function GraphMap({
       })
       context.restore()
       const frame = currentFrame()
-      chromeMeasuredRef.current = true
+      // Do not claim the chrome is measured while the open bottom sheet has no
+      // box yet; that taller frame must not freeze the initial-load baseline.
+      if (chromeMeasureReady(placementRef.current, measureChromeBox(canvas, inspectorRef.current))) {
+        chromeMeasuredRef.current = true
+      }
       // A narrow pane with long article captions can need less than the old
       // 0.35 floor to keep the measured labels inside the frame.
       const camera = fitCameraWithLabels({ frame, nodes: extents, minScale: 0.1 })
@@ -1739,6 +1755,7 @@ export function GraphMap({
   const density: GraphDensity = pane == null ? 'wide' : graphDensity(pane.width)
   densityRef.current = density
   const placement = detailPlacement(density, sheet, Boolean(selectedNode))
+  placementRef.current = placement
   const showProperties = propertiesOpen(density, sheet)
   const chrome = inspectorChrome(placement, pane?.height ?? 0)
 
@@ -1761,10 +1778,18 @@ export function GraphMap({
     const frame = requestAnimationFrame(apply)
     const timer = setTimeout(apply, 120)
     const late = setTimeout(apply, 320)
+    // A sheet can lay out after this effect ran. Observe the measured chrome,
+    // so the late sheet box triggers another untouched fit (or a user remap)
+    // instead of leaving the F5 camera on the taller pre-sheet frame.
+    const observer = new ResizeObserver(apply)
+    for (const element of [inspectorRef.current, legendRef.current]) {
+      if (element) observer.observe(element)
+    }
     return () => {
       cancelAnimationFrame(frame)
       clearTimeout(timer)
       clearTimeout(late)
+      observer.disconnect()
     }
   }, [placement, pane, selectedNode?.id])
   const pinned = Boolean(
@@ -2298,6 +2323,10 @@ function GraphInspector({
   )
 }
 
+function measureChromeBox(canvas: HTMLCanvasElement, element: HTMLElement | null): Box | null {
+  return measureChromeBoxes(canvas, [element])[0] ?? null
+}
+
 function measureChromeBoxes(canvas: HTMLCanvasElement, elements: Array<HTMLElement | null>): Box[] {
   const origin = canvas.getBoundingClientRect()
   const boxes: Box[] = []
@@ -2448,22 +2477,6 @@ function bendOf(id: string, len: number) {
   for (let index = 0; index < id.length; index += 1) hash = (hash * 33 + id.charCodeAt(index)) >>> 0
   const sign = hash % 2 === 0 ? 1 : -1
   return sign * Math.min(72, Math.max(18, len * 0.18))
-}
-
-function boxOverlap(a: EdgeLabelBox, b: EdgeLabelBox) {
-  const width = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)
-  const height = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y)
-  return width > 0 && height > 0 ? width * height : 0
-}
-
-function discOverlap(box: EdgeLabelBox, node: EdgeLabelNode) {
-  const closestX = Math.max(box.x, Math.min(node.x, box.x + box.width))
-  const closestY = Math.max(box.y, Math.min(node.y, box.y + box.height))
-  const dx = node.x - closestX
-  const dy = node.y - closestY
-  const distanceSq = dx * dx + dy * dy
-  if (distanceSq >= node.radius * node.radius) return 0
-  return node.radius - Math.sqrt(distanceSq)
 }
 
 function curveTangent(

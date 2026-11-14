@@ -4,6 +4,7 @@ import {
   GRAPH_SHEET_MAX_RATIO,
   GRAPH_WIDE_MIN_PX,
   SHEET_SWIPE_PX,
+  chromeMeasureReady,
   clampSheetBoxes,
   detailPlacement,
   fitCamera,
@@ -245,6 +246,28 @@ describe('fitting measured captions', () => {
     expect(right).toBeLessThanOrEqual(frame.x + frame.width - 16)
     expect(left).toBeGreaterThanOrEqual(frame.x + 16)
     expect(camera.k).toBeGreaterThan(0)
+  })
+
+  it('does not treat sheet chrome as measured until the inspector box exists', () => {
+    expect(chromeMeasureReady('sheet', null)).toBe(false)
+    expect(chromeMeasureReady('sheet', { x: 8, y: 420, width: 0, height: 212 })).toBe(false)
+    expect(chromeMeasureReady('sheet', { x: 8, y: 420, width: 214, height: 212 })).toBe(true)
+    expect(chromeMeasureReady('side', null)).toBe(true)
+    expect(chromeMeasureReady('hidden', null)).toBe(true)
+  })
+
+  it('fits a smaller camera when a sheet-sized chrome box is measured', () => {
+    const stage = { width: 600, height: 640 }
+    const nodes = [
+      { x: -100, y: -220, radius: 20, captionWidth: 80 },
+      { x: 100, y: 220, radius: 20, captionWidth: 80 },
+    ]
+    const full = fitCameraWithLabels({ frame: readGraphFrame(stage, [], 'narrow'), nodes })!
+    const sheet = fitCameraWithLabels({
+      frame: readGraphFrame(stage, [{ x: 8, y: 420, width: 214, height: 212 }], 'narrow'),
+      nodes,
+    })!
+    expect(sheet.k).toBeLessThan(full.k)
   })
 
   it('reserves room for a caption below a node in a short frame', () => {

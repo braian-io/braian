@@ -82,6 +82,20 @@ export function propertiesOpen(density: GraphDensity, sheet: SheetMode): boolean
   return sheet === 'expanded'
 }
 
+/**
+ * The chrome is only measured once the open bottom sheet has a real box. A
+ * `sheet` placement with a missing (or not-yet-laid-out) inspector must not
+ * freeze the initial-load baseline; the late sheet layout has to trigger
+ * another untouched fit into the shorter free frame.
+ */
+export function chromeMeasureReady(
+  placement: DetailPlacement,
+  inspector: Box | null | undefined,
+): boolean {
+  if (placement !== 'sheet') return true
+  return Boolean(inspector && inspector.width >= 1 && inspector.height >= 1)
+}
+
 export type InspectorChrome = {
   anchor: 'right' | 'bottom' | 'corner' | 'none'
   /** Content height, capped by maxHeightPx. Never stretch to the stage. */
