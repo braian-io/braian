@@ -800,7 +800,7 @@ export function GraphMap({
         requestSystemFitRef.current('sheet')
         fitSchedulerRef.current?.request('sheet')
         attempts += 1
-        if (attempts >= 40) {
+        if (attempts >= 150) {
           releaseSettledHold()
           return
         }
@@ -1423,6 +1423,18 @@ export function GraphMap({
       const width = canvas.clientWidth
       const height = canvas.clientHeight
       if (!layoutNodes.length || width < 20 || height < 20) return false
+      if (
+        !initialSettledRef.current &&
+        deferInitialFitForSheet(
+          densityRef.current,
+          selectedRef.current,
+          sheetRef.current,
+          placementRef.current,
+        ) &&
+        !initialLoadReady()
+      ) {
+        return false
+      }
       context.save()
       context.font = '12px "Inter Variable", Inter, sans-serif'
       const captionWidthForScene = (node: SceneNode) => {
@@ -1899,7 +1911,6 @@ export function GraphMap({
           node.vy = 0
         }
         fitAfterRef.current = false
-        if (reuse && initialEndedRef.current) freezeIdleForUser()
         drawRef.current(true)
       } else {
         // A link or name changed without adding nodes: redraw, never re-layout.
