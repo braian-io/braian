@@ -170,6 +170,22 @@ Filters, sorting and grouping run on the server across the whole catalog, not on
 rows that are loaded in the browser. When a colleague saves, open views update from
 the change stream; there is no manual refresh.
 
+## Review and save
+
+An object table and a Detail view share the same Save/Discard draft bar. Both act on
+the same unsaved cells, so an edit made in one view is visible in the other.
+
+A Save that fails on the server or in transport is shown as an error. It is not a
+field-validation error, so the draft stays valid and Save is still available: fix the
+cause and press Save again. The previous error clears when a new save starts, when a
+save succeeds, or when you switch to another object. Real field-validation errors
+still block Save until the value is corrected.
+
+While a save request is in flight, Save reads `Saving…` and both Save and Discard are
+disabled. A second click cannot run another save, so it never reports `Saved` when
+nothing was saved. When the request finishes, the bar returns to Save and Discard, or
+disappears if the draft is gone.
+
 ## Related
 
 - [Data sources](/docs/data-sources)

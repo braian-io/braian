@@ -168,6 +168,36 @@ describe('shared object draft', () => {
     expect(editBaseVersion('obj-1', 4)).toBe(3)
   })
 
+  it('blocks Save on real field validation, but not on a displayed save failure', () => {
+    const realValidation = reviewCapabilities({
+      principal: 'human',
+      viaAgent: false,
+      open: true,
+      stale: false,
+      conflict: false,
+      validationErrors: ['Name is required'],
+      roleCanWrite: true,
+    })
+    expect(realValidation.canSave).toBe(false)
+    expect(realValidation.saveReason).toBe('Name is required')
+
+    // A server or transport failure shown in Detail is a banner, not a field
+    // validation error. Detail passes an empty list so Save stays available.
+    const displayedSaveError = 'Save failed on the server'
+    expect(displayedSaveError).not.toBe('')
+    const retryable = reviewCapabilities({
+      principal: 'human',
+      viaAgent: false,
+      open: true,
+      stale: false,
+      conflict: false,
+      validationErrors: [],
+      roleCanWrite: true,
+    })
+    expect(retryable.canSave).toBe(true)
+    expect(retryable.saveReason).toBe('')
+  })
+
   it('does not let an agent save or discard', () => {
     const blocked = reviewCapabilities({
       principal: 'agent',

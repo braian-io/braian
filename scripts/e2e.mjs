@@ -121,6 +121,7 @@ const specs = [
   'e2e/row213b-add-view-clone.spec.ts',
   'e2e/row216-delete-object.spec.ts',
   'e2e/row216b-delete-fixes.spec.ts',
+  'e2e/row238-detail-save.spec.ts',
 ]
 
 // Explicit compose targeting. The default keeps `just up` and CI on the
@@ -290,6 +291,7 @@ const measuredSeconds = {
   'e2e/row213b-add-view-clone.spec.ts': 35,
   'e2e/row216-delete-object.spec.ts': 8,
   'e2e/row216b-delete-fixes.spec.ts': 21,
+  'e2e/row238-detail-save.spec.ts': 45,
 }
 
 const reseedSeconds = 4
