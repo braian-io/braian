@@ -2112,10 +2112,13 @@ export function GraphMap({
       // fullscreen fit here still sees the large canvas and leaves the wrong k.
       sheetStableRef.current = false
       chromeMeasuredRef.current = false
-      requestAnimationFrame(() => {
+      window.setTimeout(() => {
+        if (movedRef.current) return
         requestSystemFitRef.current('resize')
         requestSystemFitRef.current('sheet')
-      })
+        // Fall back to a direct fit once the sheet box and pane have settled.
+        apiRef.current.fit()
+      }, 480)
       return
     }
     requestSystemFitRef.current('fullscreen')
