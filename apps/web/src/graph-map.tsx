@@ -40,7 +40,7 @@ import {
 } from './graph-scene'
 import {
   chromeMeasureReady,
-  chromeSheetBoxStable,
+  chromeSheetBoxSettled,
   createFitScheduler,
   detailPlacement,
   fitCameraWithLabels,
@@ -87,9 +87,11 @@ type Marker = {
 const NO_GRAPH: Json = {}
 
 // How long the Event D observer waits (after a rAF) before accepting an
-// unchanged inspector box as the settled sheet. Two frames, not the long
-// content-growth waits the fit scheduler uses elsewhere.
-const SHEET_QUIET_MS = 34
+// unchanged inspector box as the settled sheet. Long enough that a late name
+// or caption reflow cannot slip between two otherwise identical layouts, but
+// far shorter than post-settle content growth (add-link, expand), which must
+// never refit an untouched camera.
+const SHEET_QUIET_MS = 160
 
 /**
  * Object, model-type, attribute value and structure nodes can open their own
@@ -1328,8 +1330,13 @@ export function GraphMap({
       const extents = nodes.map((node) => {
         const measured = context.measureText(node.caption).width
         // Draw hides a caption wider than the pane, so it must not shrink the
-        // fit just to reserve room for a label that is never painted.
-        const captionWidth = measured + 8 > captionPaneWidth ? 0 : measured
+        // fit just to reserve room for a label that is never painted. Only
+        // trust that measurement once the web font is ready: a fallback font
+        // can measure a long name like "Dark chocolate 70%" wider than the
+        // pane and drop a caption that actually fits (and is then culled from
+        // the paint). Until then keep the measured width rather than excluding
+        // the caption; a later fonts.ready fit remeasures it.
+        const captionWidth = fontsReady() && measured + 8 > captionPaneWidth ? 0 : measured
         return {
           x: node.x!,
           y: node.y!,
@@ -1957,7 +1964,35 @@ export function GraphMap({
       // previous stable box, and wait for this sheet to settle. The `sheet`
       // request below is scheduled async, so it reads the reset flag.
       sheetStableRef.current = false
+      // The first box is only the settled sheet once the load's names and
+      // captions are ready: a late name reflow can pass through a short quiet
+      // window between two otherwise identical layouts. Only then may the box
+      // hold still for the longer quiet window and freeze the free frame.
+      const namesReady = () =>
+        pendingNamesRef.current === '' &&
+        fontsReady() &&
+        labelsDrawnRef.current === captionSignature(simRef.current?.nodes() ?? [])
       let candidate: Box | null = null
+      const arm = () => {
+        quietTimer = setTimeout(() => {
+          quietTimer = undefined
+          const next = canvasRef.current
+          if (!next || sheetStableRef.current) return
+          if (!namesReady()) {
+            // Names are still resolving or the current captions have not been
+            // measured: the card can still grow. Re-check rather than accept a
+            // box that is about to reflow. A later resize cancels this timer.
+            arm()
+            return
+          }
+          const now = measureChromeBox(next, inspectorRef.current)
+          if (chromeSheetBoxSettled({ previous: candidate, current: now, quiet: true, namesReady: true })) {
+            sheetStableRef.current = true
+            requestSystemFitRef.current('sheet')
+            observer?.disconnect()
+          }
+        }, SHEET_QUIET_MS)
+      }
       observer = new ResizeObserver(() => {
         const canvas = canvasRef.current
         if (!canvas || sheetStableRef.current) return
@@ -1969,17 +2004,7 @@ export function GraphMap({
         // ends it is the settled sheet, not a mid-transition height.
         quietFrame = requestAnimationFrame(() => {
           quietFrame = null
-          quietTimer = setTimeout(() => {
-            quietTimer = undefined
-            const next = canvasRef.current
-            if (!next || sheetStableRef.current) return
-            const now = measureChromeBox(next, inspectorRef.current)
-            if (chromeSheetBoxStable({ previous: candidate, current: now, quiet: true })) {
-              sheetStableRef.current = true
-              requestSystemFitRef.current('sheet')
-              observer?.disconnect()
-            }
-          }, SHEET_QUIET_MS)
+          arm()
         })
       })
       for (const element of [inspectorRef.current, legendRef.current]) {

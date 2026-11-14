@@ -192,6 +192,26 @@ export function chromeSheetBoxStable(input: {
   return input.previous.width === input.current.width && input.previous.height === input.current.height
 }
 
+/**
+ * The first measured bottom-sheet box is only the settled sheet once the load's
+ * names and captions are ready (`namesReady`) and the box has stopped moving
+ * for the quiet window. While a late name or caption can still reflow the card
+ * the current box is not final and must not freeze the free frame: accepting it
+ * would fit a taller free frame and settle on a different zoom than Close full
+ * size, which already has the names. After the box is accepted, later growth is
+ * still content, not a viewport change (see `chromeResizeNeedsFit`).
+ */
+export function chromeSheetBoxSettled(input: {
+  previous: Box | null | undefined
+  current: Box | null | undefined
+  quiet: boolean
+  /** True once no name is pending and the current captions have been measured. */
+  namesReady: boolean
+}): boolean {
+  if (!input.namesReady) return false
+  return chromeSheetBoxStable({ previous: input.previous, current: input.current, quiet: input.quiet })
+}
+
 export type FitScheduler = {
   request: (event: SystemFitEvent) => void
   cancel: () => void

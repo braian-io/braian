@@ -6,6 +6,7 @@ import {
   SHEET_SWIPE_PX,
   chromeMeasureReady,
   chromeResizeNeedsFit,
+  chromeSheetBoxSettled,
   chromeSheetBoxStable,
   clampSheetBoxes,
   createFitScheduler,
@@ -357,6 +358,36 @@ describe('fitting measured captions', () => {
     expect(
       chromeResizeNeedsFit({ event: 'sheet', placement: 'sheet', inspector: grown, sheetMeasured: true }),
       'a grown sheet after the baseline is frozen must not refit',
+    ).toBe(false)
+  })
+
+  it('does not settle the first sheet box while a name or caption is still pending', () => {
+    const settled = { x: 8, y: 420, width: 214, height: 212 }
+    expect(
+      chromeSheetBoxSettled({ previous: settled, current: settled, quiet: true, namesReady: false }),
+      'a late name can still reflow the card',
+    ).toBe(false)
+    expect(
+      chromeSheetBoxSettled({ previous: settled, current: settled, quiet: false, namesReady: true }),
+      'the quiet window has not elapsed',
+    ).toBe(false)
+    expect(
+      chromeSheetBoxSettled({ previous: null, current: settled, quiet: true, namesReady: true }),
+      'a first box with no earlier observation is not settled',
+    ).toBe(false)
+  })
+
+  it('settles the first sheet box only once names are ready and the box is unchanged', () => {
+    const settled = { x: 8, y: 420, width: 214, height: 212 }
+    expect(chromeSheetBoxSettled({ previous: settled, current: settled, quiet: true, namesReady: true })).toBe(
+      true,
+    )
+    // Names still resolving make the same box not settled, but a grown box
+    // after names resolve is still content, never a refit.
+    const grown = { x: 8, y: 372, width: 214, height: 260 }
+    expect(
+      chromeSheetBoxSettled({ previous: settled, current: grown, quiet: true, namesReady: true }),
+      'a late growth is content, not a new sheet box (row 128e stay-put)',
     ).toBe(false)
   })
 
