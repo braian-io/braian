@@ -1359,16 +1359,31 @@ export function GraphMap({
               }
             }
           } else {
-            mid = placeEdgeLabel(
-              geometry.from,
-              geometry.control,
-              geometry.to,
-              { width: boxW, height: boxH },
-              labelNodes,
-              placedEdgeLabels,
-              activeEndpoint ? [] : captionObstacles,
-            )
-            box = { x: mid.x - boxW / 2, y: mid.y - boxH / 2, width: boxW, height: boxH }
+            const pickWideEdgeLabel = (avoid: EdgeLabelBox[]) => {
+              const point = placeEdgeLabel(
+                geometry.from,
+                geometry.control,
+                geometry.to,
+                { width: boxW, height: boxH },
+                labelNodes,
+                placedEdgeLabels,
+                avoid,
+              )
+              return {
+                point,
+                box: { x: point.x - boxW / 2, y: point.y - boxH / 2, width: boxW, height: boxH },
+              }
+            }
+            let picked = pickWideEdgeLabel(activeEndpoint ? [] : captionObstacles)
+            if (
+              activeEndpoint &&
+              (placedEdgeLabels.some((other) => boxOverlap(picked.box, other) > 0) ||
+                labelNodes.some((node) => discOverlap(picked.box, node) > 0))
+            ) {
+              picked = pickWideEdgeLabel(captionObstacles)
+            }
+            mid = picked.point
+            box = picked.box
             if (placedEdgeLabels.some((other) => boxOverlap(box, other) > 0)) return
             if (labelNodes.some((node) => discOverlap(box, node) > 0)) return
           }
