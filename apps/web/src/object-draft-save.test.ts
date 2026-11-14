@@ -7,10 +7,14 @@ import {
   stageObjectCell,
 } from './object-draft'
 import {
+  DRAFT_SAVE_IN_FLIGHT,
   draftDiscardPlan,
   draftSavePlan,
+  isDraftSaveInFlight,
+  objectDraftSaving,
   runDraftDiscard,
   runDraftSave,
+  subscribeObjectDraftSaving,
 } from './object-draft-save'
 import type { IndexedProposalCell, ProposalMembership } from './review-cells'
 
@@ -195,6 +199,41 @@ describe('partial and transport failures', () => {
     const reason = await runDraftSave(humanPlan(['obj-1'], { 'obj-1': 1 }), new QueryClient())
     expect(reason).toContain('newer revision')
     expect(objectDraftCells('obj-1')[0]?.proposedText).toBe('One')
+  })
+
+  it('rejects a concurrent save with the in-flight constant, not an empty success', async () => {
+    let resolve: ((value: Json) => void) | undefined
+    mock.methods.patch.mockImplementation(() => new Promise((done) => { resolve = done as (value: Json) => void }))
+    stage('obj-1', 'First')
+    const client = new QueryClient()
+    const first = runDraftSave(humanPlan(['obj-1'], { 'obj-1': 1 }), client)
+    await new Promise((done) => setTimeout(done, 0))
+
+    const second = await runDraftSave(humanPlan(['obj-1'], { 'obj-1': 1 }), client)
+    expect(second).toBe(DRAFT_SAVE_IN_FLIGHT)
+    expect(isDraftSaveInFlight(second)).toBe(true)
+    expect(second).not.toBe('')
+    expect(mock.methods.patch).toHaveBeenCalledTimes(1)
+
+    resolve?.({ id: 'obj-1', version: 2, values: {} })
+    expect(await first).toBe('')
+    expect(objectDraftCells('obj-1')).toHaveLength(0)
+  })
+
+  it('notifies subscribers when a save starts and finishes', async () => {
+    let resolve: ((value: Json) => void) | undefined
+    mock.methods.patch.mockImplementation(() => new Promise((done) => { resolve = done as (value: Json) => void }))
+    stage('obj-1', 'One')
+    const seen: boolean[] = []
+    const stop = subscribeObjectDraftSaving(() => seen.push(objectDraftSaving()))
+    const running = runDraftSave(humanPlan(['obj-1'], { 'obj-1': 1 }), new QueryClient())
+    expect(objectDraftSaving()).toBe(true)
+    await new Promise((done) => setTimeout(done, 0))
+    resolve?.({ id: 'obj-1', version: 2, values: {} })
+    expect(await running).toBe('')
+    expect(objectDraftSaving()).toBe(false)
+    expect(seen).toEqual([true, false])
+    stop()
   })
 
   it('keeps an edit typed while the request is in flight', async () => {

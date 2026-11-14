@@ -63,7 +63,8 @@ import {
   subscribeObjectDrafts,
 } from './object-draft'
 import { CellDiff, ObjectDraftBar, UnmappedDraftLinks } from './object-draft-bar'
-import { draftSavePlan, runDraftDiscard, runDraftSave } from './object-draft-save'
+import { draftSavePlan, isDraftSaveInFlight, runDraftDiscard, runDraftSave } from './object-draft-save'
+import { useObjectDraftSaving } from './use-object-draft-saving'
 import { useOpenObjectProposals } from './use-open-proposals'
 import { shouldHoldTablePaint, shouldRefreshTableSnapshot } from './table-live-paint'
 import { searchPeerArticles, type PeerPickOption } from './peer-search'
@@ -244,6 +245,7 @@ export function ObjectTable({
   const editingOriginalRef = useRef('')
   const skipBlurCommitRef = useRef(false)
   const drafts = useSyncExternalStore(subscribeObjectDrafts, getObjectDraftSnapshot, getObjectDraftSnapshot)
+  const draftSaving = useObjectDraftSaving()
   const openProposals = useOpenObjectProposals()
   const queryClient = useQueryClient()
   const parent = useRef<HTMLDivElement>(null)
@@ -1888,6 +1890,7 @@ export function ObjectTable({
         canDiscard={tableReview.canDiscard}
         saveReason={tableReview.saveReason}
         discardReason={tableReview.discardReason}
+        pending={draftSaving}
         onSave={() => {
           const plan = draftSavePlan({
             objectIds: tableObjectIds,
@@ -1900,6 +1903,7 @@ export function ObjectTable({
             scope: [...visibleIds],
           })
           void runDraftSave(plan, queryClient, viewingAgentRunId() ?? '').then((reason) => {
+            if (isDraftSaveInFlight(reason)) return
             if (reason) reportWriteError(new Error(reason))
             else session.push(copy.saved)
           })
@@ -2794,6 +2798,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
     enabled: Boolean(session.objectId),
   })
   const drafts = useSyncExternalStore(subscribeObjectDrafts, getObjectDraftSnapshot, getObjectDraftSnapshot)
+  const draftSaving = useObjectDraftSaving()
   const openProposals = useOpenObjectProposals()
   const me = useQuery({ queryKey: ['me'], queryFn: () => api.get('/v1/me'), retry: false })
   const [error, setError] = useState('')
@@ -2913,22 +2918,25 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
     stale: (draftBaseVersion(objectId) != null && draftBaseVersion(objectId) !== serverVersion)
       || (localCells.length === 0 && proposalCells.some((cell) => cell.stale)),
     conflict: localCells.length === 0 && proposalCells.some((cell) => cell.conflict),
-    validationErrors: error ? [error] : [],
+    // A failed save is displayed as its own error and must not block retry.
+    validationErrors: [],
     roleCanWrite: me.data ? roleCanWrite(me.data.role) : true,
   })
   const save = () => {
+    setError('')
     const plan = draftSavePlan({
       objectIds: [objectId],
       serverVersions: { [objectId]: serverVersion },
       principal: me.data?.kind === 'agent' ? 'agent' : 'human',
       fileAsProposal: Boolean(viewingAgentRunId()),
       roleCanWrite: me.data ? roleCanWrite(me.data.role) : true,
-      validationErrors: error ? [error] : [],
+      validationErrors: [],
       proposals: proposalCells,
       meta: { [objectId]: { key: label, type: String(object.data?.type ?? '') } },
       scope: [objectId],
     })
     void runDraftSave(plan, queryClient, viewingAgentRunId() ?? '').then((reason) => {
+      if (isDraftSaveInFlight(reason)) return
       if (reason) setError(reason)
       else {
         setError('')
@@ -3102,6 +3110,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
           canDiscard={detailReview.canDiscard}
           saveReason={detailReview.saveReason}
           discardReason={detailReview.discardReason}
+          pending={draftSaving}
           onSave={save}
           onDiscard={() => {
             void runDraftDiscard({

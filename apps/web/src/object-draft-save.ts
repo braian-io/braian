@@ -172,10 +172,29 @@ export function draftDiscardPlan(input: {
   return { clear, discard, reason: '' }
 }
 
+/** Returned instead of '' when another save is already running. */
+export const DRAFT_SAVE_IN_FLIGHT = '__braian_draft_save_in_flight__'
+
+export function isDraftSaveInFlight(reason: string): boolean {
+  return reason === DRAFT_SAVE_IN_FLIGHT
+}
+
 let saving = false
+const savingListeners = new Set<() => void>()
+
+function setSaving(next: boolean): void {
+  if (saving === next) return
+  saving = next
+  for (const listener of savingListeners) listener()
+}
 
 export function objectDraftSaving(): boolean {
   return saving
+}
+
+export function subscribeObjectDraftSaving(listener: () => void): () => void {
+  savingListeners.add(listener)
+  return () => savingListeners.delete(listener)
 }
 
 export async function runDraftDiscard(input: {
@@ -221,10 +240,10 @@ export async function runDraftSave(
   queryClient: QueryClient,
   agentRunId = '',
 ): Promise<string> {
-  if (saving) return ''
+  if (saving) return DRAFT_SAVE_IN_FLIGHT
   const blocked = items.find((item) => item.kind === 'blocked')
   if (blocked && blocked.kind === 'blocked') return blocked.reason
-  saving = true
+  setSaving(true)
   const errors: string[] = []
   try {
     for (const item of items) {
@@ -283,6 +302,6 @@ export async function runDraftSave(
     }
     return errors.filter(Boolean).join('; ')
   } finally {
-    saving = false
+    setSaving(false)
   }
 }

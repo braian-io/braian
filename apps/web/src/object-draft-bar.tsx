@@ -96,7 +96,7 @@ export function ObjectDraftBar({
         title={saveReason || undefined}
         onClick={onSave}
       >
-        {copy.reviewAndSave}
+        {pending ? copy.saving : copy.reviewAndSave}
       </Button>
     </div>
   )
