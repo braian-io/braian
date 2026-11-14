@@ -151,10 +151,16 @@ export type Scene = { nodes: SceneNode[]; edges: SceneEdge[] }
  * keeps a pending caption in the sim; link peers join once their names are known
  * so a narrow pane does not crowd out structure labels such as Food.
  */
-export function placedSceneNodes(scene: Scene, focusKey: string): Scene {
-  const nodes = scene.nodes.filter(
-    (node) => !(node.kind === 'object' && node.rawCaption) || node.id === focusKey,
-  )
+export function placedSceneNodes(
+  scene: Scene,
+  focusKey: string,
+  known: Record<string, KnownObject> = {},
+): Scene {
+  const nodes = scene.nodes.filter((node) => {
+    if (!(node.kind === 'object' && node.rawCaption)) return true
+    if (node.id === focusKey) return true
+    return Boolean(node.objectId && known[node.objectId]?.name)
+  })
   const ids = new Set(nodes.map((node) => node.id))
   return {
     nodes,
