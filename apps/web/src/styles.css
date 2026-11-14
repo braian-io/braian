@@ -1665,6 +1665,16 @@ canvas.graph {
 canvas.graph:focus-visible,
 canvas.graph:focus { outline: 2px solid var(--accent); outline-offset: -2px; }
 canvas.graph.panning { cursor: grabbing; }
+/* DOM mirror of the painted captions so assistive tests and menus can measure
+   the real label box. Canvas text has no element of its own. */
+.graph-labels { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+.graph-label {
+  position: absolute;
+  visibility: hidden;
+  font: 12px "Inter Variable", Inter, sans-serif;
+  line-height: 16px;
+  white-space: pre;
+}
 /* Visible focus ring for the a11y node button, drawn around the canvas node. */
 .graph-focus-ring {
   position: absolute;

@@ -1,7 +1,7 @@
 import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation } from 'd3-force'
 import { describe, expect, it } from 'vitest'
 import type { Json } from './api'
-import { buildScene, capScene, mergeScene, nodeMark, nodeRadius, relationLabel, sentenceCaseLabel, structureCaption, visibleLabelIds } from './graph-scene'
+import { buildScene, capScene, mergeScene, nodeMark, nodeRadius, relationLabel, sentenceCaseLabel, structureCaption, visibleCaptionIds, visibleLabelIds } from './graph-scene'
 
 const defs: Json = {
   types: [{ key: 'article', labels: { en: 'Article' } }, { key: 'product', labels: { en: 'Product' } }],
@@ -90,6 +90,43 @@ describe('graph marks', () => {
       0.4,
     )
     expect([...zoomedOut]).toEqual(['object'])
+  })
+
+  it('makes an active value chip yield to an overlapping shown name', () => {
+    const name = { id: 'object:014', priority: 3, kind: 'object' as const, left: 0, top: 0, right: 80, bottom: 16 }
+    const chip = { id: 'value:014:carbohydrates', priority: 5, kind: 'value' as const, left: 30, top: 2, right: 120, bottom: 18 }
+    const shown = visibleCaptionIds([name, chip], 1, { paneWidth: 230 })
+    expect(shown.has('object:014'), 'the shown name keeps its caption').toBe(true)
+    expect(shown.has('value:014:carbohydrates'), 'the active chip still yields').toBe(false)
+    expect(
+      [...visibleLabelIds([name, chip], 1)],
+      'the collision pass ranks value chips below real names',
+    ).toEqual(['object:014'])
+  })
+
+  it('keeps a caption wider than the pane out without dropping a clamped name', () => {
+    const name = { id: 'article', priority: 5, left: 10, top: 10, right: 239, bottom: 26 }
+    const chip = { id: 'value', priority: 0, left: 20, top: 10, right: 260, bottom: 26 }
+    const shown = visibleCaptionIds([name, chip], 1, { paneWidth: 240 })
+    expect(shown.has('article'), 'a 229 px name fits a 240 px pane').toBe(true)
+    expect(shown.has('value'), 'a 240 px chip is clipped by the pane').toBe(false)
+  })
+
+  it('keeps a 229 px name in a 230 px pane when no edge label covers it', () => {
+    const name = { id: 'article', priority: 5, left: 0.5, top: 10, right: 229.5, bottom: 26 }
+    const shown = visibleCaptionIds([name], 1, { paneWidth: 230 })
+    expect(shown.has('article'), 'the hair-width pane does not drop the clamped name').toBe(true)
+  })
+
+  it('hides a caption under a painted edge label so the label keeps the space', () => {
+    const article = { id: 'article', priority: 5, left: 10, top: 10, right: 60, bottom: 26 }
+    const value = { id: 'value', priority: 0, left: 70, top: 10, right: 110, bottom: 26 }
+    const shown = visibleCaptionIds([article, value], 1, {
+      paneWidth: 400,
+      edgeLabels: [{ left: 20, top: 12, right: 50, bottom: 24 }],
+    })
+    expect(shown.has('article')).toBe(false)
+    expect(shown.has('value')).toBe(true)
   })
 })
 
