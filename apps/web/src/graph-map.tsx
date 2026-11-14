@@ -590,7 +590,6 @@ export function GraphMap({
   const currentIdsRef = useRef('')
   // The caption signature whose real label boxes the last draw measured.
   const labelsDrawnRef = useRef('')
-  const shownCaptionIdsRef = useRef<Set<string>>(new Set())
   pendingNamesRef.current = pendingNames
 
   useEffect(() => {
@@ -920,17 +919,7 @@ export function GraphMap({
       simMatchesPlaced() &&
       chromeReady()
 
-    const layoutCaptionsPainted = () => {
-      for (const node of placedRef.current.nodes) {
-        if (isLegendHidden(hiddenRef.current, node) || !node.caption) continue
-        if (node.kind === 'value') continue
-        if (!shownCaptionIdsRef.current.has(node.id)) return false
-      }
-      return true
-    }
-
-    const initialLoadSettled = () =>
-      initialLoadReady() && labelsReady() && layoutCaptionsPainted()
+    const initialLoadSettled = () => initialLoadReady() && labelsReady()
 
     // Freeze the idle-refit baseline only after the first load has genuinely
     // settled. Until then Food and other late nodes/captions may still fit.
@@ -1356,8 +1345,6 @@ export function GraphMap({
           bottom: box.y + box.height,
         })),
       })
-      if (shouldPublish) shownCaptionIdsRef.current = shownCaptionIds
-
       for (const { node, point, radius } of placedNodes) {
         const emphasized = !hover || highlight.has(node.id)
         const fill = colors.fill[node.kind]
@@ -1478,7 +1465,17 @@ export function GraphMap({
       }
       // A narrow pane with long article captions can need less than the old
       // 0.35 floor to keep the measured labels inside the frame.
-      const camera = fitCameraWithLabels({ frame, nodes: extents, minScale: 0.1 })
+      const narrowSheet = deferInitialFitForSheet(
+        densityRef.current,
+        selectedRef.current,
+        sheetRef.current,
+        placementRef.current,
+      )
+      const camera = fitCameraWithLabels({
+        frame,
+        nodes: extents,
+        minScale: narrowSheet ? 0.08 : 0.1,
+      })
       if (!camera) return false
       transform.k = camera.k
       transform.x = camera.x
