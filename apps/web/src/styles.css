@@ -444,6 +444,23 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
   flex-direction: column;
 }
 .split-cell > .pane, .split-cell > .split { flex: 1 1 auto; min-width: 0; min-height: 0; height: 100%; width: 100%; }
+/* A table beside Detail keeps a readable floor; the Detail pane gives way instead. */
+.split[data-has-detail='true'] { container-type: inline-size; container-name: detail-split; }
+/* Only a wide split can afford the floor, and only for an active table that does not wrap a nested split. */
+@container detail-split (min-width: 640px) {
+  .split-cell:has(.pane-tab[data-view-type='object_table'].active):not(:has(.split)) {
+    min-width: 440px;
+  }
+}
+/* A table that shares its split with a direct Detail pane gives way to it. */
+.split:has(> .split-cell > .pane .pane-tab[data-view-type='object_detail'])
+  > .split-cell:has(.pane-tab[data-view-type='object_table'].active):not(:has(.split)) {
+  min-width: 0;
+}
+/* The Detail leaf keeps enough room for a stacked label and the language tag. */
+.split > .split-cell:has(.pane-tab[data-view-type='object_detail'].active):not(:has(.split)) {
+  min-width: 220px;
+}
 .split-divider {
   flex: 0 0 6px;
   position: relative;
@@ -482,6 +499,8 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
   isolation: isolate;
   overflow: hidden;
 }
+/* The pane is a definite grid item, so a Detail pane can answer its own width query. */
+.pane:has(.detail-form) { container-type: inline-size; container-name: detail-pane; }
 /* The active pane is the tab underline, not a second box around the pane. */
 .pane-tabs {
   display: flex;
@@ -1267,6 +1286,7 @@ button.filter-chip:hover:not(.on) {
 .detail-empty ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-1_5); }
 .detail-empty li { display: flex; align-items: center; gap: var(--space-1_5); color: var(--muted); font-size: var(--text-md); }
 .form, .detail-form { display: flex; flex-direction: column; gap: var(--space-2); }
+.detail-form { min-width: 0; width: 100%; }
 .detail-scroll {
   flex: 1 1 auto;
   min-height: 0;
@@ -1281,9 +1301,9 @@ button.filter-chip:hover:not(.on) {
 .field { scroll-margin-bottom: var(--space-3); }
 .detail-head { display: flex; flex-direction: column; gap: var(--space-1_5); padding: var(--space-0_5) var(--space-0_5) 0; }
 .detail-actions { display: flex; gap: var(--space-1); }
-.detail-title { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; }
-.detail-title strong { font-size: var(--text-2xl); font-weight: 600; }
-.detail-id { color: var(--muted); font-size: var(--text-md); font-variant-numeric: tabular-nums; }
+.detail-title { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; flex-wrap: wrap; }
+.detail-title strong { font-size: var(--text-2xl); font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.detail-id { flex: none; color: var(--muted); font-size: var(--text-md); font-variant-numeric: tabular-nums; }
 .detail-meta { margin: 0; color: var(--muted); font-size: var(--text-md); font-variant-numeric: tabular-nums; }
 .field-card {
   background: var(--surface);
@@ -1309,6 +1329,12 @@ button.filter-chip:hover:not(.on) {
 }
 .field { display: grid; grid-template-columns: 120px minmax(0, 1fr); column-gap: var(--space-2_5); align-items: start; }
 .field > label { color: var(--muted); font-size: var(--text-md); text-align: left; padding-top: var(--space-1_5); }
+/* Field labels sit above their values when the measured Detail form is too narrow for both. */
+.detail-form[data-narrow='true'] .field {
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--space-1);
+}
+.detail-form[data-narrow='true'] .field > label { padding-top: 0; }
 .control { min-width: 0; border-radius: var(--r-md); }
 .control input:not([type='checkbox']), .control select, .control textarea, .control .select-trigger { width: 100%; }
 .field-card input,
@@ -1374,8 +1400,8 @@ button.filter-chip:hover:not(.on) {
   width: auto;
   min-width: 0;
 }
-.measure { display: flex; gap: var(--space-1); align-items: center; }
-.measure input { width: 88px; flex: none; }
+.measure { display: flex; flex-wrap: wrap; gap: var(--space-1); align-items: center; min-width: 0; }
+.control .measure input { width: auto; flex: 1 1 88px; min-width: 88px; }
 .choices { display: flex; flex-wrap: wrap; gap: var(--space-1); }
 .choice-chip {
   height: 22px;

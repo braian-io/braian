@@ -92,6 +92,23 @@ Double-clicking a view tab also maximizes it, and double-clicking again restores
 layout. Closing the last view leaves an empty pane with the message `Nothing to
 show`; add a view from the palette to fill it again.
 
+## Detail and the table share space
+
+When an object table and a Detail view sit side by side, the table keeps a usable
+minimum width. The split never shrinks it down to a single column, so the Name column
+stays readable while you work in Detail. The Detail pane takes the rest of the space
+and gives it back when you drag the divider.
+
+Long Detail titles wrap. Every title and single-line field value also carries the
+full text as a tooltip, so a narrow pane never hides the rest of a name or value. In a
+very narrow Detail pane the labels move above their fields instead of squeezing the
+value to one letter, and a language tag stays beside the value rather than replacing
+it.
+
+Measured number fields start at the compact width and grow with the field when the
+pane has room, so a longer number stays readable. The same shared layout and theme
+tokens apply in light and dark theme.
+
 ## Select fields
 
 `Select fields` chooses which columns an object table shows, and in which order.

@@ -237,7 +237,14 @@ test.describe('Select source lists every derivable source (row 103 follow-up)', 
         selection: 'row',
         linkType: 'product_articles',
       })
+      await expect(articles.getByTestId('peer-linked-to')).toContainText('Linked to: Products', { timeout: 30_000 })
       const before = await articles.getByTestId('object-row').allInnerTexts()
+      await waitForSourceState(page, own.workspaceId, articlesId, {
+        kind: 'peer',
+        viewId: productsId,
+        selection: 'row',
+        linkType: 'product_articles',
+      })
       await page.reload()
       await expect(page.getByTestId('workspace')).toBeVisible({ timeout: 60_000 })
       const articlesAfter = pane(page, articlesId)
