@@ -44,6 +44,7 @@ import { EMPTY_CELL } from './fields/qualifiers'
 import { columnPrefsHasOverride, fetchColumnPrefs, isHopPath, orderHiddenToDocument, ensureSystemColumns,
   prefsToOrderHidden, saveColumnPrefsKeepalive, type ColumnPrefsDocument, type SystemViewColumn } from './column-prefs'
 import { columnPrefsMutationKey, columnPrefsQueryKey, resetColumnPrefs, useSaveColumnPrefs } from './column-prefs-mutation'
+import { createTablePrefsSaver, type TablePrefsSnapshot } from './table-prefs-save'
 import { readPathFromDoc, summarizePathValues } from './path-cell'
 import { cellPathValues, fetchPathValues } from './path-values'
 import { applyObjectWrite, currentSearchWaitSeq, reconcileObjectWrite } from './object-write'
@@ -303,23 +304,27 @@ export function ObjectTable({
     return () => clearTimeout(timer)
   }, [filter])
 
+  const latestTableSave = useRef<TablePrefsSnapshot>({
+    view,
+    workspaceId: workspace.id,
+    table: { filter, sort, groupBy, sizes },
+  })
+  latestTableSave.current = {
+    view,
+    workspaceId: workspace.id,
+    table: { filter, sort, groupBy, sizes },
+  }
+  const tableSaver = useRef<ReturnType<typeof createTablePrefsSaver> | null>(null)
+  if (!tableSaver.current) {
+    tableSaver.current = createTablePrefsSaver((body, signal) =>
+      api.post('/v1/views', { body, signal }),
+    )
+  }
+
   useEffect(() => {
     if (workspace.locked) return
-    const timer = setTimeout(() => {
-      const state = { ...view.state, table: { filter, sort, groupBy, sizes } }
-      void api.post('/v1/views', { body: {
-          id: view.id,
-          workspace_id: workspace.id,
-          type: view.type,
-          title: view.title,
-          pane: view.pane ?? 'center',
-          position: view.position ?? 0,
-          state,
-        } }).catch((reason: unknown) => {
-          reportWriteError(reason)
-        })
-    }, 400)
-    return () => clearTimeout(timer)
+    tableSaver.current?.schedule(() => latestTableSave.current)
+    return () => tableSaver.current?.cancel()
   }, [filter, sort, groupBy, sizes, view, workspace])
 
   const prefs = useQuery({
