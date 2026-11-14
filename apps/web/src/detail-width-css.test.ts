@@ -36,8 +36,13 @@ describe('Detail width layout (row 239)', () => {
     expect(css).not.toMatch(/\.detail-form\s*\{[^}]*container-type/)
     expect(css).not.toMatch(/\.detail-form\s*\{[^}]*container-name:\s*detail\b/)
     expect(css).toMatch(
-      /@container detail-pane \(width < 360px\)[\s\S]*?\.detail-form \.field\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/,
+      /\.detail-form\[data-narrow='true'\] \.field\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/,
     )
+    expect(css).toMatch(
+      /\.detail-form\[data-narrow='true'\] \.field\s*\{[^}]*row-gap:\s*var\(--space-1\)/,
+    )
+    expect(css).toMatch(/\.detail-form\[data-narrow='true'\] \.field > label\s*\{[^}]*padding-top:\s*0/)
+    expect(css).not.toMatch(/@container detail-pane/)
   })
 
   it('keeps the language tag beside the value in a narrow pane', () => {

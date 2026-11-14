@@ -1307,11 +1307,12 @@ button.filter-chip:hover:not(.on) {
 }
 .field { display: grid; grid-template-columns: 120px minmax(0, 1fr); column-gap: var(--space-2_5); align-items: start; }
 .field > label { color: var(--muted); font-size: var(--text-md); text-align: left; padding-top: var(--space-1_5); }
-/* Field labels sit above their values when the Detail pane is too narrow for both. */
-@container detail-pane (width < 360px) {
-  .detail-form .field { grid-template-columns: minmax(0, 1fr); row-gap: var(--space-1); }
-  .detail-form .field > label { padding-top: 0; }
+/* Field labels sit above their values when the measured Detail form is too narrow for both. */
+.detail-form[data-narrow='true'] .field {
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--space-1);
 }
+.detail-form[data-narrow='true'] .field > label { padding-top: 0; }
 .control { min-width: 0; border-radius: var(--r-md); }
 .control input:not([type='checkbox']), .control select, .control textarea, .control .select-trigger { width: 100%; }
 .field-card input,

@@ -139,7 +139,23 @@ async function expectReadableDetail(
   await expect(nameField.locator('.lang-tag').first()).toHaveText('en')
   await expect(nameInput).toHaveValue(expected.name)
   expect(await nameInput.getAttribute('title'), 'localized Name tooltip carries the full value').toBe(expected.name)
-  expect((await nameInput.boundingBox())?.width ?? 0, 'localized Name keeps room beside the tag').toBeGreaterThan(120)
+  const nameWidths = await nameField.evaluate((field) => {
+    const form = field.closest('.detail-form') as HTMLElement | null
+    const pane = field.closest('.pane') as HTMLElement | null
+    const input = field.querySelector('.lang-row input') as HTMLElement | null
+    return {
+      pane: pane?.clientWidth ?? -1,
+      form: form?.clientWidth ?? -1,
+      field: (field as HTMLElement).clientWidth,
+      input: input?.clientWidth ?? -1,
+      columns: getComputedStyle(field as HTMLElement).gridTemplateColumns,
+      narrow: form?.dataset.narrow ?? '',
+    }
+  })
+  expect(
+    (await nameInput.boundingBox())?.width ?? 0,
+    `localized Name keeps room beside the tag (${JSON.stringify(nameWidths)})`,
+  ).toBeGreaterThan(120)
 
   const measure = detail.locator('.measure input').first()
   await expect(measure).toBeVisible()

@@ -2804,6 +2804,21 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   const [error, setError] = useState('')
   const [flashId, setFlashId] = useState('')
   const [showMoreFields, setShowMoreFields] = useState(false)
+  const formRef = useRef<HTMLFormElement | null>(null)
+  useLayoutEffect(() => {
+    const form = formRef.current
+    if (!form) return
+    const apply = (width: number) => {
+      form.dataset.narrow = width < 360 ? 'true' : 'false'
+    }
+    apply(form.clientWidth)
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      apply(entry ? entry.contentRect.width : form.clientWidth)
+    })
+    observer.observe(form)
+    return () => observer.disconnect()
+  }, [session.objectId, object.data])
   useEffect(() => onFlash(setFlashId), [])
   useEffect(() => {
     setError('')
@@ -3011,6 +3026,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   }
   return (
     <form
+      ref={formRef}
       className={flashId === session.objectId ? 'detail-form form flash' : 'detail-form form'}
       data-testid="object-detail"
       onSubmit={(event) => {
