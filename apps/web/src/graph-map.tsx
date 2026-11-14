@@ -30,6 +30,7 @@ import {
   nodeMark,
   nodeRadius,
   parseTypedId,
+  placedObjectNamesPending,
   placedSceneNodes,
   searchDocuments,
   visibleCaptionIds,
@@ -793,11 +794,19 @@ export function GraphMap({
       canvas.dataset.settled = 'false'
       canvas.dataset.settling = 'true'
       if (settleHoldTimer !== undefined) clearTimeout(settleHoldTimer)
-      settleHoldTimer = setTimeout(() => {
+      let attempts = 0
+      const schedule = () => {
+        if (!alive || canvas.dataset.settling !== 'true') return
         requestSystemFitRef.current('sheet')
         fitSchedulerRef.current?.request('sheet')
-        settleHoldTimer = setTimeout(releaseSettledHold, 1200)
-      }, 1800)
+        attempts += 1
+        if (attempts >= 40) {
+          releaseSettledHold()
+          return
+        }
+        settleHoldTimer = setTimeout(schedule, attempts === 1 ? 0 : 400)
+      }
+      schedule()
     }
 
     const sim = forceSimulation<SimNode, SimLink>([])
@@ -901,8 +910,7 @@ export function GraphMap({
       const layout = placedRef.current.nodes
       return layout.length === sim.nodes().length && layout.every((node) => simIds.has(node.id))
     }
-    const objectNamesReady = () =>
-      !sceneRef.current.nodes.some((node) => node.kind === 'object' && node.rawCaption)
+    const objectNamesReady = () => !placedObjectNamesPending(placedRef.current.nodes)
 
     // Freeze the idle-refit baseline only after the first load has genuinely
     // settled. Until then Food and other late nodes/captions may still fit.
@@ -1901,7 +1909,7 @@ export function GraphMap({
         drawRef.current(true)
         if (fitAfterRef.current) {
           fitAfterRef.current = false
-          requestSystemFitRef.current(initialSettledRef.current ? 'resize' : 'initial')
+          if (!initialSettledRef.current) requestSystemFitRef.current('initial')
         } else if (!movedRef.current && !initialSettledRef.current) {
           requestSystemFitRef.current('initial')
         }
@@ -2046,7 +2054,7 @@ export function GraphMap({
       loadEnded: initialEndedRef.current,
       namesPending:
         pendingNamesRef.current !== '' ||
-        sceneRef.current.nodes.some((node) => node.kind === 'object' && node.rawCaption) ||
+        placedObjectNamesPending(placedRef.current.nodes) ||
         !layoutReady(),
     })
     if (action === 'none') return

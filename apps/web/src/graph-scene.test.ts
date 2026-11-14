@@ -7,6 +7,7 @@ import {
   mergeScene,
   nodeMark,
   nodeRadius,
+  placedObjectNamesPending,
   placedSceneNodes,
   relationLabel,
   sentenceCaseLabel,
@@ -283,6 +284,11 @@ describe('graph scene', () => {
     expect(capped.capped).toBe(true)
     expect(capped.scene.nodes.map((node) => node.id)).toEqual(['n0', 'n1', 'n2', 'n3'])
     expect(capped.scene.edges.map((edge) => edge.id)).toEqual(['keep'])
+  })
+
+  it('flags unresolved names only among placed layout nodes', () => {
+    expect(placedObjectNamesPending([{ kind: 'object', rawCaption: true }])).toBe(true)
+    expect(placedObjectNamesPending([{ kind: 'object', rawCaption: false }])).toBe(false)
   })
 
   it('keeps only the focus object in the layout while its name resolves', () => {
