@@ -186,6 +186,24 @@ disabled. A second click cannot run another save, so it never reports `Saved` wh
 nothing was saved. When the request finishes, the bar returns to Save and Discard, or
 disappears if the draft is gone.
 
+## Contrast in both themes
+
+Action labels and muted labels stay readable in both themes:
+
+- Primary action buttons (Save, and Save all when it is primary) and danger buttons
+  (Discard, Delete, and Review's Discard all) paint white text on a filled button. In
+  the dark theme the fill keeps white text at or above 4.5:1 at rest and on hover. The
+  fill uses a darker purple and a darker red than the accent and danger text tokens, so
+  focus rings and status colours keep their own values.
+- A selected choice chip shows the ordinary text colour on the dim accent wash. Its
+  text stays at or above 4.5:1 in both themes. An unselected chip keeps the muted text
+  colour and no accent wash.
+- In the light theme, muted field labels and table column headers use a muted colour
+  that stays at or above 4.5:1 on both the surface and the panel backgrounds.
+
+The rules apply to the visible labels, not only to token values: hovering Save,
+Discard, Delete, or Discard all must not lower the contrast below 4.5:1.
+
 ## Related
 
 - [Data sources](/docs/data-sources)
