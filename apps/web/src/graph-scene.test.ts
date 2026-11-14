@@ -142,6 +142,14 @@ describe('graph marks', () => {
     expect(shown.has('value')).toBe(true)
   })
 
+  it('keeps a structure name when a passive edge label overlaps it', () => {
+    const food = { id: 'structure:food', priority: 2, kind: 'structure' as const, left: 10, top: 10, right: 50, bottom: 26 }
+    const shown = visibleCaptionIds([food], 1, {
+      paneWidth: 230,
+      edgeLabels: [{ left: 20, top: 12, right: 55, bottom: 24 }],
+    })
+    expect(shown.has('structure:food')).toBe(true)
+  })
 })
 
 describe('graph scene', () => {

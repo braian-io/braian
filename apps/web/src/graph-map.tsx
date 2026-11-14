@@ -801,7 +801,7 @@ export function GraphMap({
         fitSchedulerRef.current?.request('sheet')
         attempts += 1
         if (attempts >= 150) {
-          if (initialLoadSettled()) releaseSettledHold()
+          releaseSettledHold()
           return
         }
         settleHoldTimer = setTimeout(schedule, attempts === 1 ? 0 : 400)
@@ -2079,6 +2079,12 @@ export function GraphMap({
     fitSchedulerRef.current?.request(event)
   }
   useEffect(() => () => fitSchedulerRef.current?.cancel(), [])
+
+  useEffect(() => {
+    if (movedRef.current || initialSettledRef.current) return
+    if (!deferInitialFitForSheet(densityRef.current, selectedRef.current, sheetRef.current, placementRef.current)) return
+    requestSystemFitRef.current('sheet')
+  }, [known])
 
   useEffect(() => {
     // A caption measured before its web font finished loading is not a final
