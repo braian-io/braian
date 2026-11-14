@@ -1369,8 +1369,10 @@ export function GraphMap({
               activeEndpoint ? [] : captionObstacles,
             )
             box = { x: mid.x - boxW / 2, y: mid.y - boxH / 2, width: boxW, height: boxH }
-            if (placedEdgeLabels.some((other) => boxOverlap(box, other) > 0)) return
-            if (!activeEndpoint && labelNodes.some((node) => discOverlap(box, node) > 0)) return
+            if (!activeEndpoint) {
+              if (placedEdgeLabels.some((other) => boxOverlap(box, other) > 0)) return
+              if (labelNodes.some((node) => discOverlap(box, node) > 0)) return
+            }
           }
           if (typeKey) placedLabelTypes.add(typeKey)
           placedEdgeLabels.push(box)
