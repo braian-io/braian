@@ -1344,8 +1344,6 @@ export function GraphMap({
             const edgeRect = { left: box.x, top: box.y, right: box.x + box.width, bottom: box.y + box.height }
             for (const cap of captionBoxes) {
               if (!protectCaptions.has(cap.id) || !labels.has(cap.id)) continue
-              const structure = cap.kind === 'structure' || cap.kind === 'group'
-              if (!structure && activeEndpoint) continue
               if (
                 labelRectsOverlap(edgeRect, {
                   left: cap.left,
@@ -1382,32 +1380,6 @@ export function GraphMap({
         })
       // Edge labels win the space they need; a caption that would sit under one
       // is hidden instead of stacking on top of it.
-      let showProtect = protectCaptions ? new Set(protectCaptions) : undefined
-      if (showProtect && placedEdgeLabels.length > 0) {
-        for (const cap of captionBoxes) {
-          if (!showProtect.has(cap.id)) continue
-          if (cap.kind === 'structure' || cap.kind === 'group') continue
-          const capRect = {
-            left: cap.left,
-            top: cap.top,
-            right: cap.right,
-            bottom: cap.bottom,
-          }
-          for (const box of placedEdgeLabels) {
-            const edgeRect = {
-              left: box.x,
-              top: box.y,
-              right: box.x + box.width,
-              bottom: box.y + box.height,
-            }
-            if (labelRectsOverlap(edgeRect, capRect)) {
-              showProtect.delete(cap.id)
-              break
-            }
-          }
-        }
-        if (showProtect.size === 0) showProtect = undefined
-      }
       const shownCaptionIds = visibleCaptionIds(captionBoxes, transform.k, {
         paneWidth: width,
         edgeLabels: placedEdgeLabels.map((box) => ({
@@ -1416,7 +1388,7 @@ export function GraphMap({
           right: box.x + box.width,
           bottom: box.y + box.height,
         })),
-        ...(showProtect ? { protectCaptionIds: showProtect } : {}),
+        ...(protectCaptions ? { protectCaptionIds: protectCaptions } : {}),
       })
       for (const { node, point, radius } of placedNodes) {
         const emphasized = !hover || highlight.has(node.id)
