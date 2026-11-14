@@ -1361,33 +1361,34 @@ export function GraphMap({
               }
             }
           } else {
-            const pickWideEdgeLabel = (avoid: EdgeLabelBox[]) => {
-              const point = placeEdgeLabel(
-                geometry.from,
-                geometry.control,
-                geometry.to,
-                { width: boxW, height: boxH },
-                labelNodes,
-                placedEdgeLabels,
-                avoid,
-              )
-              return {
-                point,
-                box: { x: point.x - boxW / 2, y: point.y - boxH / 2, width: boxW, height: boxH },
-              }
-            }
-            let picked = pickWideEdgeLabel(activeEndpoint ? [] : captionObstacles)
-            if (
-              activeEndpoint &&
-              (placedEdgeLabels.some((other) => boxOverlap(picked.box, other) > 0) ||
-                labelNodes.some((node) => discOverlap(picked.box, node) > 0))
-            ) {
-              picked = pickWideEdgeLabel(captionObstacles)
-            }
-            mid = picked.point
-            box = picked.box
-            if (placedEdgeLabels.some((other) => boxOverlap(box, other) > 0)) return
-            if (labelNodes.some((node) => discOverlap(box, node) > 0)) return
+            const placement = placeEdgeLabelWithFallback(
+              activeEndpoint
+                ? {
+                    from: geometry.from,
+                    control: geometry.control,
+                    to: geometry.to,
+                    size: { width: boxW, height: boxH },
+                    nodes: labelNodes,
+                    placed: placedEdgeLabels,
+                    preferred: [],
+                    fallback: namedCaptionObstacles,
+                    active: true,
+                  }
+                : {
+                    from: geometry.from,
+                    control: geometry.control,
+                    to: geometry.to,
+                    size: { width: boxW, height: boxH },
+                    nodes: labelNodes,
+                    placed: placedEdgeLabels,
+                    preferred: captionObstacles,
+                    fallback: captionObstacles,
+                    active: false,
+                  },
+            )
+            if (placement.dropped) return
+            mid = placement.point
+            box = placement.box
           }
           if (typeKey) placedLabelTypes.add(typeKey)
           placedEdgeLabels.push(box)
