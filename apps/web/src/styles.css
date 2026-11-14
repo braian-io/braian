@@ -431,6 +431,10 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
   flex-direction: column;
 }
 .split-cell > .pane, .split-cell > .split { flex: 1 1 auto; min-width: 0; min-height: 0; height: 100%; width: 100%; }
+/* A table beside Detail keeps a readable floor; the Detail pane gives way instead. */
+.split[data-has-detail='true'] > .split-cell:has(.pane-tab[data-view-type='object_table']) {
+  min-width: 440px;
+}
 .split-divider {
   flex: 0 0 6px;
   position: relative;
@@ -1254,6 +1258,14 @@ button.filter-chip:hover:not(.on) {
 .detail-empty ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-1_5); }
 .detail-empty li { display: flex; align-items: center; gap: var(--space-1_5); color: var(--muted); font-size: var(--text-md); }
 .form, .detail-form { display: flex; flex-direction: column; gap: var(--space-2); }
+/* Field labels sit above their values when the Detail pane is too narrow for both. */
+.detail-form { container-type: inline-size; container-name: detail; }
+@container detail (width < 360px) {
+  .field { grid-template-columns: minmax(0, 1fr); row-gap: var(--space-1); }
+  .field > label { padding-top: 0; }
+  .lang-row { flex-wrap: wrap; }
+  .lang-row input, .lang-row textarea { flex-basis: 100%; }
+}
 .detail-scroll {
   flex: 1 1 auto;
   min-height: 0;
@@ -1268,9 +1280,9 @@ button.filter-chip:hover:not(.on) {
 .field { scroll-margin-bottom: var(--space-3); }
 .detail-head { display: flex; flex-direction: column; gap: var(--space-1_5); padding: var(--space-0_5) var(--space-0_5) 0; }
 .detail-actions { display: flex; gap: var(--space-1); }
-.detail-title { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; }
-.detail-title strong { font-size: var(--text-2xl); font-weight: 600; }
-.detail-id { color: var(--muted); font-size: var(--text-md); font-variant-numeric: tabular-nums; }
+.detail-title { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; flex-wrap: wrap; }
+.detail-title strong { font-size: var(--text-2xl); font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.detail-id { flex: none; color: var(--muted); font-size: var(--text-md); font-variant-numeric: tabular-nums; }
 .detail-meta { margin: 0; color: var(--muted); font-size: var(--text-md); font-variant-numeric: tabular-nums; }
 .field-card {
   background: var(--surface);
@@ -1361,8 +1373,8 @@ button.filter-chip:hover:not(.on) {
   width: auto;
   min-width: 0;
 }
-.measure { display: flex; gap: var(--space-1); align-items: center; }
-.measure input { width: 88px; flex: none; }
+.measure { display: flex; flex-wrap: wrap; gap: var(--space-1); align-items: center; min-width: 0; }
+.control .measure input { width: auto; flex: 1 1 88px; min-width: 88px; }
 .choices { display: flex; flex-wrap: wrap; gap: var(--space-1); }
 .choice-chip {
   height: 22px;

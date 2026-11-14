@@ -194,9 +194,11 @@ function SplitNode({ frame, node, path }: { frame: Frame; node: Node; path: numb
     if (!leaf) return null
     return <Pane frame={frame} leaf={{ ...leaf, path }} />
   }
+  const viewTypes = new Map(frame.viewList.map((view) => [view.id, view.type]))
+  const hasDetail = views(node).some((id) => viewTypes.get(id) === 'object_detail')
   const gaps = Math.max(0, node.children.length - 1) * 6
   return (
-    <div className={`split ${node.dir}`} data-path={path.join('.') || 'root'}>
+    <div className={`split ${node.dir}`} data-path={path.join('.') || 'root'} data-has-detail={hasDetail ? 'true' : undefined}>
       {node.children.map((child, index) => (
         <SplitChild key={cellKey(path, index, child)} frame={frame} node={node} child={child} index={index} path={path} gaps={gaps} />
       ))}
@@ -225,7 +227,7 @@ function SplitChild({
       {index > 0 ? (
         <Divider frame={frame} dir={node.dir} index={index - 1} path={path} count={node.children.length} />
       ) : null}
-      <div className="split-cell" style={{ flex: `0 0 ${basis}` }}>
+      <div className="split-cell" style={{ flex: `0 1 ${basis}` }}>
         <SplitNode frame={frame} node={child} path={[...path, index]} />
       </div>
     </>
