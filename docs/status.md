@@ -1,5 +1,55 @@
 # Status 2026-11-13
 
+## Row 238 — Detail and table Save retry and in-flight state (in progress, not merged)
+
+Branch `junior/238-detail-save-flow` starts at `origin/main` `4fcbe4c` and keeps the
+docs-first commit `aea620b` first. The branch is local only, has no upstream yet and is
+**not merged, not deployed and not accepted**. Nothing below describes live behavior.
+
+The product WIP for the four acceptance criteria is finished and committed together with
+the tests and this status note:
+
+- **Failed Save does not lock retry.** `Detail` passes `validationErrors: []` to
+  `reviewCapabilities` / `draftSavePlan`; a server or transport failure is shown only in
+  the existing `data-testid="detail-error"` banner. Save stays enabled for an otherwise
+  valid draft, and the banner clears when a new save starts or the save succeeds. The
+  table already used an empty validation list and still reports through
+  `reportWriteError`/the toast.
+- **In-flight is not success.** `runDraftSave` returns the named
+  `DRAFT_SAVE_IN_FLIGHT` constant instead of `''` when a save is already running.
+  `isDraftSaveInFlight` lets both callers ignore that result, so an overlapping request
+  can never push `Saved`.
+- **Pending reaches the bar.** `setSaving`/`subscribeObjectDraftSaving` expose the
+  in-flight flag; the new `useObjectDraftSaving` hook uses `useSyncExternalStore`, and
+  both table and Detail pass `pending={draftSaving}`. While pending, Save reads
+  `Saving…` and both Save and Discard are disabled.
+- **Both views share the behavior.** The table and Detail use the same constant, the same
+  subscription and the same bar copy.
+
+New `apps/web/e2e/row238-detail-save.spec.ts` covers four cases: a failed Detail Save
+shows the banner and retries successfully, a failed table Save keeps Save enabled and
+retries successfully, and each view shows `Saving…` with both buttons disabled while a
+delayed PATCH is in flight. The in-flight case also force-clicks the disabled button and
+verifies that the activity log gains no `Saved` line. Screenshots of the failed-Detail
+retry state and both in-flight states are written to `apps/web/test-results/row238-shots`
+(ignored by git). The spec is registered in `scripts/e2e.mjs` with a measured weight of
+45 s, which makes the file weight 49 s including the 4 s reseed.
+
+Evidence locally in this worktree:
+
+- `docker run --rm --network none` with the real symlinked `apps/web/node_modules` and
+  `node:22-bookworm`: `./node_modules/.bin/tsc --noEmit` exit 0.
+- Full vitest suite in the same container: **173 files / 1022 tests passed**, including
+  the new `object-draft-bar.test.tsx` (2 tests) and the new in-flight cases in
+  `object-draft-save.test.ts` and `object-draft.test.ts`.
+- `python3 scripts/check-english.py` exit 0 and `git diff --check` exit 0.
+- `sha256sum apps/web/src/data-model.tsx` is
+  `2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`, unchanged.
+
+Playwright was **written but not run locally**: the disk is at 89% and this session did
+not start an isolated Postgres/Typesense/API stack. The end-to-end gate is CI on this
+branch, not the local unit results.
+
 ## Rad 226 — graph-uppföljningen från 128g (inte mergad)
 
 Grenen `junior/226-graph-fixes` utgår från `origin/main` i den här worktreen (`669c84b`, PR #319) som bygger på den begärda basen `03b207b` (PR #318). Den innehåller guide-/statuscommiten, kod-/testcommitarna och den här statusnotisen. Den är **inte mergad, inte deployad och inte accepterad**; inget här ska läsas som att beteendet är live.
