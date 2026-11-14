@@ -2024,6 +2024,7 @@ export function GraphMap({
     )
     if (event === 'sheet' || (event === 'fullscreen' && narrowSheet)) {
       runSystemFitRef.current(event)
+      fitSchedulerRef.current?.request(event)
       return
     }
     fitSchedulerRef.current?.request(event)
