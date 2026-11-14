@@ -117,8 +117,8 @@ export type SystemFitAction = 'none' | 'fit' | 'remap'
 /**
  * Decide what a system-fit request may do. Every event is gated on a complete
  * free frame: the current pane/canvas size is settled, the open (or about to
- * open) bottom card has a real inspector box, and the current captions have
- * been measured. A user camera is always remapped, never fitted. The initial
+ * open) bottom card has a real, settled inspector box, and the current captions
+ * have been measured. A user camera is always remapped, never fitted. The initial
  * event only exists until the idle baseline is frozen; the other three still
  * work after it (Close full size is fullscreen + resize + sheet even after
  * settle).
@@ -131,6 +131,8 @@ export function requestSystemFit(input: {
   bottomCardOpen?: boolean
   /** False until every current caption has a measured box. */
   labelsReady?: boolean
+  /** False while an open bottom sheet is still settling to its final height. */
+  sheetStable?: boolean
   paneReady: boolean
   moved: boolean
   baselineFrozen: boolean
@@ -139,6 +141,7 @@ export function requestSystemFit(input: {
 }): SystemFitAction {
   if (!input.paneReady) return 'none'
   if (input.labelsReady === false) return 'none'
+  if (input.sheetStable === false) return 'none'
   if (!chromeMeasureReady(input.placement, input.inspector, input.bottomCardOpen)) return 'none'
   if (input.event === 'sheet' && input.placement !== 'sheet') return 'none'
   if (input.event === 'initial') {
@@ -167,6 +170,26 @@ export function chromeResizeNeedsFit(input: {
   if (input.sheetMeasured) return false
   if (input.placement !== 'sheet') return false
   return chromeMeasureReady(input.placement, input.inspector)
+}
+
+/**
+ * The first measured bottom-sheet box is only the settled sheet once it has
+ * stopped moving. `previous` is the box the observation before the quiet window
+ * saw, `current` is the box now, and `quiet` is true once a short rAF+timeout
+ * window elapsed without a new size. A mid-transition box (quiet=false) or a
+ * box that has since grown (a late inspector-content change) is not the settled
+ * sheet and must not freeze the free frame: that keeps row 128e stay-put and
+ * makes F5 and Close full size measure the same final sheet.
+ */
+export function chromeSheetBoxStable(input: {
+  previous: Box | null | undefined
+  current: Box | null | undefined
+  quiet: boolean
+}): boolean {
+  if (!input.quiet) return false
+  if (!input.current || input.current.width < 1 || input.current.height < 1) return false
+  if (!input.previous) return false
+  return input.previous.width === input.current.width && input.previous.height === input.current.height
 }
 
 export type FitScheduler = {

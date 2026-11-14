@@ -40,7 +40,7 @@ import {
 } from './graph-scene'
 import {
   chromeMeasureReady,
-  chromeResizeNeedsFit,
+  chromeSheetBoxStable,
   createFitScheduler,
   detailPlacement,
   fitCameraWithLabels,
@@ -85,6 +85,11 @@ type Marker = {
   shown: boolean
 }
 const NO_GRAPH: Json = {}
+
+// How long the Event D observer waits (after a rAF) before accepting an
+// unchanged inspector box as the settled sheet. Two frames, not the long
+// content-growth waits the fit scheduler uses elsewhere.
+const SHEET_QUIET_MS = 34
 
 /**
  * Object, model-type, attribute value and structure nodes can open their own
@@ -526,6 +531,9 @@ export function GraphMap({
   const initialSettledRef = useRef(false)
   const initialEndedRef = useRef(false)
   const chromeMeasuredRef = useRef(false)
+  // False while an open bottom sheet is still settling; the first-fit baseline
+  // must not freeze on a mid-transition height (Event D flips this to true).
+  const sheetStableRef = useRef(false)
   const placementRef = useRef<DetailPlacement>('hidden')
   const sheetRef = useRef<SheetMode>('compact')
   const pendingNamesRef = useRef('')
@@ -572,6 +580,7 @@ export function GraphMap({
   const inspectorRef = useRef<HTMLElement>(null)
   const legendRef = useRef<HTMLDivElement>(null)
   const densityRef = useRef<GraphDensity>('wide')
+  const settledPaneWidthRef = useRef(0)
   const simRef = useRef<Simulation<SimNode, SimLink> | null>(null)
   const drawRef = useRef<(shouldPublish: boolean) => void>(() => {})
   const apiRef = useRef<{
@@ -794,10 +803,16 @@ export function GraphMap({
     const bottomCardOpen = () =>
       bottomCardOpenAt(densityRef.current, selectedRef.current, sheetRef.current, placementRef.current)
 
-    // A `sheet` placement without a measured inspector box is not settled
-    // chrome: the open bottom sheet still has to shrink the free frame.
+    // A bottom sheet is expected when the placement is a sheet or the card is
+    // open while the placement is still resolving (F5). Only then must the
+    // sheet have settled before the chrome counts as ready.
+    const sheetExpected = () => placementRef.current === 'sheet' || bottomCardOpen()
+
+    // A `sheet` placement without a measured, settled inspector box is not
+    // settled chrome: the open bottom sheet still has to shrink the free frame.
     const chromeReady = () =>
       chromeMeasuredRef.current &&
+      (!sheetExpected() || sheetStableRef.current) &&
       chromeMeasureReady(
         placementRef.current,
         measureChromeBox(canvas, inspectorRef.current),
@@ -1304,13 +1319,17 @@ export function GraphMap({
       const width = canvas.clientWidth
       const height = canvas.clientHeight
       if (!nodes.length || width < 20 || height < 20) return false
+      // Caption fit is decided against the settled pane width, never a transient
+      // canvas.clientWidth mid-transition: a long article name that fits in a
+      // 230 px pane must not be dropped from the fit (and then the paint).
+      const captionPaneWidth = settledPaneWidthRef.current > 0 ? settledPaneWidthRef.current : width
       context.save()
       context.font = '12px "Inter Variable", Inter, sans-serif'
       const extents = nodes.map((node) => {
         const measured = context.measureText(node.caption).width
         // Draw hides a caption wider than the pane, so it must not shrink the
         // fit just to reserve room for a label that is never painted.
-        const captionWidth = measured + 8 > width ? 0 : measured
+        const captionWidth = measured + 8 > captionPaneWidth ? 0 : measured
         return {
           x: node.x!,
           y: node.y!,
@@ -1817,6 +1836,7 @@ export function GraphMap({
   const selectedNode = scene.nodes.find((node) => node.id === selected) ?? null
   const density: GraphDensity = pane == null ? 'wide' : graphDensity(pane.width)
   densityRef.current = density
+  settledPaneWidthRef.current = pane?.width ?? 0
   const placement = detailPlacement(density, sheet, Boolean(selectedNode))
   placementRef.current = placement
   const showProperties = propertiesOpen(density, sheet)
@@ -1842,6 +1862,9 @@ export function GraphMap({
         Math.abs(canvas.clientHeight - currentPane.height) <= 1,
     )
     const sim = simRef.current
+    const sheetExpected =
+      placementRef.current === 'sheet' ||
+      bottomCardOpenAt(densityRef.current, selectedRef.current, sheetRef.current, placementRef.current)
     const action = requestSystemFit({
       event,
       placement: placementRef.current,
@@ -1853,6 +1876,7 @@ export function GraphMap({
         placementRef.current,
       ),
       labelsReady: sim ? fontsReady() && labelsDrawnRef.current === captionSignature(sim.nodes()) : false,
+      sheetStable: !sheetExpected || sheetStableRef.current,
       paneReady,
       moved: movedRef.current,
       baselineFrozen: initialSettledRef.current,
@@ -1905,7 +1929,7 @@ export function GraphMap({
 
   useEffect(() => {
     // Event D: a bottom sheet is an overlay, so it appears without resizing the
-    // canvas. The observer may only catch the first measured box for this
+    // canvas. The observer may only catch the first *settled* box for this
     // placement/pane key; after that, inspector growth (add-link, expand, a
     // late name) is content and must never refit an untouched camera. A side
     // card is never observed.
@@ -1913,27 +1937,64 @@ export function GraphMap({
     const previous = chromeKeyRef.current
     const changed = previous !== key
     chromeKeyRef.current = key
-    if (changed && pane && placement !== 'hidden') {
-      if (placement === 'sheet') requestSystemFitRef.current('sheet')
-      else if (previous !== '') requestSystemFitRef.current('resize')
-    }
+
     let observer: ResizeObserver | undefined
+    let quietFrame: number | null = null
+    let quietTimer: ReturnType<typeof setTimeout> | undefined
+    const clearQuiet = () => {
+      if (quietFrame !== null) {
+        cancelAnimationFrame(quietFrame)
+        quietFrame = null
+      }
+      if (quietTimer !== undefined) {
+        clearTimeout(quietTimer)
+        quietTimer = undefined
+      }
+    }
+
     if (placement === 'sheet') {
-      let sheetMeasured = false
+      // A fresh sheet key starts unmeasured: do not gate a later fit on a
+      // previous stable box, and wait for this sheet to settle. The `sheet`
+      // request below is scheduled async, so it reads the reset flag.
+      sheetStableRef.current = false
+      let candidate: Box | null = null
       observer = new ResizeObserver(() => {
         const canvas = canvasRef.current
-        if (!canvas || sheetMeasured) return
+        if (!canvas || sheetStableRef.current) return
         const box = measureChromeBox(canvas, inspectorRef.current)
-        if (!chromeResizeNeedsFit({ event: 'sheet', placement, inspector: box, sheetMeasured })) return
-        sheetMeasured = true
-        requestSystemFitRef.current('sheet')
-        observer?.disconnect()
+        if (!box) return
+        candidate = box
+        clearQuiet()
+        // Wait a frame or two: if the box is unchanged when the quiet window
+        // ends it is the settled sheet, not a mid-transition height.
+        quietFrame = requestAnimationFrame(() => {
+          quietFrame = null
+          quietTimer = setTimeout(() => {
+            quietTimer = undefined
+            const next = canvasRef.current
+            if (!next || sheetStableRef.current) return
+            const now = measureChromeBox(next, inspectorRef.current)
+            if (chromeSheetBoxStable({ previous: candidate, current: now, quiet: true })) {
+              sheetStableRef.current = true
+              requestSystemFitRef.current('sheet')
+              observer?.disconnect()
+            }
+          }, SHEET_QUIET_MS)
+        })
       })
       for (const element of [inspectorRef.current, legendRef.current]) {
         if (element) observer.observe(element)
       }
+    } else {
+      sheetStableRef.current = true
+    }
+
+    if (changed && pane && placement !== 'hidden') {
+      if (placement === 'sheet') requestSystemFitRef.current('sheet')
+      else if (previous !== '') requestSystemFitRef.current('resize')
     }
     return () => {
+      clearQuiet()
       observer?.disconnect()
     }
   }, [placement, pane])

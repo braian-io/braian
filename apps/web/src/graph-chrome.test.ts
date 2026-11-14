@@ -6,6 +6,7 @@ import {
   SHEET_SWIPE_PX,
   chromeMeasureReady,
   chromeResizeNeedsFit,
+  chromeSheetBoxStable,
   clampSheetBoxes,
   createFitScheduler,
   detailPlacement,
@@ -319,6 +320,46 @@ describe('fitting measured captions', () => {
     }
   })
 
+  it('does not accept a mid-transition sheet box as the settled measurement', () => {
+    const mid = { x: 8, y: 548, width: 214, height: 80 }
+    expect(
+      chromeSheetBoxStable({ previous: null, current: mid, quiet: false }),
+      'an 80 px box that is still moving is not stable',
+    ).toBe(false)
+    expect(
+      chromeSheetBoxStable({ previous: mid, current: mid, quiet: false }),
+      'the same 80 px box before the quiet window closes is not stable',
+    ).toBe(false)
+    expect(
+      chromeSheetBoxStable({ previous: null, current: mid, quiet: true }),
+      'a first box with no earlier observation is not yet the settled sheet',
+    ).toBe(false)
+  })
+
+  it('accepts the same box seen again after a quiet window as the first sheet box', () => {
+    const settled = { x: 8, y: 420, width: 214, height: 212 }
+    // The same decision holds for the initial-load path and the fullscreen/
+    // sheet path: stability is only about the box, not the event that asked.
+    expect(chromeSheetBoxStable({ previous: settled, current: settled, quiet: true })).toBe(true)
+    expect(
+      chromeSheetBoxStable({ previous: { ...settled }, current: { ...settled }, quiet: true }),
+      'equal width and height are the same box',
+    ).toBe(true)
+  })
+
+  it('does not refit when the accepted sheet later grows', () => {
+    const settled = { x: 8, y: 420, width: 214, height: 212 }
+    const grown = { x: 8, y: 372, width: 214, height: 260 }
+    expect(
+      chromeSheetBoxStable({ previous: settled, current: grown, quiet: true }),
+      'a late growth is content, not a new sheet box (row 128e stay-put)',
+    ).toBe(false)
+    expect(
+      chromeResizeNeedsFit({ event: 'sheet', placement: 'sheet', inspector: grown, sheetMeasured: true }),
+      'a grown sheet after the baseline is frozen must not refit',
+    ).toBe(false)
+  })
+
   it('fits only on the four explicit events, never a value/content change', () => {
     const complete = {
       placement: 'sheet' as const,
@@ -396,6 +437,30 @@ describe('fitting measured captions', () => {
         `${event} waits for the measured label extents`,
       ).toBe('none')
     }
+  })
+
+  it('waits for the bottom sheet to settle before any fit event runs', () => {
+    const complete = {
+      placement: 'sheet' as const,
+      inspector: { x: 8, y: 420, width: 214, height: 212 },
+      bottomCardOpen: true,
+      labelsReady: true,
+      paneReady: true,
+      moved: false,
+      baselineFrozen: false,
+      loadEnded: true,
+      namesPending: false,
+    }
+    for (const event of ['initial', 'fullscreen', 'resize', 'sheet'] as const) {
+      expect(
+        requestSystemFit({ ...complete, event, sheetStable: false }),
+        `${event} waits for the settled sheet`,
+      ).toBe('none')
+    }
+    expect(
+      requestSystemFit({ ...complete, event: 'fullscreen', sheetStable: true }),
+      'the same settled frame fits once the sheet is stable',
+    ).toBe('fit')
   })
 
   it('does not fit a sheet placement without a real box, even for a resize', () => {
