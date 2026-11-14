@@ -1,4 +1,4 @@
-import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode } from 'react'
+import { useRef, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { Command, CommandInput, CommandList } from '../components/ui/command'
 import { Checkbox } from '../components/ui/checkbox'
 import { Kbd } from '../components/ui/kbd'
@@ -55,6 +55,16 @@ export function FieldPicker({
 }: FieldPickerProps) {
   const selected = Math.min(active, Math.max(0, rows.length - 1))
   const root = `${testPrefix}-mode`
+  /**
+   * Hover may only move the highlight after the pointer actually moves. A cursor
+   * left over a row by a just-closed context menu must not override the keyboard.
+   */
+  const hoverArmed = useRef(false)
+  const onPointerMove = (index: number) => {
+    if (hoverArmed.current) return
+    hoverArmed.current = true
+    onActive(index)
+  }
   return (
     <div className="palette" data-testid={root} data-picker-mode={mode} onMouseDown={onBackdrop}>
       <style>{`
@@ -77,7 +87,10 @@ export function FieldPicker({
         loop={false}
         disablePointerSelection
         onMouseDown={(event) => event.stopPropagation()}
-        onKeyDownCapture={onKeyDown}
+        onKeyDownCapture={(event) => {
+          hoverArmed.current = false
+          onKeyDown(event)
+        }}
       >
         <div className="palette-query">
           {crumbs.length > 0 ? (
@@ -106,7 +119,10 @@ export function FieldPicker({
                 className={index === selected ? 'hit on fields-hit-active' : 'hit'}
                 data-testid={`${testPrefix}-row-${row.id}`}
                 data-active={index === selected ? 'true' : undefined}
-                onMouseEnter={() => onActive(index)}
+                onMouseEnter={() => {
+                  if (hoverArmed.current) onActive(index)
+                }}
+                onMouseMove={() => onPointerMove(index)}
                 onClick={(event) => {
                   event.preventDefault()
                   event.stopPropagation()

@@ -217,6 +217,11 @@ export function FieldsPalette({
   columnsRef.current = columns
   /** Arm outside-dismiss after mount so the opening click cannot close us (Playwright retry / sync paint). */
   const dismissArmed = useRef(false)
+  /**
+   * Hover may only move the highlight after the pointer actually moves. A cursor
+   * left over a row by a just-closed context menu must not override the keyboard.
+   */
+  const hoverArmed = useRef(false)
   useEffect(() => {
     dismissArmed.current = false
     const timer = window.setTimeout(() => {
@@ -826,7 +831,10 @@ export function FieldsPalette({
         loop={false}
         disablePointerSelection
         onMouseDown={(event) => event.stopPropagation()}
-        onKeyDownCapture={onKeyDown}
+        onKeyDownCapture={(event) => {
+          hoverArmed.current = false
+          onKeyDown(event)
+        }}
       >
         <div className="palette-query">
           <span className="crumb" data-testid="fields-crumb" style={{ marginRight: 8, whiteSpace: 'nowrap' }}>
@@ -853,7 +861,14 @@ export function FieldsPalette({
                 className={index === selected ? 'hit on fields-hit-active' : 'hit'}
                 data-testid={`fields-row-${row.id}`}
                 data-active={index === selected ? 'true' : undefined}
-                onMouseEnter={() => setActive(index)}
+                onMouseEnter={() => {
+                  if (hoverArmed.current) setActive(index)
+                }}
+                onMouseMove={() => {
+                  if (hoverArmed.current) return
+                  hoverArmed.current = true
+                  setActive(index)
+                }}
                 onClick={(event) => {
                   event.preventDefault()
                   event.stopPropagation()

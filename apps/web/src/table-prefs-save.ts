@@ -11,7 +11,6 @@ export type TablePrefsView = {
 }
 
 export type TablePrefsTable = {
-  filter: string
   sort: string
   groupBy: string
   sizes: Record<string, number>
@@ -51,7 +50,14 @@ export function tablePrefsBody(snapshot: TablePrefsSnapshot): TablePrefsBody {
     position: view.position ?? 0,
     state: {
       ...view.state,
-      table: { filter: table.filter, sort: table.sort, groupBy: table.groupBy, sizes: table.sizes },
+      table: {
+        // Never persist the live free-text search. Writing an empty filter also
+        // clears a query already saved on a shared view (row 242).
+        filter: '',
+        sort: table.sort,
+        groupBy: table.groupBy,
+        sizes: table.sizes,
+      },
     },
   }
 }

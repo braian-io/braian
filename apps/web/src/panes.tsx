@@ -171,10 +171,13 @@ function orderBase(current: string[]) {
   return current.length > 0 ? current : columns.map((column) => column.id)
 }
 
-function savedTable(view: PanesView) {
+/** Saved table prefs to apply when the view mounts. The free-text quick filter is
+ * never restored from the view row (row 242): a query saved earlier must not hide
+ * rows when the view is opened again. */
+export function savedTable(view: PanesView) {
   const table = (view.state.table as Json | undefined) ?? {}
   return {
-    filter: String(table.filter ?? ''),
+    filter: '',
     sort: String(table.sort ?? 'a_number:asc'),
     groupBy: String(table.groupBy ?? ''),
     order: Array.isArray(table.order) ? table.order.map(String) : columns.map((column) => column.id),
@@ -308,12 +311,12 @@ export function ObjectTable({
   const latestTableSave = useRef<TablePrefsSnapshot>({
     view,
     workspaceId: workspace.id,
-    table: { filter, sort, groupBy, sizes },
+    table: { sort, groupBy, sizes },
   })
   latestTableSave.current = {
     view,
     workspaceId: workspace.id,
-    table: { filter, sort, groupBy, sizes },
+    table: { sort, groupBy, sizes },
   }
   const tableSaver = useRef<ReturnType<typeof createTablePrefsSaver> | null>(null)
   if (!tableSaver.current) {
@@ -326,7 +329,7 @@ export function ObjectTable({
     if (workspace.locked) return
     tableSaver.current?.schedule(() => latestTableSave.current)
     return () => tableSaver.current?.cancel()
-  }, [filter, sort, groupBy, sizes, view, workspace])
+  }, [sort, groupBy, sizes, view, workspace])
 
   const prefs = useQuery({
     queryKey: ['column-prefs', view.id],
