@@ -1323,7 +1323,7 @@ export function GraphMap({
           if (placement.dropped) return
           const mid = placement.point
           const box = placement.box
-          if (protectCaptions) {
+          if (protectCaptions && !activeEndpoint) {
             const edgeRect = { left: box.x, top: box.y, right: box.x + box.width, bottom: box.y + box.height }
             for (const cap of captionBoxes) {
               if (!protectCaptions.has(cap.id) || !labels.has(cap.id)) continue
