@@ -1170,9 +1170,11 @@ export function GraphMap({
         }
       })
       const protectCaptionIds = new Set<string>()
-      if (densityRef.current === 'narrow' && current) protectCaptionIds.add(current)
-      for (const { node } of placedNodes) {
-        if (node.kind === 'structure' || node.kind === 'group') protectCaptionIds.add(node.id)
+      if (densityRef.current === 'narrow') {
+        if (current) protectCaptionIds.add(current)
+        for (const { node } of placedNodes) {
+          if (node.kind === 'structure' || node.kind === 'group') protectCaptionIds.add(node.id)
+        }
       }
       const protectCaptions = protectCaptionIds.size > 0 ? protectCaptionIds : undefined
       // The fit reserved room for every caption it measured, so a hair-width
