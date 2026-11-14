@@ -780,6 +780,21 @@ export function GraphMap({
     let alive = true
     let lastFrame: GraphFrame | null = null
     let settleTimer: ReturnType<typeof setTimeout> | undefined
+    let settleHoldTimer: ReturnType<typeof setTimeout> | undefined
+    const releaseSettledHold = () => {
+      if (settleHoldTimer !== undefined) {
+        clearTimeout(settleHoldTimer)
+        settleHoldTimer = undefined
+      }
+      canvas.dataset.settled = 'true'
+      canvas.dataset.settling = 'false'
+    }
+    const holdSettledUntilFit = () => {
+      canvas.dataset.settled = 'false'
+      canvas.dataset.settling = 'true'
+      if (settleHoldTimer !== undefined) clearTimeout(settleHoldTimer)
+      settleHoldTimer = setTimeout(releaseSettledHold, 2500)
+    }
 
     const sim = forceSimulation<SimNode, SimLink>([])
       .force(
@@ -2076,8 +2091,16 @@ export function GraphMap({
     // observer (D) may supply the complete frame after this; requesting B on
     // mount would be a phantom toggle, so skip it.
     if (lastFullRef.current === full) return
+    const closing = lastFullRef.current && !full
     lastFullRef.current = full
     requestSystemFitRef.current('fullscreen')
+    if (
+      closing &&
+      deferInitialFitForSheet(densityRef.current, selectedRef.current, sheetRef.current, placementRef.current)
+    ) {
+      requestSystemFitRef.current('resize')
+      requestSystemFitRef.current('sheet')
+    }
   }, [full])
 
   useEffect(() => {
