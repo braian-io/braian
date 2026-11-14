@@ -68,7 +68,14 @@ import {
   type SystemFitEvent,
 } from './graph-chrome'
 import { buildModelScene, expandModelType, mergeModelScene } from './graph-model-scene'
-import { curvePoint, edgeLabelMode, placeEdgeLabelWithFallback, type EdgeLabelBox } from './graph-edge-label'
+import {
+  curvePoint,
+  edgeLabelMode,
+  placeEdgeLabel,
+  placeEdgeLabelWithFallback,
+  type EdgeLabelBox,
+  type EdgeLabelNode,
+} from './graph-edge-label'
 import { chooseModelSelection } from './model-selection'
 import { openObjectLabel } from './type-labels'
 import { copy, uiLanguage } from './i18n'
@@ -1257,7 +1264,7 @@ export function GraphMap({
             emphasized,
             priority: activeEndpoint ? 3 : 1,
             typeKey: activeEndpoint
-              ? `${sourceFocus ? geometry.source.id : geometry.target.id}|${link.id}`
+              ? `${sourceFocus ? geometry.source.id : geometry.target.id}|${link.label}`
               : '',
           })
         }
@@ -1306,41 +1313,37 @@ export function GraphMap({
           const widthText = context.measureText(link.label).width
           const boxW = widthText + 12
           const boxH = 16
-          // A selected or hovered label wins space from a hidden value chip,
-          // but it still prefers a slot beside a shown object/type/active name.
-          // If that aside slot hits a node or another label, retry without the
-          // name obstacles (the a7a9792 path): the label is painted and the
-          // covered caption hides in `visibleCaptionIds` (K5). Only stacking on
-          // another painted edge label can still drop it.
-          const placement = placeEdgeLabelWithFallback(
-            activeEndpoint
-              ? {
-                  from: geometry.from,
-                  control: geometry.control,
-                  to: geometry.to,
-                  size: { width: boxW, height: boxH },
-                  nodes: labelNodes,
-                  placed: placedEdgeLabels,
-                  preferred: [],
-                  fallback: [],
-                  active: true,
-                }
-              : {
-                  from: geometry.from,
-                  control: geometry.control,
-                  to: geometry.to,
-                  size: { width: boxW, height: boxH },
-                  nodes: labelNodes,
-                  placed: placedEdgeLabels,
-                  preferred: captionObstacles,
-                  fallback: captionObstacles,
-                  active: false,
-                },
-          )
-          if (placement.dropped) return
-          const mid = placement.point
-          const box = placement.box
+          let mid: { x: number; y: number }
+          let box: EdgeLabelBox
           if (protectCaptions) {
+            const placement = placeEdgeLabelWithFallback(
+              activeEndpoint
+                ? {
+                    from: geometry.from,
+                    control: geometry.control,
+                    to: geometry.to,
+                    size: { width: boxW, height: boxH },
+                    nodes: labelNodes,
+                    placed: placedEdgeLabels,
+                    preferred: [],
+                    fallback: [],
+                    active: true,
+                  }
+                : {
+                    from: geometry.from,
+                    control: geometry.control,
+                    to: geometry.to,
+                    size: { width: boxW, height: boxH },
+                    nodes: labelNodes,
+                    placed: placedEdgeLabels,
+                    preferred: captionObstacles,
+                    fallback: captionObstacles,
+                    active: false,
+                  },
+            )
+            if (placement.dropped) return
+            mid = placement.point
+            box = placement.box
             const edgeRect = { left: box.x, top: box.y, right: box.x + box.width, bottom: box.y + box.height }
             for (const cap of captionBoxes) {
               if (!protectCaptions.has(cap.id) || !labels.has(cap.id)) continue
@@ -1355,6 +1358,19 @@ export function GraphMap({
                 return
               }
             }
+          } else {
+            mid = placeEdgeLabel(
+              geometry.from,
+              geometry.control,
+              geometry.to,
+              { width: boxW, height: boxH },
+              labelNodes,
+              placedEdgeLabels,
+              activeEndpoint ? [] : captionObstacles,
+            )
+            box = { x: mid.x - boxW / 2, y: mid.y - boxH / 2, width: boxW, height: boxH }
+            if (placedEdgeLabels.some((other) => boxOverlap(box, other) > 0)) return
+            if (labelNodes.some((node) => discOverlap(box, node) > 0)) return
           }
           if (typeKey) placedLabelTypes.add(typeKey)
           placedEdgeLabels.push(box)
@@ -1380,16 +1396,31 @@ export function GraphMap({
         })
       // Edge labels win the space they need; a caption that would sit under one
       // is hidden instead of stacking on top of it.
-      const shownCaptionIds = visibleCaptionIds(captionBoxes, transform.k, {
-        paneWidth: width,
-        edgeLabels: placedEdgeLabels.map((box) => ({
-          left: box.x,
-          top: box.y,
-          right: box.x + box.width,
-          bottom: box.y + box.height,
-        })),
-        ...(protectCaptions ? { protectCaptionIds: protectCaptions } : {}),
-      })
+      const shownCaptionIds = protectCaptions
+        ? visibleCaptionIds(captionBoxes, transform.k, {
+            paneWidth: width,
+            edgeLabels: placedEdgeLabels.map((box) => ({
+              left: box.x,
+              top: box.y,
+              right: box.x + box.width,
+              bottom: box.y + box.height,
+            })),
+            protectCaptionIds: protectCaptions,
+          })
+        : (() => {
+            const shown = new Set(labels)
+            for (const cap of captionBoxes) {
+              if (!shown.has(cap.id)) continue
+              const captionBox = {
+                x: cap.left,
+                y: cap.top,
+                width: cap.right - cap.left,
+                height: cap.bottom - cap.top,
+              }
+              if (placedEdgeLabels.some((other) => boxOverlap(captionBox, other) > 0)) shown.delete(cap.id)
+            }
+            return shown
+          })()
       for (const { node, point, radius } of placedNodes) {
         const emphasized = !hover || highlight.has(node.id)
         const fill = colors.fill[node.kind]
@@ -2994,6 +3025,22 @@ async function resolveNames(ids: string[], base: Record<string, KnownObject>) {
   } catch {
     return base
   }
+}
+
+function boxOverlap(a: EdgeLabelBox, b: EdgeLabelBox) {
+  const width = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)
+  const height = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y)
+  return width > 0 && height > 0 ? width * height : 0
+}
+
+function discOverlap(box: EdgeLabelBox, node: EdgeLabelNode) {
+  const closestX = Math.max(box.x, Math.min(node.x, box.x + box.width))
+  const closestY = Math.max(box.y, Math.min(node.y, box.y + box.height))
+  const dx = node.x - closestX
+  const dy = node.y - closestY
+  const distanceSq = dx * dx + dy * dy
+  if (distanceSq >= node.radius * node.radius) return 0
+  return node.radius - Math.sqrt(distanceSq)
 }
 
 function bendOf(id: string, len: number) {
