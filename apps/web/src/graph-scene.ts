@@ -111,7 +111,9 @@ export function visibleCaptionIds(
   for (const box of boxes) {
     if (!shown.has(box.id)) continue
     if (box.right - box.left > options.paneWidth) shown.delete(box.id)
-    else if (edgeLabels.some((other) => boxesOverlap(box, other))) shown.delete(box.id)
+    else if (edgeLabels.some((other) => boxesOverlap(box, other))) {
+      if (box.kind !== 'structure' && box.kind !== 'group') shown.delete(box.id)
+    }
   }
   return shown
 }
