@@ -590,6 +590,7 @@ export function GraphMap({
   const currentIdsRef = useRef('')
   // The caption signature whose real label boxes the last draw measured.
   const labelsDrawnRef = useRef('')
+  const shownCaptionIdsRef = useRef<Set<string>>(new Set())
   pendingNamesRef.current = pendingNames
 
   useEffect(() => {
@@ -919,7 +920,17 @@ export function GraphMap({
       simMatchesPlaced() &&
       chromeReady()
 
-    const initialLoadSettled = () => initialLoadReady() && labelsReady()
+    const layoutCaptionsPainted = () => {
+      for (const node of placedRef.current.nodes) {
+        if (isLegendHidden(hiddenRef.current, node) || !node.caption) continue
+        if (node.kind === 'value') continue
+        if (!shownCaptionIdsRef.current.has(node.id)) return false
+      }
+      return true
+    }
+
+    const initialLoadSettled = () =>
+      initialLoadReady() && labelsReady() && layoutCaptionsPainted()
 
     // Freeze the idle-refit baseline only after the first load has genuinely
     // settled. Until then Food and other late nodes/captions may still fit.
@@ -1345,6 +1356,7 @@ export function GraphMap({
           bottom: box.y + box.height,
         })),
       })
+      if (shouldPublish) shownCaptionIdsRef.current = shownCaptionIds
 
       for (const { node, point, radius } of placedNodes) {
         const emphasized = !hover || highlight.has(node.id)
