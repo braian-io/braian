@@ -917,18 +917,19 @@ export function GraphMap({
       pendingNamesRef.current === '' &&
       objectNamesReady() &&
       simMatchesPlaced() &&
-      chromeReady() &&
-      labelsReady()
+      chromeReady()
+
+    const initialLoadSettled = () => initialLoadReady() && labelsReady()
 
     // Freeze the idle-refit baseline only after the first load has genuinely
     // settled. Until then Food and other late nodes/captions may still fit.
     const scheduleInitialSettle = () => {
       if (initialSettledRef.current || movedRef.current) return
-      if (!initialLoadReady()) return
+      if (!initialLoadSettled()) return
       if (settleTimer !== undefined) clearTimeout(settleTimer)
       settleTimer = setTimeout(() => {
         settleTimer = undefined
-        if (movedRef.current || !initialLoadReady()) return
+        if (movedRef.current || !initialLoadSettled()) return
         initialSettledRef.current = true
         if (idleIdsRef.current == null) idleIdsRef.current = currentIdsRef.current
       }, 500)
@@ -1423,18 +1424,6 @@ export function GraphMap({
       const width = canvas.clientWidth
       const height = canvas.clientHeight
       if (!layoutNodes.length || width < 20 || height < 20) return false
-      if (
-        !initialSettledRef.current &&
-        deferInitialFitForSheet(
-          densityRef.current,
-          selectedRef.current,
-          sheetRef.current,
-          placementRef.current,
-        ) &&
-        !initialLoadReady()
-      ) {
-        return false
-      }
       context.save()
       context.font = '12px "Inter Variable", Inter, sans-serif'
       const captionWidthForScene = (node: SceneNode) => {
@@ -1484,7 +1473,7 @@ export function GraphMap({
       transform.y = camera.y
       lastFrame = frame
       draw(true)
-      if (!initialSettledRef.current && initialLoadReady()) releaseSettledHold()
+      if (!initialSettledRef.current && initialLoadSettled()) releaseSettledHold()
       scheduleInitialSettle()
       return true
     }
