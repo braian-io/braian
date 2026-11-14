@@ -203,6 +203,21 @@ disabled. A second click cannot run another save, so it never reports `Saved` wh
 nothing was saved. When the request finishes, the bar returns to Save and Discard, or
 disappears if the draft is gone.
 
+## Review proposals
+
+When a proposal is open and has pending rows, `Save all` is the primary action. It
+paints as the filled accent button with full opacity; it never looks grey or disabled.
+`Discard all` is the secondary danger action. It keeps its danger treatment so you can
+recognise it, but it does not dominate `Save all`. The command palette uses the same
+`Save all` / `Discard all` hierarchy and order as the Review view.
+
+Discarding a server proposal asks for confirmation first. The dialog shows the
+proposal name and the consequence: the proposal's consequence lines when it has them,
+otherwise the name and a sentence saying that pending rows will be thrown away and the
+proposal will be closed without saving. `Cancel` or dismissing the dialog leaves the
+proposal open and does not discard anything. `Confirm` then runs the same discard path
+as before. `Discard all` never discards silently.
+
 ## Contrast in both themes
 
 Action labels and muted labels stay readable in both themes:

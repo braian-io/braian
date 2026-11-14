@@ -52,6 +52,7 @@ import {
 import { useCatalogsQuery } from './catalog-list'
 import { MASTER_CATALOG_ID } from './catalog-ref'
 import { ProposalBulkActions } from './proposal-actions'
+import { DiscardProposalDialog } from './discard-proposal-dialog'
 import { publishProposal } from './proposal-bus'
 import { modelFocus, openModelDialog, requestDiscardDraft, requestReview, stageModel } from './model-stage'
 import { isStandardAttribute, queueViewType, requestAttributeAction } from './attribute-actions'
@@ -199,6 +200,10 @@ export function CommandPalette({
   const [answer, setAnswer] = useState('')
   const [running, setRunning] = useState(false)
   const [proposal, setProposal] = useState<ProposalPreview | null>(null)
+  const [confirmDiscardProposal, setConfirmDiscardProposal] = useState(false)
+  useEffect(() => {
+    setConfirmDiscardProposal(false)
+  }, [proposal?.id])
   const [editing, setEditing] = useState<number | null>(null)
   const [debouncedQuery, setDebouncedQuery] = useState(query)
   useEffect(() => {
@@ -1482,16 +1487,25 @@ export function CommandPalette({
                     loading={!proposal.status}
                     saveDisabled={!proposal.rows.some((row) => row.status === 'pending')}
                     discardDisabled={!proposal.rows.some((row) => row.status === 'pending')}
-                    discardFirst
                     saveVariant={proposal.rows.some((row) => row.status === 'pending') ? 'primary' : 'default'}
                     saveTestId="palette-save-all"
                     discardTestId="palette-discard-all"
                     reasonTestId="palette-proposal-reason"
                     loadingTestId="palette-proposal-loading"
-                    onDiscard={() => void api.post('/v1/proposals/{id}/discard', { params: { path: { id: proposal.id } } }).then(() => setProposal(null))}
+                    onDiscard={() => setConfirmDiscardProposal(true)}
                     onSave={() => void api.post('/v1/proposals/{id}/accept', { params: { path: { id: proposal.id } }, body: {} }).then(() => { session.setProposalId(proposal.id); setProposal(null); session.push(copy.saved) })}
                   />
                 </div>
+                <DiscardProposalDialog
+                  open={confirmDiscardProposal}
+                  title={proposal.title}
+                  lines={proposal.lines}
+                  onCancel={() => setConfirmDiscardProposal(false)}
+                  onConfirm={() => {
+                    setConfirmDiscardProposal(false)
+                    void api.post('/v1/proposals/{id}/discard', { params: { path: { id: proposal.id } } }).then(() => setProposal(null))
+                  }}
+                />
               </div>
             ) : null}
           </div>

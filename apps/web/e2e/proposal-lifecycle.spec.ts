@@ -11,6 +11,7 @@ const KEY_D = `LIFE-D-${stamp}`
 const KEY_E = `LIFE-E-${stamp}`
 const KEY_F = `LIFE-F-${stamp}`
 const KEY_G = `LIFE-G-${stamp}`
+const KEY_H = `LIFE-H-${stamp}`
 const NAME_A = `Lifecycle A ${stamp}`
 const NAME_B = `Lifecycle B ${stamp}`
 const NAME_C = `Lifecycle C ${stamp}`
@@ -18,6 +19,7 @@ const NAME_D = `Lifecycle D ${stamp}`
 const NAME_E = `Lifecycle E ${stamp}`
 const NAME_F = `Lifecycle F ${stamp}`
 const NAME_G = `Lifecycle G ${stamp}`
+const NAME_H = `Lifecycle H ${stamp}`
 const SAVED_A = `Lifecycle A saved ${stamp}`
 const PROPOSED_B = `Lifecycle B proposed ${stamp}`
 const SAVED_C = `Lifecycle C saved ${stamp}`
@@ -25,6 +27,7 @@ const SAVED_E = `Lifecycle E saved ${stamp}`
 const PROPOSED_D = `Lifecycle D proposed ${stamp}`
 const PROPOSED_F = `Lifecycle F proposed ${stamp}`
 const PROPOSED_G = `Lifecycle G proposed ${stamp}`
+const PROPOSED_H = `Lifecycle H proposed ${stamp}`
 
 const shots = process.env.BRAIAN_SHOTS_DIR
 
@@ -220,7 +223,12 @@ async function expectPendingActions(page: Page) {
   const paint = await settledActionPaint(page)
   expect(paint.save.opacity).toBe(1)
   expect(paint.discard.opacity).toBe(1)
+  expect(paint.save.background, 'Save all is the filled primary accent').toBe('rgb(124, 58, 237)')
   expect(paint.discard.background, 'an enabled Discard all stays danger-coloured').toMatch(/rgb\(251, 113, 133\)|rgb\(192, 35, 62\)/)
+  const order = await review.getByTestId('proposal-actions').evaluate((node) =>
+    [...node.querySelectorAll('[data-testid]')].map((child) => child.getAttribute('data-testid')),
+  )
+  expect(order.indexOf('save-all'), 'Save all comes before the secondary Discard all').toBeLessThan(order.indexOf('discard-all'))
   await expect(review.getByTestId('proposal-actions-reason')).toHaveCount(0)
   await expect(review.getByTestId('proposal-actions')).not.toHaveAttribute('title')
   expect(await save.getAttribute('aria-describedby')).toBeNull()
@@ -328,6 +336,71 @@ test('a scoped Save accepts only the visible row and the hidden row stays review
     }
     if (a) await deleteProduct(page, a.id)
     if (b) await deleteProduct(page, b.id)
+  }
+})
+
+test('Discard all confirms first, Cancel keeps the proposal and Confirm discards it without saving', async ({ page }) => {
+  test.setTimeout(180_000)
+  const title = `Discard confirm ${stamp}`
+  let product: { id: string; version: number } | null = null
+  let proposalId = ''
+  try {
+    await login(page)
+    product = await createProduct(page, KEY_H, NAME_H)
+    const created = await page.request.post('/v1/proposals', {
+      data: {
+        title,
+        rows: [
+          {
+            object_id: product.id,
+            object_key: KEY_H,
+            type_key: PRODUCT_TYPE,
+            base_version: product.version,
+            patch: { values: { name: { en: PROPOSED_H } } },
+          },
+        ],
+      },
+    })
+    expect(created.ok(), await created.text()).toBeTruthy()
+    proposalId = ((await created.json()) as { id: string }).id
+
+    await page.locator('nav.tabs').getByRole('button', { name: /Review/ }).click()
+    const review = page.getByTestId('proposal')
+    await expect(page.getByTestId(`proposal-row-${proposalId}`)).toBeVisible({ timeout: 30_000 })
+    await page.getByTestId(`proposal-row-${proposalId}`).click()
+    await expect(review).toContainText(title)
+    await expectPendingActions(page)
+    if (shots) await review.locator('.toolbar').first().screenshot({ path: `${shots}/row241-pending-save-discard.png` })
+
+    await review.getByTestId('discard-all').click()
+    const confirm = page.getByTestId('discard-all-confirm')
+    await expect(confirm).toBeVisible()
+    await expect(confirm.getByTestId('discard-all-proposal')).toHaveText(title)
+    await expect(confirm.getByTestId('discard-all-consequence')).toHaveText(
+      'Pending rows will be thrown away and the proposal will be closed without saving.',
+    )
+    if (shots) await confirm.screenshot({ path: `${shots}/row241-discard-confirm.png` })
+
+    await confirm.getByTestId('cancel-discard-all').click()
+    await expect(confirm).toHaveCount(0)
+    await expect(review).toContainText(title)
+    expect((await proposalBody(page, proposalId)).status).toBe('open')
+    expect(await objectName(page, product.id)).toBe(NAME_H)
+
+    const discarded = page.waitForResponse(
+      (response) => response.url().includes(`/v1/proposals/${proposalId}/discard`) && response.ok(),
+      { timeout: 30_000 },
+    )
+    await review.getByTestId('discard-all').click()
+    await expect(confirm).toBeVisible()
+    await confirm.getByTestId('confirm-discard-all').click()
+    await discarded
+    await expect(confirm).toHaveCount(0)
+    await expect.poll(async () => (await proposalBody(page, proposalId)).status, { timeout: 30_000 }).toBe('discarded')
+    expect(await objectName(page, product.id), 'discarding never saves the pending values').toBe(NAME_H)
+  } finally {
+    if (proposalId) await page.request.post(`/v1/proposals/${proposalId}/discard`).catch(() => undefined)
+    if (product) await deleteProduct(page, product.id)
   }
 })
 
