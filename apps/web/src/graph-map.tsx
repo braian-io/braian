@@ -836,17 +836,25 @@ export function GraphMap({
 
     const labelsReady = () =>
       fontsReady() && labelsDrawnRef.current === captionSignature(sim.nodes())
+    const objectNamesReady = () => !sim.nodes().some((node) => node.kind === 'object' && node.rawCaption)
 
     // Freeze the idle-refit baseline only after the first load has genuinely
     // settled. Until then Food and other late nodes/captions may still fit.
     const scheduleInitialSettle = () => {
       if (initialSettledRef.current || movedRef.current) return
-      if (!initialEndedRef.current || pendingNamesRef.current !== '' || !chromeReady() || !labelsReady()) return
+      if (
+        !initialEndedRef.current ||
+        pendingNamesRef.current !== '' ||
+        !objectNamesReady() ||
+        !chromeReady() ||
+        !labelsReady()
+      )
+        return
       if (settleTimer !== undefined) clearTimeout(settleTimer)
       settleTimer = setTimeout(() => {
         settleTimer = undefined
         if (movedRef.current || !initialEndedRef.current) return
-        if (pendingNamesRef.current !== '' || !chromeReady() || !labelsReady()) return
+        if (pendingNamesRef.current !== '' || !objectNamesReady() || !chromeReady() || !labelsReady()) return
         initialSettledRef.current = true
         if (idleIdsRef.current == null) idleIdsRef.current = currentIdsRef.current
       }, 500)
@@ -1917,7 +1925,9 @@ export function GraphMap({
       moved: movedRef.current,
       baselineFrozen: initialSettledRef.current,
       loadEnded: initialEndedRef.current,
-      namesPending: pendingNamesRef.current !== '',
+      namesPending:
+        pendingNamesRef.current !== '' ||
+        Boolean(sim?.nodes().some((node) => node.kind === 'object' && node.rawCaption)),
     })
     if (action === 'none') return
     if (action === 'remap') apiRef.current.remap()
