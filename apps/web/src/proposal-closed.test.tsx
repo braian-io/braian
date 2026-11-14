@@ -2,7 +2,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useMemo, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Json } from './api'
@@ -247,6 +247,78 @@ describe('closed proposal bulk actions', () => {
     expect(screen.getByTestId('discard-all').getAttribute('aria-describedby')).toBeNull()
     expect(screen.getByTestId('discard-all').className, 'an enabled Discard all stays danger-coloured').toContain('btn-danger')
     expect(screen.getByTestId('discard-all').className).not.toContain('btn-raised')
+    expect(screen.getByTestId('save-all').className, 'Save all is the primary CTA while a row is pending').toContain('btn-accent')
+    expect(screen.getByTestId('save-all').className).not.toContain('btn-raised')
+  })
+
+  it('makes Save all primary and Discard all secondary danger in the Ctrl+K preview', () => {
+    render(
+      <ProposalBulkActions
+        status="open"
+        rows={[row('r1', 'pending')]}
+        saveDisabled={false}
+        discardDisabled={false}
+        saveVariant="primary"
+        saveTestId="palette-save-all"
+        discardTestId="palette-discard-all"
+        onSave={() => undefined}
+        onDiscard={() => undefined}
+      />,
+    )
+    expect(screen.getByTestId('palette-save-all').className, 'palette Save all uses the same primary rule').toContain('btn-accent')
+    expect(screen.getByTestId('palette-save-all').className).not.toContain('btn-raised')
+    expect(screen.getByTestId('palette-discard-all').className, 'palette Discard all stays secondary danger').toContain('btn-danger')
+    expect(disabled('palette-save-all')).toBe(false)
+    expect(disabled('palette-discard-all')).toBe(false)
+    expect(opacity('palette-save-all')).toBe(1)
+    expect(opacity('palette-discard-all')).toBe(1)
+  })
+
+  it('confirms before discarding and shows the proposal name without consequence lines', async () => {
+    proposal = { id: 'p1', title: 'Agent draft', status: 'open', rows: [row('r1', 'pending')] }
+    render(<Host />)
+    await screen.findByTestId('discard-all')
+    await waitFor(() => expect(disabled('discard-all')).toBe(false))
+    mock.methods.post.mockClear()
+
+    fireEvent.click(screen.getByTestId('discard-all'))
+    const dialog = await screen.findByTestId('discard-all-confirm')
+    expect(within(dialog).getByTestId('discard-all-proposal').textContent).toBe('Agent draft')
+    expect(within(dialog).getByTestId('discard-all-consequence').textContent).toBe(copy.discardProposalFallback)
+    expect(mock.methods.post).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByTestId('cancel-discard-all'))
+    await waitFor(() => expect(screen.queryByTestId('discard-all-confirm')).toBeNull())
+    expect(mock.methods.post).not.toHaveBeenCalled()
+    expect(screen.getByTestId('proposal-actions')).toBeTruthy()
+
+    fireEvent.click(screen.getByTestId('discard-all'))
+    await screen.findByTestId('discard-all-confirm')
+    fireEvent.click(screen.getByTestId('confirm-discard-all'))
+    await waitFor(() =>
+      expect(mock.methods.post).toHaveBeenCalledWith('/v1/proposals/{id}/discard', {
+        params: { path: { id: 'p1' } },
+      }),
+    )
+    await waitFor(() => expect(screen.queryByTestId('discard-all-confirm')).toBeNull())
+  })
+
+  it('shows the consequence lines in the discard confirmation when the proposal has them', async () => {
+    proposal = {
+      id: 'p1',
+      title: 'Agent draft',
+      status: 'open',
+      rows: [row('r1', 'pending')],
+      consequence: { lines: ['Updates 1 product', 'Drops the old name'] },
+    }
+    render(<Host />)
+    await screen.findByTestId('discard-all')
+    await waitFor(() => expect(disabled('discard-all')).toBe(false))
+    fireEvent.click(screen.getByTestId('discard-all'))
+    const dialog = await screen.findByTestId('discard-all-confirm')
+    expect(within(dialog).getByTestId('discard-all-proposal').textContent).toBe('Agent draft')
+    expect(within(dialog).getByTestId('discard-all-consequence').textContent).toContain('Updates 1 product')
+    expect(within(dialog).getByTestId('discard-all-consequence').textContent).toContain('Drops the old name')
   })
 
   it('only reports a genuinely mixed proposal as already closed', () => {

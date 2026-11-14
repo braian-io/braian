@@ -96,6 +96,7 @@ import {
 } from './type-labels'
 import { publishProposal } from './proposal-bus'
 import { ProposalBulkActions } from './proposal-actions'
+import { DiscardProposalDialog } from './discard-proposal-dialog'
 import { acceptPendingLine, pendingLines, pendingRowsForObject, rejectPendingRow } from './proposal-focus'
 import { ImportWorkspace } from './import/view'
 import { rollbackTargetSeq } from './history-rollback'
@@ -3762,8 +3763,10 @@ export function ProposalView({ session }: { session: PanesSession }) {
   const defs = useQuery({ queryKey: ['definitions'], queryFn: () => api.get('/v1/definitions') })
   const [dropped, setDropped] = useState<string[]>([])
   const [error, setError] = useState('')
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
   useEffect(() => {
     setError('')
+    setConfirmDiscard(false)
   }, [session.proposalId])
   useEffect(() => {
     setDropped([])
@@ -3852,9 +3855,18 @@ export function ProposalView({ session }: { session: PanesSession }) {
   const proposalStale = Boolean(proposal.data?.stale)
   const hasPendingRows = rows.some((row) => row.status === 'pending')
   const proposalLoading = proposal.isPending
+  const discardDisabled = accept.isPending || discard.isPending || !hasPendingRows
   const droppedIds = new Set(dropped)
   const saveAll = () => {
     accept.mutate(acceptSelection(rows, objects, defs.data, droppedIds))
+  }
+  const requestDiscard = () => {
+    if (discardDisabled) return
+    setConfirmDiscard(true)
+  }
+  const confirmDiscardProposal = () => {
+    setConfirmDiscard(false)
+    discard.mutate()
   }
   return (
     <div data-testid="proposal">
@@ -3868,9 +3880,18 @@ export function ProposalView({ session }: { session: PanesSession }) {
           rows={rows}
           loading={proposalLoading}
           saveDisabled={loadingObjects || accept.isPending || discard.isPending || proposalStale || !hasPendingRows}
-          discardDisabled={accept.isPending || discard.isPending || !hasPendingRows}
+          discardDisabled={discardDisabled}
+          saveVariant={hasPendingRows ? 'primary' : 'default'}
           onSave={saveAll}
-          onDiscard={() => discard.mutate()}
+          onDiscard={requestDiscard}
+        />
+        <DiscardProposalDialog
+          open={confirmDiscard}
+          title={String(proposal.data?.title ?? '')}
+          lines={consequence}
+          busy={discard.isPending}
+          onCancel={() => setConfirmDiscard(false)}
+          onConfirm={confirmDiscardProposal}
         />
         {error ? <p className="error" data-testid="proposal-error">{error}</p> : null}
         {consequence.length > 0 && session.proposalId ? (
