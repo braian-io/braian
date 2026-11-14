@@ -1171,7 +1171,10 @@ export function GraphMap({
       // The fit reserved room for every caption it measured, so a hair-width
       // pane does not drop a name it clamped inside the frame.
       const labelPaneWidth = settledPaneWidthRef.current > 0 ? settledPaneWidthRef.current : canvas.clientWidth
-      const labels = visibleCaptionIds(captionBoxes, transform.k, { paneWidth: labelPaneWidth })
+      const labels = visibleCaptionIds(captionBoxes, transform.k, {
+        paneWidth: labelPaneWidth,
+        ...(protectCaptions ? { protectCaptionIds: protectCaptions } : {}),
+      })
       // These are the real measured extents for the current captions. A system
       // fit may only reserve their room after this signature is current.
       labelsDrawnRef.current = captionSignature(nodes)
@@ -1309,17 +1312,31 @@ export function GraphMap({
           // name obstacles (the a7a9792 path): the label is painted and the
           // covered caption hides in `visibleCaptionIds` (K5). Only stacking on
           // another painted edge label can still drop it.
-          const placement = placeEdgeLabelWithFallback({
-            from: geometry.from,
-            control: geometry.control,
-            to: geometry.to,
-            size: { width: boxW, height: boxH },
-            nodes: labelNodes,
-            placed: placedEdgeLabels,
-            preferred: namedCaptionObstacles,
-            fallback: activeEndpoint ? [] : captionObstacles,
-            active: activeEndpoint,
-          })
+          const placement = placeEdgeLabelWithFallback(
+            activeEndpoint
+              ? {
+                  from: geometry.from,
+                  control: geometry.control,
+                  to: geometry.to,
+                  size: { width: boxW, height: boxH },
+                  nodes: labelNodes,
+                  placed: placedEdgeLabels,
+                  preferred: [],
+                  fallback: [],
+                  active: true,
+                }
+              : {
+                  from: geometry.from,
+                  control: geometry.control,
+                  to: geometry.to,
+                  size: { width: boxW, height: boxH },
+                  nodes: labelNodes,
+                  placed: placedEdgeLabels,
+                  preferred: namedCaptionObstacles,
+                  fallback: captionObstacles,
+                  active: false,
+                },
+          )
           if (placement.dropped) return
           const mid = placement.point
           const box = placement.box
@@ -1371,6 +1388,7 @@ export function GraphMap({
           right: box.x + box.width,
           bottom: box.y + box.height,
         })),
+        ...(protectCaptions ? { protectCaptionIds: protectCaptions } : {}),
       })
       for (const { node, point, radius } of placedNodes) {
         const emphasized = !hover || highlight.has(node.id)
@@ -1674,6 +1692,7 @@ export function GraphMap({
         sim.alphaTarget(0)
         if (!modelMode) pinRef.current((tick) => tick + 1)
         draw(true)
+        if (dragged) canvas.dataset.settling = 'false'
       }
       mode = 'none'
       dragNode = undefined
