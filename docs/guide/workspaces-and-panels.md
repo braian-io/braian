@@ -172,10 +172,16 @@ cannot be deleted.
   newer local copy wins over an older server copy.
 - An unlocked workspace also saves its canonical layout for everyone. A locked or
   shared workspace keeps layout edits personal.
-- Table filters, sorting, grouping and column widths are saved on the view row and
-  therefore shared in the workspace. Column order and hidden columns are personal
-  preferences. `Reset to default` in the column menu or `Ctrl+K` clears that personal
-  override and restores the view's default columns.
+- Sorting, grouping and column widths are saved on the view row and therefore
+  shared in the workspace. Column order and hidden columns are personal preferences.
+  `Reset to default` in the column menu or `Ctrl+K` clears that personal override and
+  restores the view's default columns.
+- The free-text search in the table toolbar (the quick filter) is not saved as a view
+  preference. Closing and opening the view again, or reloading the page, starts with
+  an empty search box and the full table. While the view stays open, the search stays
+  until you clear it: clear the search box, or press `Clear search` in the empty state
+  when the query matches nothing. The empty state names the query. Press `/` to focus
+  the quick filter.
 - An object selection is not part of the saved view state.
 
 The layout is saved automatically per workspace and per user. Local changes are
