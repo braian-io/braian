@@ -1161,10 +1161,19 @@ export function GraphMap({
           bottom: placement.bottom,
         }
       })
+      const protectCaptionIds = new Set<string>()
+      if (densityRef.current === 'narrow' && current) protectCaptionIds.add(current)
+      for (const { node } of placedNodes) {
+        if (node.kind === 'structure' || node.kind === 'group') protectCaptionIds.add(node.id)
+      }
+      const protectCaptions = protectCaptionIds.size > 0 ? protectCaptionIds : undefined
       // The fit reserved room for every caption it measured, so a hair-width
       // pane does not drop a name it clamped inside the frame.
       const labelPaneWidth = settledPaneWidthRef.current > 0 ? settledPaneWidthRef.current : canvas.clientWidth
-      const labels = visibleCaptionIds(captionBoxes, transform.k, { paneWidth: labelPaneWidth })
+      const labels = visibleCaptionIds(captionBoxes, transform.k, {
+        paneWidth: labelPaneWidth,
+        ...(protectCaptions ? { protectCaptionIds: protectCaptions } : {}),
+      })
       // These are the real measured extents for the current captions. A system
       // fit may only reserve their room after this signature is current.
       labelsDrawnRef.current = captionSignature(nodes)
@@ -1348,6 +1357,7 @@ export function GraphMap({
           right: box.x + box.width,
           bottom: box.y + box.height,
         })),
+        ...(protectCaptions ? { protectCaptionIds: protectCaptions } : {}),
       })
       for (const { node, point, radius } of placedNodes) {
         const emphasized = !hover || highlight.has(node.id)

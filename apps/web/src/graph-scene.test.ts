@@ -147,6 +147,7 @@ describe('graph marks', () => {
     const shown = visibleCaptionIds([food], 1, {
       paneWidth: 230,
       edgeLabels: [{ left: 20, top: 12, right: 55, bottom: 24 }],
+      protectCaptionIds: new Set(['structure:food']),
     })
     expect(shown.has('structure:food')).toBe(true)
   })

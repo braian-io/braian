@@ -104,15 +104,17 @@ export function visibleLabelIds(boxes: LabelBox[], zoom: number) {
 export function visibleCaptionIds(
   boxes: LabelBox[],
   zoom: number,
-  options: { paneWidth: number; edgeLabels?: OverlapBox[] },
+  options: { paneWidth: number; edgeLabels?: OverlapBox[]; protectCaptionIds?: Set<string> },
 ) {
   const shown = visibleLabelIds(boxes, zoom)
   const edgeLabels = options.edgeLabels ?? []
+  const protectedIds = options.protectCaptionIds
   for (const box of boxes) {
     if (!shown.has(box.id)) continue
     if (box.right - box.left > options.paneWidth) shown.delete(box.id)
     else if (edgeLabels.some((other) => boxesOverlap(box, other))) {
-      if (box.kind !== 'structure' && box.kind !== 'group') shown.delete(box.id)
+      if (protectedIds?.has(box.id)) continue
+      shown.delete(box.id)
     }
   }
   return shown
