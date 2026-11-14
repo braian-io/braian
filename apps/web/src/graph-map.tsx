@@ -350,7 +350,7 @@ export function pendingPeerFitExtents(
 /** Web fonts must not swap a caption after its box was measured for a fit. */
 function fontsReady(): boolean {
   const fonts = typeof document !== 'undefined' ? document.fonts : undefined
-  return !fonts || fonts.status !== 'loading'
+  return !fonts || fonts.status === 'loaded'
 }
 
 /**
@@ -2084,12 +2084,12 @@ export function GraphMap({
     if (!fonts) return
     let cancelled = false
     void fonts.ready.then(() => {
-      if (cancelled || movedRef.current || initialSettledRef.current) return
+      if (cancelled || movedRef.current) return
       if (deferInitialFitForSheet(densityRef.current, selectedRef.current, sheetRef.current, placementRef.current)) {
-        if (placementRef.current === 'sheet') requestSystemFitRef.current('sheet')
+        requestSystemFitRef.current('sheet')
         return
       }
-      requestSystemFitRef.current('initial')
+      if (!initialSettledRef.current) requestSystemFitRef.current('initial')
     })
     return () => {
       cancelled = true
