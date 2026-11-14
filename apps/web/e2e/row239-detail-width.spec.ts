@@ -11,6 +11,7 @@ mkdirSync(shots, { recursive: true })
 const WANTED = 'Hazelnut chocolate 439'
 
 type SearchDoc = Record<string, unknown>
+type SearchHit = { id?: string; key?: string; document?: SearchDoc }
 
 async function login(page: Page) {
   await page.addInitScript(() => {
@@ -31,33 +32,51 @@ async function openProducts(page: Page) {
   await expect(mainTable(page)).toBeVisible()
 }
 
+async function searchProducts(
+  page: Page,
+  query: string,
+): Promise<Array<{ id: string; document: SearchDoc }>> {
+  const response = await page.request.get(
+    `/v1/search?q=${encodeURIComponent(query)}&filter=${encodeURIComponent('type_key:=product')}&lang=en&sort=a_number&per_page=100`,
+  )
+  if (!response.ok()) return []
+  const body = (await response.json()) as { hits?: SearchHit[] }
+  return (body.hits ?? [])
+    .map((hit) => {
+      const document = (hit.document ?? hit) as SearchDoc
+      return { id: String(hit.id ?? document.id ?? ''), document }
+    })
+    .filter((hit) => hit.id)
+}
+
 async function pickProduct(page: Page): Promise<{ id: string; key: string; name: string; brand: string }> {
-  for (const query of ['Hazelnut chocolate', 'chocolate', '']) {
-    const response = await page.request.get(
-      `/v1/search?q=${encodeURIComponent(query)}&lang=en&sort=a_number&per_page=60`,
-    )
-    if (!response.ok()) continue
-    const body = (await response.json()) as { hits?: Array<{ id?: string; document?: SearchDoc }> }
-    const docs = (body.hits ?? [])
-      .map((hit) => ({ id: String(hit.id ?? ''), document: hit.document ?? {} }))
-      .filter((hit) => hit.id && hit.document.type_key === 'product')
-    if (docs.length === 0) continue
-    const chosen =
-      docs.find((hit) => String(hit.document.a_name__en ?? '') === WANTED) ??
-      docs.find((hit) => String(hit.document.a_name__en ?? '').length >= 16) ??
-      docs[0]
-    const key = String(chosen.document.key ?? '')
-    if (!key) continue
-    const loaded = await page.request.get(`/v1/objects/${chosen.id}`)
+  const found = [...(await searchProducts(page, 'Hazelnut chocolate')), ...(await searchProducts(page, '*'))]
+  const unique = new Map<string, { id: string; document: SearchDoc }>()
+  for (const hit of found) unique.set(hit.id, hit)
+  const docs = [...unique.values()]
+  const nameOf = (doc: SearchDoc) => String(doc.a_name__en ?? doc.display_name ?? '')
+  const brandOf = (doc: SearchDoc) => String(doc.a_brand ?? doc.brand ?? '')
+  const keyOf = (doc: SearchDoc) => String(doc.key ?? doc.a_number ?? '')
+  const ranked = [
+    ...docs.filter((hit) => nameOf(hit.document) === WANTED),
+    ...docs.filter((hit) => nameOf(hit.document).length >= 16 && brandOf(hit.document)),
+    ...docs.filter((hit) => keyOf(hit.document) && nameOf(hit.document) && brandOf(hit.document)),
+    ...docs,
+  ]
+  const seen = new Set<string>()
+  for (const hit of ranked) {
+    if (seen.has(hit.id)) continue
+    seen.add(hit.id)
+    const loaded = await page.request.get(`/v1/objects/${hit.id}`)
     if (!loaded.ok()) continue
     const object = (await loaded.json()) as {
       values?: { number?: string; brand?: string; name?: Record<string, string> }
     }
-    const name = object.values?.name?.en ?? String(chosen.document.a_name__en ?? '')
-    const brand = object.values?.brand ?? String(chosen.document.a_brand ?? '')
-    const number = object.values?.number ?? key
-    if (!name || !brand) continue
-    return { id: chosen.id, key: number, name, brand }
+    const name = object.values?.name?.en ?? nameOf(hit.document)
+    const brand = object.values?.brand ?? brandOf(hit.document)
+    const number = object.values?.number ?? keyOf(hit.document)
+    if (!name || !brand || !number) continue
+    return { id: hit.id, key: number, name, brand }
   }
   throw new Error('no product with a readable name and brand')
 }

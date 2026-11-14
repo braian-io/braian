@@ -9,7 +9,10 @@ describe('Detail width layout (row 239)', () => {
       /\.split\[data-has-detail='true'\]\s*\{[^}]*container-type:\s*inline-size/,
     )
     expect(css).toMatch(
-      /@container detail-split \(min-width:\s*640px\)\s*\{[\s\S]*?\.split-cell:has\(\.pane-tab\[data-view-type='object_table'\]\):not\(:has\(\.split\)\)\s*\{[^}]*min-width:\s*440px/,
+      /@container detail-split \(min-width:\s*640px\)\s*\{[\s\S]*?\.split-cell:has\(\.pane-tab\[data-view-type='object_table'\]\.active\):not\(:has\(\.split\)\)\s*\{[^}]*min-width:\s*440px/,
+    )
+    expect(css).not.toMatch(
+      /\.split-cell:has\(\.pane-tab\[data-view-type='object_table'\]\):not\(:has\(\.split\)\)\s*\{[^}]*min-width:\s*440px/,
     )
     expect(css).not.toMatch(
       /\.split\[data-has-detail='true'\] > \.split-cell:has\(\.pane-tab\[data-view-type='object_table'\]\)\s*\{[^}]*min-width:\s*440px/,
