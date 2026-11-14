@@ -1786,10 +1786,10 @@ export function GraphMap({
           node.vy = 0
         }
         drawRef.current(true)
-        if (fitAfterRef.current) {
-          fitAfterRef.current = false
+        if (!movedRef.current) {
           requestSystemFitRef.current(initialSettledRef.current ? 'resize' : 'initial')
         }
+        fitAfterRef.current = false
       } else {
         // A link or name changed without adding nodes: redraw, never re-layout.
         for (const node of next) {
@@ -1797,6 +1797,9 @@ export function GraphMap({
           node.vy = 0
         }
         drawRef.current(true)
+        if (!movedRef.current && captionsChanged && !initialSettledRef.current) {
+          requestSystemFitRef.current('initial')
+        }
       }
     } else drawRef.current(true)
   }, [placed, focusId])
