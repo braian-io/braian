@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { curvePoint, edgeLabelMode, placeEdgeLabel, type EdgeLabelBox, type EdgeLabelNode } from './graph-edge-label'
+import {
+  curvePoint,
+  edgeLabelMode,
+  placeEdgeLabel,
+  placeEdgeLabelWithFallback,
+  type EdgeLabelBox,
+  type EdgeLabelNode,
+} from './graph-edge-label'
+import { visibleCaptionIds, type LabelBox } from './graph-scene'
 
 const from = { x: 0, y: 0 }
 const control = { x: 100, y: 0 }
@@ -14,6 +22,19 @@ function distanceToBox(node: EdgeLabelNode, box: EdgeLabelBox) {
   const closestX = Math.max(box.x, Math.min(node.x, box.x + box.width))
   const closestY = Math.max(box.y, Math.min(node.y, box.y + box.height))
   return Math.hypot(node.x - closestX, node.y - closestY)
+}
+
+function overlaps(box: EdgeLabelBox, other: EdgeLabelBox) {
+  return (
+    box.x < other.x + other.width &&
+    box.x + box.width > other.x &&
+    box.y < other.y + other.height &&
+    box.y + box.height > other.y
+  )
+}
+
+function captionBox(id: string, priority: number, box: EdgeLabelBox): LabelBox {
+  return { id, priority, left: box.x, top: box.y, right: box.x + box.width, bottom: box.y + box.height }
 }
 
 describe('edge label density', () => {
@@ -74,5 +95,67 @@ describe('edge label placement', () => {
       box.y + box.height > caption.y
     expect(point).not.toEqual(defaultPoint)
     expect(overlaps).toBe(false)
+  })
+
+  it('places an active label beside a named caption and keeps the name visible', () => {
+    const mid = curvePoint(from, control, to, 0.68)
+    const caption = { id: 'article', priority: 5, x: mid.x - 50, y: mid.y - 8, width: 100, height: 16 }
+    const point = placeEdgeLabel(from, control, to, size, [], [], [caption])
+    const box = labelBox(point)
+    expect(overlaps(box, caption), 'the label moves off the named caption').toBe(false)
+    const shown = visibleCaptionIds([captionBox(caption.id, caption.priority, caption)], 1, {
+      paneWidth: 400,
+      edgeLabels: [{ left: box.x, top: box.y, right: box.x + box.width, bottom: box.y + box.height }],
+    })
+    expect(shown.has('article'), 'the name stays painted').toBe(true)
+  })
+
+  it('falls back and still paints an active label when every aside slot hits a node disc', () => {
+    const mid = curvePoint(from, control, to, 0.68)
+    const caption = { id: 'article', priority: 5, x: mid.x - 50, y: mid.y - 30, width: 100, height: 60 }
+    // Small node discs cover the placement grid. The placer can only clear the
+    // named caption by moving onto a disc, so the preferred box is illegal;
+    // the fallback must still paint the label over the name instead.
+    const nodes: EdgeLabelNode[] = []
+    for (let x = -100; x <= 300; x += 4) {
+      for (let y = -100; y <= 100; y += 4) nodes.push({ x, y, radius: 2 })
+    }
+    const placement = placeEdgeLabelWithFallback({
+      from,
+      control,
+      to,
+      size,
+      nodes,
+      placed: [],
+      preferred: [caption],
+      fallback: [],
+      active: true,
+    })
+    expect(placement.usedFallback, 'the aside slot is illegal').toBe(true)
+    expect(placement.dropped, 'an active label is still painted').toBe(false)
+    const shown = visibleCaptionIds([captionBox(caption.id, caption.priority, caption)], 1, {
+      paneWidth: 400,
+      edgeLabels: [
+        {
+          left: placement.box.x,
+          top: placement.box.y,
+          right: placement.box.x + placement.box.width,
+          bottom: placement.box.y + placement.box.height,
+        },
+      ],
+    })
+    expect(shown.has('article'), 'the covered caption hides instead of dropping the label').toBe(false)
+  })
+
+  it('still paints an active label when every slot covers a name; the caption hides (K5)', () => {
+    const everything = { id: 'article', priority: 5, x: -50, y: -100, width: 300, height: 200 }
+    const point = placeEdgeLabel(from, control, to, size, [], [], [everything])
+    expect(Number.isFinite(point.x) && Number.isFinite(point.y), 'the label is still painted').toBe(true)
+    const box = labelBox(point)
+    const shown = visibleCaptionIds([captionBox(everything.id, everything.priority, everything)], 1, {
+      paneWidth: 400,
+      edgeLabels: [{ left: box.x, top: box.y, right: box.x + box.width, bottom: box.y + box.height }],
+    })
+    expect(shown.has('article'), 'the covered caption hides instead of dropping the label').toBe(false)
   })
 })

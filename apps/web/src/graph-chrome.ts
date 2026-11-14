@@ -82,6 +82,272 @@ export function propertiesOpen(density: GraphDensity, sheet: SheetMode): boolean
   return sheet === 'expanded'
 }
 
+/**
+ * The chrome is only measured once the open bottom sheet has a real box. A
+ * `sheet` placement with a missing (or not-yet-laid-out) inspector must not
+ * freeze the initial-load baseline; the late sheet layout has to trigger
+ * another untouched fit into the shorter free frame.
+ *
+ * A real F5 can briefly place the inspector as `hidden` while the selected
+ * object is still resolving, even though the bottom card is open or about to
+ * become a sheet. That transient placement is not ready either: treating
+ * `placement !== 'sheet'` as complete would fit the taller frame first and then
+ * settle on a different zoom after the card is measured.
+ */
+export function chromeMeasureReady(
+  placement: DetailPlacement,
+  inspector: Box | null | undefined,
+  bottomCardOpen = false,
+  /** Wide pane with the side inspector card visible. */
+  sideCardOpen = false,
+): boolean {
+  const needsSheetBox = placement === 'sheet' || (bottomCardOpen && placement === 'hidden')
+  if (needsSheetBox) {
+    return Boolean(inspector && inspector.width >= 1 && inspector.height >= 1)
+  }
+  if (placement === 'side' && sideCardOpen) {
+    return Boolean(inspector && inspector.width >= 1 && inspector.height >= 1)
+  }
+  return true
+}
+
+/**
+ * The four explicit events that may move the camera on their own: the first
+ * complete measurement of a load, a full-size toggle, a real pane/canvas
+ * resize, and the first measured box of an open bottom sheet. Nothing else
+ * (selection, inspector growth, add-link, expand, late captions) is a viewport
+ * event.
+ */
+export type SystemFitEvent = 'initial' | 'fullscreen' | 'resize' | 'sheet'
+export type SystemFitAction = 'none' | 'fit' | 'remap'
+
+/**
+ * Decide what a system-fit request may do. Every event is gated on a complete
+ * free frame: the current pane/canvas size is settled, the open (or about to
+ * open) bottom card has a real, settled inspector box, and the current captions
+ * have been measured. A user camera is always remapped, never fitted. The initial
+ * event only exists until the idle baseline is frozen; the other three still
+ * work after it (Close full size is fullscreen + resize + sheet even after
+ * settle).
+ */
+export function requestSystemFit(input: {
+  event: SystemFitEvent
+  placement: DetailPlacement
+  inspector: Box | null | undefined
+  /** True while a narrow bottom inspector card is open or about to be a sheet. */
+  bottomCardOpen?: boolean
+  /** Wide pane with the side inspector card visible. */
+  sideCardOpen?: boolean
+  /** False until every current caption has a measured box. */
+  labelsReady?: boolean
+  /** False while an open bottom sheet is still settling to its final height. */
+  sheetStable?: boolean
+  /** False until the pane size has been unchanged for a couple of animation frames. */
+  paneSettled?: boolean
+  paneReady: boolean
+  moved: boolean
+  baselineFrozen: boolean
+  loadEnded?: boolean
+  namesPending?: boolean
+}): SystemFitAction {
+  if (!input.paneReady) return 'none'
+  if (input.paneSettled === false) return 'none'
+  if (input.labelsReady === false) return 'none'
+  if (input.sheetStable === false) return 'none'
+  if (!chromeMeasureReady(input.placement, input.inspector, input.bottomCardOpen, input.sideCardOpen)) return 'none'
+  if (input.event === 'sheet' && input.placement !== 'sheet') return 'none'
+  if (input.event === 'initial') {
+    if (input.baselineFrozen) return 'none'
+    if (input.loadEnded === false || input.namesPending === true) return 'none'
+  }
+  return input.moved ? 'remap' : 'fit'
+}
+
+/**
+ * A chrome ResizeObserver may only catch the first real box of an open bottom
+ * sheet for the current placement/pane key. Once that box is measured, later
+ * inspector growth (add-link, expand, a late name) is content, not a viewport
+ * change, and must never refit: that would move an untouched camera and break
+ * the row 128e stay-put promise. A new placement/pane/full-size change gets a
+ * fresh effect and therefore a fresh observer.
+ */
+export function chromeResizeNeedsFit(input: {
+  event: SystemFitEvent
+  placement: DetailPlacement
+  inspector: Box | null | undefined
+  /** True once this placement/pane key already used its first sheet box. */
+  sheetMeasured: boolean
+}): boolean {
+  if (input.event !== 'sheet') return false
+  if (input.sheetMeasured) return false
+  if (input.placement !== 'sheet') return false
+  return chromeMeasureReady(input.placement, input.inspector)
+}
+
+/**
+ * The first measured bottom-sheet box is only the settled sheet once it has
+ * stopped moving. `previous` is the box the observation before the quiet window
+ * saw, `current` is the box now, and `quiet` is true once a short rAF+timeout
+ * window elapsed without a new size. A mid-transition box (quiet=false) or a
+ * box that has since grown (a late inspector-content change) is not the settled
+ * sheet and must not freeze the free frame: that keeps row 128e stay-put and
+ * makes F5 and Close full size measure the same final sheet.
+ */
+export function chromeSheetBoxStable(input: {
+  previous: Box | null | undefined
+  current: Box | null | undefined
+  quiet: boolean
+}): boolean {
+  if (!input.quiet) return false
+  if (!input.current || input.current.width < 1 || input.current.height < 1) return false
+  if (!input.previous) return false
+  return input.previous.width === input.current.width && input.previous.height === input.current.height
+}
+
+/**
+ * The first measured bottom-sheet box is only the settled sheet once the load's
+ * names and captions are ready (`namesReady`) and the box has stopped moving
+ * for the quiet window. While a late name or caption can still reflow the card
+ * the current box is not final and must not freeze the free frame: accepting it
+ * would fit a taller free frame and settle on a different zoom than Close full
+ * size, which already has the names. After the box is accepted, later growth is
+ * still content, not a viewport change (see `chromeResizeNeedsFit`).
+ */
+export function chromeSheetBoxSettled(input: {
+  previous: Box | null | undefined
+  current: Box | null | undefined
+  quiet: boolean
+  /** True once no name is pending and the current captions have been measured. */
+  namesReady: boolean
+}): boolean {
+  if (!input.namesReady) return false
+  return chromeSheetBoxStable({ previous: input.previous, current: input.current, quiet: input.quiet })
+}
+
+export type FitScheduler = {
+  request: (event: SystemFitEvent) => void
+  cancel: () => void
+}
+
+/**
+ * One pending system-fit pass. Requesting a newer event cancels the older
+ * frame and timers, so a leftover full-size or pre-sheet timer can never apply
+ * its camera after the pane has settled. The pass reads live state each time
+ * it runs (`requestSystemFit`), so it may no-op until the sheet box appears and
+ * then run again for the next event.
+ */
+/** After a pane resize, wait this many animation frames without a new size before fitting. */
+const PANE_SETTLE_FRAMES = 2
+
+/**
+ * True once `width`×`height` has stayed unchanged for `PANE_SETTLE_FRAMES`
+ * animation frames after the last observe() call. Cancelling drops any in-flight wait.
+ */
+export function createPaneSettleGate(
+  framesRequired = PANE_SETTLE_FRAMES,
+  env: {
+    frame: (callback: () => void) => number
+    cancelFrame: (handle: number) => void
+  } = {
+    frame: (callback) => requestAnimationFrame(callback),
+    cancelFrame: (handle) => cancelAnimationFrame(handle),
+  },
+) {
+  let lastWidth = -1
+  let lastHeight = -1
+  let settled = false
+  let generation = 0
+  let pending: number | null = null
+
+  const finish = (gen: number, remaining: number) => {
+    if (gen !== generation) return
+    if (remaining <= 1) {
+      settled = true
+      pending = null
+      return
+    }
+    pending = env.frame(() => finish(gen, remaining - 1))
+  }
+
+  return {
+    get settled() {
+      return settled
+    },
+    observe(width: number, height: number) {
+      const nextW = Math.floor(width)
+      const nextH = Math.floor(height)
+      if (nextW === lastWidth && nextH === lastHeight && settled) return
+      if (nextW !== lastWidth || nextH !== lastHeight) {
+        lastWidth = nextW
+        lastHeight = nextH
+        settled = false
+        generation += 1
+        if (pending !== null) {
+          env.cancelFrame(pending)
+          pending = null
+        }
+        const gen = generation
+        pending = env.frame(() => finish(gen, framesRequired))
+      }
+    },
+    cancel() {
+      generation += 1
+      if (pending !== null) {
+        env.cancelFrame(pending)
+        pending = null
+      }
+      settled = false
+      lastWidth = -1
+      lastHeight = -1
+    },
+  }
+}
+
+export function createFitScheduler(
+  run: (event: SystemFitEvent) => void,
+  env: {
+    frame: (callback: () => void) => number
+    cancelFrame: (handle: number) => void
+    timeout: (callback: () => void, ms: number) => ReturnType<typeof setTimeout>
+    clearTimeout: (handle: ReturnType<typeof setTimeout>) => void
+  } = {
+    frame: (callback) => requestAnimationFrame(callback),
+    cancelFrame: (handle) => cancelAnimationFrame(handle),
+    timeout: (callback, ms) => setTimeout(callback, ms),
+    clearTimeout: (handle) => clearTimeout(handle),
+  },
+): FitScheduler {
+  let frame: number | null = null
+  let timers: Array<ReturnType<typeof setTimeout>> = []
+  let event: SystemFitEvent | null = null
+
+  const cancel = () => {
+    if (frame !== null) {
+      env.cancelFrame(frame)
+      frame = null
+    }
+    for (const timer of timers) env.clearTimeout(timer)
+    timers = []
+    event = null
+  }
+
+  return {
+    request: (next) => {
+      cancel()
+      event = next
+      const apply = () => {
+        if (event) run(event)
+      }
+      frame = env.frame(() => {
+        frame = null
+        apply()
+      })
+      timers = [env.timeout(apply, 120), env.timeout(apply, 320)]
+    },
+    cancel,
+  }
+}
+
 export type InspectorChrome = {
   anchor: 'right' | 'bottom' | 'corner' | 'none'
   /** Content height, capped by maxHeightPx. Never stretch to the stage. */
@@ -217,4 +483,98 @@ export function fitCamera(input: {
     x: input.frame.x + pad + viewW / 2 - cx * k,
     y: input.frame.y + pad + viewH / 2 - cy * k,
   }
+}
+
+export type CaptionExtent = {
+  /** Node centre in world coordinates. */
+  x: number
+  y: number
+  /** Node circle radius in world coordinates. */
+  radius: number
+  /** Measured caption width in screen pixels (the caption does not scale with k). */
+  captionWidth: number
+}
+
+const CAPTION_SIDE_PAD_PX = 4
+const CAPTION_VERTICAL_PAD_PX = 20
+
+/**
+ * Fit the camera around the circles and their measured captions. Captions are
+ * drawn at a fixed screen size, so their world extent is `width / k`; iterate a
+ * few times because k itself is what we are solving for. A long caption on the
+ * left or right edge widens the bounds instead of being clipped by the old
+ * `length * 3.6` estimate.
+ */
+export function fitCameraWithLabels(input: {
+  frame: GraphFrame
+  nodes: CaptionExtent[]
+  pad?: number
+  minScale?: number
+  maxScale?: number
+}): { k: number; x: number; y: number } | undefined {
+  if (input.nodes.length === 0) return undefined
+  const pad = input.pad ?? 16
+  const circles = circleBounds(input.nodes)
+  let bounds = circles
+  let camera = fitCamera({ frame: input.frame, bounds, pad, minScale: input.minScale, maxScale: input.maxScale })
+  for (let pass = 0; pass < 6; pass += 1) {
+    const k = Math.max(1e-6, camera.k)
+    const next = { ...circles }
+    for (const node of input.nodes) {
+      if (node.captionWidth > 0) {
+        const half = (node.captionWidth / 2 + CAPTION_SIDE_PAD_PX) / k
+        next.minX = Math.min(next.minX, node.x - half)
+        next.maxX = Math.max(next.maxX, node.x + half)
+      }
+      const vertical = CAPTION_VERTICAL_PAD_PX / k
+      next.minY = Math.min(next.minY, node.y - node.radius - vertical)
+      next.maxY = Math.max(next.maxY, node.y + node.radius + vertical)
+    }
+    const nextCamera = fitCamera({
+      frame: input.frame,
+      bounds: next,
+      pad,
+      minScale: input.minScale,
+      maxScale: input.maxScale,
+    })
+    bounds = next
+    const settled = Math.abs(nextCamera.k - camera.k) < 0.001
+    camera = nextCamera
+    if (settled) break
+  }
+  return camera
+}
+
+function circleBounds(nodes: CaptionExtent[]): Bounds {
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  for (const node of nodes) {
+    minX = Math.min(minX, node.x - node.radius)
+    maxX = Math.max(maxX, node.x + node.radius)
+    minY = Math.min(minY, node.y - node.radius)
+    maxY = Math.max(maxY, node.y + node.radius)
+  }
+  return { minX, minY, maxX, maxY }
+}
+
+/**
+ * Keep the user's zoom and the world point at the old frame centre, then put
+ * that point at the new frame centre. Used when a resize or a full-size toggle
+ * changes the viewport while the camera belongs to the user.
+ */
+export function remapCamera(input: {
+  camera: { k: number; x: number; y: number }
+  from: GraphFrame
+  to: GraphFrame
+}): { k: number; x: number; y: number } {
+  const k = input.camera.k
+  const fromX = input.from.x + input.from.width / 2
+  const fromY = input.from.y + input.from.height / 2
+  const toX = input.to.x + input.to.width / 2
+  const toY = input.to.y + input.to.height / 2
+  const worldX = (fromX - input.camera.x) / k
+  const worldY = (fromY - input.camera.y) / k
+  return { k, x: toX - worldX * k, y: toY - worldY * k }
 }

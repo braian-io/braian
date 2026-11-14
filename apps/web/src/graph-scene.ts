@@ -56,10 +56,29 @@ export function labelVisibleAtZoom(priority: number, zoom: number) {
   return true
 }
 
-export type LabelBox = { id: string; priority: number; left: number; top: number; right: number; bottom: number }
+export type LabelBox = {
+  id: string
+  priority: number
+  left: number
+  top: number
+  right: number
+  bottom: number
+  /** Value chips always yield to a shown name, even when the chip is active. */
+  kind?: NodeKind
+}
+type OverlapBox = { left: number; top: number; right: number; bottom: number }
+
+/** Object and type captions (and the active node) are real names, not value chips. */
+export const NAMED_CAPTION_PRIORITY = 3
+
+function captionRank(box: LabelBox) {
+  return box.kind === 'value' ? -1 : box.priority
+}
 
 export function visibleLabelIds(boxes: LabelBox[], zoom: number) {
-  const sorted = [...boxes].sort((left, right) => right.priority - left.priority || left.id.localeCompare(right.id))
+  const sorted = [...boxes].sort(
+    (left, right) => captionRank(right) - captionRank(left) || left.id.localeCompare(right.id),
+  )
   const kept: LabelBox[] = []
   const ids = new Set<string>()
   for (const box of sorted) {
@@ -71,7 +90,44 @@ export function visibleLabelIds(boxes: LabelBox[], zoom: number) {
   return ids
 }
 
-function boxesOverlap(left: LabelBox, right: LabelBox) {
+/**
+ * Decide which captions to paint after zoom culling. A caption wider than the
+ * pane cannot be clamped, so it is not painted; the fit uses the same rule, so
+ * it never reserves room for it. A painted edge label wins the space it needs
+ * and the caption under it is hidden instead of stacking (K5). The placer asks
+ * active labels to move aside from a name when a legal slot exists, but it
+ * never drops the label to spare one. The pane check is `paneWidth` rather than
+ * `paneWidth - 2`, so a name the fit clamped inside the free frame is not
+ * dropped by a hair's width. A value chip (`kind: 'value'`) yields to an
+ * overlapping shown name even when the chip is the active node.
+ */
+export function labelRectsOverlap(
+  left: { left: number; top: number; right: number; bottom: number },
+  right: { left: number; top: number; right: number; bottom: number },
+) {
+  return boxesOverlap(left, right)
+}
+
+export function visibleCaptionIds(
+  boxes: LabelBox[],
+  zoom: number,
+  options: { paneWidth: number; edgeLabels?: OverlapBox[]; protectCaptionIds?: ReadonlySet<string> },
+) {
+  const shown = visibleLabelIds(boxes, zoom)
+  const edgeLabels = options.edgeLabels ?? []
+  const protectedIds = options.protectCaptionIds
+  for (const box of boxes) {
+    if (!shown.has(box.id)) continue
+    if (box.right - box.left > options.paneWidth) shown.delete(box.id)
+    else if (edgeLabels.some((other) => boxesOverlap(box, other))) {
+      if (protectedIds?.has(box.id)) continue
+      shown.delete(box.id)
+    }
+  }
+  return shown
+}
+
+function boxesOverlap(left: OverlapBox, right: OverlapBox) {
   return left.left < right.right && right.left < left.right && left.top < right.bottom && right.top < left.bottom
 }
 
@@ -100,6 +156,35 @@ export type SceneEdge = {
 }
 
 export type Scene = { nodes: SceneNode[]; edges: SceneEdge[] }
+
+/**
+ * Nodes in the force layout while object names resolve. Only the focus object
+ * keeps a pending caption in the sim; link peers join once their names are known
+ * so a narrow pane does not crowd out structure labels such as Food.
+ */
+/** Unresolved object names that participate in the current layout, not every scene peer. */
+export function placedObjectNamesPending(
+  nodes: Array<Pick<SceneNode, 'kind' | 'rawCaption'>>,
+): boolean {
+  return nodes.some((node) => node.kind === 'object' && node.rawCaption)
+}
+
+export function placedSceneNodes(
+  scene: Scene,
+  focusKey: string,
+  known: Record<string, KnownObject> = {},
+): Scene {
+  const nodes = scene.nodes.filter((node) => {
+    if (!(node.kind === 'object' && node.rawCaption)) return true
+    if (node.id === focusKey) return true
+    return Boolean(node.objectId && known[node.objectId]?.name)
+  })
+  const ids = new Set(nodes.map((node) => node.id))
+  return {
+    nodes,
+    edges: scene.edges.filter((edge) => ids.has(edge.source) && ids.has(edge.target)),
+  }
+}
 
 export type KnownObject = { name: string; typeKey: string; key?: string }
 

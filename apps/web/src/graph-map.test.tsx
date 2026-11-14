@@ -9,6 +9,7 @@ import {
   graphNodeMenuExtras,
   graphNodeKey,
   graphNodeTarget,
+  idleRefitPlan,
   nodeMenuAnchor,
   nodeMenuAvoid,
   nodeObstacles,
@@ -135,6 +136,86 @@ describe('pin on pointer up', () => {
     // The model graph keeps its old drag behaviour, but never silently drops
     // an existing pin.
     expect(staysPinnedAfterPointerUp(false, true, true)).toBe(false)
+  })
+})
+
+describe('idle refit plan', () => {
+  const loading = {
+    settled: false,
+    baselineIds: null,
+    ids: 'a',
+    captions: 'a\u0000Alpha\u0000',
+    previousCaptions: '',
+    moved: false,
+  }
+
+  it('refits while the initial load is still bringing in nodes and captions', () => {
+    expect(idleRefitPlan(loading)).toEqual({ fit: true, baselineIds: null })
+    // Food or a caption arrives after the first paint: still part of the load.
+    expect(
+      idleRefitPlan({
+        ...loading,
+        ids: 'a|b',
+        captions: 'a\u0000Alpha\u0000|b\u0000Food\u0000',
+        previousCaptions: 'a\u0000Alpha\u0000',
+      }),
+    ).toEqual({ fit: true, baselineIds: null })
+  })
+
+  it('freezes the baseline after the load and never fits for add-link growth', () => {
+    const frozen = idleRefitPlan({
+      settled: true,
+      baselineIds: 'a|b',
+      ids: 'a|b',
+      captions: 'a\u0000Alpha\u0000|b\u0000Food\u0000',
+      previousCaptions: 'a\u0000Alpha\u0000|b\u0000Food\u0000',
+      moved: false,
+    })
+    expect(frozen).toEqual({ fit: false, baselineIds: 'a|b' })
+    expect(
+      idleRefitPlan({
+        settled: true,
+        baselineIds: frozen.baselineIds,
+        ids: 'a|b|c',
+        captions: 'a\u0000Alpha\u0000|b\u0000Food\u0000|c\u0000New\u0000',
+        previousCaptions: 'a\u0000Alpha\u0000|b\u0000Food\u0000',
+        moved: false,
+      }),
+    ).toEqual({ fit: false, baselineIds: 'a|b' })
+  })
+
+  it('refits a caption that resolves during the load, never after the baseline is frozen', () => {
+    expect(
+      idleRefitPlan({
+        settled: false,
+        baselineIds: null,
+        ids: 'a|b',
+        captions: 'a\u0000Alpha\u0000|b\u0000Food\u0000',
+        previousCaptions: 'a\u0000|b\u0000Food\u0000',
+        moved: false,
+      }),
+    ).toEqual({ fit: true, baselineIds: null })
+    expect(
+      idleRefitPlan({
+        settled: true,
+        baselineIds: 'a|b',
+        ids: 'a|b',
+        captions: 'a\u0000Alpha\u0000|b\u0000Food\u0000',
+        previousCaptions: 'a\u0000|b\u0000Food\u0000',
+        moved: false,
+      }),
+      'a late caption after settle is content, not event A',
+    ).toEqual({ fit: false, baselineIds: 'a|b' })
+    expect(
+      idleRefitPlan({
+        settled: true,
+        baselineIds: 'a|b',
+        ids: 'a|b',
+        captions: 'a\u0000Alpha\u0000|b\u0000Food\u0000',
+        previousCaptions: 'a\u0000|b\u0000Food\u0000',
+        moved: true,
+      }),
+    ).toEqual({ fit: false, baselineIds: 'a|b' })
   })
 })
 
