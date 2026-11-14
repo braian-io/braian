@@ -25,10 +25,19 @@ describe('Detail width layout (row 239)', () => {
   })
 
   it('stacks Detail labels above values in a narrow pane', () => {
+    expect(css).toMatch(
+      /\.pane:has\(\.detail-form\)\s*\{[^}]*container-type:\s*inline-size/,
+    )
+    expect(css).toMatch(
+      /\.pane:has\(\.detail-form\)\s*\{[^}]*container-name:\s*detail-pane/,
+    )
     expect(css).toMatch(/\.detail-form\s*\{[^}]*min-width:\s*0/)
     expect(css).toMatch(/\.detail-form\s*\{[^}]*width:\s*100%/)
-    expect(css).toMatch(/\.detail-form\s*\{[^}]*container-type:\s*inline-size/)
-    expect(css).toMatch(/@container detail \(width < 360px\)[\s\S]*?\.field\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/)
+    expect(css).not.toMatch(/\.detail-form\s*\{[^}]*container-type/)
+    expect(css).not.toMatch(/\.detail-form\s*\{[^}]*container-name:\s*detail\b/)
+    expect(css).toMatch(
+      /@container detail-pane \(width < 360px\)[\s\S]*?\.detail-form \.field\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/,
+    )
   })
 
   it('keeps the language tag beside the value in a narrow pane', () => {

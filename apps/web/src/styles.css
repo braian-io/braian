@@ -477,6 +477,8 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
   isolation: isolate;
   overflow: hidden;
 }
+/* The pane is a definite grid item, so a Detail pane can answer its own width query. */
+.pane:has(.detail-form) { container-type: inline-size; container-name: detail-pane; }
 /* The active pane is the tab underline, not a second box around the pane. */
 .pane-tabs {
   display: flex;
@@ -1262,7 +1264,7 @@ button.filter-chip:hover:not(.on) {
 .detail-empty ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-1_5); }
 .detail-empty li { display: flex; align-items: center; gap: var(--space-1_5); color: var(--muted); font-size: var(--text-md); }
 .form, .detail-form { display: flex; flex-direction: column; gap: var(--space-2); }
-.detail-form { min-width: 0; width: 100%; container-type: inline-size; container-name: detail; }
+.detail-form { min-width: 0; width: 100%; }
 .detail-scroll {
   flex: 1 1 auto;
   min-height: 0;
@@ -1306,9 +1308,9 @@ button.filter-chip:hover:not(.on) {
 .field { display: grid; grid-template-columns: 120px minmax(0, 1fr); column-gap: var(--space-2_5); align-items: start; }
 .field > label { color: var(--muted); font-size: var(--text-md); text-align: left; padding-top: var(--space-1_5); }
 /* Field labels sit above their values when the Detail pane is too narrow for both. */
-@container detail (width < 360px) {
-  .field { grid-template-columns: minmax(0, 1fr); row-gap: var(--space-1); }
-  .field > label { padding-top: 0; }
+@container detail-pane (width < 360px) {
+  .detail-form .field { grid-template-columns: minmax(0, 1fr); row-gap: var(--space-1); }
+  .detail-form .field > label { padding-top: 0; }
 }
 .control { min-width: 0; border-radius: var(--r-md); }
 .control input:not([type='checkbox']), .control select, .control textarea, .control .select-trigger { width: 100%; }
