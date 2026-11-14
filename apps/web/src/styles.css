@@ -432,8 +432,12 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
 }
 .split-cell > .pane, .split-cell > .split { flex: 1 1 auto; min-width: 0; min-height: 0; height: 100%; width: 100%; }
 /* A table beside Detail keeps a readable floor; the Detail pane gives way instead. */
-.split[data-has-detail='true'] > .split-cell:has(.pane-tab[data-view-type='object_table']) {
-  min-width: 440px;
+.split[data-has-detail='true'] { container-type: inline-size; container-name: detail-split; }
+/* Only a wide split can afford the floor, and only for a table that does not wrap a nested split. */
+@container detail-split (min-width: 640px) {
+  .split-cell:has(.pane-tab[data-view-type='object_table']):not(:has(.split)) {
+    min-width: 440px;
+  }
 }
 .split-divider {
   flex: 0 0 6px;
@@ -1263,8 +1267,6 @@ button.filter-chip:hover:not(.on) {
 @container detail (width < 360px) {
   .field { grid-template-columns: minmax(0, 1fr); row-gap: var(--space-1); }
   .field > label { padding-top: 0; }
-  .lang-row { flex-wrap: wrap; }
-  .lang-row input, .lang-row textarea { flex-basis: 100%; }
 }
 .detail-scroll {
   flex: 1 1 auto;
