@@ -44,6 +44,7 @@ import { EMPTY_CELL } from './fields/qualifiers'
 import { columnPrefsHasOverride, fetchColumnPrefs, isHopPath, orderHiddenToDocument, ensureSystemColumns,
   prefsToOrderHidden, saveColumnPrefsKeepalive, type ColumnPrefsDocument, type SystemViewColumn } from './column-prefs'
 import { columnPrefsMutationKey, columnPrefsQueryKey, resetColumnPrefs, useSaveColumnPrefs } from './column-prefs-mutation'
+import { createTablePrefsSaver, type TablePrefsSnapshot } from './table-prefs-save'
 import { readPathFromDoc, summarizePathValues } from './path-cell'
 import { cellPathValues, fetchPathValues } from './path-values'
 import { applyObjectWrite, currentSearchWaitSeq, reconcileObjectWrite } from './object-write'
@@ -303,23 +304,27 @@ export function ObjectTable({
     return () => clearTimeout(timer)
   }, [filter])
 
+  const latestTableSave = useRef<TablePrefsSnapshot>({
+    view,
+    workspaceId: workspace.id,
+    table: { filter, sort, groupBy, sizes },
+  })
+  latestTableSave.current = {
+    view,
+    workspaceId: workspace.id,
+    table: { filter, sort, groupBy, sizes },
+  }
+  const tableSaver = useRef<ReturnType<typeof createTablePrefsSaver> | null>(null)
+  if (!tableSaver.current) {
+    tableSaver.current = createTablePrefsSaver((body, signal) =>
+      api.post('/v1/views', { body, signal }),
+    )
+  }
+
   useEffect(() => {
     if (workspace.locked) return
-    const timer = setTimeout(() => {
-      const state = { ...view.state, table: { filter, sort, groupBy, sizes } }
-      void api.post('/v1/views', { body: {
-          id: view.id,
-          workspace_id: workspace.id,
-          type: view.type,
-          title: view.title,
-          pane: view.pane ?? 'center',
-          position: view.position ?? 0,
-          state,
-        } }).catch((reason: unknown) => {
-          reportWriteError(reason)
-        })
-    }, 400)
-    return () => clearTimeout(timer)
+    tableSaver.current?.schedule(() => latestTableSave.current)
+    return () => tableSaver.current?.cancel()
   }, [filter, sort, groupBy, sizes, view, workspace])
 
   const prefs = useQuery({
@@ -2804,6 +2809,21 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   const [error, setError] = useState('')
   const [flashId, setFlashId] = useState('')
   const [showMoreFields, setShowMoreFields] = useState(false)
+  const formRef = useRef<HTMLFormElement | null>(null)
+  useLayoutEffect(() => {
+    const form = formRef.current
+    if (!form) return
+    const apply = (width: number) => {
+      form.dataset.narrow = width < 360 ? 'true' : 'false'
+    }
+    apply(form.clientWidth)
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      apply(entry ? entry.contentRect.width : form.clientWidth)
+    })
+    observer.observe(form)
+    return () => observer.disconnect()
+  }, [session.objectId, object.data])
   useEffect(() => onFlash(setFlashId), [])
   useEffect(() => {
     setError('')
@@ -3011,6 +3031,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   }
   return (
     <form
+      ref={formRef}
       className={flashId === session.objectId ? 'detail-form form flash' : 'detail-form form'}
       data-testid="object-detail"
       onSubmit={(event) => {
@@ -3043,7 +3064,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       <div className="detail-scroll">
         <header className="detail-head">
           <div className="detail-title">
-            <strong>{name || number}</strong>
+            <strong title={name || number}>{name || number}</strong>
             {number ? <span className="detail-id">{number}</span> : null}
           </div>
           <DetailMeta
@@ -3194,7 +3215,7 @@ function Editor({
   readOnly?: boolean
 }) {
   if (readOnly && !languageDependent) {
-    return <input data-field="true" readOnly value={textValue(value)} />
+    return <input data-field="true" readOnly value={textValue(value)} title={textValue(value)} />
   }
   if (languageDependent) {
     const record = value && typeof value === 'object' && !Array.isArray(value) ? (value as Json) : { en: textValue(value) }
@@ -3207,7 +3228,7 @@ function Editor({
             {form === 'long' ? (
               <AutoResizeTextarea data-field="true" readOnly={readOnly} value={textValue(record[language])} onChange={(event) => onChange({ ...record, [language]: event.target.value })} />
             ) : (
-              <input data-field="true" readOnly={readOnly} value={textValue(record[language])} onChange={(event) => onChange({ ...record, [language]: event.target.value })} />
+              <input data-field="true" readOnly={readOnly} value={textValue(record[language])} title={textValue(record[language])} onChange={(event) => onChange({ ...record, [language]: event.target.value })} />
             )}
           </label>
         ))}
@@ -3257,9 +3278,10 @@ function Editor({
   }
   if (kind === 'value_list' && options.length > 0) {
     const current = textValue(value)
+    const currentLabel = options.find((option) => option.code === current)?.label ?? current
     return (
       <Select value={current || undefined} onValueChange={onChange}>
-        <SelectTrigger data-field="true">
+        <SelectTrigger data-field="true" title={currentLabel}>
           <SelectValue placeholder={EMPTY_CELL} />
         </SelectTrigger>
         <SelectContent>
@@ -3277,8 +3299,8 @@ function Editor({
     const record = (value && typeof value === 'object' ? value : {}) as Json
     return (
       <span className="measure">
-        <input data-field="true" value={textValue(record.min)} onChange={(event) => onChange({ ...record, min: event.target.value })} />
-        <input data-field="true" value={textValue(record.max)} onChange={(event) => onChange({ ...record, max: event.target.value })} />
+        <input data-field="true" value={textValue(record.min)} title={textValue(record.min)} onChange={(event) => onChange({ ...record, min: event.target.value })} />
+        <input data-field="true" value={textValue(record.max)} title={textValue(record.max)} onChange={(event) => onChange({ ...record, max: event.target.value })} />
         <UnitSuffix units={units} value={String(record.unit ?? units[0] ?? '')} onChange={(unit) => onChange({ ...record, unit })} />
       </span>
     )
@@ -3287,7 +3309,7 @@ function Editor({
     const record = (value && typeof value === 'object' ? value : { value }) as Json
     return (
       <span className="measure">
-        <input data-field="true" value={textValue(record.value)} onChange={(event) => onChange({ ...record, value: event.target.value })} />
+        <input data-field="true" value={textValue(record.value)} title={textValue(record.value)} onChange={(event) => onChange({ ...record, value: event.target.value })} />
         <UnitSuffix units={units} value={String(record.unit ?? units[0] ?? '')} onChange={(unit) => onChange({ ...record, unit })} />
       </span>
     )
@@ -3295,7 +3317,7 @@ function Editor({
   if (form === 'long' || (typeof value === 'string' && value.length > 80)) {
     return <AutoResizeTextarea data-field="true" value={textValue(value)} onChange={(event) => onChange(event.target.value)} />
   }
-  return <input data-field="true" value={textValue(value)} onChange={(event) => onChange(event.target.value)} />
+  return <input data-field="true" value={textValue(value)} title={textValue(value)} onChange={(event) => onChange(event.target.value)} />
 }
 
 function UnitSuffix({ units, value, onChange }: { units: string[]; value: string; onChange: (unit: string) => void }) {
