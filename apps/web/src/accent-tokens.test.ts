@@ -83,3 +83,69 @@ describe('accent tokens', () => {
     expect(dim.a).toBeGreaterThan(darkAlpha)
   })
 })
+
+describe('row 240 contrast', () => {
+  const dark = css.slice(css.indexOf(':root {'), css.indexOf(":root[data-theme='light']"))
+  const light = css.slice(css.indexOf(":root[data-theme='light']"))
+  const white = { r: 255, g: 255, b: 255, a: 1 }
+
+  function lit(value: string) {
+    return { ...parseHex(value), a: 1 }
+  }
+
+  function readable(fg: string, bg: string) {
+    return contrast(luminance(lit(fg)), luminance(lit(bg)))
+  }
+
+  it('keeps white on primary and danger buttons at 4.5:1 at rest and on hover', () => {
+    for (const [name, block] of [
+      ['dark', dark],
+      ['light', light],
+    ] as const) {
+      for (const tokenName of [
+        '--accent-button',
+        '--accent-button-hover',
+        '--danger-button',
+        '--danger-button-hover',
+      ]) {
+        const fill = token(block, tokenName)
+        expect(contrast(luminance(white), luminance(lit(fill))), `${name} ${tokenName}`).toBeGreaterThanOrEqual(4.5)
+      }
+    }
+    expect(css).toMatch(/button\.primary,\s*\.btn-accent\s*\{[^}]*background:\s*var\(--accent-button\)/)
+    expect(css).toMatch(/button\.primary:hover,\s*\.btn-accent:hover\s*\{[^}]*background:\s*var\(--accent-button-hover\)/)
+    expect(css).toMatch(/\.btn-danger\s*\{[^}]*background:\s*var\(--danger-button\)/)
+    expect(css).toMatch(/\.btn-danger:hover\s*\{[^}]*background:\s*var\(--danger-button-hover\)/)
+  })
+
+  it('puts --text on the selected choice-chip wash at 4.5:1 in both themes', () => {
+    expect(css).toMatch(/\.choice-chip\.on\s*\{[^}]*background:\s*var\(--accent-dim\)[^}]*color:\s*var\(--text\)/)
+    expect(css).toMatch(/\.chip\s*\{[^}]*color:\s*var\(--text\)/)
+    for (const [name, block] of [
+      ['dark', dark],
+      ['light', light],
+    ] as const) {
+      const text = token(block, '--text')
+      const dim = parseHex(token(block, '--accent-dim'))
+      for (const surfaceName of ['--surface', '--panel']) {
+        const surface = lit(token(block, surfaceName))
+        const wash = blend(dim, surface)
+        expect(
+          contrast(luminance(lit(text)), luminance(wash)),
+          `${name} ${surfaceName}`,
+        ).toBeGreaterThanOrEqual(4.5)
+      }
+    }
+  })
+
+  it('keeps light muted labels and headers at 4.5:1 on surface and panel', () => {
+    for (const surfaceName of ['--surface', '--panel']) {
+      expect(
+        readable(token(light, '--muted'), token(light, surfaceName)),
+        surfaceName,
+      ).toBeGreaterThanOrEqual(4.5)
+    }
+    expect(css).toMatch(/\.field > label\s*\{[^}]*color:\s*var\(--muted\)/)
+    expect(css).toMatch(/\.head \.cell\.column-header-cell \.column-header-btn \{\s*color:\s*var\(--muted\)/)
+  })
+})
