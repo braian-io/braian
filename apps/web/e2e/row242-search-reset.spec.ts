@@ -8,7 +8,8 @@ import { mainTable } from './ui'
 const shots = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'test-results', 'row242-shots')
 mkdirSync(shots, { recursive: true })
 
-type WorkspaceRow = { id: string; name: string; share_token?: string | null }
+const PRODUCT_TYPE_ID = '018f0000-0000-7000-8000-000000000200'
+
 type WorkspaceDetail = {
   id: string
   views: Array<{
@@ -28,47 +29,55 @@ async function login(page: Page) {
   await expect(page.getByTestId('dock')).toBeVisible({ timeout: 60_000 })
 }
 
-async function listWorkspaces(page: Page): Promise<WorkspaceRow[]> {
-  const listed = await page.request.get('/v1/workspaces')
-  expect(listed.ok()).toBeTruthy()
-  return ((await listed.json()) as { workspaces: WorkspaceRow[] }).workspaces
-}
-
 async function getWorkspace(page: Page, id: string): Promise<WorkspaceDetail> {
   const response = await page.request.get(`/v1/workspaces/${id}`)
   expect(response.ok()).toBeTruthy()
   return (await response.json()) as WorkspaceDetail
 }
 
-/** Create a throwaway Products copy so closing and reopening a view never edits
- * the canonical Products layout shared by other specs. */
-async function createProductsCopy(page: Page): Promise<{ id: string; name: string }> {
-  const before = new Set((await listWorkspaces(page)).map((row) => row.id))
-  await page.keyboard.press('Control+k')
-  const palette = page.getByTestId('command-palette')
-  await expect(palette).toBeVisible()
-  await palette.getByTestId('palette-input').fill('New from template')
-  await expect(palette.getByRole('option', { name: /^New from template/ })).toBeVisible()
-  await page.keyboard.press('Enter')
-  await expect(palette.locator('.crumb')).toContainText('New from template')
-  await palette.getByTestId('palette-input').fill('Products')
-  const row = palette.getByRole('option', { name: /^Products/ }).first()
-  await expect(row).toBeVisible()
-  await page.keyboard.press('Enter')
-  await expect(palette).toHaveCount(0)
+/** Create a throwaway single-table Products workspace via the API so closing
+ * and reopening a view never edits the canonical Products layout shared by
+ * other specs. The seeded product rows feed the table, so no objects are
+ * inserted. */
+async function createProductsWorkspace(
+  page: Page,
+): Promise<{ id: string; name: string; viewId: string }> {
+  const id = crypto.randomUUID()
+  const viewId = crypto.randomUUID()
+  const suffix = id.slice(0, 8)
+  const name = `Row242 search ${suffix}`
+  const created = await page.request.post('/v1/workspaces', {
+    data: {
+      id,
+      name,
+      locked: false,
+      share_token: `row242-search-${suffix}`,
+      layout: { type: 'tabs', views: [viewId], active: 0 },
+    },
+  })
+  expect(created.ok(), `create workspace ${created.status()}`).toBeTruthy()
 
-  await expect.poll(async () => {
-    return (await listWorkspaces(page)).some((item) => !before.has(item.id))
-  }, { timeout: 30_000 }).toBe(true)
-  const created = (await listWorkspaces(page)).find((item) => !before.has(item.id))
-  if (!created) throw new Error('Products copy was not created')
-  expect(created.name).toMatch(/^Products \d+$/)
-  const tab = page.locator('nav.tabs button.tab').filter({ hasText: created.name }).first()
-  await expect(tab).toHaveClass(/active/)
-  return { id: created.id, name: created.name }
+  const view = await page.request.post('/v1/views', {
+    data: {
+      id: viewId,
+      workspace_id: id,
+      type: 'object_table',
+      title: 'Products',
+      pane: 'main',
+      position: 0,
+      state: {
+        columns: ['number', 'name', 'status'],
+        sort: 'number',
+        object_type: PRODUCT_TYPE_ID,
+        type_key: 'product',
+      },
+    },
+  })
+  expect(view.ok(), `create Products view ${view.status()}`).toBeTruthy()
+  return { id, name, viewId }
 }
 
-async function openProductsCopy(page: Page, name: string) {
+async function openWorkspaceTab(page: Page, name: string) {
   const tab = page.locator('nav.tabs button.tab').filter({ hasText: name }).first()
   await tab.click()
   await expect(tab).toHaveClass(/active/)
@@ -76,6 +85,11 @@ async function openProductsCopy(page: Page, name: string) {
   await expect(table).toBeVisible({ timeout: 30_000 })
   await expect(table.getByTestId('object-row').first()).toBeVisible({ timeout: 60_000 })
   return table
+}
+
+async function reloadDock(page: Page) {
+  await page.reload({ waitUntil: 'domcontentloaded', timeout: 60_000 })
+  await expect(page.getByTestId('dock')).toBeVisible({ timeout: 60_000 })
 }
 
 async function waitForSearch(page: Page, text: string) {
@@ -111,20 +125,22 @@ async function storedFilter(page: Page, workspaceId: string): Promise<string | u
 }
 
 test('Products search is not silently restored when the view is reopened', async ({ page }) => {
-  // The budget covers a Products template copy plus close/reopen and reload.
+  // The budget covers an API-created Products workspace plus close/reopen and reload.
   test.setTimeout(300_000)
   await login(page)
 
-  let copyId = ''
+  let workspaceId = ''
   try {
-    const copy = await createProductsCopy(page)
-    copyId = copy.id
-    const table = await openProductsCopy(page, copy.name)
+    const workspace = await createProductsWorkspace(page)
+    workspaceId = workspace.id
+    await reloadDock(page)
+    const table = await openWorkspaceTab(page, workspace.name)
     const quick = table.getByTestId('quick-filter')
     const rows = table.getByTestId('object-row')
     const empty = table.getByTestId('object-table-empty')
-    const view = productsTable(await getWorkspace(page, copy.id))
-    if (!view) throw new Error('copy has no Products object table view')
+    const view = productsTable(await getWorkspace(page, workspace.id))
+    if (!view) throw new Error('workspace has no Products object table view')
+    expect(view.id).toBe(workspace.viewId)
 
     // 1. An in-session query that matches nothing names itself and can be cleared.
     const noMatch = `ROW242-NO-MATCH-${Date.now()}`
@@ -148,7 +164,7 @@ test('Products search is not silently restored when the view is reopened', async
     await staleSearch
     await expect(empty).toContainText(stale)
     await page.waitForTimeout(700)
-    expect(await storedFilter(page, copy.id)).toBe('')
+    expect(await storedFilter(page, workspace.id)).toBe('')
 
     // Close and reopen the view: the box starts empty and the rows come back.
     await page.getByTestId(`close-tab-${view.id}`).click()
@@ -169,18 +185,16 @@ test('Products search is not silently restored when the view is reopened', async
     await reloadSearch
     await expect(reopened.getByTestId('object-table-empty')).toContainText(reloadQuery)
     await page.waitForTimeout(700)
-    expect(await storedFilter(page, copy.id)).toBe('')
+    expect(await storedFilter(page, workspace.id)).toBe('')
 
-    await page.reload()
-    await expect(page.getByTestId('dock')).toBeVisible({ timeout: 60_000 })
-    const afterReload = await openProductsCopy(page, copy.name)
+    await reloadDock(page)
+    const afterReload = await openWorkspaceTab(page, workspace.name)
     await expect(afterReload.getByTestId('quick-filter')).toHaveValue('')
     await expect(afterReload.getByTestId('object-row').first()).toBeVisible({ timeout: 60_000 })
   } finally {
-    if (copyId) {
+    if (workspaceId) {
       try {
-        await page.locator('nav.tabs button.tab').filter({ hasText: /^Products$/ }).first().click()
-        await page.request.delete(`/v1/workspaces/${copyId}`)
+        await page.request.delete(`/v1/workspaces/${workspaceId}`)
       } catch {
         // The page or context may already be gone; the run is isolated anyway.
       }
