@@ -553,7 +553,7 @@ export function GraphMap({
   sceneRef.current = scene
   const focusKeyRef = useRef(focusKey)
   focusKeyRef.current = focusKey
-  const placed = useMemo(() => placedSceneNodes(scene, focusKey, known), [scene, focusKey, known])
+  const placed = useMemo(() => placedSceneNodes(scene, focusKey), [scene, focusKey])
   const placedRef = useRef(placed)
   placedRef.current = placed
   const pendingNames = useMemo(
@@ -1468,6 +1468,7 @@ export function GraphMap({
       transform.y = camera.y
       lastFrame = frame
       draw(true)
+      if (!initialSettledRef.current) releaseSettledHold()
       scheduleInitialSettle()
       return true
     }
@@ -1517,10 +1518,16 @@ export function GraphMap({
       if (alive) draw(false)
     })
     sim.on('end', () => {
-      canvas.dataset.settling = 'false'
+      const waitForFit =
+        deferInitialFitForSheet(densityRef.current, selectedRef.current, sheetRef.current, placementRef.current) &&
+        !initialSettledRef.current
+      if (waitForFit) holdSettledUntilFit()
+      else {
+        canvas.dataset.settling = 'false'
+        canvas.dataset.settled = 'true'
+      }
       if (!alive || sim.nodes().length === 0) return
       sim.alphaTarget(0)
-      canvas.dataset.settled = 'true'
       initialEndedRef.current = true
       draw(true)
       if (fitAfterRef.current) {
@@ -1780,6 +1787,7 @@ export function GraphMap({
     return () => {
       alive = false
       if (settleTimer !== undefined) clearTimeout(settleTimer)
+      if (settleHoldTimer !== undefined) clearTimeout(settleHoldTimer)
       sim.on('tick', null)
       sim.on('end', null)
       sim.stop()

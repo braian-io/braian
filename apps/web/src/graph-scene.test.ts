@@ -300,8 +300,6 @@ describe('graph scene', () => {
     const ids = placed.nodes.map((node) => node.id)
     expect(ids).toContain(focusKey)
     expect(ids).not.toContain('object:product-1')
-    const named = placedSceneNodes(scene, focusKey, { 'product-1': { name: 'Peer', typeKey: 'product' } })
-    expect(named.nodes.map((node) => node.id)).toContain('object:product-1')
   })
 
   it('ticks a few hundred nodes inside a second', () => {
