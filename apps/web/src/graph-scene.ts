@@ -111,7 +111,11 @@ export function visibleCaptionIds(
   for (const box of boxes) {
     if (!shown.has(box.id)) continue
     if (box.right - box.left > options.paneWidth) shown.delete(box.id)
-    else if (edgeLabels.some((other) => boxesOverlap(box, other))) shown.delete(box.id)
+    else if (edgeLabels.some((other) => boxesOverlap(box, other))) {
+      // Structure and group names stay visible at a narrow fitted zoom; passive
+      // edge labels move aside instead of hiding Food (row 243).
+      if (box.priority < 2) shown.delete(box.id)
+    }
   }
   return shown
 }

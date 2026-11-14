@@ -590,7 +590,6 @@ export function GraphMap({
   const currentIdsRef = useRef('')
   // The caption signature whose real label boxes the last draw measured.
   const labelsDrawnRef = useRef('')
-  const shownCaptionIdsRef = useRef<Set<string>>(new Set())
   pendingNamesRef.current = pendingNames
 
   useEffect(() => {
@@ -921,15 +920,6 @@ export function GraphMap({
       chromeReady()
 
     const initialLoadSettled = () => initialLoadReady() && labelsReady()
-
-    const structureCaptionsPainted = () => {
-      for (const node of placedRef.current.nodes) {
-        if (isLegendHidden(hiddenRef.current, node) || !node.caption) continue
-        if (node.kind !== 'structure' && node.kind !== 'group') continue
-        if (!shownCaptionIdsRef.current.has(node.id)) return false
-      }
-      return true
-    }
 
     // Freeze the idle-refit baseline only after the first load has genuinely
     // settled. Until then Food and other late nodes/captions may still fit.
@@ -1355,7 +1345,6 @@ export function GraphMap({
           bottom: box.y + box.height,
         })),
       })
-      shownCaptionIdsRef.current = shownCaptionIds
       for (const { node, point, radius } of placedNodes) {
         const emphasized = !hover || highlight.has(node.id)
         const fill = colors.fill[node.kind]
@@ -1482,40 +1471,16 @@ export function GraphMap({
         sheetRef.current,
         placementRef.current,
       )
-      const applyCamera = (minScale: number) => {
-        const camera = fitCameraWithLabels({ frame, nodes: extents, minScale })
-        if (!camera) return false
-        transform.k = camera.k
-        transform.x = camera.x
-        transform.y = camera.y
-        lastFrame = frame
-        return true
-      }
-      if (narrowSheet && !initialSettledRef.current) {
-        let accepted = false
-        for (let attempt = 0; attempt < 8; attempt += 1) {
-          if (!applyCamera(0.12 - attempt * 0.01)) continue
-          const prevSettled = canvas.dataset.settled
-          const prevSettling = canvas.dataset.settling
-          canvas.dataset.settled = 'true'
-          canvas.dataset.settling = 'false'
-          draw(true)
-          if (initialLoadSettled() && structureCaptionsPainted()) {
-            accepted = true
-            break
-          }
-          canvas.dataset.settled = prevSettled
-          canvas.dataset.settling = prevSettling
-        }
-        if (!accepted) return false
-        if (settleHoldTimer !== undefined) {
-          clearTimeout(settleHoldTimer)
-          settleHoldTimer = undefined
-        }
-        scheduleInitialSettle()
-        return true
-      }
-      if (!applyCamera(narrowSheet ? 0.08 : 0.1)) return false
+      const camera = fitCameraWithLabels({
+        frame,
+        nodes: extents,
+        minScale: narrowSheet ? 0.08 : 0.1,
+      })
+      if (!camera) return false
+      transform.k = camera.k
+      transform.x = camera.x
+      transform.y = camera.y
+      lastFrame = frame
       draw(true)
       if (!initialSettledRef.current && initialLoadSettled()) releaseSettledHold()
       scheduleInitialSettle()
