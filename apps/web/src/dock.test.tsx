@@ -41,6 +41,40 @@ it('renders the tab close control as a keyboard-reachable button', () => {
   expect(views(onChange.mock.calls[0]?.[0].layout)).toEqual(['graph'])
 })
 
+it('shrinks only the split cell whose subtree contains Detail', () => {
+  const layout: LayoutDoc = {
+    id: 'ws',
+    title: 'Workspace',
+    layout: {
+      type: 'split',
+      dir: 'horizontal',
+      ratios: [0.4, 0.3, 0.3],
+      children: [
+        { type: 'tabs', views: ['products'], active: 0 },
+        { type: 'tabs', views: ['graph'], active: 0 },
+        { type: 'tabs', views: ['detail'], active: 0 },
+      ],
+    },
+    focus: 'products',
+  }
+  const { container } = render(
+    <WorkspaceDock
+      doc={layout}
+      views={[
+        { id: 'products', title: 'Products', type: 'object_table' },
+        { id: 'graph', title: 'Graph', type: 'graph' },
+        { id: 'detail', title: 'Detail', type: 'object_detail' },
+      ]}
+      onChange={() => undefined}
+      renderView={() => <div />}
+      onAddView={() => undefined}
+    />,
+  )
+
+  const cells = [...container.querySelectorAll<HTMLElement>('.split-cell')]
+  expect(cells.map((cell) => cell.style.flex.split(' ').slice(0, 2).join(' '))).toEqual(['0 0', '0 0', '0 1'])
+})
+
 it('keeps the full tab title on the truncated tab button', () => {
   const title = 'A very long view title that the tab strip truncates'
   render(

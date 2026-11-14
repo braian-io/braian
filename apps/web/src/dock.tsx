@@ -200,7 +200,16 @@ function SplitNode({ frame, node, path }: { frame: Frame; node: Node; path: numb
   return (
     <div className={`split ${node.dir}`} data-path={path.join('.') || 'root'} data-has-detail={hasDetail ? 'true' : undefined}>
       {node.children.map((child, index) => (
-        <SplitChild key={cellKey(path, index, child)} frame={frame} node={node} child={child} index={index} path={path} gaps={gaps} />
+        <SplitChild
+          key={cellKey(path, index, child)}
+          frame={frame}
+          node={node}
+          child={child}
+          index={index}
+          path={path}
+          gaps={gaps}
+          hasDetail={views(child).some((id) => viewTypes.get(id) === 'object_detail')}
+        />
       ))}
     </div>
   )
@@ -213,6 +222,7 @@ function SplitChild({
   index,
   path,
   gaps,
+  hasDetail,
 }: {
   frame: Frame
   node: Extract<Node, { type: 'split' }>
@@ -220,6 +230,7 @@ function SplitChild({
   index: number
   path: number[]
   gaps: number
+  hasDetail: boolean
 }) {
   const basis = `calc((100% - ${gaps}px) * ${node.ratios[index] ?? 0})`
   return (
@@ -227,7 +238,7 @@ function SplitChild({
       {index > 0 ? (
         <Divider frame={frame} dir={node.dir} index={index - 1} path={path} count={node.children.length} />
       ) : null}
-      <div className="split-cell" style={{ flex: `0 1 ${basis}` }}>
+      <div className="split-cell" style={{ flex: `${hasDetail ? '0 1' : '0 0'} ${basis}` }}>
         <SplitNode frame={frame} node={child} path={[...path, index]} />
       </div>
     </>

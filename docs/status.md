@@ -11,8 +11,9 @@ The six acceptance criteria are implemented in the product, the guide and the te
 
 - **The table keeps a minimum width.** A split that contains `object_detail` marks
   itself (`data-has-detail`). A direct table cell in that split gets
-  `min-width: 440px`, and split cells may shrink, so Detail gives way instead of the
-  table collapsing to the Number column.
+  `min-width: 440px`, and only the split cell whose subtree contains Detail may shrink,
+  so Detail gives way instead of the table collapsing to the Number column. Every
+  other split cell keeps the default fixed basis, as before this branch.
 - **The Detail title is fully readable.** The title wraps (`flex-wrap` plus
   `overflow-wrap: anywhere`) and carries the full name in its `title` tooltip.
 - **Field values are not clipped to one letter.** Single-line inputs and measured
@@ -34,8 +35,9 @@ Evidence locally in this worktree:
 
 - `docker run --rm --network none` with `node:22-bookworm` and the real symlinked
   `apps/web/node_modules`: `./node_modules/.bin/tsc --noEmit` exit 0.
-- Full vitest suite in the same container: **174 files / 1026 tests passed**, including
-  the new `detail-width-css.test.ts` (4 tests).
+- Full vitest suite in the same container: **174 files / 1027 tests passed**, including
+  the new `detail-width-css.test.ts` (4 tests) and the `dock.test.tsx` split-cell case
+  that pins `flex: 0 0` everywhere except the Detail cell.
 - `python3 scripts/check-english.py` exit 0 and `git diff --check` exit 0.
 - `sha256sum apps/web/src/data-model.tsx` is
   `2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`, unchanged.
