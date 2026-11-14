@@ -150,6 +150,6 @@ export function placeEdgeLabelWithFallback(input: {
   // An active label keeps its space even when the fallback still grazes a node
   // circle; only a second label in the same spot wins. A non-active label has
   // no such claim and yields as before.
-  const dropped = !input.active && (hitsLabel(placement.box) || hitsNode(placement.box))
+  const dropped = hitsLabel(placement.box) || (!input.active && hitsNode(placement.box))
   return { ...placement, usedFallback, dropped }
 }
