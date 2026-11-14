@@ -36,6 +36,12 @@
   --ok: #47ff9a;
   --warn: #f6c445;
   --danger: #fb7185;
+  /* Filled action fills are separate from the accent and danger text tokens:
+     white text must stay >=4.5:1 at rest and on hover in the dark theme. */
+  --accent-button: #7c3aed;
+  --accent-button-hover: #6d28d9;
+  --danger-button: #c0233e;
+  --danger-button-hover: #a81b33;
   --accent-disabled-bg: #3f316e;
   --accent-disabled-text: #e0d6fa;
   --r-sm: 4px;
@@ -94,7 +100,7 @@
   --border: #cdd2db;
   --text: #111827;
   --text-2: #374151;
-  --muted: #6b7280;
+  --muted: #5b6472;
   --accent: #7c3aed;
   --accent-hover: #6d28d9;
   --accent-dim: #7c3aed80;
@@ -102,6 +108,10 @@
   --ok: #13804f;
   --warn: #a66a00;
   --danger: #c0233e;
+  --accent-button: #7c3aed;
+  --accent-button-hover: #6d28d9;
+  --danger-button: #c0233e;
+  --danger-button-hover: #a81b33;
   --accent-disabled-bg: #e5d9fb;
   --accent-disabled-text: #4c1d95;
   --inset: inset 0 1px 0 #ffffff;
@@ -195,14 +205,17 @@ button {
 }
 button:hover { background: var(--hover); }
 button.primary, .btn-accent {
-  background: var(--accent);
+  background: var(--accent-button);
   color: white;
   box-shadow: none;
 }
-button.primary:hover, .btn-accent:hover { background: var(--accent-hover); }
+button.primary:hover, .btn-accent:hover { background: var(--accent-button-hover); }
 .btn-raised { background: var(--raised); color: var(--text); }
 .btn-ghost { background: transparent; color: var(--text-2); box-shadow: none; }
-.btn-danger { background: var(--danger); color: white; box-shadow: none; }
+.btn-danger { background: var(--danger-button); color: white; box-shadow: none; }
+/* An explicit danger hover keeps the red fill and white text >=4.5:1. Without
+   it the shared button:hover would replace the fill with the neutral hover. */
+.btn-danger:hover { background: var(--danger-button-hover); color: white; }
 input, select, textarea {
   background: var(--raised);
   border: 1px solid transparent;
@@ -1399,11 +1412,13 @@ button.filter-chip:hover:not(.on) {
   box-shadow: none;
   font-size: var(--text-md);
 }
-.choice-chip.on { background: var(--accent-dim); color: var(--accent); font-weight: 600; }
+/* Selected chips keep the dim wash as their marker but put --text on it, so
+   the label clears 4.5:1 in both themes (accent-on-wash was ~2.3-3.3:1). */
+.choice-chip.on { background: var(--accent-dim); color: var(--text); font-weight: 600; }
 .chip {
   border-radius: 999px;
   background: var(--accent-dim);
-  color: var(--accent);
+  color: var(--text);
   box-shadow: none;
   font-size: var(--text-md);
   height: 30px;
