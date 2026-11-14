@@ -25,6 +25,8 @@ describe('Detail width layout (row 239)', () => {
   })
 
   it('stacks Detail labels above values in a narrow pane', () => {
+    expect(css).toMatch(/\.detail-form\s*\{[^}]*min-width:\s*0/)
+    expect(css).toMatch(/\.detail-form\s*\{[^}]*width:\s*100%/)
     expect(css).toMatch(/\.detail-form\s*\{[^}]*container-type:\s*inline-size/)
     expect(css).toMatch(/@container detail \(width < 360px\)[\s\S]*?\.field\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/)
   })
