@@ -1453,10 +1453,6 @@ export function GraphMap({
       transform.y = camera.y
       lastFrame = frame
       draw(true)
-      if (!initialSettledRef.current) {
-        canvas.dataset.settled = 'true'
-        canvas.dataset.settling = 'false'
-      }
       scheduleInitialSettle()
       return true
     }
@@ -1506,13 +1502,10 @@ export function GraphMap({
       if (alive) draw(false)
     })
     sim.on('end', () => {
-      const waitForFit =
-        deferInitialFitForSheet(densityRef.current, selectedRef.current, sheetRef.current, placementRef.current) &&
-        !initialSettledRef.current
-      canvas.dataset.settling = waitForFit ? 'true' : 'false'
+      canvas.dataset.settling = 'false'
       if (!alive || sim.nodes().length === 0) return
       sim.alphaTarget(0)
-      canvas.dataset.settled = waitForFit ? 'false' : 'true'
+      canvas.dataset.settled = 'true'
       initialEndedRef.current = true
       draw(true)
       if (fitAfterRef.current) {
@@ -2020,7 +2013,21 @@ export function GraphMap({
     if (action === 'remap') apiRef.current.remap()
     else apiRef.current.fit()
   }
-  requestSystemFitRef.current = (event) => fitSchedulerRef.current?.request(event)
+  requestSystemFitRef.current = (event) => {
+    // The settled bottom-sheet box and narrow full-size toggle must fit on the
+    // same turn; the debounced scheduler can be too late for Playwright.
+    const narrowSheet = deferInitialFitForSheet(
+      densityRef.current,
+      selectedRef.current,
+      sheetRef.current,
+      placementRef.current,
+    )
+    if (event === 'sheet' || (event === 'fullscreen' && narrowSheet)) {
+      runSystemFitRef.current(event)
+      return
+    }
+    fitSchedulerRef.current?.request(event)
+  }
   useEffect(() => () => fitSchedulerRef.current?.cancel(), [])
 
   useEffect(() => {
