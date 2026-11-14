@@ -544,6 +544,8 @@ export function GraphMap({
   const focusKeyRef = useRef(focusKey)
   focusKeyRef.current = focusKey
   const placed = useMemo(() => placedSceneNodes(scene, focusKey), [scene, focusKey])
+  const placedRef = useRef(placed)
+  placedRef.current = placed
   const pendingNames = useMemo(
     () =>
       modelMode
@@ -865,7 +867,13 @@ export function GraphMap({
 
     const labelsReady = () =>
       fontsReady() && labelsDrawnRef.current === captionSignature(sim.nodes())
-    const objectNamesReady = () => !sim.nodes().some((node) => node.kind === 'object' && node.rawCaption)
+    const simMatchesPlaced = () => {
+      const simIds = new Set(sim.nodes().map((node) => node.id))
+      const layout = placedRef.current.nodes
+      return layout.length === sim.nodes().length && layout.every((node) => simIds.has(node.id))
+    }
+    const objectNamesReady = () =>
+      !sceneRef.current.nodes.some((node) => node.kind === 'object' && node.rawCaption)
 
     // Freeze the idle-refit baseline only after the first load has genuinely
     // settled. Until then Food and other late nodes/captions may still fit.
@@ -875,6 +883,7 @@ export function GraphMap({
         !initialEndedRef.current ||
         pendingNamesRef.current !== '' ||
         !objectNamesReady() ||
+        !simMatchesPlaced() ||
         !chromeReady() ||
         !labelsReady()
       )
@@ -883,7 +892,14 @@ export function GraphMap({
       settleTimer = setTimeout(() => {
         settleTimer = undefined
         if (movedRef.current || !initialEndedRef.current) return
-        if (pendingNamesRef.current !== '' || !objectNamesReady() || !chromeReady() || !labelsReady()) return
+        if (
+          pendingNamesRef.current !== '' ||
+          !objectNamesReady() ||
+          !simMatchesPlaced() ||
+          !chromeReady() ||
+          !labelsReady()
+        )
+          return
         initialSettledRef.current = true
         if (idleIdsRef.current == null) idleIdsRef.current = currentIdsRef.current
       }, 500)
@@ -1955,6 +1971,12 @@ export function GraphMap({
       densityRef.current === 'wide' &&
       Boolean(selectedRef.current) &&
       propertiesOpen(densityRef.current, sheetRef.current)
+    const layoutReady = () => {
+      const layout = placedRef.current.nodes
+      const simNodes = sim?.nodes() ?? []
+      const simIds = new Set(simNodes.map((node) => node.id))
+      return layout.length === simNodes.length && layout.every((node) => simIds.has(node.id))
+    }
     const action = requestSystemFit({
       event,
       placement: placementRef.current,
@@ -1975,7 +1997,8 @@ export function GraphMap({
       loadEnded: initialEndedRef.current,
       namesPending:
         pendingNamesRef.current !== '' ||
-        Boolean(sim?.nodes().some((node) => node.kind === 'object' && node.rawCaption)),
+        sceneRef.current.nodes.some((node) => node.kind === 'object' && node.rawCaption) ||
+        !layoutReady(),
     })
     if (action === 'none') return
     if (action === 'remap') apiRef.current.remap()
@@ -2055,10 +2078,20 @@ export function GraphMap({
       // captions are ready: a late name reflow can pass through a short quiet
       // window between two otherwise identical layouts. Only then may the box
       // hold still for the longer quiet window and freeze the free frame.
-      const namesReady = () =>
-        pendingNamesRef.current === '' &&
-        fontsReady() &&
-        labelsDrawnRef.current === captionSignature(simRef.current?.nodes() ?? [])
+      const namesReady = () => {
+        const simNodes = simRef.current?.nodes() ?? []
+        const layout = placedRef.current.nodes
+        const simIds = new Set(simNodes.map((node) => node.id))
+        const layoutReady =
+          layout.length === simNodes.length && layout.every((node) => simIds.has(node.id))
+        return (
+          pendingNamesRef.current === '' &&
+          !sceneRef.current.nodes.some((node) => node.kind === 'object' && node.rawCaption) &&
+          layoutReady &&
+          fontsReady() &&
+          labelsDrawnRef.current === captionSignature(simNodes)
+        )
+      }
       let candidate: Box | null = null
       const arm = () => {
         quietTimer = setTimeout(() => {
