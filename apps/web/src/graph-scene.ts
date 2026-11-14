@@ -101,21 +101,24 @@ export function visibleLabelIds(boxes: LabelBox[], zoom: number) {
  * dropped by a hair's width. A value chip (`kind: 'value'`) yields to an
  * overlapping shown name even when the chip is the active node.
  */
+export function labelRectsOverlap(
+  left: { left: number; top: number; right: number; bottom: number },
+  right: { left: number; top: number; right: number; bottom: number },
+) {
+  return boxesOverlap(left, right)
+}
+
 export function visibleCaptionIds(
   boxes: LabelBox[],
   zoom: number,
-  options: { paneWidth: number; edgeLabels?: OverlapBox[]; protectCaptionIds?: Set<string> },
+  options: { paneWidth: number; edgeLabels?: OverlapBox[] },
 ) {
   const shown = visibleLabelIds(boxes, zoom)
   const edgeLabels = options.edgeLabels ?? []
-  const protectedIds = options.protectCaptionIds
   for (const box of boxes) {
     if (!shown.has(box.id)) continue
     if (box.right - box.left > options.paneWidth) shown.delete(box.id)
-    else if (edgeLabels.some((other) => boxesOverlap(box, other))) {
-      if (protectedIds?.has(box.id)) continue
-      shown.delete(box.id)
-    }
+    else if (edgeLabels.some((other) => boxesOverlap(box, other))) shown.delete(box.id)
   }
   return shown
 }
