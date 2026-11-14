@@ -184,7 +184,17 @@ describe('idle refit plan', () => {
     ).toEqual({ fit: false, baselineIds: 'a|b' })
   })
 
-  it('still refits a caption that resolves for the same ids, unless the user moved', () => {
+  it('refits a caption that resolves during the load, never after the baseline is frozen', () => {
+    expect(
+      idleRefitPlan({
+        settled: false,
+        baselineIds: null,
+        ids: 'a|b',
+        captions: 'a\u0000Alpha\u0000|b\u0000Food\u0000',
+        previousCaptions: 'a\u0000|b\u0000Food\u0000',
+        moved: false,
+      }),
+    ).toEqual({ fit: true, baselineIds: null })
     expect(
       idleRefitPlan({
         settled: true,
@@ -194,7 +204,8 @@ describe('idle refit plan', () => {
         previousCaptions: 'a\u0000|b\u0000Food\u0000',
         moved: false,
       }),
-    ).toEqual({ fit: true, baselineIds: 'a|b' })
+      'a late caption after settle is content, not event A',
+    ).toEqual({ fit: false, baselineIds: 'a|b' })
     expect(
       idleRefitPlan({
         settled: true,

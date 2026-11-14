@@ -41,6 +41,7 @@ import {
 import {
   chromeMeasureReady,
   chromeResizeNeedsFit,
+  createFitScheduler,
   detailPlacement,
   fitCameraWithLabels,
   graphDensity,
@@ -51,12 +52,15 @@ import {
   propertiesOpen,
   readGraphFrame,
   remapCamera,
+  requestSystemFit,
   sheetAfterGesture,
   type Box,
   type DetailPlacement,
+  type FitScheduler,
   type GraphDensity,
   type GraphFrame,
   type SheetMode,
+  type SystemFitEvent,
 } from './graph-chrome'
 import { buildModelScene, expandModelType, mergeModelScene } from './graph-model-scene'
 import { curvePoint, edgeLabelMode, placeEdgeLabelWithFallback, type EdgeLabelBox } from './graph-edge-label'
@@ -272,8 +276,8 @@ export function staysPinnedAfterPointerUp(wasPinned: boolean, dragged: boolean, 
  * Decide whether a scene change may idle-refit the camera. During the initial
  * load (settled=false) nodes and captions that arrive a moment after the first
  * paint may fit again. Once the initial load has settled the id baseline is
- * frozen, so add-link / expand growth never idle-fits; a caption that resolves
- * for the same ids still may.
+ * frozen: add-link / expand growth, inspector content and late captions are
+ * all content then, and only events B, C and D may move the camera.
  */
 export function idleRefitPlan(input: {
   settled: boolean
@@ -285,10 +289,11 @@ export function idleRefitPlan(input: {
 }): { fit: boolean; baselineIds: string | null } {
   const changed = input.previousCaptions !== input.captions
   if (input.moved) return { fit: false, baselineIds: input.baselineIds }
-  if (!input.settled) return { fit: changed, baselineIds: input.baselineIds }
-  const baseline = input.baselineIds ?? input.ids
-  if (input.ids !== baseline) return { fit: false, baselineIds: baseline }
-  return { fit: changed, baselineIds: baseline }
+  if (input.settled) {
+    const baseline = input.baselineIds ?? input.ids
+    return { fit: false, baselineIds: baseline }
+  }
+  return { fit: changed, baselineIds: input.baselineIds }
 }
 
 /** `graph:add-link:<key>:<direction>`; the direction is what the picker must use. */
@@ -548,6 +553,14 @@ export function GraphMap({
   const expandRef = useRef<(node: SceneNode) => void>(() => {})
   const selectRef = useRef<(id: string) => void>(() => {})
   const pinRef = useRef(setPinTick)
+  // Every system fit goes through this one scheduler. It carries the event that
+  // asked for the fit so it can re-check the free frame when the timers run.
+  const runSystemFitRef = useRef<(event: SystemFitEvent) => void>(() => {})
+  const requestSystemFitRef = useRef<(event: SystemFitEvent) => void>(() => {})
+  const fitSchedulerRef = useRef<FitScheduler | null>(null)
+  if (fitSchedulerRef.current === null) {
+    fitSchedulerRef.current = createFitScheduler((event) => runSystemFitRef.current(event))
+  }
   hiddenRef.current = hidden
   selectedRef.current = selected
   focusedRef.current = focused
@@ -983,6 +996,7 @@ export function GraphMap({
         return {
           id: node.id,
           priority: labelPriority(node.kind, active),
+          kind: node.kind,
           left: centerX - textWidth / 2 - 4,
           right: centerX + textWidth / 2 + 4,
           top: placement.top,
@@ -1216,10 +1230,15 @@ export function GraphMap({
       }
 
       if (shouldPublish) {
-        for (const { node } of placedNodes) {
-          graphRoot
-            .querySelector<HTMLElement>(`[data-node-id="${CSS.escape(node.id)}"]`)
-            ?.setAttribute('data-label-shown', shownCaptionIds.has(node.id) ? 'true' : 'false')
+        const placedIds = new Set(placedNodes.map(({ node }) => node.id))
+        // Clear stale `true` flags too: a node that leaves the placed set (or
+        // was hidden) must not keep advertising an old caption box.
+        for (const button of graphRoot.querySelectorAll<HTMLElement>('[data-node-id]')) {
+          const id = button.getAttribute('data-node-id') ?? ''
+          button.setAttribute(
+            'data-label-shown',
+            placedIds.has(id) && shownCaptionIds.has(id) ? 'true' : 'false',
+          )
         }
         publishEdgeRects(edgeRects)
         const edgeSerial = [...drawnEdges].sort().join('|')
@@ -1321,8 +1340,14 @@ export function GraphMap({
       sim.alphaTarget(0)
       canvas.dataset.settled = 'true'
       initialEndedRef.current = true
-      if (fitAfterRef.current && fit()) fitAfterRef.current = false
-      else draw(true)
+      draw(true)
+      if (fitAfterRef.current) {
+        // Event A: first complete measurement of this load. requestSystemFit
+        // waits for resolved names and a complete free frame; the sheet box or
+        // a late caption may request the next attempt.
+        fitAfterRef.current = false
+        requestSystemFitRef.current('initial')
+      }
       scheduleInitialSettle()
       sim.stop()
     })
@@ -1538,17 +1563,21 @@ export function GraphMap({
     canvas.addEventListener('wheel', onWheel, { passive: false })
     canvas.addEventListener('dblclick', onDouble)
     canvas.addEventListener('contextmenu', onContextMenu)
-    // A resize (inspector growth, fullscreen toggle, pane split) refits while
-    // the camera is still untouched. Once the user has zoomed or panned, the
-    // camera belongs to them: remap the same world view into the new free
-    // frame instead of reusing screen pixels from the old canvas.
+    // Event C: a *real* pane/canvas resize. The observer's first delivery is
+    // the size we already have; the system fit is gated on the settled pane and
+    // the open sheet box, so a mid-transition size cannot be fitted as final.
+    // Once the user has zoomed or panned, the camera belongs to them: remap the
+    // same world view into the new free frame instead of reusing old pixels.
+    let observedWidth = canvas.clientWidth
+    let observedHeight = canvas.clientHeight
     const observer = new ResizeObserver(() => {
-      if (canvas.dataset.dragging !== 'true') {
-        if (movedRef.current) {
-          remap()
-          return
-        }
-        if (fit()) return
+      const width = canvas.clientWidth
+      const height = canvas.clientHeight
+      const changed = width !== observedWidth || height !== observedHeight
+      observedWidth = width
+      observedHeight = height
+      if (changed && canvas.dataset.dragging !== 'true') {
+        requestSystemFitRef.current('resize')
       }
       // Publish the new client rects too: the a11y nodes and menu anchors must
       // follow the resized canvas.
@@ -1705,27 +1734,6 @@ export function GraphMap({
   }, [])
 
   useEffect(() => {
-    // Full size re-lays out the whole chrome. Refit after that pass, once the
-    // pane and its measured chrome have their new size, while the camera is
-    // still the system's; a user camera is remapped into the new free frame
-    // instead of keeping pixels from the old canvas.
-    const apply = () => {
-      if (movedRef.current) apiRef.current.remap()
-      else apiRef.current.fit()
-    }
-    const frame = requestAnimationFrame(apply)
-    const timer = setTimeout(apply, 120)
-    // The pane and the bottom sheet settle after the toggle; fit once more
-    // when both are measured instead of leaving a mid-transition camera.
-    const late = setTimeout(apply, 320)
-    return () => {
-      cancelAnimationFrame(frame)
-      clearTimeout(timer)
-      clearTimeout(late)
-    }
-  }, [full])
-
-  useEffect(() => {
     // Nodes and captions that resolve after the first paint (a reload, F5)
     // still get an idle refit while the initial load settles. After that the
     // id baseline is frozen so add-link / expand growth never idle-fits, even
@@ -1749,7 +1757,7 @@ export function GraphMap({
       moved: movedRef.current,
     })
     idleIdsRef.current = plan.baselineIds
-    if (plan.fit) apiRef.current.fit()
+    if (plan.fit) requestSystemFitRef.current('initial')
   }, [scene])
 
   const selectedNode = scene.nodes.find((node) => node.id === selected) ?? null
@@ -1761,68 +1769,76 @@ export function GraphMap({
   const chrome = inspectorChrome(placement, pane?.height ?? 0)
 
   const chromeKeyRef = useRef('')
-  // One fit schedule at a time. A [full] toggle and a pane/placement change can
-  // both ask for a refit in the same commit; a stale [full] or pre-sheet timer
-  // must not apply its camera after the newer pane and sheet have settled.
-  const fitFrameRef = useRef<number | null>(null)
-  const fitTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([])
-  const cancelPendingFit = () => {
-    if (fitFrameRef.current !== null) {
-      cancelAnimationFrame(fitFrameRef.current)
-      fitFrameRef.current = null
-    }
-    for (const timer of fitTimersRef.current) clearTimeout(timer)
-    fitTimersRef.current = []
-  }
-  const scheduleFitPass = (apply: () => void) => {
-    cancelPendingFit()
-    fitFrameRef.current = requestAnimationFrame(() => {
-      fitFrameRef.current = null
-      apply()
+  const previousPaneRef = useRef<{ width: number; height: number } | null>(null)
+  const lastFullRef = useRef(full)
+  const paneRef = useRef(pane)
+  paneRef.current = pane
+
+  // The only place a system fit is decided. Every path below requests an
+  // explicit event; this re-reads the live pane, sheet, full-size and user
+  // camera state when the scheduled pass runs, so a mid-transition size or a
+  // sheet-less frame simply no-ops and waits for the next event.
+  runSystemFitRef.current = (event) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const currentPane = paneRef.current
+    const paneReady = Boolean(
+      currentPane &&
+        Math.abs(canvas.clientWidth - currentPane.width) <= 1 &&
+        Math.abs(canvas.clientHeight - currentPane.height) <= 1,
+    )
+    const action = requestSystemFit({
+      event,
+      placement: placementRef.current,
+      inspector: measureChromeBox(canvas, inspectorRef.current),
+      paneReady,
+      moved: movedRef.current,
+      baselineFrozen: initialSettledRef.current,
+      loadEnded: initialEndedRef.current,
+      namesPending: pendingNamesRef.current !== '',
     })
-    fitTimersRef.current = [setTimeout(apply, 120), setTimeout(apply, 320)]
+    if (action === 'none') return
+    if (action === 'remap') apiRef.current.remap()
+    else apiRef.current.fit()
   }
-  useEffect(() => () => cancelPendingFit(), [])
+  requestSystemFitRef.current = (event) => fitSchedulerRef.current?.request(event)
+  useEffect(() => () => fitSchedulerRef.current?.cancel(), [])
+
   useEffect(() => {
-    // Full size re-lays out the whole chrome. Refit after that pass, once the
-    // pane and its measured chrome have their new size, while the camera is
-    // still the system's; a user camera is remapped into the new free frame
-    // instead of keeping pixels from the old canvas.
-    const apply = () => {
-      const canvas = canvasRef.current
-      if (!canvas) return
-      // Never fit a sheet placement before its first real box: that would
-      // re-create the taller pre-sheet camera after Close full size.
-      if (!chromeMeasureReady(placementRef.current, measureChromeBox(canvas, inspectorRef.current))) return
-      if (movedRef.current) apiRef.current.remap()
-      else apiRef.current.fit()
-    }
-    scheduleFitPass(apply)
-    return () => cancelPendingFit()
+    // The first pane measurement is event A's frame; every later size is a real
+    // pane resize (event C). The system fit re-checks that the canvas still
+    // matches the pane, so a resize during Close full size cannot fit a
+    // leftover full-size canvas as if it were final.
+    const previous = previousPaneRef.current
+    previousPaneRef.current = pane ? { width: pane.width, height: pane.height } : null
+    if (!pane) return
+    if (previous && previous.width === pane.width && previous.height === pane.height) return
+    requestSystemFitRef.current(previous ? 'resize' : 'initial')
+  }, [pane])
+
+  useEffect(() => {
+    // Event B: fullscreen open or close. The pane effect (C) and the first-sheet
+    // observer (D) may supply the complete frame after this; requesting B on
+    // mount would be a phantom toggle, so skip it.
+    if (lastFullRef.current === full) return
+    lastFullRef.current = full
+    requestSystemFitRef.current('fullscreen')
   }, [full])
 
   useEffect(() => {
-    // A bottom sheet is an overlay: it can appear without resizing the canvas,
-    // so the canvas ResizeObserver never sees the smaller free frame. The
-    // narrow pane and the sheet may also be measured only after F5's first
-    // paint. Refit once both are known, then once more after the sheet has
-    // settled, so the F5 camera and the post-Close-full-size camera use the
-    // same free frame. An untouched camera fits; a user camera is remapped.
-    const key = `${placement}:${pane?.width ?? 0}x${pane?.height ?? 0}:${selectedNode?.id ?? ''}`
+    // Event D: a bottom sheet is an overlay, so it appears without resizing the
+    // canvas. The observer may only catch the first measured box for this
+    // placement/pane key; after that, inspector growth (add-link, expand, a
+    // late name) is content and must never refit an untouched camera. A side
+    // card is never observed.
+    const key = `${placement}:${pane?.width ?? 0}x${pane?.height ?? 0}`
     const previous = chromeKeyRef.current
+    const changed = previous !== key
     chromeKeyRef.current = key
-    if (previous === key || !pane || placement === 'hidden') return
-    const apply = () => {
-      const canvas = canvasRef.current
-      if (!canvas) return
-      if (!chromeMeasureReady(placementRef.current, measureChromeBox(canvas, inspectorRef.current))) return
-      if (movedRef.current) apiRef.current.remap()
-      else apiRef.current.fit()
+    if (changed && pane && placement !== 'hidden') {
+      if (placement === 'sheet') requestSystemFitRef.current('sheet')
+      else if (previous !== '') requestSystemFitRef.current('resize')
     }
-    scheduleFitPass(apply)
-    // The observer may only catch the first measured box of this open bottom
-    // sheet. After that, inspector growth is content (add-link, expand, a late
-    // name), not a viewport change, and must not refit an untouched camera.
     let observer: ResizeObserver | undefined
     if (placement === 'sheet') {
       let sheetMeasured = false
@@ -1830,9 +1846,9 @@ export function GraphMap({
         const canvas = canvasRef.current
         if (!canvas || sheetMeasured) return
         const box = measureChromeBox(canvas, inspectorRef.current)
-        if (!chromeResizeNeedsFit({ placement, inspector: box, sheetMeasured })) return
+        if (!chromeResizeNeedsFit({ event: 'sheet', placement, inspector: box, sheetMeasured })) return
         sheetMeasured = true
-        apply()
+        requestSystemFitRef.current('sheet')
         observer?.disconnect()
       })
       for (const element of [inspectorRef.current, legendRef.current]) {
@@ -1840,10 +1856,9 @@ export function GraphMap({
       }
     }
     return () => {
-      cancelPendingFit()
       observer?.disconnect()
     }
-  }, [placement, pane, selectedNode?.id])
+  }, [placement, pane])
   const pinned = Boolean(
     pinTick >= 0 && simRef.current?.nodes().some((node) => node.id === selected && node.fx != null && node.fy != null),
   )

@@ -97,6 +97,44 @@ export function chromeMeasureReady(
 }
 
 /**
+ * The four explicit events that may move the camera on their own: the first
+ * complete measurement of a load, a full-size toggle, a real pane/canvas
+ * resize, and the first measured box of an open bottom sheet. Nothing else
+ * (selection, inspector growth, add-link, expand, late captions) is a viewport
+ * event.
+ */
+export type SystemFitEvent = 'initial' | 'fullscreen' | 'resize' | 'sheet'
+export type SystemFitAction = 'none' | 'fit' | 'remap'
+
+/**
+ * Decide what a system-fit request may do. Every event is gated on a complete
+ * free frame: the current pane/canvas size is settled and, for a `sheet`
+ * placement, the inspector has a real box. A user camera is always remapped,
+ * never fitted. The initial event only exists until the idle baseline is
+ * frozen; the other three still work after it (Close full size is fullscreen +
+ * resize + sheet even after settle).
+ */
+export function requestSystemFit(input: {
+  event: SystemFitEvent
+  placement: DetailPlacement
+  inspector: Box | null | undefined
+  paneReady: boolean
+  moved: boolean
+  baselineFrozen: boolean
+  loadEnded?: boolean
+  namesPending?: boolean
+}): SystemFitAction {
+  if (!input.paneReady) return 'none'
+  if (!chromeMeasureReady(input.placement, input.inspector)) return 'none'
+  if (input.event === 'sheet' && input.placement !== 'sheet') return 'none'
+  if (input.event === 'initial') {
+    if (input.baselineFrozen) return 'none'
+    if (input.loadEnded === false || input.namesPending === true) return 'none'
+  }
+  return input.moved ? 'remap' : 'fit'
+}
+
+/**
  * A chrome ResizeObserver may only catch the first real box of an open bottom
  * sheet for the current placement/pane key. Once that box is measured, later
  * inspector growth (add-link, expand, a late name) is content, not a viewport
@@ -105,14 +143,73 @@ export function chromeMeasureReady(
  * fresh effect and therefore a fresh observer.
  */
 export function chromeResizeNeedsFit(input: {
+  event: SystemFitEvent
   placement: DetailPlacement
   inspector: Box | null | undefined
   /** True once this placement/pane key already used its first sheet box. */
   sheetMeasured: boolean
 }): boolean {
+  if (input.event !== 'sheet') return false
   if (input.sheetMeasured) return false
   if (input.placement !== 'sheet') return false
   return chromeMeasureReady(input.placement, input.inspector)
+}
+
+export type FitScheduler = {
+  request: (event: SystemFitEvent) => void
+  cancel: () => void
+}
+
+/**
+ * One pending system-fit pass. Requesting a newer event cancels the older
+ * frame and timers, so a leftover full-size or pre-sheet timer can never apply
+ * its camera after the pane has settled. The pass reads live state each time
+ * it runs (`requestSystemFit`), so it may no-op until the sheet box appears and
+ * then run again for the next event.
+ */
+export function createFitScheduler(
+  run: (event: SystemFitEvent) => void,
+  env: {
+    frame: (callback: () => void) => number
+    cancelFrame: (handle: number) => void
+    timeout: (callback: () => void, ms: number) => ReturnType<typeof setTimeout>
+    clearTimeout: (handle: ReturnType<typeof setTimeout>) => void
+  } = {
+    frame: (callback) => requestAnimationFrame(callback),
+    cancelFrame: (handle) => cancelAnimationFrame(handle),
+    timeout: (callback, ms) => setTimeout(callback, ms),
+    clearTimeout: (handle) => clearTimeout(handle),
+  },
+): FitScheduler {
+  let frame: number | null = null
+  let timers: Array<ReturnType<typeof setTimeout>> = []
+  let event: SystemFitEvent | null = null
+
+  const cancel = () => {
+    if (frame !== null) {
+      env.cancelFrame(frame)
+      frame = null
+    }
+    for (const timer of timers) env.clearTimeout(timer)
+    timers = []
+    event = null
+  }
+
+  return {
+    request: (next) => {
+      cancel()
+      event = next
+      const apply = () => {
+        if (event) run(event)
+      }
+      frame = env.frame(() => {
+        frame = null
+        apply()
+      })
+      timers = [env.timeout(apply, 120), env.timeout(apply, 320)]
+    },
+    cancel,
+  }
 }
 
 export type InspectorChrome = {

@@ -92,6 +92,18 @@ describe('graph marks', () => {
     expect([...zoomedOut]).toEqual(['object'])
   })
 
+  it('makes an active value chip yield to an overlapping shown name', () => {
+    const name = { id: 'object:014', priority: 3, kind: 'object' as const, left: 0, top: 0, right: 80, bottom: 16 }
+    const chip = { id: 'value:014:carbohydrates', priority: 5, kind: 'value' as const, left: 30, top: 2, right: 120, bottom: 18 }
+    const shown = visibleCaptionIds([name, chip], 1, { paneWidth: 230 })
+    expect(shown.has('object:014'), 'the shown name keeps its caption').toBe(true)
+    expect(shown.has('value:014:carbohydrates'), 'the active chip still yields').toBe(false)
+    expect(
+      [...visibleLabelIds([name, chip], 1)],
+      'the collision pass ranks value chips below real names',
+    ).toEqual(['object:014'])
+  })
+
   it('keeps a caption wider than the pane out without dropping a clamped name', () => {
     const name = { id: 'article', priority: 5, left: 10, top: 10, right: 239, bottom: 26 }
     const chip = { id: 'value', priority: 0, left: 20, top: 10, right: 260, bottom: 26 }

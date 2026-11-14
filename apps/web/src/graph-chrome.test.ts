@@ -7,6 +7,7 @@ import {
   chromeMeasureReady,
   chromeResizeNeedsFit,
   clampSheetBoxes,
+  createFitScheduler,
   detailPlacement,
   fitCamera,
   fitCameraWithLabels,
@@ -18,9 +19,11 @@ import {
   propertiesOpen,
   readGraphFrame,
   remapCamera,
+  requestSystemFit,
   sheetAfterGesture,
   sheetMaxHeight,
   visibleGraphFrame,
+  type SystemFitEvent,
 } from './graph-chrome'
 import { visibleCaptionIds } from './graph-scene'
 
@@ -259,11 +262,12 @@ describe('fitting measured captions', () => {
 
   it('requests one fit when the first sheet box becomes ready', () => {
     expect(
-      chromeResizeNeedsFit({ placement: 'sheet', inspector: null, sheetMeasured: false }),
+      chromeResizeNeedsFit({ event: 'sheet', placement: 'sheet', inspector: null, sheetMeasured: false }),
       'a missing box is not the sheet measurement',
     ).toBe(false)
     expect(
       chromeResizeNeedsFit({
+        event: 'sheet',
         placement: 'sheet',
         inspector: { x: 8, y: 420, width: 0, height: 212 },
         sheetMeasured: false,
@@ -272,6 +276,7 @@ describe('fitting measured captions', () => {
     ).toBe(false)
     expect(
       chromeResizeNeedsFit({
+        event: 'sheet',
         placement: 'sheet',
         inspector: { x: 8, y: 420, width: 214, height: 212 },
         sheetMeasured: false,
@@ -283,17 +288,128 @@ describe('fitting measured captions', () => {
   it('ignores inspector growth after the sheet was measured, including after settle', () => {
     const inspector = { x: 8, y: 420, width: 214, height: 212 }
     expect(
-      chromeResizeNeedsFit({ placement: 'sheet', inspector, sheetMeasured: true }),
+      chromeResizeNeedsFit({ event: 'sheet', placement: 'sheet', inspector, sheetMeasured: true }),
       'a grown sheet after the baseline is frozen must not refit',
     ).toBe(false)
     expect(
       chromeResizeNeedsFit({
+        event: 'sheet',
         placement: 'side',
         inspector: { x: 752, y: 8, width: 240, height: 400 },
         sheetMeasured: false,
       }),
       'a wide side card is not observed for sheet measurement',
     ).toBe(false)
+    for (const event of ['initial', 'fullscreen', 'resize'] as const) {
+      expect(
+        chromeResizeNeedsFit({ event, placement: 'sheet', inspector, sheetMeasured: false }),
+        `${event} is not a chrome-resize event`,
+      ).toBe(false)
+    }
+  })
+
+  it('fits only on the four explicit events, never a value/content change', () => {
+    const complete = {
+      placement: 'sheet' as const,
+      inspector: { x: 8, y: 420, width: 214, height: 212 },
+      paneReady: true,
+      moved: false,
+      baselineFrozen: false,
+      loadEnded: true,
+      namesPending: false,
+    }
+    for (const event of ['initial', 'fullscreen', 'resize', 'sheet'] as const) {
+      expect(requestSystemFit({ ...complete, event }), `${event} may fit`).toBe('fit')
+    }
+    expect(
+      requestSystemFit({ ...complete, event: 'initial', baselineFrozen: true }),
+      'event A must not run after the baseline is frozen',
+    ).toBe('none')
+    expect(
+      requestSystemFit({ ...complete, event: 'initial', loadEnded: false }),
+      'event A needs the simulation to have ended',
+    ).toBe('none')
+    expect(
+      requestSystemFit({ ...complete, event: 'initial', namesPending: true }),
+      'event A waits for resolved names',
+    ).toBe('none')
+    for (const event of ['fullscreen', 'resize', 'sheet'] as const) {
+      expect(
+        requestSystemFit({ ...complete, event, baselineFrozen: true }),
+        `${event} still works after settle (Close full size is B+C+D)`,
+      ).toBe('fit')
+      expect(
+        requestSystemFit({ ...complete, event, moved: true }),
+        `${event} remaps a user camera`,
+      ).toBe('remap')
+    }
+  })
+
+  it('does not fit a sheet placement without a real box, even for a resize', () => {
+    const base = {
+      event: 'resize' as const,
+      placement: 'sheet' as const,
+      paneReady: true,
+      moved: false,
+      baselineFrozen: false,
+      loadEnded: true,
+      namesPending: false,
+    }
+    expect(requestSystemFit({ ...base, inspector: null })).toBe('none')
+    expect(requestSystemFit({ ...base, inspector: { x: 8, y: 420, width: 0, height: 212 } })).toBe('none')
+    expect(
+      requestSystemFit({ ...base, paneReady: false, inspector: { x: 8, y: 420, width: 214, height: 212 } }),
+      'a mid-transition pane is not the settled free frame',
+    ).toBe('none')
+    expect(
+      requestSystemFit({
+        ...base,
+        event: 'sheet',
+        placement: 'side',
+        inspector: { x: 752, y: 8, width: 240, height: 400 },
+      }),
+      'the first-sheet event only exists for a sheet placement',
+    ).toBe('none')
+  })
+
+  it('cancels a leftover fit pass when a newer event arrives or on cleanup', () => {
+    const runs: SystemFitEvent[] = []
+    const frames: Array<{ handle: number; run: () => void }> = []
+    const timers = new Map<number, () => void>()
+    let handle = 1
+    const scheduler = createFitScheduler((event) => runs.push(event), {
+      frame: (callback) => {
+        const id = handle++
+        frames.push({ handle: id, run: callback })
+        return id
+      },
+      cancelFrame: (id) => {
+        const index = frames.findIndex((item) => item.handle === id)
+        if (index >= 0) frames.splice(index, 1)
+      },
+      timeout: (callback) => {
+        const id = handle++
+        timers.set(id, callback)
+        return id as unknown as ReturnType<typeof setTimeout>
+      },
+      clearTimeout: (id) => {
+        timers.delete(Number(id))
+      },
+    })
+
+    scheduler.request('initial')
+    scheduler.request('sheet')
+    expect(frames, 'the older frame is cancelled').toHaveLength(1)
+    const [pending] = frames.splice(0, 1)
+    pending!.run()
+    for (const callback of [...timers.values()]) callback()
+    expect(runs, 'only the newer event runs').toEqual(['sheet', 'sheet', 'sheet'])
+
+    runs.length = 0
+    scheduler.request('fullscreen')
+    scheduler.cancel()
+    expect(frames, 'cancel removes the frame').toHaveLength(0)
+    expect(timers.size, 'cancel removes the timers').toBe(0)
   })
 
   it('fits a smaller camera when a sheet-sized chrome box is measured', () => {

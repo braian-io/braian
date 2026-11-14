@@ -56,14 +56,29 @@ export function labelVisibleAtZoom(priority: number, zoom: number) {
   return true
 }
 
-export type LabelBox = { id: string; priority: number; left: number; top: number; right: number; bottom: number }
+export type LabelBox = {
+  id: string
+  priority: number
+  left: number
+  top: number
+  right: number
+  bottom: number
+  /** Value chips always yield to a shown name, even when the chip is active. */
+  kind?: NodeKind
+}
 type OverlapBox = { left: number; top: number; right: number; bottom: number }
 
 /** Object and type captions (and the active node) are real names, not value chips. */
 export const NAMED_CAPTION_PRIORITY = 3
 
+function captionRank(box: LabelBox) {
+  return box.kind === 'value' ? -1 : box.priority
+}
+
 export function visibleLabelIds(boxes: LabelBox[], zoom: number) {
-  const sorted = [...boxes].sort((left, right) => right.priority - left.priority || left.id.localeCompare(right.id))
+  const sorted = [...boxes].sort(
+    (left, right) => captionRank(right) - captionRank(left) || left.id.localeCompare(right.id),
+  )
   const kept: LabelBox[] = []
   const ids = new Set<string>()
   for (const box of sorted) {
@@ -83,7 +98,8 @@ export function visibleLabelIds(boxes: LabelBox[], zoom: number) {
  * active labels to move aside from a name when a legal slot exists, but it
  * never drops the label to spare one. The pane check is `paneWidth` rather than
  * `paneWidth - 2`, so a name the fit clamped inside the free frame is not
- * dropped by a hair's width.
+ * dropped by a hair's width. A value chip (`kind: 'value'`) yields to an
+ * overlapping shown name even when the chip is the active node.
  */
 export function visibleCaptionIds(
   boxes: LabelBox[],
