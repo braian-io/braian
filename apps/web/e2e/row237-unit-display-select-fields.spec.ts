@@ -35,7 +35,13 @@ async function enterOn(page: Page, rowTestId: string) {
       await page.keyboard.press('Enter')
       return
     }
-    await page.keyboard.press('ArrowDown')
+    const activeBox = await active.boundingBox()
+    const targetBox = await page.getByTestId(rowTestId).boundingBox()
+    if (activeBox && targetBox && targetBox.y + 1 < activeBox.y) {
+      await page.keyboard.press('ArrowUp')
+    } else {
+      await page.keyboard.press('ArrowDown')
+    }
   }
   throw new Error(`Could not move active highlight to ${rowTestId}`)
 }
@@ -135,6 +141,7 @@ test.describe('row 237 unit display and Select fields', () => {
     await openFieldsPalette(page)
     await page.getByTestId('fields-mode-input').fill('Energy')
     await enterOn(page, 'fields-row-energy')
+    await page.getByTestId('fields-mode-input').fill('')
     await enterOn(page, 'fields-row-kcal')
     await page.keyboard.press('Escape')
     await expect(page.getByTestId('fields-mode')).toHaveCount(0)
@@ -153,6 +160,7 @@ test.describe('row 237 unit display and Select fields', () => {
     await openFieldsPalette(page)
     await page.getByTestId('fields-mode-input').fill('Energy')
     await enterOn(page, 'fields-row-energy')
+    await page.getByTestId('fields-mode-input').fill('')
     await enterOn(page, 'fields-row-kJ')
     await page.keyboard.press('Escape')
 
@@ -178,11 +186,17 @@ test.describe('row 237 unit display and Select fields', () => {
   test('Enter still toggles when the filter matches a field', async ({ page }) => {
     await login(page)
     await openProducts(page)
+    const brandHeader = mainTable(page).locator('.head [data-testid="col-brand"]').first()
+    const wasVisible = await brandHeader.isVisible()
     await openFieldsPalette(page)
     await page.getByTestId('fields-mode-input').fill('brand')
     await enterOn(page, 'fields-row-brand')
     await page.keyboard.press('Escape')
-    await expect(mainTable(page).locator('.head [data-testid="col-brand"]').first()).toBeVisible()
+    if (wasVisible) {
+      await expect(brandHeader).toHaveCount(0)
+    } else {
+      await expect(brandHeader).toBeVisible()
+    }
   })
 
   test('inline converted energy edit keeps stored precision', async ({ page }) => {
@@ -200,6 +214,7 @@ test.describe('row 237 unit display and Select fields', () => {
     await openFieldsPalette(page)
     await page.getByTestId('fields-mode-input').fill('Energy')
     await enterOn(page, 'fields-row-energy')
+    await page.getByTestId('fields-mode-input').fill('')
     await enterOn(page, 'fields-row-kcal')
     await page.keyboard.press('Escape')
 
