@@ -16,7 +16,8 @@ import { UserMenu } from './user-menu'
 import { CatalogSelector } from './catalog-selector'
 import { api, freeObject, jsonRecord, keepaliveJsonPut, operationId, recordTitle, textValue, type Json } from './api'
 import { AssortmentList, SelectionHost } from './assortments'
-import { humanizeLive, objectIdFromLive } from './activity'
+import { humanizeLive, liveOperation, objectIdFromLive } from './activity'
+import { markObjectGone } from './object-gone'
 import { ImportScreen } from './import/view'
 import { dropImportFiles, onImportLive, openImport, resumeImport, setImportDrag } from './import/controller'
 import { importRefreshesObjects, isFileDrag } from './import/model'
@@ -676,7 +677,11 @@ export function Shell() {
         void queryClient.invalidateQueries({ queryKey: ['objects'] })
         void queryClient.invalidateQueries({ queryKey: ['path-values'] })
       },
-      (id) => {
+      (id, raw) => {
+        if (liveOperation(raw) === 'delete') {
+          markObjectGone(queryClient, id)
+          return
+        }
         void queryClient.invalidateQueries({ queryKey: ['object', id] })
         void queryClient.invalidateQueries({ queryKey: ['object-ref', id] })
         void queryClient.invalidateQueries({ queryKey: ['history', id] })

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { api } from './api'
 import { Button } from './components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
@@ -12,7 +13,8 @@ import {
   type DeleteObjectRequest,
 } from './delete-objects'
 import { copy } from './i18n'
-import { writeErrorMessage } from './write-error'
+import { clearObjectGone, markObjectGone } from './object-gone'
+import { reportWriteError, writeErrorMessage } from './write-error'
 
 type Loaded = { counts: DeleteCounts }
 
@@ -79,26 +81,63 @@ export function DeleteObjectsHost() {
     setBusy(true)
     setError('')
     void (async () => {
+      const deleted = [...request.ids]
+      const skip = new Set(deleted)
       let failed = false
-      for (const id of request.ids) {
+      for (const id of deleted) {
         try {
           await api.delete('/v1/objects/{id}', { params: { path: { id } } })
+          markObjectGone(queryClient, id)
         } catch (reason) {
           setError(writeErrorMessage(reason) ?? copy.deleteObjectFailed)
           failed = true
           break
         }
       }
+      const invalidateObjectReads = () =>
+        queryClient.invalidateQueries({
+          queryKey: ['object'],
+          predicate: (query) => !skip.has(String(query.queryKey[1] ?? '')),
+        })
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['objects'] }),
-        queryClient.invalidateQueries({ queryKey: ['object'] }),
+        invalidateObjectReads(),
         queryClient.invalidateQueries({ queryKey: ['search'] }),
         queryClient.invalidateQueries({ queryKey: ['palette'] }),
         queryClient.invalidateQueries({ queryKey: ['trash'] }),
         queryClient.invalidateQueries({ queryKey: ['links'] }),
       ])
       setBusy(false)
-      if (!failed) setRequest(null)
+      if (!failed) {
+        toast(copy.deleteObjectDone, {
+          action: {
+            label: copy.undo,
+            onClick: () => {
+              void (async () => {
+                for (const id of deleted) {
+                  try {
+                    await api.post('/v1/trash/{kind}/{id}/undelete', {
+                      params: { path: { kind: 'object', id } },
+                    })
+                    clearObjectGone(queryClient, id)
+                  } catch (reason) {
+                    reportWriteError(reason)
+                    return
+                  }
+                }
+                await Promise.all([
+                  queryClient.invalidateQueries({ queryKey: ['objects'] }),
+                  queryClient.invalidateQueries({ queryKey: ['object'] }),
+                  queryClient.invalidateQueries({ queryKey: ['search'] }),
+                  queryClient.invalidateQueries({ queryKey: ['path-values'] }),
+                  queryClient.invalidateQueries({ queryKey: ['trash'] }),
+                ])
+              })()
+            },
+          },
+        })
+        setRequest(null)
+      }
     })()
   }
 
