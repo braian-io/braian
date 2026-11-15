@@ -403,6 +403,7 @@ export const copy = {
   unlockWorkspace: 'Unlock workspace',
   copyShare: 'Copy share link',
   newWorkspace: 'New from template',
+  newWorkspaceButton: 'New workspace',
   deleteWorkspace: 'Delete workspace',
   deleteWorkspaceConfirm: 'Delete this workspace? It moves to Trash with its views, and object data stays.',
   deleteWorkspaceLast: 'The last workspace cannot be deleted',

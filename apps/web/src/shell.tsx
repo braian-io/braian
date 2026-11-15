@@ -6,7 +6,7 @@ import { ImportMappingsView } from './import/mappings-view'
 import { CatalogsView, MergeProfilesView, MergeRunsView, OwnershipView } from './catalogs/views'
 import { flushSync } from 'react-dom'
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, ChevronRight, File, Folder, FolderOpen } from 'lucide-react'
+import { ChevronDown, ChevronRight, File, Folder, FolderOpen, Plus } from 'lucide-react'
 import { StatusBar, useOnline } from './status-bar'
 import { isConnected, type LiveState } from './status-message'
 import { TrashDialog } from './trash-dialog'
@@ -1920,6 +1920,16 @@ export function Shell() {
               {index < 9 ? <span className="tab-index">{index + 1}</span> : null}
             </button>
           ))}
+          <button
+            type="button"
+            className="tab tab-new"
+            data-testid="workspace-new-button"
+            aria-label={copy.newWorkspaceButton}
+            title={copy.newWorkspaceButton}
+            onClick={() => { void runCommand('workspace:new') }}
+          >
+            <Plus size={14} aria-hidden="true" />
+          </button>
         </nav>
         <span className="spacer" />
         <AgentPresence
