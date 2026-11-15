@@ -1,4 +1,6 @@
-import { objectIdFromLive } from './activity'
+import type { QueryClient } from '@tanstack/react-query'
+import { objectIdFromLive, liveOperation } from './activity'
+import { clearObjectGone } from './object-gone'
 
 /** Debounce before refreshing a search list after an interactive edit. */
 export const INTERACTIVE_LIST_MS = 500
@@ -8,6 +10,12 @@ export const BULK_QUIET_MS = 2_000
 export const BULK_MAX_MS = 8_000
 
 export type LiveClass = 'interactive' | 'bulk' | 'ignore'
+
+/** Interactive updates after a soft delete (Trash restore, undo, another session). */
+export function liveRestoresObject(raw: string): boolean {
+  const op = liveOperation(raw)
+  return op === 'update' || op === 'patch' || op === 'create'
+}
 
 export function classifyLive(raw: string): LiveClass {
   try {
@@ -35,13 +43,17 @@ export class SearchRefresh {
   constructor(
     private readonly refreshList: () => void,
     private readonly refreshObject: (id: string, raw: string) => void,
+    private readonly queryClient?: QueryClient,
   ) {}
 
   onEvent(raw: string, now = Date.now()) {
     const kind = classifyLive(raw)
     if (kind === 'interactive') {
       const id = objectIdFromLive(raw)
-      if (id) this.refreshObject(id, raw)
+      if (id) {
+        if (liveRestoresObject(raw) && this.queryClient) clearObjectGone(this.queryClient, id)
+        this.refreshObject(id, raw)
+      }
       this.scheduleList(INTERACTIVE_LIST_MS)
       return
     }

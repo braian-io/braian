@@ -4,6 +4,7 @@ import { api } from './api'
 import { Button } from './components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
 import { copy } from './i18n'
+import { clearObjectGone } from './object-gone'
 import { writeErrorMessage } from './write-error'
 
 export function TrashDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -17,7 +18,8 @@ export function TrashDialog({ open, onClose }: { open: boolean; onClose: () => v
     mutationFn: (item: { kind: string; id: string }) => api.post('/v1/trash/{kind}/{id}/undelete', {
       params: { path: { kind: item.kind, id: item.id } },
     }),
-    onSuccess: async () => {
+    onSuccess: async (_data, item) => {
+      if (item.kind === 'object') clearObjectGone(queryClient, item.id)
       toast(copy.trashRestored)
       await queryClient.invalidateQueries()
     },

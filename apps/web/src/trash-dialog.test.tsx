@@ -2,6 +2,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { objectQueryGone, markObjectGone } from './object-gone'
 import { TrashDialog } from './trash-dialog'
 
 const get = vi.fn()
@@ -22,13 +23,13 @@ afterEach(() => {
   post.mockReset()
 })
 
-function mount() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+function mount(client = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   render(
     <QueryClientProvider client={client}>
       <TrashDialog open onClose={() => {}} />
     </QueryClientProvider>,
   )
+  return client
 }
 
 describe('TrashDialog', () => {
@@ -43,5 +44,19 @@ describe('TrashDialog', () => {
     await waitFor(() => expect(post).toHaveBeenCalledWith('/v1/trash/{kind}/{id}/undelete', {
       params: { path: { kind: 'workspace', id: 'ws-1' } },
     }))
+  })
+
+  it('clears a gone object pin when an object is restored', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    markObjectGone(client, 'obj-trash')
+    get.mockResolvedValue({
+      items: [{ kind: 'object', id: 'obj-trash', label: 'Bread', deleted_at: '2026-11-01T00:00:00Z' }],
+    })
+    post.mockResolvedValue(undefined)
+    mount(client)
+    expect(await screen.findByText('Bread')).toBeTruthy()
+    expect(objectQueryGone(client, 'obj-trash')).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Restore' }))
+    await waitFor(() => expect(objectQueryGone(client, 'obj-trash')).toBe(false))
   })
 })
