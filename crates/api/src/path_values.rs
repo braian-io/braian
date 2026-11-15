@@ -387,13 +387,9 @@ fn display_measure(
     {
         let converted = unit_family
             .and_then(|family_id| convert_unit(defs, family_id, number, &from_unit, target));
-        if let Some(converted) = converted {
-            let display = if converted.fract() == 0.0 {
-                format!("{converted:.0}")
-            } else {
-                format!("{converted}")
-            };
-            return (format!("{display} {target}"), false);
+        if let Some((converted, unit_label)) = converted {
+            let display = format_converted_number(converted);
+            return (format!("{display} {unit_label}"), false);
         }
         // Missing factor — raw value with own unit; client shows a discrete marker via raw=true.
         let raw_text = if from_unit.is_empty() {
@@ -456,7 +452,7 @@ fn convert_unit(
     value: f64,
     from_unit: &str,
     to_unit: &str,
-) -> Option<f64> {
+) -> Option<(f64, String)> {
     let family = defs
         .unit_families
         .iter()
@@ -475,7 +471,22 @@ fn convert_unit(
         return None;
     }
     // value × from.factor = base; base / to.factor = display
-    Some((value * from_f) / to_f)
+    let converted = (value * from_f) / to_f;
+    Some((converted, to.code.clone()))
+}
+
+/// Display rounding for converted measures (at most two decimals, no trailing zeros).
+fn format_converted_number(value: f64) -> String {
+    let rounded = (value * 100.0).round() / 100.0;
+    if rounded.fract().abs() < f64::EPSILON * 128.0 {
+        format!("{rounded:.0}")
+    } else {
+        let fixed = format!("{rounded:.2}");
+        fixed
+            .trim_end_matches('0')
+            .trim_end_matches('.')
+            .to_string()
+    }
 }
 
 fn display_value(
@@ -512,6 +523,18 @@ fn display_value(
             .filter(|text| !text.is_empty())
             .or_else(|| other.as_str().map(str::to_owned))
             .unwrap_or_default(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_converted_number;
+
+    #[test]
+    fn format_converted_number_trims_trailing_zeros() {
+        assert_eq!(format_converted_number(485.1816443594646), "485.18");
+        assert_eq!(format_converted_number(0.2), "0.2");
+        assert_eq!(format_converted_number(2.0), "2");
     }
 }
 

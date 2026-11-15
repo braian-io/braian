@@ -136,7 +136,18 @@ unit columns, or as all three. The separate columns are labelled `Name (value)` 
 `Name (unit)`; the value column shows only the number and the unit column only the
 unit code. The separate value and unit columns are display-only. A display unit
 chosen on the combined column only changes how the number is shown there, and leaves
-the value and unit columns alone.
+the value and unit columns alone. Converted numbers are rounded for display (at most
+two decimal places, trailing zeros omitted) in the table and in the Detail panel.
+The stored value and unit are unchanged when you edit or save.
+
+Unit labels keep conventional casing in column titles and cells, for example `kJ`,
+`kcal`, `g`, and `mg`. A column titled `Energy (kJ)` shows values converted to
+kilojoules when that display unit is selected.
+
+In the field list, `Enter` toggles or drills into the highlighted row only when the
+filter box has text. With an empty filter, `Enter` does nothing so the first row
+(such as Number) is not turned off by accident. Use `→` to drill into a field, or
+type to filter and then press `Enter` to add or remove a column.
 
 ## Switching workspaces
 

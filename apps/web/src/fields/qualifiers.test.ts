@@ -123,6 +123,8 @@ describe('qualifier module', () => {
       { kind: 'unit', optionId: 'ml', label: 'ml' },
     ]
     expect(formatColumnTitle(['Articles', 'Net volume'], qs)).toBe('Articles › Net volume (all, ml)')
+    const energy: AppliedQualifier[] = [{ kind: 'unit', optionId: 'kJ', label: 'kJ' }]
+    expect(formatColumnTitle(['Energy'], energy)).toBe('Energy (kJ)')
   })
 
   it('summarizes lists as A, B +N with full title for tooltips', () => {
@@ -151,7 +153,19 @@ describe('qualifier module', () => {
       formatCellValue({ value: { value: 1, unit: 'l' } }, volume, [
         { kind: 'unit', optionId: 'ml', label: 'ml' },
       ]),
-    ).toBe('1000 ml')
+    ).toBe('1,000 ml')
+    const weight: FieldDef = {
+      id: 'net_weight',
+      name: 'Net weight',
+      typeLabel: 'Number',
+      shape: 'unit',
+      units: ['g', 'kg'],
+    }
+    expect(
+      formatCellValue({ value: { value: 450.333, unit: 'g' } }, weight, [
+        { kind: 'unit', optionId: 'kg', label: 'kg' },
+      ]),
+    ).toBe('0.45 kg')
     expect(
       formatCellValue({ value: { min: 2, max: 8 } }, storage, [
         { kind: 'range', optionId: 'max', label: 'Max' },

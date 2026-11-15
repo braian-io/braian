@@ -74,4 +74,11 @@ describe('FieldsMode measured parts', () => {
     expect(screen.getByTestId('fields-row-fat_content.value')).toBeTruthy()
     expect(screen.getByTestId('fields-row-fat_content.unit')).toBeTruthy()
   })
+
+  it('ignores Enter on the root list when the filter is empty', () => {
+    renderFields()
+    const input = screen.getByTestId('fields-mode-input')
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(screen.getByTestId('fields-check-fat_content').getAttribute('data-state')).toBe('checked')
+  })
 })

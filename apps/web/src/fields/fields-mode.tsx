@@ -859,6 +859,7 @@ export function FieldsMode({ open, columns, fields: catalog, onClose, onToggleCo
     }
     if (event.key === 'Enter') {
       event.preventDefault()
+      if (query.trim() === '' && top.kind === 'fields') return
       runActive()
     }
   }
