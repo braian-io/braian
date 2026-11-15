@@ -859,7 +859,10 @@ export function FieldsMode({ open, columns, fields: catalog, onClose, onToggleCo
     }
     if (event.key === 'Enter') {
       event.preventDefault()
-      if (query.trim() === '' && top.kind === 'fields') return
+      const row = rows[Math.min(active, Math.max(0, rows.length - 1))]
+      // Empty filter at the field list: Enter drills into All/language/unit steps, but must not
+      // toggle simple columns (e.g. Number) on the first row.
+      if (query.trim() === '' && top.kind === 'fields' && !row?.drill) return
       runActive()
     }
   }

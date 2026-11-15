@@ -144,10 +144,10 @@ Unit labels keep conventional casing in column titles and cells, for example `kJ
 `kcal`, `g`, and `mg`. A column titled `Energy (kJ)` shows values converted to
 kilojoules when that display unit is selected.
 
-In the field list, `Enter` toggles or drills into the highlighted row only when the
-filter box has text. With an empty filter, `Enter` does nothing so the first row
-(such as Number) is not turned off by accident. Use `→` to drill into a field, or
-type to filter and then press `Enter` to add or remove a column.
+In the field list, `Enter` with an empty filter still drills into fields that have
+further steps (language, unit, links). It does not toggle simple columns, so the
+first row (such as Number) is not turned off by accident. To add or remove a simple
+field, type in the filter and press `Enter`, or click its checkbox.
 
 ## Switching workspaces
 

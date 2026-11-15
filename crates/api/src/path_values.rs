@@ -526,18 +526,6 @@ fn display_value(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::format_converted_number;
-
-    #[test]
-    fn format_converted_number_trims_trailing_zeros() {
-        assert_eq!(format_converted_number(485.1816443594646), "485.18");
-        assert_eq!(format_converted_number(0.2), "0.2");
-        assert_eq!(format_converted_number(2.0), "2");
-    }
-}
-
 fn project_part(value: &Value, part: PathPart, labels: &BTreeMap<String, String>) -> Value {
     match part {
         PathPart::Whole | PathPart::Code => value.clone(),
@@ -549,5 +537,17 @@ fn project_part(value: &Value, part: PathPart, labels: &BTreeMap<String, String>
             let code = value.as_str().unwrap_or("");
             Value::String(labels.get(code).cloned().unwrap_or_else(|| code.to_owned()))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_converted_number;
+
+    #[test]
+    fn format_converted_number_trims_trailing_zeros() {
+        assert_eq!(format_converted_number(485.1816443594646), "485.18");
+        assert_eq!(format_converted_number(0.2), "0.2");
+        assert_eq!(format_converted_number(2.0), "2");
     }
 }
