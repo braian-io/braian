@@ -1,8 +1,116 @@
+import { textValue, type Json } from './api'
+import { factorsForFamily } from './fields/catalog'
 import { parseColumnId } from './fields/columns'
+import { convertMeasure } from './fields/qualifiers'
+import { formatConvertedMeasure } from './format'
+import { attributeByKey, attributeIndexField } from './index-fields'
 
 /** True when a cell editor draft should be PATCH'ed. Esc / unchanged must return false. */
 export function cellEditShouldPatch(original: string, nextText: string): boolean {
   return nextText !== original
+}
+
+export type MeasureEditContext = {
+  stored: { value: number; unit: string }
+  displayUnit: string
+  factors: Record<string, number>
+}
+
+/** Stored measure from a Typesense row (`a_<id>` + `a_<id>__unit`). */
+export function readStoredMeasure(
+  doc: Json | undefined,
+  defs: Json | undefined,
+  attrKey: string,
+): { value: number; unit: string } | null {
+  const attr = attributeByKey(defs, attrKey)
+  if (!attr) return null
+  const kind = attr.kind as Json | undefined
+  if (String(kind?.type ?? '') !== 'number' || !kind?.unit_family) return null
+  const id = String(attr.id ?? '')
+  const field = id ? attributeIndexField(id) : `a_${attrKey}`
+  const rawValue = doc?.[field]
+  const unit = textValue(doc?.[`${field}__unit`])
+  if (!unit) return null
+  const value = typeof rawValue === 'number'
+    ? rawValue
+    : Number(String(rawValue ?? '').replaceAll(',', ''))
+  if (!Number.isFinite(value)) return null
+  return { value, unit }
+}
+
+/** Context for inline edit of a column with a display-unit qualifier (#unit:kcal, …). */
+export function measureEditContext(
+  columnId: string,
+  doc: Json | undefined,
+  defs: Json | undefined,
+): MeasureEditContext | null {
+  const { path, qualifiers } = parseColumnId(columnId)
+  if (path.includes('.')) return null
+  const unitQ = qualifiers.find((q) => q.kind === 'unit')
+  if (!unitQ) return null
+  const attrKey = columnBaseKey(columnId)
+  const stored = readStoredMeasure(doc, defs, attrKey)
+  if (!stored) return null
+  const attr = attributeByKey(defs, attrKey)
+  const kind = attr?.kind as Json | undefined
+  const family = kind?.unit_family != null ? String(kind.unit_family) : undefined
+  return {
+    stored,
+    displayUnit: unitQ.optionId,
+    factors: factorsForFamily(defs ?? {}, family),
+  }
+}
+
+/** Parse a number from inline measure text (`485.18 kcal` → 485.18). */
+export function parseMeasureInput(text: string): number | null {
+  const trimmed = text.trim()
+  if (!trimmed) return null
+  const match = trimmed.replaceAll(',', '').match(/^(-?[\d.]+)/)
+  if (!match) return null
+  const value = Number(match[1])
+  return Number.isFinite(value) ? value : null
+}
+
+function roundDisplayMeasure(value: number): number {
+  return Math.round(value * 100) / 100
+}
+
+/** Converted measure text as shown in the grid for this column. */
+export function displayMeasureText(ctx: MeasureEditContext): string {
+  const converted = convertMeasure(ctx.stored.value, ctx.stored.unit, ctx.displayUnit, ctx.factors)
+  return formatConvertedMeasure(converted, ctx.displayUnit)
+}
+
+/**
+ * Whether a converted measure cell should PATCH.
+ * Ignores display rounding: unchanged rounded text must not write.
+ */
+export function measureEditShouldPatch(ctx: MeasureEditContext, draft: string): boolean {
+  const parsed = parseMeasureInput(draft)
+  const displayValue = convertMeasure(ctx.stored.value, ctx.stored.unit, ctx.displayUnit, ctx.factors)
+  const roundedDisplay = roundDisplayMeasure(displayValue)
+  if (parsed == null) return draft.trim() !== displayMeasureText(ctx).trim()
+  return roundDisplayMeasure(parsed) !== roundedDisplay
+}
+
+/** Map display-unit draft back to the stored unit without display rounding. */
+export function measureEditStoredValue(
+  ctx: MeasureEditContext,
+  draft: string,
+): { value: string; unit: string } | null {
+  const parsed = parseMeasureInput(draft)
+  if (parsed == null) return null
+  const storedNum = convertMeasure(parsed, ctx.displayUnit, ctx.stored.unit, ctx.factors)
+  if (!Number.isFinite(storedNum)) return null
+  return { value: String(storedNum), unit: ctx.stored.unit }
+}
+
+/** Proposed grid text after a measure edit (display unit, rounded for paint only). */
+export function measureEditProposedText(ctx: MeasureEditContext, draft: string): string {
+  const stored = measureEditStoredValue(ctx, draft)
+  if (!stored) return draft.trim()
+  const converted = convertMeasure(Number(stored.value), stored.unit, ctx.displayUnit, ctx.factors)
+  return formatConvertedMeasure(converted, ctx.displayUnit)
 }
 
 /**

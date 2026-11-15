@@ -11,7 +11,19 @@ import { CreateDialog, requireText, type CreateDialogField } from './create-dial
 import { createObjectFields, createObjectFieldValues } from './create-object-fields'
 import { newObjectBody } from './new-object'
 import { attributeByKey, indexSort, readIndexed, sortKeyForColumnId } from './index-fields'
-import { cellEditShouldPatch, cellEditValuesBody, isEditingCell, isEditableColumn, resolveCellEditInitial, valueListKeyForColumn, columnBaseKey } from './cell-edit'
+import {
+  cellEditShouldPatch,
+  cellEditValuesBody,
+  isEditingCell,
+  isEditableColumn,
+  measureEditContext,
+  measureEditProposedText,
+  measureEditShouldPatch,
+  measureEditStoredValue,
+  resolveCellEditInitial,
+  valueListKeyForColumn,
+  columnBaseKey,
+} from './cell-edit'
 import { batchGetObjects } from './batch'
 import { MetaChip, optionLabel, statusTone, typeLabel } from './chips'
 import { BulkWriteConfirm } from './bulk-write'
@@ -1385,7 +1397,11 @@ export function ObjectTable({
     skipBlurCommitRef.current = true
     setEditingCell(null)
     const original = editingOriginalRef.current
-    if (!cellEditShouldPatch(original, nextText)) return
+    const measureCtx = measureEditContext(columnId, row.doc, defs.data)
+    const shouldPatch = measureCtx
+      ? measureEditShouldPatch(measureCtx, nextText)
+      : cellEditShouldPatch(original, nextText)
+    if (!shouldPatch) return
     const path = parseColumnId(columnId).path
     const langMatch = path.includes('@') ? path.split('@') : null
     const attrKey = (langMatch ? langMatch[0]! : path).split('.')[0] ?? path
@@ -1393,17 +1409,28 @@ export function ObjectTable({
     const attr = attributeByKey(defs.data, attrKey)
     const languageDependent = Boolean(attr?.language_dependent)
     const cellLanguage = language ?? (languageDependent ? uiLanguage : undefined)
-    const bodyValues: Json = cellEditValuesBody({
-      attrKey,
-      nextText,
-      columnLanguage: cellLanguage,
-      languageDependent,
-      uiLanguage,
-    })
-    const fragment = bodyValues[attrKey]
-    const value = cellLanguage && fragment && typeof fragment === 'object'
-      ? (fragment as Json)[cellLanguage]
-      : fragment
+    let value: unknown
+    let proposedText = nextText
+    let bodyValues: Json
+    if (measureCtx) {
+      const stored = measureEditStoredValue(measureCtx, nextText)
+      if (!stored) return
+      value = stored
+      proposedText = measureEditProposedText(measureCtx, nextText)
+      bodyValues = { [attrKey]: stored }
+    } else {
+      bodyValues = cellEditValuesBody({
+        attrKey,
+        nextText,
+        columnLanguage: cellLanguage,
+        languageDependent,
+        uiLanguage,
+      })
+      const fragment = bodyValues[attrKey]
+      value = cellLanguage && fragment && typeof fragment === 'object'
+        ? (fragment as Json)[cellLanguage]
+        : fragment
+    }
     // Enter stages the shared draft. Save writes it. A refetch must not be the write.
     stageObjectCell({
       objectId: row.id,
@@ -1412,7 +1439,7 @@ export function ObjectTable({
       language: cellLanguage,
       baseVersion: editBaseVersion(row.id, Number(row.version ?? 0)),
       originalText: original,
-      proposedText: nextText,
+      proposedText,
       value,
     })
   }
