@@ -1,6 +1,6 @@
 import type { QueryClient } from '@tanstack/react-query'
 import { objectIdFromLive, liveOperation } from './activity'
-import { clearObjectGone } from './object-gone'
+import { clearObjectGone, objectQueryGone } from './object-gone'
 
 /** Debounce before refreshing a search list after an interactive edit. */
 export const INTERACTIVE_LIST_MS = 500
@@ -51,7 +51,9 @@ export class SearchRefresh {
     if (kind === 'interactive') {
       const id = objectIdFromLive(raw)
       if (id) {
-        if (liveRestoresObject(raw) && this.queryClient) clearObjectGone(this.queryClient, id)
+        if (liveRestoresObject(raw) && this.queryClient && objectQueryGone(this.queryClient, id)) {
+          clearObjectGone(this.queryClient, id)
+        }
         this.refreshObject(id, raw)
       }
       this.scheduleList(INTERACTIVE_LIST_MS)
