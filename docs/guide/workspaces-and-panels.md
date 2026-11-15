@@ -147,7 +147,8 @@ slot. A click on a tab does the same.
 
 ## Create a workspace
 
-New workspaces come from templates. Press `Ctrl+K` and choose `New from template`:
+New workspaces come from templates. Press `Ctrl+K` and choose `New from template`, or click
+the **+** button after the last workspace tab in the top bar (tooltip: **New workspace**):
 
 - `Data model` creates a workspace for structures, object types, link types, value
   lists, units, and attribute definitions.
