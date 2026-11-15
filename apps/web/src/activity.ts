@@ -33,6 +33,15 @@ export function humanizeLive(raw: string, typeName?: string): string {
   }
 }
 
+export function liveOperation(raw: string): string {
+  try {
+    const event = JSON.parse(raw) as Record<string, unknown>
+    return typeof event.op === 'string' ? event.op : ''
+  } catch {
+    return ''
+  }
+}
+
 export function objectIdFromLive(raw: string): string | null {
   try {
     const event = JSON.parse(raw) as Record<string, unknown>

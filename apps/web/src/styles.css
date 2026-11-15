@@ -373,6 +373,14 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
   padding: 0 var(--space-2_5);
   color: var(--muted);
 }
+.tab-new {
+  flex: none;
+  width: 30px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
 .tab.active, .pane-tab.active {
   background: var(--bg);
   color: var(--text);

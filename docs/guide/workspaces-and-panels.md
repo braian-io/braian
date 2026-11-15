@@ -109,6 +109,10 @@ Measured number fields start at the compact width and grow with the field when t
 pane has room, so a longer number stays readable. The same shared layout and theme
 tokens apply in light and dark theme.
 
+When the open object is deleted, Detail shows a calm empty state (`This object was
+deleted.`) with no fields and no Save/Discard bar, rather than a graph or validation
+error.
+
 ## Select fields
 
 `Select fields` chooses which columns an object table shows, and in which order.
@@ -136,7 +140,18 @@ unit columns, or as all three. The separate columns are labelled `Name (value)` 
 `Name (unit)`; the value column shows only the number and the unit column only the
 unit code. The separate value and unit columns are display-only. A display unit
 chosen on the combined column only changes how the number is shown there, and leaves
-the value and unit columns alone.
+the value and unit columns alone. Converted numbers are rounded for display (at most
+two decimal places, trailing zeros omitted) in the table and in the Detail panel.
+The stored value and unit are unchanged when you edit or save.
+
+Unit labels keep conventional casing in column titles and cells, for example `kJ`,
+`kcal`, `g`, and `mg`. A column titled `Energy (kJ)` shows values converted to
+kilojoules when that display unit is selected.
+
+In the field list, `Enter` with an empty filter still drills into fields that have
+further steps (language, unit, links). It does not toggle simple columns, so the
+first row (such as Number) is not turned off by accident. To add or remove a simple
+field, type in the filter and press `Enter`, or click its checkbox.
 
 ## Switching workspaces
 
@@ -147,7 +162,8 @@ slot. A click on a tab does the same.
 
 ## Create a workspace
 
-New workspaces come from templates. Press `Ctrl+K` and choose `New from template`:
+New workspaces come from templates. Press `Ctrl+K` and choose `New from template`, or click
+the **+** button after the last workspace tab in the top bar (tooltip: **New workspace**):
 
 - `Data model` creates a workspace for structures, object types, link types, value
   lists, units, and attribute definitions.

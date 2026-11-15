@@ -6,7 +6,7 @@ these pages; if a claim is not here, it does not belong there yet. It walks thro
 the daily flows rather than the internals.
 
 - [Getting started](/docs/getting-started) — run Braian locally, sign in and open the demo workspace.
-- [Workspaces and panels](/docs/workspaces-and-panels) — tiled views, layouts and sharing.
+- [Workspaces and panels](/docs/workspaces-and-panels) — tiled views, layouts, Select fields, and unit display.
 - [Object types and relations](/docs/object-types-and-relations) — the model, attributes and link types.
 - [Data sources](/docs/data-sources) — make a view follow a type, a linked object or a structure node.
 - [Command palette and shortcuts](/docs/command-palette-and-shortcuts) — Ctrl+K, the agent and the keyboard.

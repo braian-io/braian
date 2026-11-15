@@ -37,7 +37,7 @@ delete operation. A single object is soft-deleted into Trash; it disappears from
 tables and search after the indexer catches up. There is no extra Save step.
 
 If Detail or Graph is still looking at that object, it shows an honest deleted state
-(`This object is deleted. Restore it from Trash to see it here again.`) rather than a
+(`This object was deleted. Restore it from Trash to see it here again.`) rather than a
 graph or validation error such as `The graph could not be loaded. Validation stopped
 the save.`
 

@@ -74,4 +74,28 @@ describe('FieldsMode measured parts', () => {
     expect(screen.getByTestId('fields-row-fat_content.value')).toBeTruthy()
     expect(screen.getByTestId('fields-row-fat_content.unit')).toBeTruthy()
   })
+
+  it('ignores Enter on a simple field when the filter is empty', () => {
+    const number: FieldDef = {
+      id: 'number',
+      name: 'Number',
+      typeLabel: 'text',
+      shape: 'text',
+    }
+    render(
+      <FieldsMode
+        open={{ kind: 'browse' }}
+        columns={[makeViewColumn(['number'], [], [number])!]}
+        fields={[number, ...fields]}
+        onClose={() => undefined}
+        onToggleColumn={() => undefined}
+        onShowColumn={() => undefined}
+        onReplaceColumn={() => undefined}
+        peerOptionsForField={() => []}
+      />,
+    )
+    const input = screen.getByTestId('fields-mode-input')
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(screen.getByTestId('fields-check-number').getAttribute('data-state')).toBe('checked')
+  })
 })

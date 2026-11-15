@@ -4,9 +4,13 @@ import {
   cellEditShouldPatch,
   cellEditValuesBody,
   columnBaseKey,
+  displayMeasureText,
   isEditableColumn,
   isEditingCell,
   isTextEditingTarget,
+  measureEditContext,
+  measureEditShouldPatch,
+  measureEditStoredValue,
   resolveCellEditInitial,
   valueListKeyForColumn,
 } from './cell-edit'
@@ -167,6 +171,51 @@ describe('valueListKeyForColumn', () => {
   })
 })
 
+
+const energyEnergyDefs = {
+  attributes: [
+    {
+      id: '018f0000-0000-7000-8000-000000000099',
+      key: 'energy',
+      kind: { type: 'number', unit_family: '018f0000-0000-7000-8000-000000000014' },
+    },
+  ],
+  unit_families: [
+    {
+      id: '018f0000-0000-7000-8000-000000000014',
+      key: 'energy',
+      units: [
+        { code: 'kJ', factor: '1' },
+        { code: 'kcal', factor: '4.184' },
+      ],
+    },
+  ],
+}
+
+describe('measure inline edit', () => {
+  const energyDoc = {
+    a_018f0000_0000_7000_8000_000000000099: '2030',
+    a_018f0000_0000_7000_8000_000000000099__unit: 'kJ',
+  }
+  const columnId = 'energy#unit:kcal'
+
+  it('skips PATCH when the rounded display text is unchanged', () => {
+    const ctx = measureEditContext(columnId, energyDoc, energyEnergyDefs)
+    expect(ctx).not.toBeNull()
+    const shown = displayMeasureText(ctx!)
+    expect(shown).toMatch(/kcal$/)
+    expect(measureEditShouldPatch(ctx!, shown)).toBe(false)
+    expect(measureEditShouldPatch(ctx!, shown.replace(' kcal', ''))).toBe(false)
+  })
+
+  it('converts a typed display value back to the stored unit without display rounding', () => {
+    const ctx = measureEditContext(columnId, energyDoc, energyEnergyDefs)
+    expect(ctx).not.toBeNull()
+    const stored = measureEditStoredValue(ctx!, '500 kcal')
+    expect(stored).toEqual({ value: '2092', unit: 'kJ' })
+    expect(measureEditShouldPatch(ctx!, '500 kcal')).toBe(true)
+  })
+})
 
 describe('resolveCellEditInitial', () => {
   it('uses fallback text for indexed columns without waiting on path-values', () => {

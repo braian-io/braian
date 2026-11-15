@@ -6,7 +6,7 @@ import { ImportMappingsView } from './import/mappings-view'
 import { CatalogsView, MergeProfilesView, MergeRunsView, OwnershipView } from './catalogs/views'
 import { flushSync } from 'react-dom'
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, ChevronRight, File, Folder, FolderOpen } from 'lucide-react'
+import { ChevronDown, ChevronRight, File, Folder, FolderOpen, Plus } from 'lucide-react'
 import { StatusBar, useOnline } from './status-bar'
 import { isConnected, type LiveState } from './status-message'
 import { TrashDialog } from './trash-dialog'
@@ -16,7 +16,8 @@ import { UserMenu } from './user-menu'
 import { CatalogSelector } from './catalog-selector'
 import { api, freeObject, jsonRecord, keepaliveJsonPut, operationId, recordTitle, textValue, type Json } from './api'
 import { AssortmentList, SelectionHost } from './assortments'
-import { humanizeLive, objectIdFromLive } from './activity'
+import { humanizeLive, liveOperation, objectIdFromLive } from './activity'
+import { markObjectGone } from './object-gone'
 import { ImportScreen } from './import/view'
 import { dropImportFiles, onImportLive, openImport, resumeImport, setImportDrag } from './import/controller'
 import { importRefreshesObjects, isFileDrag } from './import/model'
@@ -676,7 +677,11 @@ export function Shell() {
         void queryClient.invalidateQueries({ queryKey: ['objects'] })
         void queryClient.invalidateQueries({ queryKey: ['path-values'] })
       },
-      (id) => {
+      (id, raw) => {
+        if (liveOperation(raw) === 'delete') {
+          markObjectGone(queryClient, id)
+          return
+        }
         void queryClient.invalidateQueries({ queryKey: ['object', id] })
         void queryClient.invalidateQueries({ queryKey: ['object-ref', id] })
         void queryClient.invalidateQueries({ queryKey: ['history', id] })
@@ -1920,6 +1925,16 @@ export function Shell() {
               {index < 9 ? <span className="tab-index">{index + 1}</span> : null}
             </button>
           ))}
+          <button
+            type="button"
+            className="tab tab-new"
+            data-testid="workspace-new-button"
+            aria-label={copy.newWorkspaceButton}
+            title={copy.newWorkspaceButton}
+            onClick={() => { void runCommand('workspace:new') }}
+          >
+            <Plus size={14} aria-hidden="true" />
+          </button>
         </nav>
         <span className="spacer" />
         <AgentPresence
