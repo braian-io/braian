@@ -36,6 +36,19 @@ describe('live search refresh', () => {
     refresh.dispose()
   })
 
+  it('does not clear object read cache on an ordinary update when the object is not gone', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const data = { id: 'obj-live', values: {} }
+    client.setQueryData(['object', 'obj-live'], data)
+    client.setQueryData(['graph', 'obj-live'], { nodes: [] })
+    const refresh = new SearchRefresh(() => {}, () => {}, client)
+    refresh.onEvent(JSON.stringify({ op: 'update', object_id: 'obj-live' }))
+    expect(client.getQueryData(['object', 'obj-live'])).toEqual(data)
+    expect(client.getQueryData(['graph', 'obj-live'])).toEqual({ nodes: [] })
+    expect(objectQueryGone(client, 'obj-live')).toBe(false)
+    refresh.dispose()
+  })
+
   it('refreshes one object immediately and the list once after a burst of edits', () => {
     vi.useFakeTimers()
     const lists: number[] = []
