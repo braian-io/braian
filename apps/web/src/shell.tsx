@@ -686,6 +686,7 @@ export function Shell() {
         void queryClient.invalidateQueries({ queryKey: ['object-ref', id] })
         void queryClient.invalidateQueries({ queryKey: ['history', id] })
       },
+      queryClient,
     )
     source.onopen = () => setLiveState('open')
     source.onmessage = (event) => {

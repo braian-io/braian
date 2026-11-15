@@ -1,5 +1,14 @@
+import { QueryClient } from '@tanstack/react-query'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { BULK_MAX_MS, BULK_QUIET_MS, INTERACTIVE_LIST_MS, SearchRefresh, classifyLive } from './live-refresh'
+import {
+  BULK_MAX_MS,
+  BULK_QUIET_MS,
+  INTERACTIVE_LIST_MS,
+  SearchRefresh,
+  classifyLive,
+  liveRestoresObject,
+} from './live-refresh'
+import { markObjectGone, objectQueryGone } from './object-gone'
 
 afterEach(() => {
   vi.useRealTimers()
@@ -10,6 +19,21 @@ describe('live search refresh', () => {
     expect(classifyLive(JSON.stringify({ op: 'update', object_id: '1' }))).toBe('interactive')
     expect(classifyLive(JSON.stringify({ op: 'bulk_summary', count: 200 }))).toBe('bulk')
     expect(classifyLive(JSON.stringify({ op: 'job', status: 'running' }))).toBe('ignore')
+  })
+
+  it('treats interactive updates as restoring a soft-deleted object', () => {
+    expect(liveRestoresObject(JSON.stringify({ op: 'update', object_id: '1' }))).toBe(true)
+    expect(liveRestoresObject(JSON.stringify({ op: 'patch', object_id: '1' }))).toBe(true)
+    expect(liveRestoresObject(JSON.stringify({ op: 'delete', object_id: '1' }))).toBe(false)
+  })
+
+  it('clears a gone pin when a restore event arrives on the live stream', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    markObjectGone(client, 'obj-restore')
+    const refresh = new SearchRefresh(() => {}, () => {}, client)
+    refresh.onEvent(JSON.stringify({ op: 'update', object_id: 'obj-restore' }))
+    expect(objectQueryGone(client, 'obj-restore')).toBe(false)
+    refresh.dispose()
   })
 
   it('refreshes one object immediately and the list once after a burst of edits', () => {
