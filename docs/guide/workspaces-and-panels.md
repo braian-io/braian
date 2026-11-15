@@ -173,7 +173,9 @@ cannot be deleted.
 - An unlocked workspace also saves its canonical layout for everyone. A locked or
   shared workspace keeps layout edits personal.
 - Sorting, grouping and column widths are saved on the view row and therefore
-  shared in the workspace. Column order and hidden columns are personal preferences.
+  shared in the workspace. After a page reload, the table keeps the same sort
+  and the column header shows the matching arrow. Column order and hidden columns
+  are personal preferences.
   `Reset to default` in the column menu or `Ctrl+K` clears that personal override and
   restores the view's default columns.
 - The free-text search in the table toolbar (the quick filter) is not saved as a view

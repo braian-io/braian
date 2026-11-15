@@ -31,6 +31,23 @@ export function readIndexed(doc: Json | undefined, defs: Json | undefined, key: 
 }
 
 /** Sort and group fields follow the index name, which is the attribute id. */
+export type HeaderSortState = 'asc' | 'desc' | false
+
+/** Match header arrows to the same normalized sort the search request uses. */
+export function headerSortState(sort: string, columnSortKey: string, defs: Json | undefined): HeaderSortState {
+  if (!sort || !columnSortKey) return false
+  const normalized = indexSort(sort, defs)
+  if (
+    normalized.endsWith(':asc')
+    && indexSort(`${columnSortKey}:asc`, defs) === normalized
+  ) return 'asc'
+  if (
+    normalized.endsWith(':desc')
+    && indexSort(`${columnSortKey}:desc`, defs) === normalized
+  ) return 'desc'
+  return false
+}
+
 export function indexSort(field: string, defs: Json | undefined) {
   const direction = field.endsWith(':asc') || field.endsWith(':desc') ? field.slice(field.lastIndexOf(':')) : ''
   const name = direction ? field.slice(0, -direction.length) : field

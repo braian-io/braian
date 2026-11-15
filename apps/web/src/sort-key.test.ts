@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { sortKeyForColumnId } from './index-fields'
+import { headerSortState, sortKeyForColumnId } from './index-fields'
 
 const defs = {
   attributes: [
@@ -23,5 +23,20 @@ describe('sortKeyForColumnId', () => {
   it('returns empty for searchable-only and hops', () => {
     expect(sortKeyForColumnId('notes', defs)).toBe('')
     expect(sortKeyForColumnId('packaging>name', defs)).toBe('')
+  })
+})
+
+describe('headerSortState', () => {
+  it('matches legacy a_name tokens to the name column sort field', () => {
+    const key = sortKeyForColumnId('name', defs)
+    expect(headerSortState('a_name__en:asc', key, defs)).toBe('asc')
+    expect(headerSortState('a_name__en:desc', key, defs)).toBe('desc')
+    expect(headerSortState(`${key}:asc`, key, defs)).toBe('asc')
+  })
+
+  it('returns false for an unrelated column or cleared sort', () => {
+    const key = sortKeyForColumnId('name', defs)
+    expect(headerSortState('', key, defs)).toBe(false)
+    expect(headerSortState('a_number:asc', key, defs)).toBe(false)
   })
 })

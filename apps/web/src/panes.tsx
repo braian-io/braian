@@ -10,7 +10,7 @@ import { useCatalogIdToKey } from './catalog-list'
 import { CreateDialog, requireText, type CreateDialogField } from './create-dialog'
 import { createObjectFields, createObjectFieldValues } from './create-object-fields'
 import { newObjectBody } from './new-object'
-import { attributeByKey, indexSort, readIndexed, sortKeyForColumnId } from './index-fields'
+import { attributeByKey, headerSortState, indexSort, readIndexed, sortKeyForColumnId } from './index-fields'
 import { cellEditShouldPatch, cellEditValuesBody, isEditingCell, isEditableColumn, resolveCellEditInitial, valueListKeyForColumn, columnBaseKey } from './cell-edit'
 import { batchGetObjects } from './batch'
 import { MetaChip, optionLabel, statusTone, typeLabel } from './chips'
@@ -359,6 +359,12 @@ export function ObjectTable({
     queryFn: () => inCatalog(catalogKey, () => api.get('/v1/definitions')),
     enabled: catalogReady,
   })
+  // Align restored sort tokens with attribute-id index fields once definitions load.
+  useEffect(() => {
+    if (!defs.data || !sort) return
+    const normalized = indexSort(sort, defs.data)
+    if (normalized !== sort) setSort(normalized)
+  }, [defs.data, sort])
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey) return
@@ -2039,20 +2045,15 @@ export function ObjectTable({
                     header={column.header}
                     sortable={Boolean(column.sort)}
                     active={activeColumn === id}
-                    sortState={
-                      column.sort && sort === `${column.sort}:asc`
-                        ? 'asc'
-                        : column.sort && sort === `${column.sort}:desc`
-                          ? 'desc'
-                          : false
-                    }
+                    sortState={headerSortState(sort, column.sort, defs.data)}
                     onActivate={() => activateColumn(id)}
                     onSort={() => {
                       if (!column.sort) return
                       // Three states (TanStack enableSortingRemoval equivalent):
                       // none → asc → desc → none.
-                      if (sort === `${column.sort}:asc`) setSort(`${column.sort}:desc`)
-                      else if (sort === `${column.sort}:desc`) setSort('')
+                      const state = headerSortState(sort, column.sort, defs.data)
+                      if (state === 'asc') setSort(`${column.sort}:desc`)
+                      else if (state === 'desc') setSort('')
                       else setSort(`${column.sort}:asc`)
                     }}
                     onContextMenu={(event) => onHeaderMenu(id, event)}
