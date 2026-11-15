@@ -151,7 +151,7 @@ describe('qualifier module', () => {
       formatCellValue({ value: { value: 1, unit: 'l' } }, volume, [
         { kind: 'unit', optionId: 'ml', label: 'ml' },
       ]),
-    ).toBe('1000 ml')
+    ).toBe('1,000 ml')
     expect(
       formatCellValue({ value: { min: 2, max: 8 } }, storage, [
         { kind: 'range', optionId: 'max', label: 'Max' },

@@ -104,6 +104,7 @@ async function enterOn(page: Page, rowTestId: string) {
 
 async function toggleBrand(page: Page) {
   await openFieldsPalette(page)
+  await page.getByTestId('fields-mode-input').fill('brand')
   await enterOn(page, 'fields-row-brand')
   await page.keyboard.press('Escape')
   await expect(page.getByTestId('fields-mode')).toHaveCount(0)

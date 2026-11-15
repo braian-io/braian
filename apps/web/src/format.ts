@@ -6,6 +6,28 @@ export function formatTimestamp(value: unknown): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
+/** Display unit code with conventional casing (kJ, kcal, g, …). */
+export function formatUnitCode(unit: string): string {
+  const trimmed = unit.trim()
+  if (!trimmed) return ''
+  if (trimmed.toLowerCase() === 'kj') return 'kJ'
+  return trimmed
+}
+
+/** Rounded measure for display after unit conversion (at most 2 decimals, trailing zeros trimmed). */
+export function formatConvertedNumber(value: number): string {
+  if (!Number.isFinite(value)) return String(value)
+  const rounded = Math.round(value * 100) / 100
+  return new Intl.NumberFormat('en', { maximumFractionDigits: 2, minimumFractionDigits: 0 }).format(rounded)
+}
+
+/** Number plus unit for a converted measure cell. */
+export function formatConvertedMeasure(value: number, unit: string): string {
+  const label = formatUnitCode(unit)
+  const shown = formatConvertedNumber(value)
+  return label ? `${shown} ${label}` : shown
+}
+
 /** A number, and its unit when one was entered. Digits follow the `en` locale. */
 export function formatMeasure(value: string, unit?: string): string {
   const trimmed = value.trim()
