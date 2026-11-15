@@ -132,6 +132,7 @@ test.describe('column drag and system fields', () => {
 
     await openFieldsPalette(page)
     await expect(page.getByTestId('fields-row-type')).toBeVisible()
+    await page.getByTestId('fields-mode-input').fill('type')
     const putHide = page.waitForResponse(
       (res) =>
         res.url().includes('/column-prefs') &&
@@ -146,6 +147,7 @@ test.describe('column drag and system fields', () => {
 
     await openFieldsPalette(page)
     await expect(page.getByTestId('fields-row-type')).toBeVisible()
+    await page.getByTestId('fields-mode-input').fill('type')
     const putShow = page.waitForResponse(
       (res) =>
         res.url().includes('/column-prefs') &&
