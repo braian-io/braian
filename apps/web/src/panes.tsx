@@ -10,7 +10,7 @@ import { useCatalogIdToKey } from './catalog-list'
 import { CreateDialog, requireText, type CreateDialogField } from './create-dialog'
 import { createObjectFields, createObjectFieldValues } from './create-object-fields'
 import { newObjectBody } from './new-object'
-import { attributeByKey, headerSortState, indexSort, readIndexed, sortKeyForColumnId } from './index-fields'
+import { attributeByKey, headerSortState, indexSort, normalizeTableSort, readIndexed, sortKeyForColumnId } from './index-fields'
 import {
   cellEditShouldPatch,
   cellEditValuesBody,
@@ -372,10 +372,10 @@ export function ObjectTable({
     queryFn: () => inCatalog(catalogKey, () => api.get('/v1/definitions')),
     enabled: catalogReady,
   })
-  // Align restored sort tokens with attribute-id index fields once definitions load.
+  // Align restored view-row sort tokens with Typesense fields once definitions load.
   useEffect(() => {
     if (!defs.data || !sort) return
-    const normalized = indexSort(sort, defs.data)
+    const normalized = normalizeTableSort(sort, defs.data)
     if (normalized !== sort) setSort(normalized)
   }, [defs.data, sort])
   useEffect(() => {

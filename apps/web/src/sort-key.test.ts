@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { headerSortState, sortKeyForColumnId } from './index-fields'
+import { headerSortState, normalizeTableSort, sortKeyForColumnId } from './index-fields'
 
 const defs = {
   attributes: [
@@ -27,6 +27,14 @@ describe('sortKeyForColumnId', () => {
 })
 
 describe('headerSortState', () => {
+  it('matches persisted attribute-id sorts to the name column sort field', () => {
+    const nameId = String(defs.attributes[0].id)
+    const key = sortKeyForColumnId('name', defs)
+    expect(normalizeTableSort(`${nameId}:asc`, defs)).toBe(`${key}:asc`)
+    expect(headerSortState(`${nameId}:asc`, key, defs)).toBe('asc')
+    expect(headerSortState(`${nameId}:desc`, key, defs)).toBe('desc')
+  })
+
   it('matches legacy a_name tokens to the name column sort field', () => {
     const key = sortKeyForColumnId('name', defs)
     expect(headerSortState('a_name__en:asc', key, defs)).toBe('asc')

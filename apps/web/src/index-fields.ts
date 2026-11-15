@@ -33,10 +33,42 @@ export function readIndexed(doc: Json | undefined, defs: Json | undefined, key: 
 /** Sort and group fields follow the index name, which is the attribute id. */
 export type HeaderSortState = 'asc' | 'desc' | false
 
+function sortDirection(sort: string): { field: string; direction: '' | ':asc' | ':desc' } {
+  if (sort.endsWith(':asc')) return { field: sort.slice(0, -4), direction: ':asc' }
+  if (sort.endsWith(':desc')) return { field: sort.slice(0, -5), direction: ':desc' }
+  return { field: sort, direction: '' }
+}
+
+/** Map a persisted view sort field (attribute id / column key) to a table column id. */
+export function columnIdForSortField(field: string, defs: Json | undefined): string {
+  const path = field.split('@')[0]?.split('.')[0] ?? field
+  if (path === 'key' || path === 'number') return 'number'
+  if (path === 'type_key' || path === 'type') return 'type'
+  if (path === 'version') return 'version'
+  if (!defs) return path
+  const match = attributes(defs).find(
+    (item) => String(item.id ?? '') === path || String(item.key ?? '') === path,
+  )
+  if (match) return String(match.key ?? path)
+  if (path === 'name' || path === 'status') return path
+  return path
+}
+
+/** One canonical Typesense sort token for UI state and header matching. */
+export function normalizeTableSort(sort: string, defs: Json | undefined): string {
+  if (!sort) return sort
+  const { field, direction } = sortDirection(sort)
+  if (field.startsWith('a_')) return indexSort(sort, defs)
+  const columnId = columnIdForSortField(field, defs)
+  const sortKey = sortKeyForColumnId(columnId, defs)
+  if (!sortKey) return sort
+  return indexSort(`${sortKey}${direction}`, defs)
+}
+
 /** Match header arrows to the same normalized sort the search request uses. */
 export function headerSortState(sort: string, columnSortKey: string, defs: Json | undefined): HeaderSortState {
   if (!sort || !columnSortKey) return false
-  const normalized = indexSort(sort, defs)
+  const normalized = normalizeTableSort(sort, defs)
   if (
     normalized.endsWith(':asc')
     && indexSort(`${columnSortKey}:asc`, defs) === normalized
