@@ -109,6 +109,10 @@ Measured number fields start at the compact width and grow with the field when t
 pane has room, so a longer number stays readable. The same shared layout and theme
 tokens apply in light and dark theme.
 
+When the open object is deleted, Detail shows a calm empty state (`This object was
+deleted.`) with no fields and no Save/Discard bar, rather than a graph or validation
+error.
+
 ## Select fields
 
 `Select fields` chooses which columns an object table shows, and in which order.

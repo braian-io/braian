@@ -34,14 +34,14 @@ export class SearchRefresh {
 
   constructor(
     private readonly refreshList: () => void,
-    private readonly refreshObject: (id: string) => void,
+    private readonly refreshObject: (id: string, raw: string) => void,
   ) {}
 
   onEvent(raw: string, now = Date.now()) {
     const kind = classifyLive(raw)
     if (kind === 'interactive') {
       const id = objectIdFromLive(raw)
-      if (id) this.refreshObject(id)
+      if (id) this.refreshObject(id, raw)
       this.scheduleList(INTERACTIVE_LIST_MS)
       return
     }

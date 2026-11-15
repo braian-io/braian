@@ -2,7 +2,7 @@ import { isValidElement, useMemo, useEffect, useLayoutEffect, useRef, useState, 
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { History as HistoryIcon } from 'lucide-react'
-import { ApiError, api, catalogName, failureLines, freeObject, jsonRecord, recordNumber, recordTitle, searchQuery, textValue, type Json } from './api'
+import { api, catalogName, failureLines, freeObject, jsonRecord, recordNumber, recordTitle, searchQuery, textValue, type Json } from './api'
 import { AutoResizeTextarea } from './auto-resize-textarea'
 import { messageFromErrorBody, reportWriteError, writeErrorMessage } from './write-error'
 import { catalogKeyOf, inCatalog, workspaceCatalogRef } from './catalog-scope'
@@ -48,6 +48,7 @@ import { createTablePrefsSaver, type TablePrefsSnapshot } from './table-prefs-sa
 import { readPathFromDoc, summarizePathValues } from './path-cell'
 import { cellPathValues, fetchPathValues } from './path-values'
 import { applyObjectWrite, currentSearchWaitSeq, reconcileObjectWrite } from './object-write'
+import { markObjectGone, objectFetchQueryOptions, objectGone, objectQueryGone } from './object-gone'
 import {
   discardObjectDraft,
   displayOf,
@@ -2776,20 +2777,23 @@ export function ClassAttributes({ session }: { session: PanesSession }) {
   )
 }
 
-/** A soft-deleted object is gone from reads, not a broken graph or validation. */
-function objectGone(error: unknown) {
-  return error instanceof ApiError && error.status === 410
-}
-
 export function ObjectDetail({ session }: { session: PanesSession }) {
   const queryClient = useQueryClient()
+  const objectId = session.objectId ?? ''
+  const objectGoneState = objectQueryGone(queryClient, session.objectId)
   const object = useQuery({
     queryKey: ['object', session.objectId],
     queryFn: async () => {
       const id = session.objectId ?? ''
-      return reconcileObjectWrite(id, await api.get('/v1/objects/{id}', { params: { path: { id } } }))
+      try {
+        return reconcileObjectWrite(id, await api.get('/v1/objects/{id}', { params: { path: { id } } }))
+      } catch (reason) {
+        if (objectGone(reason)) markObjectGone(queryClient, id)
+        throw reason
+      }
     },
-    enabled: Boolean(session.objectId),
+    enabled: Boolean(session.objectId) && !objectGoneState,
+    ...objectFetchQueryOptions(),
   })
   const provenance = useQuery({
     queryKey: ['object-origin', session.objectId],
@@ -2798,13 +2802,14 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       if (!response.ok) return { owners: {} as Record<string, string>, origin: null as Json | null }
       return response.json() as Promise<{ owners?: Record<string, string>; origin?: Json | null }>
     },
-    enabled: Boolean(session.objectId),
+    enabled: Boolean(session.objectId) && !objectGoneState,
+    ...objectFetchQueryOptions(),
   })
   const defs = useQuery({ queryKey: ['definitions'], queryFn: () => api.get('/v1/definitions') })
   const suggestions = useQuery({
     queryKey: ['proposals', 'detail', session.objectId],
     queryFn: () => api.get('/v1/proposals', { params: { query: { status: 'open', limit: 200 } } }),
-    enabled: Boolean(session.objectId),
+    enabled: Boolean(session.objectId) && !objectGoneState,
   })
   const drafts = useSyncExternalStore(subscribeObjectDrafts, getObjectDraftSnapshot, getObjectDraftSnapshot)
   const draftSaving = useObjectDraftSaving()
@@ -2857,10 +2862,11 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       </div>
     )
   }
-  if (objectGone(object.error)) return <StateNote tone="empty" title={copy.objectDeleted} detail={copy.objectDeletedHint} testId="detail-deleted" />
+  if (objectGone(object.error) || objectGoneState) {
+    return <StateNote tone="empty" title={copy.objectDeleted} detail={copy.objectDeletedHint} testId="detail-deleted" />
+  }
   if (object.isError) return <StateNote tone="error" title={copy.graphError} detail={copy.validation} testId="detail-error" />
   if (!object.data || !session.objectId) return <StateNote tone="loading" title={copy.loading} />
-  const objectId = session.objectId
   const serverValues = (object.data.values as Json) ?? {}
   const serverVersion = Number(object.data.version ?? 0)
   const values = overlayValues(objectId, serverValues, serverVersion)
@@ -3445,6 +3451,8 @@ function ObjectRefField({ value, onChange }: { value: unknown; onChange: (value:
 }
 
 export function GraphView({ session, view }: { session: PanesSession; view?: PanesView }) {
+  const queryClient = useQueryClient()
+  const objectGoneState = objectQueryGone(queryClient, session.objectId)
   const modelSource = String(view?.state?.source ?? '') === 'data_model'
   const defs = useQuery({ queryKey: ['definitions'], queryFn: () => api.get('/v1/definitions') })
   const stats = useQuery({
@@ -3455,12 +3463,22 @@ export function GraphView({ session, view }: { session: PanesSession; view?: Pan
   const graph = useQuery({
     queryKey: ['graph', session.objectId],
     queryFn: () => api.get('/v1/objects/{id}/graph', { params: { path: { id: session.objectId ?? '' } } }),
-    enabled: Boolean(session.objectId) && !modelSource,
+    enabled: Boolean(session.objectId) && !modelSource && !objectGoneState,
+    ...objectFetchQueryOptions(),
   })
   const object = useQuery({
     queryKey: ['object', session.objectId],
-    queryFn: () => api.get('/v1/objects/{id}', { params: { path: { id: session.objectId ?? '' } } }),
-    enabled: Boolean(session.objectId) && !modelSource,
+    queryFn: async () => {
+      const id = session.objectId ?? ''
+      try {
+        return await api.get('/v1/objects/{id}', { params: { path: { id } } })
+      } catch (reason) {
+        if (objectGone(reason)) markObjectGone(queryClient, id)
+        throw reason
+      }
+    },
+    enabled: Boolean(session.objectId) && !modelSource && !objectGoneState,
+    ...objectFetchQueryOptions(),
   })
   if (modelSource) {
     if (defs.isError || stats.isError) return <StateNote tone="error" title={copy.graphError} testId="graph" />
@@ -3468,7 +3486,9 @@ export function GraphView({ session, view }: { session: PanesSession; view?: Pan
     return <GraphMap key="data-model" defs={defs.data} model={{ defs: defs.data, stats: stats.data }} />
   }
   if (!session.objectId) return <StateNote tone="empty" title={emptyGraph(typeNames(defs.data, uiLanguage), session.listType)} testId="graph" />
-  if (objectGone(object.error)) return <StateNote tone="empty" title={copy.objectDeleted} detail={copy.objectDeletedHint} testId="graph" />
+  if (objectGone(object.error) || objectGoneState) {
+    return <StateNote tone="empty" title={copy.objectDeleted} detail={copy.objectDeletedHint} testId="graph" />
+  }
   if (graph.isError || object.isError) return <StateNote tone="error" title={copy.graphError} testId="graph" />
   if (!graph.data || !object.data) return <StateNote tone="loading" title={copy.graphLoading} testId="graph" />
   return (
