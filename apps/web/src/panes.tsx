@@ -1,4 +1,4 @@
-import { isValidElement, useMemo, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
+import { isValidElement, useMemo, useEffect, useLayoutEffect, useCallback, useRef, useState, useSyncExternalStore, type CSSProperties, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { History as HistoryIcon } from 'lucide-react'
@@ -123,6 +123,8 @@ import { classSections } from './class-sections'
 import { LinkSections } from './link-section'
 import { DetailMeta } from './detail-meta'
 import { splitDetailKeys } from './detail-fields'
+import { DetailFieldDraftHost, useDetailFieldDraft, type DetailFieldDraftHandle } from './detail-field-draft'
+import { commitDetailMeasureDraft, detailMeasureCommittedText, type MeasureFieldRecord } from './detail-measure-commit'
 import { beginLinkDrag, dispatchLinkDrop, endLinkDrag, linkDragActive, linkDragContains, linkDragLabel, linkDragMime, linkDragObjects, linkDragPayload, linkDropDecision, readLinkDrag, setLinkDragHint } from './link-drag'
 import { EMPTY_MANUAL_FILTER, groupKeyOf, isEmptyManualQuery, labelCodes, labelSearchFilter, publishSelectionLabels, SELECTION_APPLIED_EVENT, selectionFilterText, selectionMatchesType } from './assortment-filter'
 import { appendPathFilter, objectTableFilter } from './table-filter'
@@ -2940,6 +2942,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   const [flashId, setFlashId] = useState('')
   const [showMoreFields, setShowMoreFields] = useState(false)
   const formRef = useRef<HTMLFormElement | null>(null)
+  const fieldDraftRef = useRef<DetailFieldDraftHandle | null>(null)
   useLayoutEffect(() => {
     const form = formRef.current
     if (!form) return
@@ -3074,6 +3077,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
     roleCanWrite: me.data ? roleCanWrite(me.data.role) : true,
   })
   const save = () => {
+    if (!fieldDraftRef.current?.flush()) return
     setError('')
     const plan = draftSavePlan({
       objectIds: [objectId],
@@ -3173,6 +3177,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       onKeyDown={(event) => {
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
           event.preventDefault()
+          event.stopPropagation()
           save()
           return
         }
@@ -3184,6 +3189,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
         const index = fields.indexOf(target)
         if (event.key === 'Escape') {
           if (target.closest('[role="listbox"]')) return
+          fieldDraftRef.current?.discard()
           discardObjectDraft(session.objectId ?? '')
           return
         }
@@ -3193,6 +3199,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
         fields[Math.max(0, Math.min(fields.length - 1, next))]?.focus()
       }}
     >
+      <DetailFieldDraftHost ref={fieldDraftRef}>
       <div className="detail-scroll">
         <header className="detail-head">
           <div className="detail-title">
@@ -3255,6 +3262,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
         ) : null}
         {error ? <p className="error" data-testid="detail-error">{error}</p> : null}
       </div>
+      </DetailFieldDraftHost>
       <UnmappedDraftLinks proposals={openProposals.unmapped} />
       {dirty ? (
         <ObjectDraftBar
@@ -3266,6 +3274,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
           pending={draftSaving}
           onSave={save}
           onDiscard={() => {
+            fieldDraftRef.current?.discard()
             void runDraftDiscard({
               objectIds: [objectId],
               proposals: proposalCells,
@@ -3334,35 +3343,41 @@ function NumberMeasureField({
   units: string[]
   onChange: (value: unknown) => void
 }) {
-  const record = (value && typeof value === 'object' ? value : { value }) as Json
-  const committedText = record.value != null && record.value !== ''
-    ? formatMeasureEditNumber(record.value)
-    : textValue(record.value)
+  const record = (value && typeof value === 'object' ? value : { value }) as MeasureFieldRecord
+  const committedText = detailMeasureCommittedText(record)
   const [draft, setDraft] = useState(committedText)
   const [invalid, setInvalid] = useState(false)
+  const skipBlurCommitRef = useRef(false)
+  const draftRef = useRef(draft)
+  draftRef.current = draft
+  const recordRef = useRef(record)
+  recordRef.current = record
   const valueStamp = `${String(record.value ?? '')}\0${String(record.unit ?? '')}`
   useEffect(() => {
     setDraft(committedText)
     setInvalid(false)
   }, [valueStamp, committedText])
 
-  const commitDraft = (text: string) => {
-    const trimmed = text.trim()
-    if (!trimmed) {
+  const applyCommit = useCallback((text: string, mode: 'blur' | 'flush') => {
+    const result = commitDetailMeasureDraft(text, recordRef.current, mode)
+    if (!result.ok) {
       setInvalid(true)
-      onChange({ ...record, value: '' })
-      return
-    }
-    const parsed = parseDecimalInput(text)
-    if (parsed == null) {
-      setInvalid(true)
-      return
+      return false
     }
     setInvalid(false)
-    const stored = formatMeasureStorageNumber(parsed)
-    onChange({ ...record, value: stored })
-    setDraft(formatMeasureEditNumber(stored))
-  }
+    onChange(result.next)
+    setDraft(result.displayText)
+    return true
+  }, [onChange])
+
+  const commitForSave = useCallback(() => applyCommit(draftRef.current, 'flush'), [applyCommit])
+  const discardLocal = useCallback(() => {
+    skipBlurCommitRef.current = true
+    setDraft(committedText)
+    setInvalid(false)
+  }, [committedText])
+
+  useDetailFieldDraft({ commit: commitForSave, discard: discardLocal })
 
   return (
     <span className="measure" data-testid={`detail-measure-field-${fieldKey}`}>
@@ -3376,12 +3391,19 @@ function NumberMeasureField({
           setInvalid(false)
           setDraft(event.target.value)
         }}
-        onBlur={() => commitDraft(draft)}
+        onBlur={() => {
+          if (skipBlurCommitRef.current) {
+            skipBlurCommitRef.current = false
+            return
+          }
+          applyCommit(draft, 'blur')
+        }}
       />
       <UnitSuffix
         units={units}
         value={String(record.unit ?? units[0] ?? '')}
         onChange={(unit) => {
+          skipBlurCommitRef.current = true
           setInvalid(false)
           onChange({ ...record, unit })
         }}
