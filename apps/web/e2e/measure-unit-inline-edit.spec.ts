@@ -325,13 +325,12 @@ test.describe('measure unit inline edit', () => {
       await expect(valueInput).toHaveValue('2000')
       await valueInput.press('Tab')
 
-      const save = page.getByTestId('review-and-save')
-      if (await save.isVisible()) {
-        await save.click()
-        const dialog = page.getByTestId('review-dialog')
-        if (await dialog.isVisible()) {
-          await dialog.getByTestId('confirm-review').click()
-        }
+      const save = page.getByTestId('object-detail').getByTestId('review-and-save')
+      await expect(save).toBeVisible({ timeout: 15_000 })
+      await save.click()
+      const dialog = page.getByTestId('review-dialog')
+      if (await dialog.isVisible()) {
+        await dialog.getByTestId('confirm-review').click()
       }
       await expect.poll(async () => (await readEnergy(page, objectId))?.unit, { timeout: 60_000 }).toBe('kJ')
       await expect.poll(async () => (await readEnergy(page, objectId))?.value, { timeout: 60_000 }).toBe('2000')
