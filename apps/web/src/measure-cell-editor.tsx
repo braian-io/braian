@@ -79,6 +79,10 @@ export function MeasureCellEditor({
             event.preventDefault()
             onCommit()
           }
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            onCancel()
+          }
         }}
         onBlur={() => onValueBlur?.()}
       />
@@ -101,7 +105,10 @@ export function MeasureCellEditor({
             className="unit-suffix cell-editor-unit-trigger"
             data-testid={`cell-editor-${columnId}-unit`}
             aria-label={copy.unit}
-            onPointerDown={blockInputBlur}
+            onPointerDown={(event) => {
+              blockInputBlur(event)
+              onUnitSelectorOpen?.()
+            }}
           >
             <SelectValue />
           </SelectTrigger>

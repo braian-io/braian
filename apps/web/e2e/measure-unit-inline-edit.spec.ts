@@ -283,7 +283,7 @@ test.describe('measure unit inline edit', () => {
       const cancelInput = editor()
       await expect(cancelInput).toBeVisible()
       await replaceMeasureInput(cancelInput, '1,5')
-      await page.keyboard.press('Escape')
+      await cancelInput.press('Escape')
       await expect(cancelInput).toHaveCount(0)
       expect(patches).toHaveLength(0)
       expect((await readEnergy(page, objectId))?.value).toBe(beforeValue)
@@ -342,6 +342,7 @@ test.describe('measure unit inline edit', () => {
         const valueInput = page.locator('[data-testid^="cell-editor-energy"][data-testid$="-value"]').first()
         await replaceMeasureInput(valueInput, typed)
         await valueInput.press('Enter')
+        await expect(valueInput).toHaveCount(0, { timeout: 30_000 })
         await saveDraftIfNeeded(page)
         await expect.poll(async () => (await readEnergy(page, objectId))?.value, { timeout: 60_000 }).toBe(stored)
       }
