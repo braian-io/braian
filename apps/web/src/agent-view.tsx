@@ -195,10 +195,14 @@ export function AgentView({ runId }: AgentViewProps) {
   const [error, setError] = useState('')
   const [announced, setAnnounced] = useState('')
   const previousStatus = useRef('')
+  const runQueryKey = ['agent-run', runId, 'pane'] as const
   const run = useQuery({
-    queryKey: ['agent-run', runId],
+    // Pane query is separate from any warm create/run-list cache on ['agent-run', id].
+    queryKey: runQueryKey,
     queryFn: () => fetchAgentRun(runId),
     refetchOnMount: 'always',
+    staleTime: 0,
+    gcTime: 0,
     retry: false,
     refetchInterval: (query) => {
       if (query.state.status === 'error') return false
@@ -218,7 +222,7 @@ export function AgentView({ runId }: AgentViewProps) {
   const modeChange = useMutation({
     mutationFn: (mode: 'foreground' | 'background') => patchAgentRun(runId, { mode }),
     onSuccess: (detail) => {
-      queryClient.setQueryData(['agent-run', runId], detail)
+      queryClient.setQueryData(runQueryKey, detail)
       setError('')
       void queryClient.invalidateQueries({ queryKey: ['agent-runs'] })
     },
@@ -229,7 +233,7 @@ export function AgentView({ runId }: AgentViewProps) {
   const follow = useMutation({
     mutationFn: (content: string) => followAgentRun(runId, content),
     onSuccess: (detail) => {
-      queryClient.setQueryData(['agent-run', runId], detail)
+      queryClient.setQueryData(runQueryKey, detail)
       setDraft('')
       setError('')
       refresh()
@@ -333,7 +337,7 @@ export function AgentView({ runId }: AgentViewProps) {
               onClick={() => {
                 requestShowAgentSession(data)
                 void patchAgentRun(data.id, { hidden: false }).then((detail) => {
-                  queryClient.setQueryData(['agent-run', runId], detail)
+                  queryClient.setQueryData(runQueryKey, detail)
                 }).catch((reason: unknown) => {
                   setError(reason instanceof Error ? reason.message : copy.validation)
                 })

@@ -216,7 +216,7 @@ function SplitNode({ frame, node, path }: { frame: Frame; node: Node; path: numb
   const gaps = Math.max(0, node.children.length - 1) * 6
   return (
     <div
-      className={`split ${node.dir}`}
+      className={lockRatios ? `split ${node.dir} split-agent-dock` : `split ${node.dir}`}
       data-path={path.join('.') || 'root'}
       data-has-detail={hasDetail ? 'true' : undefined}
       data-agent-dock={lockRatios ? 'true' : undefined}
@@ -259,12 +259,23 @@ function SplitChild({
 }) {
   const basis = `calc((100% - ${gaps}px) * ${node.ratios[index] ?? 0})`
   const flex = lockRatios ? '0 0' : hasDetail ? '0 1' : '0 0'
+  const last = index === node.children.length - 1
+  const docked = lockRatios && node.dir === 'horizontal'
+    ? {
+        position: 'absolute' as const,
+        top: 0,
+        bottom: 0,
+        width: basis,
+        flex: 'none',
+        ...(index === 0 ? { left: 0 } : last ? { right: 0 } : {}),
+      }
+    : { flex: `${flex} ${basis}` }
   return (
     <>
       {index > 0 ? (
         <Divider frame={frame} dir={node.dir} index={index - 1} path={path} count={node.children.length} />
       ) : null}
-      <div className="split-cell" style={{ flex: `${flex} ${basis}` }}>
+      <div className="split-cell" style={docked}>
         <SplitNode frame={frame} node={child} path={[...path, index]} />
       </div>
     </>

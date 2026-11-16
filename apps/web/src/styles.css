@@ -460,13 +460,23 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
     min-width: 440px;
   }
 }
-/* Edge-docked agent chat shrinks the left subtree — table floors must not jump it sideways. */
+/* Edge-docked agent chat: pin the catalog subtree at the left edge (absolute layout). */
+.dock-root > .split.horizontal.split-agent-dock {
+  display: block;
+  position: relative;
+}
 .dock-root > .split.horizontal[data-agent-dock='true'] > .split-cell {
   min-width: 0;
 }
 .dock-root > .split.horizontal[data-agent-dock='true'] .split[data-has-detail='true'] {
   container-type: normal;
   container-name: none;
+}
+.dock-root > .split.horizontal.split-agent-dock > .split-divider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  margin: 0;
 }
 /* A table that shares its split with a direct Detail pane gives way to it. */
 .split:has(> .split-cell > .pane .pane-tab[data-view-type='object_detail'])
