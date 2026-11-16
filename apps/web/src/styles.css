@@ -533,7 +533,7 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
   overflow-anchor: none;
   scrollbar-width: none;
   position: relative;
-  z-index: 1;
+  z-index: 2;
 }
 .pane-tab-list::-webkit-scrollbar { display: none; }
 .pane-tab-pad { flex: none; width: 0; }
@@ -604,6 +604,8 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
   flex: 0 0 auto;
   gap: var(--space-0_5);
   min-width: 0;
+  position: relative;
+  z-index: 1;
   opacity: 0;
   pointer-events: none;
 }

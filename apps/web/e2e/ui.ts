@@ -12,18 +12,42 @@ export function mainTable(page: Page, title = 'Products'): Locator {
   return paneWithTab(page, title).getByTestId('object-table').first()
 }
 
-/** Focus the Products table. Clicks the tab open control, not the crowded strip chrome. */
-export async function showProducts(page: Page, title = 'Products') {
+export async function resetProductsLayout(page: Page, title = 'Products') {
+  await page.evaluate(() => sessionStorage.setItem('braian.layout.suppressFlush', '1'))
+  const listed = await page.request.get('/v1/workspaces')
+  const body = (await listed.json()) as { workspaces: Array<{ id: string; name: string }> }
+  const workspace = body.workspaces.find((item) => item.name === title)
+  const me = await page.request.get('/v1/me')
+  const userId = ((await me.json()) as { user_id?: string }).user_id
+  if (userId && workspace) {
+    await page.evaluate((key) => localStorage.removeItem(key), `braian.layout.${userId}.default.${workspace.id}`)
+    await page.request.delete(`/v1/workspaces/${workspace.id}/state?environment=default`)
+  }
+  await page.reload()
+  await expect(page.locator('nav.tabs')).toBeVisible({ timeout: 60_000 })
+  await page.evaluate(() => sessionStorage.removeItem('braian.layout.suppressFlush'))
+  await showProductsInner(page, title)
+}
+
+async function showProductsInner(page: Page, title = 'Products') {
   await page.locator('nav.tabs').getByRole('button', { name: new RegExp(`^${title}`) }).click()
   const rows = mainTable(page, title).getByTestId('object-row')
   if (await rows.first().isVisible().catch(() => false)) return
-  const tableTab = page
-    .locator('.pane-tab[data-view-type="object_table"]')
-    .filter({ hasText: new RegExp(`^${title}`) })
-    .first()
-  await expect(tableTab).toBeVisible({ timeout: 60_000 })
-  await tableTab.getByRole('button').first().click()
+  const pane = paneWithTab(page, title)
+  await pane.hover()
+  const tabOpen = pane.locator('.pane-tab[data-view-type="object_table"] .pane-tab-open').first()
+  await tabOpen.scrollIntoViewIfNeeded()
+  await tabOpen.click()
   await expect(rows.first()).toBeVisible({ timeout: 60_000 })
+}
+
+/** Focus the Products table in the pane that owns the main object table. */
+export async function showProducts(page: Page, title = 'Products') {
+  try {
+    await showProductsInner(page, title)
+  } catch {
+    await resetProductsLayout(page, title)
+  }
 }
 
 /** Draft links live in chat; review and save stay on the object table pane. */

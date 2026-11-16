@@ -1,23 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
-import { expectToastClearsLists, mainTable, setTheme, showProducts } from './ui'
-
-async function resetProductsLayout(page: Page) {
-  await page.evaluate(() => sessionStorage.setItem('braian.layout.suppressFlush', '1'))
-  const listed = await page.request.get('/v1/workspaces')
-  const body = (await listed.json()) as { workspaces: Array<{ id: string; name: string }> }
-  const workspace = body.workspaces.find((item) => item.name === 'Products')
-  const me = await page.request.get('/v1/me')
-  const userId = ((await me.json()) as { user_id?: string }).user_id
-  if (userId && workspace) {
-    await page.evaluate((key) => localStorage.removeItem(key), `braian.layout.${userId}.default.${workspace.id}`)
-    await page.request.delete(`/v1/workspaces/${workspace.id}/state?environment=default`)
-  }
-  await page.reload()
-  await expect(page.locator('nav.tabs')).toBeVisible({ timeout: 60_000 })
-  await page.evaluate(() => sessionStorage.removeItem('braian.layout.suppressFlush'))
-  await showProducts(page)
-}
+import { expectToastClearsLists, mainTable, resetProductsLayout, setTheme, showProducts } from './ui'
 
 async function login(page: Page) {
   const demo = demoCredentials()

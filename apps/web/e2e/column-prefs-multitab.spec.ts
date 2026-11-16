@@ -282,7 +282,9 @@ test.describe('column prefs reset', () => {
     expect(detailFocus).toBeTruthy()
     expect(detailFocus).not.toBe(viewId)
 
-    await paneWithTab(page, 'Products').getByTestId('pane-maximize').click()
+    const productsPane = paneWithTab(page, 'Products')
+    await productsPane.hover()
+    await productsPane.getByTestId('pane-maximize').click()
     await expect(dock).toHaveAttribute('data-zoom', viewId)
     await expect(dock).toHaveAttribute('data-focus', detailFocus ?? '')
     await expect(page.locator('section.pane')).toHaveCount(1)
