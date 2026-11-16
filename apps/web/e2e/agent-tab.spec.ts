@@ -239,11 +239,10 @@ test('rejecting toasts the field and leaves the name unchanged', async ({ page }
 test('a failed fetch can be retried and a missing run cannot', async ({ page }) => {
   test.setTimeout(120_000)
   await login(page)
-  let failed = false
+  let allowRunFetch = false
   const runDetail = /\/v1\/agent\/runs\/[^/]+$/
   await page.route(runDetail, async (route) => {
-    if (route.request().method() === 'GET' && !failed) {
-      failed = true
+    if (route.request().method() === 'GET' && !allowRunFetch) {
       await route.fulfill({
         status: 500,
         contentType: 'application/json',
@@ -255,10 +254,12 @@ test('a failed fetch can be retried and a missing run cannot', async ({ page }) 
   })
   await ask(page, 'hold the run briefly')
   await expect(page.getByTestId('command-palette')).toHaveCount(0)
-  const busy = page.getByTestId('agent-fetch-error')
+  const view = agentView(page, 'hold the run briefly')
+  const busy = view.getByTestId('agent-fetch-error')
   await expect(busy).toContainText('the store is busy')
+  allowRunFetch = true
   await busy.getByTestId('agent-retry').click()
-  await expect(agentView(page, 'hold the run briefly').getByTestId('agent-status')).toBeVisible({ timeout: 30_000 })
+  await expect(view.getByTestId('agent-status')).toBeVisible({ timeout: 30_000 })
   await page.unroute(runDetail)
   await page.route(runDetail, async (route) => {
     if (route.request().method() === 'GET') {
@@ -272,8 +273,9 @@ test('a failed fetch can be retried and a missing run cannot', async ({ page }) 
     await route.continue()
   })
   await ask(page, 'hold the run missing')
-  await expect(page.getByTestId('agent-missing').first()).toBeVisible({ timeout: 30_000 })
-  await expect(page.getByTestId('agent-retry')).toHaveCount(0)
+  const missing = agentView(page, 'hold the run missing')
+  await expect(missing.getByTestId('agent-missing')).toBeVisible({ timeout: 30_000 })
+  await expect(missing.getByTestId('agent-retry')).toHaveCount(0)
 })
 
 test('a failed run shows a cleaned error and try again', async ({ page }) => {

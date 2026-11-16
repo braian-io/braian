@@ -9,10 +9,10 @@ const agentA = 'agent-a'
 const agentB = 'agent-b'
 
 const catalog: SavedView[] = [
-  { id: table, type: 'object_table', title: 'Products', pane: 'main', position: 0, state: {} },
-  { id: detail, type: 'object_detail', title: 'Detail', pane: 'main', position: 1, state: {} },
-  { id: agentA, type: 'agent', title: 'Ask', pane: 'main', position: 2, state: {} },
-  { id: agentB, type: 'agent', title: 'Ask again', pane: 'main', position: 3, state: {} },
+  { id: table, type: 'object_table', title: 'Products', state: {} },
+  { id: detail, type: 'object_detail', title: 'Detail', state: {} },
+  { id: agentA, type: 'agent', title: 'Ask', state: {} },
+  { id: agentB, type: 'agent', title: 'Ask again', state: {} },
 ]
 
 describe('healAgentDockLayout', () => {

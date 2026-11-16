@@ -34,10 +34,9 @@ async function showProductsInner(page: Page, title = 'Products') {
   const rows = mainTable(page, title).getByTestId('object-row')
   if (await rows.first().isVisible().catch(() => false)) return
   const pane = paneWithTab(page, title)
-  await pane.hover()
-  const tabOpen = pane.locator('.pane-tab[data-view-type="object_table"] .pane-tab-open').first()
-  await tabOpen.scrollIntoViewIfNeeded()
-  await tabOpen.click()
+  const tab = pane.locator('.pane-tab[data-view-type="object_table"]', { hasText: title }).first()
+  await tab.scrollIntoViewIfNeeded()
+  await tab.click()
   await expect(rows.first()).toBeVisible({ timeout: 60_000 })
 }
 

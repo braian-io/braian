@@ -1,7 +1,7 @@
 // Docked agent chat: right pane, follow-ups, and Products stays open.
 import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
-import { mainTable } from './ui'
+import { mainTable, paneWithTab } from './ui'
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -29,7 +29,7 @@ function agentPane(page: Page) {
 }
 
 function paneWithTable(page: Page) {
-  return page.locator('section.pane').filter({ has: mainTable(page, 'Products') })
+  return paneWithTab(page, 'Products')
 }
 
 function paneWithDetail(page: Page) {

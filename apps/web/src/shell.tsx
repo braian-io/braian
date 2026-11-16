@@ -298,6 +298,7 @@ export function Shell() {
   const mineDocRef = useRef<LayoutDoc | null>(null)
   const viewingRunId = useSyncExternalStore(subscribeViewingAgent, viewingAgentRunId, viewingAgentRunId)
   const restoredAgents = useRef<string | null>(null)
+  const elsewhereAnnounced = useRef<string | null>(null)
   const applyViewTypeSourceRef = useRef<(typeId: string, viewId?: string) => Promise<void>>(async () => undefined)
   const applyViewPeerSourceRef = useRef<(peerViewId: string, viewId?: string, linkType?: string) => Promise<void>>(async () => undefined)
   const migratedRef = useRef(new Set<string>())
@@ -773,12 +774,23 @@ export function Shell() {
     restoredAgents.current = surface.id
     void listAgentRuns()
       .then((runs) => {
-        const { here, elsewhere } = agentRunsForWorkspace(runs, surface.id)
-        if (elsewhere.length > 0) toast.message(copy.agentOpenElsewhere)
+        const { here } = agentRunsForWorkspace(runs, surface.id)
         for (const run of here) openAgentRunRef.current(run)
       })
       .catch((reason: unknown) => reportWriteError(reason))
   }, [workspace.data, doc, userId])
+
+  useEffect(() => {
+    const surface = workspace.data
+    const runs = agentRunList.data
+    if (!surface || !runs || !doc) return
+    const { elsewhere } = agentRunsForWorkspace(runs, surface.id)
+    if (elsewhere.length === 0) return
+    const key = `${surface.id}:${elsewhere.map((run) => run.id).sort().join(',')}`
+    if (elsewhereAnnounced.current === key) return
+    elsewhereAnnounced.current = key
+    toast.message(copy.agentOpenElsewhere)
+  }, [agentRunList.data, workspace.data, doc])
 
   useEffect(() => {
     const onRun = (event: Event) => {
