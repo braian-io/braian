@@ -1,4 +1,11 @@
-import { useRef, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
+import {
+  useLayoutEffect,
+  useRef,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from 'react'
+import { isPaletteListNavKey, scrollPaletteActiveItem } from '../palette-list-scroll'
 import { Command, CommandInput, CommandList } from '../components/ui/command'
 import { Checkbox } from '../components/ui/checkbox'
 import { Kbd } from '../components/ui/kbd'
@@ -60,11 +67,20 @@ export function FieldPicker({
    * left over a row by a just-closed context menu must not override the keyboard.
    */
   const hoverArmed = useRef(false)
+  const keyboardScroll = useRef(false)
+  const listRef = useRef<HTMLDivElement>(null)
   const onPointerMove = (index: number) => {
     if (hoverArmed.current) return
     hoverArmed.current = true
     onActive(index)
   }
+
+  useLayoutEffect(() => {
+    if (!keyboardScroll.current) return
+    keyboardScroll.current = false
+    scrollPaletteActiveItem(listRef.current)
+  }, [selected, levelKey])
+
   return (
     <div className="palette" data-testid={root} data-picker-mode={mode} onMouseDown={onBackdrop}>
       <style>{`
@@ -89,6 +105,7 @@ export function FieldPicker({
         onMouseDown={(event) => event.stopPropagation()}
         onKeyDownCapture={(event) => {
           hoverArmed.current = false
+          if (isPaletteListNavKey(event.key)) keyboardScroll.current = true
           onKeyDown(event)
         }}
       >
@@ -109,7 +126,7 @@ export function FieldPicker({
             }}
           />
         </div>
-        <CommandList id={`${root}-list`} data-testid={`${root}-list`}>
+        <CommandList ref={listRef} id={`${root}-list`} data-testid={`${root}-list`}>
           <div className="palette-group" role="listbox">
             {rows.map((row, index) => (
               <div

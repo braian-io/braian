@@ -21,6 +21,7 @@ import { mergeFrecency, readFrecency, touch, writeFrecency } from './frecency'
 import { withModelCommand } from './model-command'
 import { activeAfterQuery, filterPaletteRows, frecencyId, groupOrder, groupTitle, markedTitle, readPaletteMemory, rememberPaletteItem, rememberRecent, resultAnnouncement, selectedObjectId, sublistPlaceholder, visibleRows, withRecent, type PaletteItem } from './palette-model'
 import { argumentBreadcrumb, isObjectParam, objectTypeFilter, paletteKeyEffect, placeTargetId, tabHint, type PaletteFrame } from './palette-core'
+import { scrollPaletteActiveItem } from './palette-list-scroll'
 import { argumentCommands, type OperationRecord } from './palette-operations'
 import { objectPaletteRows } from './palette-objects'
 import { viewPaletteRows } from './palette-views'
@@ -566,8 +567,12 @@ export function CommandPalette({
     if (mode !== 'list' || stack.length === 0 || !query.trim()) return
     setActive(0)
   }, [query, mode, stack.length])
-  useEffect(() => {
-    document.querySelector<HTMLElement>('#palette-list .hit.on')?.scrollIntoView({ block: 'nearest' })
+  const paletteListRef = useRef<HTMLDivElement>(null)
+  const paletteKeyboardScroll = useRef(false)
+  useLayoutEffect(() => {
+    if (!paletteKeyboardScroll.current) return
+    paletteKeyboardScroll.current = false
+    scrollPaletteActiveItem(paletteListRef.current)
   }, [active, rows.length])
 
   const needsWorkspace = (commandId: string) =>
@@ -1320,6 +1325,7 @@ export function CommandPalette({
       if (item) run(item)
       return
     }
+    if (effect.type === 'move') paletteKeyboardScroll.current = true
     setActive(effect.index)
   }
 
@@ -1510,7 +1516,7 @@ export function CommandPalette({
             ) : null}
           </div>
         ) : (
-            <CommandList id="palette-list" role="listbox">
+            <CommandList ref={paletteListRef} id="palette-list" role="listbox">
               {showEmpty ? (
                 <p className="palette-empty" data-testid="palette-empty">No results for &quot;{query.trim()}&quot;</p>
               ) : null}
