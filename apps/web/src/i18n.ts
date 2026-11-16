@@ -118,6 +118,7 @@ export const copy = {
   rollback: 'Restore',
   restoreObjectVersion: 'Restore {object} to version {version}?',
   restoreObject: 'Restore {object}?',
+  restoreAlreadyMatches: 'This object already matches that version.',
   massEdit: 'Set status OK',
   export: 'Export',
   exportStarted: 'Export started',

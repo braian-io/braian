@@ -375,14 +375,13 @@ test('delete-structure dialog names the operation while loading, then drops the 
     // confirm, and no invented affected/sample counts.
     await expect(dialog.locator('.consequence-title > strong')).toHaveText('Delete structure')
     await expect(dialog.getByTestId('confirm-delete')).toBeDisabled()
-    await expect(dialog.getByTestId('impact-result')).toHaveCount(0)
     await expect(dialog).not.toContainText('Affected objects')
     await expect(dialog).not.toContainText('Sample:')
     await expect(dialog.getByTestId('model-diff')).toHaveCount(0)
 
-    await expect(dialog.getByTestId('impact-result')).toHaveCount(0)
     await expect(dialog.locator('.consequence-title > strong')).toHaveText(`Delete structure ${label}`)
     await expect(dialog.getByTestId('confirm-delete')).toBeEnabled()
+    await expect(dialog.getByTestId('impact-result')).toHaveCount(0)
     await expect(dialog.getByTestId('model-diff')).toHaveCount(0)
 
     await dialog.getByRole('button', { name: 'Cancel' }).click()
