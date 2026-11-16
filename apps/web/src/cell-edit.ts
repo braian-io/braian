@@ -2,7 +2,7 @@ import { textValue, type Json } from './api'
 import { factorsForFamily, unitsForFamily } from './fields/catalog'
 import { parseColumnId } from './fields/columns'
 import { convertMeasure } from './fields/qualifiers'
-import { formatConvertedMeasure, formatConvertedNumber, formatMeasureStorageNumber, parseDecimalInput } from './format'
+import { formatConvertedMeasure, formatMeasureEditNumber, formatMeasureStorageNumber, parseDecimalInput } from './format'
 import { attributeByKey, attributeIndexField } from './index-fields'
 
 /** True when a cell editor draft should be PATCH'ed. Esc / unchanged must return false. */
@@ -124,7 +124,7 @@ export function measureEditInitialDraft(ctx: MeasureEditContext): MeasureEditDra
     return { valueText: '', unit: ctx.displayUnit }
   }
   const converted = convertMeasure(ctx.stored.value, ctx.stored.unit, ctx.displayUnit, ctx.factors)
-  return { valueText: formatConvertedNumber(converted), unit: ctx.displayUnit }
+  return { valueText: formatMeasureEditNumber(converted), unit: ctx.displayUnit }
 }
 
 function roundDisplayMeasure(value: number): number {

@@ -300,7 +300,7 @@ const measuredSeconds = {
   'e2e/row129f-allowed-trees-state-lock.spec.ts': 16,
   'e2e/row209-workspace-new-button.spec.ts': 25,
   'e2e/row237-unit-display-select-fields.spec.ts': 55,
-  'e2e/measure-unit-inline-edit.spec.ts': 90,
+  'e2e/measure-unit-inline-edit.spec.ts': 105,
   'e2e/row211-new-from-template.spec.ts': 40,
   'e2e/row213-open-view.spec.ts': 30,
   'e2e/row213b-add-view-clone.spec.ts': 35,

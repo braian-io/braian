@@ -42,7 +42,7 @@ import { onFlash } from './flash'
 import { GraphMap } from './graph-map'
 import { exportPayload, runExport, saveWorkbook } from './export'
 import { diffLines, historyWho, isCreate, proposedValues, relativeTime, sourceLabel, suggestionLines, valuesFromKept, type DiffLine } from './field-diff'
-import { formatCount, formatMeasure, formatMeasureNumber, formatMeasureStorageNumber, formatTimestamp, parseDecimalInput } from './format'
+import { formatCount, formatMeasure, formatMeasureEditNumber, formatMeasureStorageNumber, formatTimestamp, parseDecimalInput } from './format'
 import { PathMenu, type ListedPath } from './path-picker'
 import { publishFieldsHost } from './fields-host'
 import { fieldCatalogForType, withSystemViewFields } from './fields/catalog'
@@ -3322,7 +3322,7 @@ function NumberMeasureField({
   const record = (value && typeof value === 'object' ? value : { value }) as Json
   const [invalid, setInvalid] = useState(false)
   const shown = record.value != null && record.value !== ''
-    ? formatMeasureNumber(record.value)
+    ? formatMeasureEditNumber(record.value)
     : textValue(record.value)
   return (
     <span className="measure" data-testid={`detail-measure-field-${fieldKey}`}>

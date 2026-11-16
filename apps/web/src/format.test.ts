@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatConvertedMeasure, formatConvertedNumber, formatCount, formatMeasure, formatMeasureStorageNumber, formatTimestamp, formatUnitCode, parseDecimalInput } from './format'
+import { formatConvertedMeasure, formatConvertedNumber, formatCount, formatMeasure, formatMeasureEditNumber, formatMeasureStorageNumber, formatTimestamp, formatUnitCode, parseDecimalInput } from './format'
 
 describe('format', () => {
   it('rounds converted numbers for display', () => {
@@ -24,8 +24,12 @@ describe('format', () => {
   it('parses decimal commas and formats storage without float noise', () => {
     expect(parseDecimalInput('1,5')).toBe(1.5)
     expect(parseDecimalInput('1,234.5')).toBe(1234.5)
+    expect(parseDecimalInput('2,000')).toBe(2000)
     expect(parseDecimalInput('abc')).toBeNull()
     expect(formatMeasureStorageNumber(418.40000000000003)).toBe('418.4')
+    expect(formatMeasureEditNumber(2000)).toBe('2000')
+    expect(formatMeasureEditNumber(1.5)).toBe('1.5')
+    expect(formatMeasureEditNumber('2030')).toBe('2030')
   })
 
   it('groups counts in English', () => {

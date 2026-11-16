@@ -249,6 +249,58 @@ test.describe('measure unit inline edit', () => {
     }
   })
 
+  test('detail 2000 kJ shows without grouping and unchanged grid edit keeps stored value', async ({ page }) => {
+    test.setTimeout(120_000)
+    let objectId = ''
+    let energyBefore: MeasureValue | undefined
+    try {
+      await login(page)
+      await openProducts(page)
+      objectId = await cheddarObjectId(page)
+      energyBefore = await readEnergy(page, objectId)
+      const current = await page.request.get(`/v1/objects/${objectId}`)
+      const version = (await current.json()) as { version?: number }
+      await page.request.patch(`/v1/objects/${objectId}`, {
+        headers: { 'If-Match': String(version.version ?? 0) },
+        data: { values: { energy: { value: '2000', unit: 'kJ' } } },
+      })
+
+      const row = cheddarRow(page)
+      await row.click()
+      await page.keyboard.press('Enter')
+      await expect(page.getByTestId('object-detail')).toBeVisible()
+      await expect(page.getByTestId('detail-measure-field-energy').getByTestId('detail-measure-value')).toHaveValue(
+        '2000',
+      )
+
+      await addEnergyKcalColumn(page)
+      await openFieldsPalette(page)
+      await page.getByTestId('fields-mode-input').fill('Energy')
+      await enterOn(page, 'fields-row-energy')
+      await page.getByTestId('fields-mode-input').fill('')
+      await enterOn(page, 'fields-row-kJ')
+      await page.keyboard.press('Escape')
+
+      const kjCell = row.locator('[data-testid="path-cell-energy#unit:kJ"]')
+      await kjCell.dblclick()
+      const valueInput = page.locator('[data-testid="cell-editor-energy#unit:kJ-value"]')
+      await expect(valueInput).toHaveValue('2000')
+      await valueInput.press('Enter')
+      expect(await readEnergy(page, objectId)).toEqual({ value: '2000', unit: 'kJ' })
+    } finally {
+      try {
+        if (objectId) await restoreEnergy(page, objectId, energyBefore)
+      } catch (error) {
+        console.error('energy cleanup failed:', error)
+      }
+      try {
+        await restoreProductsColumnPrefs(page)
+      } catch (error) {
+        console.error('column prefs cleanup failed:', error)
+      }
+    }
+  })
+
   test('K1/K2 detail view keeps separate number and unit on unit change', async ({ page }) => {
     test.setTimeout(120_000)
     let objectId = ''
@@ -267,11 +319,10 @@ test.describe('measure unit inline edit', () => {
       const valueInput = energyField.getByTestId('detail-measure-value')
       await expect(valueInput).toBeVisible()
       await valueInput.fill('2000')
-      const numberBeforeUnitChange = await valueInput.inputValue()
       const unitTrigger = energyField.locator('.unit-suffix')
       await unitTrigger.click()
       await page.getByRole('option', { name: 'kJ' }).click()
-      await expect(valueInput).toHaveValue(numberBeforeUnitChange)
+      await expect(valueInput).toHaveValue('2000')
       await valueInput.press('Tab')
 
       const save = page.getByTestId('review-and-save')

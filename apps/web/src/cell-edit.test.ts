@@ -236,6 +236,26 @@ describe('measure inline edit', () => {
     expect(commitMeasureEdit(ctx!, { valueText: '', unit: 'kcal' })).toEqual({ ok: false, reason: 'empty' })
     expect(commitMeasureEdit(ctx!, { valueText: 'abc', unit: 'kcal' })).toEqual({ ok: false, reason: 'invalid' })
   })
+
+  it('seeds and commits 2000 without thousands grouping', () => {
+    const doc = {
+      a_018f0000_0000_7000_8000_000000000099: '2000',
+      a_018f0000_0000_7000_8000_000000000099__unit: 'kJ',
+    }
+    const kjColumn = 'energy#unit:kJ'
+    const ctx = inlineMeasureEditContext(kjColumn, doc, energyEnergyDefs)
+    expect(ctx).not.toBeNull()
+    expect(measureEditInitialDraft(ctx!)).toEqual({ valueText: '2000', unit: 'kJ' })
+    const unchanged = commitMeasureEdit(ctx!, { valueText: '2000', unit: 'kJ' })
+    expect(unchanged.ok).toBe(true)
+    if (unchanged.ok) {
+      expect(unchanged.unchanged).toBe(true)
+    }
+    expect(commitMeasureEdit(ctx!, { valueText: '2,000', unit: 'kJ' })).toMatchObject({
+      ok: true,
+      stored: { value: '2000', unit: 'kJ' },
+    })
+  })
 })
 
 describe('resolveCellEditInitial', () => {

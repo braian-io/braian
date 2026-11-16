@@ -32,7 +32,13 @@ export function parseDecimalInput(text: string): number | null {
   const commaCount = (normalized.match(/,/g) ?? []).length
   const dotCount = (normalized.match(/\./g) ?? []).length
   if (commaCount === 1 && dotCount === 0) {
-    normalized = normalized.replace(',', '.')
+    const [, after = ''] = normalized.split(',')
+    // One comma with up to two fractional digits = decimal comma (e.g. 1,5).
+    if (after.length > 0 && after.length <= 2) {
+      normalized = normalized.replace(',', '.')
+    } else {
+      normalized = normalized.replaceAll(',', '')
+    }
   } else {
     normalized = normalized.replaceAll(',', '')
   }
@@ -54,6 +60,15 @@ export function formatMeasureNumber(value: unknown): string {
   const numeric = typeof value === 'number' ? value : parseDecimalInput(String(value))
   if (numeric == null) return String(value)
   return formatConvertedNumber(numeric)
+}
+
+/** Editable measure inputs: no thousands grouping (avoids 2,000 parsing as 2). */
+export function formatMeasureEditNumber(value: unknown): string {
+  if (value == null || value === '') return ''
+  const numeric = typeof value === 'number' ? value : parseDecimalInput(String(value))
+  if (numeric == null || !Number.isFinite(numeric)) return String(value).trim()
+  const rounded = Math.round(numeric * 100) / 100
+  return rounded.toFixed(2).replace(/\.?0+$/, '')
 }
 
 /** Number plus unit for a converted measure cell. */
