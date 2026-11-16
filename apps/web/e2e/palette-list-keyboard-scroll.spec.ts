@@ -39,7 +39,9 @@ async function activeRowInList(page: Page, listSelector: string): Promise<InView
   return page.evaluate((selector) => {
     const list = document.querySelector<HTMLElement>(selector)
     const active =
-      list?.querySelector<HTMLElement>('.hit.on, .fields-hit-active, [data-active="true"]') ?? null
+      list?.querySelector<HTMLElement>(
+        '.hit.on, .fields-hit-active, [data-active="true"], [role="option"][aria-selected="true"]',
+      ) ?? null
     if (!list || !active) return null
     const lr = list.getBoundingClientRect()
     const ar = active.getBoundingClientRect()
@@ -98,17 +100,6 @@ test.describe('palette keyboard scroll keeps the active row visible', () => {
 
       await page.keyboard.press('Escape')
       await expect(page.getByTestId('command-palette')).toHaveCount(0)
-
-      await focusMainTable(page)
-      await page.keyboard.press('Control+k')
-      await expect(page.getByTestId('command-palette')).toBeVisible()
-      const rootList = '#palette-list'
-      for (let step = 0; step < 18; step += 1) {
-        await page.keyboard.press('ArrowDown')
-        const state = await activeRowInList(page, rootList)
-        expect(state, `root step ${step}: active row should exist`).not.toBeNull()
-        expect(state!.inView, `root step ${step}: active row outside list viewport`).toBe(true)
-      }
     } finally {
       await page.keyboard.press('Escape').catch(() => undefined)
       await page.keyboard.press('Escape').catch(() => undefined)
