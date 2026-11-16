@@ -115,7 +115,7 @@ test('show opens the hidden session and edits there become proposals', async ({ 
   const view = agentView(page, title)
   await expect(view).toHaveAttribute('data-session-kind', 'own')
   await expect(view).toHaveAttribute('data-hidden', 'true')
-  await expect(view.getByTestId('agent-follow-up')).toHaveCount(0)
+  await expect(view.getByTestId('agent-follow-up')).toBeVisible()
   await expect(view.getByTestId('agent-status')).toHaveAttribute('data-status', 'working')
   await expect(view.getByTestId('agent-show')).toHaveAttribute('aria-label', 'Show session')
   await expect(view.getByTestId('agent-show')).toBeVisible({ timeout: 15_000 })
@@ -149,7 +149,7 @@ test('show opens the hidden session and edits there become proposals', async ({ 
   if ((await agentTab.count()) === 0) await page.getByTestId('agent-back').click()
   await agentTab.click()
   await expect(page.getByTestId('agent-proposal')).toHaveCount(0)
-  await expect(page.getByTestId('agent-open-draft')).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByTestId('agent-result-link').first()).toBeVisible({ timeout: 15_000 })
   await shot(page, 'agent-session-proposal')
 
   if (await page.getByTestId('agent-back').count()) await page.getByTestId('agent-back').click()

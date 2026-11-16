@@ -48,13 +48,14 @@ test('a clear rename becomes a proposal without asking, and Accept changes the n
   const view = agentView(page, title)
 
   await expect(view.getByTestId('agent-proposal')).toHaveCount(0)
-  await expect(view.getByTestId('agent-follow-up')).toHaveCount(0)
+  await expect(view.getByTestId('agent-follow-up')).toBeVisible()
   await expect(view.getByTestId('agent-status')).toHaveAttribute('data-status', 'done', { timeout: 30_000 })
   await expect(view.getByTestId('agent-status')).not.toHaveText('Waiting for you')
   await expect(view.getByTestId('agent-question')).toHaveCount(0)
   await expect(view.getByRole('button', { name: 'Run in background' })).toBeVisible()
   await expect(view.getByTestId('agent-mode')).toHaveAttribute('aria-label', 'Run in background')
-  await view.getByTestId('agent-open-draft').click()
+  await expect(mainTable(page, 'Products')).toBeVisible()
+  await view.getByTestId('agent-result-link').first().click()
   const renamed = mainTable(page, 'Products').locator(`[id="object-row-${objectId}"] [data-column="name"]`)
   await expect(renamed).toContainText(target, { timeout: 30_000 })
   await page.getByTestId('review-and-save').first().click()
@@ -68,9 +69,6 @@ test('a clear rename becomes a proposal without asking, and Accept changes the n
   const identifier = saved.values?.number ?? saved.values?.sku
   if (identifier) expect(identifier).not.toBe(target)
 
-  // The agent opens as the active tab in this pane, so the products table
-  // unmounts. Show it again and read the renamed object's name cell.
-  await page.locator('.pane-tab[data-view-type="object_table"]').filter({ hasText: /^Products/ }).first().click()
   const shown = mainTable(page, 'Products').locator(`[id="object-row-${objectId}"]`)
   await expect(shown).toBeVisible({ timeout: 15_000 })
   await expect(shown.locator('[data-column="name"]')).toContainText(target, { timeout: 15_000 })

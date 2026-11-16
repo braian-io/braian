@@ -140,6 +140,11 @@ type Workspace = { id: string; name: string; locked: boolean; share_token?: stri
 function viewRows<T>(views: readonly T[] | null | undefined): T[] {
   return views ? [...views] : []
 }
+
+function agentRunIdFromView(views: View[], viewId: string): string {
+  const view = views.find((item) => item.id === viewId)
+  return String(view?.state?.run_id ?? '')
+}
 type Me = {
   email?: string
   role: string
@@ -532,6 +537,38 @@ export function Shell() {
         setPaletteStartAddView(false)
         setPaletteSourceTargetViewId(null)
         setPaletteStartNewFromTemplate(false)
+        const current = docRef.current
+        const surface = workspaceRef.current
+        if (current && surface && !paletteModeRef.current) {
+          const rows = viewRows(surface.views)
+          const catalog = rows.map((view) => ({ id: view.id, title: view.title, type: view.type }))
+          const agents = catalog.filter((view) => view.type === 'agent')
+          const openIds = layoutViews(current.layout)
+          const openAgents = agents.filter((view) => openIds.includes(view.id))
+          if (openAgents.length > 0) {
+            const focus = current.focus
+            const focused = openAgents.find((view) => view.id === focus)
+            if (focused) {
+              applyRef.current('close_view', { view: focused.id })
+              return
+            }
+            const target = openAgents[openAgents.length - 1]!
+            if (focus !== target.id) applyRef.current('ui.open_view', { id: target.id })
+            window.dispatchEvent(new CustomEvent('braian-focus-agent-input', {
+              detail: { runId: agentRunIdFromView(rows, target.id) },
+            }))
+            return
+          }
+          const hidden = agents.filter((view) => !openIds.includes(view.id))
+          if (hidden.length > 0) {
+            const view = hidden[hidden.length - 1]!
+            const runId = agentRunIdFromView(rows, view.id)
+            if (runId) {
+              openAgentRunRef.current({ id: runId, title: view.title, view_id: view.id, tab_open: true })
+              return
+            }
+          }
+        }
         setPaletteMode('ai')
         setPaletteEpoch((value) => value + 1)
       }),
@@ -1732,13 +1769,20 @@ export function Shell() {
       }
       const current = docRef.current
       if (!current) return
-      if (layoutViews(current.layout).includes(found.id)) return
-      const result = applyLayoutCommand(current, 'ui.open_view', { id: found.id, zone: 'center' }, {
+      if (layoutViews(current.layout).includes(found.id)) {
+        let next = current
+        if (current.focus !== found.id) next = { ...current, focus: found.id }
+        if (next !== current) commitDoc(next)
+        window.dispatchEvent(new CustomEvent('braian-focus-agent-input', { detail: { runId: run.id } }))
+        return
+      }
+      const result = applyLayoutCommand(current, 'ui.open_view', { id: found.id, zone: 'right' }, {
         views: views.map((view) => ({ id: view.id, title: view.title, type: view.type })),
         canonical: canonicalRef.current,
         place: placeOverride.current,
       })
       if (result.handled && result.doc !== current) commitDoc(result.doc)
+      window.dispatchEvent(new CustomEvent('braian-focus-agent-input', { detail: { runId: run.id } }))
     })().catch((reason: unknown) => reportWriteError(reason))
   }
 

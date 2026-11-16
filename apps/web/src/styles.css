@@ -695,7 +695,13 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
   color: var(--muted);
   align-self: center;
 }
-.agent-view { display: flex; flex-direction: column; gap: var(--space-3); }
+.agent-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: 0;
+  flex: 1 1 auto;
+}
 .agent-view-head { display: flex; align-items: center; gap: var(--space-1_5); flex-wrap: nowrap; min-width: 0; }
 .agent-view-head h2 { margin: 0; font-size: var(--text-lg); font-weight: 600; min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent-view-head time { color: var(--muted); font-size: var(--text-md); margin-left: auto; flex: none; }
@@ -710,8 +716,36 @@ button.agent-mode {
   opacity: 1;
 }
 button.agent-mode:hover:not(:disabled) { background: var(--hover); }
-.agent-log { display: flex; flex-direction: column; gap: var(--space-1_5); }
+.agent-log {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1_5);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
 .agent-line { margin: 0; }
+.agent-chat-user {
+  margin: 0 0 0 auto;
+  max-width: 92%;
+  padding: var(--space-1_5) var(--space-2);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.agent-chat-assistant {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-0_5);
+  max-width: 100%;
+}
+.agent-result-link {
+  padding: 0;
+  min-height: 0;
+  height: auto;
+  font-size: inherit;
+}
 .agent-proposal { border: 0; border-top: 1px solid var(--border); border-radius: 0; padding: var(--space-2_5) 0 0; display: flex; flex-direction: column; gap: var(--space-2); }
 .agent-proposal header { display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; }
 .agent-approve { background: var(--accent); color: #fff; }
@@ -731,8 +765,9 @@ button.agent-approve:disabled:hover {
 .agent-skeleton i:nth-child(3) { width: 70%; }
 .agent-failed, .agent-fetch-error { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
 .agent-failed p, .agent-fetch-error p { margin: 0; }
-.agent-follow { display: flex; gap: var(--space-2); align-items: center; }
-.agent-follow input { flex: 1 1 auto; }
+.agent-follow { display: flex; gap: var(--space-2); align-items: flex-end; flex: none; }
+.agent-follow-input,
+.agent-follow input { flex: 1 1 auto; min-height: 2.6rem; max-height: 9rem; resize: vertical; }
 .agent-follow .agent-action { flex: none; justify-content: center; width: 28px; padding: 0; }
 /* Disabled Send next to "Agent is working…" must look inactive; keep --muted for contrast checks. */
 .agent-follow .agent-action:disabled,
