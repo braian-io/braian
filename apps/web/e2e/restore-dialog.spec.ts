@@ -25,7 +25,7 @@ test('restore dialog names the object, shows a diff, and hides empty impact rows
 
     const nummer = page.locator('[data-testid=object-detail] .field', { hasText: 'Number' }).locator('input')
     const original = await nummer.inputValue()
-  const next = `${original || number}-restored`
+    const next = `${original || number}-restored`
     await nummer.fill(next)
     await page.getByTestId('object-detail').getByTestId('review-and-save').click()
     await expect(page.getByTestId('activity-log')).toContainText('Saved')
@@ -64,8 +64,6 @@ test('restore dialog names the object, shows a diff, and hides empty impact rows
       expect(discarded.ok()).toBeTruthy()
     }
   } finally {
-    if (createdId) {
-      await page.request.delete(`/v1/objects/${createdId}`).catch(() => undefined)
-    }
+    // Discard is attempted above when a rollback proposal stays open.
   }
 })
