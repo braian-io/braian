@@ -19,6 +19,12 @@ describe('Detail width layout (row 239)', () => {
     )
   })
 
+  it('does not apply detail-split containment inside an agent dock wrapper', () => {
+    expect(css).toMatch(
+      /\.dock-root > \.split\.horizontal\[data-agent-dock='true'\] \.split\[data-has-detail='true'\]\s*\{[^}]*container-type:\s*normal/,
+    )
+  })
+
   it('does not floor a table beside a direct Detail pane', () => {
     expect(css).toMatch(
       /\.split:has\(> \.split-cell > \.pane \.pane-tab\[data-view-type='object_detail'\]\)\s*>\s*\.split-cell:has\(\.pane-tab\[data-view-type='object_table'\]\.active\):not\(:has\(\.split\)\)\s*\{[^}]*min-width:\s*0/,

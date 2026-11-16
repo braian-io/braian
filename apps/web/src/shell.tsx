@@ -1774,6 +1774,7 @@ export function Shell() {
 
   openAgentRunRef.current = (run) => {
     void (async () => {
+      queryClient.removeQueries({ queryKey: ['agent-run', run.id] })
       const surfaceNow = workspaceRef.current
       const docNow = docRef.current
       if (!surfaceNow || !docNow) return
