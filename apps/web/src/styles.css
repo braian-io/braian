@@ -520,6 +520,10 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
   padding: 0 var(--space-1_5);
   background: var(--surface);
   overflow: hidden;
+  pointer-events: none;
+}
+.pane-tabs > * {
+  pointer-events: auto;
 }
 .pane-tab-list {
   display: flex;

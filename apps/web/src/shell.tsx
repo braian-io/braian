@@ -83,6 +83,7 @@ import {
   resolveActiveWorkspaceId,
   writeActiveWorkspaceId,
 } from './active-workspace'
+import { healAgentDockLayout } from './agent-layout-migrate'
 import { healDataModelWorkspace, isKnownViewType, layoutHasMissingViews, migrateLegacyModelViews } from './model-workspace-migrate'
 import { persistWorkspaceMigration } from './workspace-migration-persist'
 import { commandPlaceholder, displayViewTitle, migrateSavedWorkspace, singularOf, typeNames, typeOfView } from './type-labels'
@@ -930,15 +931,19 @@ export function Shell() {
     const canonical = canonicalDoc(current)
     canonicalRef.current = canonical.layout
     const local = readLayoutStore(key)
-    const painted = local ? migrateDoc(local.document) : canonical
+    let painted = local ? migrateDoc(local.document) : canonical
     const listed = viewRows(current.views)
-    // Heal against the layout we would paint (local/personal), not only the server
-    // workspace layout — otherwise a healed server + stale personal doc keeps
-    // Unavailable tabs across reloads without re-entering heal.
-    const pendingHeal = healDataModelWorkspace(current, listed, painted.layout).changed
+    const agentHealPainted = healAgentDockLayout(painted.layout, listed, painted.focus)
+    if (agentHealPainted.changed && agentHealPainted.layout) {
+      painted = { ...painted, layout: agentHealPainted.layout }
+    }
+    const modelHealNeeded =
+      healDataModelWorkspace(current, listed, painted.layout).changed
       || healDataModelWorkspace(current, listed, canonical.layout).changed
-    dirtyRef.current = false
-    if (pendingHeal) {
+    const agentHealNeeded =
+      agentHealPainted.changed || healAgentDockLayout(canonical.layout, listed, canonical.focus).changed
+    dirtyRef.current = agentHealPainted.changed
+    if (modelHealNeeded) {
       // Force the heal effect to run even if a prior no-op marked this id.
       migratedRef.current.delete(current.id)
       healPendingFor.current = current.id
@@ -947,6 +952,7 @@ export function Shell() {
       setDoc(null)
       return
     }
+    if (agentHealNeeded) migratedRef.current.delete(current.id)
     healPendingFor.current = null
     setLayoutHealPending(false)
     docRef.current = painted
@@ -957,7 +963,13 @@ export function Shell() {
         if (cancelled || dirtyRef.current || loadedFor.current !== stamp) return
         if (healPendingFor.current === current.id) return
         const fresh = readLayoutStore(key)
-        const next = reconcileLayout(fresh, server, canonical)
+        let next = reconcileLayout(fresh, server, canonical)
+        const agentInline = healAgentDockLayout(next.layout, listed, next.focus)
+        if (agentInline.changed && agentInline.layout) {
+          next = { ...next, layout: agentInline.layout }
+          dirtyRef.current = true
+          migratedRef.current.delete(current.id)
+        }
         if (
           layoutHasMissingViews(next.layout, listed)
           || healDataModelWorkspace(current, listed, next.layout).changed
@@ -1287,16 +1299,27 @@ export function Shell() {
     const key = userId ? layoutStorageKey(userId, current.id) : ''
     const local = key ? readLayoutStore(key) : null
     // Prefer the layout the user would see (local/personal), then server canonical.
-    const paintedLayout = local ? migrateDoc(local.document).layout : migrateLayout(current.layout)
-    const modelFromPainted = healDataModelWorkspace(current, listed, paintedLayout)
-    const modelFromServer = healDataModelWorkspace(current, listed, migrateLayout(current.layout))
+    const paintedDoc = local ? migrateDoc(local.document) : null
+    const paintedLayout = paintedDoc ? paintedDoc.layout : migrateLayout(current.layout)
+    const paintedFocus = paintedDoc?.focus
+    const agentFromPainted = healAgentDockLayout(paintedLayout, listed, paintedFocus)
+    let layoutForPainted =
+      agentFromPainted.changed && agentFromPainted.layout ? agentFromPainted.layout : paintedLayout
+    const serverLayout = migrateLayout(current.layout)
+    const agentFromServer = healAgentDockLayout(serverLayout, listed)
+    const layoutForServer =
+      agentFromServer.changed && agentFromServer.layout ? agentFromServer.layout : serverLayout
+    const modelFromPainted = healDataModelWorkspace(current, listed, layoutForPainted)
+    const modelFromServer = healDataModelWorkspace(current, listed, layoutForServer)
     const modelPatch = modelFromPainted.changed ? modelFromPainted : modelFromServer
+    const agentChanged = agentFromPainted.changed || agentFromServer.changed
+    const agentLayout = agentFromPainted.layout ?? agentFromServer.layout
     const patch = {
-      changed: objectPatch.changed || modelPatch.changed,
+      changed: objectPatch.changed || modelPatch.changed || agentChanged,
       name: objectPatch.name,
       views: [...objectPatch.views, ...modelPatch.views],
       create: modelPatch.create,
-      layout: modelPatch.layout,
+      layout: modelPatch.layout ?? agentLayout,
     }
     migratedRef.current.add(current.id)
     if (!patch.changed) {

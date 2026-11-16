@@ -472,7 +472,12 @@ export function applyLayoutCommand(
   const token = args.view ?? args.entity ?? args.id ?? args.title
   const view = resolveView(token, catalog)
   if (!view) return { doc, handled: true }
+  const opened = catalog.find((row) => row.id === view)
+  const agentView = opened?.type === 'agent'
   if (name === 'ui.open_view' && args.zone == null && args.place == null && !ctx.place) {
+    if (agentView) {
+      return { doc: placeView(doc, view, { zone: 'right', dock: 'edge', share: 0.3 }), handled: true }
+    }
     return { doc: ensureInLayout(doc, view, typeof args.target === 'string' ? args.target : undefined), handled: true }
   }
   const fromArgs = placeFrom(args)
@@ -482,6 +487,11 @@ export function applyLayoutCommand(
     dock: fromArgs.dock ?? ctx.place?.dock,
     share: fromArgs.share ?? ctx.place?.share,
     tabIndex: fromArgs.tabIndex ?? ctx.place?.tabIndex,
+  }
+  if (agentView && (name === 'open_view' || name === 'ui.open_view' || name === 'ui.place')) {
+    place.zone = 'right'
+    place.dock = 'edge'
+    place.share = place.share ?? 0.3
   }
   if ((name === 'open_view' || name === 'ui.place') && !place.zone && place.dock !== 'edge') place.zone = 'right'
   return { doc: placeView(doc, view, place), handled: true }

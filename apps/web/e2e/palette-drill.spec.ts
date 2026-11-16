@@ -342,11 +342,7 @@ test.describe('palette drill-in, recent order, and global commands', () => {
     try {
       const fresh = await context.newPage()
       await login(fresh)
-      const row = fresh.getByTestId('object-row').first()
-      if (!(await row.isVisible().catch(() => false))) {
-        await fresh.locator('.pane-tab[data-view-type="object_table"]').first().click()
-      }
-      await expect(row).toBeVisible({ timeout: 60_000 })
+      await expect(fresh.getByTestId('object-row').first()).toBeVisible()
     } finally {
       await context.close()
     }
