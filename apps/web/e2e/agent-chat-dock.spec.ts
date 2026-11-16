@@ -28,6 +28,18 @@ function agentPane(page: Page) {
   return page.getByTestId('agent-view').last()
 }
 
+function paneWithTable(page: Page) {
+  return page.locator('section.pane').filter({ has: mainTable(page, 'Products') })
+}
+
+function paneWithDetail(page: Page) {
+  return page.locator('section.pane').filter({ has: page.getByTestId('object-detail') })
+}
+
+function paneWithAgent(page: Page) {
+  return page.locator('section.pane').filter({ has: page.getByTestId('agent-view') })
+}
+
 test('Ctrl+J opens a right agent chat while Products stays visible', async ({ page }) => {
   test.setTimeout(120_000)
   await login(page)
@@ -37,10 +49,36 @@ test('Ctrl+J opens a right agent chat while Products stays visible', async ({ pa
   await row.click()
   const firstTarget = `cola 440 ${Date.now().toString().slice(-4)}`
   const prompt = `byt namn på den här produkten till ${firstTarget}`
+  const productsPane = paneWithTable(page)
+  const detailPane = paneWithDetail(page)
+  await expect(detailPane).toBeVisible()
+  await page.locator('.pane-tab[data-view-type="object_table"]').filter({ hasText: /^Products/ }).first().click()
+
+  const layoutBefore = await Promise.all([productsPane.boundingBox(), detailPane.boundingBox()])
+  expect(layoutBefore[0] && layoutBefore[1], 'products and detail panes need layout boxes').toBeTruthy()
+  const [productsBefore, detailBefore] = layoutBefore as [NonNullable<Awaited<ReturnType<typeof productsPane.boundingBox>>>, NonNullable<Awaited<ReturnType<typeof detailPane.boundingBox>>>]
+  const stacked = Math.abs(productsBefore.x - detailBefore.x) < 8
+  if (stacked) expect(productsBefore.y).toBeLessThanOrEqual(detailBefore.y + 2)
+  else expect(productsBefore.x).toBeLessThan(detailBefore.x + 4)
+
   await openAgentAsk(page, prompt)
   const agent = agentPane(page)
   await expect(agent).toBeVisible({ timeout: 30_000 })
   await expect(products).toBeVisible()
+  await expect(page.getByTestId('object-detail')).toBeVisible()
+
+  const [productsAfter, detailAfter, agentBox] = await Promise.all([
+    productsPane.boundingBox(),
+    detailPane.boundingBox(),
+    paneWithAgent(page).boundingBox(),
+  ])
+  expect(productsAfter && detailAfter && agentBox, 'all three panes need layout boxes').toBeTruthy()
+  if (stacked) expect(productsAfter!.y).toBeLessThanOrEqual(detailAfter!.y + 2)
+  else expect(productsAfter!.x).toBeLessThan(detailAfter!.x + 4)
+  const rightEdge = Math.max(productsAfter!.x, detailAfter!.x)
+  expect(agentBox!.x).toBeGreaterThan(rightEdge + 40)
+  expect(Math.abs((productsAfter!.x - productsBefore.x))).toBeLessThan(4)
+  expect(Math.abs((detailAfter!.x - detailBefore.x))).toBeLessThan(4)
   await expect(agent.getByTestId('agent-follow-up')).toBeFocused()
   await expect(agent.getByTestId('agent-chat-user')).toContainText(prompt)
   await expect(agent.getByTestId('agent-status')).toHaveAttribute('data-status', 'done', { timeout: 30_000 })

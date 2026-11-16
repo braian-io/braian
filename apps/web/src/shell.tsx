@@ -1776,11 +1776,16 @@ export function Shell() {
         window.dispatchEvent(new CustomEvent('braian-focus-agent-input', { detail: { runId: run.id } }))
         return
       }
-      const result = applyLayoutCommand(current, 'ui.open_view', { id: found.id, zone: 'right' }, {
-        views: views.map((view) => ({ id: view.id, title: view.title, type: view.type })),
-        canonical: canonicalRef.current,
-        place: placeOverride.current,
-      })
+      const result = applyLayoutCommand(
+        current,
+        'ui.open_view',
+        { id: found.id, zone: 'right', dock: 'edge', share: 0.3 },
+        {
+          views: views.map((view) => ({ id: view.id, title: view.title, type: view.type })),
+          canonical: canonicalRef.current,
+          place: placeOverride.current,
+        },
+      )
       if (result.handled && result.doc !== current) commitDoc(result.doc)
       window.dispatchEvent(new CustomEvent('braian-focus-agent-input', { detail: { runId: run.id } }))
     })().catch((reason: unknown) => reportWriteError(reason))
