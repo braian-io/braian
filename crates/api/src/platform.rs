@@ -5586,7 +5586,7 @@ async fn rollback(
         object_key: Some(stored.key.clone()),
         type_key: Some(wire::type_key(&cached.defs, stored.object.type_id)),
         base_version: Some(stored.version as i64),
-        patch: json!({ "values": patch_values }),
+        patch: json!({ "values": patch_values, "_rollback_seq": body.seq }),
         status: "pending".into(),
         conflict,
         position: 0,

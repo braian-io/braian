@@ -195,8 +195,77 @@ describe('consequence dialog', () => {
     await waitFor(() => expect((screen.getByTestId('confirm-delete') as HTMLButtonElement).disabled).toBe(false))
     expect(document.getElementById(dialog.getAttribute('aria-labelledby') ?? '')?.textContent)
       .toBe('Delete structure Food')
-    expect(screen.getByTestId('impact-result')).toBeTruthy()
+    expect(screen.queryByTestId('impact-result')).toBeNull()
     expect(screen.queryByTestId('model-diff')).toBeNull()
+  })
+})
+
+describe('rollback restore dialog', () => {
+  afterEach(() => {
+    cleanup()
+  })
+
+  it('names the object and shows a field diff without impact noise', async () => {
+    const rollbackProposal: Json = {
+      title: 'Restore',
+      source: 'rollback',
+      rows: [{
+        id: 'row-1',
+        object_id: 'object-1',
+        object_key: 'PROD-1',
+        type_key: 'product',
+        base_version: 4,
+        patch: {
+          _rollback_seq: 2,
+          values: { number: '430' },
+        },
+        base_values: { name: { en: 'Cola' }, number: '431' },
+        status: 'pending',
+        conflict: false,
+        position: 0,
+      }],
+      consequence: {
+        affected_objects: 0,
+        samples: [],
+        jobs: [],
+      },
+    }
+    mock.use((path) => {
+      if (path === '/v1/definitions') {
+        return Promise.resolve({
+          languages: ['en'],
+          types: [{ key: 'product', singular: { en: 'Product' } }],
+          attributes: [
+            { key: 'number', labels: { en: 'Number' } },
+            { key: 'name', labels: { en: 'Name' } },
+          ],
+        })
+      }
+      if (path.startsWith('/v1/proposals/')) return Promise.resolve(rollbackProposal)
+      if (path.includes('/changes')) {
+        return Promise.resolve([{ seq: 2, version: 3 }])
+      }
+      if (path.includes('/objects/object-1')) {
+        return Promise.resolve({ values: { name: { en: 'Cola' }, number: '431' } })
+      }
+      return Promise.resolve({})
+    })
+    render(<Host />)
+    publishProposal('proposal-rollback', 'rollback', { targetSeq: 2 })
+
+    const dialog = await screen.findByTestId('restore-dialog')
+    const title = document.getElementById(dialog.getAttribute('aria-labelledby') ?? '')
+    await waitFor(() => {
+      expect(title?.textContent).toBe('Restore Cola 431 to version 3?')
+    })
+    expect(screen.queryByTestId('proposal-source')).toBeNull()
+    const diff = screen.getByTestId('field-diff')
+    expect(diff.textContent).toContain('Number')
+    expect(diff.querySelector('.diff-old')?.textContent).toBe('431')
+    expect(diff.textContent).toContain('430')
+    expect(screen.queryByTestId('impact-result')).toBeNull()
+    expect(dialog.textContent).not.toContain('No job reads these fields.')
+    expect(screen.getByTestId('confirm-restore').textContent).toBe('Restore')
   })
 })
 

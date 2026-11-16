@@ -3728,12 +3728,17 @@ export function HistoryView({ session }: { session: PanesSession }) {
     enabled: Boolean(session.objectId && current && travel),
   })
   const rollback = useMutation({
-    mutationFn: (at: number) =>
-      api.post('/v1/objects/{id}/rollback', { params: { path: { id: session.objectId ?? '' } }, body: { seq: at } }),
-    onSuccess: (proposal) => {
+    mutationFn: async (at: number) => {
+      const proposal = await api.post('/v1/objects/{id}/rollback', {
+        params: { path: { id: session.objectId ?? '' } },
+        body: { seq: at },
+      })
+      return { proposal, at }
+    },
+    onSuccess: ({ proposal, at }) => {
       const id = String(proposal.id)
       // Same as assortment / model proposes: open the review dialog so Confirm applies it.
-      publishProposal(id)
+      publishProposal(id, 'rollback', { targetSeq: at })
       session.setProposalId(id)
       session.push(copy.proposed)
     },

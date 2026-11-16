@@ -3,11 +3,20 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, failureLines, type Json } from './api'
 import { Button } from './components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
+import { suggestionLines } from './field-diff'
+import { FieldDiff } from './field-diff-view'
 import { copy } from './i18n'
 import { formatCount } from './format'
 import { describeModelSteps } from './model-step-text'
 import { affectedLabel, typeNames } from './type-labels'
 import { onProposal } from './proposal-bus'
+import {
+  isRollbackProposal,
+  objectDisplayLabel,
+  restoreTitle,
+  rollbackTargetSeqFromPatch,
+  versionAtSeq,
+} from './restore-proposal'
 import { StateNote } from './states'
 
 type HostSession = {
@@ -62,12 +71,15 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
   const queryClient = useQueryClient()
   const [id, setId] = useState<string | null>(null)
   const [operation, setOperation] = useState<string | undefined>()
+  const [rollbackSeq, setRollbackSeq] = useState<number | undefined>()
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const opener = useRef<HTMLElement | null>(null)
+  const confirmRef = useRef<HTMLButtonElement | null>(null)
   const dismiss = () => {
     const target = opener.current
     opener.current = null
+    setRollbackSeq(undefined)
     setId(null)
     if (target?.isConnected) queueMicrotask(() => target.focus())
   }
@@ -75,6 +87,7 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
     opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     setError('')
     setOperation(proposal.operation)
+    setRollbackSeq(proposal.rollback?.targetSeq)
     setId(proposal.id)
   }), [])
   const defs = useQuery({ queryKey: ['definitions'], queryFn: () => api.get('/v1/definitions'), staleTime: 60_000 })
@@ -83,10 +96,22 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
     queryFn: () => api.get('/v1/proposals/{id}', { params: { path: { id: id ?? '' } } }),
     enabled: Boolean(id),
   })
-  if (!id) return null
   const body = proposal.data
-  const consequence = (body?.consequence as Json | undefined) ?? {}
   const rows = (body?.rows as Json[] | undefined) ?? []
+  const objectRow = rows.find((row) => row.object_id)
+  const objectId = String(objectRow?.object_id ?? '')
+  const isRollback = isRollbackProposal(body?.source) || operation === 'rollback'
+  const object = useQuery({
+    queryKey: ['object', objectId],
+    queryFn: () => api.get('/v1/objects/{id}', { params: { path: { id: objectId } } }),
+    enabled: Boolean(id) && isRollback && Boolean(objectId),
+  })
+  const history = useQuery({
+    queryKey: ['history', objectId],
+    queryFn: () => api.get('/v1/objects/{id}/changes', { params: { path: { id: objectId } } }),
+    enabled: Boolean(id) && isRollback && Boolean(objectId),
+  })
+  const consequence = (body?.consequence as Json | undefined) ?? {}
   const modelSteps = rows
     .filter((row) => String(row.type_key ?? '') === 'model' && row.patch && typeof row.patch === 'object')
     .sort((left, right) => Number(left.position ?? 0) - Number(right.position ?? 0))
@@ -100,9 +125,26 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
     : stepTexts.length > 1
       ? copy.reviewChangeTitle
       : String(body?.title ?? copy.dataModel)
+  const targetSeq = rollbackSeq ?? rollbackTargetSeqFromPatch(objectRow?.patch)
+  const historyBody = history.data
+  const changes = Array.isArray(historyBody)
+    ? historyBody
+    : ((historyBody as Json | undefined)?.changes as Json[] | undefined) ?? []
+  const targetVersion = versionAtSeq(changes, targetSeq)
+  const liveValues = (object.data?.values as Json | undefined)
+    ?? (objectRow?.base_values as Json | undefined)
+  const objectLabel = objectDisplayLabel(liveValues, objectRow?.object_key ? String(objectRow.object_key) : undefined)
+  const rollbackTitle = restoreTitle(objectLabel, targetVersion)
+  const restoreDiff = isRollback && objectRow
+    ? suggestionLines(liveValues, objectRow.patch, defs.data)
+    : []
   // The proposal fetch can be slow. Name the operation we already know instead
   // of showing the generic "Data model" while the counts are unknown.
-  const title = proposal.isPending ? loadingTitle(operation) : loadedTitle
+  const title = proposal.isPending
+    ? (operation === 'rollback' ? copy.rollback : loadingTitle(operation))
+    : isRollback
+      ? rollbackTitle
+      : loadedTitle
   // A single model step is already the title. Do not repeat it under a
   // "Model diff" label.
   const showDiff = stepTexts.length !== 1 && lines.length > 0
@@ -129,6 +171,24 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
   const noImpact = values === 0 && objects === 0 && (links ?? 0) === 0 && (selections ?? 0) === 0
   const deleteLines = noImpact ? [copy.noValuesDeleted] : detail
   const unlinkedTypes = typesLosingAllowedTree(defs.data, modelSteps)
+  const affected = typeof consequence.affected_objects === 'number' && Number.isFinite(consequence.affected_objects)
+    ? consequence.affected_objects
+    : 0
+  const sampleNames = samples
+    .map((item) => String(item.key ?? item.id ?? ''))
+    .filter(Boolean)
+  const showImpact = !isRollback && !proposal.isPending
+    && (affected > 0 || sampleNames.length > 0 || jobs.length > 0)
+  const showSourceChip = Boolean(body?.source)
+    && String(body?.source) !== 'user'
+    && !isRollback
+  const confirmLabel = isRollback ? copy.rollback : destructiveIntent ? copy.delete : copy.confirm
+  const confirmTestId = isRollback ? 'confirm-restore' : destructiveIntent ? 'confirm-delete' : 'confirm-model'
+  useEffect(() => {
+    if (!id || !isRollback || proposal.isPending || proposal.isError) return
+    confirmRef.current?.focus()
+  }, [id, isRollback, proposal.isPending, proposal.isError, rollbackTitle, restoreDiff.length])
+  if (!id) return null
   const close = dismiss
   const discard = () => {
     setBusy(true)
@@ -171,19 +231,27 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
     <Dialog open onOpenChange={(next) => { if (!next) dismiss() }}>
       <DialogContent
         className="consequence"
-        data-testid="consequence"
+        data-testid={isRollback ? 'restore-dialog' : 'consequence'}
         onEscapeKeyDown={(event) => event.stopPropagation()}
+        onOpenAutoFocus={(event) => {
+          if (isRollback) event.preventDefault()
+        }}
       >
         <div className="toolbar consequence-title">
           <DialogTitle asChild><strong>{title}</strong></DialogTitle>
-          {body?.source && String(body.source) !== 'user'
-            ? <span className="chip" data-testid="proposal-source">{String(body.source)}</span>
-            : null}
         </div>
+        {showSourceChip ? (
+          <p>
+            <span className="chip" data-testid="proposal-source">{String(body?.source)}</span>
+          </p>
+        ) : null}
         <DialogDescription asChild><p className="hint">{copy.reviewChange}</p></DialogDescription>
         {proposal.isPending ? <StateNote tone="loading" title={copy.loadingModel} /> : null}
         {proposal.isError ? <StateNote tone="error" title={copy.errorModel} /> : null}
-        {!proposal.isPending && showDiff ? (
+        {isRollback && !proposal.isPending && restoreDiff.length > 0 ? (
+          <FieldDiff lines={restoreDiff} />
+        ) : null}
+        {!isRollback && !proposal.isPending && showDiff ? (
           <>
             <p className="hint">{copy.modelDiff}</p>
             <ul className="proposal-tree" data-testid="model-diff">
@@ -208,24 +276,25 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
             {copy.allowedTreesLinkRemoved.replace('{types}', unlinkedTypes.join(', '))}
           </p>
         ) : null}
-        {!proposal.isPending ? <div data-testid="impact-result">
-          {noImpact ? null : (
-            <>
+        {showImpact ? (
+          <div data-testid="impact-result">
+            {affected > 0 ? (
               <p>
-                {affectedLabel(rows.map((row) => String(row.type_key ?? '')), typeNames(defs.data))}: {formatCount(consequence.affected_objects ?? 0)}
+                {affectedLabel(rows.map((row) => String(row.type_key ?? '')), typeNames(defs.data))}: {formatCount(affected)}
               </p>
+            ) : null}
+            {sampleNames.length > 0 ? (
               <p>
-                {copy.samples}: {samples.map((item) => String(item.key ?? item.id ?? '')).filter(Boolean).join(', ') || '—'}
+                {copy.samples}: {sampleNames.join(', ')}
               </p>
-            </>
-          )}
-          {jobs.length === 0 ? <p>{copy.noJob}</p> : null}
-          {jobs.map((job) => (
-            <p key={String(job.key)}>
-              {String(job.title)} · {((job.reads_fields as string[]) ?? []).join(', ')}
-            </p>
-          ))}
-        </div> : null}
+            ) : null}
+            {jobs.map((job) => (
+              <p key={String(job.key)}>
+                {String(job.title)} · {((job.reads_fields as string[]) ?? []).join(', ')}
+              </p>
+            ))}
+          </div>
+        ) : null}
         {!proposal.isPending ? errors.map((item) => (
           <p key={item} className="error">{item}</p>
         )) : null}
@@ -234,12 +303,13 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
           <Button type="button" variant="ghost" onClick={discard} disabled={busy}>{copy.cancel}</Button>
           <Button
             type="button"
+            ref={confirmRef}
             variant={destructiveIntent ? 'danger' : 'primary'}
-            data-testid={destructiveIntent ? 'confirm-delete' : 'confirm-model'}
+            data-testid={confirmTestId}
             onClick={confirm}
             disabled={busy || proposal.isPending || proposal.isError || errors.length > 0}
           >
-            {destructiveIntent ? copy.delete : copy.confirm}
+            {confirmLabel}
           </Button>
         </div>
       </DialogContent>
