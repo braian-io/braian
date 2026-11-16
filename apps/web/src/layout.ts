@@ -189,7 +189,7 @@ export function agentDockShare(layout: Node, preferred = 0.3): number {
   if (lefts.length === 0) return preferred
   const catalogRight = Math.max(...lefts)
   const maxShare = roundRatio(1 - catalogRight - AGENT_DOCK_LEAD)
-  return clamp(Math.min(preferred, maxShare), 0.12, 0.45)
+  return clamp(Math.min(preferred, maxShare), 0.08, 0.45)
 }
 
 /** Move boundary `index` to absolute fraction `position` inside that split. Only the two neighbours change, and each stays at least 0.04. */

@@ -217,8 +217,9 @@ function SplitNode({ frame, node, path, inAgentDock = false }: { frame: Frame; n
   const pinCells = lockRatios || freezeCatalog
   const gaps = Math.max(0, node.children.length - 1) * 6
   const subtreeInAgentDock = inAgentDock || lockRatios
+  const focused = frame.viewList.find((view) => view.id === frame.doc.focus)
   const catalogScale =
-    lockRatios && node.dir === 'horizontal' && (node.ratios[0] ?? 0) > 0
+    lockRatios && node.dir === 'horizontal' && (node.ratios[0] ?? 0) > 0 && focused?.type !== 'agents'
       ? `calc(100% / ${node.ratios[0]})`
       : undefined
   return (
