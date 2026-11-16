@@ -242,6 +242,7 @@ function SplitNode({ frame, node, path, inAgentDock = false }: { frame: Frame; n
           gaps={gaps}
           hasDetail={hasDetail}
           pinCells={pinCells}
+          agentDockOverlay={lockRatios}
           inAgentDock={subtreeInAgentDock}
         />
       ))}
@@ -258,6 +259,7 @@ function SplitChild({
   gaps,
   hasDetail,
   pinCells,
+  agentDockOverlay,
   inAgentDock,
 }: {
   frame: Frame
@@ -268,18 +270,22 @@ function SplitChild({
   gaps: number
   hasDetail: boolean
   pinCells: boolean
+  agentDockOverlay: boolean
   inAgentDock: boolean
 }) {
   const basis = `calc((100% - ${gaps}px) * ${node.ratios[index] ?? 0})`
   const flex = pinCells ? '0 0' : hasDetail ? '0 1' : '0 0'
   const last = index === node.children.length - 1
+  const agentOverlay = agentDockOverlay && node.dir === 'horizontal'
   const docked = pinCells && node.dir === 'horizontal'
     ? {
         position: 'absolute' as const,
         top: 0,
         bottom: 0,
-        width: basis,
+        // The catalog subtree keeps the full dock width; the agent pane overlays the right edge.
+        width: agentOverlay && index === 0 ? '100%' : basis,
         flex: 'none',
+        zIndex: agentOverlay ? (index === 0 ? 1 : 2) : undefined,
         ...(index === 0 ? { left: 0 } : last ? { right: 0 } : {}),
       }
     : { flex: `${flex} ${basis}` }
