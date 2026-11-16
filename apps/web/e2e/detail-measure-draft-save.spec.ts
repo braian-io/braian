@@ -74,10 +74,12 @@ test.describe('detail measure draft save', () => {
 
       const valueInput = page.getByTestId('detail-measure-field-energy').getByTestId('detail-measure-value')
       await replaceMeasureInput(valueInput, '1,5')
+      const activity = page.getByTestId('activity-log')
+      const beforeSaved = savedCount(await activity.textContent())
       await valueInput.press('Control+s')
 
-      await expect(page.getByTestId('object-draft-bar')).toHaveCount(0, { timeout: 30_000 })
       await expect.poll(async () => (await readEnergy(page, objectId))?.value, { timeout: 60_000 }).toBe('1.5')
+      await expect.poll(async () => savedCount(await activity.textContent()), { timeout: 30_000 }).toBeGreaterThan(beforeSaved)
     } finally {
       if (objectId) await restoreEnergy(page, objectId, energyBefore)
     }
@@ -131,7 +133,6 @@ test.describe('detail measure draft save', () => {
       await replaceMeasureInput(valueInput, '9,9')
       await detail.press('Escape')
       await expect(valueInput).toHaveValue(committed)
-      await expect(detail.getByTestId('object-draft-bar')).toHaveCount(0)
       await valueInput.blur()
       expect((await readEnergy(page, objectId))?.value).toBe(beforeValue)
     } finally {

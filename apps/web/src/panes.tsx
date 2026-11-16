@@ -3177,6 +3177,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       onKeyDown={(event) => {
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
           event.preventDefault()
+          event.stopPropagation()
           save()
           return
         }
@@ -3347,6 +3348,10 @@ function NumberMeasureField({
   const [draft, setDraft] = useState(committedText)
   const [invalid, setInvalid] = useState(false)
   const skipBlurCommitRef = useRef(false)
+  const draftRef = useRef(draft)
+  draftRef.current = draft
+  const recordRef = useRef(record)
+  recordRef.current = record
   const valueStamp = `${String(record.value ?? '')}\0${String(record.unit ?? '')}`
   useEffect(() => {
     setDraft(committedText)
@@ -3354,7 +3359,7 @@ function NumberMeasureField({
   }, [valueStamp, committedText])
 
   const applyCommit = useCallback((text: string, mode: 'blur' | 'flush') => {
-    const result = commitDetailMeasureDraft(text, record, mode)
+    const result = commitDetailMeasureDraft(text, recordRef.current, mode)
     if (!result.ok) {
       setInvalid(true)
       return false
@@ -3363,9 +3368,9 @@ function NumberMeasureField({
     onChange(result.next)
     setDraft(result.displayText)
     return true
-  }, [onChange, record])
+  }, [onChange])
 
-  const commitForSave = useCallback(() => applyCommit(draft, 'flush'), [applyCommit, draft])
+  const commitForSave = useCallback(() => applyCommit(draftRef.current, 'flush'), [applyCommit])
   const discardLocal = useCallback(() => {
     skipBlurCommitRef.current = true
     setDraft(committedText)
