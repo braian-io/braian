@@ -606,10 +606,16 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
   min-width: 0;
   position: relative;
   z-index: 1;
+  visibility: hidden;
   opacity: 0;
   pointer-events: none;
+  transition: opacity var(--dur) var(--ease);
 }
-.pane:hover .pane-chrome, .pane.focused .pane-chrome, .pane-chrome:focus-within { opacity: 1; pointer-events: auto; }
+.pane:hover .pane-chrome, .pane.focused .pane-chrome, .pane-chrome:focus-within {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+}
 .pane-chrome .icon-btn { width: 22px; padding: 0; justify-content: center; }
 .catalog-admin { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); overflow: auto; }
 .catalog-admin input, .catalog-admin select, .catalog-admin textarea { font: inherit; }

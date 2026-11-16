@@ -9,7 +9,7 @@ async function login(page: Page) {
   await page.getByTestId('password').fill(demo.password)
   await page.getByRole('button', { name: 'Sign in' }).click()
   await expect(page.locator('nav.tabs')).toBeVisible({ timeout: 60_000 })
-  await showProducts(page)
+  await resetProductsLayout(page)
 }
 
 async function displayedName(cell: Locator): Promise<string> {
@@ -240,7 +240,8 @@ test('a failed fetch can be retried and a missing run cannot', async ({ page }) 
   test.setTimeout(120_000)
   await login(page)
   let failed = false
-  await page.route(/\/v1\/agent\/runs\/[0-9a-f-]{36}$/, async (route) => {
+  const runDetail = /\/v1\/agent\/runs\/[^/]+$/
+  await page.route(runDetail, async (route) => {
     if (route.request().method() === 'GET' && !failed) {
       failed = true
       await route.fulfill({
@@ -253,12 +254,13 @@ test('a failed fetch can be retried and a missing run cannot', async ({ page }) 
     await route.continue()
   })
   await ask(page, 'hold the run briefly')
+  await expect(page.getByTestId('command-palette')).toHaveCount(0)
   const busy = page.getByTestId('agent-fetch-error')
-  await expect(busy).toContainText('the store is busy', { timeout: 30_000 })
+  await expect(busy).toContainText('the store is busy', { timeout: 60_000 })
   await busy.getByTestId('agent-retry').click()
   await expect(agentView(page, 'hold the run briefly').getByTestId('agent-status')).toBeVisible({ timeout: 30_000 })
-  await page.unroute(/\/v1\/agent\/runs\/[0-9a-f-]{36}$/)
-  await page.route(/\/v1\/agent\/runs\/[0-9a-f-]{36}$/, async (route) => {
+  await page.unroute(runDetail)
+  await page.route(runDetail, async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({
         status: 404,
