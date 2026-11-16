@@ -29,6 +29,7 @@ describe('Detail width layout (row 239)', () => {
   })
 
   it('wraps a long Detail title instead of clipping it', () => {
+    expect(css).toMatch(/\.detail-title-row\s*\{[^}]*display:\s*flex/)
     expect(css).toMatch(/\.detail-title\s*\{[^}]*flex-wrap:\s*wrap/)
     expect(css).toMatch(/\.detail-title strong\s*\{[^}]*overflow-wrap:\s*anywhere/)
   })

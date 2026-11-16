@@ -116,6 +116,8 @@ export const copy = {
   suggestedChanges: 'suggested changes',
   importJob: 'Import job',
   rollback: 'Restore',
+  restoreObjectVersion: 'Restore {object} to version {version}?',
+  restoreObject: 'Restore {object}?',
   massEdit: 'Set status OK',
   export: 'Export',
   exportStarted: 'Export started',

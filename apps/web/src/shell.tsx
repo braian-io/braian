@@ -845,6 +845,25 @@ export function Shell() {
           if (!found) return
           const state = freeObject({ ...found.state, catalogOverride: { catalogId } })
           delete (state as { catalog?: unknown }).catalog
+          const updated: View = { ...found, state }
+          const nextViews = viewRows(surfaceNow.views).map((view) =>
+            view.id === found.id
+              ? {
+                  ...updated,
+                  pane: updated.pane ?? 'center',
+                  position: updated.position ?? 0,
+                  state,
+                }
+              : {
+                  ...view,
+                  pane: view.pane ?? 'center',
+                  position: view.position ?? 0,
+                  state: freeObject(view.state),
+                },
+          )
+          const nextSurface = { ...surfaceNow, views: nextViews }
+          workspaceRef.current = nextSurface
+          queryClient.setQueryData(['workspace', surfaceNow.id], nextSurface)
           void api.post('/v1/views', {
             body: {
               id: found.id,

@@ -73,6 +73,7 @@ test.describe('row 217 detail when object deleted', () => {
       await openDetailTab(page)
       await expect(page.getByTestId('object-detail')).toBeVisible()
       await expect(page.getByTestId('object-detail')).toContainText(firstNumber)
+      await expect(page.getByTestId('object-detail').getByRole('button', { name: 'Delete' })).toBeVisible()
 
       await rowFor(page, first.id).click({ button: 'right' })
       await page.getByTestId('context-menu').getByRole('menuitem', { name: /^Delete/ }).click()
