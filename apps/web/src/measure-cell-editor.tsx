@@ -73,7 +73,13 @@ export function MeasureCellEditor({
         aria-invalid={invalid || undefined}
         aria-label={copy.number}
         onChange={(event) => onValueTextChange(event.target.value)}
-        onKeyDown={(event) => event.stopPropagation()}
+        onKeyDown={(event) => {
+          event.stopPropagation()
+          if (event.key === 'Enter' || event.key === 'Tab') {
+            event.preventDefault()
+            onCommit()
+          }
+        }}
         onBlur={() => onValueBlur?.()}
       />
       {unitLocked || unitOptions.length <= 1 ? (
