@@ -1,7 +1,7 @@
 import { isValidElement, useMemo, useEffect, useLayoutEffect, useCallback, useRef, useState, useSyncExternalStore, type CSSProperties, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { History as HistoryIcon } from 'lucide-react'
+import { History as HistoryIcon, Trash2 } from 'lucide-react'
 import { api, catalogName, failureLines, freeObject, jsonRecord, recordNumber, recordTitle, searchQuery, textValue, type Json } from './api'
 import { AutoResizeTextarea } from './auto-resize-textarea'
 import { messageFromErrorBody, reportWriteError, writeErrorMessage } from './write-error'
@@ -33,6 +33,7 @@ import { batchGetObjects } from './batch'
 import { MetaChip, optionLabel, statusTone, typeLabel } from './chips'
 import { BulkWriteConfirm } from './bulk-write'
 import { Button } from './components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from './components/ui/tooltip'
 import { Dialog, DialogContent } from './components/ui/dialog'
 import { Slider } from './components/ui/slider'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select'
@@ -3202,27 +3203,36 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       <DetailFieldDraftHost ref={fieldDraftRef}>
       <div className="detail-scroll">
         <header className="detail-head">
-          <div className="detail-title">
-            <strong title={name || number}>{name || number}</strong>
-            {number ? <span className="detail-id">{number}</span> : null}
+          <div className="detail-title-row">
+            <div className="detail-title">
+              <strong title={name || number}>{name || number}</strong>
+              {number ? <span className="detail-id">{number}</span> : null}
+            </div>
+            {inAgentSession ? null : (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="icon"
+                    size="icon"
+                    className="detail-delete icon-danger"
+                    data-testid="delete-object-detail"
+                    aria-label={copy.delete}
+                    title={copy.delete}
+                    onClick={() => requestDeleteObjects([objectId])}
+                  >
+                    <Trash2 aria-hidden="true" size={14} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{copy.delete}</TooltipContent>
+              </Tooltip>
+            )}
           </div>
           <DetailMeta
             createdAt={typeof object.data.created_at === 'string' ? object.data.created_at : ''}
             updatedAt={typeof object.data.updated_at === 'string' ? object.data.updated_at : ''}
             updatedBy={object.data.updated_by}
           />
-          {inAgentSession ? null : (
-            <div className="detail-actions">
-              <Button
-                type="button"
-                variant="danger"
-                data-testid="delete-object-detail"
-                onClick={() => requestDeleteObjects([objectId])}
-              >
-                {copy.delete}
-              </Button>
-            </div>
-          )}
           <div className="field-chips">
             <MetaChip>{typeLabel(defs.data, String(object.data.type), uiLanguage)}</MetaChip>
             <MetaChip tone={status ? statusTone(status) : 'neutral'}>
