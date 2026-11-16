@@ -14,8 +14,11 @@ import { attributeByKey, headerSortState, indexSort, normalizeTableSort, readInd
 import {
   cellEditShouldPatch,
   cellEditValuesBody,
+  commitMeasureEdit,
+  inlineMeasureEditContext,
   isEditingCell,
   isEditableColumn,
+  measureEditInitialDraft,
   measureEditContext,
   measureEditProposedText,
   measureEditShouldPatch,
@@ -23,7 +26,9 @@ import {
   resolveCellEditInitial,
   valueListKeyForColumn,
   columnBaseKey,
+  type MeasureEditDraft,
 } from './cell-edit'
+import { MeasureCellEditor } from './measure-cell-editor'
 import { batchGetObjects } from './batch'
 import { MetaChip, optionLabel, statusTone, typeLabel } from './chips'
 import { BulkWriteConfirm } from './bulk-write'
@@ -37,7 +42,7 @@ import { onFlash } from './flash'
 import { GraphMap } from './graph-map'
 import { exportPayload, runExport, saveWorkbook } from './export'
 import { diffLines, historyWho, isCreate, proposedValues, relativeTime, sourceLabel, suggestionLines, valuesFromKept, type DiffLine } from './field-diff'
-import { formatCount, formatMeasure, formatTimestamp } from './format'
+import { formatCount, formatMeasure, formatMeasureEditNumber, formatMeasureStorageNumber, formatTimestamp, parseDecimalInput } from './format'
 import { PathMenu, type ListedPath } from './path-picker'
 import { publishFieldsHost } from './fields-host'
 import { fieldCatalogForType, withSystemViewFields } from './fields/catalog'
@@ -260,6 +265,9 @@ export function ObjectTable({
   const [flashId, setFlashId] = useState('')
   const [editingCell, setEditingCell] = useState<{ rowId: string; columnId: string } | null>(null)
   const [editingDraft, setEditingDraft] = useState('')
+  const [editingMeasureDraft, setEditingMeasureDraft] = useState<MeasureEditDraft | null>(null)
+  const [editingMeasureError, setEditingMeasureError] = useState<'empty' | 'invalid' | null>(null)
+  const editingMeasureRef = useRef<MeasureEditDraft | null>(null)
   const editingOriginalRef = useRef('')
   const skipBlurCommitRef = useRef(false)
   const drafts = useSyncExternalStore(subscribeObjectDrafts, getObjectDraftSnapshot, getObjectDraftSnapshot)
@@ -1400,13 +1408,45 @@ export function ObjectTable({
   }
 
   const commitCellEdit = (row: ObjRow, columnId: string, nextText: string) => {
+    const measureCtx = inlineMeasureEditContext(columnId, row.doc, defs.data)
+    const measureDraft = editingMeasureRef.current ?? editingMeasureDraft
+    if (measureCtx && measureDraft) {
+      const result = commitMeasureEdit(measureCtx, measureDraft)
+      if (!result.ok) {
+        setEditingMeasureError(result.reason)
+        skipBlurCommitRef.current = true
+        return
+      }
+      // Prevent the input's blur (fired on unmount after Enter) from double-PATCHing.
+      skipBlurCommitRef.current = true
+      setEditingCell(null)
+      setEditingMeasureDraft(null)
+      editingMeasureRef.current = null
+      setEditingMeasureError(null)
+      const original = editingOriginalRef.current
+      if (result.unchanged) return
+      const attrKey = columnBaseKey(columnId)
+      stageObjectCell({
+        objectId: row.id,
+        attribute: attrKey,
+        columnId,
+        baseVersion: editBaseVersion(row.id, Number(row.version ?? 0)),
+        originalText: original,
+        proposedText: result.proposedText,
+        value: result.stored,
+      })
+      return
+    }
     // Prevent the input's blur (fired on unmount after Enter) from double-PATCHing.
     skipBlurCommitRef.current = true
     setEditingCell(null)
+    setEditingMeasureDraft(null)
+    editingMeasureRef.current = null
+    setEditingMeasureError(null)
     const original = editingOriginalRef.current
-    const measureCtx = measureEditContext(columnId, row.doc, defs.data)
-    const shouldPatch = measureCtx
-      ? measureEditShouldPatch(measureCtx, nextText)
+    const legacyMeasureCtx = measureEditContext(columnId, row.doc, defs.data)
+    const shouldPatch = legacyMeasureCtx
+      ? measureEditShouldPatch(legacyMeasureCtx, nextText)
       : cellEditShouldPatch(original, nextText)
     if (!shouldPatch) return
     const path = parseColumnId(columnId).path
@@ -1419,11 +1459,11 @@ export function ObjectTable({
     let value: unknown
     let proposedText = nextText
     let bodyValues: Json
-    if (measureCtx) {
-      const stored = measureEditStoredValue(measureCtx, nextText)
+    if (legacyMeasureCtx) {
+      const stored = measureEditStoredValue(legacyMeasureCtx, nextText)
       if (!stored) return
       value = stored
-      proposedText = measureEditProposedText(measureCtx, nextText)
+      proposedText = measureEditProposedText(legacyMeasureCtx, nextText)
       bodyValues = { [attrKey]: stored }
     } else {
       bodyValues = cellEditValuesBody({
@@ -1455,6 +1495,15 @@ export function ObjectTable({
     skipBlurCommitRef.current = true
     setEditingCell(null)
     setEditingDraft('')
+    setEditingMeasureDraft(null)
+    editingMeasureRef.current = null
+    setEditingMeasureError(null)
+  }
+
+  const syncMeasureDraft = (draft: MeasureEditDraft) => {
+    editingMeasureRef.current = draft
+    setEditingMeasureDraft(draft)
+    setEditingMeasureError(null)
   }
 
   /** Open the inline editor from row / path-values data — never from a loading placeholder. */
@@ -1511,9 +1560,20 @@ export function ObjectTable({
       formatPathValues: (values) => summarizePathValues(values).text,
     })
     if (!initial.ok) return
+    const measureCtx = inlineMeasureEditContext(column, row.doc, defs.data)
+    if (measureCtx) {
+      editingOriginalRef.current = initial.text
+      skipBlurCommitRef.current = false
+      setEditingDraft('')
+      syncMeasureDraft(measureEditInitialDraft(measureCtx))
+      setEditingCell({ rowId: row.id, columnId: column })
+      return
+    }
     editingOriginalRef.current = initial.text
     skipBlurCommitRef.current = false
     setEditingDraft(initial.text)
+    setEditingMeasureDraft(null)
+    editingMeasureRef.current = null
     setEditingCell({ rowId: row.id, columnId: column })
   }
 
@@ -1552,6 +1612,24 @@ export function ObjectTable({
 
   const cell = (row: ObjRow, id: string) => {
     if (editingCell && editingCell.rowId === row.id && editingCell.columnId === id) {
+      const measureCtx = inlineMeasureEditContext(id, row.doc, defs.data)
+      const measureDraft = editingMeasureDraft ?? editingMeasureRef.current
+      if (measureCtx && measureDraft) {
+        return (
+          <MeasureCellEditor
+            columnId={id}
+            valueText={measureDraft.valueText}
+            unit={measureDraft.unit}
+            unitLocked={measureCtx.unitLocked}
+            unitOptions={measureCtx.unitOptions}
+            invalid={editingMeasureError != null}
+            onValueTextChange={(valueText) => syncMeasureDraft({ ...measureDraft, valueText })}
+            onUnitChange={(unit) => syncMeasureDraft({ ...measureDraft, unit })}
+            onCommit={() => commitCellEdit(row, id, '')}
+            onCancel={cancelCellEdit}
+          />
+        )
+      }
       const listKey = valueListKeyForColumn(id, defs.data)
       if (listKey) {
         const lists = (defs.data?.value_lists as Json[] | undefined) ?? []
@@ -3040,6 +3118,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
         <label>{fieldLabel}{owner ? ` · ${copy.ownedBy} ${owner}` : ''}</label>
         <div className={controlClass}>
           <Editor
+            fieldKey={key}
             kind={String(kind.type ?? 'text')}
             form={String(kind.form ?? '')}
             multiple={Boolean(attribute?.multiple)}
@@ -3229,7 +3308,60 @@ function modelLanguages(defs: Json | undefined): string[] {
   return listed.length > 0 ? listed : ['en']
 }
 
+function NumberMeasureField({
+  fieldKey,
+  value,
+  units,
+  onChange,
+}: {
+  fieldKey: string
+  value: unknown
+  units: string[]
+  onChange: (value: unknown) => void
+}) {
+  const record = (value && typeof value === 'object' ? value : { value }) as Json
+  const [invalid, setInvalid] = useState(false)
+  const shown = record.value != null && record.value !== ''
+    ? formatMeasureEditNumber(record.value)
+    : textValue(record.value)
+  return (
+    <span className="measure" data-testid={`detail-measure-field-${fieldKey}`}>
+      <input
+        data-field="true"
+        data-testid="detail-measure-value"
+        value={shown}
+        title={shown}
+        aria-invalid={invalid || undefined}
+        onChange={(event) => {
+          const next = event.target.value
+          if (!next.trim()) {
+            setInvalid(true)
+            onChange({ ...record, value: '' })
+            return
+          }
+          const parsed = parseDecimalInput(next)
+          if (parsed == null) {
+            setInvalid(true)
+            return
+          }
+          setInvalid(false)
+          onChange({ ...record, value: formatMeasureStorageNumber(parsed) })
+        }}
+      />
+      <UnitSuffix
+        units={units}
+        value={String(record.unit ?? units[0] ?? '')}
+        onChange={(unit) => {
+          setInvalid(false)
+          onChange({ ...record, unit })
+        }}
+      />
+    </span>
+  )
+}
+
 function Editor({
+  fieldKey,
   kind,
   form,
   value,
@@ -3241,6 +3373,7 @@ function Editor({
   onChange,
   readOnly = false,
 }: {
+  fieldKey: string
   kind: string
   form: string
   multiple: boolean
@@ -3344,13 +3477,7 @@ function Editor({
     )
   }
   if (kind === 'number') {
-    const record = (value && typeof value === 'object' ? value : { value }) as Json
-    return (
-      <span className="measure">
-        <input data-field="true" value={textValue(record.value)} title={textValue(record.value)} onChange={(event) => onChange({ ...record, value: event.target.value })} />
-        <UnitSuffix units={units} value={String(record.unit ?? units[0] ?? '')} onChange={(unit) => onChange({ ...record, unit })} />
-      </span>
-    )
+    return <NumberMeasureField fieldKey={fieldKey} value={value} units={units} onChange={onChange} />
   }
   if (form === 'long' || (typeof value === 'string' && value.length > 80)) {
     return <AutoResizeTextarea data-field="true" value={textValue(value)} onChange={(event) => onChange(event.target.value)} />

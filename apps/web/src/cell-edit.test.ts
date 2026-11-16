@@ -4,11 +4,14 @@ import {
   cellEditShouldPatch,
   cellEditValuesBody,
   columnBaseKey,
+  commitMeasureEdit,
   displayMeasureText,
+  inlineMeasureEditContext,
   isEditableColumn,
   isEditingCell,
   isTextEditingTarget,
   measureEditContext,
+  measureEditInitialDraft,
   measureEditShouldPatch,
   measureEditStoredValue,
   resolveCellEditInitial,
@@ -214,6 +217,44 @@ describe('measure inline edit', () => {
     const stored = measureEditStoredValue(ctx!, '500 kcal')
     expect(stored).toEqual({ value: '2092', unit: 'kJ' })
     expect(measureEditShouldPatch(ctx!, '500 kcal')).toBe(true)
+  })
+
+  it('commits a structured draft with a decimal comma', () => {
+    const ctx = inlineMeasureEditContext(columnId, energyDoc, energyEnergyDefs)
+    expect(ctx).not.toBeNull()
+    const draft = measureEditInitialDraft(ctx!)
+    const result = commitMeasureEdit(ctx!, { ...draft, valueText: '1,5' })
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.stored.value).toBeTruthy()
+    }
+  })
+
+  it('rejects invalid and empty measure drafts visibly', () => {
+    const ctx = inlineMeasureEditContext(columnId, energyDoc, energyEnergyDefs)
+    expect(ctx).not.toBeNull()
+    expect(commitMeasureEdit(ctx!, { valueText: '', unit: 'kcal' })).toEqual({ ok: false, reason: 'empty' })
+    expect(commitMeasureEdit(ctx!, { valueText: 'abc', unit: 'kcal' })).toEqual({ ok: false, reason: 'invalid' })
+  })
+
+  it('seeds and commits 2000 without thousands grouping', () => {
+    const doc = {
+      a_018f0000_0000_7000_8000_000000000099: '2000',
+      a_018f0000_0000_7000_8000_000000000099__unit: 'kJ',
+    }
+    const kjColumn = 'energy#unit:kJ'
+    const ctx = inlineMeasureEditContext(kjColumn, doc, energyEnergyDefs)
+    expect(ctx).not.toBeNull()
+    expect(measureEditInitialDraft(ctx!)).toEqual({ valueText: '2000', unit: 'kJ' })
+    const unchanged = commitMeasureEdit(ctx!, { valueText: '2000', unit: 'kJ' })
+    expect(unchanged.ok).toBe(true)
+    if (unchanged.ok) {
+      expect(unchanged.unchanged).toBe(true)
+    }
+    expect(commitMeasureEdit(ctx!, { valueText: '2,000', unit: 'kJ' })).toMatchObject({
+      ok: true,
+      stored: { value: '2000', unit: 'kJ' },
+    })
   })
 })
 
