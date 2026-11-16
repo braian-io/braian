@@ -1,12 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
-import { closeAllAgentTabs, mainTable, openAgentDraftInTable, resetProductsLayout, setTheme, showProducts } from './ui'
-
-test.afterEach(async ({ page }) => {
-  await page.keyboard.press('Escape').catch(() => undefined)
-  await page.getByTestId('discard-draft').first().click({ timeout: 2_000 }).catch(() => undefined)
-  await closeAllAgentTabs(page).catch(() => undefined)
-})
+import { mainTable, openAgentDraftInTable, resetProductsLayout, setTheme, showProducts } from './ui'
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -282,6 +276,7 @@ test('a failed fetch can be retried and a missing run cannot', async ({ page }) 
   const missing = agentView(page, 'hold the run missing')
   await expect(missing.getByTestId('agent-missing')).toBeVisible({ timeout: 30_000 })
   await expect(missing.getByTestId('agent-retry')).toHaveCount(0)
+  await page.unroute(runDetail)
 })
 
 test('a failed run shows a cleaned error and try again', async ({ page }) => {
@@ -317,6 +312,7 @@ test('escape inside the agent tab does not close it', async ({ page }) => {
 test('an agent tab in another workspace is announced', async ({ page }) => {
   test.setTimeout(120_000)
   await login(page)
+  try {
   await page.route('**/v1/agent/runs', async (route) => {
     const url = new URL(route.request().url())
     if (route.request().method() !== 'GET' || url.pathname !== '/v1/agent/runs') {
@@ -362,6 +358,10 @@ test('an agent tab in another workspace is announced', async ({ page }) => {
   await showProducts(page)
   await expect(page.locator('[data-sonner-toast]')).toContainText('another workspace')
   await expect(page.locator('.pane-tab', { hasText: 'agent in another workspace' })).toHaveCount(0)
+  } finally {
+    await page.unroute('**/v1/agent/runs').catch(() => undefined)
+    await resetProductsLayout(page).catch(() => undefined)
+  }
 })
 
 test('screenshots of the agent tab in dark and light', async ({ page }) => {

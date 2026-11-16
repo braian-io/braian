@@ -198,6 +198,7 @@ export function AgentView({ runId }: AgentViewProps) {
   const run = useQuery({
     queryKey: ['agent-run', runId],
     queryFn: () => fetchAgentRun(runId),
+    refetchOnMount: 'always',
     retry: false,
     refetchInterval: (query) => {
       if (query.state.status === 'error') return false

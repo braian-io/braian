@@ -14,14 +14,16 @@ export function mainTable(page: Page, title = 'Products'): Locator {
 
 /** Close every open agent pane tab so layout reset can paint the catalog again. */
 export async function closeAllAgentTabs(page: Page) {
-  const tabs = page.locator('.pane-tab[data-view-type="agent"]')
   for (let guard = 0; guard < 16; guard += 1) {
+    const tabs = page.locator('.pane-tab[data-view-type="agent"]')
     const count = await tabs.count()
     if (count === 0) return
     const tab = tabs.first()
-    await tab.hover()
-    await tab.getByRole('button', { name: 'Close tab' }).click()
-    await expect(tabs).toHaveCount(count - 1)
+    await tab.hover({ timeout: 3_000 }).catch(() => undefined)
+    await tab.getByRole('button', { name: 'Close tab' }).click({ timeout: 3_000 }).catch(() => undefined)
+    if ((await tabs.count()) >= count) {
+      await page.keyboard.press('Control+j').catch(() => undefined)
+    }
   }
 }
 

@@ -194,6 +194,14 @@ function splitHasDirectDetail(node: Extract<Node, { type: 'split' }>, viewTypes:
   )
 }
 
+/** A horizontal agent dock must not let the Detail flex rules resize the left subtree. */
+function splitLocksAgentDock(node: Extract<Node, { type: 'split' }>, viewTypes: Map<string, string>) {
+  if (node.dir !== 'horizontal' || node.children.length !== 2) return false
+  return node.children.some(
+    (child) => child.type === 'tabs' && child.views.some((id) => viewTypes.get(id) === 'agent'),
+  )
+}
+
 function SplitNode({ frame, node, path }: { frame: Frame; node: Node; path: number[] }) {
   if (node.type !== 'split') {
     const leaf = leaves(node)[0]
@@ -204,9 +212,15 @@ function SplitNode({ frame, node, path }: { frame: Frame; node: Node; path: numb
   // Detail flex rules apply only when Detail is a direct pane in this split.
   // An agent edge-dock wrapper must not inherit them on the whole left subtree.
   const hasDetail = splitHasDirectDetail(node, viewTypes)
+  const lockRatios = splitLocksAgentDock(node, viewTypes)
   const gaps = Math.max(0, node.children.length - 1) * 6
   return (
-    <div className={`split ${node.dir}`} data-path={path.join('.') || 'root'} data-has-detail={hasDetail ? 'true' : undefined}>
+    <div
+      className={`split ${node.dir}`}
+      data-path={path.join('.') || 'root'}
+      data-has-detail={hasDetail ? 'true' : undefined}
+      data-agent-dock={lockRatios ? 'true' : undefined}
+    >
       {node.children.map((child, index) => (
         <SplitChild
           key={cellKey(path, index, child)}
@@ -217,6 +231,7 @@ function SplitNode({ frame, node, path }: { frame: Frame; node: Node; path: numb
           path={path}
           gaps={gaps}
           hasDetail={hasDetail}
+          lockRatios={lockRatios}
         />
       ))}
     </div>
@@ -231,6 +246,7 @@ function SplitChild({
   path,
   gaps,
   hasDetail,
+  lockRatios,
 }: {
   frame: Frame
   node: Extract<Node, { type: 'split' }>
@@ -239,14 +255,16 @@ function SplitChild({
   path: number[]
   gaps: number
   hasDetail: boolean
+  lockRatios: boolean
 }) {
   const basis = `calc((100% - ${gaps}px) * ${node.ratios[index] ?? 0})`
+  const flex = lockRatios ? '0 0' : hasDetail ? '0 1' : '0 0'
   return (
     <>
       {index > 0 ? (
         <Divider frame={frame} dir={node.dir} index={index - 1} path={path} count={node.children.length} />
       ) : null}
-      <div className="split-cell" style={{ flex: `${hasDetail ? '0 1' : '0 0'} ${basis}` }}>
+      <div className="split-cell" style={{ flex: `${flex} ${basis}` }}>
         <SplitNode frame={frame} node={child} path={[...path, index]} />
       </div>
     </>

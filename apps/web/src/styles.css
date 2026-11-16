@@ -460,6 +460,10 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
     min-width: 440px;
   }
 }
+/* Edge-docked agent chat shrinks the left subtree — table floors must not jump it sideways. */
+.dock-root > .split.horizontal[data-agent-dock='true'] .split-cell {
+  min-width: 0;
+}
 /* A table that shares its split with a direct Detail pane gives way to it. */
 .split:has(> .split-cell > .pane .pane-tab[data-view-type='object_detail'])
   > .split-cell:has(.pane-tab[data-view-type='object_table'].active):not(:has(.split)) {
