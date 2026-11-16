@@ -117,9 +117,15 @@ test('restore dialog names the object, shows a diff, and hides empty impact rows
     await dialog.getByRole('button', { name: 'Cancel' }).click()
     await expect(dialog).toHaveCount(0)
 
-    await changed.click()
-    await expect(changed.getByTestId('rollback')).toBeVisible()
-    await changed.getByTestId('rollback').click()
+    if ((await page.getByTestId('history').count()) === 0) {
+      await page.getByRole('button', { name: 'History' }).click()
+    }
+    await expect(page.getByTestId('history')).toBeVisible()
+    const again = page.getByTestId('history').locator('article', { has: page.getByTestId('field-diff') }).first()
+    await expect(again).toBeVisible()
+    await again.click()
+    await expect(again.getByTestId('rollback')).toBeVisible()
+    await again.getByTestId('rollback').click()
     await expect(dialog).toBeVisible()
     await expect(dialog.getByTestId('confirm-restore')).toBeEnabled()
     await page.keyboard.press('Escape')
