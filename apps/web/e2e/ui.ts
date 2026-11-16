@@ -12,6 +12,26 @@ export function mainTable(page: Page, title = 'Products'): Locator {
   return paneWithTab(page, title).getByTestId('object-table').first()
 }
 
+/** Focus the Products table even when agent tabs crowd the strip and intercept clicks. */
+export async function showProducts(page: Page, title = 'Products') {
+  await page.locator('nav.tabs').getByRole('button', { name: new RegExp(`^${title}`) }).click()
+  const rows = mainTable(page, title).getByTestId('object-row')
+  if (await rows.first().isVisible().catch(() => false)) return
+  const tableTab = page
+    .locator('.pane-tab[data-view-type="object_table"]')
+    .filter({ hasText: new RegExp(`^${title}`) })
+    .first()
+  await expect(tableTab).toBeVisible({ timeout: 60_000 })
+  await tableTab.click({ force: true })
+  await expect(rows.first()).toBeVisible({ timeout: 60_000 })
+}
+
+/** Draft links live in chat; review and save stay on the object table pane. */
+export async function openAgentDraftInTable(page: Page, view: Locator, title = 'Products') {
+  await view.getByTestId('agent-result-link').first().click()
+  await showProducts(page, title)
+}
+
 /**
  * Focus the main table before opening the Fields palette. The palette's fields
  * host is the last mounted object table, so a peer table would win; close the

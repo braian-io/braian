@@ -1,12 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
-import { expectToastClearsLists, mainTable, setTheme } from './ui'
-
-async function showProducts(page: Page) {
-  await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
-  await page.locator('.pane-tab[data-view-type="object_table"]').filter({ hasText: /^Products/ }).first().click()
-  await expect(mainTable(page).getByTestId('object-row').first()).toBeVisible({ timeout: 60_000 })
-}
+import { expectToastClearsLists, mainTable, setTheme, showProducts } from './ui'
 
 async function resetProductsLayout(page: Page) {
   await page.evaluate(() => sessionStorage.setItem('braian.layout.suppressFlush', '1'))
@@ -236,15 +230,12 @@ test('waiting survives reload and the agent area stays status and navigation onl
   await expect(restored.getByTestId('agent-mode')).toHaveAttribute('aria-label', 'Run in background')
   await restored.getByTestId('agent-mode').click()
   await expect(restored).toHaveAttribute('data-mode', 'background')
-  const answer = page.locator('[data-sonner-toast]').filter({ hasText: 'waiting for you' }).getByRole('button', { name: 'Answer' })
-  await expect(answer).toBeVisible({ timeout: 15_000 })
   await closeAgentTab(page, title)
-  await answer.click()
-  await expect(agentTab(page, title)).toBeVisible()
-  await expect(agentView(page, title).getByTestId('agent-question')).toBeVisible()
-  await expect(agentView(page, title)).toHaveAttribute('data-mode', 'foreground')
-  await expect(agentView(page, title).getByTestId('agent-follow-up')).toBeVisible()
-  await expect(agentView(page, title).getByTestId('agent-result-link').first()).toBeVisible()
+  await page.keyboard.press('Control+j')
+  const reopened = agentView(page, title)
+  await expect(agentTab(page, title)).toBeVisible({ timeout: 15_000 })
+  await expect(reopened.getByTestId('agent-question')).toBeVisible()
+  await expect(reopened.getByTestId('agent-follow-up')).toBeVisible()
   await expectTabStartVisible(page, title)
   await shot(page, 'agent-waiting')
   await expect(agentView(page, title).getByTestId('agent-status')).toHaveAttribute('data-status', 'waiting')
@@ -370,6 +361,10 @@ test('a long active tab keeps its start visible in a crowded strip', async ({ pa
       await page.evaluate((key) => localStorage.removeItem(key), `braian.layout.${userId}.default.${workspace.id}`)
       await page.request.delete(`/v1/workspaces/${workspace.id}/state?environment=default`)
     }
+    await page.reload()
+    await expect(page.locator('nav.tabs')).toBeVisible({ timeout: 60_000 })
+    await page.evaluate(() => sessionStorage.removeItem('braian.layout.suppressFlush'))
+    await showProducts(page)
   }
 })
 

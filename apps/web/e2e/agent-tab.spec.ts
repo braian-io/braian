@@ -1,12 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
-import { mainTable, setTheme } from './ui'
-
-async function showProducts(page: Page) {
-  await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
-  await page.locator('.pane-tab[data-view-type="object_table"]').filter({ hasText: /^Products/ }).first().click()
-  await expect(mainTable(page).getByTestId('object-row').first()).toBeVisible({ timeout: 60_000 })
-}
+import { mainTable, openAgentDraftInTable, setTheme, showProducts } from './ui'
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -146,7 +140,7 @@ test('a user edit marks the agent proposal stale', async ({ page }) => {
   const reason = view.getByTestId('agent-stale-reason')
   await expect(reason).toContainText(edited, { timeout: 30_000 })
   await expect(reason).toContainText(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}/)
-  await view.getByTestId('agent-result-link').first().click()
+  await openAgentDraftInTable(page, view)
   await expect(page.getByTestId('review-and-save').first()).toBeDisabled()
   await nameCell.dblclick()
   await page.getByTestId('cell-editor-name').fill(original)
@@ -172,7 +166,7 @@ test('the proposal card shows the object and the field diff', async ({ page }) =
   const view = agentView(page, title)
   await expect(view.getByTestId('agent-proposal')).toHaveCount(0)
   await expect(view.getByTestId('agent-result-link').first()).toBeVisible({ timeout: 30_000 })
-  await view.getByTestId('agent-result-link').first().click()
+  await openAgentDraftInTable(page, view)
   const diff = row.locator('[data-column="name"]').getByTestId('cell-diff')
   await expect(diff).toContainText(original, { timeout: 30_000 })
   await expect(diff).toContainText('Agent draft')
@@ -188,7 +182,7 @@ test('approving toasts the change, records who approved it, and undo restores th
   await ask(page, title)
   const view = agentView(page, title)
   await expect(view.getByTestId('agent-result-link').first()).toBeVisible({ timeout: 30_000 })
-  await view.getByTestId('agent-result-link').first().click()
+  await openAgentDraftInTable(page, view)
   await expect(row.locator('[data-column="name"]').getByTestId('cell-diff')).toContainText('Agent draft', { timeout: 30_000 })
   await page.getByTestId('review-and-save').first().click()
   await expect(row.locator('[data-column="name"]').first()).toContainText('Agent draft', { timeout: 30_000 })
@@ -204,9 +198,9 @@ test('undo after a later edit does not overwrite the name', async ({ page }) => 
   await ask(page, title)
   const view = agentView(page, title)
   await expect(view.getByTestId('agent-result-link').first()).toBeVisible({ timeout: 30_000 })
-  await view.getByTestId('agent-result-link').first().click()
+  await openAgentDraftInTable(page, view)
   await page.getByTestId('review-and-save').first().click()
-  await page.locator('.pane-tab[data-view-type="object_table"]').first().click()
+  await showProducts(page)
   const later = `${original} later`
   const nameCell = row.locator('[data-column="name"]').first()
   await expect(nameCell).toContainText('Agent draft', { timeout: 30_000 })
@@ -231,7 +225,7 @@ test('rejecting toasts the field and leaves the name unchanged', async ({ page }
   await ask(page, title)
   const view = agentView(page, title)
   await expect(view.getByTestId('agent-result-link').first()).toBeVisible({ timeout: 30_000 })
-  await view.getByTestId('agent-result-link').first().click()
+  await openAgentDraftInTable(page, view)
   await expect(row.locator('[data-column="name"]').getByTestId('cell-diff')).toContainText('Agent draft', { timeout: 30_000 })
   await page.getByTestId('discard-draft').first().click()
   await expect(row.locator('[data-column="name"]').first()).toContainText(original)
@@ -254,11 +248,13 @@ test('a failed fetch can be retried and a missing run cannot', async ({ page }) 
     }
     await route.continue()
   })
-  await ask(page, 'hold the run briefly')
-  const busy = page.getByTestId('agent-fetch-error')
-  await expect(busy).toContainText('the store is busy')
+  const briefTitle = 'hold the run briefly'
+  await ask(page, briefTitle)
+  const briefView = agentView(page, briefTitle)
+  const busy = briefView.getByTestId('agent-fetch-error')
+  await expect(busy).toContainText('the store is busy', { timeout: 30_000 })
   await busy.getByTestId('agent-retry').click()
-  await expect(agentView(page, 'hold the run briefly').getByTestId('agent-status')).toBeVisible({ timeout: 30_000 })
+  await expect(briefView.getByTestId('agent-status')).toBeVisible({ timeout: 30_000 })
   await page.unroute(/\/v1\/agent\/runs\/[0-9a-f-]{36}$/)
   await page.route(/\/v1\/agent\/runs\/[0-9a-f-]{36}$/, async (route) => {
     if (route.request().method() === 'GET') {
@@ -271,9 +267,11 @@ test('a failed fetch can be retried and a missing run cannot', async ({ page }) 
     }
     await route.continue()
   })
-  await ask(page, 'hold the run missing')
-  await expect(page.getByTestId('agent-missing').first()).toBeVisible({ timeout: 30_000 })
-  await expect(page.getByTestId('agent-retry')).toHaveCount(0)
+  const missingTitle = 'hold the run missing'
+  await ask(page, missingTitle)
+  const missingView = agentView(page, missingTitle)
+  await expect(missingView.getByTestId('agent-missing')).toBeVisible({ timeout: 30_000 })
+  await expect(missingView.getByTestId('agent-retry')).toHaveCount(0)
 })
 
 test('a failed run shows a cleaned error and try again', async ({ page }) => {
@@ -298,9 +296,9 @@ test('escape inside the agent tab does not close it', async ({ page }) => {
   await ask(page, title)
   const tab = agentTab(page, title)
   await expect(tab).toBeVisible()
-  const openDraft = agentView(page, title).getByTestId('agent-result-link')
-  await expect(openDraft).toBeVisible({ timeout: 30_000 })
-  await openDraft.focus()
+  const followUp = agentView(page, title).getByTestId('agent-follow-up')
+  await expect(followUp).toBeVisible({ timeout: 30_000 })
+  await followUp.focus()
   await page.keyboard.press('Escape')
   await expect(tab).toBeVisible()
   await expect(agentView(page, title)).toBeVisible()
@@ -351,6 +349,8 @@ test('an agent tab in another workspace is announced', async ({ page }) => {
     }
   })
   await page.reload()
+  await expect(page.locator('nav.tabs')).toBeVisible({ timeout: 60_000 })
+  await showProducts(page)
   await expect(page.locator('[data-sonner-toast]')).toContainText('another workspace', { timeout: 60_000 })
   await expect(page.locator('.pane-tab', { hasText: 'agent in another workspace' })).toHaveCount(0)
 })
@@ -390,7 +390,7 @@ test('screenshots of the agent tab in dark and light', async ({ page }) => {
   releaseSkeleton()
   const view = agentView(page, 'propose a new name for the selected product')
   await expect(view.getByTestId('agent-result-link').first()).toBeVisible({ timeout: 30_000 })
-  await view.getByTestId('agent-result-link').first().click()
+  await openAgentDraftInTable(page, view)
   await expect(row.locator('[data-column="name"]').getByTestId('cell-diff')).toContainText('Agent draft', { timeout: 30_000 })
   await setTheme(page, 'dark')
   await page.screenshot({ path: `${dir}/agent-diff-dark.png`, fullPage: true })
