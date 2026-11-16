@@ -213,7 +213,13 @@ function SplitNode({ frame, node, path, inAgentDock = false }: { frame: Frame; n
   // An agent edge-dock wrapper must not inherit them on the whole left subtree.
   const hasDetail = splitHasDirectDetail(node, viewTypes)
   const lockRatios = splitLocksAgentDock(node, viewTypes)
-  const freezeCatalog = inAgentDock && hasDetail && node.dir === 'horizontal' && node.children.length === 2
+  const focusedType = frame.viewList.find((view) => view.id === frame.doc.focus)?.type
+  const freezeCatalog =
+    inAgentDock
+    && hasDetail
+    && node.dir === 'horizontal'
+    && node.children.length === 2
+    && focusedType !== 'agents'
   const pinCells = lockRatios || freezeCatalog
   const gaps = Math.max(0, node.children.length - 1) * 6
   const subtreeInAgentDock = inAgentDock || lockRatios

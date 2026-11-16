@@ -181,7 +181,7 @@ export function dockEdge(node: Node, view: string, zone: Zone, share = 0.3): Nod
   }
 }
 
-const AGENT_DOCK_LEAD = 0.11
+const AGENT_DOCK_LEAD = 0.12
 
 /** Narrow the agent share when a wide catalog would start to the right of the default dock line. */
 export function agentDockShare(

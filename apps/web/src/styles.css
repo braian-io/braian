@@ -952,8 +952,13 @@ button.agent-bg-indicator strong { font-variant-numeric: tabular-nums; }
 .dock-root > .split.horizontal.split-agent-dock .pane:has([data-testid='agents-table']) .pane-body {
   overflow: auto;
 }
-.dock-root > .split.horizontal.split-agent-dock .pane:has([data-testid='agents-table']) .standard-grid-head {
-  position: relative;
+.dock-root > .split.horizontal.split-agent-dock:has([data-testid='agents-table']) > .split-cell:first-child {
+  overflow: auto;
+}
+.dock-root > .split.horizontal.split-agent-dock .pane:has([data-testid='agents-table']) .standard-grid,
+.dock-root > .split.horizontal.split-agent-dock .pane:has([data-testid='agents-table']) .table-wrap {
+  overflow: visible;
+  min-height: 0;
 }
 .dock-preview {
   position: absolute;

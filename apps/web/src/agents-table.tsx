@@ -51,8 +51,11 @@ export function AgentsTable() {
   ]
   const error = list.isError ? (list.error instanceof Error ? list.error.message : copy.agentsEmpty) : ''
   useLayoutEffect(() => {
-    document.querySelector<HTMLElement>('[data-testid="agents-table"] .standard-grid-head')
-      ?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    const root = document.querySelector<HTMLElement>('[data-testid="agents-table"]')
+    if (!root) return
+    const pane = root.closest<HTMLElement>('.pane-body')
+    if (pane) pane.scrollTop = 0
+    root.querySelector<HTMLElement>('.standard-grid-head')?.scrollIntoView({ block: 'nearest', inline: 'start' })
   }, [list.isPending, list.data, filter])
   return (
     <StandardEditableTable
