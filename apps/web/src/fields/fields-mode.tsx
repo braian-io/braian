@@ -764,7 +764,7 @@ export function FieldsMode({ open, columns, fields: catalog, onClose, onToggleCo
       if (existing) {
         const existingUnit = existing.qualifiers.find((item) => item.kind === 'unit')?.optionId
         if (existingUnit === option.id) {
-          onToggleColumn(col)
+          // Single-choice: re-selecting the active unit is a no-op (K1).
         } else {
           onReplaceColumn(existing.id, col)
         }
