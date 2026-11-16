@@ -171,16 +171,16 @@ test.describe('unit field single choice in Select fields', () => {
     await expect(mainTable(page).locator('.head [data-testid="col-protein#unit:kg"]')).toBeVisible()
     await expect(mainTable(page).locator('.head [data-testid="col-protein#unit:g"]')).toHaveCount(0)
 
-    // K2: re-selecting the active unit must never leave two units checked (toggle-off is OK).
+    // K1: re-selecting the active unit is a no-op — radio stays checked, column stays.
     await openFieldsPalette(page)
     await page.getByTestId('fields-mode-input').fill('Protein')
     await enterOn(page, 'fields-row-protein')
     await expect(page.getByTestId('fields-check-kg')).toHaveAttribute('data-state', 'checked')
     await enterOn(page, 'fields-row-kg')
+    await expect(page.getByTestId('fields-check-kg')).toHaveAttribute('data-state', 'checked')
     await expect(page.getByTestId('fields-check-g')).toHaveAttribute('data-state', 'unchecked')
-    const gChecked = (await page.getByTestId('fields-check-g').getAttribute('data-state')) === 'checked'
-    const kgChecked = (await page.getByTestId('fields-check-kg').getAttribute('data-state')) === 'checked'
-    expect(gChecked && kgChecked).toBe(false)
     await page.keyboard.press('Escape')
+    await expect(mainTable(page).locator('.head [data-testid="col-protein#unit:kg"]')).toBeVisible()
+    await expect(mainTable(page).locator('.head [data-testid="col-protein#unit:g"]')).toHaveCount(0)
   })
 })

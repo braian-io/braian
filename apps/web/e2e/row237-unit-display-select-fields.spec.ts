@@ -135,6 +135,19 @@ test.describe('row 237 unit display and Select fields', () => {
     }
   })
 
+  const energySnapshots = new Map<string, MeasureValue | undefined>()
+
+  test.afterEach(async ({ page }) => {
+    for (const [objectId, snapshot] of energySnapshots) {
+      try {
+        await restoreEnergy(page, objectId, snapshot)
+      } catch (error) {
+        console.error('energy cleanup failed:', error)
+      }
+    }
+    energySnapshots.clear()
+  })
+
   test('converted measures are rounded and unit headers keep casing', async ({ page }) => {
     await login(page)
     await openProducts(page)
@@ -202,55 +215,60 @@ test.describe('row 237 unit display and Select fields', () => {
   test('inline converted energy edit keeps stored precision', async ({ page }) => {
     test.setTimeout(180_000)
     const patches: string[] = []
-    await page.route('**/v1/objects/*', async (route) => {
-      if (route.request().method() === 'PATCH') {
-        patches.push(route.request().postData() ?? '')
-      }
-      await route.continue()
-    })
-
-    await login(page)
-    await openProducts(page)
-    await openFieldsPalette(page)
-    await page.getByTestId('fields-mode-input').fill('Energy')
-    await enterOn(page, 'fields-row-energy')
-    await page.getByTestId('fields-mode-input').fill('')
-    await enterOn(page, 'fields-row-kcal')
-    await page.keyboard.press('Escape')
-
-    const objectId = await cheddarObjectId(page)
-    const energyBefore = await readEnergy(page, objectId)
-    expect(energyBefore?.unit).toBe('kJ')
-
-    const energyCell = cheddarRow(page).locator('[data-column*="energy"]').first()
-    await expect(energyCell).toBeVisible()
-    await energyCell.dblclick()
-    const editor = page.locator('[data-testid^="cell-editor-energy"]').first()
-    await expect(editor).toBeVisible()
-    const beforeUnchanged = patches.length
-    await editor.press('Enter')
-    await expect(editor).toHaveCount(0)
-    expect(patches.slice(beforeUnchanged)).toEqual([])
-    expect(await readEnergy(page, objectId)).toEqual(energyBefore)
-
-    await energyCell.dblclick()
-    await expect(editor).toBeVisible()
-    await editor.fill('500 kcal')
-    const beforeSave = patches.length
-    await editor.press('Enter')
-    await mainTable(page).getByTestId('review-and-save').click()
-    const dialog = page.getByTestId('review-dialog')
-    if (await dialog.isVisible()) {
-      await dialog.getByTestId('confirm-review').click()
-    }
-    await expect.poll(async () => (await readEnergy(page, objectId))?.value, { timeout: 60_000 }).toBe('2092')
-    expect(patches.length).toBeGreaterThan(beforeSave)
-    expect(await readEnergy(page, objectId)).toEqual({ value: '2092', unit: 'kJ' })
-
+    let objectId = ''
+  let energyBefore: MeasureValue | undefined
     try {
-      await restoreEnergy(page, objectId, energyBefore)
-    } catch (error) {
-      console.error('energy cleanup failed:', error)
+      await page.route('**/v1/objects/*', async (route) => {
+        if (route.request().method() === 'PATCH') {
+          patches.push(route.request().postData() ?? '')
+        }
+        await route.continue()
+      })
+
+      await login(page)
+      await openProducts(page)
+      await openFieldsPalette(page)
+      await page.getByTestId('fields-mode-input').fill('Energy')
+      await enterOn(page, 'fields-row-energy')
+      await page.getByTestId('fields-mode-input').fill('')
+      await enterOn(page, 'fields-row-kcal')
+      await page.keyboard.press('Escape')
+
+      objectId = await cheddarObjectId(page)
+      energyBefore = await readEnergy(page, objectId)
+      energySnapshots.set(objectId, energyBefore)
+      expect(energyBefore?.unit).toBe('kJ')
+
+      const energyCell = cheddarRow(page).locator('[data-column*="energy"]').first()
+      await expect(energyCell).toBeVisible()
+      await energyCell.dblclick()
+      const valueInput = page.locator('[data-testid^="cell-editor-energy"][data-testid$="-value"]').first()
+      await expect(valueInput).toBeVisible()
+      const beforeUnchanged = patches.length
+      await valueInput.press('Enter')
+      await expect(valueInput).toHaveCount(0)
+      expect(patches.slice(beforeUnchanged)).toEqual([])
+      expect(await readEnergy(page, objectId)).toEqual(energyBefore)
+
+      await energyCell.dblclick()
+      await expect(valueInput).toBeVisible()
+      await valueInput.fill('500')
+      const beforeSave = patches.length
+      await valueInput.press('Enter')
+      await mainTable(page).getByTestId('review-and-save').click()
+      const dialog = page.getByTestId('review-dialog')
+      if (await dialog.isVisible()) {
+        await dialog.getByTestId('confirm-review').click()
+      }
+      await expect.poll(async () => (await readEnergy(page, objectId))?.value, { timeout: 60_000 }).toBe('2092')
+      expect(patches.length).toBeGreaterThan(beforeSave)
+      expect(await readEnergy(page, objectId)).toEqual({ value: '2092', unit: 'kJ' })
+    } finally {
+      try {
+        if (objectId) await restoreEnergy(page, objectId, energyBefore)
+      } catch (error) {
+        console.error('energy cleanup failed:', error)
+      }
     }
   })
 })

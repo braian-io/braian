@@ -78,10 +78,11 @@ describe('FieldsMode unit display choice', () => {
     expect(onReplaceColumn.mock.calls[0]?.[1]?.id).toBe(kgCol!.id)
   })
 
-  it('toggles off when picking the active unit again', () => {
+  it('does nothing when picking the active unit again', () => {
     const gCol = makeViewColumn(['protein'], [{ kind: 'unit', optionId: 'g', label: 'g' }], [protein])
     expect(gCol).toBeTruthy()
     const onToggleColumn = vi.fn()
+    const onReplaceColumn = vi.fn()
     render(
       <FieldsMode
         open={{ kind: 'browse' }}
@@ -90,12 +91,15 @@ describe('FieldsMode unit display choice', () => {
         onClose={() => undefined}
         onToggleColumn={onToggleColumn}
         onShowColumn={() => undefined}
-        onReplaceColumn={() => undefined}
+        onReplaceColumn={onReplaceColumn}
         peerOptionsForField={() => []}
       />,
     )
     fireEvent.click(screen.getByTestId('fields-row-protein'))
     fireEvent.click(screen.getByTestId('fields-row-g'))
-    expect(onToggleColumn).toHaveBeenCalledTimes(1)
+    expect(onToggleColumn).not.toHaveBeenCalled()
+    expect(onReplaceColumn).not.toHaveBeenCalled()
+    expect(screen.getByTestId('fields-check-g').getAttribute('data-state')).toBe('checked')
+    expect(screen.getByTestId('fields-check-kg').getAttribute('data-state')).toBe('unchecked')
   })
 })

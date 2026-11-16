@@ -417,10 +417,14 @@ fn display_measure(
             .map(|inner| {
                 let unit = other.get("unit").and_then(Value::as_str).unwrap_or("");
                 let base = display_value(inner, PathPart::Whole, labels, lang, false);
-                if unit.is_empty() || base.is_empty() {
-                    base
+                let formatted = base
+                    .parse::<f64>()
+                    .map(format_converted_number)
+                    .unwrap_or(base);
+                if unit.is_empty() || formatted.is_empty() {
+                    formatted
                 } else {
-                    format!("{base} {unit}")
+                    format!("{formatted} {unit}")
                 }
             })
             .filter(|text| !text.is_empty())

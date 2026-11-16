@@ -1499,6 +1499,25 @@ button.filter-chip:hover:not(.on) {
 }
 /* The editor already carries an accent border. Its focus lives there, inside the cell. */
 .cell-editor:focus-visible { outline: none; }
+.cell-editor-invalid {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--danger) 55%, transparent);
+}
+.cell-measure-editor {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+  min-width: 0;
+}
+.cell-measure-editor .cell-editor {
+  flex: 1 1 auto;
+  min-width: 2.5rem;
+}
+.cell-measure-editor .cell-editor-unit,
+.cell-measure-editor .cell-editor-unit-trigger {
+  flex: 0 0 auto;
+}
 .meta-chip {
   display: inline-flex;
   align-items: center;
