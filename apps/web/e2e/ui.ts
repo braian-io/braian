@@ -12,7 +12,7 @@ export function mainTable(page: Page, title = 'Products'): Locator {
   return paneWithTab(page, title).getByTestId('object-table').first()
 }
 
-/** Focus the Products table even when agent tabs crowd the strip and intercept clicks. */
+/** Focus the Products table. Clicks the tab open control, not the crowded strip chrome. */
 export async function showProducts(page: Page, title = 'Products') {
   await page.locator('nav.tabs').getByRole('button', { name: new RegExp(`^${title}`) }).click()
   const rows = mainTable(page, title).getByTestId('object-row')
@@ -22,7 +22,7 @@ export async function showProducts(page: Page, title = 'Products') {
     .filter({ hasText: new RegExp(`^${title}`) })
     .first()
   await expect(tableTab).toBeVisible({ timeout: 60_000 })
-  await tableTab.click({ force: true })
+  await tableTab.getByRole('button').first().click()
   await expect(rows.first()).toBeVisible({ timeout: 60_000 })
 }
 

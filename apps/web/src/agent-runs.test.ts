@@ -79,6 +79,11 @@ describe('agent run presentation', () => {
     const foreground = run({ id: 'b', mode: 'foreground', status: 'waiting' })
     const sentBack = run({ ...foreground, mode: 'background' })
     expect(backgroundNotices([foreground], [sentBack]).map((item) => item.id)).toEqual(['b'])
+    const sentBackAgain = run({ ...sentBack, mode: 'background', updated_at: '2026-11-05T12:10:00Z' })
+    const broughtFront = run({ ...sentBackAgain, mode: 'foreground', updated_at: '2026-11-05T12:11:00Z' })
+    const notices = agentNotices(backgroundNotices([broughtFront], [sentBackAgain]))
+    expect(notices.map((notice) => notice.actionLabel)).toEqual(['Answer'])
+    expect(notices[0]?.id).not.toBe(`agent-notice-b-waiting-${foreground.updated_at}`)
   })
 
   it('sorts waiting ahead of working and done', () => {

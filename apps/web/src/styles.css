@@ -605,8 +605,9 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
   gap: var(--space-0_5);
   min-width: 0;
   opacity: 0;
+  pointer-events: none;
 }
-.pane:hover .pane-chrome, .pane.focused .pane-chrome, .pane-chrome:focus-within { opacity: 1; }
+.pane:hover .pane-chrome, .pane.focused .pane-chrome, .pane-chrome:focus-within { opacity: 1; pointer-events: auto; }
 .pane-chrome .icon-btn { width: 22px; padding: 0; justify-content: center; }
 .catalog-admin { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); overflow: auto; }
 .catalog-admin input, .catalog-admin select, .catalog-admin textarea { font: inherit; }

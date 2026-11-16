@@ -297,7 +297,7 @@ export function agentNotices(runs: AgentRunSummary[]): AgentNotice[] {
     }]
   }
   return runs.map((run) => ({
-    id: `agent-notice-${run.id}-${run.status}`,
+    id: `agent-notice-${run.id}-${run.status}-${run.updated_at}`,
     text: agentNoticeText(run),
     failed: run.status === 'failed',
     run,
