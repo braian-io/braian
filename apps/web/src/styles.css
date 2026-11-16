@@ -486,6 +486,18 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
   bottom: 0;
   margin: 0;
 }
+.dock-root .split.horizontal.split-catalog-frozen {
+  display: block;
+  position: relative;
+  height: 100%;
+  width: 100%;
+}
+.dock-root .split.horizontal.split-catalog-frozen > .split-divider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  margin: 0;
+}
 /* A table that shares its split with a direct Detail pane gives way to it. */
 .split:has(> .split-cell > .pane .pane-tab[data-view-type='object_detail'])
   > .split-cell:has(.pane-tab[data-view-type='object_table'].active):not(:has(.split)) {

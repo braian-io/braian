@@ -202,7 +202,7 @@ function splitLocksAgentDock(node: Extract<Node, { type: 'split' }>, viewTypes: 
   )
 }
 
-function SplitNode({ frame, node, path }: { frame: Frame; node: Node; path: number[] }) {
+function SplitNode({ frame, node, path, inAgentDock = false }: { frame: Frame; node: Node; path: number[]; inAgentDock?: boolean }) {
   if (node.type !== 'split') {
     const leaf = leaves(node)[0]
     if (!leaf) return null
@@ -213,13 +213,23 @@ function SplitNode({ frame, node, path }: { frame: Frame; node: Node; path: numb
   // An agent edge-dock wrapper must not inherit them on the whole left subtree.
   const hasDetail = splitHasDirectDetail(node, viewTypes)
   const lockRatios = splitLocksAgentDock(node, viewTypes)
+  const freezeCatalog = inAgentDock && hasDetail && node.dir === 'horizontal' && node.children.length === 2
+  const pinCells = lockRatios || freezeCatalog
   const gaps = Math.max(0, node.children.length - 1) * 6
+  const subtreeInAgentDock = inAgentDock || lockRatios
   return (
     <div
-      className={lockRatios ? `split ${node.dir} split-agent-dock` : `split ${node.dir}`}
+      className={
+        lockRatios
+          ? `split ${node.dir} split-agent-dock`
+          : freezeCatalog
+            ? `split ${node.dir} split-catalog-frozen`
+            : `split ${node.dir}`
+      }
       data-path={path.join('.') || 'root'}
       data-has-detail={hasDetail ? 'true' : undefined}
       data-agent-dock={lockRatios ? 'true' : undefined}
+      data-catalog-frozen={freezeCatalog ? 'true' : undefined}
     >
       {node.children.map((child, index) => (
         <SplitChild
@@ -231,7 +241,8 @@ function SplitNode({ frame, node, path }: { frame: Frame; node: Node; path: numb
           path={path}
           gaps={gaps}
           hasDetail={hasDetail}
-          lockRatios={lockRatios}
+          pinCells={pinCells}
+          inAgentDock={subtreeInAgentDock}
         />
       ))}
     </div>
@@ -246,7 +257,8 @@ function SplitChild({
   path,
   gaps,
   hasDetail,
-  lockRatios,
+  pinCells,
+  inAgentDock,
 }: {
   frame: Frame
   node: Extract<Node, { type: 'split' }>
@@ -255,12 +267,13 @@ function SplitChild({
   path: number[]
   gaps: number
   hasDetail: boolean
-  lockRatios: boolean
+  pinCells: boolean
+  inAgentDock: boolean
 }) {
   const basis = `calc((100% - ${gaps}px) * ${node.ratios[index] ?? 0})`
-  const flex = lockRatios ? '0 0' : hasDetail ? '0 1' : '0 0'
+  const flex = pinCells ? '0 0' : hasDetail ? '0 1' : '0 0'
   const last = index === node.children.length - 1
-  const docked = lockRatios && node.dir === 'horizontal'
+  const docked = pinCells && node.dir === 'horizontal'
     ? {
         position: 'absolute' as const,
         top: 0,
@@ -270,7 +283,7 @@ function SplitChild({
         ...(index === 0 ? { left: 0 } : last ? { right: 0 } : {}),
       }
     : { flex: `${flex} ${basis}` }
-  const dividerOffset = lockRatios && node.dir === 'horizontal'
+  const dividerOffset = pinCells && node.dir === 'horizontal'
     ? node.ratios.slice(0, index).reduce((sum, ratio) => sum + ratio, 0)
     : null
   return (
@@ -286,7 +299,7 @@ function SplitChild({
         />
       ) : null}
       <div className="split-cell" style={docked}>
-        <SplitNode frame={frame} node={child} path={[...path, index]} />
+        <SplitNode frame={frame} node={child} path={[...path, index]} inAgentDock={inAgentDock} />
       </div>
     </>
   )

@@ -115,6 +115,9 @@ it('does not mark the agent dock wrapper as a detail split', () => {
   const inner = container.querySelector<HTMLElement>(".split.horizontal[data-path='0']")
   expect(outer?.dataset.hasDetail).toBeUndefined()
   expect(inner?.dataset.hasDetail).toBe('true')
+  expect(inner?.dataset.catalogFrozen).toBe('true')
+  const innerCells = [...(inner?.querySelectorAll<HTMLElement>(':scope > .split-cell') ?? [])]
+  expect(innerCells.map((cell) => cell.style.position)).toEqual(['absolute', 'absolute'])
   const outerCells = [...(outer?.querySelectorAll<HTMLElement>(':scope > .split-cell') ?? [])]
   expect(outer?.dataset.agentDock).toBe('true')
   expect(outerCells.map((cell) => cell.style.position)).toEqual(['absolute', 'absolute'])
