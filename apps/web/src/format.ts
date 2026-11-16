@@ -25,22 +25,28 @@ export function formatConvertedNumber(value: number): string {
  * Parse a human-entered decimal (`1,5`, `1.5`, `1,234.5` with grouping).
  * Returns null for empty or non-numeric text.
  */
+/** Thousands: ASCII space, NBSP, narrow NBSP. Commas are always decimal when alone. */
+const GROUPING_SPACE = /[\s\u00A0\u202F]/g
+
 export function parseDecimalInput(text: string): number | null {
   const trimmed = text.trim()
   if (!trimmed) return null
-  let normalized = trimmed.replace(/\s/g, '')
-  const commaCount = (normalized.match(/,/g) ?? []).length
-  const dotCount = (normalized.match(/\./g) ?? []).length
-  if (commaCount === 1 && dotCount === 0) {
-    const [, after = ''] = normalized.split(',')
-    // One comma with up to two fractional digits = decimal comma (e.g. 1,5).
-    if (after.length > 0 && after.length <= 2) {
-      normalized = normalized.replace(',', '.')
+  let normalized = trimmed.replace(GROUPING_SPACE, '')
+  const lastComma = normalized.lastIndexOf(',')
+  const lastDot = normalized.lastIndexOf('.')
+  if (lastComma >= 0 && lastDot >= 0) {
+    // When both appear, the rightmost separator is the decimal mark.
+    if (lastComma > lastDot) {
+      normalized = normalized.replaceAll('.', '').replace(',', '.')
     } else {
       normalized = normalized.replaceAll(',', '')
     }
-  } else {
-    normalized = normalized.replaceAll(',', '')
+  } else if (lastComma >= 0) {
+    if ((normalized.match(/,/g) ?? []).length > 1) return null
+    normalized = normalized.replace(',', '.')
+  } else if (lastDot >= 0 && (normalized.match(/\./g) ?? []).length > 1) {
+    const head = normalized.slice(0, lastDot).replaceAll('.', '')
+    normalized = `${head}${normalized.slice(lastDot)}`
   }
   if (!/^-?\d+(\.\d+)?$/.test(normalized)) return null
   const value = Number(normalized)
@@ -67,8 +73,7 @@ export function formatMeasureEditNumber(value: unknown): string {
   if (value == null || value === '') return ''
   const numeric = typeof value === 'number' ? value : parseDecimalInput(String(value))
   if (numeric == null || !Number.isFinite(numeric)) return String(value).trim()
-  const rounded = Math.round(numeric * 100) / 100
-  return rounded.toFixed(2).replace(/\.?0+$/, '')
+  return formatMeasureStorageNumber(numeric)
 }
 
 /** Number plus unit for a converted measure cell. */

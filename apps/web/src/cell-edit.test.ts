@@ -251,7 +251,7 @@ describe('measure inline edit', () => {
     if (unchanged.ok) {
       expect(unchanged.unchanged).toBe(true)
     }
-    expect(commitMeasureEdit(ctx!, { valueText: '2,000', unit: 'kJ' })).toMatchObject({
+    expect(commitMeasureEdit(ctx!, { valueText: '2 000', unit: 'kJ' })).toMatchObject({
       ok: true,
       stored: { value: '2000', unit: 'kJ' },
     })
