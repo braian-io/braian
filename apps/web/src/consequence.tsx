@@ -76,6 +76,7 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
   const [busy, setBusy] = useState(false)
   const opener = useRef<HTMLElement | null>(null)
   const confirmRef = useRef<HTMLButtonElement | null>(null)
+  const discardPending = useRef(false)
   const dismiss = () => {
     const target = opener.current
     opener.current = null
@@ -138,6 +139,7 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
   const restoreDiff = isRollback && objectRow
     ? suggestionLines(liveValues, objectRow.patch, defs.data)
     : []
+  const restoreEmpty = isRollback && !proposal.isPending && !proposal.isError && restoreDiff.length === 0
   // The proposal fetch can be slow. Name the operation we already know instead
   // of showing the generic "Data model" while the counts are unknown.
   const title = proposal.isPending
@@ -191,6 +193,8 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
   if (!id) return null
   const close = dismiss
   const discard = () => {
+    if (!id || discardPending.current) return
+    discardPending.current = true
     setBusy(true)
     void api.post('/v1/proposals/{id}/discard', { params: { path: { id: id } } })
       .then(() => {
@@ -199,7 +203,10 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
         close()
       })
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : copy.validation))
-      .finally(() => setBusy(false))
+      .finally(() => {
+        setBusy(false)
+        discardPending.current = false
+      })
   }
   const confirm = () => {
     setBusy(true)
@@ -228,11 +235,22 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
       .finally(() => setBusy(false))
   }
   return (
-    <Dialog open onOpenChange={(next) => { if (!next) dismiss() }}>
+    <Dialog open onOpenChange={(next) => {
+      if (!next) {
+        if (isRollback) discard()
+        else dismiss()
+      }
+    }}>
       <DialogContent
         className="consequence"
         data-testid={isRollback ? 'restore-dialog' : 'consequence'}
-        onEscapeKeyDown={(event) => event.stopPropagation()}
+        onEscapeKeyDown={(event) => {
+          event.stopPropagation()
+          if (isRollback) {
+            event.preventDefault()
+            discard()
+          }
+        }}
         onOpenAutoFocus={(event) => {
           if (isRollback) event.preventDefault()
         }}
@@ -250,6 +268,9 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
         {proposal.isError ? <StateNote tone="error" title={copy.errorModel} /> : null}
         {isRollback && !proposal.isPending && restoreDiff.length > 0 ? (
           <FieldDiff lines={restoreDiff} />
+        ) : null}
+        {restoreEmpty ? (
+          <p className="hint" data-testid="restore-no-changes">{copy.restoreAlreadyMatches}</p>
         ) : null}
         {!isRollback && !proposal.isPending && showDiff ? (
           <>
@@ -307,7 +328,7 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
             variant={destructiveIntent ? 'danger' : 'primary'}
             data-testid={confirmTestId}
             onClick={confirm}
-            disabled={busy || proposal.isPending || proposal.isError || errors.length > 0}
+            disabled={busy || proposal.isPending || proposal.isError || errors.length > 0 || restoreEmpty}
           >
             {confirmLabel}
           </Button>
