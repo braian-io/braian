@@ -117,6 +117,8 @@ test('restore dialog names the object, shows a diff, and hides empty impact rows
     await dialog.getByRole('button', { name: 'Cancel' }).click()
     await expect(dialog).toHaveCount(0)
 
+    await changed.click()
+    await expect(changed.getByTestId('rollback')).toBeVisible()
     await changed.getByTestId('rollback').click()
     await expect(dialog).toBeVisible()
     await expect(dialog.getByTestId('confirm-restore')).toBeEnabled()
