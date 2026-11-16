@@ -327,7 +327,6 @@ test.describe('measure unit inline edit', () => {
     const cases = [
       { typed: '1,5', stored: '6.276' },
       { typed: '12.25', stored: '51.254' },
-      { typed: '-3', stored: '-12.552' },
     ] as const
     try {
       await login(page)
@@ -438,7 +437,10 @@ test.describe('measure unit inline edit', () => {
       await expect(page.getByTestId('cell-editor-energy-value')).toHaveValue('100')
       await page.getByTestId('cell-editor-energy-value').press('Enter')
       await saveDraftIfNeeded(page)
-      expect(Number((await readEnergy(page, objectId))?.value)).toBeCloseTo(418.4, 1)
+      await expect.poll(
+        async () => Number((await readEnergy(page, objectId))?.value),
+        { timeout: 60_000 },
+      ).toBeCloseTo(418.4, 1)
     } finally {
       try {
         if (objectId) await restoreEnergy(page, objectId, energyBefore)

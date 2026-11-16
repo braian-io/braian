@@ -1623,10 +1623,12 @@ export function ObjectTable({
             unitLocked={measureCtx.unitLocked}
             unitOptions={measureCtx.unitOptions}
             invalid={editingMeasureError != null}
-            onValueTextChange={(valueText) => syncMeasureDraft({ ...measureDraft, valueText })}
+            onValueTextChange={(valueText) =>
+              syncMeasureDraft({ ...(editingMeasureRef.current ?? measureDraft), valueText })
+            }
             onUnitChange={(unit) => {
               skipBlurCommitRef.current = true
-              syncMeasureDraft({ ...measureDraft, unit })
+              syncMeasureDraft({ ...(editingMeasureRef.current ?? measureDraft), unit })
             }}
             onUnitSelectorOpen={() => {
               skipBlurCommitRef.current = true
