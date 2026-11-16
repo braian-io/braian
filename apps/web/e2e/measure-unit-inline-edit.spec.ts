@@ -60,21 +60,23 @@ async function cheddarObjectId(page: Page) {
 }
 
 async function readEnergy(page: Page, objectId: string): Promise<MeasureValue | undefined> {
-  const response = await page.request.get(`/v1/objects/${objectId}`)
+  const response = await page.request.get(`/v1/objects/${objectId}`, { timeout: apiTimeout })
   expect(response.ok(), await response.text()).toBeTruthy()
   const body = (await response.json()) as { values?: { energy?: MeasureValue } }
   return body.values?.energy
 }
 
+const apiTimeout = 15_000
+
 async function restoreProductsColumnPrefs(page: Page) {
-  const listed = await page.request.get('/v1/workspaces')
+  const listed = await page.request.get('/v1/workspaces', { timeout: apiTimeout })
   if (!listed.ok()) throw new Error(`workspaces: HTTP ${listed.status()}`)
   const { workspaces } = (await listed.json()) as {
     workspaces: Array<{ id: string; name: string }>
   }
   const products = workspaces.find((item) => item.name === 'Products')
   if (!products) throw new Error('missing workspace Products')
-  const workspace = await page.request.get(`/v1/workspaces/${products.id}`)
+  const workspace = await page.request.get(`/v1/workspaces/${products.id}`, { timeout: apiTimeout })
   if (!workspace.ok()) throw new Error(`workspace: HTTP ${workspace.status()}`)
   const { views } = (await workspace.json()) as {
     views: Array<{
@@ -98,6 +100,7 @@ async function restoreProductsColumnPrefs(page: Page) {
   const seeded = await page.request.put(
     `/v1/views/${table.id}/column-prefs?environment=default`,
     {
+      timeout: apiTimeout,
       data: {
         environment: 'default',
         document: {
@@ -117,11 +120,12 @@ async function restoreProductsColumnPrefs(page: Page) {
 
 async function restoreEnergy(page: Page, objectId: string, snapshot: MeasureValue | undefined) {
   if (!snapshot) return
-  const current = await page.request.get(`/v1/objects/${objectId}`)
+  const current = await page.request.get(`/v1/objects/${objectId}`, { timeout: apiTimeout })
   if (!current.ok()) return
   const version = (await current.json()) as { version?: number }
   await page.request.patch(`/v1/objects/${objectId}`, {
     headers: { 'If-Match': String(version.version ?? 0) },
+    timeout: apiTimeout,
     data: { values: { energy: snapshot } },
   })
 }
@@ -137,12 +141,12 @@ async function addEnergyKcalColumn(page: Page) {
 }
 
 async function addBareEnergyColumn(page: Page) {
-  const listed = await page.request.get('/v1/workspaces')
+  const listed = await page.request.get('/v1/workspaces', { timeout: apiTimeout })
   if (!listed.ok()) throw new Error(`workspaces: HTTP ${listed.status()}`)
   const { workspaces } = (await listed.json()) as { workspaces: Array<{ id: string; name: string }> }
   const products = workspaces.find((item) => item.name === 'Products')
   if (!products) throw new Error('missing workspace Products')
-  const workspace = await page.request.get(`/v1/workspaces/${products.id}`)
+  const workspace = await page.request.get(`/v1/workspaces/${products.id}`, { timeout: apiTimeout })
   if (!workspace.ok()) throw new Error(`workspace: HTTP ${workspace.status()}`)
   const { views } = (await workspace.json()) as {
     views: Array<{ id: string; type: string; title?: string; state?: { object_type?: string } }>
@@ -156,6 +160,7 @@ async function addBareEnergyColumn(page: Page) {
     ) ?? views.find((view) => view.type === 'object_table' || view.type === 'table')
   if (!table) throw new Error('missing Products object table')
   const seeded = await page.request.put(`/v1/views/${table.id}/column-prefs?environment=default`, {
+    timeout: apiTimeout,
     data: {
       environment: 'default',
       document: {
@@ -173,10 +178,17 @@ async function addBareEnergyColumn(page: Page) {
   await openProducts(page)
 }
 
-async function typeMeasureSequentially(input: ReturnType<Page['locator']>, text: string) {
+async function replaceMeasureInput(
+  input: ReturnType<Page['locator']>,
+  text: string,
+) {
   await expect(input).toBeVisible()
-  await input.click()
-  await input.pressSequentially(text, { delay: 50 })
+  await input.focus()
+  await input.evaluate((element) => {
+    const field = element as HTMLInputElement
+    field.setSelectionRange(0, field.value.length)
+  })
+  await input.pressSequentially(text, { delay: 0 })
   await expect(input).toHaveValue(text)
 }
 
@@ -270,8 +282,7 @@ test.describe('measure unit inline edit', () => {
       await cell.dblclick()
       const cancelInput = editor()
       await expect(cancelInput).toBeVisible()
-      await cancelInput.selectText()
-      await typeMeasureSequentially(cancelInput, '1,5')
+      await replaceMeasureInput(cancelInput, '1,5')
       await page.keyboard.press('Escape')
       await expect(cancelInput).toHaveCount(0)
       expect(patches).toHaveLength(0)
@@ -280,8 +291,7 @@ test.describe('measure unit inline edit', () => {
       await focusMainTable(page)
       await cell.dblclick()
       const tabInput = editor()
-      await tabInput.selectText()
-      await typeMeasureSequentially(tabInput, '1,5')
+      await replaceMeasureInput(tabInput, '1,5')
       await tabInput.press('Tab')
       await expect(tabInput).toHaveCount(0, { timeout: 30_000 })
       await saveDraftIfNeeded(page)
@@ -310,44 +320,44 @@ test.describe('measure unit inline edit', () => {
     }
   })
 
-  for (const { typed, stored } of [
-    { typed: '1,5', stored: '6.276' },
-    { typed: '12.25', stored: '51.254' },
-    { typed: '-3', stored: '-12.552' },
-  ] as const) {
-    test(`K1 grid pressSequentially ${typed}`, async ({ page }) => {
-      test.setTimeout(120_000)
-      let objectId = ''
-      let energyBefore: MeasureValue | undefined
-      try {
-        await login(page)
-        await openProducts(page)
-        await addEnergyKcalColumn(page)
-        objectId = await cheddarObjectId(page)
-        energyBefore = await readEnergy(page, objectId)
-        const cell = cheddarRow(page).locator('[data-column*="energy"]').first()
+  test('K1 grid pressSequentially comma, dot, and negative values', async ({ page }) => {
+    test.setTimeout(180_000)
+    let objectId = ''
+    let energyBefore: MeasureValue | undefined
+    const cases = [
+      { typed: '1,5', stored: '6.276' },
+      { typed: '12.25', stored: '51.254' },
+      { typed: '-3', stored: '-12.552' },
+    ] as const
+    try {
+      await login(page)
+      await openProducts(page)
+      await addEnergyKcalColumn(page)
+      objectId = await cheddarObjectId(page)
+      energyBefore = await readEnergy(page, objectId)
+      const cell = cheddarRow(page).locator('[data-column*="energy"]').first()
+      for (const { typed, stored } of cases) {
         await focusMainTable(page)
         await cell.dblclick()
         const valueInput = page.locator('[data-testid^="cell-editor-energy"][data-testid$="-value"]').first()
-        await valueInput.selectText()
-        await typeMeasureSequentially(valueInput, typed)
+        await replaceMeasureInput(valueInput, typed)
         await valueInput.press('Enter')
         await saveDraftIfNeeded(page)
         await expect.poll(async () => (await readEnergy(page, objectId))?.value, { timeout: 60_000 }).toBe(stored)
-      } finally {
-        try {
-          if (objectId) await restoreEnergy(page, objectId, energyBefore)
-        } catch (error) {
-          console.error('energy cleanup failed:', error)
-        }
-        try {
-          await restoreProductsColumnPrefs(page)
-        } catch (error) {
-          console.error('column prefs cleanup failed:', error)
-        }
       }
-    })
-  }
+    } finally {
+      try {
+        if (objectId) await restoreEnergy(page, objectId, energyBefore)
+      } catch (error) {
+        console.error('energy cleanup failed:', error)
+      }
+      try {
+        await restoreProductsColumnPrefs(page)
+      } catch (error) {
+        console.error('column prefs cleanup failed:', error)
+      }
+    }
+  })
 
   test('detail 2000 kJ shows without grouping and unchanged grid edit keeps stored value', async ({ page }) => {
     test.setTimeout(120_000)
@@ -358,10 +368,11 @@ test.describe('measure unit inline edit', () => {
       await openProducts(page)
       objectId = await cheddarObjectId(page)
       energyBefore = await readEnergy(page, objectId)
-      const current = await page.request.get(`/v1/objects/${objectId}`)
+      const current = await page.request.get(`/v1/objects/${objectId}`, { timeout: apiTimeout })
       const version = (await current.json()) as { version?: number }
       await page.request.patch(`/v1/objects/${objectId}`, {
         headers: { 'If-Match': String(version.version ?? 0) },
+        timeout: apiTimeout,
         data: { values: { energy: { value: '2000', unit: 'kJ' } } },
       })
 
@@ -418,8 +429,7 @@ test.describe('measure unit inline edit', () => {
       const valueInput = page.getByTestId('cell-editor-energy-value')
       const unitTrigger = page.getByTestId('cell-editor-energy-unit')
       await expect(valueInput).toBeVisible({ timeout: 30_000 })
-      await valueInput.selectText()
-      await typeMeasureSequentially(valueInput, '100')
+      await replaceMeasureInput(valueInput, '100')
       await unitTrigger.click()
       await expect(valueInput).toBeVisible()
       await page.getByRole('option', { name: 'kcal' }).click()
@@ -460,14 +470,12 @@ test.describe('measure unit inline edit', () => {
       const valueInput = energyField.getByTestId('detail-measure-value')
       await expect(valueInput).toBeVisible()
       for (const typed of ['1,5', '12.25', '-3'] as const) {
-        await valueInput.selectText()
-        await typeMeasureSequentially(valueInput, typed)
+        await replaceMeasureInput(valueInput, typed)
         await valueInput.blur()
         const expected = typed.includes(',') ? typed.replace(',', '.') : typed
         await expect(valueInput).toHaveValue(expected)
       }
-      await valueInput.selectText()
-      await typeMeasureSequentially(valueInput, '2000')
+      await replaceMeasureInput(valueInput, '2000')
       const unitTrigger = energyField.locator('.unit-suffix')
       await unitTrigger.click()
       await page.getByRole('option', { name: 'kJ' }).click()
