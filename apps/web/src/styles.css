@@ -498,6 +498,10 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
   bottom: 0;
   margin: 0;
 }
+/* Pixel gutter before the agent pane without shrinking the catalog scale (K1). */
+.dock-root > .split.horizontal.split-agent-dock > .split-cell:last-child {
+  transform: translateX(18px);
+}
 .dock-root .split.horizontal.split-catalog-frozen {
   display: block;
   position: relative;

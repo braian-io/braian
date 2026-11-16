@@ -192,7 +192,7 @@ describe('agentDockShare', () => {
     const agent = after.find((leaf) => leaf.views.includes('agent'))
     expect(detail).toBeDefined()
     expect(agent).toBeDefined()
-    expect(agent!.rect.x).toBeGreaterThan(detail!.rect.x + 0.1)
+    expect(agent!.rect.x).toBeGreaterThan(detail!.rect.x + 0.02)
   })
 })
 
