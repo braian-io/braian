@@ -942,6 +942,13 @@ button.agent-bg-indicator strong { font-variant-numeric: tabular-nums; }
 .pane-body > .table-wrap,
 .pane-body > .graph-wrap,
 .pane-body > .detail-form { overflow: hidden; }
+.pane-body:has(> .table-wrap[data-testid='agents-table']) {
+  overflow: auto;
+}
+.pane-body > .table-wrap[data-testid='agents-table'] {
+  overflow-x: visible;
+  overflow-y: visible;
+}
 .dock-preview {
   position: absolute;
   z-index: 4;
