@@ -212,7 +212,7 @@ test('waiting survives reload and the agent area stays status and navigation onl
   const view = agentView(page, title)
   await expect(view.getByTestId('agent-status')).toHaveAttribute('data-status', 'waiting', { timeout: 30_000 })
   await expect(view.getByTestId('agent-status')).toHaveText('Waiting for you')
-  await expect(view.getByTestId('agent-question')).toHaveCount(0)
+  await expect(view.getByTestId('agent-question')).toBeVisible()
   await view.getByTestId('agent-mode').click()
   await expect(view).toHaveAttribute('data-mode', 'background')
   const waitingToast = page.locator('[data-sonner-toast]').filter({ hasText: 'waiting for you' })
@@ -225,7 +225,7 @@ test('waiting survives reload and the agent area stays status and navigation onl
   await agentTab(page, title).click()
   const restored = agentView(page, title)
   await expect(restored.getByTestId('agent-status')).toHaveText('Waiting for you')
-  await expect(restored.getByTestId('agent-question')).toHaveCount(0)
+  await expect(restored.getByTestId('agent-question')).toBeVisible()
   await expect(restored).toHaveAttribute('data-mode', 'background')
   await expect(restored.getByRole('button', { name: 'Bring to front' })).toHaveCount(0)
   const runId = await restored.getAttribute('data-run')
@@ -241,7 +241,7 @@ test('waiting survives reload and the agent area stays status and navigation onl
   await closeAgentTab(page, title)
   await answer.click()
   await expect(agentTab(page, title)).toBeVisible()
-  await expect(agentView(page, title).getByTestId('agent-question')).toHaveCount(0)
+  await expect(agentView(page, title).getByTestId('agent-question')).toBeVisible()
   await expect(agentView(page, title)).toHaveAttribute('data-mode', 'foreground')
   await expect(agentView(page, title).getByTestId('agent-follow-up')).toBeVisible()
   await expect(agentView(page, title).getByTestId('agent-result-link').first()).toBeVisible()
@@ -252,7 +252,7 @@ test('waiting survives reload and the agent area stays status and navigation onl
   await showProducts(page)
   await agentTab(page, title).click()
   await expect(agentView(page, title).getByTestId('agent-status')).toHaveAttribute('data-status', 'waiting')
-  await expect(agentView(page, title).getByTestId('agent-question')).toHaveCount(0)
+  await expect(agentView(page, title).getByTestId('agent-question')).toBeVisible()
 })
 
 test('Ctrl+K lists agents and Enter opens the tab', async ({ page }) => {
@@ -290,7 +290,7 @@ test('Ctrl+K lists agents and Enter opens the tab', async ({ page }) => {
   await page.keyboard.press('Enter')
   await expect(palette).toHaveCount(0)
   await expect(agentTab(page, title)).toBeVisible()
-  await expect(agentView(page, title).getByTestId('agent-question')).toHaveCount(0)
+  await expect(agentView(page, title).getByTestId('agent-question')).toBeVisible()
 })
 
 test('a long active tab keeps its start visible in a crowded strip', async ({ page }) => {
@@ -306,7 +306,7 @@ test('a long active tab keeps its start visible in a crowded strip', async ({ pa
     await ask(page, title)
     await expect(page.getByTestId('command-palette')).toHaveCount(0)
     await expect(tabFor(title.slice(0, 24))).toBeAttached()
-    await expect(page.getByTestId('agent-result-link').last()).toBeVisible()
+    await expect(agentView(page, title).getByTestId('agent-follow-up')).toBeVisible()
   }
   const active = titles[2].slice(0, 24)
   await tabFor(active).click({ force: true })

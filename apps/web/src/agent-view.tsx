@@ -170,27 +170,12 @@ function chatLines(data: AgentRunDetail): Array<{ key: string; kind: string; nod
       const unavailable = /no model is connected|openai_api_key/i.test(raw)
       const text = unavailable ? copy.agentUnavailableHint : agentDisplayText(raw)
       if (!text) continue
-      const linked = data.proposals.find((proposal) => {
-        const status = proposal.status.toLowerCase()
-        return status === 'open' || status === 'pending'
-      })
       lines.push({
         key: message.id,
         kind: message.kind,
         node: (
           <div className="agent-chat-assistant" data-testid={message.kind === 'assistant' ? 'agent-answer' : 'agent-error-line'}>
             <p className="agent-line">{text}</p>
-            {linked && message === data.messages.filter((item) => item.kind === 'assistant').at(-1) ? (
-              <Button
-                type="button"
-                variant="ghost"
-                className="agent-result-link"
-                data-testid="agent-result-link"
-                onClick={() => openDraft(linked)}
-              >
-                {linked.object_key || copy.openDraftInTable}
-              </Button>
-            ) : null}
           </div>
         ),
       })

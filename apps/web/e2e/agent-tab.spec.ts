@@ -127,7 +127,7 @@ test('a user edit marks the agent proposal stale', async ({ page }) => {
   const title = 'propose a new name'
   await ask(page, title)
   const view = agentView(page, title)
-  await expect(view.getByTestId('agent-result-link')).toBeVisible({ timeout: 30_000 })
+  await expect(view.getByTestId('agent-result-link').first()).toBeVisible({ timeout: 30_000 })
   await expect(view.getByTestId('agent-proposal')).toHaveCount(0)
   await page.locator('.pane-tab[data-view-type="object_table"]').first().click()
   const edited = `${original} edited`
@@ -171,7 +171,7 @@ test('the proposal card shows the object and the field diff', async ({ page }) =
   await ask(page, title)
   const view = agentView(page, title)
   await expect(view.getByTestId('agent-proposal')).toHaveCount(0)
-  await expect(view.getByTestId('agent-result-link')).toBeVisible({ timeout: 30_000 })
+  await expect(view.getByTestId('agent-result-link').first()).toBeVisible({ timeout: 30_000 })
   await view.getByTestId('agent-result-link').first().click()
   const diff = row.locator('[data-column="name"]').getByTestId('cell-diff')
   await expect(diff).toContainText(original, { timeout: 30_000 })
@@ -187,7 +187,7 @@ test('approving toasts the change, records who approved it, and undo restores th
   const title = 'propose a new name for approve'
   await ask(page, title)
   const view = agentView(page, title)
-  await expect(view.getByTestId('agent-result-link')).toBeVisible({ timeout: 30_000 })
+  await expect(view.getByTestId('agent-result-link').first()).toBeVisible({ timeout: 30_000 })
   await view.getByTestId('agent-result-link').first().click()
   await expect(row.locator('[data-column="name"]').getByTestId('cell-diff')).toContainText('Agent draft', { timeout: 30_000 })
   await page.getByTestId('review-and-save').first().click()
@@ -203,7 +203,7 @@ test('undo after a later edit does not overwrite the name', async ({ page }) => 
   const title = 'propose a new name before a later edit'
   await ask(page, title)
   const view = agentView(page, title)
-  await expect(view.getByTestId('agent-result-link')).toBeVisible({ timeout: 30_000 })
+  await expect(view.getByTestId('agent-result-link').first()).toBeVisible({ timeout: 30_000 })
   await view.getByTestId('agent-result-link').first().click()
   await page.getByTestId('review-and-save').first().click()
   await page.locator('.pane-tab[data-view-type="object_table"]').first().click()
@@ -230,7 +230,7 @@ test('rejecting toasts the field and leaves the name unchanged', async ({ page }
   const title = 'propose a new name for reject'
   await ask(page, title)
   const view = agentView(page, title)
-  await expect(view.getByTestId('agent-result-link')).toBeVisible({ timeout: 30_000 })
+  await expect(view.getByTestId('agent-result-link').first()).toBeVisible({ timeout: 30_000 })
   await view.getByTestId('agent-result-link').first().click()
   await expect(row.locator('[data-column="name"]').getByTestId('cell-diff')).toContainText('Agent draft', { timeout: 30_000 })
   await page.getByTestId('discard-draft').first().click()
@@ -389,7 +389,7 @@ test('screenshots of the agent tab in dark and light', async ({ page }) => {
   await page.screenshot({ path: `${dir}/agent-skeleton-light.png`, fullPage: true })
   releaseSkeleton()
   const view = agentView(page, 'propose a new name for the selected product')
-  await expect(view.getByTestId('agent-result-link')).toBeVisible({ timeout: 30_000 })
+  await expect(view.getByTestId('agent-result-link').first()).toBeVisible({ timeout: 30_000 })
   await view.getByTestId('agent-result-link').first().click()
   await expect(row.locator('[data-column="name"]').getByTestId('cell-diff')).toContainText('Agent draft', { timeout: 30_000 })
   await setTheme(page, 'dark')
@@ -406,7 +406,7 @@ test('screenshots of the agent tab in dark and light', async ({ page }) => {
   const staleTitle = 'propose a new name after the edit'
   await ask(page, staleTitle)
   const stale = agentView(page, staleTitle)
-  await expect(stale.getByTestId('agent-result-link')).toBeVisible({ timeout: 30_000 })
+  await expect(stale.getByTestId('agent-result-link').first()).toBeVisible({ timeout: 30_000 })
   await page.locator('.pane-tab[data-view-type="object_table"]').first().click()
   const nameCell = row.locator('[data-column="name"]').first()
   await nameCell.dblclick()
