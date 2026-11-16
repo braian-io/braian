@@ -267,10 +267,11 @@ test.describe('measure unit inline edit', () => {
       const valueInput = energyField.getByTestId('detail-measure-value')
       await expect(valueInput).toBeVisible()
       await valueInput.fill('2000')
+      const numberBeforeUnitChange = await valueInput.inputValue()
       const unitTrigger = energyField.locator('.unit-suffix')
       await unitTrigger.click()
       await page.getByRole('option', { name: 'kJ' }).click()
-      await expect(valueInput).toHaveValue('2000')
+      await expect(valueInput).toHaveValue(numberBeforeUnitChange)
       await valueInput.press('Tab')
 
       const save = page.getByTestId('review-and-save')
