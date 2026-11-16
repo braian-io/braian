@@ -182,9 +182,12 @@ test.describe('measure unit inline edit', () => {
       await enterOn(page, 'fields-row-kJ')
       await page.keyboard.press('Escape')
 
-      const kjCell = cheddarRow(page).locator('[data-column*="energy"]').first()
+      const kjCell = cheddarRow(page).locator('[data-testid="path-cell-energy#unit:kJ"]')
+      await expect(kjCell).toBeVisible({ timeout: 60_000 })
+      await expect.poll(async () => ((await kjCell.textContent()) ?? '').trim(), { timeout: 60_000 }).toMatch(
+        /418\.4 kJ/,
+      )
       const kjText = ((await kjCell.textContent()) ?? '').trim()
-      expect(kjText).toMatch(/418\.4 kJ/)
       expect(kjText).not.toMatch(/418\.40000000000003/)
     } finally {
       try {
@@ -260,14 +263,15 @@ test.describe('measure unit inline edit', () => {
       objectId = await cheddarObjectId(page)
       energyBefore = await readEnergy(page, objectId)
 
-      const valueInput = page.getByTestId('detail-measure-value')
+      const energyField = page.getByTestId('detail-measure-field-energy')
+      const valueInput = energyField.getByTestId('detail-measure-value')
       await expect(valueInput).toBeVisible()
       await valueInput.fill('2000')
-      const unitTrigger = page.locator('[data-testid="detail-measure-field"] .unit-suffix').first()
+      const unitTrigger = energyField.locator('.unit-suffix')
       await unitTrigger.click()
       await page.getByRole('option', { name: 'kJ' }).click()
       await expect(valueInput).toHaveValue('2000')
-      await page.getByTestId('detail-measure-value').press('Tab')
+      await valueInput.press('Tab')
 
       const save = page.getByTestId('review-and-save')
       if (await save.isVisible()) {

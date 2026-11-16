@@ -3118,6 +3118,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
         <label>{fieldLabel}{owner ? ` · ${copy.ownedBy} ${owner}` : ''}</label>
         <div className={controlClass}>
           <Editor
+            fieldKey={key}
             kind={String(kind.type ?? 'text')}
             form={String(kind.form ?? '')}
             multiple={Boolean(attribute?.multiple)}
@@ -3308,10 +3309,12 @@ function modelLanguages(defs: Json | undefined): string[] {
 }
 
 function NumberMeasureField({
+  fieldKey,
   value,
   units,
   onChange,
 }: {
+  fieldKey: string
   value: unknown
   units: string[]
   onChange: (value: unknown) => void
@@ -3322,7 +3325,7 @@ function NumberMeasureField({
     ? formatMeasureNumber(record.value)
     : textValue(record.value)
   return (
-    <span className="measure" data-testid="detail-measure-field">
+    <span className="measure" data-testid={`detail-measure-field-${fieldKey}`}>
       <input
         data-field="true"
         data-testid="detail-measure-value"
@@ -3358,6 +3361,7 @@ function NumberMeasureField({
 }
 
 function Editor({
+  fieldKey,
   kind,
   form,
   value,
@@ -3369,6 +3373,7 @@ function Editor({
   onChange,
   readOnly = false,
 }: {
+  fieldKey: string
   kind: string
   form: string
   multiple: boolean
@@ -3472,7 +3477,7 @@ function Editor({
     )
   }
   if (kind === 'number') {
-    return <NumberMeasureField value={value} units={units} onChange={onChange} />
+    return <NumberMeasureField fieldKey={fieldKey} value={value} units={units} onChange={onChange} />
   }
   if (form === 'long' || (typeof value === 'string' && value.length > 80)) {
     return <AutoResizeTextarea data-field="true" value={textValue(value)} onChange={(event) => onChange(event.target.value)} />
