@@ -113,7 +113,7 @@ test.describe('demo 216/216b delete and restore', () => {
       await palette.fill(number)
       await page.getByRole('option').first().click()
       await expect(page.getByTestId('object-detail')).toBeVisible()
-      await page.getByTestId('object-detail').getByTestId('delete-object-detail').click()
+      await page.getByTestId('object-detail').getByRole('button', { name: 'Delete' }).click()
       await expect(page.getByTestId('delete-object-dialog')).toBeVisible()
       await page.keyboard.press('Escape')
 

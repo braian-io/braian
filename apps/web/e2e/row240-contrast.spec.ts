@@ -120,7 +120,7 @@ test('row 240 keeps actions, selected chips and muted labels readable', async ({
   await expectReadable(remove, 'dark Delete at rest')
   await expectReadable(chip, 'dark selected choice chip')
   await attach(testInfo, bar, 'row240-dark-save-discard')
-  await attach(testInfo, detail.locator('.detail-actions').first(), 'row240-dark-delete')
+  await attach(testInfo, remove, 'row240-dark-delete')
   await attach(testInfo, detail.locator('.choices').first(), 'row240-dark-selected-chip')
 
   await expectReadableOnHover(save, 'dark Save on hover')
