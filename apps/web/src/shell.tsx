@@ -2349,7 +2349,7 @@ function ViewBody({ view, session, workspace }: { view: View; session: Session; 
   }
   if (view.type === 'data_model') return <DataModel view={view} />
   if (view.type === 'attribute_definitions') return <AttributeDefinitions />
-  if (view.type === 'agent') return <AgentView runId={String(view.state.run_id ?? '')} push={session.push} />
+  if (view.type === 'agent') return <AgentView runId={String(view.state.run_id ?? '')} title={view.title} push={session.push} />
   if (view.type === 'agents') return <AgentsTable />
   if (view.type === 'proposal') return <ProposalView session={session} />
   if (view.type === 'proposal_list') return <ProposalListView session={session} />

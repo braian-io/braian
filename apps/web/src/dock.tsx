@@ -270,10 +270,20 @@ function SplitChild({
         ...(index === 0 ? { left: 0 } : last ? { right: 0 } : {}),
       }
     : { flex: `${flex} ${basis}` }
+  const dividerOffset = lockRatios && node.dir === 'horizontal'
+    ? node.ratios.slice(0, index).reduce((sum, ratio) => sum + ratio, 0)
+    : null
   return (
     <>
       {index > 0 ? (
-        <Divider frame={frame} dir={node.dir} index={index - 1} path={path} count={node.children.length} />
+        <Divider
+          frame={frame}
+          dir={node.dir}
+          index={index - 1}
+          path={path}
+          count={node.children.length}
+          dockedLeft={dividerOffset == null ? undefined : `calc((100% - ${gaps}px) * ${dividerOffset})`}
+        />
       ) : null}
       <div className="split-cell" style={docked}>
         <SplitNode frame={frame} node={child} path={[...path, index]} />
@@ -288,12 +298,14 @@ function Divider({
   index,
   path,
   count,
+  dockedLeft,
 }: {
   frame: Frame
   dir: 'horizontal' | 'vertical'
   index: number
   path: number[]
   count: number
+  dockedLeft?: string
 }) {
   const [active, setActive] = useState(false)
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -327,6 +339,7 @@ function Divider({
       data-active={active ? 'true' : 'false'}
       role="separator"
       aria-orientation={dir === 'horizontal' ? 'vertical' : 'horizontal'}
+      style={dockedLeft ? { position: 'absolute', left: dockedLeft, top: 0, bottom: 0, margin: 0 } : undefined}
       onPointerDown={onPointerDown}
     >
       <span />

@@ -24,6 +24,7 @@ import type { Json } from './api'
 
 type AgentViewProps = {
   runId: string
+  title: string
   push: (line: string) => void
 }
 
@@ -184,7 +185,7 @@ function chatLines(data: AgentRunDetail): Array<{ key: string; kind: string; nod
   return lines
 }
 
-export function AgentView({ runId }: AgentViewProps) {
+export function AgentView({ runId, title: viewTitle }: AgentViewProps) {
   const queryClient = useQueryClient()
   const viewingId = useSyncExternalStore(subscribeViewingAgent, viewingAgentRunId, viewingAgentRunId)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -270,25 +271,36 @@ export function AgentView({ runId }: AgentViewProps) {
     if (!log) return
     log.scrollTop = log.scrollHeight
   }, [run.data?.messages.length, run.data?.status])
+  const heading = run.data?.title ?? viewTitle
   if (run.isPending) {
     return (
-      <div className="agent-skeleton" data-testid="agent-skeleton" aria-busy="true" aria-live="polite">
-        <i />
-        <i />
-        <i />
+      <div className="agent-view" data-testid="agent-view" data-run={runId} ref={rootRef}>
+        <header className="agent-view-head">
+          <h2 title={heading}>{heading}</h2>
+        </header>
+        <div className="agent-skeleton" data-testid="agent-skeleton" aria-busy="true" aria-live="polite">
+          <i />
+          <i />
+          <i />
+        </div>
       </div>
     )
   }
   if (run.isError || !run.data) {
     const missing = run.error instanceof AgentRunError && run.error.status === 404
-    if (missing) {
-      return <p className="error" role="alert" data-testid="agent-missing">{copy.agentRunMissing}</p>
-    }
-    const message = run.error instanceof Error ? run.error.message : copy.agentRunMissing
     return (
-      <div className="agent-fetch-error" role="alert" data-testid="agent-fetch-error">
-        <p>{message}</p>
-        <Button type="button" data-testid="agent-retry" onClick={() => void run.refetch()}>{copy.agentRetry}</Button>
+      <div className="agent-view" data-testid="agent-view" data-run={runId} ref={rootRef}>
+        <header className="agent-view-head">
+          <h2 title={heading}>{heading}</h2>
+        </header>
+        {missing ? (
+          <p className="error" role="alert" data-testid="agent-missing">{copy.agentRunMissing}</p>
+        ) : (
+          <div className="agent-fetch-error" role="alert" data-testid="agent-fetch-error">
+            <p>{run.error instanceof Error ? run.error.message : copy.agentRunMissing}</p>
+            <Button type="button" data-testid="agent-retry" onClick={() => void run.refetch()}>{copy.agentRetry}</Button>
+          </div>
+        )}
       </div>
     )
   }
