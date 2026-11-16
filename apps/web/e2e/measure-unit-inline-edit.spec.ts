@@ -166,7 +166,7 @@ async function addNativeEnergyColumn(page: Page) {
           { path: 'name', visible: true },
           { path: 'brand', visible: true },
           { path: 'status', visible: true },
-          { path: 'energy', visible: true },
+          { path: 'energy', visible: true, qualifiers: [] },
         ],
       },
     },
@@ -348,11 +348,15 @@ test.describe('measure unit inline edit', () => {
     }
   })
 
-  test('K1 key-by-key typing in grid and detail (pressSequentially)', async ({ page }) => {
+  test('K1 grid key-by-key typing (pressSequentially)', async ({ page }) => {
     test.setTimeout(180_000)
     let objectId = ''
     let energyBefore: MeasureValue | undefined
-    const cases = ['1,5', '12.25', '-3'] as const
+    const cases = [
+      { typed: '1,5', stored: '6.276' },
+      { typed: '12.25', stored: '51.254' },
+      { typed: '-3', stored: '-12.552' },
+    ] as const
     try {
       await login(page)
       await openProducts(page)
@@ -361,19 +365,43 @@ test.describe('measure unit inline edit', () => {
       energyBefore = await readEnergy(page, objectId)
 
       const cell = cheddarRow(page).locator('[data-column*="energy"]').first()
-      for (const typed of cases) {
+      for (const { typed, stored } of cases) {
         await cell.dblclick()
         const valueInput = page.locator('[data-testid^="cell-editor-energy"][data-testid$="-value"]').first()
         await typeMeasureSequentially(valueInput, typed)
         await valueInput.press('Enter')
         await saveDraftIfNeeded(page)
-        await expect.poll(async () => (await readEnergy(page, objectId))?.value, { timeout: 60_000 }).toBeTruthy()
+        await expect.poll(async () => (await readEnergy(page, objectId))?.value, { timeout: 60_000 }).toBe(stored)
       }
+    } finally {
+      try {
+        if (objectId) await restoreEnergy(page, objectId, energyBefore)
+      } catch (error) {
+        console.error('energy cleanup failed:', error)
+      }
+      try {
+        await restoreProductsColumnPrefs(page)
+      } catch (error) {
+        console.error('column prefs cleanup failed:', error)
+      }
+    }
+  })
 
+  test('K1 detail key-by-key typing (pressSequentially)', async ({ page }) => {
+    test.setTimeout(120_000)
+    let objectId = ''
+    let energyBefore: MeasureValue | undefined
+  const cases = ['1,5', '12.25', '-3'] as const
+    try {
+      await login(page)
+      await openProducts(page)
       const row = cheddarRow(page)
       await row.click()
       await page.keyboard.press('Enter')
       await expect(page.getByTestId('object-detail')).toBeVisible()
+      objectId = await cheddarObjectId(page)
+      energyBefore = await readEnergy(page, objectId)
+
       const detailValue = page.getByTestId('detail-measure-field-energy').getByTestId('detail-measure-value')
       for (const typed of cases) {
         await typeMeasureSequentially(detailValue, typed)
@@ -381,6 +409,7 @@ test.describe('measure unit inline edit', () => {
         const expected = typed.includes(',') ? typed.replace(',', '.') : typed
         await expect(detailValue).toHaveValue(expected)
       }
+
       const save = page.getByTestId('object-detail').getByTestId('review-and-save')
       await expect(save).toBeVisible({ timeout: 15_000 })
       await save.click()
@@ -394,11 +423,6 @@ test.describe('measure unit inline edit', () => {
         if (objectId) await restoreEnergy(page, objectId, energyBefore)
       } catch (error) {
         console.error('energy cleanup failed:', error)
-      }
-      try {
-        await restoreProductsColumnPrefs(page)
-      } catch (error) {
-        console.error('column prefs cleanup failed:', error)
       }
     }
   })
@@ -414,7 +438,8 @@ test.describe('measure unit inline edit', () => {
       objectId = await cheddarObjectId(page)
       energyBefore = await readEnergy(page, objectId)
 
-      const cell = cheddarRow(page).locator('[data-testid="path-cell-energy"]').first()
+      const cell = cheddarRow(page).locator('[data-column="energy"]')
+      await expect(cell).toBeVisible({ timeout: 60_000 })
       await cell.dblclick()
       const valueInput = page.getByTestId('cell-editor-energy-value')
       const unitTrigger = page.getByTestId('cell-editor-energy-unit')
@@ -471,7 +496,7 @@ test.describe('measure unit inline edit', () => {
 
       await cell.dblclick()
       await typeMeasureSequentially(valueInput, '1,5')
-      await page.keyboard.press('Tab')
+      await valueInput.press('Tab')
       await saveDraftIfNeeded(page)
       await expect.poll(async () => (await readEnergy(page, objectId))?.value, { timeout: 60_000 }).not.toBe(beforeValue)
     } finally {

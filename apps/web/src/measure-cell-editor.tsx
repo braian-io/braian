@@ -44,6 +44,10 @@ export function MeasureCellEditor({
       event.preventDefault()
       onCommit()
     }
+    if (event.key === 'Tab') {
+      event.preventDefault()
+      onCommit()
+    }
     if (event.key === 'Escape') {
       event.preventDefault()
       onCancel()
