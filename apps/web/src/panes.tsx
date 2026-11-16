@@ -1625,6 +1625,16 @@ export function ObjectTable({
             invalid={editingMeasureError != null}
             onValueTextChange={(valueText) => syncMeasureDraft({ ...measureDraft, valueText })}
             onUnitChange={(unit) => syncMeasureDraft({ ...measureDraft, unit })}
+            onUnitSelectorOpen={() => {
+              skipBlurCommitRef.current = true
+            }}
+            onValueBlur={() => {
+              if (skipBlurCommitRef.current) {
+                skipBlurCommitRef.current = false
+                return
+              }
+              commitCellEdit(row, id, '')
+            }}
             onCommit={() => commitCellEdit(row, id, '')}
             onCancel={cancelCellEdit}
           />
@@ -3320,33 +3330,48 @@ function NumberMeasureField({
   onChange: (value: unknown) => void
 }) {
   const record = (value && typeof value === 'object' ? value : { value }) as Json
-  const [invalid, setInvalid] = useState(false)
-  const shown = record.value != null && record.value !== ''
+  const committedText = record.value != null && record.value !== ''
     ? formatMeasureEditNumber(record.value)
     : textValue(record.value)
+  const [draft, setDraft] = useState(committedText)
+  const [invalid, setInvalid] = useState(false)
+  const valueStamp = `${String(record.value ?? '')}\0${String(record.unit ?? '')}`
+  useEffect(() => {
+    setDraft(committedText)
+    setInvalid(false)
+  }, [valueStamp, committedText])
+
+  const commitDraft = (text: string) => {
+    const trimmed = text.trim()
+    if (!trimmed) {
+      setInvalid(true)
+      onChange({ ...record, value: '' })
+      return
+    }
+    const parsed = parseDecimalInput(text)
+    if (parsed == null) {
+      setInvalid(true)
+      return
+    }
+    setInvalid(false)
+    const stored = formatMeasureStorageNumber(parsed)
+    onChange({ ...record, value: stored })
+    setDraft(formatMeasureEditNumber(stored))
+  }
+
   return (
     <span className="measure" data-testid={`detail-measure-field-${fieldKey}`}>
       <input
         data-field="true"
         data-testid="detail-measure-value"
-        value={shown}
-        title={shown}
+        value={draft}
+        title={draft}
         aria-invalid={invalid || undefined}
         onChange={(event) => {
-          const next = event.target.value
-          if (!next.trim()) {
-            setInvalid(true)
-            onChange({ ...record, value: '' })
-            return
-          }
-          const parsed = parseDecimalInput(next)
-          if (parsed == null) {
-            setInvalid(true)
-            return
-          }
           setInvalid(false)
-          onChange({ ...record, value: formatMeasureStorageNumber(parsed) })
+          setDraft(event.target.value)
         }}
+        onBlur={() => commitDraft(draft)}
       />
       <UnitSuffix
         units={units}

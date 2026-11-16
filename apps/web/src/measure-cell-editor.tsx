@@ -1,4 +1,4 @@
-import type { KeyboardEvent } from 'react'
+import type { FocusEvent, KeyboardEvent, MouseEvent } from 'react'
 import { copy } from './i18n'
 import { formatUnitCode } from './format'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select'
@@ -14,6 +14,10 @@ export type MeasureCellEditorProps = {
   onUnitChange: (unit: string) => void
   onCommit: () => void
   onCancel: () => void
+  /** Commit or cancel after focus leaves the editor (blur / Tab). */
+  onValueBlur?: () => void
+  /** Fires when the unit dropdown opens so the parent can ignore the value input blur. */
+  onUnitSelectorOpen?: () => void
 }
 
 export function MeasureCellEditor({
@@ -27,6 +31,8 @@ export function MeasureCellEditor({
   onUnitChange,
   onCommit,
   onCancel,
+  onValueBlur,
+  onUnitSelectorOpen,
 }: MeasureCellEditorProps) {
   const handleKeyDown = (event: KeyboardEvent) => {
     event.stopPropagation()
@@ -44,12 +50,31 @@ export function MeasureCellEditor({
     }
   }
 
+  const blockInputBlur = (event: MouseEvent) => {
+    event.preventDefault()
+  }
+
+  const handleEditorBlurCapture = (event: FocusEvent<HTMLSpanElement>) => {
+    const root = event.currentTarget
+    const next = event.relatedTarget
+    if (next instanceof Node && root.contains(next)) return
+    window.setTimeout(() => {
+      const active = document.activeElement
+      if (active instanceof Element) {
+        if (root.contains(active)) return
+        if (active.closest('.select-content') || active.closest('[data-radix-select-content]')) return
+      }
+      onValueBlur?.()
+    }, 0)
+  }
+
   return (
     <span
       className="measure cell-measure-editor"
       data-testid={`cell-editor-${columnId}`}
       onClick={(event) => event.stopPropagation()}
       onKeyDown={handleKeyDown}
+      onBlurCapture={handleEditorBlurCapture}
     >
       <input
         className={invalid ? 'cell-editor cell-editor-invalid' : 'cell-editor'}
@@ -59,18 +84,24 @@ export function MeasureCellEditor({
         aria-invalid={invalid || undefined}
         aria-label={copy.number}
         onChange={(event) => onValueTextChange(event.target.value)}
-        onBlur={() => onCommit()}
       />
       {unitLocked || unitOptions.length <= 1 ? (
         <span className="meta-chip cell-editor-unit" data-testid={`cell-editor-${columnId}-unit`}>
           {formatUnitCode(unit)}
         </span>
       ) : (
-        <Select value={unit || unitOptions[0]} onValueChange={onUnitChange}>
+        <Select
+          value={unit || unitOptions[0]}
+          onValueChange={onUnitChange}
+          onOpenChange={(open) => {
+            if (open) onUnitSelectorOpen?.()
+          }}
+        >
           <SelectTrigger
             className="unit-suffix cell-editor-unit-trigger"
             data-testid={`cell-editor-${columnId}-unit`}
             aria-label={copy.unit}
+            onPointerDown={blockInputBlur}
           >
             <SelectValue />
           </SelectTrigger>

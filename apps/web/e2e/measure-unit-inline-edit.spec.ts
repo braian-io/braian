@@ -136,6 +136,53 @@ async function addEnergyKcalColumn(page: Page) {
   await expect(page.getByTestId('fields-mode')).toHaveCount(0)
 }
 
+async function addNativeEnergyColumn(page: Page) {
+  const listed = await page.request.get('/v1/workspaces')
+  if (!listed.ok()) throw new Error(`workspaces: HTTP ${listed.status()}`)
+  const { workspaces } = (await listed.json()) as { workspaces: Array<{ id: string; name: string }> }
+  const products = workspaces.find((item) => item.name === 'Products')
+  if (!products) throw new Error('missing workspace Products')
+  const workspace = await page.request.get(`/v1/workspaces/${products.id}`)
+  if (!workspace.ok()) throw new Error(`workspace: HTTP ${workspace.status()}`)
+  const { views } = (await workspace.json()) as {
+    views: Array<{ id: string; type: string; title?: string; state?: { object_type?: string } }>
+  }
+  const productTypeId = '018f0000-0000-7000-8000-000000000200'
+  const isTable = (view: { type: string }) => view.type === 'object_table' || view.type === 'table'
+  const table =
+    views.find(
+      (view) =>
+        isTable(view)
+        && (view.state?.object_type === productTypeId || view.title === 'Products'),
+    ) ?? views.find(isTable)
+  if (!table) throw new Error('missing Products object table')
+  const seeded = await page.request.put(`/v1/views/${table.id}/column-prefs?environment=default`, {
+    data: {
+      environment: 'default',
+      document: {
+        version: 2,
+        columns: [
+          { path: 'number', visible: true },
+          { path: 'name', visible: true },
+          { path: 'brand', visible: true },
+          { path: 'status', visible: true },
+          { path: 'energy', visible: true },
+        ],
+      },
+    },
+  })
+  if (!seeded.ok()) throw new Error(`column prefs seed energy: HTTP ${seeded.status()}`)
+  await page.reload()
+  await openProducts(page)
+}
+
+async function typeMeasureSequentially(input: ReturnType<Page['locator']>, text: string) {
+  await input.click()
+  await input.fill('')
+  await input.pressSequentially(text, { delay: 40 })
+  await expect(input).toHaveValue(text)
+}
+
 async function saveDraftIfNeeded(page: Page) {
   const save = mainTable(page).getByTestId('review-and-save')
   if (await save.isVisible()) {
@@ -287,6 +334,146 @@ test.describe('measure unit inline edit', () => {
       await expect(valueInput).toHaveValue('2000')
       await valueInput.press('Enter')
       expect(await readEnergy(page, objectId)).toEqual({ value: '2000', unit: 'kJ' })
+    } finally {
+      try {
+        if (objectId) await restoreEnergy(page, objectId, energyBefore)
+      } catch (error) {
+        console.error('energy cleanup failed:', error)
+      }
+      try {
+        await restoreProductsColumnPrefs(page)
+      } catch (error) {
+        console.error('column prefs cleanup failed:', error)
+      }
+    }
+  })
+
+  test('K1 key-by-key typing in grid and detail (pressSequentially)', async ({ page }) => {
+    test.setTimeout(180_000)
+    let objectId = ''
+    let energyBefore: MeasureValue | undefined
+    const cases = ['1,5', '12.25', '-3'] as const
+    try {
+      await login(page)
+      await openProducts(page)
+      await addEnergyKcalColumn(page)
+      objectId = await cheddarObjectId(page)
+      energyBefore = await readEnergy(page, objectId)
+
+      const cell = cheddarRow(page).locator('[data-column*="energy"]').first()
+      for (const typed of cases) {
+        await cell.dblclick()
+        const valueInput = page.locator('[data-testid^="cell-editor-energy"][data-testid$="-value"]').first()
+        await typeMeasureSequentially(valueInput, typed)
+        await valueInput.press('Enter')
+        await saveDraftIfNeeded(page)
+        await expect.poll(async () => (await readEnergy(page, objectId))?.value, { timeout: 60_000 }).toBeTruthy()
+      }
+
+      const row = cheddarRow(page)
+      await row.click()
+      await page.keyboard.press('Enter')
+      await expect(page.getByTestId('object-detail')).toBeVisible()
+      const detailValue = page.getByTestId('detail-measure-field-energy').getByTestId('detail-measure-value')
+      for (const typed of cases) {
+        await typeMeasureSequentially(detailValue, typed)
+        await detailValue.blur()
+        const expected = typed.includes(',') ? typed.replace(',', '.') : typed
+        await expect(detailValue).toHaveValue(expected)
+      }
+      const save = page.getByTestId('object-detail').getByTestId('review-and-save')
+      await expect(save).toBeVisible({ timeout: 15_000 })
+      await save.click()
+      const dialog = page.getByTestId('review-dialog')
+      if (await dialog.isVisible()) {
+        await dialog.getByTestId('confirm-review').click()
+      }
+      await expect.poll(async () => (await readEnergy(page, objectId))?.value, { timeout: 60_000 }).toBe('-3')
+    } finally {
+      try {
+        if (objectId) await restoreEnergy(page, objectId, energyBefore)
+      } catch (error) {
+        console.error('energy cleanup failed:', error)
+      }
+      try {
+        await restoreProductsColumnPrefs(page)
+      } catch (error) {
+        console.error('column prefs cleanup failed:', error)
+      }
+    }
+  })
+
+  test('K4 native unit column: unit selector does not commit before choice', async ({ page }) => {
+    test.setTimeout(180_000)
+    let objectId = ''
+    let energyBefore: MeasureValue | undefined
+    try {
+      await login(page)
+      await openProducts(page)
+      await addNativeEnergyColumn(page)
+      objectId = await cheddarObjectId(page)
+      energyBefore = await readEnergy(page, objectId)
+
+      const cell = cheddarRow(page).locator('[data-testid="path-cell-energy"]').first()
+      await cell.dblclick()
+      const valueInput = page.getByTestId('cell-editor-energy-value')
+      const unitTrigger = page.getByTestId('cell-editor-energy-unit')
+      await expect(valueInput).toBeVisible()
+      await typeMeasureSequentially(valueInput, '100')
+      await unitTrigger.click()
+      await expect(valueInput).toBeVisible()
+      await page.getByRole('option', { name: 'kcal' }).click()
+      await expect(valueInput).toBeVisible()
+      await valueInput.press('Enter')
+      await saveDraftIfNeeded(page)
+      await expect.poll(async () => (await readEnergy(page, objectId))?.unit, { timeout: 60_000 }).toBe('kJ')
+      const energy = await readEnergy(page, objectId)
+      expect(Number(energy?.value)).toBeCloseTo(418.4, 1)
+    } finally {
+      try {
+        if (objectId) await restoreEnergy(page, objectId, energyBefore)
+      } catch (error) {
+        console.error('energy cleanup failed:', error)
+      }
+      try {
+        await restoreProductsColumnPrefs(page)
+      } catch (error) {
+        console.error('column prefs cleanup failed:', error)
+      }
+    }
+  })
+
+  test('Escape cancels grid edit without PATCH; Tab commits', async ({ page }) => {
+    test.setTimeout(120_000)
+    let objectId = ''
+    let energyBefore: MeasureValue | undefined
+    const patches: string[] = []
+    try {
+      await page.route('**/v1/objects/*', async (route) => {
+        if (route.request().method() === 'PATCH') patches.push(route.request().postData() ?? '')
+        await route.continue()
+      })
+      await login(page)
+      await openProducts(page)
+      await addEnergyKcalColumn(page)
+      objectId = await cheddarObjectId(page)
+      energyBefore = await readEnergy(page, objectId)
+      const beforeValue = energyBefore?.value
+
+      const cell = cheddarRow(page).locator('[data-column*="energy"]').first()
+      await cell.dblclick()
+      const valueInput = page.locator('[data-testid^="cell-editor-energy"][data-testid$="-value"]').first()
+      await typeMeasureSequentially(valueInput, '1,5')
+      await page.keyboard.press('Escape')
+      await expect(valueInput).toHaveCount(0)
+      expect(patches).toHaveLength(0)
+      expect((await readEnergy(page, objectId))?.value).toBe(beforeValue)
+
+      await cell.dblclick()
+      await typeMeasureSequentially(valueInput, '1,5')
+      await page.keyboard.press('Tab')
+      await saveDraftIfNeeded(page)
+      await expect.poll(async () => (await readEnergy(page, objectId))?.value, { timeout: 60_000 }).not.toBe(beforeValue)
     } finally {
       try {
         if (objectId) await restoreEnergy(page, objectId, energyBefore)
