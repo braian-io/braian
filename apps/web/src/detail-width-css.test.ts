@@ -26,6 +26,9 @@ describe('Detail width layout (row 239)', () => {
     expect(css).toMatch(
       /\.dock-root > \.split\.horizontal\.split-agent-dock\s*\{[^}]*position:\s*relative/,
     )
+    expect(css).toMatch(
+      /\.dock-root > \.split\.horizontal\.split-agent-dock > \.split-cell:first-child > \.split,\s*\.dock-root > \.split\.horizontal\.split-agent-dock > \.split-cell:first-child > \.pane\s*\{[^}]*width:\s*var\(--agent-dock-catalog-scale/,
+    )
   })
 
   it('does not floor a table beside a direct Detail pane', () => {
