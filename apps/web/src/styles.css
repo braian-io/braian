@@ -471,8 +471,8 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
 .dock-root > .split.horizontal.split-agent-dock > .split-cell:first-child {
   overflow: hidden;
 }
-.dock-root > .split.horizontal.split-agent-dock > .split-cell:first-child > .split,
-.dock-root > .split.horizontal.split-agent-dock > .split-cell:first-child > .pane {
+.dock-root > .split.horizontal.split-agent-dock .split.split-catalog-frozen,
+.dock-root > .split.horizontal.split-agent-dock .split[data-catalog-frozen='true'] {
   width: var(--agent-dock-catalog-scale, 100%);
   min-width: var(--agent-dock-catalog-scale, 100%);
 }
