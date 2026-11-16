@@ -27,7 +27,7 @@ describe('Detail width layout (row 239)', () => {
       /\.dock-root > \.split\.horizontal\.split-agent-dock\s*\{[^}]*position:\s*relative/,
     )
     expect(css).toMatch(
-      /\.dock-root > \.split\.horizontal\.split-agent-dock \.split\.split-catalog-frozen,\s*\.dock-root > \.split\.horizontal\.split-agent-dock \.split\[data-catalog-frozen='true'\]\s*\{[^}]*width:\s*var\(--agent-dock-catalog-scale/,
+      /\.dock-root > \.split\.horizontal\.split-agent-dock > \.split-cell:first-child > \.split:not\(:has\(\[data-testid='agents-table'\]\)\),\s*\.dock-root > \.split\.horizontal\.split-agent-dock \.split\.split-catalog-frozen/,
     )
   })
 

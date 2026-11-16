@@ -471,6 +471,10 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
 .dock-root > .split.horizontal.split-agent-dock > .split-cell:first-child {
   overflow: hidden;
 }
+.dock-root > .split.horizontal.split-agent-dock > .split-cell:first-child:has([data-testid='agents-table']) {
+  overflow: auto;
+}
+.dock-root > .split.horizontal.split-agent-dock > .split-cell:first-child > .split:not(:has([data-testid='agents-table'])),
 .dock-root > .split.horizontal.split-agent-dock .split.split-catalog-frozen,
 .dock-root > .split.horizontal.split-agent-dock .split[data-catalog-frozen='true'] {
   width: var(--agent-dock-catalog-scale, 100%);
