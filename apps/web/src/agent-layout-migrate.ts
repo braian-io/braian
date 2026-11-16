@@ -1,4 +1,4 @@
-import { activate, dockEdge, insert, leaves, migrateLayout, normalize, remove, views, type Node } from './layout'
+import { activate, agentDockShare, dockEdge, insert, leaves, migrateLayout, normalize, remove, views, type Node } from './layout'
 import type { SavedView } from './type-labels'
 
 const AGENT_DOCK_SHARE = 0.3
@@ -36,7 +36,7 @@ export function migrateAgentsToRightDock(layout: Node, agentIds: readonly string
   if (views(next).length === 0) {
     next = { type: 'tabs', views: [primary], active: 0 }
   } else {
-    next = dockEdge(next, primary, 'right', AGENT_DOCK_SHARE)
+    next = dockEdge(next, primary, 'right', agentDockShare(next, AGENT_DOCK_SHARE))
   }
   for (let index = 1; index < ids.length; index += 1) {
     next = insert(next, primary, ids[index], 'center')

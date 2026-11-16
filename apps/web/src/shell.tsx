@@ -43,7 +43,7 @@ import {
   takeQueuedOpenTypeView,
 } from './open-type-view-queue'
 import { copy } from './i18n'
-import { applyLayoutCommand, focusView, migrateLayout, views as layoutViews, type LayoutDoc, type Place } from './layout'
+import { agentDockShare, applyLayoutCommand, focusView, migrateLayout, views as layoutViews, type LayoutDoc, type Place } from './layout'
 import { cloneObjectTableView, objectTableTemplateForType, objectTableViewForType } from './open-type-view'
 import { ConsequenceHost } from './consequence'
 import { ModelDraftHost } from './model-draft-ui'
@@ -1834,7 +1834,7 @@ export function Shell() {
       const result = applyLayoutCommand(
         current,
         'ui.open_view',
-        { id: found.id, zone: 'right', dock: 'edge', share: 0.3 },
+        { id: found.id, zone: 'right', dock: 'edge', share: agentDockShare(current.layout, 0.3) },
         {
           views: views.map((view) => ({ id: view.id, title: view.title, type: view.type })),
           canonical: canonicalRef.current,
