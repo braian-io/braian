@@ -1,4 +1,11 @@
 import { expect, test, type Page } from '@playwright/test'
+import {
+  MASTER_CATALOG_ID,
+  PRODUCTS_WORKSPACE_ID,
+  SAP_CATALOG_ID,
+  setProductsViewCatalogOverride,
+  waitForViewCatalogOverridePost,
+} from './catalog-products-fixture'
 import { demoCredentials } from './demo'
 import { mainTable } from './ui'
 
@@ -34,7 +41,6 @@ async function pickCatalog(page: Page, name: RegExp) {
   await menu.getByRole('menuitem', { name }).click()
 }
 
-const MASTER_CATALOG_ID = '018f1000-0000-7000-8000-000000000001'
 const SOURCES_WORKSPACE_ID = '018f2000-0000-7000-8000-000000000008'
 
 async function ensureSourcesWorkspaceSap(page: Page) {
@@ -74,53 +80,8 @@ async function ensureSourcesWorkspaceSap(page: Page) {
   if (!result.ok) throw new Error(`ensureSourcesWorkspaceSap failed: ${JSON.stringify(result)}`)
 }
 
-const PRODUCTS_WORKSPACE_ID = '018f2000-0000-7000-8000-000000000003'
-const PRODUCTS_VIEW_ID = '018f2000-0000-7000-8000-000000000302'
-
-/** Clear the Products table override via API (no UI). */
-async function restoreProductsViewMaster(page: Page) {
-  const result = await page.evaluate(
-    async ({ workspaceId, viewId }) => {
-      const get = await fetch(`/v1/workspaces/${workspaceId}`, { credentials: 'include' })
-      if (!get.ok) return { ok: false, step: 'get', status: get.status }
-      const ws = await get.json() as {
-        views?: {
-          id?: string
-          type?: string
-          title?: string
-          pane?: string
-          position?: number
-          state?: Record<string, unknown>
-        }[]
-      }
-      const view = (ws.views ?? []).find((row) => row.id === viewId)
-      if (!view) return { ok: false, step: 'find' }
-      const state: Record<string, unknown> = { ...(view.state ?? {}) }
-      delete state.catalogOverride
-      const post = await fetch('/v1/views', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          id: view.id,
-          workspace_id: workspaceId,
-          type: view.type,
-          title: view.title,
-          pane: view.pane ?? 'center',
-          position: view.position ?? 0,
-          state,
-        }),
-      })
-      if (!post.ok) {
-        return { ok: false, step: 'post', status: post.status, body: await post.text() }
-      }
-      return { ok: true }
-    },
-    { workspaceId: PRODUCTS_WORKSPACE_ID, viewId: PRODUCTS_VIEW_ID },
-  )
-  if (!result.ok) {
-    throw new Error(`restoreProductsViewMaster failed: ${JSON.stringify(result)}`)
-  }
+async function ensureProductsViewNoOverride(page: Page) {
+  await setProductsViewCatalogOverride(page, null)
 }
 
 /** Reset Products workspace catalog via API (no UI). File is named z-catalogs so
@@ -169,7 +130,7 @@ async function restoreProductsMaster(page: Page) {
 test.afterEach(async ({ page }) => {
   try {
     await restoreProductsMaster(page)
-    await restoreProductsViewMaster(page)
+    await ensureProductsViewNoOverride(page)
   } catch {
     // Login may have failed; nothing to restore.
   }
@@ -177,6 +138,7 @@ test.afterEach(async ({ page }) => {
 
 test('header catalog selector switches the workspace catalog', async ({ page }) => {
   await login(page)
+  await ensureProductsViewNoOverride(page)
   await page.locator('nav.tabs').getByRole('button', { name: /Products/ }).click()
   await expect(page.getByTestId('catalog-chip')).toHaveCount(0)
   const selector = page.getByTestId('catalog-selector')
@@ -204,7 +166,7 @@ test('header catalog picker closes on Escape and returns focus', async ({ page }
 
 test('Ctrl+K Switch catalog opens straight into the catalog list', async ({ page }) => {
   await login(page)
-  await restoreProductsViewMaster(page)
+  await ensureProductsViewNoOverride(page)
   await page.reload()
   await expect(page.getByTestId('workspace')).toBeVisible()
   await page.locator('nav.tabs').getByRole('button', { name: /Products/ }).click()
@@ -222,7 +184,9 @@ test('Ctrl+K Switch catalog opens straight into the catalog list', async ({ page
   await expect(palette.getByRole('option', { name: /SAP ERP/ })).toBeVisible()
   await page.screenshot({ path: 'test-results/117-palette-switch-catalog.png' })
   await expect(palette.getByRole('option', { name: /On selected object/i })).toHaveCount(0)
+  const overrideSave = waitForViewCatalogOverridePost(page, SAP_CATALOG_ID)
   await palette.getByRole('option', { name: /SAP ERP/ }).click()
+  await overrideSave
   // A focused view gets an override; the header picker stays workspace-global.
   await expect(label).toHaveText('All Products · SAP ERP')
   await expect(page.getByTestId('catalog-selector')).toContainText(/Master catalog/i)
@@ -230,6 +194,7 @@ test('Ctrl+K Switch catalog opens straight into the catalog list', async ({ page
 
 test('pane-source differs label; override survives a global switch', async ({ page }) => {
   await login(page)
+  await ensureProductsViewNoOverride(page)
   await waitForCatalogs(page)
   await ensureSourcesWorkspaceSap(page)
   await page.locator('nav.tabs').getByRole('button', { name: 'Sources' }).click()
@@ -293,6 +258,7 @@ test('sources workspace, merge profile and a locked brand', async ({ page }) => 
 
   // Earlier specs may leave Products on SAP and/or a sticky quick-filter.
   await restoreProductsMaster(page)
+  await ensureProductsViewNoOverride(page)
   await page.locator('nav.tabs').getByRole('button', { name: /Products/ }).click()
   await expect(page.getByTestId('catalog-selector')).toContainText(/Master catalog/i)
   const table = mainTable(page)
