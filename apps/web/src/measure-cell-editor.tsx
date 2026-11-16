@@ -1,4 +1,4 @@
-import type { FocusEvent, KeyboardEvent, MouseEvent } from 'react'
+import type { KeyboardEvent, MouseEvent } from 'react'
 import { copy } from './i18n'
 import { formatUnitCode } from './format'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select'
@@ -58,27 +58,12 @@ export function MeasureCellEditor({
     event.preventDefault()
   }
 
-  const handleEditorBlurCapture = (event: FocusEvent<HTMLSpanElement>) => {
-    const root = event.currentTarget
-    const next = event.relatedTarget
-    if (next instanceof Node && root.contains(next)) return
-    window.setTimeout(() => {
-      const active = document.activeElement
-      if (active instanceof Element) {
-        if (root.contains(active)) return
-        if (active.closest('.select-content') || active.closest('[data-radix-select-content]')) return
-      }
-      onValueBlur?.()
-    }, 0)
-  }
-
   return (
     <span
       className="measure cell-measure-editor"
       data-testid={`cell-editor-${columnId}`}
       onClick={(event) => event.stopPropagation()}
       onKeyDown={handleKeyDown}
-      onBlurCapture={handleEditorBlurCapture}
     >
       <input
         className={invalid ? 'cell-editor cell-editor-invalid' : 'cell-editor'}
@@ -88,6 +73,8 @@ export function MeasureCellEditor({
         aria-invalid={invalid || undefined}
         aria-label={copy.number}
         onChange={(event) => onValueTextChange(event.target.value)}
+        onKeyDown={(event) => event.stopPropagation()}
+        onBlur={() => onValueBlur?.()}
       />
       {unitLocked || unitOptions.length <= 1 ? (
         <span className="meta-chip cell-editor-unit" data-testid={`cell-editor-${columnId}-unit`}>

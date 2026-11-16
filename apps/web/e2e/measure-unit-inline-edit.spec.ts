@@ -178,13 +178,9 @@ async function addNativeEnergyColumn(page: Page) {
 
 async function typeMeasureSequentially(input: ReturnType<Page['locator']>, text: string) {
   await input.click()
-  await input.fill('')
-  if (text.startsWith('-')) {
-    await input.press('Minus')
-    await input.pressSequentially(text.slice(1), { delay: 40 })
-  } else {
-    await input.pressSequentially(text, { delay: 40 })
-  }
+  await input.press('Control+a')
+  await input.press('Backspace')
+  await input.pressSequentially(text, { delay: 50 })
   await expect(input).toHaveValue(text)
 }
 
@@ -466,8 +462,9 @@ test.describe('measure unit inline edit', () => {
       await unitTrigger.click()
       await expect(valueInput).toBeVisible()
       await page.getByRole('option', { name: 'kcal' }).click()
-      await expect(valueInput).toBeVisible()
-      await valueInput.press('Enter')
+      await expect(page.getByTestId('cell-editor-energy-value')).toBeVisible()
+      await expect(page.getByTestId('cell-editor-energy-value')).toHaveValue('100')
+      await page.getByTestId('cell-editor-energy-value').press('Enter')
       await saveDraftIfNeeded(page)
       await expect.poll(async () => (await readEnergy(page, objectId))?.unit, { timeout: 60_000 }).toBe('kJ')
       const energy = await readEnergy(page, objectId)
