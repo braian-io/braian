@@ -179,8 +179,23 @@ async function addNativeEnergyColumn(page: Page) {
 async function typeMeasureSequentially(input: ReturnType<Page['locator']>, text: string) {
   await input.click()
   await input.fill('')
-  await input.pressSequentially(text, { delay: 40 })
+  if (text.startsWith('-')) {
+    await input.press('Minus')
+    await input.pressSequentially(text.slice(1), { delay: 40 })
+  } else {
+    await input.pressSequentially(text, { delay: 40 })
+  }
   await expect(input).toHaveValue(text)
+}
+
+async function saveDetailMeasure(page: Page) {
+  const save = page.getByTestId('object-detail').getByTestId('review-and-save')
+  await expect(save).toBeVisible({ timeout: 15_000 })
+  await save.click()
+  const dialog = page.getByTestId('review-dialog')
+  if (await dialog.isVisible()) {
+    await dialog.getByTestId('confirm-review').click()
+  }
 }
 
 async function saveDraftIfNeeded(page: Page) {
@@ -388,10 +403,14 @@ test.describe('measure unit inline edit', () => {
   })
 
   test('K1 detail key-by-key typing (pressSequentially)', async ({ page }) => {
-    test.setTimeout(120_000)
+    test.setTimeout(180_000)
     let objectId = ''
     let energyBefore: MeasureValue | undefined
-  const cases = ['1,5', '12.25', '-3'] as const
+    const cases = [
+      { typed: '1,5', stored: '1.5' },
+      { typed: '12.25', stored: '12.25' },
+      { typed: '-3', stored: '-3' },
+    ] as const
     try {
       await login(page)
       await openProducts(page)
@@ -403,21 +422,14 @@ test.describe('measure unit inline edit', () => {
       energyBefore = await readEnergy(page, objectId)
 
       const detailValue = page.getByTestId('detail-measure-field-energy').getByTestId('detail-measure-value')
-      for (const typed of cases) {
+      for (const { typed, stored } of cases) {
         await typeMeasureSequentially(detailValue, typed)
         await detailValue.blur()
         const expected = typed.includes(',') ? typed.replace(',', '.') : typed
         await expect(detailValue).toHaveValue(expected)
+        await saveDetailMeasure(page)
+        await expect.poll(async () => (await readEnergy(page, objectId))?.value, { timeout: 60_000 }).toBe(stored)
       }
-
-      const save = page.getByTestId('object-detail').getByTestId('review-and-save')
-      await expect(save).toBeVisible({ timeout: 15_000 })
-      await save.click()
-      const dialog = page.getByTestId('review-dialog')
-      if (await dialog.isVisible()) {
-        await dialog.getByTestId('confirm-review').click()
-      }
-      await expect.poll(async () => (await readEnergy(page, objectId))?.value, { timeout: 60_000 }).toBe('-3')
     } finally {
       try {
         if (objectId) await restoreEnergy(page, objectId, energyBefore)
@@ -438,7 +450,13 @@ test.describe('measure unit inline edit', () => {
       objectId = await cheddarObjectId(page)
       energyBefore = await readEnergy(page, objectId)
 
-      const cell = cheddarRow(page).locator('[data-column="energy"]')
+      const row = cheddarRow(page)
+      await row.click()
+      await page.keyboard.press('Enter')
+      await expect(page.getByTestId('object-detail')).toBeVisible()
+      await page.keyboard.press('Escape')
+
+      const cell = row.locator('[data-column="energy"]')
       await expect(cell).toBeVisible({ timeout: 60_000 })
       await cell.dblclick()
       const valueInput = page.getByTestId('cell-editor-energy-value')

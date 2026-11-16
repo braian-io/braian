@@ -16,7 +16,7 @@ export type MeasureCellEditorProps = {
   onCancel: () => void
   /** Commit or cancel after focus leaves the editor (blur / Tab). */
   onValueBlur?: () => void
-  /** Fires when the unit dropdown opens so the parent can ignore the value input blur. */
+  /** Fires when the unit dropdown opens or closes so the parent can ignore input blur. */
   onUnitSelectorOpen?: () => void
 }
 
@@ -98,7 +98,10 @@ export function MeasureCellEditor({
           value={unit || unitOptions[0]}
           onValueChange={onUnitChange}
           onOpenChange={(open) => {
-            if (open) onUnitSelectorOpen?.()
+            onUnitSelectorOpen?.()
+            if (!open) {
+              window.setTimeout(() => onUnitSelectorOpen?.(), 0)
+            }
           }}
         >
           <SelectTrigger
