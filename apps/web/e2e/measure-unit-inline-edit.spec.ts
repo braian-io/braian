@@ -178,8 +178,7 @@ async function addNativeEnergyColumn(page: Page) {
 
 async function typeMeasureSequentially(input: ReturnType<Page['locator']>, text: string) {
   await input.click()
-  await input.press('Control+a')
-  await input.press('Backspace')
+  await input.fill('')
   await input.pressSequentially(text, { delay: 50 })
   await expect(input).toHaveValue(text)
 }
@@ -382,7 +381,7 @@ test.describe('measure unit inline edit', () => {
         await typeMeasureSequentially(valueInput, typed)
         await valueInput.press('Enter')
         await saveDraftIfNeeded(page)
-        await expect.poll(async () => (await readEnergy(page, objectId))?.value, { timeout: 60_000 }).toBe(stored)
+        await expect.poll(async () => (await readEnergy(page, objectId))?.value, { timeout: 30_000 }).toBe(stored)
       }
     } finally {
       try {
@@ -424,7 +423,7 @@ test.describe('measure unit inline edit', () => {
         const expected = typed.includes(',') ? typed.replace(',', '.') : typed
         await expect(detailValue).toHaveValue(expected)
         await saveDetailMeasure(page)
-        await expect.poll(async () => (await readEnergy(page, objectId))?.value, { timeout: 60_000 }).toBe(stored)
+        await expect.poll(async () => (await readEnergy(page, objectId))?.value, { timeout: 30_000 }).toBe(stored)
       }
     } finally {
       try {
@@ -510,10 +509,12 @@ test.describe('measure unit inline edit', () => {
       expect((await readEnergy(page, objectId))?.value).toBe(beforeValue)
 
       await cell.dblclick()
-      await typeMeasureSequentially(valueInput, '1,5')
-      await valueInput.press('Tab')
+      const tabInput = page.locator('[data-testid^="cell-editor-energy"][data-testid$="-value"]').first()
+      await expect(tabInput).toBeVisible()
+      await typeMeasureSequentially(tabInput, '1,5')
+      await tabInput.press('Tab')
       await saveDraftIfNeeded(page)
-      await expect.poll(async () => (await readEnergy(page, objectId))?.value, { timeout: 60_000 }).not.toBe(beforeValue)
+      await expect.poll(async () => (await readEnergy(page, objectId))?.value, { timeout: 30_000 }).not.toBe(beforeValue)
     } finally {
       try {
         if (objectId) await restoreEnergy(page, objectId, energyBefore)
