@@ -289,7 +289,7 @@ export function leafAttributeKey(fieldId: string): string {
   return fieldId
 }
 
-export { attrByKey, typeByKey, factorsForFamily, labelOf }
+export { attrByKey, typeByKey, factorsForFamily, labelOf, unitsForFamily }
 
 /** Merge pathless system view columns (type, version) into the Fields › list as ordinary fields. */
 export function withSystemViewFields(

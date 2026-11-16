@@ -2,6 +2,7 @@ import { attributeByKey, attributeIndexField } from './index-fields'
 import type { Json } from './api'
 import { textValue } from './api'
 import { isHopPath } from './column-prefs'
+import { formatMeasure, formatMeasureNumber } from './format'
 
 /** How many linked values to show before "+N". */
 export const PATH_SUMMARY_VISIBLE = 2
@@ -70,7 +71,8 @@ export function readPathFromDoc(doc: Json | undefined, defs: Json | undefined, p
     if (id) unitFields.push(`${attributeIndexField(id)}__unit`)
     unitFields.push(`${legacyBase}__unit`, `a_${key}__unit`)
     const unit = readFields(unitFields)
-    return unit ? `${value} ${unit}` : value
+    const shown = formatMeasureNumber(value)
+  return unit ? formatMeasure(shown, unit) : shown
   }
   return value
 }

@@ -4,11 +4,14 @@ import {
   cellEditShouldPatch,
   cellEditValuesBody,
   columnBaseKey,
+  commitMeasureEdit,
   displayMeasureText,
+  inlineMeasureEditContext,
   isEditableColumn,
   isEditingCell,
   isTextEditingTarget,
   measureEditContext,
+  measureEditInitialDraft,
   measureEditShouldPatch,
   measureEditStoredValue,
   resolveCellEditInitial,
@@ -214,6 +217,24 @@ describe('measure inline edit', () => {
     const stored = measureEditStoredValue(ctx!, '500 kcal')
     expect(stored).toEqual({ value: '2092', unit: 'kJ' })
     expect(measureEditShouldPatch(ctx!, '500 kcal')).toBe(true)
+  })
+
+  it('commits a structured draft with a decimal comma', () => {
+    const ctx = inlineMeasureEditContext(columnId, energyDoc, energyEnergyDefs)
+    expect(ctx).not.toBeNull()
+    const draft = measureEditInitialDraft(ctx!)
+    const result = commitMeasureEdit(ctx!, { ...draft, valueText: '1,5' })
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.stored.value).toBeTruthy()
+    }
+  })
+
+  it('rejects invalid and empty measure drafts visibly', () => {
+    const ctx = inlineMeasureEditContext(columnId, energyDoc, energyEnergyDefs)
+    expect(ctx).not.toBeNull()
+    expect(commitMeasureEdit(ctx!, { valueText: '', unit: 'kcal' })).toEqual({ ok: false, reason: 'empty' })
+    expect(commitMeasureEdit(ctx!, { valueText: 'abc', unit: 'kcal' })).toEqual({ ok: false, reason: 'invalid' })
   })
 })
 
