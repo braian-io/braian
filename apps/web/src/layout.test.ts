@@ -180,7 +180,11 @@ describe('agentDockShare', () => {
       tabs(['left']),
       splitPair('horizontal', 0.62, tabs(['products']), tabs(['detail'])),
     )
-    const share = agentDockShare(tree, 0.3)
+    const types = new Map([
+      ['products', 'object_table'],
+      ['detail', 'object_detail'],
+    ])
+    const share = agentDockShare(tree, 0.3, types)
     expect(share).toBeLessThan(0.3)
     const docked = dockEdge(tree, 'agent', 'right', share)
     const after = leaves(docked)
@@ -188,7 +192,7 @@ describe('agentDockShare', () => {
     const agent = after.find((leaf) => leaf.views.includes('agent'))
     expect(detail).toBeDefined()
     expect(agent).toBeDefined()
-    expect(agent!.rect.x).toBeGreaterThan(detail!.rect.x + 0.02)
+    expect(agent!.rect.x).toBeGreaterThan(detail!.rect.x + 0.09)
   })
 })
 

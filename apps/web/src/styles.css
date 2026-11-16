@@ -949,6 +949,12 @@ button.agent-bg-indicator strong { font-variant-numeric: tabular-nums; }
   overflow-x: visible;
   overflow-y: visible;
 }
+.dock-root > .split.horizontal.split-agent-dock .pane:has([data-testid='agents-table']) .pane-body {
+  overflow: auto;
+}
+.dock-root > .split.horizontal.split-agent-dock .pane:has([data-testid='agents-table']) .standard-grid-head {
+  position: relative;
+}
 .dock-preview {
   position: absolute;
   z-index: 4;

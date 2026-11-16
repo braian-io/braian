@@ -181,14 +181,25 @@ export function dockEdge(node: Node, view: string, zone: Zone, share = 0.3): Nod
   }
 }
 
-const AGENT_DOCK_LEAD = 0.05
+const AGENT_DOCK_LEAD = 0.11
 
 /** Narrow the agent share when a wide catalog would start to the right of the default dock line. */
-export function agentDockShare(layout: Node, preferred = 0.3): number {
-  const lefts = leaves(layout).map((leaf) => leaf.rect.x)
-  if (lefts.length === 0) return preferred
-  const catalogRight = Math.max(...lefts)
-  const maxShare = roundRatio(1 - catalogRight - AGENT_DOCK_LEAD)
+export function agentDockShare(
+  layout: Node,
+  preferred = 0.3,
+  viewTypes?: ReadonlyMap<string, string>,
+): number {
+  const all = leaves(layout)
+  const detailLefts = viewTypes
+    ? all
+        .filter((leaf) => leaf.views.some((id) => viewTypes.get(id) === 'object_detail'))
+        .map((leaf) => leaf.rect.x)
+    : []
+  const catalogLeft = detailLefts.length > 0
+    ? Math.max(...detailLefts)
+    : Math.max(0, ...all.map((leaf) => leaf.rect.x))
+  if (!Number.isFinite(catalogLeft)) return preferred
+  const maxShare = roundRatio(1 - catalogLeft - AGENT_DOCK_LEAD)
   return clamp(Math.min(preferred, maxShare), 0.08, 0.45)
 }
 
@@ -385,6 +396,10 @@ export type CommandResult = {
   summary?: string
 }
 
+function catalogTypes(catalog: Array<{ id: string; type?: string }>): Map<string, string> {
+  return new Map(catalog.map((view) => [view.id, view.type ?? '']))
+}
+
 const layoutCommandNames = new Set([
   'open_view',
   'move_view',
@@ -487,7 +502,10 @@ export function applyLayoutCommand(
   const agentView = opened?.type === 'agent'
   if (name === 'ui.open_view' && args.zone == null && args.place == null && !ctx.place) {
     if (agentView) {
-      return { doc: placeView(doc, view, { zone: 'right', dock: 'edge', share: agentDockShare(doc.layout, 0.3) }), handled: true }
+      return {
+        doc: placeView(doc, view, { zone: 'right', dock: 'edge', share: agentDockShare(doc.layout, 0.3, catalogTypes(catalog)) }),
+        handled: true,
+      }
     }
     return { doc: ensureInLayout(doc, view, typeof args.target === 'string' ? args.target : undefined), handled: true }
   }
@@ -502,7 +520,7 @@ export function applyLayoutCommand(
   if (agentView && (name === 'open_view' || name === 'ui.open_view' || name === 'ui.place')) {
     place.zone = 'right'
     place.dock = 'edge'
-    place.share = place.share ?? agentDockShare(doc.layout, 0.3)
+    place.share = place.share ?? agentDockShare(doc.layout, 0.3, catalogTypes(catalog))
   }
   if ((name === 'open_view' || name === 'ui.place') && !place.zone && place.dock !== 'edge') place.zone = 'right'
   return { doc: placeView(doc, view, place), handled: true }

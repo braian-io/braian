@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { agentStatusLabel, agentStatusTone, listAgentRuns, requestOpenAgent, sortAgentRuns, type AgentRunSummary } from './agent-runs'
 import { MetaChip } from './chips'
@@ -16,7 +16,6 @@ type AgentTableRow = {
 }
 
 export function AgentsTable() {
-  const rootRef = useRef<HTMLDivElement>(null)
   const [filter, setFilter] = useState('')
   const list = useQuery({
     queryKey: ['agent-runs'],
@@ -52,10 +51,10 @@ export function AgentsTable() {
   ]
   const error = list.isError ? (list.error instanceof Error ? list.error.message : copy.agentsEmpty) : ''
   useLayoutEffect(() => {
-    rootRef.current?.querySelector<HTMLElement>('.standard-grid-head')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    document.querySelector<HTMLElement>('[data-testid="agents-table"] .standard-grid-head')
+      ?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }, [list.isPending, list.data, filter])
   return (
-    <div ref={rootRef}>
     <StandardEditableTable
       testId="agents-table"
       columns={columns}
@@ -69,6 +68,5 @@ export function AgentsTable() {
       getRowTestId={() => 'agent-table-row'}
       belowBar={error ? <p className="error" role="alert" data-testid="agents-table-error">{error}</p> : null}
     />
-    </div>
   )
 }

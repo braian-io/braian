@@ -1834,7 +1834,16 @@ export function Shell() {
       const result = applyLayoutCommand(
         current,
         'ui.open_view',
-        { id: found.id, zone: 'right', dock: 'edge', share: agentDockShare(current.layout, 0.3) },
+        {
+          id: found.id,
+          zone: 'right',
+          dock: 'edge',
+          share: agentDockShare(
+            current.layout,
+            0.3,
+            new Map(views.map((view) => [view.id, view.type])),
+          ),
+        },
         {
           views: views.map((view) => ({ id: view.id, title: view.title, type: view.type })),
           canonical: canonicalRef.current,
