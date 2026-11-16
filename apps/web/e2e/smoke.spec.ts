@@ -82,6 +82,8 @@ test('login, edit, search, proposal, rollback and live update', async ({ page })
   await expect(page.locator('canvas[data-testid=graph]')).toBeVisible()
   await page.screenshot({ path: `${shots}/graph.png` })
 
+  await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
+  await expect(mainTable(page)).toBeVisible()
   await editedRow.click()
   await page.locator('[data-view-type="object_detail"]').first().click()
   await page.getByRole('button', { name: 'History' }).click()
