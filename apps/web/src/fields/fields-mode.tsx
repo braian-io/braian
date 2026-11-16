@@ -72,6 +72,7 @@ type Row = {
   subtitle: string
   drill?: boolean
   checked?: boolean
+  input?: 'checkbox' | 'radio'
   run: () => void
 }
 
@@ -194,6 +195,30 @@ function qualifiersMatch(col: ViewColumn, required: AppliedQualifier[]): boolean
 
 function columnsUnder(columns: ViewColumn[], pathIds: string[], required: AppliedQualifier[]): ViewColumn[] {
   return columns.filter((col) => pathMatches(col, pathIds) && qualifiersMatch(col, required))
+}
+
+/** Qualifiers for matching a column before the display unit is chosen. */
+function appliedWithoutUnit(applied: AppliedQualifier[]): AppliedQualifier[] {
+  return applied.filter(
+    (item) =>
+      item.kind !== 'unit' &&
+      !(item.kind === 'cardinality' && item.optionId === 'specific' && !item.value),
+  )
+}
+
+function unitColumnsForPath(columns: ViewColumn[], pathIds: string[], applied: AppliedQualifier[]): ViewColumn[] {
+  const base = appliedWithoutUnit(applied)
+  return columns.filter(
+    (col) =>
+      pathMatches(col, pathIds) &&
+      qualifiersMatch(col, base) &&
+      col.qualifiers.some((item) => item.kind === 'unit'),
+  )
+}
+
+function activeUnitOptionId(columns: ViewColumn[], pathIds: string[], applied: AppliedQualifier[]): string | undefined {
+  const hit = unitColumnsForPath(columns, pathIds, applied)[0]
+  return hit?.qualifiers.find((item) => item.kind === 'unit')?.optionId
 }
 
 /** Subtitle for a checked row: which sub-choice is active, e.g. `Description — sv`. */
@@ -376,6 +401,8 @@ export function FieldsMode({ open, columns, fields: catalog, onClose, onToggleCo
             // Edit field…: check must reflect THIS column only, not sibling hop columns.
             const current = editingHit.qualifiers.find((q) => q.kind === top.step.kind)
             checked = current?.optionId === option.id
+          } else if (top.step.kind === 'unit') {
+            checked = activeUnitOptionId(cols, top.pathIds, top.applied) === option.id
           } else {
             checked =
               columnsUnder(cols, top.pathIds, [
@@ -393,6 +420,7 @@ export function FieldsMode({ open, columns, fields: catalog, onClose, onToggleCo
             subtitle: option.subtitle ?? '',
             drill,
             checked,
+            input: top.step.kind === 'unit' ? 'radio' : 'checkbox',
             run: () => activateQualifier(option, top),
           }
         })
@@ -730,7 +758,22 @@ export function FieldsMode({ open, columns, fields: catalog, onClose, onToggleCo
     // Always toggle (not show-only): Enter, Enter must turn nested hops and
     // composites (value_list Label/Code, unit, range, language) off again.
     // Root cause of "Label stuck on": onShowColumn never hid; isChecked stayed true.
-    onToggleColumn(col)
+    if (frame.step.kind === 'unit') {
+      const siblings = unitColumnsForPath(columnsRef.current, frame.pathIds, nextApplied)
+      const existing = siblings[0]
+      if (existing) {
+        const existingUnit = existing.qualifiers.find((item) => item.kind === 'unit')?.optionId
+        if (existingUnit === option.id) {
+          onToggleColumn(col)
+        } else {
+          onReplaceColumn(existing.id, col)
+        }
+      } else {
+        onToggleColumn(col)
+      }
+    } else {
+      onToggleColumn(col)
+    }
     // After a language pick, return to the fields list so fields-check-${fieldId} shows.
     // Keep filter when staying on this qualify list (value_list / unit / …).
     if (frame.step.kind === 'language') {

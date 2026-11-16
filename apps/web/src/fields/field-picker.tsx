@@ -18,6 +18,8 @@ export type PickerRow = {
   /** Opens a deeper level (qualifier, language, unit). */
   drill?: boolean
   checked?: boolean
+  /** Unit options are single-choice (radio); other levels use checkboxes. */
+  input?: 'checkbox' | 'radio'
   run: () => void
 }
 
@@ -97,6 +99,20 @@ export function FieldPicker({
           flex: none;
           pointer-events: none;
         }
+        [data-picker-mode] .fields-radio.check {
+          border-radius: 999px;
+        }
+        [data-picker-mode] .fields-radio[data-state='checked'] {
+          background: var(--surface);
+          box-shadow: var(--inset);
+          color: var(--accent);
+        }
+        [data-picker-mode] .fields-radio-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 999px;
+          background: currentColor;
+        }
       `}</style>
       <Command
         shouldFilter={false}
@@ -151,14 +167,28 @@ export function FieldPicker({
                   <span className="hit-title">{row.title}</span>
                   {row.subtitle ? <small>{row.subtitle}</small> : null}
                 </span>
-                <Checkbox
-                  className="fields-check"
-                  checked={Boolean(row.checked)}
-                  tabIndex={-1}
-                  data-testid={`${testPrefix}-check-${row.id}`}
-                  aria-label={row.checked ? (mode === 'single' ? copy.current : copy.shown) : mode === 'single' ? copy.notSelected : copy.hidden}
-                  onCheckedChange={() => {}}
-                />
+                {row.input === 'radio' ? (
+                  <span
+                    className="fields-check fields-radio check"
+                    data-choice="radio"
+                    data-state={row.checked ? 'checked' : 'unchecked'}
+                    data-testid={`${testPrefix}-check-${row.id}`}
+                    role="radio"
+                    aria-checked={Boolean(row.checked)}
+                    aria-label={row.checked ? copy.shown : copy.hidden}
+                  >
+                    {row.checked ? <span className="fields-radio-dot" aria-hidden="true" /> : null}
+                  </span>
+                ) : (
+                  <Checkbox
+                    className="fields-check"
+                    checked={Boolean(row.checked)}
+                    tabIndex={-1}
+                    data-testid={`${testPrefix}-check-${row.id}`}
+                    aria-label={row.checked ? (mode === 'single' ? copy.current : copy.shown) : mode === 'single' ? copy.notSelected : copy.hidden}
+                    onCheckedChange={() => {}}
+                  />
+                )}
                 {row.drill ? <span aria-hidden="true">›</span> : null}
               </div>
             ))}
