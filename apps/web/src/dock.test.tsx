@@ -75,6 +75,50 @@ it('lets every cell give way in a split that contains Detail', () => {
   expect(cells.map((cell) => cell.style.flex.split(' ').slice(0, 2).join(' '))).toEqual(['0 1', '0 1', '0 1'])
 })
 
+it('does not mark the agent dock wrapper as a detail split', () => {
+  const layout: LayoutDoc = {
+    id: 'ws',
+    title: 'Workspace',
+    layout: {
+      type: 'split',
+      dir: 'horizontal',
+      ratios: [0.7, 0.3],
+      children: [
+        {
+          type: 'split',
+          dir: 'horizontal',
+          ratios: [0.55, 0.45],
+          children: [
+            { type: 'tabs', views: ['products'], active: 0 },
+            { type: 'tabs', views: ['detail'], active: 0 },
+          ],
+        },
+        { type: 'tabs', views: ['agent'], active: 0 },
+      ],
+    },
+    focus: 'products',
+  }
+  const { container } = render(
+    <WorkspaceDock
+      doc={layout}
+      views={[
+        { id: 'products', title: 'Products', type: 'object_table' },
+        { id: 'detail', title: 'Detail', type: 'object_detail' },
+        { id: 'agent', title: 'Ask', type: 'agent' },
+      ]}
+      onChange={() => undefined}
+      renderView={() => <div />}
+      onAddView={() => undefined}
+    />,
+  )
+  const outer = container.querySelector<HTMLElement>(".split.horizontal[data-path='root']")
+  const inner = container.querySelector<HTMLElement>(".split.horizontal[data-path='0']")
+  expect(outer?.dataset.hasDetail).toBeUndefined()
+  expect(inner?.dataset.hasDetail).toBe('true')
+  const outerCells = [...(outer?.querySelectorAll<HTMLElement>('.split-cell') ?? [])]
+  expect(outerCells.map((cell) => cell.style.flex.split(' ').slice(0, 2).join(' '))).toEqual(['0 0', '0 0'])
+})
+
 it('keeps the full tab title on the truncated tab button', () => {
   const title = 'A very long view title that the tab strip truncates'
   render(

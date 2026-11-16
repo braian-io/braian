@@ -4,7 +4,7 @@ import { expect, type Locator, type Page } from '@playwright/test'
 export function paneWithTab(page: Page, title: string): Locator {
   return page.locator('section.pane').filter({
     has: page.locator('.pane-tab[data-view-type="object_table"]', { hasText: title }),
-  })
+  }).first()
 }
 
 /** Main object table in a type workspace. Products is the default type workspace. */
@@ -12,7 +12,22 @@ export function mainTable(page: Page, title = 'Products'): Locator {
   return paneWithTab(page, title).getByTestId('object-table').first()
 }
 
+/** Close every open agent pane tab so layout reset can paint the catalog again. */
+export async function closeAllAgentTabs(page: Page) {
+  const tabs = page.locator('.pane-tab[data-view-type="agent"]')
+  for (let guard = 0; guard < 16; guard += 1) {
+    const count = await tabs.count()
+    if (count === 0) return
+    const tab = tabs.first()
+    await tab.hover()
+    await tab.getByRole('button', { name: 'Close tab' }).click()
+    await expect(tabs).toHaveCount(count - 1)
+  }
+}
+
 export async function resetProductsLayout(page: Page, title = 'Products') {
+  await closeAllAgentTabs(page).catch(() => undefined)
+  await page.getByTestId('discard-draft').first().click({ timeout: 2_000 }).catch(() => undefined)
   await page.evaluate(() => sessionStorage.setItem('braian.layout.suppressFlush', '1'))
   const listed = await page.request.get('/v1/workspaces')
   const body = (await listed.json()) as { workspaces: Array<{ id: string; name: string }> }

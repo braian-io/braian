@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { leaves, splitPair, tabGroup, views } from './layout'
+import { dockEdge, leaves, splitPair, tabGroup, views } from './layout'
 import { agentViewIds, agentsNeedDockMigration, healAgentDockLayout, migrateAgentsToRightDock } from './agent-layout-migrate'
 import type { SavedView } from './type-labels'
 
@@ -42,6 +42,15 @@ describe('healAgentDockLayout', () => {
     const healed = healAgentDockLayout(legacy, catalog, agentB)
     const agentPane = leaves(healed.layout!).find((leaf) => leaf.views.includes(agentA))
     expect(agentPane?.views).toEqual([agentA, agentB])
+  })
+
+  it('keeps the products pane origin when docking on the right', () => {
+    const base = splitPair('horizontal', 0.55, tabGroup([table]), tabGroup([detail]))
+    const tableBefore = leaves(base).find((leaf) => leaf.views.includes(table))
+    expect(tableBefore?.rect.x).toBe(0)
+    const docked = dockEdge(base, agentA, 'right', 0.3)
+    const tableAfter = leaves(docked).find((leaf) => leaf.views.includes(table))
+    expect(tableAfter?.rect.x).toBeCloseTo(tableBefore?.rect.x ?? 0, 4)
   })
 
   it('repairs a horizontal split when the agent is not on the right', () => {

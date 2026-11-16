@@ -188,6 +188,12 @@ type Frame = {
   agentViews: Set<string>
 }
 
+function splitHasDirectDetail(node: Extract<Node, { type: 'split' }>, viewTypes: Map<string, string>) {
+  return node.children.some(
+    (child) => child.type === 'tabs' && child.views.some((id) => viewTypes.get(id) === 'object_detail'),
+  )
+}
+
 function SplitNode({ frame, node, path }: { frame: Frame; node: Node; path: number[] }) {
   if (node.type !== 'split') {
     const leaf = leaves(node)[0]
@@ -195,7 +201,9 @@ function SplitNode({ frame, node, path }: { frame: Frame; node: Node; path: numb
     return <Pane frame={frame} leaf={{ ...leaf, path }} />
   }
   const viewTypes = new Map(frame.viewList.map((view) => [view.id, view.type]))
-  const hasDetail = views(node).some((id) => viewTypes.get(id) === 'object_detail')
+  // Detail flex rules apply only when Detail is a direct pane in this split.
+  // An agent edge-dock wrapper must not inherit them on the whole left subtree.
+  const hasDetail = splitHasDirectDetail(node, viewTypes)
   const gaps = Math.max(0, node.children.length - 1) * 6
   return (
     <div className={`split ${node.dir}`} data-path={path.join('.') || 'root'} data-has-detail={hasDetail ? 'true' : undefined}>

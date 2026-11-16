@@ -1,6 +1,12 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
-import { mainTable, openAgentDraftInTable, resetProductsLayout, setTheme, showProducts } from './ui'
+import { closeAllAgentTabs, mainTable, openAgentDraftInTable, resetProductsLayout, setTheme, showProducts } from './ui'
+
+test.afterEach(async ({ page }) => {
+  await page.keyboard.press('Escape').catch(() => undefined)
+  await page.getByTestId('discard-draft').first().click({ timeout: 2_000 }).catch(() => undefined)
+  await closeAllAgentTabs(page).catch(() => undefined)
+})
 
 async function login(page: Page) {
   const demo = demoCredentials()
