@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
-import { mainTable, openAgentDraftInTable, setTheme, showProducts } from './ui'
+import { mainTable, openAgentDraftInTable, resetProductsLayout, setTheme, showProducts } from './ui'
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -199,7 +199,9 @@ test('undo after a later edit does not overwrite the name', async ({ page }) => 
   const view = agentView(page, title)
   await expect(view.getByTestId('agent-result-link').first()).toBeVisible({ timeout: 30_000 })
   await openAgentDraftInTable(page, view)
-  await page.getByTestId('review-and-save').first().click()
+  const review = page.getByTestId('review-and-save').first()
+  await expect(review).toBeEnabled({ timeout: 30_000 })
+  await review.click()
   await showProducts(page)
   const later = `${original} later`
   const nameCell = row.locator('[data-column="name"]').first()
@@ -211,7 +213,9 @@ test('undo after a later edit does not overwrite the name', async ({ page }) => 
   await editor.press('Enter')
   await expect(page.getByTestId('cell-editor-name')).toHaveCount(0)
   await expect(nameCell).toContainText(later)
-  await page.getByTestId('review-and-save').first().click()
+  const saveLater = page.getByTestId('review-and-save').first()
+  await expect(saveLater).toBeEnabled({ timeout: 30_000 })
+  await saveLater.click()
   await expect(nameCell).toContainText(later, { timeout: 30_000 })
 })
 
@@ -248,13 +252,11 @@ test('a failed fetch can be retried and a missing run cannot', async ({ page }) 
     }
     await route.continue()
   })
-  const briefTitle = 'hold the run briefly'
-  await ask(page, briefTitle)
-  const briefView = agentView(page, briefTitle)
-  const busy = briefView.getByTestId('agent-fetch-error')
+  await ask(page, 'hold the run briefly')
+  const busy = page.getByTestId('agent-fetch-error')
   await expect(busy).toContainText('the store is busy', { timeout: 30_000 })
   await busy.getByTestId('agent-retry').click()
-  await expect(briefView.getByTestId('agent-status')).toBeVisible({ timeout: 30_000 })
+  await expect(agentView(page, 'hold the run briefly').getByTestId('agent-status')).toBeVisible({ timeout: 30_000 })
   await page.unroute(/\/v1\/agent\/runs\/[0-9a-f-]{36}$/)
   await page.route(/\/v1\/agent\/runs\/[0-9a-f-]{36}$/, async (route) => {
     if (route.request().method() === 'GET') {
@@ -267,11 +269,9 @@ test('a failed fetch can be retried and a missing run cannot', async ({ page }) 
     }
     await route.continue()
   })
-  const missingTitle = 'hold the run missing'
-  await ask(page, missingTitle)
-  const missingView = agentView(page, missingTitle)
-  await expect(missingView.getByTestId('agent-missing')).toBeVisible({ timeout: 30_000 })
-  await expect(missingView.getByTestId('agent-retry')).toHaveCount(0)
+  await ask(page, 'hold the run missing')
+  await expect(page.getByTestId('agent-missing').first()).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByTestId('agent-retry')).toHaveCount(0)
 })
 
 test('a failed run shows a cleaned error and try again', async ({ page }) => {
@@ -350,7 +350,7 @@ test('an agent tab in another workspace is announced', async ({ page }) => {
   })
   await page.reload()
   await expect(page.locator('nav.tabs')).toBeVisible({ timeout: 60_000 })
-  await showProducts(page)
+  await resetProductsLayout(page)
   await expect(page.locator('[data-sonner-toast]')).toContainText('another workspace', { timeout: 60_000 })
   await expect(page.locator('.pane-tab', { hasText: 'agent in another workspace' })).toHaveCount(0)
 })
