@@ -33,7 +33,7 @@ import { batchGetObjects } from './batch'
 import { MetaChip, optionLabel, statusTone, typeLabel } from './chips'
 import { BulkWriteConfirm } from './bulk-write'
 import { Button } from './components/ui/button'
-import { Tooltip, TooltipContent, TooltipTrigger } from './components/ui/tooltip'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './components/ui/tooltip'
 import { Dialog, DialogContent } from './components/ui/dialog'
 import { Slider } from './components/ui/slider'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select'
@@ -3209,23 +3209,25 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
               {number ? <span className="detail-id">{number}</span> : null}
             </div>
             {inAgentSession ? null : (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="icon"
-                    size="icon"
-                    className="detail-delete icon-danger"
-                    data-testid="delete-object-detail"
-                    aria-label={copy.delete}
-                    title={copy.delete}
-                    onClick={() => requestDeleteObjects([objectId])}
-                  >
-                    <Trash2 aria-hidden="true" size={14} />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>{copy.delete}</TooltipContent>
-              </Tooltip>
+              <TooltipProvider delayDuration={400} disableHoverableContent>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="icon"
+                      size="icon"
+                      className="detail-delete icon-danger"
+                      data-testid="delete-object-detail"
+                      aria-label={copy.delete}
+                      title={copy.delete}
+                      onClick={() => requestDeleteObjects([objectId])}
+                    >
+                      <Trash2 aria-hidden="true" size={14} />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{copy.delete}</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             )}
           </div>
           <DetailMeta
