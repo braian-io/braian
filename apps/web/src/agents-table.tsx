@@ -1,6 +1,6 @@
 import { useLayoutEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { agentStatusLabel, agentStatusTone, listAgentRuns, requestOpenAgent, sortAgentRuns, type AgentRunSummary } from './agent-runs'
+import { agentRunSearchHaystack, agentStatusLabel, agentStatusTone, listAgentRuns, requestOpenAgent, sortAgentRuns, type AgentRunSummary } from './agent-runs'
 import { MetaChip } from './chips'
 import { formatTimestamp } from './format'
 import { copy } from './i18n'
@@ -67,6 +67,7 @@ export function AgentsTable() {
       emptyLabel={copy.agentsEmpty}
       filterValue={filter}
       onFilterChange={setFilter}
+      rowFilterText={(row) => agentRunSearchHaystack(row.run)}
       onActivateRow={(row) => requestOpenAgent(row.run)}
       getRowTestId={() => 'agent-table-row'}
       belowBar={error ? <p className="error" role="alert" data-testid="agents-table-error">{error}</p> : null}

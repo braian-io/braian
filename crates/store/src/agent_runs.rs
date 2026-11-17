@@ -29,6 +29,8 @@ pub struct AgentRunRow {
     pub proposal_count: i32,
     /// Latest question the agent asked, when the run is waiting.
     pub question: Option<String>,
+    /// First user message; used for agent search when the short title differs.
+    pub first_message: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -128,6 +130,9 @@ impl Store {
                         (SELECT m.body->>'text' FROM agent_messages m
                           WHERE m.run_id = agent_runs.id AND m.kind = 'question'
                           ORDER BY m.created_at DESC LIMIT 1),
+                        (SELECT m.body->>'text' FROM agent_messages m
+                          WHERE m.run_id = agent_runs.id AND m.kind = 'user'
+                          ORDER BY m.position ASC LIMIT 1),
                         session
                  FROM agent_runs
                  WHERE id = $1
@@ -152,6 +157,9 @@ impl Store {
                         (SELECT m.body->>'text' FROM agent_messages m
                           WHERE m.run_id = agent_runs.id AND m.kind = 'question'
                           ORDER BY m.created_at DESC LIMIT 1),
+                        (SELECT m.body->>'text' FROM agent_messages m
+                          WHERE m.run_id = agent_runs.id AND m.kind = 'user'
+                          ORDER BY m.position ASC LIMIT 1),
                         session
                  FROM agent_runs
                  WHERE principal_id = $1 OR ($2::uuid IS NOT NULL AND user_id = $2)
@@ -537,12 +545,13 @@ fn read_run(row: &tokio_postgres::Row) -> AgentRunRow {
         hidden: row.get(9),
         tab_open: row.get(10),
         context: row.get(11),
-        session: row.get(18),
         error: row.get(12),
         created_at: row.get(13),
         updated_at: row.get(14),
         finished_at: row.get(15),
         proposal_count: row.get(16),
         question: row.get(17),
+        first_message: row.get(18),
+        session: row.get(19),
     }
 }

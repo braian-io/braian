@@ -7499,6 +7499,12 @@
               "null"
             ]
           },
+          "first_message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "hidden": {
             "type": "boolean"
           },
@@ -7659,6 +7665,13 @@
               "string",
               "null"
             ]
+          },
+          "first_message": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "First user message in the session."
           },
           "hidden": {
             "type": "boolean"
