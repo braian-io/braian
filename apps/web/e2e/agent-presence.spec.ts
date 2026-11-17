@@ -247,7 +247,8 @@ test('Ctrl+K lists agents and Enter opens the tab', async ({ page }) => {
   await page.keyboard.press('Enter')
   await expect(page.getByTestId('palette-crumb')).toContainText('Agents ›')
   await expect(page.getByTestId('palette-input')).toHaveAttribute('placeholder', 'Search agents…')
-  await page.getByTestId('palette-input').fill('palette lists')
+  await page.getByTestId('palette-input').fill('before the palette')
+  await expect.poll(async () => palette.locator('.hit.on').count()).toBeGreaterThan(0)
   await expect(palette.locator('.hit.on')).toContainText(sessionName)
   if (process.env.BRAIAN_AGENT_SHOTS) {
     const dir = process.env.BRAIAN_AGENT_SHOTS
