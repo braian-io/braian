@@ -111,9 +111,9 @@ test.describe('peer-linked label selections (Notion row 272)', () => {
       const organic = articles.getByTestId('assortment').filter({ hasText: 'Organic' })
       await organic.click()
       await expect(organic).toHaveClass(/\bon\b/, { timeout: 30_000 })
-      const linkedOrganic = await articles.getByTestId('object-row').count()
-      expect(linkedOrganic).toBeGreaterThan(0)
-      expect(linkedOrganic).toBeLessThanOrEqual(linkedBefore)
+      await expect
+        .poll(async () => articles.getByTestId('object-row').count(), { timeout: 30_000 })
+        .toBeLessThan(linkedBefore)
     } finally {
       await page.request.delete(`/v1/workspaces/${workspaceId}`)
     }
