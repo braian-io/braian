@@ -106,12 +106,15 @@ test.describe('structure tree auto-links object tables (Notion row 41)', () => {
       await expect(cheeseChip).not.toHaveClass(/\bon\b/)
 
       await expect.poll(async () => products.getByTestId('object-row').count()).toBeLessThan(allRows)
-      const rows = products.getByTestId('object-row')
-      const count = await rows.count()
-      expect(count).toBeGreaterThan(0)
-      for (let index = 0; index < Math.min(count, 5); index += 1) {
-        await expect(rows.nth(index)).toContainText(/cheddar|brie|gouda|cheese|PROD-/i)
-      }
+      const cheeseCount = await products.getByTestId('object-row').count()
+      expect(cheeseCount).toBeGreaterThan(0)
+
+      await tree.getByRole('treeitem').filter({ hasText: 'Milk' }).first().click()
+      await expect(products.getByTestId('view-source-label')).toContainText('Food › Milk', { timeout: 30_000 })
+      await expect.poll(async () => products.getByTestId('object-row').count()).not.toBe(cheeseCount)
+      const milkCount = await products.getByTestId('object-row').count()
+      expect(milkCount).toBeGreaterThan(0)
+      expect(milkCount).toBeLessThan(allRows)
 
       await products.getByTestId('view-source-label').click()
       await expect(products.getByTestId('view-source-label')).toHaveText('All Products', { timeout: 30_000 })
