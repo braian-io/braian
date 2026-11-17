@@ -12,10 +12,16 @@ export function mainTable(page: Page, title = 'Products'): Locator {
   return paneWithTab(page, title).getByTestId('object-table').first()
 }
 
+/** Mirrors the server title stub (first five words) used in e2e under BRAIAN_AGENT_MOCK. */
+export function agentTitleStubHint(text: string): string {
+  return text.trim().split(/\s+/).slice(0, 5).join(' ')
+}
+
 export function agentPaneTab(page: Page, sessionTitle?: string, which: 'first' | 'last' = 'last') {
   let tabs = page.locator('.pane-tab[data-view-type="agent"]')
   if (sessionTitle) {
-    const escaped = sessionTitle.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+    const hint = agentTitleStubHint(sessionTitle)
+    const escaped = hint.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
     tabs = page.locator(`.pane-tab[data-view-type="agent"][title*="${escaped}"]`)
   } else {
     tabs = tabs.filter({ hasText: /^Agent$/ })
@@ -23,10 +29,16 @@ export function agentPaneTab(page: Page, sessionTitle?: string, which: 'first' |
   return which === 'first' ? tabs.first() : tabs.last()
 }
 
-export function agentSessionView(page: Page, sessionTitle: string) {
+export function agentSessionView(page: Page, needle: string) {
+  const escaped = needle.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  const heading = page.getByTestId('agent-session-title')
   return page.getByTestId('agent-view').filter({
-    has: page.getByTestId('agent-session-title').filter({ hasText: sessionTitle }),
+    has: heading.filter({ hasText: needle }).or(page.locator(`[data-testid="agent-session-title"][title*="${escaped}"]`)),
   }).last()
+}
+
+export function agentSessionViewByFullPrompt(page: Page, fragment: string) {
+  return agentSessionView(page, fragment)
 }
 
 /** Close every open agent pane tab so layout reset can paint the catalog again. */

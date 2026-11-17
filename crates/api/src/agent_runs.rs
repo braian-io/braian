@@ -68,7 +68,7 @@ async fn create_run(
             user_id,
             principal_id: identity.actor.actor.as_uuid(),
             workspace_id: body.workspace_id,
-            title: title_from(&prompt),
+            title: display_title_fallback(&prompt),
             context: context.clone(),
         })
         .await
@@ -104,6 +104,7 @@ async fn create_run(
         .ensure_agent_session(id, kind, hidden, &session)
         .await
         .map_err(store_status)?;
+    spawn_session_title(state.clone(), id, prompt.clone());
     spawn_run(state.clone(), identity.clone(), id);
     Ok(Json(load_detail(&state, &identity, id).await?))
 }
@@ -327,6 +328,17 @@ async fn propose_in_session(
         .await
         .map_err(store_status)?;
     Ok(Json(load_detail(&state, &identity, id).await?))
+}
+
+fn spawn_session_title(state: AppState, run_id: Uuid, prompt: String) {
+    tokio::spawn(async move {
+        let Some(title) = crate::platform::generate_session_title(&prompt).await else {
+            return;
+        };
+        if let Err(error) = state.store.set_agent_session_title(run_id, &title).await {
+            tracing::warn!(%error, %run_id, "could not store agent session title");
+        }
+    });
 }
 
 fn spawn_run(state: AppState, identity: Identity, run_id: Uuid) {
@@ -1636,17 +1648,16 @@ fn latest_user_text(messages: &[Value]) -> String {
         .unwrap_or_default()
 }
 
-fn title_from(prompt: &str) -> String {
+fn display_title_fallback(prompt: &str) -> String {
     let trimmed = prompt.trim();
+    if trimmed.is_empty() {
+        return "Agent".to_owned();
+    }
     let mut title: String = trimmed.chars().take(80).collect();
     if trimmed.chars().count() > 80 {
         title.push('…');
     }
-    if title.is_empty() {
-        "Agent".to_owned()
-    } else {
-        title
-    }
+    title
 }
 
 async fn resolve_user_id(state: &AppState, identity: &Identity) -> Result<Option<Uuid>, Problem> {
@@ -1829,7 +1840,7 @@ fn display_value(value: &Value) -> String {
 #[cfg(test)]
 mod session_tests {
     use super::{
-        parse_rename, rename_target, session_choice, session_document,
+        display_title_fallback, parse_rename, rename_target, session_choice, session_document,
         unmatched_name_reaches_the_model,
     };
     use serde_json::json;
@@ -1971,5 +1982,26 @@ mod session_tests {
         assert_eq!(session["views"][0], "products");
         assert_eq!(session["views"][1], "other");
         assert_eq!(session["focus"], "products");
+    }
+
+    #[test]
+    fn display_title_fallback_truncates_long_prompts() {
+        let long = format!("{}END", "x".repeat(120));
+        let fallback = display_title_fallback(&long);
+        assert!(fallback.ends_with('…'));
+        assert!(fallback.chars().count() <= 81);
+        assert_eq!(
+            display_title_fallback("  rename Cheddar  "),
+            "rename Cheddar"
+        );
+        assert_eq!(display_title_fallback("   "), "Agent");
+    }
+
+    #[test]
+    fn stub_session_title_uses_five_words() {
+        assert_eq!(
+            crate::platform::stub_session_title("one two three four five six seven"),
+            "one two three four five"
+        );
     }
 }
