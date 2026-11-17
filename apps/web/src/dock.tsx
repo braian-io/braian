@@ -188,12 +188,6 @@ type Frame = {
   agentViews: Set<string>
 }
 
-function splitHasDirectDetail(node: Extract<Node, { type: 'split' }>, viewTypes: Map<string, string>) {
-  return node.children.some(
-    (child) => child.type === 'tabs' && child.views.some((id) => viewTypes.get(id) === 'object_detail'),
-  )
-}
-
 /** A horizontal agent dock must not let the Detail flex rules resize the left subtree. */
 function splitLocksAgentDock(node: Extract<Node, { type: 'split' }>, viewTypes: Map<string, string>) {
   if (node.dir !== 'horizontal' || node.children.length !== 2) return false
@@ -209,43 +203,20 @@ function SplitNode({ frame, node, path, inAgentDock = false }: { frame: Frame; n
     return <Pane frame={frame} leaf={{ ...leaf, path }} />
   }
   const viewTypes = new Map(frame.viewList.map((view) => [view.id, view.type]))
-  const directDetail = splitHasDirectDetail(node, viewTypes)
   const lockRatios = splitLocksAgentDock(node, viewTypes)
   // Same rule as main: a split that contains Detail anywhere can shrink so the
   // table floor (440px once the split is at least 640px) holds and Detail
   // gives way. The agent-dock wrapper also contains Detail, but marking it
   // would make the whole dock the container and floor nested tables against it.
   const hasDetail = !lockRatios && views(node).some((id) => viewTypes.get(id) === 'object_detail')
-  const focusedType = frame.viewList.find((view) => view.id === frame.doc.focus)?.type
-  const freezeCatalog =
-    inAgentDock
-    && directDetail
-    && node.dir === 'horizontal'
-    && node.children.length === 2
-    && focusedType !== 'agents'
-  const pinCells = lockRatios || freezeCatalog
   const gaps = Math.max(0, node.children.length - 1) * 6
   const subtreeInAgentDock = inAgentDock || lockRatios
-  const catalogScale = lockRatios && node.dir === 'horizontal' && focusedType !== 'agents'
-  const catalogRatio = node.ratios[0] ?? 1
-  const catalogStyle: CSSProperties | undefined = catalogScale
-    ? { ['--agent-dock-ratio' as string]: String(catalogRatio > 0 ? catalogRatio : 1) }
-    : undefined
   return (
     <div
-      className={
-        lockRatios
-          ? `split ${node.dir} split-agent-dock`
-          : freezeCatalog
-            ? `split ${node.dir} split-catalog-frozen`
-            : `split ${node.dir}`
-      }
+      className={lockRatios ? `split ${node.dir} split-agent-dock` : `split ${node.dir}`}
       data-path={path.join('.') || 'root'}
       data-has-detail={hasDetail ? 'true' : undefined}
       data-agent-dock={lockRatios ? 'true' : undefined}
-      data-catalog-frozen={freezeCatalog ? 'true' : undefined}
-      data-catalog-scale={catalogScale ? 'full' : undefined}
-      style={catalogStyle}
     >
       {node.children.map((child, index) => (
         <SplitChild
@@ -257,7 +228,6 @@ function SplitNode({ frame, node, path, inAgentDock = false }: { frame: Frame; n
           path={path}
           gaps={gaps}
           hasDetail={hasDetail}
-          pinCells={pinCells}
           inAgentDock={subtreeInAgentDock}
         />
       ))}
@@ -273,7 +243,6 @@ function SplitChild({
   path,
   gaps,
   hasDetail,
-  pinCells,
   inAgentDock,
 }: {
   frame: Frame
@@ -283,29 +252,10 @@ function SplitChild({
   path: number[]
   gaps: number
   hasDetail: boolean
-  pinCells: boolean
   inAgentDock: boolean
 }) {
   const basis = `calc((100% - ${gaps}px) * ${node.ratios[index] ?? 0})`
-  const flex = pinCells ? '0 0' : hasDetail ? '0 1' : '0 0'
-  const last = index === node.children.length - 1
-  const docked = pinCells && node.dir === 'horizontal'
-    ? {
-        position: 'absolute' as const,
-        top: 0,
-        bottom: 0,
-        width: basis,
-        // The catalog's min-width is the full dock. Without a cap, that min
-        // content size grows this cell over the agent and steals its clicks.
-        maxWidth: basis,
-        minWidth: 0,
-        flex: 'none',
-        ...(index === 0 ? { left: 0 } : last ? { right: 0, zIndex: 2 } : {}),
-      }
-    : { flex: `${flex} ${basis}` }
-  const dividerOffset = pinCells && node.dir === 'horizontal'
-    ? node.ratios.slice(0, index).reduce((sum, ratio) => sum + ratio, 0)
-    : null
+  const flex = hasDetail ? '0 1' : '0 0'
   return (
     <>
       {index > 0 ? (
@@ -315,10 +265,9 @@ function SplitChild({
           index={index - 1}
           path={path}
           count={node.children.length}
-          dockedLeft={dividerOffset == null ? undefined : `calc((100% - ${gaps}px) * ${dividerOffset})`}
         />
       ) : null}
-      <div className="split-cell" style={docked}>
+      <div className="split-cell" style={{ flex: `${flex} ${basis}` }}>
         <SplitNode frame={frame} node={child} path={[...path, index]} inAgentDock={inAgentDock} />
       </div>
     </>

@@ -19,20 +19,16 @@ describe('Detail width layout (row 239)', () => {
     )
   })
 
-  it('does not apply detail-split containment inside an agent dock wrapper', () => {
-    expect(css).toMatch(
-      /\.dock-root > \.split\.horizontal\[data-agent-dock='true'\] \.split\[data-has-detail='true'\]\s*\{[^}]*container-type:\s*normal/,
-    )
-    expect(css).toMatch(
+  it('lays out the agent dock with flex splits instead of overlaying the catalog', () => {
+    expect(css).not.toMatch(/split-catalog-frozen/)
+    expect(css).not.toMatch(/data-catalog-scale/)
+    expect(css).not.toMatch(/translateX\(18px\)/)
+    expect(css).not.toMatch(
       /\.dock-root > \.split\.horizontal\.split-agent-dock\s*\{[^}]*position:\s*relative/,
     )
-    expect(css).toMatch(
-      /\.dock-root > \.split\.horizontal\.split-agent-dock\[data-catalog-scale='full'\] > \.split-cell:first-child > \.split:not\(:has\(\[data-testid='agents-table'\]\)\)\s*\{[^}]*width:\s*calc\(100% \/ var\(--agent-dock-ratio\) \+ 6px\)/,
+    expect(css).not.toMatch(
+      /--agent-dock-ratio/,
     )
-    expect(css).toMatch(
-      /\.dock-root \.split\.horizontal\.split-catalog-frozen\s*\{[^}]*width:\s*100%/,
-    )
-    expect(css).not.toMatch(/translateX\(18px\)/)
   })
 
   it('does not floor a table beside a direct Detail pane', () => {
