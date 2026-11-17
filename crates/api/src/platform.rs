@@ -1091,10 +1091,11 @@ async fn translate_workspace_views(state: &AppState, workspace: &mut Value) {
         let view_type = view
             .get("type")
             .and_then(Value::as_str)
+            .map(str::to_owned)
             .unwrap_or_default();
         if let Some(view_state) = view.get_mut("state") {
             braian_model::translate_view_state(view_state, &cached.defs);
-            braian_model::strip_ephemeral_table_search(view_type, view_state);
+            braian_model::strip_ephemeral_table_search(&view_type, view_state);
         }
     }
 }
