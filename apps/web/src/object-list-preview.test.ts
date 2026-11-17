@@ -56,6 +56,12 @@ describe('object list preview', () => {
     expect(client.getQueryData(['object', 'obj-1'])).toBe(full)
   })
 
+  it('treats list previews as stale immediately', () => {
+    const preview = buildListPreviewFromRow(row, defs, 'en')
+    expect(objectQueryStaleTime(preview)).toBe(0)
+    expect(objectQueryStaleTime({ id: 'obj-1', values: {} })).toBe(OBJECT_FETCH_STALE_MS)
+  })
+
   it('replaces an older preview with a newer preview', () => {
     const client = new QueryClient()
     const older = { ...buildListPreviewFromRow({ ...row, version: '1' }, defs, 'en') }
