@@ -204,6 +204,51 @@ async function saveDraftIfNeeded(page: Page) {
 }
 
 test.describe('measure unit inline edit', () => {
+  test('unchanged edit in kcal column does not PATCH storage', async ({ page }) => {
+    test.setTimeout(120_000)
+    let objectId = ''
+    let energyBefore: MeasureValue | undefined
+    const patches: string[] = []
+    try {
+      await page.route('**/v1/objects/*', async (route) => {
+        if (route.request().method() === 'PATCH') patches.push(route.request().postData() ?? '')
+        await route.continue()
+      })
+      await login(page)
+      await openProducts(page)
+      await addEnergyKcalColumn(page)
+      objectId = await cheddarObjectId(page)
+      energyBefore = await readEnergy(page, objectId)
+      const current = await page.request.get(`/v1/objects/${objectId}`, { timeout: apiTimeout })
+      const version = (await current.json()) as { version?: number }
+      await page.request.patch(`/v1/objects/${objectId}`, {
+        headers: { 'If-Match': String(version.version ?? 0) },
+        timeout: apiTimeout,
+        data: { values: { energy: { value: '2030', unit: 'kJ' } } },
+      })
+
+      const cell = cheddarRow(page).locator('[data-column*="energy"]').first()
+      await expect(cell).toBeVisible({ timeout: 60_000 })
+      await cell.dblclick()
+      const valueInput = page.locator('[data-testid^="cell-editor-energy"][data-testid$="-value"]').first()
+      await expect(valueInput).toBeVisible()
+      await valueInput.press('Enter')
+      expect(patches).toHaveLength(0)
+      expect(await readEnergy(page, objectId)).toEqual({ value: '2030', unit: 'kJ' })
+    } finally {
+      try {
+        if (objectId) await restoreEnergy(page, objectId, energyBefore)
+      } catch (error) {
+        console.error('energy cleanup failed:', error)
+      }
+      try {
+        await restoreProductsColumnPrefs(page)
+      } catch (error) {
+        console.error('column prefs cleanup failed:', error)
+      }
+    }
+  })
+
   test('K1–K3 grid editor splits number and unit, converts on save, no float noise', async ({ page }) => {
     test.setTimeout(180_000)
     let objectId = ''
@@ -397,13 +442,6 @@ test.describe('measure unit inline edit', () => {
       const valueInput = page.locator('[data-testid="cell-editor-energy#unit:kJ-value"]')
       await expect(valueInput).toHaveValue('2000')
       await valueInput.press('Enter')
-      expect(await readEnergy(page, objectId)).toEqual({ value: '2000', unit: 'kJ' })
-
-      const kcalCell = row.locator('[data-testid="path-cell-energy#unit:kcal"]')
-      await kcalCell.dblclick()
-      const kcalValueInput = page.locator('[data-testid="cell-editor-energy#unit:kcal-value"]')
-      await expect(kcalValueInput).not.toHaveValue('')
-      await kcalValueInput.press('Enter')
       expect(await readEnergy(page, objectId)).toEqual({ value: '2000', unit: 'kJ' })
     } finally {
       try {
