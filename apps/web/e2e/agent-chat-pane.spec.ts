@@ -127,7 +127,7 @@ test('keeps the word fallback when session title generation fails', async ({ pag
   test.setTimeout(120_000)
   await page.setViewportSize({ width: 1280, height: 800 })
   await login(page)
-  const prompt = `title-fail-e2e: ask me before the palette lists extra words that never become the ai title`
+  const prompt = `title-fail-e2e: describe the catalog layout ${Date.now().toString().slice(-4)}`
   const fallback = agentWordFallbackHint(prompt)
   const products = mainTable(page, 'Products')
   await products.getByTestId('object-row').first().click()
