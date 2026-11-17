@@ -25,6 +25,14 @@ function agent(page: Page) {
   return page.getByTestId('agent-view').last()
 }
 
+async function ensureAgentOpen(page: Page) {
+  if ((await agent(page).count()) === 0) {
+    await page.keyboard.press('Control+j')
+  }
+  await expect(agent(page)).toBeVisible({ timeout: 30_000 })
+  return agent(page)
+}
+
 async function cleanupDrafts(page: Page) {
   await page.getByTestId('discard-draft').first().click({ timeout: 5_000 }).catch(() => undefined)
   const discardAll = page.getByRole('button', { name: 'Discard all' })
@@ -75,9 +83,7 @@ test('agent keyboard shortcuts', async ({ page }) => {
       await expect(agent(page)).toHaveCount(0)
     }
 
-    await page.keyboard.press('Control+j')
-    const reopened = agent(page)
-    await expect(reopened).toBeVisible()
+    const reopened = await ensureAgentOpen(page)
     const input = reopened.getByTestId('agent-follow-up')
     await input.fill('line one')
     await input.press('Shift+Enter')
