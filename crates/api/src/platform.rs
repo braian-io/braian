@@ -1834,7 +1834,11 @@ fn reply_text(payload: &Value) -> String {
 const SESSION_TITLE_SYSTEM: &str = "Write a short session title using 3 to 6 words in the same language as the user message. Reply with only the title: no quotes, no trailing punctuation, no explanation.";
 
 pub(crate) fn stub_session_title(prompt: &str) -> String {
-    prompt.split_whitespace().take(5).collect::<Vec<_>>().join(" ")
+    prompt
+        .split_whitespace()
+        .take(5)
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 pub(crate) fn normalize_session_title(text: &str) -> String {

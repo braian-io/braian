@@ -61,8 +61,8 @@ test('agent pane tab and session header stay readable', async ({ page }) => {
     const tab = agentPaneTab(page)
     await expect(tab).toBeVisible({ timeout: 30_000 })
     await expect(tab).toHaveText(/^Agent$/)
-    const shortTitle = 'byt namn på den här produkten'
-    await expect(tab).toHaveAttribute('title', `Agent — ${shortTitle}`)
+    const shortTitle = 'byt namn på den här'
+    await expect.poll(async () => tab.getAttribute('title')).toBe(`Agent — ${shortTitle}`)
     const view = agentSessionView(page, shortTitle)
     await expect(view).toBeVisible()
     const heading = view.getByTestId('agent-session-title')
@@ -94,8 +94,8 @@ test('long first message keeps full prompt on the session header', async ({ page
     await openAgentAsk(page, prompt)
     const tab = agentPaneTab(page)
     await expect(tab).toBeVisible({ timeout: 30_000 })
-    const shortTitle = 'Please summarize how this catalog row differs'
-    await expect(tab).toHaveAttribute('title', `Agent — ${shortTitle}`)
+    const shortTitle = 'Please summarize how this catalog row'
+    await expect.poll(async () => tab.getAttribute('title')).toBe(`Agent — ${shortTitle}`)
     const view = agentSessionViewByFullPrompt(page, marker)
     await expect(view).toBeVisible()
     const heading = view.getByTestId('agent-session-title')

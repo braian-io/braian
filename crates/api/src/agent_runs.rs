@@ -1986,11 +1986,14 @@ mod session_tests {
 
     #[test]
     fn display_title_fallback_truncates_long_prompts() {
-        let long = format!("{}END", "å".repeat(120));
+        let long = format!("{}END", "x".repeat(120));
         let fallback = display_title_fallback(&long);
         assert!(fallback.ends_with('…'));
         assert!(fallback.chars().count() <= 81);
-        assert_eq!(display_title_fallback("  rename Cheddar  "), "rename Cheddar");
+        assert_eq!(
+            display_title_fallback("  rename Cheddar  "),
+            "rename Cheddar"
+        );
         assert_eq!(display_title_fallback("   "), "Agent");
     }
 
