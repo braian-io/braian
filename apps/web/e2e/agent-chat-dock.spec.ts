@@ -39,7 +39,7 @@ function paneWithDetail(page: Page) {
 }
 
 function paneWithAgent(page: Page) {
-  return page.locator('section.pane').filter({ has: page.getByTestId('agent-view') })
+  return page.locator('section.pane').filter({ has: page.getByTestId('agent-view') }).last()
 }
 
 function intersectionWidth(a: Box, b: Box): number {

@@ -29,6 +29,12 @@ describe('Detail width layout (row 239)', () => {
     expect(css).not.toMatch(
       /--agent-dock-ratio/,
     )
+    expect(css).toMatch(
+      /\.dock-root > \.split\.horizontal\[data-agent-dock='true'\] \.split\[data-has-detail='true'\]\s*\{[^}]*container-type:\s*normal/,
+    )
+    expect(css).toMatch(
+      /@media \(min-width:\s*1360px\)\s*\{[\s\S]*?min-width:\s*360px/,
+    )
   })
 
   it('does not floor a table beside a direct Detail pane', () => {
