@@ -1420,9 +1420,10 @@ export function CommandPalette({
       : commandPlaceholder(types)
   const userTurns = turns.filter((turn) => turn.role === 'user')
   const question = userTurns.at(-1)?.text ?? ''
-  const filteredHighlight =
-    mode === 'list' && stack.length === 0 && query.trim() ? resolveActiveAfterQuery(rows, query) : null
-  const selected = active ?? filteredHighlight
+  const selected =
+    mode === 'list' && stack.length === 0 && query.trim()
+      ? resolveActiveAfterQuery(rows, query)
+      : active
 
 
   if (mode === 'fields') {
