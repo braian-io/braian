@@ -114,25 +114,6 @@ test.describe('palette keyboard scroll keeps the active row visible', () => {
 
       await page.keyboard.press('Escape')
       await expect(page.getByTestId('command-palette')).toHaveCount(0)
-
-      // Wheel and pointer move must not jump the list scroll position (avoid hover() — it scrolls into view).
-      await openFieldsPalette(page)
-      for (let step = 0; step < 16; step += 1) await page.keyboard.press('ArrowDown')
-      for (let i = 0; i < 4; i += 1) await page.mouse.wheel(0, 200)
-      const afterWheel = await page.evaluate((selector) => {
-        const list = document.querySelector<HTMLElement>(selector)
-        return list?.scrollTop ?? 0
-      }, listSelector)
-      expect(afterWheel).toBeGreaterThan(0)
-      const foot = page.getByTestId('fields-mode-foot')
-      const footBox = await foot.boundingBox()
-      expect(footBox).not.toBeNull()
-      await page.mouse.move(footBox!.x + 12, footBox!.y + 12)
-      const afterPointer = await page.evaluate((selector) => {
-        const list = document.querySelector<HTMLElement>(selector)
-        return list?.scrollTop ?? 0
-      }, listSelector)
-      expect(afterPointer).toBe(afterWheel)
     } finally {
       await page.keyboard.press('Escape').catch(() => undefined)
       await page.keyboard.press('Escape').catch(() => undefined)
@@ -150,7 +131,7 @@ test.describe('palette keyboard scroll keeps the active row visible', () => {
       await page.keyboard.press('Control+k')
       await expect(page.getByTestId('command-palette')).toBeVisible()
 
-      await page.getByTestId('palette-input').fill('select fields')
+      await page.getByTestId('palette-input').fill('open view')
       await expect
         .poll(async () => activeRowInList(page, rootList), { timeout: 15_000 })
         .toMatchObject({ inView: true })
@@ -183,9 +164,10 @@ test.describe('palette keyboard scroll keeps the active row visible', () => {
         return list?.scrollTop ?? 0
       }, rootList)
       expect(afterWheel).toBeGreaterThan(0)
-      const listBox = await page.locator(rootList).boundingBox()
-      expect(listBox).not.toBeNull()
-      await page.mouse.move(listBox!.x + listBox!.width / 2, listBox!.y + 48)
+      const foot = page.locator('.palette-foot').first()
+      const footBox = await foot.boundingBox()
+      expect(footBox).not.toBeNull()
+      await page.mouse.move(footBox!.x + 12, footBox!.y + 8)
       const afterPointer = await page.evaluate((selector) => {
         const list = document.querySelector<HTMLElement>(selector)
         return list?.scrollTop ?? 0

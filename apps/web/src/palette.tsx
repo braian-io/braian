@@ -580,7 +580,7 @@ export function CommandPalette({
       paletteScrollList.current = true
     }
     setActive(activeAfterQuery(rows, query))
-  }, [query, mode, stack.length, queryMatchId])
+  }, [query, mode, stack.length, queryMatchId, rows.length])
   useEffect(() => {
     if (mode !== 'list' || stack.length === 0 || !query.trim()) return
     paletteScrollList.current = true
@@ -1496,8 +1496,10 @@ export function CommandPalette({
             value={query}
             placeholder={placeholder}
             onValueChange={(value) => {
+              if (value.trim() && mode === 'list') paletteScrollList.current = true
               setQuery(value)
-              setActive(value.trim() ? (stack.length > 0 ? 0 : null) : 0)
+              if (stack.length > 0) setActive(value.trim() ? 0 : 0)
+              else if (!value.trim()) setActive(0)
             }}
           />
           {mode === 'ai' ? (
