@@ -1498,8 +1498,22 @@ export function CommandPalette({
             onValueChange={(value) => {
               if (value.trim() && mode === 'list') paletteScrollList.current = true
               setQuery(value)
-              if (stack.length > 0) setActive(value.trim() ? 0 : 0)
-              else if (!value.trim()) setActive(0)
+              if (stack.length > 0) {
+                setActive(value.trim() ? 0 : 0)
+                return
+              }
+              if (!value.trim()) {
+                setActive(0)
+                return
+              }
+              const nextRows = topFrame
+                ? filterPaletteRows(isObjectParam(topFrame.paramType) ? hits : topFrame.rows, value)
+                : withModelCommand(
+                    value,
+                    visibleRows(value, catalog, hits, frecency, Date.now(), paletteMemory, session.objectId),
+                  )
+              const next = activeAfterQuery(nextRows, value)
+              if (next != null) setActive(next)
             }}
           />
           {mode === 'ai' ? (
