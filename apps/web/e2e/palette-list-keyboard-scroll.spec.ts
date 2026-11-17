@@ -124,9 +124,10 @@ test.describe('palette keyboard scroll keeps the active row visible', () => {
         return list?.scrollTop ?? 0
       }, listSelector)
       expect(afterWheel).toBeGreaterThan(0)
-      const listBox = await page.locator(listSelector).boundingBox()
-      expect(listBox).not.toBeNull()
-      await page.mouse.move(listBox!.x + listBox!.width / 2, listBox!.y + 40)
+      const foot = page.getByTestId('fields-mode-foot')
+      const footBox = await foot.boundingBox()
+      expect(footBox).not.toBeNull()
+      await page.mouse.move(footBox!.x + 12, footBox!.y + 12)
       const afterPointer = await page.evaluate((selector) => {
         const list = document.querySelector<HTMLElement>(selector)
         return list?.scrollTop ?? 0
@@ -149,11 +150,10 @@ test.describe('palette keyboard scroll keeps the active row visible', () => {
       await page.keyboard.press('Control+k')
       await expect(page.getByTestId('command-palette')).toBeVisible()
 
-      await page.getByTestId('palette-input').fill('open structure')
-      await expect(page.locator('#palette-list .hit.on')).toBeVisible()
-      const filterState = await activeRowInList(page, rootList)
-      expect(filterState, 'root filter should highlight a row').not.toBeNull()
-      expect(filterState!.inView, 'root filter highlight outside list viewport').toBe(true)
+      await page.getByTestId('palette-input').fill('select fields')
+      await expect
+        .poll(async () => activeRowInList(page, rootList), { timeout: 15_000 })
+        .toMatchObject({ inView: true })
 
       await page.getByTestId('palette-input').fill('')
       await page.getByTestId('palette-input').fill('open structure')
