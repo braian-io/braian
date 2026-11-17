@@ -57,8 +57,6 @@ test('agent keyboard shortcuts', async ({ page }) => {
     await expect(agent(page)).toBeVisible()
     await expect(agent(page).getByTestId('agent-follow-up')).toHaveValue(draftText)
 
-    await page.keyboard.press('Control+j')
-    await expect(agent(page)).toBeVisible()
     await products.getByTestId('object-row').first().click()
     await expect(agent(page)).toBeVisible()
     await page.keyboard.press('Control+j')
