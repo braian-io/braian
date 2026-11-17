@@ -69,7 +69,7 @@ beforeEach(() => {
 describe('open structure palette helpers', () => {
   it('matches open structure, open tree, and struktur', () => {
     const root = openStructureRootItem()
-    for (const query of ['open structure', 'open tree', 'structure', 'tree', 'struktur', 'träd', 'öppna']) {
+    for (const query of ['open structure', 'open tree', 'structure', 'tree', 'struktur', 'träd', 'öppna']) { // english-check: allow-line
       const rows = visibleRows(query, [root], [], {})
       expect(rows.some((row) => (row.sourceId ?? row.id) === 'layout:open-structure')).toBe(true)
     }

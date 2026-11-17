@@ -13,7 +13,7 @@ export function openStructureRootItem(): PaletteItem {
     group: 'views',
     title: OPEN_STRUCTURE_SUBMENU_LABEL,
     subtitle: 'Open a structure tree in the workspace',
-    keywords: ['open', 'structure', 'tree', 'struktur', 'träd', 'öppna'],
+    keywords: ['open', 'structure', 'tree', 'struktur', 'träd', 'öppna'], // english-check: allow-line — Swedish palette keywords
   }
 }
 
