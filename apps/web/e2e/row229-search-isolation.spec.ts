@@ -4,6 +4,15 @@ import { mainTable } from './ui'
 
 const PRODUCT_TYPE_ID = '018f0000-0000-7000-8000-000000000200'
 
+type WorkspaceView = {
+  id: string
+  type: string
+  title: string
+  pane?: string
+  position?: number
+  state: Record<string, unknown>
+}
+
 async function login(page: Page) {
   const demo = demoCredentials()
   await page.goto('/')
@@ -48,9 +57,15 @@ async function createProductsWorkspace(page: Page): Promise<{ id: string; name: 
   return { id, name, viewId }
 }
 
-async function openWorkspace(page: Page, workspaceId: string) {
-  await page.goto(`/?ws=${encodeURIComponent(workspaceId)}`)
+async function reloadDock(page: Page) {
+  await page.reload({ waitUntil: 'domcontentloaded', timeout: 60_000 })
   await expect(page.getByTestId('dock')).toBeVisible({ timeout: 60_000 })
+}
+
+async function openWorkspaceTab(page: Page, name: string) {
+  const tab = page.locator('nav.tabs button.tab').filter({ hasText: name }).first()
+  await tab.click()
+  await expect(tab).toHaveClass(/active/)
   const table = mainTable(page)
   await expect(table).toBeVisible({ timeout: 30_000 })
   await expect(table.getByTestId('quick-filter')).toHaveValue('')
@@ -58,19 +73,45 @@ async function openWorkspace(page: Page, workspaceId: string) {
   return table
 }
 
-async function storedTableFilter(page: Page, workspaceId: string, viewId: string): Promise<string> {
+async function getView(page: Page, workspaceId: string, viewId: string): Promise<WorkspaceView> {
   const response = await page.request.get(`/v1/workspaces/${workspaceId}`)
   expect(response.ok()).toBeTruthy()
-  const workspace = (await response.json()) as {
-    views: Array<{ id: string; state?: { table?: { filter?: string } } }>
-  }
-  return workspace.views.find((item) => item.id === viewId)?.state?.table?.filter ?? ''
+  const workspace = (await response.json()) as { views: WorkspaceView[] }
+  const view = workspace.views.find((item) => item.id === viewId)
+  if (!view) throw new Error(`workspace ${workspaceId} has no view ${viewId}`)
+  return view
+}
+
+async function storedTableFilter(page: Page, workspaceId: string, viewId: string): Promise<string> {
+  const view = await getView(page, workspaceId, viewId)
+  const table = view.state.table as { filter?: string } | undefined
+  return table?.filter ?? ''
+}
+
+/** Simulate an old client that only wrote toolbar search into state.table.filter. */
+async function poisonViewTableFilter(page: Page, workspaceId: string, viewId: string, filter: string) {
+  const view = await getView(page, workspaceId, viewId)
+  const state = view.state
+  const table = { ...(state.table as Record<string, unknown> | undefined), filter }
+  const poisoned = await page.request.post('/v1/views', {
+    data: {
+      id: viewId,
+      workspace_id: workspaceId,
+      type: view.type,
+      title: view.title,
+      pane: view.pane ?? 'main',
+      position: view.position ?? 0,
+      state: { ...state, table },
+    },
+  })
+  expect(poisoned.ok(), `poison view ${poisoned.status()}`).toBeTruthy()
 }
 
 test('table search stays local per browser session', async ({ browser }) => {
   test.setTimeout(300_000)
   let workspaceId = ''
   let viewId = ''
+  let workspaceName = ''
   const contexts: Array<Awaited<ReturnType<Browser['newContext']>>> = []
 
   try {
@@ -81,6 +122,7 @@ test('table search stays local per browser session', async ({ browser }) => {
     const workspace = await createProductsWorkspace(seedPage)
     workspaceId = workspace.id
     viewId = workspace.viewId
+    workspaceName = workspace.name
     await seed.close()
 
     const contextA = await browser.newContext()
@@ -91,8 +133,10 @@ test('table search stays local per browser session', async ({ browser }) => {
     await login(pageA)
     await login(pageB)
 
-    await openWorkspace(pageA, workspaceId)
-    await openWorkspace(pageB, workspaceId)
+    await reloadDock(pageA)
+    await reloadDock(pageB)
+    await openWorkspaceTab(pageA, workspaceName)
+    await openWorkspaceTab(pageB, workspaceName)
 
     const termA = `ROW229-A-${Date.now()}`
     const termB = `ROW229-B-${Date.now() + 1}`
@@ -107,31 +151,12 @@ test('table search stays local per browser session', async ({ browser }) => {
     await expect(quickB).toHaveValue(termB)
     await expect(quickA).toHaveValue(termA)
 
-    // Another session (or an old client) must not persist toolbar search on the view row.
     const poison = `ROW229-POISON-${Date.now()}`
-    const poisoned = await pageB.request.post('/v1/views', {
-      data: {
-        id: viewId,
-        workspace_id: workspaceId,
-        type: 'object_table',
-        title: 'Products',
-        pane: 'main',
-        position: 0,
-        state: {
-          columns: ['number', 'name', 'status'],
-          sort: 'number',
-          object_type: PRODUCT_TYPE_ID,
-          type_key: 'product',
-          table: { filter: poison, sort: 'number', groupBy: '', sizes: {} },
-        },
-      },
-    })
-    expect(poisoned.ok(), `poison view ${poisoned.status()}`).toBeTruthy()
+    await poisonViewTableFilter(pageB, workspaceId, viewId, poison)
     expect(await storedTableFilter(pageB, workspaceId, viewId)).toBe('')
 
-    // Reload must not resurrect server-side or other-session search text.
-    await pageA.reload({ waitUntil: 'domcontentloaded', timeout: 60_000 })
-    await openWorkspace(pageA, workspaceId)
+    await reloadDock(pageA)
+    await openWorkspaceTab(pageA, workspaceName)
 
     await quickA.fill(termA)
     await expect(quickA).toHaveValue(termA)
