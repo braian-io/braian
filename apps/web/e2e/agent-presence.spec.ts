@@ -359,6 +359,8 @@ test('the agents table lists status, proposals and updated time, and Enter opens
   const title = 'ask me before the agents table'
   await ask(page, title)
   await expect(agentView(page, title).getByTestId('agent-status')).toHaveAttribute('data-status', 'waiting', { timeout: 30_000 })
+  await page.keyboard.press('Control+j')
+  await expect(agentView(page, title)).toHaveCount(0)
   await page.keyboard.press('Control+k')
   await page.getByTestId('palette-input').fill('Agents table')
   await expect(page.getByTestId('command-palette').locator('.hit.on')).toContainText('Agents table')
