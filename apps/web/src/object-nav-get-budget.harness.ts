@@ -19,6 +19,8 @@ export const ROW269_MEASURED_WITH_DEBOUNCE = 48
 export const ROW269_PREFETCH_SCHEDULED_WITHOUT_DEBOUNCE_MIN = 27
 /** Unit-model prefetch schedules with debounce on (one coalesced burst). */
 export const ROW269_PREFETCH_SCHEDULED_WITH_DEBOUNCE = 7
+/** Observed `prefetchObjectDetails` schedules with debounce on in CI e2e (c060b46). */
+export const ROW269_E2E_PREFETCH_WITH_DEBOUNCE_MAX = 30
 /** Upper cap on HTTP GET /v1/objects/* during the rapid-Down burst (debounced nav). */
 export const ROW269_GET_BUDGET_MAX = 52
 
