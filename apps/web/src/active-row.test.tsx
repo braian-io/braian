@@ -267,7 +267,7 @@ function selectedLook(row: Element) {
 }
 
 describe('active row', () => {
-  it('moves focus with arrows without selecting or changing the detail', async () => {
+  it('moves and selects with arrows and updates detail without Enter', async () => {
     render(<TableHarness />)
     await waitFor(() => expect(screen.getAllByTestId('object-row')).toHaveLength(tableRows.length))
     const rows = () => screen.getAllByTestId('object-row')
@@ -275,13 +275,10 @@ describe('active row', () => {
 
     expect(detail()).toBe('')
     fireEvent.keyDown(grid(), { key: 'ArrowDown' })
+    await waitFor(() => expect(detail()).toBe('id-0'))
+    expect(rows()[0]?.getAttribute('aria-selected')).toBe('true')
     fireEvent.keyDown(grid(), { key: 'ArrowDown' })
     await waitFor(() => expect(grid().getAttribute('aria-activedescendant')).toBe('object-row-id-1'))
-    expect(detail()).toBe('')
-    expect(rows()[1]?.getAttribute('aria-selected')).toBe('false')
-    expect(readUiContext().selection).toEqual([])
-
-    fireEvent.keyDown(grid(), { key: 'Enter' })
     await waitFor(() => expect(detail()).toBe('id-1'))
     expect(rows()[1]?.getAttribute('aria-selected')).toBe('true')
 
@@ -291,17 +288,16 @@ describe('active row', () => {
 
     fireEvent.keyDown(grid(), { key: 'ArrowDown' })
     await waitFor(() => expect(grid().getAttribute('aria-activedescendant')).toBe('object-row-id-4'))
-    expect(detail()).toBe('id-3')
-    expect(rows()[3]?.getAttribute('aria-selected')).toBe('true')
-    expect(rows()[4]?.getAttribute('aria-selected')).toBe('false')
+    await waitFor(() => expect(detail()).toBe('id-4'))
+    expect(rows()[4]?.getAttribute('aria-selected')).toBe('true')
     await waitFor(() => expect(readUiContext().selection).toEqual([
-      { id: 'id-3', key: 'ART-3', name: 'Three', type: 'article', version: '1' },
+      { id: 'id-4', key: 'ART-4', name: 'Four', type: 'article', version: '1' },
     ]))
 
     fireEvent.mouseEnter(rows()[0]!)
     fireEvent.mouseOver(rows()[0]!)
     fireEvent.pointerMove(rows()[0]!)
-    expect(detail()).toBe('id-3')
+    expect(detail()).toBe('id-4')
     expect(rows()[0]?.getAttribute('aria-selected')).toBe('false')
     expect(scrollToIndex).toHaveBeenLastCalledWith(4)
   })
@@ -328,11 +324,10 @@ describe('active row', () => {
     fireEvent.keyDown(focused, { key: 'ArrowDown' })
 
     await waitFor(() => expect(grid().getAttribute('aria-activedescendant')).toBe('object-row-id-3'))
-    expect(detail()).toBe('id-0')
-    expect(rows()[0]?.getAttribute('aria-selected')).toBe('true')
-    expect(rows()[3]?.getAttribute('aria-selected')).toBe('false')
-    expect(rows()[0]?.classList.contains('picked')).toBe(true)
-    expect(rows()[3]?.classList.contains('active')).toBe(true)
+    await waitFor(() => expect(detail()).toBe('id-3'))
+    expect(rows()[3]?.getAttribute('aria-selected')).toBe('true')
+    expect(rows()[0]?.classList.contains('picked')).toBe(false)
+    expect(rows()[3]?.classList.contains('selected')).toBe(true)
     expect(rows()[3]?.querySelector('.cell.active-cell')).toBeTruthy()
     expect(document.activeElement).toBe(grid())
 

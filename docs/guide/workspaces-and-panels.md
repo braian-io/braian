@@ -94,6 +94,10 @@ show`; add a view from the palette to fill it again.
 
 ## Detail and the table share space
 
+Arrow keys in an object table select the row and open Detail from the list data right
+away; the full object fills in while you read what is already on screen. Neighbour rows
+are prefetched so normal up/down movement stays instant.
+
 When an object table and a Detail view sit side by side, the table keeps a usable
 minimum width. The split never shrinks it down to a single column, so the Name column
 stays readable while you work in Detail. The Detail pane takes the rest of the space

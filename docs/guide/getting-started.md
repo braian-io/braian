@@ -68,9 +68,10 @@ Click a row in an object table to make it the current selection. The `Detail` vi
 shows the selected object with its attributes. When a detail view is open, clicking a
 row updates it immediately; you do not need to open a new tab.
 
-Use the arrow keys to move through the table and `Enter` or `Space` to commit the row
-as the selection. `Shift` plus an arrow key extends the selection. Double-click a cell
-to edit it in place.
+Use the arrow keys to move through the table; each move selects the row and Detail
+updates at once without a loading screen. `Enter` or `Space` still confirms the focused
+row. `Shift` plus an arrow key extends the selection. Double-click a cell to edit it in
+place.
 
 ## Find something
 

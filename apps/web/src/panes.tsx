@@ -68,6 +68,14 @@ import { cellPathValues, fetchPathValues } from './path-values'
 import { applyObjectWrite, currentSearchWaitSeq, reconcileObjectWrite } from './object-write'
 import { markObjectGone, objectFetchQueryOptions, objectGone, objectQueryGone } from './object-gone'
 import {
+  buildListPreviewFromRow,
+  loadObjectDetail,
+  OBJECT_NAV_DEBOUNCE_MS,
+  OBJECT_PREFETCH_RADIUS,
+  prefetchObjectDetails,
+  seedObjectListPreview,
+} from './object-list-preview'
+import {
   discardObjectDraft,
   displayOf,
   draftBaseVersion,
@@ -257,8 +265,7 @@ export function ObjectTable({
   const [hidden, setHidden] = useState<string[]>([])
   const [prefsReady, setPrefsReady] = useState(false)
   const [prefsLoadFailed, setPrefsLoadFailed] = useState(false)
-  // Single focused row. Click and arrows move it; only Enter/Space/click commit
-  // it as a selection, and Detail follows the selection, not this index.
+  // Single focused row. Arrows move focus and selection together; Detail follows at once.
   const [active, setActive] = useState(-1)
   const [createOpen, setCreateOpen] = useState(false)
   const [pendingSelectId, setPendingSelectId] = useState<string | null>(null)
@@ -278,6 +285,7 @@ export function ObjectTable({
   const draftSaving = useObjectDraftSaving()
   const openProposals = useOpenObjectProposals()
   const queryClient = useQueryClient()
+  const objectNavTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const parent = useRef<HTMLDivElement>(null)
   const prefsApplied = useRef(false)
   /** dataUpdatedAt we last applied; re-apply when invalidate lands a newer fetch. */
@@ -794,8 +802,7 @@ export function ObjectTable({
         ? { id: row.id, key: row.key, name: row.name, type: row.type, version: row.version }
         : { id, key: '', name: '', type: '', version: '' }
     }
-    // Publish the rows the user actually selected. Keyboard focus alone is not
-    // a selection; Detail and peer panes follow `selected`, never `activeRow`.
+    // Publish committed selections. Detail and peer panes follow `selected`.
     const marked = scopeChanged ? [] : selected.map(described)
     publishTable(view.id, [queryText, filterBy].filter(Boolean).join(' '), sort, filterBy)
     publishSelection(view.id, marked)
@@ -1007,10 +1014,12 @@ export function ObjectTable({
     }
   }, [])
 
+  const followRowImpl = useRef<(row: ObjRow, index: number, fetch: 'immediate' | 'debounced') => void>(() => undefined)
+
   const applySelection = (row: ObjRow, index: number, anchor: number, extend: boolean) => {
-    session.setObjectId(row.id)
     if (!extend) {
       setSelected([row.id])
+      followRowImpl.current(row, index, 'immediate')
       return
     }
     const [start, end] = anchor < index ? [anchor, index] : [index, Math.max(anchor, 0)]
@@ -1020,6 +1029,7 @@ export function ObjectTable({
       if (item) ids.push(item.id)
     }
     setSelected(ids.length > 0 ? ids : [row.id])
+    followRowImpl.current(row, index, 'immediate')
   }
 
   // Keep the focused row in view. A virtualized row may mount a frame later;
@@ -1040,9 +1050,11 @@ export function ObjectTable({
     setActive(clamped)
     const row = rowAt(clamped)
     if (!row) return
-    // Shift+Arrow is an explicit range extension, so it also commits a selection.
-    // Plain navigation only moves focus and must not touch Detail or peer panes.
     if (extend) applySelection(row, clamped, active, extend)
+    else {
+      setSelected([row.id])
+      followRowImpl.current(row, clamped, 'debounced')
+    }
   }
 
   const focusGrid = () => {
@@ -1107,11 +1119,11 @@ export function ObjectTable({
     setActive(index)
     const row = rowAt(index)
     if (!row) return
-    session.setObjectId(row.id)
     if (event.shiftKey) setSelected((current) => (current.includes(row.id) ? current : [...current, row.id]))
     else if (event.metaKey || event.ctrlKey) {
       setSelected((current) => (current.includes(row.id) ? current.filter((id) => id !== row.id) : [...current, row.id]))
     } else setSelected([row.id])
+    followRowImpl.current(row, index, 'immediate')
   }
 
   const onRowMenu = (index: number, x: number, y: number, column: string) => {
@@ -1119,8 +1131,8 @@ export function ObjectTable({
     if (column) activateColumn(column)
     const row = rowAt(index)
     if (!row) return
-    session.setObjectId(row.id)
     setSelected((current) => (current.includes(row.id) ? current : [row.id]))
+    followRowImpl.current(row, index, 'immediate')
     const context = column ? 'cell' : 'row'
     const hiddenColumns = all
       .filter((id) => hidden.includes(id))
@@ -1305,8 +1317,6 @@ export function ObjectTable({
     }
     event.preventDefault()
     if (event.key === 'Enter' || event.key === ' ') {
-      // Enter and Space commit the focused row as the selection. Focus alone
-      // (arrows, Home/End, Tab) never selects.
       const row = rowAt(active)
       if (row) applySelection(row, active, active, false)
       return
@@ -1402,6 +1412,39 @@ export function ObjectTable({
   const paintPathValues = tableBusy ? painted.pathValues : pathValues.data
   const rowAtPainted = (index: number) =>
     groupBy ? painted.groupedRows[index] : painted.byIndex.get(index)
+  const previewPathValuesRef = useRef(paintPathValues?.values)
+  previewPathValuesRef.current = paintPathValues?.values
+  followRowImpl.current = (row, index, fetch) => {
+    seedObjectListPreview(
+      queryClient,
+      buildListPreviewFromRow(row, defs.data, session.language, previewPathValuesRef.current?.[row.id]),
+    )
+    session.setObjectId(row.id)
+    const runFetches = () => {
+      const ids: string[] = []
+      for (let cursor = index - OBJECT_PREFETCH_RADIUS; cursor <= index + OBJECT_PREFETCH_RADIUS; cursor += 1) {
+        const item = rowAt(cursor)
+        if (item) ids.push(item.id)
+      }
+      prefetchObjectDetails(queryClient, ids)
+    }
+    if (fetch === 'immediate') {
+      if (objectNavTimer.current) {
+        clearTimeout(objectNavTimer.current)
+        objectNavTimer.current = null
+      }
+      runFetches()
+      return
+    }
+    if (objectNavTimer.current) clearTimeout(objectNavTimer.current)
+    objectNavTimer.current = setTimeout(() => {
+      objectNavTimer.current = null
+      runFetches()
+    }, OBJECT_NAV_DEBOUNCE_MS)
+  }
+  useEffect(() => () => {
+    if (objectNavTimer.current) clearTimeout(objectNavTimer.current)
+  }, [])
   const cellDisplayText = (row: ObjRow, id: string) => {
     const apiPath = parseColumnId(id).path
     if (columnNeedsPathValues(id)) {
@@ -2911,15 +2954,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   const objectGoneState = objectQueryGone(queryClient, session.objectId)
   const object = useQuery({
     queryKey: ['object', session.objectId],
-    queryFn: async () => {
-      const id = session.objectId ?? ''
-      try {
-        return reconcileObjectWrite(id, await api.get('/v1/objects/{id}', { params: { path: { id } } }))
-      } catch (reason) {
-        if (objectGone(reason)) markObjectGone(queryClient, id)
-        throw reason
-      }
-    },
+    queryFn: () => loadObjectDetail(queryClient, session.objectId ?? ''),
     enabled: Boolean(session.objectId) && !objectGoneState,
     ...objectFetchQueryOptions(),
   })
@@ -2985,7 +3020,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
         <p>{emptyDetail(typeNames(defs.data, uiLanguage), session.listType)}</p>
         <ul>
           <li><kbd>↑</kbd><kbd>↓</kbd> {copy.detailKeysMove}</li>
-          <li><kbd>Enter</kbd> {copy.detailKeysOpen}</li>
+          <li><kbd>Enter</kbd> / <kbd>Space</kbd> {copy.detailKeysOpen}</li>
           <li><kbd>Ctrl</kbd><kbd>K</kbd> {copy.detailKeysPalette}</li>
         </ul>
       </div>
@@ -2994,8 +3029,10 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   if (objectGone(object.error) || objectGoneState) {
     return <StateNote tone="empty" title={copy.objectDeleted} detail={copy.objectDeletedHint} testId="detail-deleted" />
   }
-  if (object.isError) return <StateNote tone="error" title={copy.graphError} detail={copy.validation} testId="detail-error" />
-  if (!object.data || !session.objectId) return <StateNote tone="loading" title={copy.loading} />
+  if (object.isError && !object.data) {
+    return <StateNote tone="error" title={copy.graphError} detail={copy.validation} testId="detail-error" />
+  }
+  if (!object.data || !session.objectId) return <StateNote tone="loading" title={copy.loading} testId="detail-loading" />
   const serverValues = (object.data.values as Json) ?? {}
   const serverVersion = Number(object.data.version ?? 0)
   const values = overlayValues(objectId, serverValues, serverVersion)
