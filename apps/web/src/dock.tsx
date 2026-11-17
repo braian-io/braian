@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { Maximize2, Minimize2, MoreHorizontal, X } from 'lucide-react'
 import { ViewGlyph } from './chips'
@@ -223,11 +223,7 @@ function SplitNode({ frame, node, path, inAgentDock = false }: { frame: Frame; n
   const pinCells = lockRatios || freezeCatalog
   const gaps = Math.max(0, node.children.length - 1) * 6
   const subtreeInAgentDock = inAgentDock || lockRatios
-  const focused = frame.viewList.find((view) => view.id === frame.doc.focus)
-  const catalogScale =
-    lockRatios && node.dir === 'horizontal' && (node.ratios[0] ?? 0) > 0 && focused?.type !== 'agents'
-      ? `calc(100% / ${node.ratios[0]})`
-      : undefined
+  const catalogScale = lockRatios && node.dir === 'horizontal' && focusedType !== 'agents'
   return (
     <div
       className={
@@ -241,7 +237,7 @@ function SplitNode({ frame, node, path, inAgentDock = false }: { frame: Frame; n
       data-has-detail={hasDetail ? 'true' : undefined}
       data-agent-dock={lockRatios ? 'true' : undefined}
       data-catalog-frozen={freezeCatalog ? 'true' : undefined}
-      style={catalogScale ? ({ '--agent-dock-catalog-scale': catalogScale } as CSSProperties) : undefined}
+      data-catalog-scale={catalogScale ? 'full' : undefined}
     >
       {node.children.map((child, index) => (
         <SplitChild
