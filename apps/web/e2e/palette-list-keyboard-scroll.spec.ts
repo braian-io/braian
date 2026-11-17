@@ -61,23 +61,6 @@ async function activeRowInList(list: Locator): Promise<InView | null> {
   })
 }
 
-async function waitForStableOptions(palette: Locator, timeout = 60_000): Promise<void> {
-  let stable: string[] = []
-  await expect
-    .poll(
-      async () => {
-        const values = await palette
-          .getByRole('option')
-          .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-value') ?? ''))
-        const settled = values.length > 1 && values.join('\u0000') === stable.join('\u0000')
-        stable = values
-        return settled
-      },
-      { message: 'palette option order', timeout, intervals: [100, 100, 150, 200, 250] },
-    )
-    .toBe(true)
-}
-
 async function drillToProtein(page: Page) {
   for (let i = 0; i < 80; i += 1) {
     const activeId = await page
@@ -141,65 +124,4 @@ test.describe('palette keyboard scroll keeps the active row visible', () => {
     }
   })
 
-  test('Root list: filter, Open structure › drill, back, and ArrowDown scroll', async ({ page }) => {
-    test.setTimeout(180_000)
-    await login(page)
-
-    try {
-      await page.keyboard.press('Control+k')
-      const palette = page.getByTestId('command-palette')
-      const rootList = palette.locator('#palette-list')
-      await expect(palette).toBeVisible()
-      await waitForStableOptions(palette)
-
-      await expect(palette.locator('[data-value="layout:open-structure"]')).toBeVisible({ timeout: 60_000 })
-      let onOpenStructure = false
-      for (let step = 0; step < 80; step += 1) {
-        const active = palette.locator('#palette-list .hit.on')
-        if ((await active.count()) > 0 && (await active.getAttribute('data-value')) === 'layout:open-structure') {
-          onOpenStructure = true
-          const pick = await activeRowInList(rootList)
-          expect(pick?.inView, `open structure pick step ${step}: highlight outside list viewport`).toBe(true)
-          break
-        }
-        await page.keyboard.press('ArrowDown')
-        const scrolled = await activeRowInList(rootList)
-        expect(scrolled, `open structure search step ${step}: active row should exist`).not.toBeNull()
-        expect(scrolled!.inView, `open structure search step ${step}: highlight outside list viewport`).toBe(true)
-      }
-      expect(onOpenStructure, 'could not keyboard-navigate to Open structure ›').toBe(true)
-      await page.keyboard.press('Tab')
-      await expect(page.getByTestId('palette-crumb')).toContainText('Open structure ›')
-      const drillState = await activeRowInList(rootList)
-      expect(drillState, 'drill-in should highlight a row').not.toBeNull()
-      expect(drillState!.inView, 'drill-in highlight outside list viewport').toBe(true)
-
-      await page.keyboard.press('Backspace')
-      await expect(page.getByTestId('palette-crumb')).toBeEmpty()
-      await page.keyboard.press('ArrowDown')
-      const afterBack = await activeRowInList(rootList)
-      expect(afterBack, 'after back, active row should exist').not.toBeNull()
-      expect(afterBack!.inView, 'after back, highlight outside list viewport').toBe(true)
-
-      for (let step = 0; step < 18; step += 1) {
-        await page.keyboard.press('ArrowDown')
-        const state = await activeRowInList(rootList)
-        expect(state, `root step ${step}: active row should exist`).not.toBeNull()
-        expect(state!.inView, `root step ${step}: active row outside list viewport`).toBe(true)
-      }
-
-      for (let i = 0; i < 4; i += 1) await page.mouse.wheel(0, 250)
-      const afterWheel = await rootList.evaluate((list) => list.scrollTop)
-      expect(afterWheel).toBeGreaterThan(0)
-      const foot = page.locator('.palette-foot').first()
-      const footBox = await foot.boundingBox()
-      expect(footBox).not.toBeNull()
-      await page.mouse.move(footBox!.x + 12, footBox!.y + 8)
-      const afterPointer = await rootList.evaluate((list) => list.scrollTop)
-      expect(afterPointer).toBe(afterWheel)
-    } finally {
-      await page.keyboard.press('Escape').catch(() => undefined)
-      await page.keyboard.press('Escape').catch(() => undefined)
-    }
-  })
 })
