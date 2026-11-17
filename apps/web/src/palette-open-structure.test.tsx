@@ -69,7 +69,7 @@ beforeEach(() => {
 describe('open structure palette helpers', () => {
   it('matches open structure, open tree, and struktur', () => {
     const root = openStructureRootItem()
-    for (const query of ['open structure', 'open tree', 'structure', 'tree', 'struktur']) {
+    for (const query of ['open structure', 'open tree', 'structure', 'tree', 'struktur', 'träd', 'öppna']) {
       const rows = visibleRows(query, [root], [], {})
       expect(rows.some((row) => (row.sourceId ?? row.id) === 'layout:open-structure')).toBe(true)
     }
@@ -129,5 +129,41 @@ describe('Open structure › in Ctrl+K', () => {
     })
     fireEvent.keyDown(input, { key: 'Enter' })
     await waitFor(() => expect(opened).toEqual([{ key: 'food', zone: 'center' }]))
+  })
+
+  it('opens to the right on Ctrl+Enter', async () => {
+    const opened: Array<{ key: string; zone: string }> = []
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <CommandPalette
+          session={{
+            objectId: null,
+            setObjectId: () => undefined,
+            setProposalId: () => undefined,
+            push: () => undefined,
+            openWorkspace: () => undefined,
+            openStructureView: (key, placement) => {
+              opened.push({ key, zone: placement?.zone ?? 'center' })
+            },
+          }}
+          workspaces={[]}
+          views={[]}
+          focusViewId="v-table"
+          onClose={() => undefined}
+        />
+      </QueryClientProvider>,
+    )
+    const input = await screen.findByTestId('palette-input')
+    fireEvent.change(input, { target: { value: 'open tree' } })
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: /Open structure/ })).toBeTruthy()
+    })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: /Food/ })).toBeTruthy()
+    })
+    fireEvent.keyDown(input, { key: 'Enter', ctrlKey: true })
+    await waitFor(() => expect(opened).toEqual([{ key: 'food', zone: 'right' }]))
   })
 })

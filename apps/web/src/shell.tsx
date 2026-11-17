@@ -98,6 +98,7 @@ import {
 import { objectTablesToAutoLinkToTree } from './structure-tree-link'
 import {
   findStructureTreeView,
+  resolveStructureOpenTarget,
   structureTreeViewState,
   structureTreeViewTitle,
 } from './structure-tree-view'
@@ -1961,6 +1962,10 @@ export function Shell() {
       try {
         let views: View[] = viewRows(surfaceNow.views)
         let tree = findStructureTreeView(views, structureKey, defs)
+        if (!tree && surfaceNow.locked) {
+          toast.error(copy.layoutLocked)
+          return
+        }
         if (!tree) {
           const id = crypto.randomUUID()
           const title = structureTreeViewTitle(structureKey, defs)
@@ -1970,7 +1975,7 @@ export function Shell() {
             title,
             pane: 'center',
             position: views.length,
-            state: freeObject(structureTreeViewState(structureKey)),
+            state: freeObject(structureTreeViewState(structureKey, defs)),
           }
           await api.post('/v1/views', {
             body: {
@@ -1999,13 +2004,20 @@ export function Shell() {
         queryClient.setQueryData(['workspace', surfaceNow.id], nextSurface)
         const current = docRef.current
         if (!current || !tree) return
+        const openIds = layoutViews(current.layout)
+        const target = resolveStructureOpenTarget(
+          views,
+          placement.target ?? current.focus,
+          openIds,
+          placement.zone,
+        )
         placeOverride.current = placement.zone === 'right'
-          ? { zone: 'right', ...(placement.target ? { target: placement.target } : {}) }
-          : { target: placement.target, zone: 'center' }
+          ? { zone: 'right', ...(target ? { target } : {}) }
+          : { target, zone: 'center' }
         const result = applyLayoutCommand(current, 'ui.open_view', {
           id: tree.id,
           zone: placement.zone,
-          ...(placement.target ? { target: placement.target } : {}),
+          ...(target ? { target } : {}),
         }, {
           views: views.map((view) => ({ id: view.id, title: view.title, type: view.type })),
           canonical: canonicalRef.current,
@@ -2521,7 +2533,11 @@ export function StructureTree({ session, view }: { session: Session; view: View 
   const [menu, setMenu] = useState<{ x: number; y: number; row: TreeEntry } | null>(null)
   const [editing, setEditing] = useState<{ row: TreeEntry; mode: 'rename' | 'child' | 'sibling' | 'key'; value: string } | null>(null)
   const [dropId, setDropId] = useState<string | null>(null)
-  const structures = (defs.data?.structures as Json[] | undefined) ?? []
+  const allStructures = (defs.data?.structures as Json[] | undefined) ?? []
+  const boundStructureKey = String(view.state?.structure_key ?? view.state?.structure ?? '').trim()
+  const structures = boundStructureKey
+    ? allStructures.filter((structure) => String(structure.key ?? '') === boundStructureKey)
+    : allStructures
   const typeKey = session.workspaceType || session.listType || ''
   const typeRow = ((defs.data?.types as Json[]) ?? []).find((item) => String(item.key) === typeKey)
   const allowedTrees = Array.isArray(typeRow?.structures) ? (typeRow.structures as unknown[]).map(String) : null

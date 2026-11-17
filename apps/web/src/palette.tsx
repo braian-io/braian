@@ -28,7 +28,9 @@ import { viewPaletteRows } from './palette-views'
 import { workspacePaletteRows } from './palette-workspaces'
 import { addViewRootItem, addViewSubmenuRows, isAddViewRoot, parseAddViewChoice } from './palette-add-view'
 import {
+  isOpenStructureSubmenuFrame,
   isOpenStructureRoot,
+  OPEN_STRUCTURE_EMPTY_MESSAGE,
   openStructureRootItem,
   openStructureSubmenuRows,
   parseOpenStructureChoice,
@@ -1322,6 +1324,7 @@ export function CommandPalette({
             entity: secondaryOf(row).length > 0,
             ask: row.group === 'ask' || row.id === 'ask',
             disabled: row.disabled,
+            openStructure: Boolean(parseOpenStructureChoice(row.sourceId ?? row.id)),
           }
         : undefined,
     })
@@ -1391,6 +1394,11 @@ export function CommandPalette({
   const askRow = rows.find((row) => row.group === 'ask')
   const resultCount = rows.filter((row) => row.group !== 'ask' && row.id !== 'ask').length
   const showEmpty = mode === 'list' && query.trim().length > 0 && resultCount === 0
+  const showOpenStructureEmpty = mode === 'list'
+    && !query.trim()
+    && stack.length > 0
+    && isOpenStructureSubmenuFrame(stack[stack.length - 1]?.label ?? '')
+    && resultCount === 0
   const placeholder = mode === 'ai'
     ? copy.askAi
     : topFrame
@@ -1552,6 +1560,9 @@ export function CommandPalette({
             <CommandList ref={paletteListRef} id="palette-list" role="listbox">
               {showEmpty ? (
                 <p className="palette-empty" data-testid="palette-empty">No results for &quot;{query.trim()}&quot;</p>
+              ) : null}
+              {showOpenStructureEmpty ? (
+                <p className="palette-empty" data-testid="palette-open-structure-empty">{OPEN_STRUCTURE_EMPTY_MESSAGE}</p>
               ) : null}
               {groups.map((group) => (
                 <div key={group.name} className="palette-group">
