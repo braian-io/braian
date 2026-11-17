@@ -296,7 +296,7 @@ export function AgentView({ runId, title: viewTitle }: AgentViewProps) {
     return (
       <div className="agent-view" data-testid="agent-view" data-run={runId} ref={rootRef}>
         <header className="agent-view-head">
-          <h2 title={heading}>{heading}</h2>
+          <h2 data-testid="agent-session-title" title={heading}>{heading}</h2>
         </header>
         <div className="agent-skeleton" data-testid="agent-skeleton" aria-busy="true" aria-live="polite">
           <i />
@@ -311,7 +311,7 @@ export function AgentView({ runId, title: viewTitle }: AgentViewProps) {
     return (
       <div className="agent-view" data-testid="agent-view" data-run={runId} ref={rootRef}>
         <header className="agent-view-head">
-          <h2 title={heading}>{heading}</h2>
+          <h2 data-testid="agent-session-title" title={heading}>{heading}</h2>
         </header>
         {missing ? (
           <p className="error" role="alert" data-testid="agent-missing">{copy.agentRunMissing}</p>
@@ -349,7 +349,7 @@ export function AgentView({ runId, title: viewTitle }: AgentViewProps) {
     >
       <p className="sr-only" aria-live="polite" data-testid="agent-status-live">{announced}</p>
       <header className="agent-view-head">
-        <h2 title={data.title}>{data.title}</h2>
+        <h2 data-testid="agent-session-title" title={data.title}>{data.title}</h2>
         <span className="meta-chip" data-testid="agent-status" data-status={data.status}>{statusLabel(data.status)}</span>
         <div className="agent-head-actions">
           {data.mode === 'foreground' ? (

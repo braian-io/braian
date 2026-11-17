@@ -6,7 +6,7 @@
 // and `rename_fails_safely_when_the_product_is_ambiguous_missing_or_read_only`).
 import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
-import { mainTable } from './ui'
+import { agentSessionView, mainTable } from './ui'
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -30,7 +30,7 @@ async function ask(page: Page, prompt: string) {
 }
 
 function agentView(page: Page, title: string) {
-  return page.getByTestId('agent-view').filter({ has: page.getByRole('heading', { level: 2, name: title, exact: true }) }).last()
+  return agentSessionView(page, title)
 }
 
 test('a clear rename becomes a proposal without asking, and Accept changes the name', async ({ page }) => {

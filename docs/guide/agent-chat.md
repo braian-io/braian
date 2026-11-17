@@ -12,13 +12,20 @@ short width transition, so the agent can take a dedicated column. Nothing
 overlaps Detail, and its controls stay clickable. On a wide window (1360px and
 up), Detail stays at least 360px.
 
+## Pane chrome
+
+The dock tab is always named **Agent**, even when several runs are open at once.
+Tell sessions apart from the **session title** at the top of the chat (your first
+message or run title) and from the tab tooltip, which shows the full prompt.
+
 ## Chat
 
 The agent pane is a conversation:
 
 - Your messages and the agent's replies appear in a scrollable history.
 - The input at the bottom is always available. **Enter** sends; **Shift+Enter**
-  starts a new line.
+  starts a new line. Its border and keyboard focus ring match the other search
+  fields in the app (`var(--inset)` with a `var(--accent)` ring).
 - When the agent is working, the status chip updates and **Send** is disabled.
 - When the agent files a draft, the reply includes a **link** that jumps to the
   affected row or object. Review and **Save** (or **Discard**) there — the same

@@ -61,7 +61,7 @@ import { prepareFeedbackCapture, type FeedbackCapture } from './feedback'
 import { AgentPresence } from './agent-presence'
 import { AgentView } from './agent-view'
 import { AgentsTable } from './agents-table'
-import { agentRunPrompt, agentRunsForWorkspace, agentTabTitle, backToMySessionEvent, listAgentRuns, openAgentEvent, openAgentsTableEvent, patchAgentRun, requestBackToMySession, showAgentSessionEvent, takeOverAgentRun, type AgentMessage, type AgentRunSummary } from './agent-runs'
+import { agentRunPrompt, agentRunsForWorkspace, backToMySessionEvent, listAgentRuns, openAgentEvent, openAgentsTableEvent, patchAgentRun, requestBackToMySession, showAgentSessionEvent, takeOverAgentRun, type AgentMessage, type AgentRunSummary } from './agent-runs'
 import { agentSessionLayout, controllingAgentRuns, holdLayoutFlush, layoutFlushHeld, agentMarkerViewIds, setViewingAgentRun, subscribeViewingAgent, viewingAgentRunId } from './agent-session'
 import { CommandPalette } from './palette'
 import { SharedContextMenuHost, prefersNativeContextMenu } from './shared-context-menu'
@@ -95,6 +95,7 @@ import {
   peerSourceOf,
   viewSourceLabel,
 } from './view-source'
+import { objectTablesToAutoLinkToTree } from './structure-tree-link'
 import { useDetailFollow } from './detail-follow'
 import { MASTER_CATALOG_ID } from './catalog-ref'
 import { workspaceCatalogRef } from './catalog-scope'
@@ -298,9 +299,19 @@ export function Shell() {
   const mineDocRef = useRef<LayoutDoc | null>(null)
   const viewingRunId = useSyncExternalStore(subscribeViewingAgent, viewingAgentRunId, viewingAgentRunId)
   const restoredAgents = useRef<string | null>(null)
-  const elsewhereAnnounced = useRef<string | null>(null)
   const applyViewTypeSourceRef = useRef<(typeId: string, viewId?: string) => Promise<void>>(async () => undefined)
   const applyViewPeerSourceRef = useRef<(peerViewId: string, viewId?: string, linkType?: string) => Promise<void>>(async () => undefined)
+  const autoLinkStructureTreeRef = useRef<(treeViewId: string) => Promise<void>>(async () => undefined)
+  const openLayoutViewsRef = useRef<string[]>([])
+  useEffect(() => {
+    openLayoutViewsRef.current = []
+  }, [workspaceId])
+  useEffect(() => {
+    if (!doc) return
+    if (openLayoutViewsRef.current.length === 0) {
+      openLayoutViewsRef.current = layoutViews(doc.layout)
+    }
+  }, [doc])
   const migratedRef = useRef(new Set<string>())
   const ensuredTypes = useRef(new Set<string>())
   const workspaceIdRef = useRef<string | null>(null)
@@ -779,18 +790,6 @@ export function Shell() {
       })
       .catch((reason: unknown) => reportWriteError(reason))
   }, [workspace.data, doc, userId])
-
-  useEffect(() => {
-    const surface = workspace.data
-    const runs = agentRunList.data
-    if (!surface || !runs || !doc) return
-    const { elsewhere } = agentRunsForWorkspace(runs, surface.id)
-    if (elsewhere.length === 0) return
-    const key = `${surface.id}:${elsewhere.map((run) => run.id).sort().join(',')}`
-    if (elsewhereAnnounced.current === key) return
-    elsewhereAnnounced.current = key
-    toast.message(copy.agentOpenElsewhere)
-  }, [agentRunList.data, workspace.data, doc])
 
   useEffect(() => {
     const onRun = (event: Event) => {
@@ -1611,9 +1610,18 @@ export function Shell() {
 
   const commitDoc = (next: LayoutDoc) => {
     if (!workspaceId || !user.user_id) return
+    const prevOpen = openLayoutViewsRef.current
+    const nextOpen = layoutViews(next.layout)
+    const addedTrees = nextOpen.filter((id) => {
+      if (prevOpen.includes(id)) return false
+      const view = viewRows(workspaceRef.current?.views ?? []).find((item) => item.id === id)
+      return view?.type === 'structure_tree'
+    })
     if (layoutFlushHeld()) {
       docRef.current = next
       setDoc(next)
+      openLayoutViewsRef.current = nextOpen
+      for (const treeId of addedTrees) void autoLinkStructureTreeRef.current(treeId)
       return
     }
     docRef.current = next
@@ -1621,6 +1629,8 @@ export function Shell() {
     saveGen.current += 1
     writeLayoutStore(layoutStorageKey(user.user_id, workspaceId), next)
     setDoc(next)
+    openLayoutViewsRef.current = nextOpen
+    for (const treeId of addedTrees) void autoLinkStructureTreeRef.current(treeId)
   }
   applyRef.current = (name, args) => {
     const current = docRef.current
@@ -1720,6 +1730,24 @@ export function Shell() {
     }
   }
 
+  autoLinkStructureTreeRef.current = async (treeViewId: string) => {
+    try {
+      const surfaceNow = workspaceRef.current
+      const docNow = docRef.current
+      if (!surfaceNow || surfaceNow.locked || !docNow) return
+      const defs = queryClient.getQueryData<Json>(['definitions'])
+      const types = typeNames(defs)
+      const openIds = layoutViews(docNow.layout)
+      const views = viewRows(surfaceNow.views)
+      const targets = objectTablesToAutoLinkToTree(treeViewId, views, types, openIds, defs)
+      for (const targetId of targets) {
+        await applyViewPeerSourceRef.current(treeViewId, targetId)
+      }
+    } catch (reason) {
+      reportWriteError(reason)
+    }
+  }
+
   applyViewPeerSourceRef.current = async (peerViewId: string, viewId?: string, linkType?: string) => {
     try {
     const surfaceNow = workspaceRef.current
@@ -1783,7 +1811,7 @@ export function Shell() {
       if (!found) {
         const id = crypto.randomUUID()
         const prompt = agentRunPrompt(run)
-        const title = agentTabTitle(prompt) || copy.agent
+        const title = copy.agent
         found = {
           id,
           type: 'agent',
@@ -2112,12 +2140,18 @@ export function Shell() {
               const prompt = view.type === 'agent' ? String(view.state?.prompt ?? view.title) : undefined
               return {
                 ...view,
-                title: prompt ? agentTabTitle(prompt) : displayViewTitle(view, typeCatalog, openTypeKey),
+                title: view.type === 'agent' ? copy.agent : displayViewTitle(view, typeCatalog, openTypeKey),
                 prompt,
                 sourceLabel: viewSourceLabel(view, typeCatalog, workspaceCatalogRef(surface), catalogNamesById, peerLabelFor(view)),
+                sourceLabelClearable: view.type === 'object_table' && Boolean(peerSourceOf(view.state)),
               }
             })}
             onChange={commitDoc}
+            onSourceLabelClear={(viewId) => {
+              const view = viewRows(surface.views).find((item) => item.id === viewId)
+              const bound = view ? typeOfView(view, typeCatalog) : undefined
+              if (bound?.id) void applyViewTypeSourceRef.current(bound.id, viewId)
+            }}
             agentViews={agentViews}
             renderView={(item) => {
               const full = viewRows(surface.views).find((view) => view.id === item.id)
@@ -2358,7 +2392,10 @@ function ViewBody({ view, session, workspace }: { view: View; session: Session; 
   }
   if (view.type === 'data_model') return <DataModel view={view} />
   if (view.type === 'attribute_definitions') return <AttributeDefinitions />
-  if (view.type === 'agent') return <AgentView runId={String(view.state.run_id ?? '')} title={view.title} push={session.push} />
+  if (view.type === 'agent') {
+    const prompt = String(view.state?.prompt ?? '').trim()
+    return <AgentView runId={String(view.state.run_id ?? '')} title={prompt || view.title} push={session.push} />
+  }
   if (view.type === 'agents') return <AgentsTable />
   if (view.type === 'proposal') return <ProposalView session={session} />
   if (view.type === 'proposal_list') return <ProposalListView session={session} />
