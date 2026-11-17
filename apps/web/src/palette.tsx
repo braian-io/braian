@@ -573,7 +573,7 @@ export function CommandPalette({
   const paletteStackScroll = useRef(false)
   const paletteActiveFromPointer = useRef(false)
   const filterScrollQuery = useRef('')
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (mode !== 'list' || stack.length > 0 || !query.trim()) return
     if (filterScrollQuery.current !== query) {
       filterScrollQuery.current = query

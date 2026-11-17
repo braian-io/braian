@@ -141,6 +141,7 @@ test.describe('palette keyboard scroll keeps the active row visible', () => {
     await login(page)
     await openProducts(page)
     await expect(page.getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
+    await expect(page.getByTestId('object-row').first()).toBeVisible({ timeout: 60_000 })
 
     const rootList = '#palette-list'
     try {
@@ -152,8 +153,9 @@ test.describe('palette keyboard scroll keeps the active row visible', () => {
 
       await expect(palette.locator('[data-value="layout:open-structure"]')).toBeVisible({ timeout: 60_000 })
       await page.getByTestId('palette-input').fill('open structure')
+      await expect(palette.getByRole('option', { name: /^Open structure/ }).first()).toBeVisible()
       await expect
-        .poll(async () => activeRowInList(page, rootList), { timeout: 60_000 })
+        .poll(async () => activeRowInList(page, rootList), { timeout: 60_000, intervals: [50, 100, 150, 200] })
         .toMatchObject({ inView: true })
 
       await page.keyboard.press('Tab')
