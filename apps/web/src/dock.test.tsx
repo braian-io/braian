@@ -127,7 +127,7 @@ it('marks a nested Products split that contains Detail so the table can keep its
   expect(cells.map((cell) => cell.style.position)).toEqual(['', ''])
 })
 
-it('pins the structure tree width when the agent dock is open', () => {
+it('sets the catalog ratio on the dock root when the agent is docked', () => {
   const layout: LayoutDoc = {
     id: 'ws',
     title: 'Products',
@@ -142,15 +142,7 @@ it('pins the structure tree width when the agent dock is open', () => {
           ratios: [0.22, 0.78],
           children: [
             { type: 'tabs', views: ['tree'], active: 0 },
-            {
-              type: 'split',
-              dir: 'horizontal',
-              ratios: [0.55, 0.45],
-              children: [
-                { type: 'tabs', views: ['products'], active: 0 },
-                { type: 'tabs', views: ['detail'], active: 0 },
-              ],
-            },
+            { type: 'tabs', views: ['products'], active: 0 },
           ],
         },
         { type: 'tabs', views: ['agent'], active: 0 },
@@ -164,7 +156,6 @@ it('pins the structure tree width when the agent dock is open', () => {
       views={[
         { id: 'tree', title: 'Food', type: 'structure_tree' },
         { id: 'products', title: 'Products', type: 'object_table' },
-        { id: 'detail', title: 'Detail', type: 'object_detail' },
         { id: 'agent', title: 'Ask', type: 'agent' },
       ]}
       onChange={() => undefined}
@@ -172,11 +163,8 @@ it('pins the structure tree width when the agent dock is open', () => {
       onAddView={() => undefined}
     />,
   )
-  const treeSplit = container.querySelector<HTMLElement>(".split.horizontal[data-tree-pinned='true']")
-  expect(treeSplit?.dataset.treePinned).toBe('true')
-  const treeCells = [...(treeSplit?.querySelectorAll<HTMLElement>(':scope > .split-cell') ?? [])]
-  expect(treeCells[0]?.style.flex).toMatch(/^0 0 calc\(0\.3142857142857143\*\(100% - 6px\)\)/)
-  expect(treeCells[1]?.style.flex).toBe('1 1 0px')
+  const root = container.querySelector<HTMLElement>('.dock-root')
+  expect(root?.style.getPropertyValue('--agent-catalog-ratio')).toBe('0.7')
 })
 
 it('does not mark the agent dock wrapper as a detail split', () => {

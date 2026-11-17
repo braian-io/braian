@@ -36,7 +36,10 @@ describe('Detail width layout (row 239)', () => {
       /\.dock-root > \.split\.horizontal\[data-agent-dock='true'\] > \.split-cell\s*\{[^}]*transition:[^}]*var\(--dur\)/,
     )
     expect(css).toMatch(
-      /\.dock-root > \.split\.horizontal\[data-tree-pinned='true'\] > \.split-cell\s*\{[^}]*transition:/,
+      /--agent-catalog-ratio/,
+    )
+    expect(css).toMatch(
+      /\.dock-root > \.split\.horizontal\[data-agent-dock='true'\] > \.split-cell:first-child > \.split:not\(:has\(\[data-testid='agents-table'\]\)\)\s*\{[^}]*width:\s*calc\(100% \/ var\(--agent-catalog-ratio/,
     )
   })
 

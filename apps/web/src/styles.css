@@ -469,11 +469,19 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
 .dock-root > .split.horizontal[data-agent-dock='true'] > .split-cell {
   transition: flex-basis var(--dur) var(--ease), width var(--dur) var(--ease), max-width var(--dur) var(--ease);
 }
-.dock-root > .split.horizontal[data-tree-pinned='true'] > .split-cell {
-  transition: flex-basis var(--dur) var(--ease), width var(--dur) var(--ease), max-width var(--dur) var(--ease);
+.dock-root > .split.horizontal[data-agent-dock='true'] > .split-cell:first-child {
+  overflow: clip;
+  contain: paint;
 }
 .dock-root > .split.horizontal.split-agent-dock > .split-cell:first-child:has([data-testid='agents-table']) {
   overflow: auto;
+  contain: none;
+}
+/* Lay the catalog out at the pre-dock width so Products keeps its origin; the cell clips the right edge. */
+.dock-root > .split.horizontal[data-agent-dock='true'] > .split-cell:first-child > .split:not(:has([data-testid='agents-table'])) {
+  width: calc(100% / var(--agent-catalog-ratio, 1) + 6px);
+  min-width: calc(100% / var(--agent-catalog-ratio, 1) + 6px);
+  transition: width var(--dur) var(--ease), min-width var(--dur) var(--ease);
 }
 /* With the agent docked, drop the table floor on nested Detail splits so Detail can keep width. */
 .dock-root > .split.horizontal[data-agent-dock='true'] .split[data-has-detail='true'] {
@@ -1027,7 +1035,7 @@ select.link-type-line { width: 100%; font-weight: 600; }
 @media (prefers-reduced-motion: reduce) {
   .dock-preview, .split-divider > span,
   .dock-root > .split.horizontal[data-agent-dock='true'] > .split-cell,
-  .dock-root > .split.horizontal[data-tree-pinned='true'] > .split-cell { transition: none; }
+  .dock-root > .split.horizontal[data-agent-dock='true'] > .split-cell:first-child > .split { transition: none; }
 }
 
 .bottom-bar { display: flex; align-items: center; gap: var(--space-3); min-width: 0; margin: 0 var(--space-1_5) var(--space-0_5); }

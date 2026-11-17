@@ -59,38 +59,8 @@ function boxesOverlap(a: Box, b: Box): boolean {
 }
 
 async function waitForAgentDockReflow(page: Page) {
-  await page.evaluate(() => {
-    return new Promise<void>((resolve) => {
-      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-        resolve()
-        return
-      }
-      const cell = document.querySelector(
-        ".dock-root > .split.horizontal[data-agent-dock='true'] > .split-cell",
-      )
-      if (!cell) {
-        resolve()
-        return
-      }
-      let done = false
-      const finish = () => {
-        if (done) return
-        done = true
-        cell.removeEventListener('transitionend', onEnd)
-        resolve()
-      }
-      const onEnd = (event: TransitionEvent) => {
-        if (
-          event.target === cell
-          && (event.propertyName === 'width' || event.propertyName === 'flex-basis')
-        ) {
-          finish()
-        }
-      }
-      cell.addEventListener('transitionend', onEnd)
-      window.setTimeout(finish, 220)
-    })
-  })
+  const reduced = await page.evaluate(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+  if (!reduced) await page.waitForTimeout(180)
 }
 
 async function cleanupDrafts(page: Page) {
