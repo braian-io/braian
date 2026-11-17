@@ -85,6 +85,7 @@ import {
 } from './active-workspace'
 import { healAgentDockLayout } from './agent-layout-migrate'
 import { decideAgentToggle } from './agent-chat-toggle'
+import { agentsTablePlacementTarget } from './agents-table-layout'
 import { healDataModelWorkspace, isKnownViewType, layoutHasMissingViews, migrateLegacyModelViews } from './model-workspace-migrate'
 import { persistWorkspaceMigration } from './workspace-migration-persist'
 import { commandPlaceholder, displayViewTitle, migrateSavedWorkspace, singularOf, typeNames, typeOfView } from './type-labels'
@@ -1928,10 +1929,14 @@ export function Shell() {
       const current = docRef.current
       if (!current || !found) return
       const open = layoutViews(current.layout).includes(found.id)
+      const catalog = views.map((view) => ({ id: view.id, type: view.type }))
+      const placementTarget = open ? undefined : agentsTablePlacementTarget(current.layout, catalog, current.focus)
       const result = applyLayoutCommand(
         current,
         'ui.open_view',
-        open ? { id: found.id } : { id: found.id, zone: 'center' },
+        open || !placementTarget
+          ? { id: found.id }
+          : { id: found.id, zone: 'center', target: placementTarget },
         {
           views: views.map((view) => ({ id: view.id, title: view.title, type: view.type })),
           canonical: canonicalRef.current,
