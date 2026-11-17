@@ -1100,6 +1100,23 @@ export function Shell() {
     }
   }, [workspaceId])
 
+  useEffect(() => {
+    if (!tabMenu) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' && event.key !== 'Tab') return
+      event.preventDefault()
+      event.stopPropagation()
+      const trigger = tabMenuTriggerRef.current
+      setTabMenu(null)
+      tabMenuTriggerRef.current = null
+      if (!trigger?.isConnected) return
+      if (event.key === 'Tab') focusAfterMenuTab(trigger, event.shiftKey)
+      else trigger.focus({ preventScroll: true })
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [tabMenu])
+
   useShortcutBindings({
     openPalette: () => {
       // Ctrl+K does nothing while the command list is already open.
@@ -2364,17 +2381,6 @@ export function Shell() {
           style={{ left: tabMenu.x, top: tabMenu.y }}
           data-testid="workspace-menu"
           role="menu"
-          onKeyDown={(event) => {
-            if (event.key !== 'Escape' && event.key !== 'Tab') return
-            event.preventDefault()
-            event.stopPropagation()
-            const trigger = tabMenuTriggerRef.current
-            setTabMenu(null)
-            tabMenuTriggerRef.current = null
-            if (!trigger?.isConnected) return
-            if (event.key === 'Tab') focusAfterMenuTab(trigger, event.shiftKey)
-            else trigger.focus({ preventScroll: true })
-          }}
         >
           {workspaces.data?.workspaces.filter((item) => item.id === tabMenu.id).map((item) => {
             const last = orderedWorkspaces.length <= 1

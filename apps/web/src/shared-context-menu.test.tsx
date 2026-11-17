@@ -152,13 +152,13 @@ describe('shared context menu registry', () => {
 
   it('closes on Tab and moves focus to the next tab stop after the opener', async () => {
     registerCommandRunner('object:open', () => undefined)
-    const after = document.createElement('button')
-    after.type = 'button'
-    document.body.appendChild(after)
     const grid = document.createElement('button')
     grid.type = 'button'
     grid.textContent = 'Grid'
     document.body.appendChild(grid)
+    const after = document.createElement('button')
+    after.type = 'button'
+    document.body.appendChild(after)
     grid.focus()
     render(<SharedContextMenuHost />)
     openSharedContextMenu({ context: 'row', x: 12, y: 12, target: { objectId: 'o1' } })
