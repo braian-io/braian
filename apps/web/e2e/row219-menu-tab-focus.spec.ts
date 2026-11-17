@@ -15,6 +15,7 @@ async function nextTabStopAfter(page: Page, trigger: Locator) {
   const handle = await trigger.elementHandle()
   if (!handle) throw new Error('missing tab trigger')
   return page.evaluateHandle((triggerEl) => {
+    if (!(triggerEl instanceof HTMLElement)) return null
     const stops = Array.from(
       document.querySelectorAll<HTMLElement>(
         'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
@@ -24,7 +25,7 @@ async function nextTabStopAfter(page: Page, trigger: Locator) {
       if (el.closest('[inert], [aria-hidden="true"]')) return false
       return true
     })
-    const index = stops.indexOf(triggerEl!)
+    const index = stops.indexOf(triggerEl)
     return index >= 0 ? (stops[index + 1] ?? null) : null
   }, handle)
 }
