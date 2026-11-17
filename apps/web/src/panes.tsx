@@ -139,7 +139,7 @@ import { EMPTY_MANUAL_FILTER, isEmptyManualQuery, labelCodes, labelSearchFilter,
 import { appendPathFilter, objectTableFilter } from './table-filter'
 import { assortmentChipActive, isGroupOnlyManualSelection, manualSelectionHasGroup } from './table-filters'
 import { dispatchUi, onUi } from './ui-bus'
-import { columnMoveAppliesTo } from './column-move'
+import { columnMoveAppliesTo, uiCommandAppliesToView } from './column-move'
 import {
   EMPTY_SELECTION,
   enrichSelection,
@@ -287,6 +287,8 @@ export function ObjectTable({
   const queryClient = useQueryClient()
   const objectNavTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const parent = useRef<HTMLDivElement>(null)
+  /** Remote ui.filter must not stomp text the user is entering locally. */
+  const searchFocusedRef = useRef(false)
   const prefsApplied = useRef(false)
   /** dataUpdatedAt we last applied; re-apply when invalidate lands a newer fetch. */
   const prefsAppliedAt = useRef(0)
@@ -980,9 +982,19 @@ export function ObjectTable({
       resetColumnsToDefault()
       return
     }
-    if (event.name === 'ui.filter') setFilter(String(args.q ?? args.text ?? args.filter ?? ''))
-    if (event.name === 'ui.group') setGroupBy(String(args.group ?? args.by ?? ''))
-    if (event.name === 'ui.sort' && args.sort) setSort(String(args.sort))
+    if (event.name === 'ui.filter') {
+      if (!uiCommandAppliesToView(args, view.id)) return
+      if (searchFocusedRef.current) return
+      setFilter(String(args.q ?? args.text ?? args.filter ?? ''))
+    }
+    if (event.name === 'ui.group') {
+      if (!uiCommandAppliesToView(args, view.id)) return
+      setGroupBy(String(args.group ?? args.by ?? ''))
+    }
+    if (event.name === 'ui.sort' && args.sort) {
+      if (!uiCommandAppliesToView(args, view.id)) return
+      setSort(String(args.sort))
+    }
     if (event.name === 'ui.select' && args.id) {
       const id = String(args.id)
       session.setObjectId(id)
@@ -2107,6 +2119,8 @@ export function ObjectTable({
       rowCount={prefsReady && probe.isFetched ? (groupBy ? groups.reduce((sum, group) => sum + group.found, 0) : found) : undefined}
       filterValue={filter}
       onFilterChange={setFilter}
+      onFilterFocus={() => { searchFocusedRef.current = true }}
+      onFilterBlur={() => { searchFocusedRef.current = false }}
     >
       <ObjectDraftBar
         count={draftCount}

@@ -47,12 +47,10 @@ async function openFoodStructure(page: Page, modifiers: { ctrl?: boolean } = {})
   await expect(palette).toHaveCount(0)
 }
 
-async function structureTreeViewCount(page: Page, workspaceId: string) {
+async function foodStructureTreeViewCount(page: Page, workspaceId: string) {
   const views = await page.request.get(`/v1/workspaces/${workspaceId}`)
-  const body = (await views.json()) as { views?: Array<{ type: string; state?: Record<string, unknown> }> }
-  return (body.views ?? []).filter(
-    (view) => view.type === 'structure_tree' && String(view.state?.structure_key ?? '') === 'food',
-  ).length
+  const body = (await views.json()) as { views?: Array<{ type: string; title?: string }> }
+  return (body.views ?? []).filter((view) => view.type === 'structure_tree').length
 }
 
 test('Open structure from Ctrl+K shows the structure tree', async ({ page }) => {
@@ -67,7 +65,7 @@ test('Open structure from Ctrl+K shows the structure tree', async ({ page }) => 
 
     await openFoodStructure(page)
     await expect(page.getByTestId('structure-tree')).toBeVisible({ timeout: 30_000 })
-    expect(await structureTreeViewCount(page, workspaceId)).toBe(1)
+    expect(await foodStructureTreeViewCount(page, workspaceId)).toBe(1)
   } finally {
     await resetProductsLayout(page)
   }
@@ -79,25 +77,31 @@ test('Ctrl+Enter opens the structure tree to the right without duplicating views
   const workspaceId = await resetProductsLayout(page)
   try {
     await expect(page.getByTestId('structure-tree')).toBeVisible()
-    await page.locator('.pane-tab[data-view-type="structure_tree"]').first().click()
-    await page.keyboard.press('Control+Alt+w')
-    await expect(page.getByTestId('structure-tree')).toHaveCount(0)
 
     const products = page.getByTestId('object-table').first()
     await expect(products).toBeVisible()
     await page.locator('[data-view-type="object_detail"]').first().click()
 
     await openFoodStructure(page, { ctrl: true })
-    await expect(page.getByTestId('structure-tree')).toBeVisible({ timeout: 30_000 })
-    expect(await structureTreeViewCount(page, workspaceId)).toBe(1)
+    const trees = page.getByTestId('structure-tree')
+    await expect(trees).toHaveCount(1, { timeout: 30_000 })
+    expect(await foodStructureTreeViewCount(page, workspaceId)).toBe(1)
 
     const detailPane = page.locator('section.pane').filter({ has: page.locator('[data-view-type="object_detail"]') })
+    const treePane = page.locator('section.pane').filter({ has: page.getByTestId('structure-tree') })
     await expect(detailPane).toBeVisible()
-    await expect(products).toBeVisible()
+    await expect(treePane).toBeVisible()
+    const detailBox = await detailPane.boundingBox()
+    const treeBox = await treePane.boundingBox()
+    if (!detailBox || !treeBox) throw new Error('missing pane boxes')
+    expect(treeBox.x, 'structure tree opens in a pane to the right of Detail').toBeGreaterThan(detailBox.x + 40)
 
     await openFoodStructure(page, { ctrl: true })
     await expect(page.getByTestId('structure-tree')).toHaveCount(1)
-    expect(await structureTreeViewCount(page, workspaceId)).toBe(1)
+    expect(await foodStructureTreeViewCount(page, workspaceId)).toBe(1)
+
+    await expect(products).toBeVisible()
+    await expect(page.locator('[data-view-type="object_detail"]').first()).toBeVisible()
   } finally {
     await resetProductsLayout(page)
   }

@@ -2,6 +2,7 @@ import { api, type Json } from './api'
 import { splitPair, tabGroup, type Node } from './layout'
 import { typeNames, type TypeName } from './type-labels'
 import { MODEL_WORKSPACE_VIEW_SPECS, modelWorkspaceLayout } from './model-workspace-migrate'
+import { structureTreeViewState } from './structure-tree-view'
 import { typeShareToken, typeUsesTree } from './type-workspaces'
 import { linkedTypeIds } from './view-source'
 
@@ -23,6 +24,17 @@ const TABLE_STATE = {
 }
 
 /** First linked object type in definition order, never a link type itself. */
+/** Structure key when the type is bound to exactly one tree (e.g. product → food). */
+function singleStructureKey(type: TypeName, defs?: Json): string | undefined {
+  if (type.structures?.length !== 1) return undefined
+  const token = type.structures[0]
+  const structure = ((defs?.structures as Json[]) ?? []).find(
+    (row) => String(row.id ?? '') === token || String(row.key ?? '') === token,
+  )
+  const key = String(structure?.key ?? '').trim()
+  return key || token
+}
+
 function firstLinkedType(type: TypeName, defs: Json | undefined): TypeName | undefined {
   if (!defs || !type.id) return undefined
   const linkedId = linkedTypeIds(type.id, defs)[0]
@@ -39,8 +51,15 @@ export function typeWorkspaceTemplate(type: TypeName, defs?: Json): WorkspaceTem
   const mainIndex = tree ? 2 : 1
   const peerIndex = linked ? mainIndex + 1 : -1
   const rightIndex = linked ? peerIndex + 1 : mainIndex + 1
+  const structureKey = tree ? singleStructureKey(type, defs) : undefined
   const views: WorkspaceTemplate['views'] = [
-    ...(tree ? [{ type: 'structure_tree', title: treeTitle, state: {} }] : []),
+    ...(tree
+      ? [{
+          type: 'structure_tree',
+          title: treeTitle,
+          state: structureKey ? structureTreeViewState(structureKey, defs) : {},
+        }]
+      : []),
     { type: 'assortment_list', title: 'Selections', state: {} },
     {
       type: 'object_table',

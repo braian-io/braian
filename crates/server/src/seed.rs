@@ -667,7 +667,7 @@ async fn save_views(store: &Store, defs: &DefinitionSet) -> anyhow::Result<()> {
             "Food",
             "left",
             0,
-            json!({"expanded": ["dairy", "beverages"]}),
+            json!({"expanded": ["dairy", "beverages"], "structure_key": "food"}),
         ),
         (
             "018f2000-0000-7000-8000-000000000308",
@@ -802,7 +802,7 @@ async fn save_views(store: &Store, defs: &DefinitionSet) -> anyhow::Result<()> {
             "Food",
             "left",
             0,
-            json!({"expanded": ["dairy", "beverages"]}),
+            json!({"expanded": ["dairy", "beverages"], "structure_key": "food"}),
         ),
         (
             "018f2000-0000-7000-8000-000000000508",
