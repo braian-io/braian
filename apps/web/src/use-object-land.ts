@@ -18,11 +18,12 @@ export function useObjectLand(objectId: string | null) {
   useEffect(() => {
     const onImmediate = (event: Event) => {
       const id = (event as CustomEvent<{ id?: string }>).detail?.id ?? null
-      if (id === objectId) syncTo(id)
+      // React may not have applied setObjectId yet; the signal names the row to fetch.
+      if (id) syncTo(id)
     }
     window.addEventListener(OBJECT_LAND_IMMEDIATE, onImmediate)
     return () => window.removeEventListener(OBJECT_LAND_IMMEDIATE, onImmediate)
-  }, [objectId, syncTo])
+  }, [syncTo])
 
   useEffect(() => {
     if (objectId === landedId) return

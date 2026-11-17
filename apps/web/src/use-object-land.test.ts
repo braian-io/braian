@@ -26,9 +26,10 @@ describe('useObjectLand', () => {
 
   it('flushes immediately when the table commits a landed row', () => {
     const { result, rerender } = renderHook(({ id }) => useObjectLand(id), { initialProps: { id: 'a' as string | null } })
-    rerender({ id: 'b' })
     act(() => notifyObjectLandImmediate('b'))
-    expect(result.current.settled).toBe(true)
     expect(result.current.landedId).toBe('b')
+    expect(result.current.settled).toBe(false)
+    rerender({ id: 'b' })
+    expect(result.current.settled).toBe(true)
   })
 })
