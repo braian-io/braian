@@ -43,6 +43,14 @@ does not move the view into the focused pane, and it does not close or replace t
 structure tree or the graph. Use it to bring an open view back into focus; it never
 creates a copy. The list leaves out old agent-run tabs, so it only offers real views.
 
+## Open a structure tree from the palette
+
+Press `Ctrl+K`, choose `Open structure ›`, and pick a structure by label or key.
+`Enter` opens its tree in the focused pane (or beside Detail when Detail is focused,
+so Detail stays visible). `Ctrl+Enter` opens it in a new pane to the right. Braian
+reuses an existing `structure_tree` view when the view state carries the same
+structure key or id; it never matches only on title.
+
 ## Add a view
 
 There are two places to add a view to the focused pane:

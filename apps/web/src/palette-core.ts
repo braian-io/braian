@@ -28,6 +28,8 @@ export type PaletteKeyInput = {
     entity?: boolean
     ask?: boolean
     disabled?: boolean
+    /** Open structure submenu row: Ctrl/Cmd+Enter opens the tree, not actions. */
+    openStructure?: boolean
   }
 }
 
@@ -65,6 +67,7 @@ export function paletteKeyEffect(input: PaletteKeyInput): PaletteKeyEffect {
     if (input.mode !== 'list' || input.rowCount === 0) return { type: 'none' }
     const index = input.activeIndex ?? 0
     if (input.row?.entity) return { type: 'actions', index }
+    if (input.row?.openStructure) return { type: 'activate', index }
     return { type: 'none' }
   }
   if (input.key === 'ArrowRight' && input.mode === 'list' && input.row?.entity) {

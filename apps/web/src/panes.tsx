@@ -141,7 +141,7 @@ import { commitDetailMeasureDraft, detailMeasureCommittedText, type MeasureField
 import { beginLinkDrag, dispatchLinkDrop, endLinkDrag, linkDragActive, linkDragContains, linkDragLabel, linkDragMime, linkDragObjects, linkDragPayload, linkDropDecision, readLinkDrag, setLinkDragHint } from './link-drag'
 import { EMPTY_MANUAL_FILTER, isEmptyManualQuery, labelCodes, labelSearchFilter, publishSelectionLabels, SELECTION_APPLIED_EVENT, selectionFilterText, selectionMatchesType } from './assortment-filter'
 import { appendPathFilter, objectTableFilter } from './table-filter'
-import { assortmentChipActive } from './table-filters'
+import { assortmentChipActive, isGroupOnlyManualSelection, manualSelectionHasGroup } from './table-filters'
 import { dispatchUi, onUi } from './ui-bus'
 import { columnMoveAppliesTo } from './column-move'
 import {
@@ -465,8 +465,8 @@ export function ObjectTable({
       const query = (item.query as Json) ?? {}
       const dynamicFilter = selectionFilterText(query)
       const emptyManual = !dynamicFilter && isEmptyManualQuery(query)
-      // Group/label assortments do not apply while a peer source drives the table.
-      if (peerSource && !dynamicFilter && !emptyManual) return
+      // Pure group assortments do not apply while a peer source drives the table.
+      if (peerSource && isGroupOnlyManualSelection(query)) return
       setActiveSelectionId(String(item.id ?? ''))
       setFilter('')
       setSelectionFilter(dynamicFilter || (emptyManual ? EMPTY_MANUAL_FILTER : ''))
@@ -529,6 +529,7 @@ export function ObjectTable({
     .join(' && ')
   const enableGroupAssortmentFilter = useCallback(async () => {
     if (!explicitAll || workspace.locked) return
+    const prevState = view.state
     const nextState = clearExplicitAllSource(view.state)
     const body = {
       id: view.id,
@@ -547,7 +548,19 @@ export function ObjectTable({
         views: views.map((item) => (String(item.id) === view.id ? { ...item, state: nextState } : item)),
       })
     }
-    await api.post('/v1/views', { body })
+    try {
+      await api.post('/v1/views', { body })
+    } catch (reason) {
+      if (surface && typeof surface === 'object' && !Array.isArray(surface)) {
+        const views = (surface.views as Json[] | undefined) ?? []
+        queryClient.setQueryData(['workspace', workspace.id], {
+          ...surface,
+          views: views.map((item) => (String(item.id) === view.id ? { ...item, state: prevState } : item)),
+        })
+      }
+      reportWriteError(reason)
+      throw reason
+    }
   }, [explicitAll, workspace.id, workspace.locked, view, queryClient])
   const attributePaths = useQuery({
     queryKey: ['attribute-paths', typeKey],
@@ -2775,7 +2788,7 @@ function TableFilters({
     groupFilterApplies,
     defs,
   }
-  const applyAssortment = (item: Json) => {
+  const applyAssortment = async (item: Json) => {
     const query = (item.query as Json) ?? {}
     const dynamicFilter = selectionFilterText(query)
     const emptyManual = !dynamicFilter && isEmptyManualQuery(query)
@@ -2790,10 +2803,14 @@ function TableFilters({
       setActiveSelectionId('')
       return
     }
-    const needsGroupFilter = !dynamicFilter && !emptyManual
+    const needsGroupFilter = manualSelectionHasGroup(query)
     if (needsGroupFilter && !groupFilterApplies) {
       if (!onBeforeGroupAssortment) return
-      void onBeforeGroupAssortment()
+      try {
+        await onBeforeGroupAssortment()
+      } catch {
+        return
+      }
     }
     setFilter('')
     setActiveSelectionId(String(item.id ?? ''))
@@ -2826,7 +2843,7 @@ function TableFilters({
           className={assortmentActive(item) ? 'filter-chip on' : 'filter-chip'}
           data-testid="assortment"
           aria-pressed={assortmentActive(item)}
-          onClick={() => applyAssortment(item)}
+          onClick={() => { void applyAssortment(item) }}
         >
           {assortmentDisplayName(String(item.name))}
         </Button>

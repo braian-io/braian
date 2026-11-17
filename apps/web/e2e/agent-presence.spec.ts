@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
-import { agentPaneTab, agentSessionView, expectToastClearsLists, mainTable, resetProductsLayout, setTheme, showProducts } from './ui'
+import { agentPaneTab, agentSessionView, agentTitleStubHint, expectToastClearsLists, mainTable, resetProductsLayout, setTheme, showProducts } from './ui'
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -29,7 +29,7 @@ function agentView(page: Page, title: string) {
 
 async function closeAgentTab(page: Page, title: string) {
   const tab = agentPaneTab(page, title)
-  const escaped = title.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  const escaped = agentTitleStubHint(title).replace(/\\/g, '\\\\').replace(/"/g, '\\"')
   const tabs = page.locator(`.pane-tab[data-view-type="agent"][title*="${escaped}"]`)
   const before = await tabs.count()
   await tab.hover()
@@ -234,6 +234,7 @@ test('Ctrl+K lists agents and Enter opens the tab', async ({ page }) => {
   test.setTimeout(120_000)
   await login(page)
   const title = 'ask me before the palette lists it'
+  const sessionName = agentTitleStubHint(title)
   await ask(page, title)
   await expect(agentView(page, title).getByTestId('agent-status')).toHaveAttribute('data-status', 'waiting', { timeout: 30_000 })
   await closeAgentTab(page, title)
@@ -246,8 +247,9 @@ test('Ctrl+K lists agents and Enter opens the tab', async ({ page }) => {
   await page.keyboard.press('Enter')
   await expect(page.getByTestId('palette-crumb')).toContainText('Agents ›')
   await expect(page.getByTestId('palette-input')).toHaveAttribute('placeholder', 'Search agents…')
-  await page.getByTestId('palette-input').fill('palette lists')
-  await expect(palette.locator('.hit.on')).toContainText(title)
+  await page.getByTestId('palette-input').fill('before the palette')
+  await expect.poll(async () => palette.locator('.hit.on').count()).toBeGreaterThan(0)
+  await expect(palette.locator('.hit.on')).toContainText(sessionName)
   if (process.env.BRAIAN_AGENT_SHOTS) {
     const dir = process.env.BRAIAN_AGENT_SHOTS
     const theme = (await page.locator('html').getAttribute('data-theme')) === 'light' ? 'light' : 'dark'
@@ -258,8 +260,8 @@ test('Ctrl+K lists agents and Enter opens the tab', async ({ page }) => {
     await page.keyboard.press('Control+k')
     await page.getByTestId('palette-input').fill('Agents')
     await page.keyboard.press('Enter')
-    await page.getByTestId('palette-input').fill('palette lists')
-    await expect(page.getByTestId('command-palette').locator('.hit.on')).toContainText(title)
+    await page.getByTestId('palette-input').fill('before the palette')
+    await expect(page.getByTestId('command-palette').locator('.hit.on')).toContainText(sessionName)
     await page.screenshot({ path: `${dir}/agent-palette-${other}.png` })
   }
   await page.keyboard.press('Enter')
@@ -357,6 +359,7 @@ test('the agents table lists status, proposals and updated time, and Enter opens
   await login(page)
   await resetProductsLayout(page)
   const title = 'ask me before the agents table'
+  const sessionName = agentTitleStubHint(title)
   await ask(page, title)
   await expect(agentView(page, title).getByTestId('agent-status')).toHaveAttribute('data-status', 'waiting', { timeout: 30_000 })
   await page.keyboard.press('Control+k')
@@ -369,7 +372,7 @@ test('the agents table lists status, proposals and updated time, and Enter opens
   await expect(table.getByRole('columnheader', { name: 'Status' })).toBeVisible()
   await expect(table.getByRole('columnheader', { name: 'Proposals' })).toBeVisible()
   await expect(table.getByRole('columnheader', { name: 'Updated' })).toBeVisible()
-  const row = table.getByTestId('agent-table-row').filter({ hasText: title }).first()
+  const row = table.getByTestId('agent-table-row').filter({ hasText: sessionName }).first()
   await expect(row).toContainText('Waiting')
   await expect(row).toContainText('0')
   await expect(row).toContainText(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}/)
