@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
 import { focusMainTable, mainTable } from './ui'
 
@@ -55,6 +55,23 @@ async function activeRowInList(page: Page, listSelector: string): Promise<InView
       scrollTop: list.scrollTop,
     }
   }, listSelector)
+}
+
+async function waitForStableOptions(palette: Locator, timeout = 60_000): Promise<void> {
+  let stable: string[] = []
+  await expect
+    .poll(
+      async () => {
+        const values = await palette
+          .getByRole('option')
+          .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-value') ?? ''))
+        const settled = values.length > 1 && values.join('\u0000') === stable.join('\u0000')
+        stable = values
+        return settled
+      },
+      { message: 'palette option order', timeout, intervals: [100, 100, 150, 200, 250] },
+    )
+    .toBe(true)
 }
 
 async function drillToProtein(page: Page) {
@@ -129,12 +146,15 @@ test.describe('palette keyboard scroll keeps the active row visible', () => {
     try {
       await focusMainTable(page)
       await page.keyboard.press('Control+k')
-      await expect(page.getByTestId('command-palette')).toBeVisible()
+      const palette = page.getByTestId('command-palette')
+      await expect(palette).toBeVisible()
+      await waitForStableOptions(palette)
 
-      await page.getByTestId('palette-input').fill('open view')
-      await expect
-        .poll(async () => activeRowInList(page, rootList), { timeout: 15_000 })
-        .toMatchObject({ inView: true })
+      await page.getByTestId('palette-input').fill('Open view')
+      await expect(palette.locator('#palette-list .hit.on')).toContainText('Open view', { timeout: 60_000 })
+      const filterState = await activeRowInList(page, rootList)
+      expect(filterState, 'root filter should highlight a row').not.toBeNull()
+      expect(filterState!.inView, 'root filter highlight outside list viewport').toBe(true)
 
       await page.getByTestId('palette-input').fill('')
       await page.getByTestId('palette-input').fill('open structure')
