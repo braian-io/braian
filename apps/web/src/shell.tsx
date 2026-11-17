@@ -1926,13 +1926,29 @@ export function Shell() {
         workspaceRef.current = nextSurface
         queryClient.setQueryData(['workspace', surfaceNow.id], nextSurface)
       }
-      const current = docRef.current
+      let current = docRef.current
       if (!current || !found) return
       const catalog = views.map((view) => ({ id: view.id, type: view.type }))
       const open = layoutViews(current.layout).includes(found.id)
       const misDocked = agentsTableSharesAgentDock(current.layout, catalog, found.id)
       const placementTarget = agentsTablePlacementTarget(current.layout, catalog, current.focus)
       const placeInCatalog = placementTarget && (!open || misDocked)
+      if (placeInCatalog && placementTarget && current.focus !== placementTarget) {
+        const focusResult = applyLayoutCommand(
+          current,
+          'ui.open_view',
+          { id: placementTarget },
+          {
+            views: views.map((view) => ({ id: view.id, title: view.title, type: view.type })),
+            canonical: canonicalRef.current,
+            place: placeOverride.current,
+          },
+        )
+        if (focusResult.handled && focusResult.doc !== current) {
+          commitDoc(focusResult.doc)
+          current = focusResult.doc
+        }
+      }
       const result = applyLayoutCommand(
         current,
         'ui.open_view',
