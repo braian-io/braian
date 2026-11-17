@@ -18,13 +18,10 @@ function run(patch: Partial<AgentRunSummary>): AgentRunSummary {
 }
 
 describe('agent run presentation', () => {
-  it('shortens a long prompt and keeps a short one', () => {
-    expect(agentTabTitle('propose a new name')).toBe('propose a new name')
+  it('uses a fixed Agent tab title regardless of prompt length', () => {
+    expect(agentTabTitle('propose a new name')).toBe('Agent')
     const long = 'please rewrite the selected product description so it fits the catalog voice and stays specific'
-    const title = agentTabTitle(long)
-    expect(title.endsWith('…')).toBe(true)
-    expect(title.length).toBeLessThan(long.length)
-    expect(long.startsWith(title.slice(0, -1))).toBe(true)
+    expect(agentTabTitle(long)).toBe('Agent')
   })
 
   it('cleans a failed run error', () => {

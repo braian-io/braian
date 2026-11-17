@@ -160,14 +160,9 @@ export function cleanAgentError(text: string): string {
   return cleaned || copy.agentFailed
 }
 
-/** Tab label. The full prompt stays on the tooltip. */
-export function agentTabTitle(prompt: string): string {
-  const trimmed = prompt.trim().replace(/\s+/g, ' ')
-  if (trimmed.length <= 48) return trimmed
-  const cut = trimmed.slice(0, 48)
-  const space = cut.lastIndexOf(' ')
-  const base = space > 16 ? cut.slice(0, space) : cut
-  return `${base}…`
+/** Pane tab label. Session text lives in the header and tab tooltip. */
+export function agentTabTitle(_prompt?: string): string {
+  return copy.agent
 }
 
 export function agentRunPrompt(run: { title: string; messages?: AgentMessage[] }): string {

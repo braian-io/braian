@@ -212,7 +212,6 @@ export const copy = {
   agentRejectedByYou: 'Rejected by you',
   agentRedo: 'Ask the agent to redo it',
   agentRedoDraft: 'The proposal is stale. Please redo it.',
-  agentOpenElsewhere: 'An agent tab is still open in another workspace.',
   proposalStale: 'Stale',
   proposalAlreadyAccepted: 'Proposal already accepted',
   proposalAlreadyDiscarded: 'Proposal already discarded',

@@ -182,7 +182,8 @@ test('Open view does not list old agent runs, and closing its tab keeps the run'
   await palette.getByTestId('palette-input').fill(title)
   await page.keyboard.press('Control+j')
   await expect(page.getByTestId('command-palette')).toHaveCount(0)
-  const tab = page.locator('.pane-tab[data-view-type="agent"]').filter({ hasText: title }).last()
+  const escaped = title.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  const tab = page.locator(`.pane-tab[data-view-type="agent"][title*="${escaped}"]`).last()
   await expect(tab).toBeVisible({ timeout: 30_000 })
 
   const open = await openOpenViewSublist(page)
@@ -205,12 +206,12 @@ test('Open view does not list old agent runs, and closing its tab keeps the run'
   // Actually close the tab this test created; the run itself stays in the catalog.
   await tab.hover()
   await tab.getByRole('button', { name: 'Close tab' }).click()
-  await expect(page.locator('.pane-tab[data-view-type="agent"]').filter({ hasText: title })).toHaveCount(0)
+  await expect(page.locator(`.pane-tab[data-view-type="agent"][title*="${escaped}"]`)).toHaveCount(0)
   const patched = await page.request.patch(`/v1/agent/runs/${run.id}`, { data: { tab_open: false } })
   expect(patched.ok()).toBeTruthy()
   await page.reload()
   await expect(page.getByTestId('dock')).toBeVisible({ timeout: 60_000 })
-  await expect(page.locator('.pane-tab[data-view-type="agent"]').filter({ hasText: title })).toHaveCount(0)
+  await expect(page.locator(`.pane-tab[data-view-type="agent"][title*="${escaped}"]`)).toHaveCount(0)
   const after = (await (await page.request.get('/v1/agent/runs')).json()) as { runs: Array<{ id: string; title: string }> }
   expect(after.runs.some((item) => item.id === run.id)).toBeTruthy()
   await page.screenshot({ path: `${shots}/row213-07-agent-tab-closed-run-kept.png` })

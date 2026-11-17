@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
-import { expectToastClearsLists, mainTable, paneWithTab, setTheme } from './ui'
+import { agentSessionView, expectToastClearsLists, mainTable, paneWithTab, setTheme } from './ui'
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -28,7 +28,7 @@ async function ask(page: Page, prompt: string) {
 }
 
 function agentView(page: Page, title: string) {
-  return page.getByTestId('agent-view').filter({ has: page.getByRole('heading', { level: 2, name: title, exact: true }) }).last()
+  return agentSessionView(page, title)
 }
 
 async function expectReadable(page: Page, selector: string, minimum: number) {
