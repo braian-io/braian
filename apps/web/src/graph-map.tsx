@@ -14,6 +14,7 @@ import { ChevronDown, Link2, List, Pin, PinOff, X } from 'lucide-react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import { api, catalogName, searchQuery, textValue, type Json } from './api'
 import { Button } from './components/ui/button'
+import { Portal } from './components/ui/portal'
 import { MetaChip, typeLabel } from './chips'
 import {
   buildScene,
@@ -1676,6 +1677,10 @@ export function GraphMap({
 
   const onKey = (event: ReactKeyboardEvent<HTMLCanvasElement>) => {
     if (event.key === 'Escape') {
+      if (full) {
+        setFull(false)
+        return
+      }
       if (density === 'narrow' && sheet !== 'dismissed' && selected) {
         setSheet('dismissed')
         return
@@ -1707,6 +1712,10 @@ export function GraphMap({
 
   const onStageKey = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'Escape' || event.target === canvasRef.current) return
+    if (full) {
+      setFull(false)
+      return
+    }
     if (density !== 'narrow' || sheet === 'dismissed' || !selected) return
     setSheet('dismissed')
   }
@@ -1731,7 +1740,7 @@ export function GraphMap({
     drawRef.current(true)
   }
 
-  return (
+  const graphShell = (
     <div className={full ? 'graph-wrap graph-full' : 'graph-wrap'} data-testid={full ? 'graph-full' : undefined}>
       <div className="toolbar">
         <Button type="button" variant="default" data-testid="graph-fit" onClick={() => apiRef.current.fit()}>
@@ -1915,6 +1924,14 @@ export function GraphMap({
         />
       ) : null}
     </div>
+  )
+
+  if (!full) return graphShell
+  return (
+    <>
+      <div className="graph-wrap graph-full-placeholder" aria-hidden="true" />
+      <Portal>{graphShell}</Portal>
+    </>
   )
 }
 

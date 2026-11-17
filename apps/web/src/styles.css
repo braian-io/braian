@@ -84,6 +84,9 @@
   --purple: var(--accent);
   --purple-bg: var(--accent-dim);
   --shadow: var(--shadow-md);
+  /* Fixed overlays (full-size graph) portalled to document.body use these inset anchors. */
+  --app-chrome-top: 40px;
+  --app-chrome-bottom: 24px;
   font-family: var(--font-sans);
   font-feature-settings: "cv11", "ss01";
   font-size: var(--text-base);
@@ -2631,8 +2634,11 @@ kbd {
 [data-testid='proposal'] > label { display: flex; gap: var(--space-2); align-items: center; }
 .graph-full {
   position: fixed;
-  inset: 16px;
   z-index: 35;
+  left: var(--space-4);
+  right: var(--space-4);
+  top: calc(var(--app-chrome-top) + var(--space-2));
+  bottom: calc(var(--app-chrome-bottom) + var(--space-2));
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--r-xl);
@@ -2641,6 +2647,13 @@ kbd {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  min-height: 0;
+}
+.graph-full-placeholder {
+  flex: 1 1 auto;
+  min-height: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 .model-tree:focus-visible { outline: 2px solid var(--accent); border-radius: var(--r-md); }
 button, .pane-tab, .hit, .class-row, .attr-card {
