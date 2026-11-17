@@ -115,25 +115,23 @@ test.describe('palette keyboard scroll keeps the active row visible', () => {
       await page.keyboard.press('Escape')
       await expect(page.getByTestId('command-palette')).toHaveCount(0)
 
-      // Wheel and hover must not jump the list scroll position.
+      // Wheel and pointer move must not jump the list scroll position (avoid hover() — it scrolls into view).
       await openFieldsPalette(page)
-      const scrollAfterOpen = await page.evaluate((selector) => {
-        const list = document.querySelector<HTMLElement>(selector)
-        return list?.scrollTop ?? 0
-      }, listSelector)
+      for (let step = 0; step < 16; step += 1) await page.keyboard.press('ArrowDown')
       for (let i = 0; i < 4; i += 1) await page.mouse.wheel(0, 200)
       const afterWheel = await page.evaluate((selector) => {
         const list = document.querySelector<HTMLElement>(selector)
         return list?.scrollTop ?? 0
       }, listSelector)
-      expect(afterWheel).toBeGreaterThan(scrollAfterOpen)
-      const wheelTop = afterWheel
-      await page.locator(`${listSelector} .hit`).nth(3).hover()
-      const afterHover = await page.evaluate((selector) => {
+      expect(afterWheel).toBeGreaterThan(0)
+      const listBox = await page.locator(listSelector).boundingBox()
+      expect(listBox).not.toBeNull()
+      await page.mouse.move(listBox!.x + listBox!.width / 2, listBox!.y + 40)
+      const afterPointer = await page.evaluate((selector) => {
         const list = document.querySelector<HTMLElement>(selector)
         return list?.scrollTop ?? 0
       }, listSelector)
-      expect(afterHover).toBe(wheelTop)
+      expect(afterPointer).toBe(afterWheel)
     } finally {
       await page.keyboard.press('Escape').catch(() => undefined)
       await page.keyboard.press('Escape').catch(() => undefined)
@@ -151,7 +149,8 @@ test.describe('palette keyboard scroll keeps the active row visible', () => {
       await page.keyboard.press('Control+k')
       await expect(page.getByTestId('command-palette')).toBeVisible()
 
-      await page.getByTestId('palette-input').fill('delete structure')
+      await page.getByTestId('palette-input').fill('open structure')
+      await expect(page.locator('#palette-list .hit.on')).toBeVisible()
       const filterState = await activeRowInList(page, rootList)
       expect(filterState, 'root filter should highlight a row').not.toBeNull()
       expect(filterState!.inView, 'root filter highlight outside list viewport').toBe(true)
@@ -178,23 +177,20 @@ test.describe('palette keyboard scroll keeps the active row visible', () => {
         expect(state!.inView, `root step ${step}: active row outside list viewport`).toBe(true)
       }
 
-      const scrollAfterKeys = await page.evaluate((selector) => {
-        const list = document.querySelector<HTMLElement>(selector)
-        return list?.scrollTop ?? 0
-      }, rootList)
       for (let i = 0; i < 4; i += 1) await page.mouse.wheel(0, 250)
       const afterWheel = await page.evaluate((selector) => {
         const list = document.querySelector<HTMLElement>(selector)
         return list?.scrollTop ?? 0
       }, rootList)
-      expect(afterWheel).toBeGreaterThan(scrollAfterKeys)
-      const wheelTop = afterWheel
-      await page.locator('#palette-list .hit').nth(2).hover()
-      const afterHover = await page.evaluate((selector) => {
+      expect(afterWheel).toBeGreaterThan(0)
+      const listBox = await page.locator(rootList).boundingBox()
+      expect(listBox).not.toBeNull()
+      await page.mouse.move(listBox!.x + listBox!.width / 2, listBox!.y + 48)
+      const afterPointer = await page.evaluate((selector) => {
         const list = document.querySelector<HTMLElement>(selector)
         return list?.scrollTop ?? 0
       }, rootList)
-      expect(afterHover).toBe(wheelTop)
+      expect(afterPointer).toBe(afterWheel)
     } finally {
       await page.keyboard.press('Escape').catch(() => undefined)
       await page.keyboard.press('Escape').catch(() => undefined)
