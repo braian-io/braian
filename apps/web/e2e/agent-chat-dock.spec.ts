@@ -1,7 +1,7 @@
 // Docked agent chat: right pane, no overlap with Detail, Products stays open.
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
-import { mainTable, paneWithTab } from './ui'
+import { closeAllAgentTabs, mainTable, paneWithTab } from './ui'
 
 type Box = { x: number; y: number; width: number; height: number }
 
@@ -30,14 +30,14 @@ function agentPane(page: Page) {
   return page.getByTestId('agent-view').last()
 }
 
-// Ctrl+J closes the dock only while the agent pane is the focused view.
-// A result link focuses Products, so the shortcut would refocus the agent
-// instead of closing it. Click the agent title (not a field) first.
+// Ctrl+J closes the dock only while that agent view is focused. A result link
+// focuses Products, so the shortcut would refocus the agent instead of closing
+// it. The tab's click handler focuses the view; the long title does not.
 async function closeAgentDock(page: Page) {
-  const agent = agentPane(page)
-  await agent.locator('.agent-view-head h2').click()
+  const tab = page.locator('.pane-tab[data-view-type="agent"]').last()
+  await tab.locator('button.pane-tab-open').click({ timeout: 5_000 })
   await page.keyboard.press('Control+j')
-  await expect(agent).toHaveCount(0)
+  await expect(page.getByTestId('agent-view')).toHaveCount(0)
 }
 
 function paneWithTable(page: Page) {
@@ -110,8 +110,7 @@ async function cleanupDrafts(page: Page) {
   if ((await discardAll.count()) > 0 && (await discardAll.isEnabled())) {
     await discardAll.click({ timeout: 15_000 }).catch(() => undefined)
   }
-  await page.keyboard.press('Control+j').catch(() => undefined)
-  await page.keyboard.press('Control+j').catch(() => undefined)
+  await closeAllAgentTabs(page)
 }
 
 async function expectNoAgentDetailOverlap(page: Page, detailMinWidth: number) {
@@ -236,7 +235,8 @@ test('Ctrl+J opens a right agent chat while Products stays visible', async ({ pa
     await expect(agent.getByTestId('agent-status')).toHaveAttribute('data-status', 'done', { timeout: 30_000 })
     await expect(agent.getByTestId('agent-chat-user').filter({ hasText: secondTarget })).toBeVisible()
     await expect(agent.getByTestId('agent-send')).toBeDisabled()
-    await closeAgentDock(page)
+    await page.keyboard.press('Control+j')
+    await expect(agent).toHaveCount(0)
     await expect(products).toBeVisible()
     await waitForAgentDockReflow(page)
     const [productsClosed, detailClosed] = await Promise.all([
