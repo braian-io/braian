@@ -167,17 +167,13 @@ it('does not mark the agent dock wrapper as a detail split', () => {
   const inner = container.querySelector<HTMLElement>(".split.horizontal[data-path='0']")
   expect(outer?.dataset.hasDetail).toBeUndefined()
   expect(inner?.dataset.hasDetail).toBe('true')
-  expect(inner?.dataset.catalogFrozen).toBe('true')
+  expect(inner?.dataset.catalogFrozen).toBeUndefined()
   const innerCells = [...(inner?.querySelectorAll<HTMLElement>(':scope > .split-cell') ?? [])]
-  expect(innerCells.map((cell) => cell.style.position)).toEqual(['absolute', 'absolute'])
+  expect(innerCells.map((cell) => cell.style.flex.split(' ').slice(0, 2).join(' '))).toEqual(['0 1', '0 1'])
   const outerCells = [...(outer?.querySelectorAll<HTMLElement>(':scope > .split-cell') ?? [])]
   expect(outer?.dataset.agentDock).toBe('true')
-  expect(outerCells.map((cell) => cell.style.position)).toEqual(['absolute', 'absolute'])
-  expect(outerCells[0]?.style.left).toBe('0px')
-  expect(outerCells[0]?.style.maxWidth).toBe(outerCells[0]?.style.width)
-  expect(outer?.dataset.catalogScale).toBe('full')
-  expect(outer?.style.getPropertyValue('--agent-dock-ratio')).toBe('0.7')
-  expect(outerCells[1]?.style.right).toBe('0px')
+  expect(outer?.dataset.catalogScale).toBeUndefined()
+  expect(outerCells.map((cell) => cell.style.flex.split(' ').slice(0, 2).join(' '))).toEqual(['0 0', '0 0'])
 })
 
 it('keeps the full tab title on the truncated tab button', () => {
