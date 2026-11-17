@@ -200,6 +200,10 @@ test('Detail and Graph create dialogs are wide enough to confirm without forcing
   await expectWideDialog(page, detailDialog)
   await shot(page, 'detail-dialog-wide')
   await confirmAndCleanup(page, detailDialog)
+  // API delete does not run the app's query invalidation; reload so the graph picker
+  // does not treat the removed supplier as still linked.
+  await page.reload()
+  await expect(page.getByTestId('workspace')).toBeVisible({ timeout: 60_000 })
 
   await openObjectGraph(page, PRODUCT)
   const { menu } = await openNodeMenu(page, PRODUCT.id)
