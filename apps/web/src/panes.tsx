@@ -3298,6 +3298,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       ref={formRef}
       className={flashId === session.objectId ? 'detail-form form flash' : 'detail-form form'}
       data-testid="object-detail"
+      data-detail-ready={editingReady ? 'true' : 'false'}
       onSubmit={(event) => {
         // Enter in a Detail field stages nothing and never saves.
         event.preventDefault()

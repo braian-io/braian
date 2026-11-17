@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { demoCredentials } from './demo'
-import { mainTable, paneWithTab } from './ui'
+import { mainTable, paneWithTab, waitDetailReady } from './ui'
 
 const shots = process.env.BRAIAN_ROW128D_SHOTS
   ? resolve(process.env.BRAIAN_ROW128D_SHOTS)
@@ -50,8 +50,8 @@ async function openObjectDetail(page: Page, item: { title: string; key: string }
     const detailTab = page.locator('.pane-tab[data-view-type="object_detail"]:visible').first()
     if ((await detailTab.count()) > 0) await detailTab.click()
   }
-  await expect(detail).toBeVisible()
   await expect(detail).toContainText(item.key)
+  await waitDetailReady(page, detail)
 }
 
 async function nodeMarker(page: Page, id: string) {
