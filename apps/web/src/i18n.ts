@@ -371,6 +371,7 @@ export const copy = {
   notSelected: 'Not selected',
   hidden: 'Hidden',
   allOfType: 'All {type}',
+  clearViewSource: 'Clear data source and show {label}',
   noLinkedOfType: 'No linked {type} for {object}',
   selectRowIn: 'Select a row in {view}',
   sourceMissing: 'Source no longer exists',
