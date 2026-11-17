@@ -110,7 +110,7 @@ describe('type workspaces', () => {
     ])
     expect(articles?.views[2]?.state).toMatchObject({ type_key: 'article', object_type: '201' })
     expect(articles?.views[0]?.title).toBe('Food')
-    expect(articles?.views[0]?.state).toEqual({})
+    expect(articles?.views[0]?.state).toEqual({ structure_key: 'food' })
     const suppliers = templates[2]
     expect(suppliers?.views.map((view) => view.type)).toEqual([
       'assortment_list',

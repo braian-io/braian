@@ -14,6 +14,19 @@ function structureIdForKey(structureKey: string, defs?: Json): string {
   return row?.id ? String(row.id).trim() : ''
 }
 
+function viewStructureBinding(view: SavedTreeView): { key: string; id: string } {
+  return {
+    key: String(view.state?.structure_key ?? view.state?.structure ?? '').trim().toLowerCase(),
+    id: String(view.state?.structure_id ?? '').trim().toLowerCase(),
+  }
+}
+
+function isLegacyKeylessTree(view: SavedTreeView): boolean {
+  if (view.type !== 'structure_tree') return false
+  const binding = viewStructureBinding(view)
+  return !binding.key && !binding.id
+}
+
 /** Reuse a workspace tree view bound to this structure key or id in view state. */
 export function findStructureTreeView(
   views: SavedTreeView[],
@@ -22,12 +35,19 @@ export function findStructureTreeView(
 ): SavedTreeView | undefined {
   const key = structureKey.trim().toLowerCase()
   const id = structureIdForKey(structureKey, defs).toLowerCase()
-  return views.find((view) => {
+  const keyed = views.find((view) => {
     if (view.type !== 'structure_tree') return false
-    const stateKey = String(view.state?.structure_key ?? view.state?.structure ?? '').trim().toLowerCase()
-    if (stateKey && stateKey === key) return true
-    const stateId = String(view.state?.structure_id ?? '').trim().toLowerCase()
-    return Boolean(stateId && id && stateId === id)
+    const binding = viewStructureBinding(view)
+    if (binding.key && binding.key === key) return true
+    return Boolean(binding.id && id && binding.id === id)
+  })
+  if (keyed) return keyed
+
+  const label = structureTreeViewTitle(structureKey, defs).trim().toLowerCase()
+  return views.find((view) => {
+    if (!isLegacyKeylessTree(view)) return false
+    const title = view.title.trim().toLowerCase()
+    return title === label || title === key
   })
 }
 
@@ -37,6 +57,31 @@ export function structureTreeViewState(structureKey: string, defs?: Json): Json 
     structure_key: structureKey,
     ...(id ? { structure_id: id } : {}),
   }
+}
+
+/** True when view state should gain structure_key / structure_id for Open structure › reuse. */
+export function structureTreeViewNeedsBackfill(
+  view: SavedTreeView,
+  structureKey: string,
+  defs?: Json,
+): boolean {
+  if (view.type !== 'structure_tree') return false
+  const target = structureTreeViewState(structureKey, defs)
+  const currentKey = String(view.state?.structure_key ?? view.state?.structure ?? '').trim()
+  const targetKey = String(target.structure_key ?? '').trim()
+  if (currentKey && currentKey.toLowerCase() === targetKey.toLowerCase()) {
+    const currentId = String(view.state?.structure_id ?? '').trim().toLowerCase()
+    const targetId = String(target.structure_id ?? '').trim().toLowerCase()
+    return Boolean(targetId && currentId !== targetId)
+  }
+  return true
+}
+
+export function mergeStructureTreeViewState(view: SavedTreeView, structureKey: string, defs?: Json): Json {
+  const base = view.state && typeof view.state === 'object' && !Array.isArray(view.state)
+    ? { ...(view.state as Record<string, unknown>) }
+    : {}
+  return { ...base, ...structureTreeViewState(structureKey, defs) }
 }
 
 const PLACEMENT_ANCHOR_TYPES = new Set(['structure_tree', 'object_table'])

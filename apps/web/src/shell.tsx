@@ -98,7 +98,9 @@ import {
 import { objectTablesToAutoLinkToTree } from './structure-tree-link'
 import {
   findStructureTreeView,
+  mergeStructureTreeViewState,
   resolveStructureOpenTarget,
+  structureTreeViewNeedsBackfill,
   structureTreeViewState,
   structureTreeViewTitle,
 } from './structure-tree-view'
@@ -1965,6 +1967,22 @@ export function Shell() {
         if (!tree && surfaceNow.locked) {
           toast.error(copy.layoutLocked)
           return
+        }
+        if (tree && structureTreeViewNeedsBackfill(tree, structureKey, defs)) {
+          const state = freeObject(mergeStructureTreeViewState(tree, structureKey, defs))
+          await api.post('/v1/views', {
+            body: {
+              id: tree.id,
+              workspace_id: surfaceNow.id,
+              type: tree.type,
+              title: tree.title,
+              pane: tree.pane ?? 'center',
+              position: tree.position ?? 0,
+              state,
+            },
+          })
+          tree = { ...tree, state }
+          views = views.map((view) => (view.id === tree.id ? tree! : view))
         }
         if (!tree) {
           const id = crypto.randomUUID()
