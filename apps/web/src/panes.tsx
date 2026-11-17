@@ -1491,7 +1491,11 @@ export function ObjectTable({
         const item = rowAt(cursor)
         if (item) ids.push(item.id)
       }
-      prefetchObjectDetails(queryClient, ids)
+      const scheduled = prefetchObjectDetails(queryClient, ids)
+      if (typeof window !== 'undefined' && window.__BRAIAN_TRACK_OBJECT_NAV_PREFETCH__) {
+        window.__BRAIAN_NAV_PREFETCH_BATCHES__ = (window.__BRAIAN_NAV_PREFETCH_BATCHES__ ?? 0) + 1
+        window.__BRAIAN_NAV_PREFETCH_SCHEDULED__ = (window.__BRAIAN_NAV_PREFETCH_SCHEDULED__ ?? 0) + scheduled.length
+      }
     }
     if (fetch === 'immediate') {
       if (objectNavTimer.current) {

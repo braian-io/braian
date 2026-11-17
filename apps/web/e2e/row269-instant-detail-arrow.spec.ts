@@ -3,7 +3,8 @@ import { demoCredentials } from './demo'
 import {
   ROW269_GET_BUDGET_MAX,
   ROW269_MEASURED_WITH_DEBOUNCE,
-  ROW269_MEASURED_WITHOUT_DEBOUNCE_MIN,
+  ROW269_PREFETCH_SCHEDULED_WITH_DEBOUNCE,
+  ROW269_PREFETCH_SCHEDULED_WITHOUT_DEBOUNCE_MIN,
   ROW269_RAPID_ARROWS,
 } from '../src/object-nav-get-budget.harness'
 import { mainTable } from './ui'
@@ -17,11 +18,23 @@ async function login(page: Page) {
   await expect(page.getByTestId('workspace')).toBeVisible()
 }
 
-async function openProducts(page: Page, disableDebounce = false) {
-  if (disableDebounce) {
-    await page.addInitScript(() => {
-      window.__BRAIAN_DISABLE_OBJECT_NAV_DEBOUNCE__ = true
-    })
+type NavBudgetMetrics = { httpGets: number; prefetchScheduled: number; prefetchBatches: number }
+
+async function openProducts(page: Page, options?: { disableDebounce?: boolean; trackPrefetch?: boolean }) {
+  const disableDebounce = options?.disableDebounce ?? false
+  const trackPrefetch = options?.trackPrefetch ?? false
+  if (disableDebounce || trackPrefetch) {
+    await page.addInitScript(
+      ({ off, track }: { off: boolean; track: boolean }) => {
+        if (off) window.__BRAIAN_DISABLE_OBJECT_NAV_DEBOUNCE__ = true
+        if (track) {
+          window.__BRAIAN_TRACK_OBJECT_NAV_PREFETCH__ = true
+          window.__BRAIAN_NAV_PREFETCH_BATCHES__ = 0
+          window.__BRAIAN_NAV_PREFETCH_SCHEDULED__ = 0
+        }
+      },
+      { off: disableDebounce, track: trackPrefetch },
+    )
   }
   await login(page)
   await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
@@ -31,6 +44,14 @@ async function openProducts(page: Page, disableDebounce = false) {
   const grid = table.locator('.grid').first()
   await grid.focus()
   return { table, rows, grid }
+}
+
+async function focusProductsGrid(page: Page) {
+  const table = mainTable(page)
+  const grid = table.locator('.grid').first()
+  await expect(table.getByTestId('object-row').first()).toBeVisible({ timeout: 60_000 })
+  await grid.focus()
+  return table
 }
 
 function objectReads(url: string) {
@@ -51,8 +72,8 @@ async function detailTitle(page: Page) {
   return (await detail.locator('.detail-title strong').innerText()).trim()
 }
 
-async function countRapidDownObjectGets(page: Page, disableDebounce: boolean) {
-  await openProducts(page, disableDebounce)
+async function countRapidDownNavBudget(page: Page, disableDebounce: boolean): Promise<NavBudgetMetrics> {
+  await openProducts(page, { disableDebounce, trackPrefetch: true })
   const gets: string[] = []
   await page.route('**/v1/objects/**', async (route) => {
     if (route.request().method() === 'GET' && objectReads(route.request().url())) gets.push(route.request().url())
@@ -62,18 +83,48 @@ async function countRapidDownObjectGets(page: Page, disableDebounce: boolean) {
   await expect(page.getByTestId('object-detail')).toBeVisible()
   await expect.poll(async () => page.getByTestId('object-detail').getAttribute('data-detail-ready')).toBe('true')
   gets.length = 0
+  await page.evaluate(() => {
+    window.__BRAIAN_NAV_PREFETCH_BATCHES__ = 0
+    window.__BRAIAN_NAV_PREFETCH_SCHEDULED__ = 0
+  })
   for (let step = 0; step < ROW269_RAPID_ARROWS; step += 1) await page.keyboard.press('ArrowDown', { delay: 25 })
   await expect.poll(async () => page.getByTestId('object-detail').getAttribute('data-detail-ready')).toBe('true')
-  return gets.length
+  const prefetch = await page.evaluate(() => ({
+    prefetchBatches: window.__BRAIAN_NAV_PREFETCH_BATCHES__ ?? 0,
+    prefetchScheduled: window.__BRAIAN_NAV_PREFETCH_SCHEDULED__ ?? 0,
+  }))
+  return { httpGets: gets.length, ...prefetch }
 }
 
 async function withFreshPage(browser: Browser, disableDebounce: boolean) {
-  const page = await browser.newPage()
+  const context = await browser.newContext()
+  const page = await context.newPage()
   try {
-    return await countRapidDownObjectGets(page, disableDebounce)
+    return await countRapidDownNavBudget(page, disableDebounce)
   } finally {
-    await page.close()
+    await context.close()
   }
+}
+
+function selectedRow(table: ReturnType<typeof mainTable>) {
+  return table.getByTestId('object-row').and(table.locator('[aria-selected="true"]'))
+}
+
+async function listSuccessorRow(table: ReturnType<typeof mainTable>) {
+  const rows = table.getByTestId('object-row')
+  const current = rowObjectId(await selectedRow(table).getAttribute('id'))
+  const count = await rows.count()
+  for (let index = 0; index < count; index += 1) {
+    const row = rows.nth(index)
+    if (rowObjectId(await row.getAttribute('id')) !== current) continue
+    if (index + 1 >= count) throw new Error('no list successor row')
+    const next = rows.nth(index + 1)
+    return {
+      id: rowObjectId(await next.getAttribute('id')),
+      name: (await next.locator('[data-column="name"]').innerText()).trim(),
+    }
+  }
+  throw new Error('selected row not found in table')
 }
 
 test('arrowing through rows keeps Detail visible without a loading screen', async ({ page }) => {
@@ -96,11 +147,13 @@ test('debounce lowers rapid-arrow object GET count', async ({ browser }) => {
   test.setTimeout(240_000)
   const withDebounce = await withFreshPage(browser, false)
   const withoutDebounce = await withFreshPage(browser, true)
-  expect(withDebounce).toBe(ROW269_MEASURED_WITH_DEBOUNCE)
-  expect(withDebounce).toBeLessThan(withoutDebounce)
-  expect(withDebounce).toBeLessThan(ROW269_GET_BUDGET_MAX)
-  expect(withoutDebounce).toBeGreaterThan(ROW269_GET_BUDGET_MAX)
-  expect(withoutDebounce).toBeGreaterThanOrEqual(ROW269_MEASURED_WITHOUT_DEBOUNCE_MIN)
+  expect(withDebounce.httpGets).toBe(ROW269_MEASURED_WITH_DEBOUNCE)
+  expect(withDebounce.httpGets).toBeLessThan(ROW269_GET_BUDGET_MAX)
+  // HTTP totals match with/without debounce (~list-preview upgrades along the walk); prefetch schedules do not.
+  expect(withDebounce.prefetchScheduled).toBe(ROW269_PREFETCH_SCHEDULED_WITH_DEBOUNCE)
+  expect(withoutDebounce.prefetchScheduled).toBeGreaterThanOrEqual(ROW269_PREFETCH_SCHEDULED_WITHOUT_DEBOUNCE_MIN)
+  expect(withDebounce.prefetchScheduled).toBeLessThan(withoutDebounce.prefetchScheduled)
+  expect(withDebounce.prefetchBatches).toBeLessThan(withoutDebounce.prefetchBatches)
 })
 
 test('rapid Down arrows bound object GETs and show preview skeletons before the body loads', async ({ page }) => {
@@ -121,7 +174,6 @@ test('rapid Down arrows bound object GETs and show preview skeletons before the 
   await expect.poll(async () => page.getByTestId('object-detail').getAttribute('data-detail-ready')).toBe('true')
 
   expect(gets.length).toBeGreaterThan(0)
-  // ROW269_GET_BUDGET_MAX sits between debounced (48) and immediate (~90+) HTTP totals; see harness.
   expect(gets.length).toBeLessThan(ROW269_GET_BUDGET_MAX)
 
   let slowLoads = false
@@ -133,8 +185,11 @@ test('rapid Down arrows bound object GETs and show preview skeletons before the 
     await route.continue()
   })
 
-  await page.keyboard.press('Home')
   slowLoads = true
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await expect(page.getByTestId('workspace')).toBeVisible({ timeout: 60_000 })
+  await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
+  await focusProductsGrid(page)
   await page.keyboard.press('ArrowDown')
   const detail = page.getByTestId('object-detail')
   await expect(detail).toBeVisible()
@@ -157,7 +212,7 @@ test('rapid Down arrows bound object GETs and show preview skeletons before the 
 
 test('a persistent object GET failure shows Retry without endless requests', async ({ page }) => {
   test.setTimeout(120_000)
-  const { rows } = await openProducts(page)
+  const { rows, table } = await openProducts(page)
   let fail = true
   const failIds = new Set<string>()
   const failedGets: string[] = []
@@ -196,10 +251,10 @@ test('a persistent object GET failure shows Retry without endless requests', asy
   failedGets.length = 0
   fail = true
   failIds.clear()
-  failIds.add(rowObjectId(await rows.nth(1).getAttribute('id')))
+  const nextRow = await listSuccessorRow(table)
+  failIds.add(nextRow.id)
   await page.keyboard.press('ArrowDown')
-  const nextName = (await rows.nth(1).locator('[data-column="name"]').innerText()).trim()
-  await expect.poll(() => detailTitle(page)).toBe(nextName)
+  await expect.poll(() => detailTitle(page)).toBe(nextRow.name)
   await expect(page.getByTestId('detail-error')).toBeVisible({ timeout: 30_000 })
   await page.waitForTimeout(2_000)
   expect(failedGets.length).toBeLessThanOrEqual(6)

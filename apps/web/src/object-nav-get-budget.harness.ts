@@ -15,9 +15,11 @@ export const ROW269_INTER_KEY_MS = 52
  * Without debounce, the same burst is measured in the e2e budget test below.
  */
 export const ROW269_MEASURED_WITH_DEBOUNCE = 48
-/** Set by e2e `debounce lowers rapid-arrow object GET count`; must stay above ROW269_GET_BUDGET_MAX. */
-export const ROW269_MEASURED_WITHOUT_DEBOUNCE_MIN = 72
-/** Between debounced and immediate HTTP counts; removing debounce should exceed this. */
+/** Model + e2e prefetch schedules when object-nav debounce is off (HTTP totals stay ~48; react-query dedupes). */
+export const ROW269_PREFETCH_SCHEDULED_WITHOUT_DEBOUNCE_MIN = 27
+/** Unit-model prefetch schedules with debounce on (one coalesced burst). */
+export const ROW269_PREFETCH_SCHEDULED_WITH_DEBOUNCE = 7
+/** Upper cap on HTTP GET /v1/objects/* during the rapid-Down burst (debounced nav). */
 export const ROW269_GET_BUDGET_MAX = 52
 
 function rowIds(count: number) {
