@@ -123,6 +123,7 @@ it('does not mark the agent dock wrapper as a detail split', () => {
   expect(outerCells.map((cell) => cell.style.position)).toEqual(['absolute', 'absolute'])
   expect(outerCells[0]?.style.left).toBe('0px')
   expect(outer?.dataset.catalogScale).toBe('full')
+  expect(outer?.style.getPropertyValue('--agent-dock-ratio')).toBe('0.7')
   expect(outerCells[1]?.style.right).toBe('0px')
 })
 

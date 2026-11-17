@@ -443,8 +443,6 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
   inset: 6px;
   min-width: 0;
   min-height: 0;
-  container-type: inline-size;
-  container-name: dock;
 }
 .dock-root > .split, .dock-root > .pane { width: 100%; height: 100%; }
 .split { min-height: 0; min-width: 0; width: 100%; height: 100%; display: flex; align-items: stretch; }
@@ -478,11 +476,6 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
 .dock-root > .split.horizontal.split-agent-dock > .split-cell:first-child {
   overflow: hidden;
 }
-/* The catalog is laid out at the full dock width and clipped here. The agent
-   cell has to stay above that overflow so chat actions receive the pointer. */
-.dock-root > .split.horizontal.split-agent-dock > .split-cell:first-child:not(:has([data-testid='agents-table'])) {
-  contain: paint;
-}
 .dock-root > .split.horizontal.split-agent-dock > .split-cell:last-child {
   z-index: 2;
 }
@@ -490,13 +483,14 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
   overflow: auto;
 }
 /* Lay the catalog out at the full dock width so existing panes keep their
-   coordinates. The agent cell clips the right edge. Scaling the cell by
-   1/ratio is 6px short (the divider sits outside the ratio). Applying that
-   same scale to a nested frozen split widens it and, because Detail is pinned
-   to the split's right edge, slides Detail right by about 31px. */
+   coordinates. The left cell is (dock - 6px divider) * ratio, so 100% / ratio
+   is 6px short of the dock. Adding the divider back reaches the dock width.
+   A container-query width (100cqw) livelocks layout. The same scale must not
+   apply to a nested frozen split: Detail is pinned to that split's right edge
+   and slides about 31px. */
 .dock-root > .split.horizontal.split-agent-dock[data-catalog-scale='full'] > .split-cell:first-child > .split:not(:has([data-testid='agents-table'])) {
-  width: 100cqw;
-  min-width: 100cqw;
+  width: calc(100% / var(--agent-dock-ratio) + 6px);
+  min-width: calc(100% / var(--agent-dock-ratio) + 6px);
 }
 .dock-root > .split.horizontal[data-agent-dock='true'] .split[data-has-detail='true'] {
   container-type: normal;
