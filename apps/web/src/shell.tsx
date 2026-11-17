@@ -17,7 +17,7 @@ import { CatalogSelector } from './catalog-selector'
 import { api, freeObject, jsonRecord, keepaliveJsonPut, operationId, recordTitle, textValue, type Json } from './api'
 import { AssortmentList, SelectionHost } from './assortments'
 import { humanizeLive, liveOperation, objectIdFromLive } from './activity'
-import { loadObjectDetail } from './object-list-preview'
+import { loadObjectDetail, objectQueryStaleTime } from './object-list-preview'
 import { markObjectGone, objectFetchQueryOptions } from './object-gone'
 import { useObjectLand } from './use-object-land'
 import { ImportScreen } from './import/view'
@@ -470,12 +470,14 @@ export function Shell() {
     enabled: Boolean(workspaceId),
   })
   const { settled: objectFetchSettled } = useObjectLand(objectId)
+  const openedPreview = queryClient.getQueryData(['object', objectId])
   const opened = useQuery({
     queryKey: ['object', objectId],
     queryFn: () => loadObjectDetail(queryClient, objectId ?? ''),
     enabled: Boolean(objectId) && objectFetchSettled,
     placeholderData: () => queryClient.getQueryData(['object', objectId]),
     ...objectFetchQueryOptions(),
+    staleTime: objectQueryStaleTime(openedPreview),
   })
   const detailListViews = useMemo(
     () => viewRows(workspace.data?.views).map((view) => ({ id: view.id, type: view.type })),

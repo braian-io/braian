@@ -5,8 +5,10 @@ import {
   buildListPreviewFromRow,
   isListPreview,
   LIST_PREVIEW,
+  objectQueryStaleTime,
   seedObjectListPreview,
 } from './object-list-preview'
+import { OBJECT_FETCH_STALE_MS } from './object-gone'
 
 const defs: Json = {
   languages: ['en'],

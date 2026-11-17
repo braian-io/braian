@@ -1,7 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query'
 import { api, recordNumber, type Json } from './api'
 import { attributeByKey, readIndexed } from './index-fields'
-import { markObjectGone, objectFetchQueryOptions, objectGone } from './object-gone'
+import { markObjectGone, OBJECT_FETCH_STALE_MS, objectFetchQueryOptions, objectGone } from './object-gone'
 import { parseColumnId } from './fields/columns'
 import { reconcileObjectWrite } from './object-write'
 
@@ -100,10 +100,12 @@ export function prefetchObjectDetails(queryClient: QueryClient, ids: string[]): 
     if (state?.fetchStatus === 'fetching') continue
     if (state?.data && !isListPreview(state.data)) continue
     scheduled.push(id)
+    const cached = queryClient.getQueryData(['object', id])
     void queryClient.prefetchQuery({
       queryKey: ['object', id],
       queryFn: () => loadObjectDetail(queryClient, id),
       ...objectFetchQueryOptions(),
+      staleTime: objectQueryStaleTime(cached),
     })
   }
   return scheduled
@@ -111,3 +113,8 @@ export function prefetchObjectDetails(queryClient: QueryClient, ids: string[]): 
 
 export const OBJECT_NAV_DEBOUNCE_MS = 100
 export const OBJECT_PREFETCH_RADIUS = 3
+
+/** List previews must refetch immediately; full objects stay warm for fast arrows. */
+export function objectQueryStaleTime(data: unknown): number {
+  return data && isListPreview(data) ? 0 : OBJECT_FETCH_STALE_MS
+}

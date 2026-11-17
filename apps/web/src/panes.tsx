@@ -71,6 +71,7 @@ import {
   buildListPreviewFromRow,
   isListPreview,
   loadObjectDetail,
+  objectQueryStaleTime,
   OBJECT_NAV_DEBOUNCE_MS,
   OBJECT_PREFETCH_RADIUS,
   prefetchObjectDetails,
@@ -3003,12 +3004,14 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   const objectId = session.objectId ?? ''
   const { settled: objectFetchSettled } = useObjectLand(session.objectId)
   const objectGoneState = objectQueryGone(queryClient, session.objectId)
+  const previewCached = queryClient.getQueryData<Json>(['object', session.objectId])
   const object = useQuery({
     queryKey: ['object', session.objectId],
     queryFn: () => loadObjectDetail(queryClient, session.objectId ?? ''),
     enabled: Boolean(session.objectId) && !objectGoneState && objectFetchSettled,
     placeholderData: () => queryClient.getQueryData<Json>(['object', session.objectId]),
     ...objectFetchQueryOptions(),
+    staleTime: objectQueryStaleTime(previewCached),
   })
   const provenance = useQuery({
     queryKey: ['object-origin', session.objectId],
@@ -3106,7 +3109,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   }
   if (!object.data || !session.objectId) return <StateNote tone="loading" title={copy.loading} testId="detail-loading" />
   const objectPreview = isListPreview(object.data)
-  const editingReady = !objectPreview && objectFetchSettled
+  const editingReady = !objectPreview
   const serverValues = (object.data.values as Json) ?? {}
   const serverVersion = Number(object.data.version ?? 0)
   const values = overlayValues(objectId, serverValues, serverVersion)
