@@ -40,15 +40,14 @@ type InView = {
   scrollTop: number
 }
 
-async function activeRowInList(page: Page, listSelector: string): Promise<InView | null> {
-  return page.evaluate((selector) => {
-    const list = document.querySelector<HTMLElement>(selector)
+async function activeRowInList(list: Locator): Promise<InView | null> {
+  return list.evaluate((listEl) => {
     const active =
-      list?.querySelector<HTMLElement>(
+      listEl.querySelector<HTMLElement>(
         '.hit.on, .fields-hit-active, [data-active="true"], [role="option"][aria-selected="true"]',
       ) ?? null
-    if (!list || !active) return null
-    const lr = list.getBoundingClientRect()
+    if (!active) return null
+    const lr = listEl.getBoundingClientRect()
     const ar = active.getBoundingClientRect()
     return {
       inView: ar.top >= lr.top - 0.5 && ar.bottom <= lr.bottom + 0.5,
@@ -56,9 +55,9 @@ async function activeRowInList(page: Page, listSelector: string): Promise<InView
       listBottom: lr.bottom,
       activeTop: ar.top,
       activeBottom: ar.bottom,
-      scrollTop: list.scrollTop,
+      scrollTop: listEl.scrollTop,
     }
-  }, listSelector)
+  })
 }
 
 async function waitForStableOptions(palette: Locator, timeout = 60_000): Promise<void> {
@@ -101,19 +100,19 @@ test.describe('palette keyboard scroll keeps the active row visible', () => {
     await openProducts(page)
     await expect(page.getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
 
-    const listSelector = '[data-testid="fields-mode-list"]'
+    const fieldsList = page.locator('[data-testid="fields-mode-list"]')
     try {
       await openFieldsPalette(page)
 
       for (let step = 0; step < 24; step += 1) {
         await page.keyboard.press('ArrowDown')
-        const state = await activeRowInList(page, listSelector)
+        const state = await activeRowInList(fieldsList)
         expect(state, `step ${step}: active row should exist`).not.toBeNull()
         expect(state!.inView, `step ${step}: active row outside list viewport`).toBe(true)
       }
 
       await page.getByTestId('fields-mode-input').fill('protein')
-      const filterState = await activeRowInList(page, listSelector)
+      const filterState = await activeRowInList(fieldsList)
       expect(filterState, 'filter should leave an active row').not.toBeNull()
       expect(filterState!.inView, 'filter highlight outside list viewport').toBe(true)
 
@@ -121,7 +120,7 @@ test.describe('palette keyboard scroll keeps the active row visible', () => {
       await drillToProtein(page)
       for (let step = 0; step < 12; step += 1) {
         await page.keyboard.press('ArrowDown')
-        const state = await activeRowInList(page, listSelector)
+        const state = await activeRowInList(fieldsList)
         expect(state, `drill step ${step}: active row should exist`).not.toBeNull()
         expect(state!.inView, `drill step ${step}: active row outside list viewport`).toBe(true)
       }
@@ -129,7 +128,7 @@ test.describe('palette keyboard scroll keeps the active row visible', () => {
       await page.keyboard.press('ArrowLeft')
       await expect(page.getByTestId('fields-crumb')).not.toContainText('Protein')
       await page.keyboard.press('ArrowDown')
-      const afterBack = await activeRowInList(page, listSelector)
+      const afterBack = await activeRowInList(fieldsList)
       expect(afterBack, 'after ← back, active row should exist').not.toBeNull()
       expect(afterBack!.inView, 'after ← back, highlight outside list viewport').toBe(true)
 
@@ -148,62 +147,70 @@ test.describe('palette keyboard scroll keeps the active row visible', () => {
     await expect(page.getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
     await expect(page.getByTestId('object-row').first()).toBeVisible({ timeout: 60_000 })
 
-    const rootList = '#palette-list'
     try {
       await focusMainTable(page)
       await page.keyboard.press('Control+k')
       const palette = page.getByTestId('command-palette')
+      const rootList = palette.locator('#palette-list')
       await expect(palette).toBeVisible()
       await waitForStableOptions(palette)
 
       await expect(palette.locator('[data-value="op:ui.open_view"]')).toBeVisible({ timeout: 60_000 })
       await page.getByTestId('palette-input').fill('Open view')
-      await expect(palette.locator('.hit.on')).toContainText('Open view', { timeout: 60_000 })
-      await expect(palette.locator('.hit.on')).toHaveCount(1)
-      const filterState = await activeRowInList(page, rootList)
-      expect(filterState, 'root filter should highlight a row').not.toBeNull()
-      expect(filterState!.inView, 'root filter highlight outside list viewport').toBe(true)
+      await expect(palette.locator('#palette-list [data-value="op:ui.open_view"]')).toHaveAttribute(
+        'aria-selected',
+        'true',
+        { timeout: 60_000 },
+      )
+      await expect
+        .poll(async () => (await activeRowInList(rootList))?.inView ?? false, {
+          message: 'root filter highlight in list viewport',
+          timeout: 10_000,
+        })
+        .toBe(true)
 
       await page.getByTestId('palette-input').fill('')
       await expect(palette.locator('[data-value="layout:open-structure"]')).toBeVisible({ timeout: 60_000 })
       await page.getByTestId('palette-input').fill('open structure')
-      await expect(palette.locator('.hit.on').first()).toBeVisible({ timeout: 60_000 })
-      const drillPickState = await activeRowInList(page, rootList)
-      expect(drillPickState?.inView, 'open structure pick outside list viewport').toBe(true)
+      await expect(palette.locator('#palette-list [data-value="layout:open-structure"]')).toHaveAttribute(
+        'aria-selected',
+        'true',
+        { timeout: 60_000 },
+      )
+      await expect
+        .poll(async () => (await activeRowInList(rootList))?.inView ?? false, {
+          message: 'open structure pick in list viewport',
+          timeout: 10_000,
+        })
+        .toBe(true)
       await page.keyboard.press('Tab')
       await expect(page.getByTestId('palette-crumb')).toContainText('Open structure ›')
-      const drillState = await activeRowInList(page, rootList)
+      const drillState = await activeRowInList(rootList)
       expect(drillState, 'drill-in should highlight a row').not.toBeNull()
       expect(drillState!.inView, 'drill-in highlight outside list viewport').toBe(true)
 
       await page.keyboard.press('Backspace')
       await expect(page.getByTestId('palette-crumb')).toBeEmpty()
       await page.keyboard.press('ArrowDown')
-      const afterBack = await activeRowInList(page, rootList)
+      const afterBack = await activeRowInList(rootList)
       expect(afterBack, 'after back, active row should exist').not.toBeNull()
       expect(afterBack!.inView, 'after back, highlight outside list viewport').toBe(true)
 
       for (let step = 0; step < 18; step += 1) {
         await page.keyboard.press('ArrowDown')
-        const state = await activeRowInList(page, rootList)
+        const state = await activeRowInList(rootList)
         expect(state, `root step ${step}: active row should exist`).not.toBeNull()
         expect(state!.inView, `root step ${step}: active row outside list viewport`).toBe(true)
       }
 
       for (let i = 0; i < 4; i += 1) await page.mouse.wheel(0, 250)
-      const afterWheel = await page.evaluate((selector) => {
-        const list = document.querySelector<HTMLElement>(selector)
-        return list?.scrollTop ?? 0
-      }, rootList)
+      const afterWheel = await rootList.evaluate((list) => list.scrollTop)
       expect(afterWheel).toBeGreaterThan(0)
       const foot = page.locator('.palette-foot').first()
       const footBox = await foot.boundingBox()
       expect(footBox).not.toBeNull()
       await page.mouse.move(footBox!.x + 12, footBox!.y + 8)
-      const afterPointer = await page.evaluate((selector) => {
-        const list = document.querySelector<HTMLElement>(selector)
-        return list?.scrollTop ?? 0
-      }, rootList)
+      const afterPointer = await rootList.evaluate((list) => list.scrollTop)
       expect(afterPointer).toBe(afterWheel)
     } finally {
       await page.keyboard.press('Escape').catch(() => undefined)
