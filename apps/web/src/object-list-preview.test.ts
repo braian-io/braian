@@ -5,8 +5,10 @@ import {
   buildListPreviewFromRow,
   isListPreview,
   LIST_PREVIEW,
+  objectQueryStaleTime,
   seedObjectListPreview,
 } from './object-list-preview'
+import { OBJECT_FETCH_STALE_MS } from './object-gone'
 
 const defs: Json = {
   languages: ['en'],
@@ -52,6 +54,12 @@ describe('object list preview', () => {
     client.setQueryData(['object', 'obj-1'], full)
     seedObjectListPreview(client, buildListPreviewFromRow(row, defs, 'en'))
     expect(client.getQueryData(['object', 'obj-1'])).toBe(full)
+  })
+
+  it('treats list previews as stale immediately', () => {
+    const preview = buildListPreviewFromRow(row, defs, 'en')
+    expect(objectQueryStaleTime(preview)).toBe(0)
+    expect(objectQueryStaleTime({ id: 'obj-1', values: {} })).toBe(OBJECT_FETCH_STALE_MS)
   })
 
   it('replaces an older preview with a newer preview', () => {

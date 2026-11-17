@@ -57,6 +57,7 @@ export function LinkSections({
   defs,
   defsLoading = false,
   links,
+  bodyLoading = false,
   onOpen,
 }: {
   objectId: string
@@ -66,6 +67,7 @@ export function LinkSections({
   defs?: Json
   defsLoading?: boolean
   links: LinkSide[]
+  bodyLoading?: boolean
   onOpen: (id: string) => void
 }) {
   const queryClient = useQueryClient()
@@ -266,6 +268,9 @@ export function LinkSections({
           }}
         >
           <h3>{section.label} ({formatCount(section.links.length)})</h3>
+          {bodyLoading && section.links.length === 0 ? (
+            <span className="detail-link-skeleton" data-testid="detail-link-skeleton" aria-busy="true" />
+          ) : null}
           {section.links.map((link) => (
             <div
               key={link.id}
@@ -301,6 +306,7 @@ export function LinkSections({
             type="button"
             variant="default"
             data-testid="add-link"
+            disabled={bodyLoading}
             onClick={(event) => {
               opener.current = event.currentTarget
               setRequest({ linkType: section.link_type, direction: section.direction })

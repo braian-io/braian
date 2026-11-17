@@ -69,12 +69,16 @@ import { applyObjectWrite, currentSearchWaitSeq, reconcileObjectWrite } from './
 import { markObjectGone, objectFetchQueryOptions, objectGone, objectQueryGone } from './object-gone'
 import {
   buildListPreviewFromRow,
+  isListPreview,
   loadObjectDetail,
+  objectQueryStaleTime,
   OBJECT_NAV_DEBOUNCE_MS,
   OBJECT_PREFETCH_RADIUS,
   prefetchObjectDetails,
   seedObjectListPreview,
 } from './object-list-preview'
+import { markObjectNavReplace, notifyObjectLandImmediate } from './object-nav-signal'
+import { useObjectLand } from './use-object-land'
 import {
   discardObjectDraft,
   displayOf,
@@ -286,6 +290,7 @@ export function ObjectTable({
   const openProposals = useOpenObjectProposals()
   const queryClient = useQueryClient()
   const objectNavTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingFollowIndex = useRef<number | null>(null)
   const parent = useRef<HTMLDivElement>(null)
   /** Remote ui.filter must not stomp text the user is entering locally. */
   const searchFocusedRef = useRef(false)
@@ -1102,7 +1107,11 @@ export function ObjectTable({
     const clamped = Math.max(0, Math.min(listCount - 1, next))
     setActive(clamped)
     const row = rowAt(clamped)
-    if (!row) return
+    if (!row) {
+      if (!extend) pendingFollowIndex.current = clamped
+      return
+    }
+    pendingFollowIndex.current = null
     if (extend) applySelection(row, clamped, active, extend)
     else {
       setSelected([row.id])
@@ -1473,6 +1482,7 @@ export function ObjectTable({
       buildListPreviewFromRow(row, defs.data, session.language, previewPathValuesRef.current?.[row.id]),
     )
     session.setObjectId(row.id)
+    if (fetch === 'debounced') markObjectNavReplace()
     const runFetches = () => {
       const ids: string[] = []
       for (let cursor = index - OBJECT_PREFETCH_RADIUS; cursor <= index + OBJECT_PREFETCH_RADIUS; cursor += 1) {
@@ -1486,18 +1496,30 @@ export function ObjectTable({
         clearTimeout(objectNavTimer.current)
         objectNavTimer.current = null
       }
+      notifyObjectLandImmediate(row.id)
       runFetches()
       return
     }
     if (objectNavTimer.current) clearTimeout(objectNavTimer.current)
     objectNavTimer.current = setTimeout(() => {
       objectNavTimer.current = null
+      notifyObjectLandImmediate(row.id)
       runFetches()
     }, OBJECT_NAV_DEBOUNCE_MS)
   }
   useEffect(() => () => {
     if (objectNavTimer.current) clearTimeout(objectNavTimer.current)
   }, [])
+  // PageDown/End can land on an index before its page is in memory.
+  useEffect(() => {
+    const index = pendingFollowIndex.current
+    if (index == null || index < 0) return
+    const row = rowAt(index)
+    if (!row) return
+    pendingFollowIndex.current = null
+    setSelected([row.id])
+    followRowImpl.current(row, index, 'debounced')
+  }, [knownStamp, groupedRows.length, found])
   const cellDisplayText = (row: ObjRow, id: string) => {
     const apiPath = parseColumnId(id).path
     if (columnNeedsPathValues(id)) {
@@ -3011,28 +3033,35 @@ export function ClassAttributes({ session }: { session: PanesSession }) {
 export function ObjectDetail({ session }: { session: PanesSession }) {
   const queryClient = useQueryClient()
   const objectId = session.objectId ?? ''
+  const { settled: objectFetchSettled } = useObjectLand(session.objectId)
   const objectGoneState = objectQueryGone(queryClient, session.objectId)
+  const previewCached = queryClient.getQueryData<Json>(['object', session.objectId])
   const object = useQuery({
     queryKey: ['object', session.objectId],
     queryFn: () => loadObjectDetail(queryClient, session.objectId ?? ''),
-    enabled: Boolean(session.objectId) && !objectGoneState,
+    enabled: Boolean(session.objectId) && !objectGoneState && objectFetchSettled,
+    placeholderData: () => queryClient.getQueryData<Json>(['object', session.objectId]),
     ...objectFetchQueryOptions(),
+    staleTime: objectQueryStaleTime(previewCached),
   })
   const provenance = useQuery({
     queryKey: ['object-origin', session.objectId],
     queryFn: async () => {
       const response = await fetch(`/v1/objects/${session.objectId}?include=owners,origin`, { credentials: 'include' })
-      if (!response.ok) return { owners: {} as Record<string, string>, origin: null as Json | null }
+      if (!response.ok) {
+        const body = await response.json().catch(() => null)
+        throw new Error(typeof body?.detail === 'string' ? body.detail : `HTTP ${response.status}`)
+      }
       return response.json() as Promise<{ owners?: Record<string, string>; origin?: Json | null }>
     },
-    enabled: Boolean(session.objectId) && !objectGoneState,
+    enabled: Boolean(session.objectId) && !objectGoneState && objectFetchSettled,
     ...objectFetchQueryOptions(),
   })
   const defs = useQuery({ queryKey: ['definitions'], queryFn: () => api.get('/v1/definitions') })
   const suggestions = useQuery({
     queryKey: ['proposals', 'detail', session.objectId],
     queryFn: () => api.get('/v1/proposals', { params: { query: { status: 'open', limit: 200 } } }),
-    enabled: Boolean(session.objectId) && !objectGoneState,
+    enabled: Boolean(session.objectId) && !objectGoneState && objectFetchSettled,
   })
   const drafts = useSyncExternalStore(subscribeObjectDrafts, getObjectDraftSnapshot, getObjectDraftSnapshot)
   const draftSaving = useObjectDraftSaving()
@@ -3089,10 +3118,29 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   if (objectGone(object.error) || objectGoneState) {
     return <StateNote tone="empty" title={copy.objectDeleted} detail={copy.objectDeletedHint} testId="detail-deleted" />
   }
-  if (object.isError && !object.data) {
-    return <StateNote tone="error" title={copy.graphError} detail={copy.validation} testId="detail-error" />
+  if (provenance.isError && objectFetchSettled) {
+    return (
+      <StateNote
+        tone="error"
+        title={copy.graphError}
+        detail={provenance.error instanceof Error ? provenance.error.message : copy.validation}
+        testId="detail-error"
+      />
+    )
+  }
+  if (object.isError && (!object.data || isListPreview(object.data))) {
+    return (
+      <StateNote
+        tone="error"
+        title={copy.graphError}
+        detail={object.error instanceof Error ? object.error.message : copy.validation}
+        testId="detail-error"
+      />
+    )
   }
   if (!object.data || !session.objectId) return <StateNote tone="loading" title={copy.loading} testId="detail-loading" />
+  const objectPreview = isListPreview(object.data)
+  const editingReady = !objectPreview
   const serverValues = (object.data.values as Json) ?? {}
   const serverVersion = Number(object.data.version ?? 0)
   const values = overlayValues(objectId, serverValues, serverVersion)
@@ -3126,6 +3174,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
     return value
   }
   const stageField = (key: string, next: unknown) => {
+    if (!editingReady) return
     const attribute = attributes.find((item) => item.key === key)
     const baseVersion = editBaseVersion(objectId, serverVersion)
     const before = values[key]
@@ -3179,6 +3228,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
     roleCanWrite: me.data ? roleCanWrite(me.data.role) : true,
   })
   const save = () => {
+    if (!editingReady) return
     if (!fieldDraftRef.current?.flush()) return
     setError('')
     const plan = draftSavePlan({
@@ -3222,6 +3272,12 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   const visibleKeys = showMoreFields ? [...primaryKeys, ...moreKeys] : primaryKeys
   const owners = provenance.data?.owners ?? {}
   const origin = provenance.data?.origin
+  const previewValues = (object.data.values as Json) ?? {}
+  const fieldKnownInPreview = (key: string) => {
+    if (!objectPreview) return true
+    if (key === 'number' || key === 'name' || key === 'status') return true
+    return Object.prototype.hasOwnProperty.call(previewValues, key)
+  }
   const renderField = (key: string) => {
     const attribute = attributes.find((item) => item.key === key)
     const kind = (attribute?.kind as Json) ?? {}
@@ -3238,6 +3294,9 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       <div key={key} className={owner ? 'field locked' : 'field'} data-testid={owner ? 'locked-field' : undefined}>
         <label>{fieldLabel}{owner ? ` · ${copy.ownedBy} ${owner}` : ''}</label>
         <div className={controlClass}>
+          {!fieldKnownInPreview(key) ? (
+            <span className="detail-field-skeleton" data-testid="detail-field-skeleton" aria-busy="true" />
+          ) : (
           <Editor
             fieldKey={key}
             kind={String(kind.type ?? 'text')}
@@ -3248,9 +3307,10 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
             value={fieldDisplayValue(key)}
             options={optionsFor(lists, String(kind.list ?? ''))}
             units={unitsFor(families, String(kind.unit_family ?? ''))}
-            readOnly={Boolean(owner)}
+            readOnly={Boolean(owner) || !editingReady}
             onChange={(next) => stageField(key, next)}
           />
+          )}
           {proposalKeyCells.map((cell) => (
             <div key={cell.id} className="pending-field" data-testid="pending-field" data-field={key} data-stale={cell.stale ? 'true' : 'false'}>
               <span className="pending-chip" data-testid={cell.stale ? 'pending-stale' : 'pending-chip'}>{cell.stale ? copy.proposalStale : copy.pending}</span>
@@ -3272,6 +3332,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       ref={formRef}
       className={flashId === session.objectId ? 'detail-form form flash' : 'detail-form form'}
       data-testid="object-detail"
+      data-detail-ready={editingReady ? 'true' : 'false'}
       onSubmit={(event) => {
         // Enter in a Detail field stages nothing and never saves.
         event.preventDefault()
@@ -3321,6 +3382,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
                       data-testid="delete-object-detail"
                       aria-label={copy.delete}
                       title={copy.delete}
+                      disabled={!editingReady}
                       onClick={() => requestDeleteObjects([objectId])}
                     >
                       <Trash2 aria-hidden="true" size={14} />
@@ -3331,11 +3393,15 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
               </TooltipProvider>
             )}
           </div>
+          {objectPreview ? (
+            <p className="detail-section-skeleton" data-testid="detail-meta-skeleton" aria-busy="true" />
+          ) : (
           <DetailMeta
             createdAt={typeof object.data.created_at === 'string' ? object.data.created_at : ''}
             updatedAt={typeof object.data.updated_at === 'string' ? object.data.updated_at : ''}
             updatedBy={object.data.updated_by}
           />
+          )}
           <div className="field-chips">
             <MetaChip>{typeLabel(defs.data, String(object.data.type), uiLanguage)}</MetaChip>
             <MetaChip tone={status ? statusTone(status) : 'neutral'}>
@@ -3353,6 +3419,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
           defs={defs.data}
           defsLoading={defs.isLoading}
           links={(object.data.links as never) ?? []}
+          bodyLoading={objectPreview}
           onOpen={(id) => session.setObjectId(id)}
         />
         {fieldSections(visibleKeys).map((section) => (
@@ -3380,8 +3447,8 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       {dirty ? (
         <ObjectDraftBar
           count={localCells.length + (proposalCells.length > 0 ? 1 : 0)}
-          canSave={detailReview.canSave}
-          canDiscard={detailReview.canDiscard}
+          canSave={detailReview.canSave && editingReady}
+          canDiscard={detailReview.canDiscard && editingReady}
           saveReason={detailReview.saveReason}
           discardReason={detailReview.discardReason}
           pending={draftSaving}

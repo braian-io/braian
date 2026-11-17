@@ -12,6 +12,12 @@ export function mainTable(page: Page, title = 'Products'): Locator {
   return paneWithTab(page, title).getByTestId('object-table').first()
 }
 
+/** Full Postgres body loaded; list preview and debounced nav have settled. */
+export async function waitDetailReady(page: Page, detail = page.getByTestId('object-detail')) {
+  await expect(detail).toBeVisible()
+  await expect(detail).toHaveAttribute('data-detail-ready', 'true', { timeout: 60_000 })
+}
+
 /** Mirrors the server title stub (first five words) used in e2e under BRAIAN_AGENT_MOCK. */
 export function agentTitleStubHint(text: string): string {
   return text.trim().split(/\s+/).slice(0, 5).join(' ')
