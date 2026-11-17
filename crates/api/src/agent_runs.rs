@@ -332,9 +332,10 @@ async fn propose_in_session(
 
 fn spawn_session_title(state: AppState, run_id: Uuid, prompt: String) {
     tokio::spawn(async move {
-        let Some(title) = crate::platform::generate_session_title(&prompt).await else {
-            return;
-        };
+        let fallback = crate::platform::session_title_word_fallback(&prompt);
+        let title = crate::platform::generate_session_title(&prompt)
+            .await
+            .unwrap_or(fallback);
         if let Err(error) = state.store.set_agent_session_title(run_id, &title).await {
             tracing::warn!(%error, %run_id, "could not store agent session title");
         }
@@ -1649,15 +1650,7 @@ fn latest_user_text(messages: &[Value]) -> String {
 }
 
 fn display_title_fallback(prompt: &str) -> String {
-    let trimmed = prompt.trim();
-    if trimmed.is_empty() {
-        return "Agent".to_owned();
-    }
-    let mut title: String = trimmed.chars().take(80).collect();
-    if trimmed.chars().count() > 80 {
-        title.push('…');
-    }
-    title
+    crate::platform::session_title_word_fallback(prompt)
 }
 
 async fn resolve_user_id(state: &AppState, identity: &Identity) -> Result<Option<Uuid>, Problem> {
@@ -1710,6 +1703,7 @@ fn summary_of(run: braian_store::AgentRunRow) -> AgentRunSummary {
         finished_at: run.finished_at.map(|value| value.to_rfc3339()),
         proposal_count: run.proposal_count,
         question: run.question,
+        first_message: run.first_message,
     }
 }
 
@@ -1736,6 +1730,7 @@ fn detail_of(
         finished_at: summary.finished_at,
         proposal_count: summary.proposal_count,
         question: summary.question,
+        first_message: summary.first_message,
         messages: messages
             .into_iter()
             .map(|message| AgentMessageView {
@@ -1985,11 +1980,10 @@ mod session_tests {
     }
 
     #[test]
-    fn display_title_fallback_truncates_long_prompts() {
-        let long = format!("{}END", "x".repeat(120));
+    fn display_title_fallback_uses_six_words() {
+        let long = (0..12).map(|n| format!("word{n}")).collect::<Vec<_>>().join(" ");
         let fallback = display_title_fallback(&long);
-        assert!(fallback.ends_with('…'));
-        assert!(fallback.chars().count() <= 81);
+        assert_eq!(fallback, "word0 word1 word2 word3 word4 word5…");
         assert_eq!(
             display_title_fallback("  rename Cheddar  "),
             "rename Cheddar"

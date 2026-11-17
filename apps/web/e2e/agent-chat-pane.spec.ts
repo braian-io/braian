@@ -1,6 +1,6 @@
 // Agent chat pane: tab title, session header, and follow-up focus ring.
 import { expect, test, type Page } from '@playwright/test'
-import { agentPaneTab, agentSessionView, agentTitleStubHint, mainTable, paneWithTab } from './ui'
+import { agentPaneTab, agentSessionView, agentTitleStubHint, agentWordFallbackHint, mainTable, paneWithTab } from './ui'
 import { demoCredentials } from './demo'
 
 async function login(page: Page) {
@@ -68,6 +68,10 @@ test('agent pane tab and session header stay readable', async ({ page }) => {
     const heading = view.getByTestId('agent-session-title')
     await expect(heading).toContainText(shortTitle)
     await expect(heading).toHaveAttribute('title', prompt)
+    await expect(heading).not.toHaveAttribute('aria-label', /.*/)
+    const describedBy = await heading.getAttribute('aria-describedby')
+    expect(describedBy).toBeTruthy()
+    await expect(page.locator(`#${describedBy}`)).toHaveText(prompt)
     const headerStyle = await heading.evaluate((node) => {
       const style = getComputedStyle(node)
       return { lineClamp: style.webkitLineClamp, whiteSpace: style.whiteSpace, textOverflow: style.textOverflow }
@@ -113,6 +117,27 @@ test('long first message keeps full prompt on the session header', async ({ page
       }
     })
     expect(overflow.ok, `title box ${overflow.titleWidth} vs pane ${overflow.paneWidth}`).toBe(true)
+    await expect(view.getByTestId('agent-status')).toHaveAttribute('data-status', 'done', { timeout: 30_000 })
+  } finally {
+    await cleanupDrafts(page)
+  }
+})
+
+test('keeps the word fallback when session title generation fails', async ({ page }) => {
+  test.setTimeout(120_000)
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await login(page)
+  const prompt = `title-fail-e2e: ask me before the palette lists extra words that never become the ai title`
+  const fallback = agentWordFallbackHint(prompt)
+  const products = mainTable(page, 'Products')
+  await products.getByTestId('object-row').first().click()
+  try {
+    await openAgentAsk(page, prompt)
+    const view = agentSessionView(page, 'title-fail-e2e:')
+    await expect(view).toBeVisible({ timeout: 30_000 })
+    const heading = view.getByTestId('agent-session-title')
+    await expect(heading).toHaveText(fallback, { timeout: 30_000 })
+    await expect.poll(async () => heading.textContent()).toBe(fallback)
     await expect(view.getByTestId('agent-status')).toHaveAttribute('data-status', 'done', { timeout: 30_000 })
   } finally {
     await cleanupDrafts(page)

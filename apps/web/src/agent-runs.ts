@@ -21,6 +21,7 @@ export type AgentRunSummary = {
   finished_at?: string | null
   proposal_count?: number
   question?: string | null
+  first_message?: string | null
 }
 
 export type AgentMessage = {
@@ -160,16 +161,18 @@ export function cleanAgentError(text: string): string {
   return cleaned || copy.agentFailed
 }
 
-const SESSION_DISPLAY_TITLE_MAX = 80
+const SESSION_DISPLAY_TITLE_WORDS = 6
 
 /** Pane tab label. Session text lives in the header and tab tooltip. */
 export function agentTabTitle(_prompt?: string): string {
   return copy.agent
 }
 
-export function agentRunPrompt(run: { title: string; messages?: AgentMessage[] }): string {
+export function agentRunPrompt(run: { title: string; first_message?: string | null; messages?: AgentMessage[] }): string {
   const text = run.messages?.find((message) => message.kind === 'user')?.body.text
   if (typeof text === 'string' && text.trim()) return text.trim()
+  const stored = run.first_message?.trim()
+  if (stored) return stored
   return run.title
 }
 
@@ -177,9 +180,24 @@ export function agentRunPrompt(run: { title: string; messages?: AgentMessage[] }
 export function agentDisplayTitleFallback(text: string): string {
   const trimmed = text.trim()
   if (!trimmed) return copy.agent
-  const chars = [...trimmed]
-  if (chars.length <= SESSION_DISPLAY_TITLE_MAX) return trimmed
-  return `${chars.slice(0, SESSION_DISPLAY_TITLE_MAX).join('')}…`
+  const words = trimmed.split(/\s+/)
+  if (words.length <= SESSION_DISPLAY_TITLE_WORDS) return trimmed
+  return `${words.slice(0, SESSION_DISPLAY_TITLE_WORDS).join(' ')}…`
+}
+
+/** Palette and Agents table search: title, first message, status, and waiting question. */
+export function agentRunSearchHaystack(run: AgentRunSummary): string {
+  return [
+    run.title,
+    run.first_message,
+    run.question,
+    run.status,
+    run.mode,
+    agentStatusLabel(run.status),
+  ]
+    .map((part) => (typeof part === 'string' ? part.trim() : ''))
+    .filter(Boolean)
+    .join(' ')
 }
 
 /** Short title for the session header and dock tooltip. */
@@ -401,12 +419,13 @@ export function agentsTablePaletteItem(): PaletteItem {
 export function agentPaletteRows(runs: AgentRunSummary[]): PaletteItem[] {
   return runs.map((run) => {
     const question = run.question?.trim() ?? ''
+    const firstMessage = run.first_message?.trim() ?? ''
     return {
       id: `agent-run:${run.id}`,
       group: 'views' as const,
       title: run.title,
       subtitle: run.status === 'waiting' && question ? question : '',
-      keywords: [run.status, run.mode, agentStatusLabel(run.status), question, 'agent'],
+      keywords: [agentRunSearchHaystack(run), question, firstMessage, 'agent'],
       chips: [{ text: agentStatusLabel(run.status), tone: agentStatusTone(run.status) }],
     }
   })
