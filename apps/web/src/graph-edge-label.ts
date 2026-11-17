@@ -106,3 +106,50 @@ export function placeEdgeLabel(
   }
   return best
 }
+
+export type EdgeLabelPlacement = {
+  point: Point
+  box: EdgeLabelBox
+  /** True when the preferred slot was illegal and the fallback was used. */
+  usedFallback: boolean
+  /** True when the label must be dropped instead of stacking on a neighbour. */
+  dropped: boolean
+}
+
+/**
+ * Prefer a slot that moves an active label aside from a shown name, but never
+ * drop the active label just to spare that name. When the preferred slot hits a
+ * node disc or another painted edge label, retry without the named-caption
+ * obstacles (the a7a9792 path); the covered caption yields in `visibleCaptionIds`.
+ * Non-active labels still yield to a node or a neighbour as before.
+ */
+export function placeEdgeLabelWithFallback(input: {
+  from: Point
+  control: Point
+  to: Point
+  size: EdgeLabelSize
+  nodes: EdgeLabelNode[]
+  placed?: EdgeLabelBox[]
+  preferred?: EdgeLabelBox[]
+  fallback?: EdgeLabelBox[]
+  active: boolean
+}): EdgeLabelPlacement {
+  const placed = input.placed ?? []
+  const attempt = (avoid: EdgeLabelBox[]) => {
+    const point = placeEdgeLabel(input.from, input.control, input.to, input.size, input.nodes, placed, avoid)
+    return { point, box: centeredBox(point, input.size) }
+  }
+  const hitsLabel = (box: EdgeLabelBox) => placed.some((other) => boxOverlap(box, other) > 0)
+  const hitsNode = (box: EdgeLabelBox) => input.nodes.some((node) => discOverlap(box, node) > 0)
+  let placement = attempt(input.preferred ?? [])
+  let usedFallback = false
+  if (input.active && (hitsLabel(placement.box) || hitsNode(placement.box))) {
+    placement = attempt(input.fallback ?? [])
+    usedFallback = true
+  }
+  // An active label keeps its space even when the fallback still grazes a node
+  // circle; only a second label in the same spot wins. A non-active label has
+  // no such claim and yields as before.
+  const dropped = hitsLabel(placement.box) || (!input.active && hitsNode(placement.box))
+  return { ...placement, usedFallback, dropped }
+}

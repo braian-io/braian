@@ -4,9 +4,16 @@ import {
   GRAPH_SHEET_MAX_RATIO,
   GRAPH_WIDE_MIN_PX,
   SHEET_SWIPE_PX,
+  chromeMeasureReady,
+  chromeResizeNeedsFit,
+  chromeSheetBoxSettled,
+  chromeSheetBoxStable,
   clampSheetBoxes,
+  createFitScheduler,
+  createPaneSettleGate,
   detailPlacement,
   fitCamera,
+  fitCameraWithLabels,
   graphDensity,
   inspectorChrome,
   legendLayout,
@@ -14,10 +21,14 @@ import {
   placeNodeLabel,
   propertiesOpen,
   readGraphFrame,
+  remapCamera,
+  requestSystemFit,
   sheetAfterGesture,
   sheetMaxHeight,
   visibleGraphFrame,
+  type SystemFitEvent,
 } from './graph-chrome'
+import { visibleCaptionIds } from './graph-scene'
 
 const bounds = { minX: -100, minY: -80, maxX: 100, maxY: 80 }
 
@@ -223,6 +234,502 @@ describe('visible graph frame', () => {
     const camera = fitCamera({ frame, bounds: { minX: -50, minY: -20, maxX: 50, maxY: 20 } })
     expect(camera.x).toBeCloseTo(frame.x + 16 + (frame.width - 32) / 2)
     expect(camera.y).toBeCloseTo(frame.y + 16 + (frame.height - 32) / 2)
+  })
+})
+
+describe('fitting measured captions', () => {
+  it('uses the measured caption boxes, not a per-character estimate', () => {
+    const frame = { x: 0, y: 0, width: 600, height: 400 }
+    const camera = fitCameraWithLabels({
+      frame,
+      nodes: [
+        { x: -140, y: 0, radius: 20, captionWidth: 40 },
+        { x: 140, y: 0, radius: 20, captionWidth: 220 },
+      ],
+    })!
+    // "Dark chocolate 70%" is wider than length * 3.6 / 2 would reserve.
+    const right = camera.x + 140 * camera.k + 220 / 2
+    const left = camera.x - 140 * camera.k - 40 / 2
+    expect(right).toBeLessThanOrEqual(frame.x + frame.width - 16)
+    expect(left).toBeGreaterThanOrEqual(frame.x + 16)
+    expect(camera.k).toBeGreaterThan(0)
+  })
+
+  it('does not treat sheet chrome as measured until the inspector box exists', () => {
+    expect(chromeMeasureReady('sheet', null)).toBe(false)
+    expect(chromeMeasureReady('sheet', { x: 8, y: 420, width: 0, height: 212 })).toBe(false)
+    expect(chromeMeasureReady('sheet', { x: 8, y: 420, width: 214, height: 212 })).toBe(true)
+    expect(chromeMeasureReady('side', null)).toBe(true)
+    expect(chromeMeasureReady('side', null, false, true), 'side card open, no box yet').toBe(false)
+    expect(chromeMeasureReady('side', { x: 400, y: 8, width: 240, height: 400 }, false, true)).toBe(true)
+    expect(chromeMeasureReady('hidden', null)).toBe(true)
+  })
+
+  it('does not treat a transient hidden placement as ready while the bottom card is open', () => {
+    const inspector = { x: 8, y: 420, width: 214, height: 212 }
+    // After a real F5 the selected object may still be resolving, so the
+    // placement is briefly hidden even though the card is about to be a sheet.
+    expect(chromeMeasureReady('hidden', null, true), 'about to be a sheet, no box yet').toBe(false)
+    expect(chromeMeasureReady('hidden', inspector, true), 'the sheet box is measured').toBe(true)
+    expect(chromeMeasureReady('hidden', null, false), 'no open bottom card').toBe(true)
+    expect(chromeMeasureReady('chip', null, true), 'a chip is not a full sheet box').toBe(true)
+    expect(chromeMeasureReady('side', null, true), 'a wide side card is not a bottom sheet').toBe(true)
+  })
+
+  it('requests one fit when the first sheet box becomes ready', () => {
+    expect(
+      chromeResizeNeedsFit({ event: 'sheet', placement: 'sheet', inspector: null, sheetMeasured: false }),
+      'a missing box is not the sheet measurement',
+    ).toBe(false)
+    expect(
+      chromeResizeNeedsFit({
+        event: 'sheet',
+        placement: 'sheet',
+        inspector: { x: 8, y: 420, width: 0, height: 212 },
+        sheetMeasured: false,
+      }),
+      'a zero-width box is not the sheet measurement',
+    ).toBe(false)
+    expect(
+      chromeResizeNeedsFit({
+        event: 'sheet',
+        placement: 'sheet',
+        inspector: { x: 8, y: 420, width: 214, height: 212 },
+        sheetMeasured: false,
+      }),
+      'the first measured sheet box fits the settled free frame',
+    ).toBe(true)
+  })
+
+  it('ignores inspector growth after the sheet was measured, including after settle', () => {
+    const inspector = { x: 8, y: 420, width: 214, height: 212 }
+    expect(
+      chromeResizeNeedsFit({ event: 'sheet', placement: 'sheet', inspector, sheetMeasured: true }),
+      'a grown sheet after the baseline is frozen must not refit',
+    ).toBe(false)
+    expect(
+      chromeResizeNeedsFit({
+        event: 'sheet',
+        placement: 'side',
+        inspector: { x: 752, y: 8, width: 240, height: 400 },
+        sheetMeasured: false,
+      }),
+      'a wide side card is not observed for sheet measurement',
+    ).toBe(false)
+    for (const event of ['initial', 'fullscreen', 'resize'] as const) {
+      expect(
+        chromeResizeNeedsFit({ event, placement: 'sheet', inspector, sheetMeasured: false }),
+        `${event} is not a chrome-resize event`,
+      ).toBe(false)
+    }
+  })
+
+  it('does not accept a mid-transition sheet box as the settled measurement', () => {
+    const mid = { x: 8, y: 548, width: 214, height: 80 }
+    expect(
+      chromeSheetBoxStable({ previous: null, current: mid, quiet: false }),
+      'an 80 px box that is still moving is not stable',
+    ).toBe(false)
+    expect(
+      chromeSheetBoxStable({ previous: mid, current: mid, quiet: false }),
+      'the same 80 px box before the quiet window closes is not stable',
+    ).toBe(false)
+    expect(
+      chromeSheetBoxStable({ previous: null, current: mid, quiet: true }),
+      'a first box with no earlier observation is not yet the settled sheet',
+    ).toBe(false)
+  })
+
+  it('accepts the same box seen again after a quiet window as the first sheet box', () => {
+    const settled = { x: 8, y: 420, width: 214, height: 212 }
+    // The same decision holds for the initial-load path and the fullscreen/
+    // sheet path: stability is only about the box, not the event that asked.
+    expect(chromeSheetBoxStable({ previous: settled, current: settled, quiet: true })).toBe(true)
+    expect(
+      chromeSheetBoxStable({ previous: { ...settled }, current: { ...settled }, quiet: true }),
+      'equal width and height are the same box',
+    ).toBe(true)
+  })
+
+  it('does not refit when the accepted sheet later grows', () => {
+    const settled = { x: 8, y: 420, width: 214, height: 212 }
+    const grown = { x: 8, y: 372, width: 214, height: 260 }
+    expect(
+      chromeSheetBoxStable({ previous: settled, current: grown, quiet: true }),
+      'a late growth is content, not a new sheet box (row 128e stay-put)',
+    ).toBe(false)
+    expect(
+      chromeResizeNeedsFit({ event: 'sheet', placement: 'sheet', inspector: grown, sheetMeasured: true }),
+      'a grown sheet after the baseline is frozen must not refit',
+    ).toBe(false)
+  })
+
+  it('does not settle the first sheet box while a name or caption is still pending', () => {
+    const settled = { x: 8, y: 420, width: 214, height: 212 }
+    expect(
+      chromeSheetBoxSettled({ previous: settled, current: settled, quiet: true, namesReady: false }),
+      'a late name can still reflow the card',
+    ).toBe(false)
+    expect(
+      chromeSheetBoxSettled({ previous: settled, current: settled, quiet: false, namesReady: true }),
+      'the quiet window has not elapsed',
+    ).toBe(false)
+    expect(
+      chromeSheetBoxSettled({ previous: null, current: settled, quiet: true, namesReady: true }),
+      'a first box with no earlier observation is not settled',
+    ).toBe(false)
+  })
+
+  it('settles the first sheet box only once names are ready and the box is unchanged', () => {
+    const settled = { x: 8, y: 420, width: 214, height: 212 }
+    expect(chromeSheetBoxSettled({ previous: settled, current: settled, quiet: true, namesReady: true })).toBe(
+      true,
+    )
+    // Names still resolving make the same box not settled, but a grown box
+    // after names resolve is still content, never a refit.
+    const grown = { x: 8, y: 372, width: 214, height: 260 }
+    expect(
+      chromeSheetBoxSettled({ previous: settled, current: grown, quiet: true, namesReady: true }),
+      'a late growth is content, not a new sheet box (row 128e stay-put)',
+    ).toBe(false)
+  })
+
+  it('fits only on the four explicit events, never a value/content change', () => {
+    const complete = {
+      placement: 'sheet' as const,
+      inspector: { x: 8, y: 420, width: 214, height: 212 },
+      bottomCardOpen: true,
+      labelsReady: true,
+      paneSettled: true,
+      paneReady: true,
+      moved: false,
+      baselineFrozen: false,
+      loadEnded: true,
+      namesPending: false,
+    }
+    for (const event of ['initial', 'fullscreen', 'resize', 'sheet'] as const) {
+      expect(requestSystemFit({ ...complete, event }), `${event} may fit`).toBe('fit')
+    }
+    expect(
+      requestSystemFit({ ...complete, event: 'initial', baselineFrozen: true }),
+      'event A must not run after the baseline is frozen',
+    ).toBe('none')
+    expect(
+      requestSystemFit({ ...complete, event: 'initial', loadEnded: false }),
+      'event A needs the simulation to have ended',
+    ).toBe('none')
+    expect(
+      requestSystemFit({ ...complete, event: 'initial', namesPending: true }),
+      'event A waits for resolved names',
+    ).toBe('none')
+    for (const event of ['fullscreen', 'resize', 'sheet'] as const) {
+      expect(
+        requestSystemFit({ ...complete, event, baselineFrozen: true }),
+        `${event} still works after settle (Close full size is B+C+D)`,
+      ).toBe('fit')
+      expect(
+        requestSystemFit({ ...complete, event, moved: true }),
+        `${event} remaps a user camera`,
+      ).toBe('remap')
+    }
+  })
+
+  it('gives F5 and Close full size the same complete-frame gate', () => {
+    const frame = {
+      placement: 'hidden' as const,
+      bottomCardOpen: true,
+      labelsReady: true,
+      paneSettled: true,
+      paneReady: true,
+      moved: false,
+      baselineFrozen: false,
+      loadEnded: true,
+      namesPending: false,
+    }
+    const inspector = { x: 8, y: 420, width: 214, height: 212 }
+    // After F5 the placement can be hidden while the card is open; after Close
+    // full size it is a sheet. Neither may fit until the same box is measured.
+    for (const event of ['initial', 'fullscreen', 'resize'] as const) {
+      expect(
+        requestSystemFit({ ...frame, event, inspector: null }),
+        `${event} waits for the measured bottom-card box`,
+      ).toBe('none')
+      expect(
+        requestSystemFit({ ...frame, event, inspector }),
+        `${event} fits once the same settled frame is complete`,
+      ).toBe('fit')
+    }
+    expect(
+      requestSystemFit({ ...frame, event: 'initial', inspector, baselineFrozen: true }),
+      'event A stays off after the load settled',
+    ).toBe('none')
+    expect(
+      requestSystemFit({ ...frame, event: 'resize', placement: 'sheet', inspector, moved: true }),
+      'a user camera is remapped, not fitted',
+    ).toBe('remap')
+    for (const event of ['initial', 'fullscreen', 'resize', 'sheet'] as const) {
+      expect(
+        requestSystemFit({ ...frame, event, inspector, labelsReady: false }),
+        `${event} waits for the measured label extents`,
+      ).toBe('none')
+    }
+  })
+
+  it('waits for the bottom sheet to settle before any fit event runs', () => {
+    const complete = {
+      placement: 'sheet' as const,
+      inspector: { x: 8, y: 420, width: 214, height: 212 },
+      bottomCardOpen: true,
+      labelsReady: true,
+      paneSettled: true,
+      paneReady: true,
+      moved: false,
+      baselineFrozen: false,
+      loadEnded: true,
+      namesPending: false,
+    }
+    for (const event of ['initial', 'fullscreen', 'resize', 'sheet'] as const) {
+      expect(
+        requestSystemFit({ ...complete, event, sheetStable: false }),
+        `${event} waits for the settled sheet`,
+      ).toBe('none')
+    }
+    expect(
+      requestSystemFit({ ...complete, event: 'fullscreen', sheetStable: true }),
+      'the same settled frame fits once the sheet is stable',
+    ).toBe('fit')
+  })
+
+  it('waits for a settled pane width before any fit event runs', () => {
+    const complete = {
+      placement: 'sheet' as const,
+      inspector: { x: 8, y: 420, width: 214, height: 212 },
+      bottomCardOpen: true,
+      labelsReady: true,
+      paneSettled: false,
+      paneReady: true,
+      sheetStable: true,
+      moved: false,
+      baselineFrozen: false,
+      loadEnded: true,
+      namesPending: false,
+    }
+    for (const event of ['initial', 'fullscreen', 'resize', 'sheet'] as const) {
+      expect(requestSystemFit({ ...complete, event }), `${event} waits for pane settle`).toBe('none')
+    }
+  })
+
+  it('does not fit a sheet placement without a real box, even for a resize', () => {
+    const base = {
+      event: 'resize' as const,
+      placement: 'sheet' as const,
+      paneSettled: true,
+      paneReady: true,
+      moved: false,
+      baselineFrozen: false,
+      loadEnded: true,
+      namesPending: false,
+    }
+    expect(requestSystemFit({ ...base, inspector: null })).toBe('none')
+    expect(requestSystemFit({ ...base, inspector: { x: 8, y: 420, width: 0, height: 212 } })).toBe('none')
+    expect(
+      requestSystemFit({ ...base, paneReady: false, inspector: { x: 8, y: 420, width: 214, height: 212 } }),
+      'a mid-transition pane is not the settled free frame',
+    ).toBe('none')
+    expect(
+      requestSystemFit({
+        ...base,
+        event: 'sheet',
+        placement: 'side',
+        inspector: { x: 752, y: 8, width: 240, height: 400 },
+      }),
+      'the first-sheet event only exists for a sheet placement',
+    ).toBe('none')
+  })
+
+  it('waits for two quiet animation frames before a pane counts as settled', () => {
+    const frames: Array<{ handle: number; run: () => void }> = []
+    let handle = 1
+    const gate = createPaneSettleGate(2, {
+      frame: (callback) => {
+        const id = handle++
+        frames.push({ handle: id, run: callback })
+        return id
+      },
+      cancelFrame: (id) => {
+        const index = frames.findIndex((item) => item.handle === id)
+        if (index >= 0) frames.splice(index, 1)
+      },
+    })
+    expect(gate.settled, 'not settled before the first observe').toBe(false)
+    gate.observe(230, 400)
+    expect(gate.settled, 'one frame is not enough').toBe(false)
+    while (frames.length > 0 && !gate.settled) {
+      const next = frames.shift()
+      next?.run()
+    }
+    expect(gate.settled, 'two quiet frames settle the pane').toBe(true)
+    gate.observe(231, 400)
+    expect(gate.settled, 'a new size restarts the wait').toBe(false)
+    while (frames.length > 0 && !gate.settled) {
+      const next = frames.shift()
+      next?.run()
+    }
+    expect(gate.settled).toBe(true)
+  })
+
+  it('cancels a leftover fit pass when a newer event arrives or on cleanup', () => {
+    const runs: SystemFitEvent[] = []
+    const frames: Array<{ handle: number; run: () => void }> = []
+    const timers = new Map<number, () => void>()
+    let handle = 1
+    const scheduler = createFitScheduler((event) => runs.push(event), {
+      frame: (callback) => {
+        const id = handle++
+        frames.push({ handle: id, run: callback })
+        return id
+      },
+      cancelFrame: (id) => {
+        const index = frames.findIndex((item) => item.handle === id)
+        if (index >= 0) frames.splice(index, 1)
+      },
+      timeout: (callback) => {
+        const id = handle++
+        timers.set(id, callback)
+        return id as unknown as ReturnType<typeof setTimeout>
+      },
+      clearTimeout: (id) => {
+        timers.delete(Number(id))
+      },
+    })
+
+    scheduler.request('initial')
+    scheduler.request('sheet')
+    expect(frames, 'the older frame is cancelled').toHaveLength(1)
+    const [pending] = frames.splice(0, 1)
+    pending!.run()
+    for (const callback of [...timers.values()]) callback()
+    expect(runs, 'only the newer event runs').toEqual(['sheet', 'sheet', 'sheet'])
+
+    runs.length = 0
+    scheduler.request('fullscreen')
+    scheduler.cancel()
+    expect(frames, 'cancel removes the frame').toHaveLength(0)
+    expect(timers.size, 'cancel removes the timers').toBe(0)
+  })
+
+  it('fits a smaller camera when a sheet-sized chrome box is measured', () => {
+    const stage = { width: 600, height: 640 }
+    const nodes = [
+      { x: -100, y: -220, radius: 20, captionWidth: 80 },
+      { x: 100, y: 220, radius: 20, captionWidth: 80 },
+    ]
+    const full = fitCameraWithLabels({ frame: readGraphFrame(stage, [], 'narrow'), nodes })!
+    const sheet = fitCameraWithLabels({
+      frame: readGraphFrame(stage, [{ x: 8, y: 420, width: 214, height: 212 }], 'narrow'),
+      nodes,
+    })!
+    expect(sheet.k).toBeLessThan(full.k)
+  })
+
+  it('reserves room for a caption below a node in a short frame', () => {
+    const frame = { x: 0, y: 0, width: 400, height: 220 }
+    const camera = fitCameraWithLabels({
+      frame,
+      nodes: [{ x: 0, y: 0, radius: 24, captionWidth: 120 }],
+    })!
+    const labelBottom = camera.y + 24 * camera.k + 20
+    const labelTop = camera.y - 24 * camera.k - 20
+    expect(labelBottom).toBeLessThanOrEqual(frame.y + frame.height - 16)
+    expect(labelTop).toBeGreaterThanOrEqual(frame.y + 16)
+  })
+
+  it('fits labels above a bottom inspector in a narrow pane', () => {
+    const stage = { width: 230, height: 420 }
+    const frame = readGraphFrame(stage, [{ x: 8, y: 280, width: 214, height: 132 }], 'narrow')
+    expect(frame.height).toBeLessThan(stage.height - 100)
+    const camera = fitCameraWithLabels({
+      frame,
+      nodes: [
+        { x: -120, y: -20, radius: 18, captionWidth: 120 },
+        { x: 100, y: 30, radius: 18, captionWidth: 60 },
+      ],
+    })!
+    for (const node of [
+      { x: -120, y: -20, r: 18, w: 120 },
+      { x: 100, y: 30, r: 18, w: 60 },
+    ]) {
+      const center = camera.x + node.x * camera.k
+      expect(center - node.w / 2).toBeGreaterThanOrEqual(frame.x + 16)
+      expect(center + node.w / 2).toBeLessThanOrEqual(frame.x + frame.width - 16)
+      const bottom = camera.y + node.y * camera.k + node.r * camera.k + 20
+      expect(bottom).toBeLessThanOrEqual(frame.y + frame.height - 16)
+    }
+  })
+
+  it('keeps a long selected caption after a fit into a 230 px pane with a bottom sheet', () => {
+    const stage = { width: 230, height: 640 }
+    const frame = readGraphFrame(stage, [{ x: 8, y: 420, width: 214, height: 212 }], 'narrow')
+    const camera = fitCameraWithLabels({
+      frame,
+      nodes: [
+        { x: 0, y: 0, radius: 22, captionWidth: 221 },
+        { x: 70, y: 8, radius: 18, captionWidth: 30 },
+      ],
+    })!
+    const caption = (id: string, priority: number, x: number, y: number, radius: number, textWidth: number) => {
+      const centerX = camera.x + x * camera.k
+      const width = textWidth + 8
+      const placement = placeNodeLabel(camera.y + y * camera.k, radius * camera.k, stage.height)
+      return {
+        id,
+        priority,
+        left: centerX - width / 2,
+        right: centerX + width / 2,
+        top: placement.top,
+        bottom: placement.bottom,
+      }
+    }
+    const article = caption('article', 5, 0, 0, 22, 221)
+    const value = caption('value', 0, 70, 8, 18, 30)
+    // The old pane-minus-2 check dropped this 229 px box in a 230 px pane.
+    expect(article.right - article.left).toBeCloseTo(229)
+    expect(article.left).toBeGreaterThanOrEqual(frame.x)
+    expect(article.right).toBeLessThanOrEqual(frame.x + frame.width + 0.5)
+    const shown = visibleCaptionIds([article, value], camera.k, { paneWidth: stage.width })
+    expect(shown.has('article'), 'the long object name stays painted').toBe(true)
+    expect(shown.has('value'), 'the lower-priority neighbour still yields').toBe(false)
+    // K5: a painted edge label may keep its spot; the caption beneath it hides
+    // rather than forcing the label out (that is how Supplier used to vanish).
+    const underLabel = visibleCaptionIds([article, value], camera.k, {
+      paneWidth: stage.width,
+      edgeLabels: [{ left: article.left, top: article.top, right: article.right, bottom: article.bottom }],
+    })
+    expect(underLabel.has('article'), 'the caption under the edge label yields').toBe(false)
+  })
+})
+
+describe('remapping a user camera', () => {
+  const from = { x: 0, y: 40, width: 220, height: 300 }
+  const to = { x: 0, y: 0, width: 1200, height: 800 }
+
+  it('keeps k and puts the old frame-centre world point at the new centre', () => {
+    const camera = { k: 1.7, x: 30, y: 210 }
+    const worldX = (from.x + from.width / 2 - camera.x) / camera.k
+    const worldY = (from.y + from.height / 2 - camera.y) / camera.k
+    const remapped = remapCamera({ camera, from, to })
+    expect(remapped.k).toBe(camera.k)
+    expect(remapped.x + worldX * remapped.k).toBeCloseTo(to.x + to.width / 2)
+    expect(remapped.y + worldY * remapped.k).toBeCloseTo(to.y + to.height / 2)
+  })
+
+  it('round-trips back to the original camera when the frame returns', () => {
+    const camera = { k: 0.8, x: 12, y: 90 }
+    const there = remapCamera({ camera, from, to })
+    const back = remapCamera({ camera: there, from: to, to: from })
+    expect(back.k).toBeCloseTo(camera.k)
+    expect(back.x).toBeCloseTo(camera.x)
+    expect(back.y).toBeCloseTo(camera.y)
   })
 })
 
