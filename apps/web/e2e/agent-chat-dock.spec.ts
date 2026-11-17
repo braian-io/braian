@@ -190,6 +190,8 @@ test('agent dock does not cover Detail controls at 1280×800 (K2)', async ({ pag
     await result.click({ timeout: 15_000 })
     await expectHitTarget(page, 'review-and-save')
     await expectHitTarget(page, 'discard-draft')
+    await page.keyboard.press('Control+j')
+    await expect(agentPane(page)).toHaveCount(0)
   } finally {
     await cleanupDrafts(page)
   }

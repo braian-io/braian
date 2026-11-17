@@ -62,11 +62,16 @@ An entity row in the palette has more than one action. For an object, the action
 offers `Open`, `Open to the right`, and `Copy id`. For a view or workspace, it offers
 `Place left`, `Place right`, `Place top`, `Place bottom`, and `New tab`.
 
-## Agent in the palette
+## Agent chat
 
-`Ctrl+J` opens the agent palette. Inside the palette, `Ctrl+J` asks the agent with the
-current query. The input shows an `AI` badge and the placeholder `Ask AI`. Previous
-turns are shown as clickable chips; send with `Enter` and close with `Escape`.
+With the command palette **closed**, `Ctrl+J` **toggles** the docked agent pane: it
+closes when any agent view is open (wherever focus is), or reopens the last session and
+focuses the follow-up box. With no prior session it opens the palette in Ask AI mode.
+
+Inside an **open** command palette, `Ctrl+J` asks the agent with the current query
+instead of toggling the dock. See [Agent chat](/docs/agent-chat) for follow-up keys:
+`Enter` sends, `Shift+Enter` adds a line, and `Esc` in the follow-up box returns focus
+to the pane on the left without clearing your draft.
 
 The agent runs in the context you are looking at: the focused view, the selected rows
 and the current filter. It proposes changes; a person reviews and saves them. See
@@ -91,7 +96,7 @@ shortcut. See [Feedback](/docs/feedback).
 | Chord | Action |
 | --- | --- |
 | `Ctrl+K` | Open the command palette |
-| `Ctrl+J` | Open the agent palette |
+| `Ctrl+J` | Toggle the agent chat pane (or ask from the palette) |
 | `Ctrl+S` | Save review drafts |
 | `Ctrl+Shift+B` | Send feedback (when the operator enables it) |
 | `F1` | Show keyboard shortcuts |

@@ -24,6 +24,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from './components/ui/tooltip
 import { formatTimestamp } from './format'
 import { copy } from './i18n'
 import { reviewOperation } from './review-cells'
+import { readAgentFollowDraft, writeAgentFollowDraft } from './agent-follow-draft'
+import { runCommand } from './command-registry'
 import type { Json } from './api'
 
 type AgentViewProps = {
@@ -196,7 +198,7 @@ export function AgentView({ runId, title: viewTitle }: AgentViewProps) {
   const logRef = useRef<HTMLDivElement>(null)
   const followRef = useRef<HTMLTextAreaElement>(null)
   const opened = useRef(false)
-  const [draft, setDraft] = useState('')
+  const [draft, setDraft] = useState(() => readAgentFollowDraft(runId))
   const [error, setError] = useState('')
   const [announced, setAnnounced] = useState('')
   const previousStatus = useRef('')
@@ -248,6 +250,7 @@ export function AgentView({ runId, title: viewTitle }: AgentViewProps) {
     onSuccess: (detail) => {
       queryClient.setQueryData(runQueryKey, detail)
       setDraft('')
+      writeAgentFollowDraft(runId, '')
       setError('')
       refresh()
       focusInput()
@@ -341,11 +344,6 @@ export function AgentView({ runId, title: viewTitle }: AgentViewProps) {
       data-session-kind={data.session_kind}
       data-hidden={data.hidden ? 'true' : 'false'}
       ref={rootRef}
-      onKeyDownCapture={(event) => {
-        if (event.key !== 'Escape') return
-        event.preventDefault()
-        event.stopPropagation()
-      }}
     >
       <p className="sr-only" aria-live="polite" data-testid="agent-status-live">{announced}</p>
       <header className="agent-view-head">
@@ -421,8 +419,20 @@ export function AgentView({ runId, title: viewTitle }: AgentViewProps) {
           value={draft}
           placeholder={working ? copy.agentWorkingPlaceholder : copy.agentFollowUp}
           disabled={working || follow.isPending}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => {
+            const next = event.target.value
+            setDraft(next)
+            writeAgentFollowDraft(runId, next)
+          }}
           onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault()
+              event.stopPropagation()
+              writeAgentFollowDraft(runId, draft)
+              event.currentTarget.blur()
+              void runCommand('layout:focus:left')
+              return
+            }
             if (event.key !== 'Enter') return
             if (event.shiftKey) return
             event.preventDefault()

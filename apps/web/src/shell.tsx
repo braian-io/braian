@@ -84,6 +84,7 @@ import {
   writeActiveWorkspaceId,
 } from './active-workspace'
 import { healAgentDockLayout } from './agent-layout-migrate'
+import { decideAgentToggle } from './agent-chat-toggle'
 import { healDataModelWorkspace, isKnownViewType, layoutHasMissingViews, migrateLegacyModelViews } from './model-workspace-migrate'
 import { persistWorkspaceMigration } from './workspace-migration-persist'
 import { commandPlaceholder, displayViewTitle, migrateSavedWorkspace, singularOf, typeNames, typeOfView } from './type-labels'
@@ -564,26 +565,17 @@ export function Shell() {
           const catalog = rows.map((view) => ({ id: view.id, title: view.title, type: view.type }))
           const agents = catalog.filter((view) => view.type === 'agent')
           const openIds = layoutViews(current.layout)
-          const openAgents = agents.filter((view) => openIds.includes(view.id))
-          if (openAgents.length > 0) {
-            const focus = current.focus
-            const focused = openAgents.find((view) => view.id === focus)
-            if (focused) {
-              applyRef.current('close_view', { view: focused.id })
-              return
+          const decision = decideAgentToggle(openIds, agents)
+          if (decision.kind === 'close') {
+            for (const id of decision.viewIds) {
+              applyRef.current('close_view', { view: id })
             }
-            const target = openAgents[openAgents.length - 1]!
-            if (focus !== target.id) applyRef.current('ui.open_view', { id: target.id })
-            window.dispatchEvent(new CustomEvent('braian-focus-agent-input', {
-              detail: { runId: agentRunIdFromView(rows, target.id) },
-            }))
             return
           }
-          const hidden = agents.filter((view) => !openIds.includes(view.id))
-          if (hidden.length > 0) {
-            const view = hidden[hidden.length - 1]!
-            const runId = agentRunIdFromView(rows, view.id)
-            if (runId) {
+          if (decision.kind === 'reopen-hidden') {
+            const view = rows.find((item) => item.id === decision.viewId)
+            const runId = view ? agentRunIdFromView(rows, view.id) : ''
+            if (view && runId) {
               openAgentRunRef.current({ id: runId, title: view.title, view_id: view.id, tab_open: true })
               return
             }

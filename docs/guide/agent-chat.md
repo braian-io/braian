@@ -1,7 +1,8 @@
 # Agent chat
 
-Press **Ctrl+J** to talk to the agent from anywhere in the app. If the palette
-is already open, **Ctrl+J** runs your question with the text in the query box.
+Press **Ctrl+J** to talk to the agent from anywhere in the app. If the command
+palette is already open, **Ctrl+J** runs your question with the text in the query
+box instead of toggling the pane.
 
 The agent opens in its own **docked pane on the far right**. Products, Detail,
 and your other views stay where they are in the center layout.
@@ -31,12 +32,25 @@ Follow-up messages stay in the **same run**, so you can continue with context
 
 ## Toggle the pane
 
-Press **Ctrl+J** again while the palette is closed:
+**Ctrl+J** is a **toggle** while the command palette is closed:
 
-- If the agent pane is focused, it **closes** (history is kept for this browser
-  session).
-- If it is open but another pane is focused, **Ctrl+J** focuses the agent input
-  again.
+- If **any** agent pane is open in the layout, **Ctrl+J closes it** — whether
+  focus is in the follow-up box, on the Agent tab, or on Products, Detail, or
+  another view (including narrow viewports such as 1280×800).
+- If the pane is closed, **Ctrl+J** reopens the last agent session in the dock
+  and focuses the follow-up input. With no prior session, it opens the palette in
+  Ask AI mode so you can type a new question.
+
+Unsent text in the follow-up box is **kept for this browser tab** when you close
+the pane with **Ctrl+J** and restored when you open it again.
+
+## Escape in the follow-up box
+
+While the follow-up input is focused, **Esc** blurs the field and moves keyboard
+focus to the **pane on the left** (for example Products or Detail). Your draft
+text stays in the input. **Esc** does not close the agent pane.
+
+Use **Ctrl+J** when you want to hide the whole agent column.
 
 Use **Ctrl+K** any time for commands, navigation, and a new agent question with
 a fresh prompt.
