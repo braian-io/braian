@@ -47,7 +47,12 @@ header then shows `All {type} · {tree} › {node}`. Click the header once to re
 to **All {type}**; that choice stays until another structure tree is added to the
 layout. Selection chips in the filter bar light up only when their filter is really
 applied to the table (on **All {type}**, a tree-side group selection does not
-highlight a matching assortment chip).
+highlight a matching assortment chip). A **group** chip on a table in explicit
+**All {type}** (after auto-linking a structure tree) leaves that saved All mode
+and applies the group filter to the whole type. In a **peer-linked** table,
+group chips such as Cheese have no effect; label chips such as Organic still
+apply. Clicking the pane header while following a peer returns to **All {type}**;
+its accessible name names that destination, not the current peer selection.
 
 Sources that cannot produce the target type are not listed. A Products view never
 offers an Article-only source, and a source with no derivation path never appears.
@@ -171,7 +176,8 @@ while the group or label filter you want is active. A manual selection with no g
 or labels matches no objects, not every object of the type.
 
 Selecting a selection chip applies it to the table, and clicking the active chip
-clears it. Selections are listed with an `Edit selection` and `Delete selection`
+clears it. Group chips do not apply in peer-linked tables; label chips still do.
+Selections are listed with an `Edit selection` and `Delete selection`
 action for each row. `Delete selection` first shows the saved views, jobs, and webhooks
 that use the selection; an active filter chip is not part of that list. Deleting a
 selection that is the active chip makes the table fall back to `All` at once, with the
