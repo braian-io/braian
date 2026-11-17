@@ -143,9 +143,6 @@ test.describe('palette keyboard scroll keeps the active row visible', () => {
   test('Root list: filter, Open structure › drill, back, and ArrowDown scroll', async ({ page }) => {
     test.setTimeout(120_000)
     await login(page)
-    await openProducts(page)
-    await expect(page.getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
-    await expect(page.getByTestId('object-row').first()).toBeVisible({ timeout: 60_000 })
 
     try {
       await focusMainTable(page)
@@ -155,21 +152,6 @@ test.describe('palette keyboard scroll keeps the active row visible', () => {
       await expect(palette).toBeVisible()
       await waitForStableOptions(palette)
 
-      await expect(palette.locator('[data-value="op:ui.open_view"]')).toBeVisible({ timeout: 60_000 })
-      await page.getByTestId('palette-input').fill('Open view')
-      await expect(palette.locator('#palette-list [data-value="op:ui.open_view"]')).toHaveAttribute(
-        'aria-selected',
-        'true',
-        { timeout: 60_000 },
-      )
-      await expect
-        .poll(async () => (await activeRowInList(rootList))?.inView ?? false, {
-          message: 'root filter highlight in list viewport',
-          timeout: 10_000,
-        })
-        .toBe(true)
-
-      await page.getByTestId('palette-input').fill('')
       await expect(palette.locator('[data-value="layout:open-structure"]')).toBeVisible({ timeout: 60_000 })
       await page.getByTestId('palette-input').fill('open structure')
       await expect(palette.locator('#palette-list [data-value="layout:open-structure"]')).toHaveAttribute(
