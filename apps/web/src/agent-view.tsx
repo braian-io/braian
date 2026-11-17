@@ -281,7 +281,15 @@ export function AgentView({ runId, title: viewTitle }: AgentViewProps) {
   useEffect(() => {
     const log = logRef.current
     if (!log) return
-    log.scrollTop = log.scrollHeight
+    const link = log.querySelector<HTMLElement>('[data-testid="agent-result-link"]')
+    if (!link) {
+      log.scrollTop = log.scrollHeight
+      return
+    }
+    const logBox = log.getBoundingClientRect()
+    const linkBox = link.getBoundingClientRect()
+    if (linkBox.bottom > logBox.bottom) log.scrollTop += linkBox.bottom - logBox.bottom
+    else if (linkBox.top < logBox.top) log.scrollTop -= logBox.top - linkBox.top
   }, [run.data?.messages.length, run.data?.status])
   const heading = run.data?.title ?? viewTitle
   if (run.isPending) {

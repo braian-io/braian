@@ -258,7 +258,7 @@ test('a failed fetch can be retried and a missing run cannot', async ({ page }) 
   const busy = view.getByTestId('agent-fetch-error')
   await expect(busy).toContainText('the store is busy')
   allowRunFetch = true
-  await busy.getByTestId('agent-retry').click()
+  await busy.getByTestId('agent-retry').click({ timeout: 15_000 })
   await expect(view.getByTestId('agent-status')).toBeVisible({ timeout: 30_000 })
   await page.unroute(runDetail)
   await page.route(runDetail, async (route) => {
@@ -290,7 +290,7 @@ test('a failed run shows a cleaned error and try again', async ({ page }) => {
   await expect(failure).toContainText('The model request failed. Try again, or check the AI settings.')
   await expect(failure).not.toContainText('openai')
   await expect(failure).not.toContainText('status 500')
-  await failure.getByTestId('agent-try-again').click()
+  await failure.getByTestId('agent-try-again').click({ timeout: 15_000 })
   await expect(view.getByTestId('agent-status')).toHaveAttribute('data-status', 'working')
 })
 
@@ -303,7 +303,7 @@ test('escape inside the agent tab does not close it', async ({ page }) => {
   await expect(tab).toBeVisible()
   const followUp = agentView(page, title).getByTestId('agent-follow-up')
   await expect(followUp).toBeVisible({ timeout: 30_000 })
-  await followUp.focus()
+  await followUp.focus({ timeout: 15_000 })
   await page.keyboard.press('Escape')
   await expect(tab).toBeVisible()
   await expect(agentView(page, title)).toBeVisible()

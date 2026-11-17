@@ -474,13 +474,16 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
   min-width: 0;
 }
 .dock-root > .split.horizontal.split-agent-dock > .split-cell:first-child {
-  overflow: hidden;
+  overflow: clip;
+  contain: paint;
 }
 .dock-root > .split.horizontal.split-agent-dock > .split-cell:last-child {
   z-index: 2;
+  isolation: isolate;
 }
 .dock-root > .split.horizontal.split-agent-dock > .split-cell:first-child:has([data-testid='agents-table']) {
   overflow: auto;
+  contain: none;
 }
 /* Lay the catalog out at the full dock width so existing panes keep their
    coordinates. The left cell is (dock - 6px divider) * ratio, so 100% / ratio
@@ -775,7 +778,13 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
   flex-direction: column;
   gap: var(--space-2);
   min-height: 0;
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
   flex: 1 1 auto;
+}
+.pane-body > .agent-view {
+  overflow: hidden;
 }
 .agent-view-head { display: flex; align-items: center; gap: var(--space-1_5); flex-wrap: nowrap; min-width: 0; }
 .agent-view-head h2 { margin: 0; font-size: var(--text-lg); font-weight: 600; min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -818,7 +827,12 @@ button.agent-mode:hover:not(:disabled) { background: var(--hover); }
 .agent-result-link {
   padding: 0;
   min-height: 0;
+  min-width: 0;
+  max-width: 100%;
   height: auto;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: start;
   font-size: inherit;
 }
 .agent-proposal { border: 0; border-top: 1px solid var(--border); border-radius: 0; padding: var(--space-2_5) 0 0; display: flex; flex-direction: column; gap: var(--space-2); }
@@ -838,11 +852,12 @@ button.agent-approve:disabled:hover {
 .agent-skeleton i:first-child { width: 42%; height: 16px; }
 .agent-skeleton i:nth-child(2) { width: 88%; }
 .agent-skeleton i:nth-child(3) { width: 70%; }
-.agent-failed, .agent-fetch-error { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
-.agent-failed p, .agent-fetch-error p { margin: 0; }
-.agent-follow { display: flex; gap: var(--space-2); align-items: flex-end; flex: none; }
+.agent-failed, .agent-fetch-error { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); min-width: 0; max-width: 100%; }
+.agent-failed p, .agent-fetch-error p { margin: 0; max-width: 100%; overflow-wrap: anywhere; }
+.agent-failed button, .agent-fetch-error button { max-width: 100%; }
+.agent-follow { display: flex; gap: var(--space-2); align-items: flex-end; flex: none; min-width: 0; max-width: 100%; }
 .agent-follow-input,
-.agent-follow input { flex: 1 1 auto; min-height: 2.6rem; max-height: 9rem; resize: vertical; }
+.agent-follow input { flex: 1 1 auto; width: 100%; min-width: 0; max-width: 100%; min-height: 2.6rem; max-height: 9rem; resize: vertical; }
 .agent-follow .agent-action { flex: none; justify-content: center; width: 28px; padding: 0; }
 /* Disabled Send next to "Agent is working…" must look inactive; keep --muted for contrast checks. */
 .agent-follow .agent-action:disabled,
@@ -966,6 +981,7 @@ button.agent-bg-indicator strong { font-variant-numeric: tabular-nums; }
 }
 .dock-root > .split.horizontal.split-agent-dock:has([data-testid='agents-table']) > .split-cell:first-child {
   overflow: auto;
+  contain: none;
 }
 .dock-root > .split.horizontal.split-agent-dock .pane:has([data-testid='agents-table']) .standard-grid,
 .dock-root > .split.horizontal.split-agent-dock .pane:has([data-testid='agents-table']) .table-wrap {

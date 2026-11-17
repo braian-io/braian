@@ -292,8 +292,12 @@ function SplitChild({
         top: 0,
         bottom: 0,
         width: basis,
+        // The catalog's min-width is the full dock. Without a cap, that min
+        // content size grows this cell over the agent and steals its clicks.
+        maxWidth: basis,
+        minWidth: 0,
         flex: 'none',
-        ...(index === 0 ? { left: 0 } : last ? { right: 0 } : {}),
+        ...(index === 0 ? { left: 0 } : last ? { right: 0, zIndex: 2 } : {}),
       }
     : { flex: `${flex} ${basis}` }
   const dividerOffset = pinCells && node.dir === 'horizontal'

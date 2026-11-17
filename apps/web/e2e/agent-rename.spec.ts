@@ -55,7 +55,7 @@ test('a clear rename becomes a proposal without asking, and Accept changes the n
   await expect(view.getByRole('button', { name: 'Run in background' })).toBeVisible()
   await expect(view.getByTestId('agent-mode')).toHaveAttribute('aria-label', 'Run in background')
   await expect(mainTable(page, 'Products')).toBeVisible()
-  await view.getByTestId('agent-result-link').first().click()
+  await view.getByTestId('agent-result-link').first().click({ timeout: 15_000 })
   const renamed = mainTable(page, 'Products').locator(`[id="object-row-${objectId}"] [data-column="name"]`)
   await expect(renamed).toContainText(target, { timeout: 30_000 })
   await page.getByTestId('review-and-save').first().click()

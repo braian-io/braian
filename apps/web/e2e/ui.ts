@@ -68,7 +68,7 @@ export async function showProducts(page: Page, title = 'Products') {
 
 /** Draft links live in chat; review and save stay on the object table pane. */
 export async function openAgentDraftInTable(page: Page, view: Locator, title = 'Products') {
-  await view.getByTestId('agent-result-link').first().click()
+  await view.getByTestId('agent-result-link').first().click({ timeout: 15_000 })
   await showProducts(page, title)
 }
 
