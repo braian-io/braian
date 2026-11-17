@@ -13,6 +13,10 @@ Common root commands include:
 - `Open view`, `Open workspace`, and `Open object`, plus one `Open {type}` row per
   object type. `Open view` focuses a view in place; it never moves one into the
   focused pane and never lists old agent-run tabs.
+- `Open structure` lists every structure in the active catalog by label and key.
+  Choose one to open its tree in the focused pane (`Enter`) or in a new pane to
+  the right (`Ctrl+Enter`). An existing tree view for that structure is reused;
+  otherwise Braian creates one.
 - `Add view`, `New from template`, and `Switch catalog`. `Add view` is the way to
   bring an existing view into the focused pane. A type row always creates a new copy
   of that type's object table in a new pane immediately to the right of the open

@@ -22,6 +22,8 @@ describe('Open view rows', () => {
     expect(ids).not.toContain('view:v-run')
     expect(titles).not.toContain('old agent run about this product')
     expect(ids).toContain('view:v-tree')
+    const treeRow = rows.find((row) => row.id === 'view:v-tree')
+    expect(treeRow?.keywords).toEqual(['structure_tree', 'Food', 'tree', 'structure'])
     expect(ids).toContain('view:v-products')
     expect(ids).toContain('view:v-graph')
   })

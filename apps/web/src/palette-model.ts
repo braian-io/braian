@@ -130,6 +130,7 @@ function isCreateId(id: string): boolean {
     id === 'workspace:new'
     || id === 'import:file'
     || id === 'layout:add-view'
+    || id === 'layout:open-structure'
     || id === 'selection:new'
     || id === 'attr:new'
     || id.startsWith('model:new-')
@@ -482,6 +483,8 @@ export function markedTitle(item: PaletteItem): string {
 export function sublistPlaceholder(frame: { label: string; paramType?: string }, plurals: string[] = []): string {
   if (frame.paramType === 'agent' || /\bagents?\b/i.test(frame.label)) return 'Search agents…'
   if (frame.paramType === 'view' || /\bview\b/i.test(frame.label)) return 'Search views…'
+  if (/\bstructure\b/i.test(frame.label) && /\btree\b/i.test(frame.label)) return 'Search structures…'
+  if (/\bstructure\b/i.test(frame.label)) return 'Search structures…'
   if (frame.paramType === 'workspace' || /\bworkspace\b/i.test(frame.label)) return 'Search workspaces…'
   const plural = plurals.find((name) => name && frame.paramType && name.toLowerCase().startsWith(frame.paramType.toLowerCase()))
   if (plural) return `Search ${plural.toLowerCase()}…`

@@ -96,6 +96,11 @@ import {
   viewSourceLabel,
 } from './view-source'
 import { objectTablesToAutoLinkToTree } from './structure-tree-link'
+import {
+  findStructureTreeView,
+  structureTreeViewState,
+  structureTreeViewTitle,
+} from './structure-tree-view'
 import { useDetailFollow } from './detail-follow'
 import { MASTER_CATALOG_ID } from './catalog-ref'
 import { workspaceCatalogRef } from './catalog-scope'
@@ -170,6 +175,7 @@ type Session = {
   push: (line: string) => void
   openWorkspace: (id: string) => void
   openTypeView: (typeId: string) => void
+  openStructureView: (structureKey: string, placement?: { zone: 'center' | 'right'; target?: string }) => void
   workspaceId: string | null
 }
 
@@ -292,6 +298,7 @@ export function Shell() {
   const loadedFor = useRef('')
   const applyRef = useRef<(name: string, args: Record<string, unknown>) => void>(() => {})
   const openTypeViewRef = useRef<(typeId: string) => void>(() => {})
+  const openStructureViewRef = useRef<(structureKey: string, placement?: { zone: 'center' | 'right'; target?: string }) => void>(() => {})
   const openAgentRunRef = useRef<(run: { id: string; title: string; view_id?: string | null; tab_open?: boolean; messages?: AgentMessage[] }) => void>(() => {})
   const openAgentsTableRef = useRef<() => void>(() => {})
   const showAgentSessionRef = useRef<(run: AgentRunSummary) => void>(() => {})
@@ -1466,6 +1473,7 @@ export function Shell() {
     push,
     openWorkspace: setWorkspaceId,
     openTypeView: (typeId) => openTypeViewRef.current(typeId),
+    openStructureView: (structureKey, placement) => openStructureViewRef.current(structureKey, placement),
     workspaceId,
   }
 
@@ -1941,6 +1949,76 @@ export function Shell() {
     })().catch((reason: unknown) => reportWriteError(reason))
   }
 
+  openStructureViewRef.current = (structureKey: string, placement: { zone: 'center' | 'right'; target?: string } = { zone: 'center' }) => {
+    const surfaceNow = workspaceRef.current
+    const docNow = docRef.current
+    if (!surfaceNow || !docNow) {
+      toast.message(copy.workspaceOpeningWhenReady)
+      return
+    }
+    const defs = queryClient.getQueryData<Json>(['definitions'])
+    void (async () => {
+      try {
+        let views: View[] = viewRows(surfaceNow.views)
+        let tree = findStructureTreeView(views, structureKey, defs)
+        if (!tree) {
+          const id = crypto.randomUUID()
+          const title = structureTreeViewTitle(structureKey, defs)
+          const created: View = {
+            id,
+            type: 'structure_tree',
+            title,
+            pane: 'center',
+            position: views.length,
+            state: freeObject(structureTreeViewState(structureKey)),
+          }
+          await api.post('/v1/views', {
+            body: {
+              id: created.id,
+              workspace_id: surfaceNow.id,
+              type: created.type,
+              title: created.title,
+              pane: 'center',
+              position: views.length,
+              state: freeObject(created.state),
+            },
+          })
+          views = [...views, created]
+          tree = created
+        }
+        const nextSurface = {
+          ...surfaceNow,
+          views: views.map((view) => ({
+            ...view,
+            pane: view.pane ?? 'center',
+            position: view.position ?? 0,
+            state: freeObject(view.state),
+          })),
+        }
+        workspaceRef.current = nextSurface
+        queryClient.setQueryData(['workspace', surfaceNow.id], nextSurface)
+        const current = docRef.current
+        if (!current || !tree) return
+        placeOverride.current = placement.zone === 'right'
+          ? { zone: 'right', ...(placement.target ? { target: placement.target } : {}) }
+          : { target: placement.target, zone: 'center' }
+        const result = applyLayoutCommand(current, 'ui.open_view', {
+          id: tree.id,
+          zone: placement.zone,
+          ...(placement.target ? { target: placement.target } : {}),
+        }, {
+          views: views.map((view) => ({ id: view.id, title: view.title, type: view.type })),
+          canonical: canonicalRef.current,
+          place: placeOverride.current,
+        })
+        placeOverride.current = undefined
+        if (result.handled && result.doc !== current) commitDoc(result.doc)
+      } catch (reason) {
+        reportWriteError(reason)
+      }
+    })()
+  }
+
   openTypeViewRef.current = (typeId: string) => {
     const surfaceNow = workspaceRef.current
     const docNow = docRef.current
@@ -2232,6 +2310,10 @@ export function Shell() {
             void applyViewPeerSourceRef.current(peerViewId, targetViewId, linkType)
           }}
           onPrepareAddView={() => {
+            const focus = docRef.current?.focus
+            placeOverride.current = focus ? { target: focus, zone: 'center' } : { zone: 'center' }
+          }}
+          onPrepareOpenStructure={() => {
             const focus = docRef.current?.focus
             placeOverride.current = focus ? { target: focus, zone: 'center' } : { zone: 'center' }
           }}

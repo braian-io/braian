@@ -122,6 +122,7 @@ function TreeHarness() {
       push: () => undefined,
       openWorkspace: () => undefined,
       openTypeView: () => undefined,
+      openStructureView: () => undefined,
       workspaceId: null,
     }),
     [group],
