@@ -78,21 +78,26 @@ test('Ctrl+Enter opens the structure tree to the right without duplicating views
   await login(page)
   const workspaceId = await resetProductsLayout(page)
   try {
+    await expect(page.getByTestId('structure-tree')).toBeVisible()
+    await page.locator('.pane-tab[data-view-type="structure_tree"]').first().click()
+    await page.keyboard.press('Control+Alt+w')
+    await expect(page.getByTestId('structure-tree')).toHaveCount(0)
+
     const products = page.getByTestId('object-table').first()
     await expect(products).toBeVisible()
     await page.locator('[data-view-type="object_detail"]').first().click()
 
     await openFoodStructure(page, { ctrl: true })
-    const trees = page.getByTestId('structure-tree')
-    await expect(trees).toHaveCount(1, { timeout: 30_000 })
+    await expect(page.getByTestId('structure-tree')).toBeVisible({ timeout: 30_000 })
     expect(await structureTreeViewCount(page, workspaceId)).toBe(1)
+
+    const detailPane = page.locator('section.pane').filter({ has: page.locator('[data-view-type="object_detail"]') })
+    await expect(detailPane).toBeVisible()
+    await expect(products).toBeVisible()
 
     await openFoodStructure(page, { ctrl: true })
     await expect(page.getByTestId('structure-tree')).toHaveCount(1)
     expect(await structureTreeViewCount(page, workspaceId)).toBe(1)
-
-    await expect(products).toBeVisible()
-    await expect(page.locator('[data-view-type="object_detail"]').first()).toBeVisible()
   } finally {
     await resetProductsLayout(page)
   }
