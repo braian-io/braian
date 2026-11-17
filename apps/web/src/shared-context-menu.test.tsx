@@ -150,6 +150,26 @@ describe('shared context menu registry', () => {
     expect(document.activeElement).toBe(items[0])
   })
 
+  it('closes on Tab and moves focus to the next tab stop after the opener', async () => {
+    registerCommandRunner('object:open', () => undefined)
+    const after = document.createElement('button')
+    after.type = 'button'
+    document.body.appendChild(after)
+    const grid = document.createElement('button')
+    grid.type = 'button'
+    grid.textContent = 'Grid'
+    document.body.appendChild(grid)
+    grid.focus()
+    render(<SharedContextMenuHost />)
+    openSharedContextMenu({ context: 'row', x: 12, y: 12, target: { objectId: 'o1' } })
+    const menu = await screen.findByTestId('context-menu')
+    fireEvent.keyDown(menu, { key: 'Tab' })
+    await waitFor(() => expect(screen.queryByTestId('context-menu')).toBeNull())
+    expect(document.activeElement).toBe(after)
+    after.remove()
+    grid.remove()
+  })
+
   it('keeps highlight and focus on one item when hovering then arrowing', async () => {
     registerCommandRunner('object:open', () => undefined)
     render(<SharedContextMenuHost />)

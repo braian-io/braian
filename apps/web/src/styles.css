@@ -2070,13 +2070,15 @@ canvas.graph.panning { cursor: grabbing; }
 .menu button[data-highlighted], .menu-item[data-highlighted] { background: var(--accent-dim); }
 /* Focus and highlight move together here, so the fill is the only mark.
    Legacy menus without a highlighted item keep the global focus ring. */
-.menu:has([data-highlighted]) button:focus-visible,
-.menu:has([data-highlighted]) .menu-item:focus-visible { outline: none; }
-/* The account menu is arrow-navigated: the highlighted item is the focused
-   item, so it keeps the same 2px accent ring as other keyboard-focused
-   controls even when the browser does not match :focus-visible for arrow
-   navigation. The ring sits inside the item so the menu edge never clips it. */
-.menu.user-menu-content .menu-item[data-highlighted] {
+.menu:has([data-highlighted]) button:focus-visible:not([data-highlighted]),
+.menu:has([data-highlighted]) .menu-item:focus-visible:not([data-highlighted]) { outline: none; }
+/* Arrow-navigated menus mark the active item with data-highlighted. It is also
+   the focused item, so it keeps the same 2px accent ring as other
+   keyboard-focused controls even when the browser does not match
+   :focus-visible for arrow navigation. The ring sits inside the item so the
+   menu edge never clips it. */
+.menu button[data-highlighted],
+.menu .menu-item[data-highlighted] {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
