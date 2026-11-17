@@ -130,9 +130,14 @@ async function openSectionPicker(page: Page, section: string) {
 }
 
 async function chooseSupplier(page: Page, supplier = NORTHMILL) {
-  await page.getByTestId('link-search').fill(supplier.key)
-  const option = page.getByTestId('link-picker').getByRole('option').filter({ hasText: supplier.key }).first()
-  await expect(option).toBeVisible()
+  const picker = page.getByTestId('link-picker')
+  await expect(picker).toBeVisible()
+  const search = picker.getByTestId('link-search')
+  const option = picker.getByRole('option').filter({ hasText: supplier.key }).first()
+  await expect(async () => {
+    await search.fill(supplier.key)
+    await expect(option).toBeVisible()
+  }).toPass({ timeout: 15_000 })
   await option.click()
   const dialog = page.getByTestId('link-create-dialog')
   await expect(dialog).toBeVisible()
@@ -199,6 +204,7 @@ test('Detail and Graph create dialogs are wide enough to confirm without forcing
   await openObjectGraph(page, PRODUCT)
   const { menu } = await openNodeMenu(page, PRODUCT.id)
   await menu.getByRole('menuitem', { name: 'Link Suppliers…', exact: true }).click()
+  await expect(page.getByTestId('link-picker')).toBeVisible()
   const graphDialog = await chooseSupplier(page)
   await expectWideDialog(page, graphDialog)
   await shot(page, 'graph-dialog-wide')
