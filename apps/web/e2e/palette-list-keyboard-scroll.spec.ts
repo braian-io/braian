@@ -150,14 +150,13 @@ test.describe('palette keyboard scroll keeps the active row visible', () => {
       await expect(palette).toBeVisible()
       await waitForStableOptions(palette)
 
-      await page.getByTestId('palette-input').fill('Open view')
-      await expect(palette.locator('#palette-list .hit.on')).toContainText('Open view', { timeout: 60_000 })
+      await expect(palette.locator('[data-value="layout:open-structure"]')).toBeVisible({ timeout: 60_000 })
+      await page.getByTestId('palette-input').fill('open structure')
+      await expect(palette.locator('#palette-list .hit.on')).toContainText('Open structure', { timeout: 15_000 })
       const filterState = await activeRowInList(page, rootList)
       expect(filterState, 'root filter should highlight a row').not.toBeNull()
       expect(filterState!.inView, 'root filter highlight outside list viewport').toBe(true)
 
-      await page.getByTestId('palette-input').fill('')
-      await page.getByTestId('palette-input').fill('open structure')
       await page.keyboard.press('Tab')
       await expect(page.getByTestId('palette-crumb')).toContainText('Open structure ›')
       const drillState = await activeRowInList(page, rootList)

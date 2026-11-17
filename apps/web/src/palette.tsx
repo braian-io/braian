@@ -19,7 +19,7 @@ import { structureCaption } from './graph-scene'
 import { chordForCommand } from './shortcuts'
 import { mergeFrecency, readFrecency, touch, writeFrecency } from './frecency'
 import { withModelCommand } from './model-command'
-import { activeAfterQuery, filterPaletteRows, frecencyId, groupOrder, groupTitle, markedTitle, readPaletteMemory, rememberPaletteItem, rememberRecent, resultAnnouncement, selectedObjectId, sublistPlaceholder, visibleRows, withRecent, type PaletteItem } from './palette-model'
+import { activeAfterQuery, filterPaletteRows, frecencyId, groupOrder, groupTitle, markedTitle, readPaletteMemory, rememberPaletteItem, rememberRecent, resolveActiveAfterQuery, resultAnnouncement, selectedObjectId, sublistPlaceholder, visibleRows, withRecent, type PaletteItem } from './palette-model'
 import { argumentBreadcrumb, isObjectParam, objectTypeFilter, paletteKeyEffect, placeTargetId, tabHint, type PaletteFrame } from './palette-core'
 import { scrollPaletteActiveItem } from './palette-list-scroll'
 import { argumentCommands, type OperationRecord } from './palette-operations'
@@ -566,7 +566,7 @@ export function CommandPalette({
   const activeRow = active == null ? undefined : rows[active]
   const queryMatchId = !query.trim() || stack.length > 0
     ? ''
-    : rows[activeAfterQuery(rows, query) ?? -1]?.id ?? ''
+    : rows[resolveActiveAfterQuery(rows, query) ?? -1]?.id ?? ''
 
   const paletteListRef = useRef<HTMLDivElement>(null)
   const paletteScrollList = useRef(false)
@@ -579,7 +579,7 @@ export function CommandPalette({
       filterScrollQuery.current = query
       paletteScrollList.current = true
     }
-    setActive(activeAfterQuery(rows, query))
+    setActive(resolveActiveAfterQuery(rows, query))
   }, [query, mode, stack.length, queryMatchId, rows.length])
   useEffect(() => {
     if (mode !== 'list' || stack.length === 0 || !query.trim()) return
@@ -1512,7 +1512,7 @@ export function CommandPalette({
                     value,
                     visibleRows(value, catalog, hits, frecency, Date.now(), paletteMemory, session.objectId),
                   )
-              const next = activeAfterQuery(nextRows, value)
+              const next = resolveActiveAfterQuery(nextRows, value)
               if (next != null) setActive(next)
             }}
           />
