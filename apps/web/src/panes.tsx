@@ -127,8 +127,9 @@ import { splitDetailKeys } from './detail-fields'
 import { DetailFieldDraftHost, useDetailFieldDraft, type DetailFieldDraftHandle } from './detail-field-draft'
 import { commitDetailMeasureDraft, detailMeasureCommittedText, type MeasureFieldRecord } from './detail-measure-commit'
 import { beginLinkDrag, dispatchLinkDrop, endLinkDrag, linkDragActive, linkDragContains, linkDragLabel, linkDragMime, linkDragObjects, linkDragPayload, linkDropDecision, readLinkDrag, setLinkDragHint } from './link-drag'
-import { EMPTY_MANUAL_FILTER, groupKeyOf, isEmptyManualQuery, labelCodes, labelSearchFilter, publishSelectionLabels, SELECTION_APPLIED_EVENT, selectionFilterText, selectionMatchesType } from './assortment-filter'
+import { EMPTY_MANUAL_FILTER, isEmptyManualQuery, labelCodes, labelSearchFilter, publishSelectionLabels, SELECTION_APPLIED_EVENT, selectionFilterText, selectionMatchesType } from './assortment-filter'
 import { appendPathFilter, objectTableFilter } from './table-filter'
+import { assortmentChipActive } from './table-filters'
 import { dispatchUi, onUi } from './ui-bus'
 import { columnMoveAppliesTo } from './column-move'
 import {
@@ -2114,6 +2115,7 @@ export function ObjectTable({
           setActiveSelectionId={setActiveSelectionId}
           activeFilter={filter}
           assortments={selectionRows}
+          groupFilterApplies={!peerSource && !explicitAll}
           defs={defs.data}
         />
       </div>
@@ -2641,6 +2643,7 @@ function TableFilters({
   setActiveSelectionId,
   activeFilter,
   assortments,
+  groupFilterApplies,
   defs,
 }: {
   groupBy: string
@@ -2656,6 +2659,7 @@ function TableFilters({
   setActiveSelectionId: (value: string) => void
   activeFilter: string
   assortments: Json[]
+  groupFilterApplies: boolean
   defs?: Json
 }) {
   const clear = () => {
@@ -2677,7 +2681,10 @@ function TableFilters({
       ? dynamicFilter === activeSelectionFilter
       : emptyManual
         ? activeSelectionFilter === EMPTY_MANUAL_FILTER
-        : (nextGroup ?? '') === (activeGroup ?? '') && nextLabels === activeLabelFilter && !activeSelectionFilter
+        : groupFilterApplies
+          && (nextGroup ?? '') === (activeGroup ?? '')
+          && nextLabels === activeLabelFilter
+          && !activeSelectionFilter
     if (same) {
       setGroup(null)
       setLabelFilter('')
@@ -2698,23 +2705,20 @@ function TableFilters({
     setGroup(dynamicFilter ? null : nextGroup)
     setLabelFilter(dynamicFilter ? '' : nextLabels)
   }
-  const assortmentActive = (item: Json) => {
-    const query = (item.query as Json) ?? {}
-    const dynamicFilter = selectionFilterText(query)
-    if (dynamicFilter) return dynamicFilter === activeSelectionFilter || dynamicFilter === activeFilter
-    if (!dynamicFilter && isEmptyManualQuery(query)) return activeSelectionFilter === EMPTY_MANUAL_FILTER
-    if (activeSelectionFilter) return false
-    const wantGroup = query.group ? String(query.group) : ''
-    const wantLabels = labelSearchFilter(query, defs)
-    if (wantGroup && activeGroup) {
-      const a = groupKeyOf(wantGroup, defs)
-      const b = groupKeyOf(activeGroup, defs)
-      if (a === b || wantGroup === activeGroup) return wantLabels === activeLabelFilter
-    }
-    if (!wantGroup && wantLabels && wantLabels === activeLabelFilter && !activeGroup) return true
-    return Boolean(activeSelectionId && String(item.id ?? '') === activeSelectionId)
-  }
-  const selectionOn = Boolean(activeGroup || activeLabelFilter || activeSelectionFilter)
+  const assortmentActive = (item: Json) => assortmentChipActive(item, {
+    activeGroup,
+    activeLabelFilter,
+    activeSelectionFilter,
+    activeSelectionId,
+    activeFilter,
+    groupFilterApplies,
+    defs,
+  })
+  const selectionOn = Boolean(
+    (groupFilterApplies && activeGroup)
+    || activeLabelFilter
+    || activeSelectionFilter,
+  )
   return (
     <>
       <Button type="button" variant="ghost" className={!selectionOn && groupBy === '' ? 'filter-chip on' : 'filter-chip'} onClick={clear}>{copy.all}</Button>

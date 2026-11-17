@@ -95,6 +95,7 @@ import {
   peerSourceOf,
   viewSourceLabel,
 } from './view-source'
+import { objectTablesToAutoLinkToTree } from './structure-tree-link'
 import { useDetailFollow } from './detail-follow'
 import { MASTER_CATALOG_ID } from './catalog-ref'
 import { workspaceCatalogRef } from './catalog-scope'
@@ -301,6 +302,17 @@ export function Shell() {
   const elsewhereAnnounced = useRef<string | null>(null)
   const applyViewTypeSourceRef = useRef<(typeId: string, viewId?: string) => Promise<void>>(async () => undefined)
   const applyViewPeerSourceRef = useRef<(peerViewId: string, viewId?: string, linkType?: string) => Promise<void>>(async () => undefined)
+  const autoLinkStructureTreeRef = useRef<(treeViewId: string) => Promise<void>>(async () => undefined)
+  const openLayoutViewsRef = useRef<string[]>([])
+  useEffect(() => {
+    openLayoutViewsRef.current = []
+  }, [workspaceId])
+  useEffect(() => {
+    if (!doc) return
+    if (openLayoutViewsRef.current.length === 0) {
+      openLayoutViewsRef.current = layoutViews(doc.layout)
+    }
+  }, [doc])
   const migratedRef = useRef(new Set<string>())
   const ensuredTypes = useRef(new Set<string>())
   const workspaceIdRef = useRef<string | null>(null)
@@ -1611,9 +1623,18 @@ export function Shell() {
 
   const commitDoc = (next: LayoutDoc) => {
     if (!workspaceId || !user.user_id) return
+    const prevOpen = openLayoutViewsRef.current
+    const nextOpen = layoutViews(next.layout)
+    const addedTrees = nextOpen.filter((id) => {
+      if (prevOpen.includes(id)) return false
+      const view = viewRows(workspaceRef.current?.views ?? []).find((item) => item.id === id)
+      return view?.type === 'structure_tree'
+    })
     if (layoutFlushHeld()) {
       docRef.current = next
       setDoc(next)
+      openLayoutViewsRef.current = nextOpen
+      for (const treeId of addedTrees) void autoLinkStructureTreeRef.current(treeId)
       return
     }
     docRef.current = next
@@ -1621,6 +1642,8 @@ export function Shell() {
     saveGen.current += 1
     writeLayoutStore(layoutStorageKey(user.user_id, workspaceId), next)
     setDoc(next)
+    openLayoutViewsRef.current = nextOpen
+    for (const treeId of addedTrees) void autoLinkStructureTreeRef.current(treeId)
   }
   applyRef.current = (name, args) => {
     const current = docRef.current
@@ -1715,6 +1738,24 @@ export function Shell() {
     }
     workspaceRef.current = nextSurface
     queryClient.setQueryData(['workspace', surfaceNow.id], nextSurface)
+    } catch (reason) {
+      reportWriteError(reason)
+    }
+  }
+
+  autoLinkStructureTreeRef.current = async (treeViewId: string) => {
+    try {
+      const surfaceNow = workspaceRef.current
+      const docNow = docRef.current
+      if (!surfaceNow || surfaceNow.locked || !docNow) return
+      const defs = queryClient.getQueryData<Json>(['definitions'])
+      const types = typeNames(defs)
+      const openIds = layoutViews(docNow.layout)
+      const views = viewRows(surfaceNow.views)
+      const targets = objectTablesToAutoLinkToTree(treeViewId, views, types, openIds, defs)
+      for (const targetId of targets) {
+        await applyViewPeerSourceRef.current(treeViewId, targetId)
+      }
     } catch (reason) {
       reportWriteError(reason)
     }
@@ -2115,9 +2156,15 @@ export function Shell() {
                 title: prompt ? agentTabTitle(prompt) : displayViewTitle(view, typeCatalog, openTypeKey),
                 prompt,
                 sourceLabel: viewSourceLabel(view, typeCatalog, workspaceCatalogRef(surface), catalogNamesById, peerLabelFor(view)),
+                sourceLabelClearable: view.type === 'object_table' && Boolean(peerSourceOf(view.state)),
               }
             })}
             onChange={commitDoc}
+            onSourceLabelClear={(viewId) => {
+              const view = viewRows(surface.views).find((item) => item.id === viewId)
+              const bound = view ? typeOfView(view, typeCatalog) : undefined
+              if (bound?.id) void applyViewTypeSourceRef.current(bound.id, viewId)
+            }}
             agentViews={agentViews}
             renderView={(item) => {
               const full = viewRows(surface.views).find((view) => view.id === item.id)
