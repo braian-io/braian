@@ -11,6 +11,17 @@ export function isPaletteListNavKey(key: string): boolean {
   return LIST_NAV_KEYS.has(key)
 }
 
+/** Keys that change level or the active row without using ArrowDown/Up. */
+export function isPaletteListTransitionKey(key: string): boolean {
+  return (
+    isPaletteListNavKey(key)
+    || key === 'ArrowRight'
+    || key === 'ArrowLeft'
+    || key === 'Backspace'
+    || key === 'Enter'
+  )
+}
+
 /** Keep the active row inside a scrollable palette list; adjust scrollTop only when needed. */
 export function scrollPaletteActiveItem(list: HTMLElement | null | undefined): void {
   if (!list) return

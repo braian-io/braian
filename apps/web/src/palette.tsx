@@ -568,22 +568,42 @@ export function CommandPalette({
     ? ''
     : rows[activeAfterQuery(rows, query) ?? -1]?.id ?? ''
 
+  const paletteListRef = useRef<HTMLDivElement>(null)
+  const paletteScrollList = useRef(false)
+  const paletteStackScroll = useRef(false)
+  const paletteActiveFromPointer = useRef(false)
+  const filterScrollQuery = useRef('')
   useEffect(() => {
     if (mode !== 'list' || stack.length > 0 || !query.trim()) return
+    if (filterScrollQuery.current !== query) {
+      filterScrollQuery.current = query
+      paletteScrollList.current = true
+    }
     setActive(activeAfterQuery(rows, query))
   }, [query, mode, stack.length, queryMatchId])
   useEffect(() => {
     if (mode !== 'list' || stack.length === 0 || !query.trim()) return
+    paletteScrollList.current = true
     setActive(0)
   }, [query, mode, stack.length])
-  const paletteListRef = useRef<HTMLDivElement>(null)
-  const paletteKeyboardScroll = useRef(false)
   const openStructurePlacementRef = useRef<'center' | 'right'>('center')
+  useEffect(() => {
+    paletteStackScroll.current = true
+  }, [stack.length])
   useLayoutEffect(() => {
-    if (!paletteKeyboardScroll.current) return
-    paletteKeyboardScroll.current = false
+    if (mode !== 'list') return
+    if (paletteActiveFromPointer.current) {
+      paletteActiveFromPointer.current = false
+      paletteScrollList.current = false
+      paletteStackScroll.current = false
+      return
+    }
+    const shouldScroll = paletteScrollList.current || paletteStackScroll.current
+    paletteScrollList.current = false
+    paletteStackScroll.current = false
+    if (!shouldScroll) return
     scrollPaletteActiveItem(paletteListRef.current)
-  }, [active, rows.length])
+  }, [active, rows.length, stack.length, queryMatchId, mode])
 
   const needsWorkspace = (commandId: string) =>
     commandId.startsWith('view:')
@@ -1337,6 +1357,7 @@ export function CommandPalette({
       return
     }
     if (effect.type === 'back') {
+      paletteScrollList.current = true
       setStack((current) => current.slice(0, -1))
       setActive(null)
       return
@@ -1347,6 +1368,7 @@ export function CommandPalette({
       return
     }
     if (effect.type === 'actions') {
+      paletteScrollList.current = true
       openActions(rows[effect.index])
       return
     }
@@ -1358,7 +1380,7 @@ export function CommandPalette({
       if (item) run(item)
       return
     }
-    if (effect.type === 'move') paletteKeyboardScroll.current = true
+    if (effect.type === 'move') paletteScrollList.current = true
     setActive(effect.index)
   }
 
@@ -1569,7 +1591,10 @@ export function CommandPalette({
                         className={`${index === selected ? 'hit on' : 'hit'}${row.group === 'ask' ? ' ask' : ''}${row.disabled ? ' disabled' : ''}`}
                         disabled={row.disabled}
                         aria-disabled={row.disabled ? true : undefined}
-                        onPointerDown={() => setActive(index)}
+                        onPointerDown={() => {
+                          paletteActiveFromPointer.current = true
+                          setActive(index)
+                        }}
                         onSelect={() => run(row)}
                       >
                         <span className="hit-copy">
@@ -1599,7 +1624,10 @@ export function CommandPalette({
             role="option"
             aria-selected={rows.indexOf(askRow) === selected}
             className={rows.indexOf(askRow) === selected ? 'hit on ask' : 'hit ask'}
-            onPointerDown={() => setActive(rows.indexOf(askRow))}
+            onPointerDown={() => {
+              paletteActiveFromPointer.current = true
+              setActive(rows.indexOf(askRow))
+            }}
             onSelect={() => run(askRow)}
           >
             <span className="hit-copy">
