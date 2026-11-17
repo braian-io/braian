@@ -75,6 +75,58 @@ it('lets every cell give way in a split that contains Detail', () => {
   expect(cells.map((cell) => cell.style.flex.split(' ').slice(0, 2).join(' '))).toEqual(['0 1', '0 1', '0 1'])
 })
 
+it('marks a nested Products split that contains Detail so the table can keep its floor', () => {
+  const layout: LayoutDoc = {
+    id: 'ws',
+    title: 'Products',
+    layout: {
+      type: 'split',
+      dir: 'horizontal',
+      ratios: [0.22, 0.78],
+      children: [
+        { type: 'tabs', views: ['tree'], active: 0 },
+        {
+          type: 'split',
+          dir: 'horizontal',
+          ratios: [0.5, 0.5],
+          children: [
+            { type: 'tabs', views: ['products'], active: 0 },
+            {
+              type: 'split',
+              dir: 'horizontal',
+              ratios: [0.5, 0.5],
+              children: [
+                { type: 'tabs', views: ['articles'], active: 0 },
+                { type: 'tabs', views: ['detail'], active: 0 },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    focus: 'products',
+  }
+  const { container } = render(
+    <WorkspaceDock
+      doc={layout}
+      views={[
+        { id: 'tree', title: 'Food', type: 'structure_tree' },
+        { id: 'products', title: 'Products', type: 'object_table' },
+        { id: 'articles', title: 'Articles', type: 'object_table' },
+        { id: 'detail', title: 'Detail', type: 'object_detail' },
+      ]}
+      onChange={() => undefined}
+      renderView={() => <div />}
+      onAddView={() => undefined}
+    />,
+  )
+  const middle = container.querySelector<HTMLElement>(".split.horizontal[data-path='1']")
+  expect(middle?.dataset.hasDetail).toBe('true')
+  const cells = [...(middle?.querySelectorAll<HTMLElement>(':scope > .split-cell') ?? [])]
+  expect(cells.map((cell) => cell.style.flex.split(' ').slice(0, 2).join(' '))).toEqual(['0 1', '0 1'])
+  expect(cells.map((cell) => cell.style.position)).toEqual(['', ''])
+})
+
 it('does not mark the agent dock wrapper as a detail split', () => {
   const layout: LayoutDoc = {
     id: 'ws',

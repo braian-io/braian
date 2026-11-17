@@ -209,14 +209,17 @@ function SplitNode({ frame, node, path, inAgentDock = false }: { frame: Frame; n
     return <Pane frame={frame} leaf={{ ...leaf, path }} />
   }
   const viewTypes = new Map(frame.viewList.map((view) => [view.id, view.type]))
-  // Detail flex rules apply only when Detail is a direct pane in this split.
-  // An agent edge-dock wrapper must not inherit them on the whole left subtree.
-  const hasDetail = splitHasDirectDetail(node, viewTypes)
+  const directDetail = splitHasDirectDetail(node, viewTypes)
   const lockRatios = splitLocksAgentDock(node, viewTypes)
+  // Same rule as main: a split that contains Detail anywhere can shrink so the
+  // table floor (440px once the split is at least 640px) holds and Detail
+  // gives way. The agent-dock wrapper also contains Detail, but marking it
+  // would make the whole dock the container and floor nested tables against it.
+  const hasDetail = !lockRatios && views(node).some((id) => viewTypes.get(id) === 'object_detail')
   const focusedType = frame.viewList.find((view) => view.id === frame.doc.focus)?.type
   const freezeCatalog =
     inAgentDock
-    && hasDetail
+    && directDetail
     && node.dir === 'horizontal'
     && node.children.length === 2
     && focusedType !== 'agents'
