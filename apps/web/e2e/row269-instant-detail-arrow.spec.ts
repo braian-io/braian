@@ -11,6 +11,11 @@ async function login(page: Page) {
   await expect(page.getByTestId('workspace')).toBeVisible()
 }
 
+async function detailTitle(page: Page) {
+  const detail = page.getByTestId('object-detail')
+  return (await detail.locator('.detail-title strong').innerText()).trim()
+}
+
 test('arrowing through rows keeps Detail visible without a loading screen', async ({ page }) => {
   test.setTimeout(120_000)
   await login(page)
@@ -25,9 +30,12 @@ test('arrowing through rows keeps Detail visible without a loading screen', asyn
   await grid.focus()
 
   for (let step = 0; step < 6; step += 1) {
+    const row = rows.nth(step)
+    const name = (await row.locator('[data-column="name"]').innerText()).trim()
     await page.keyboard.press('ArrowDown')
     await expect(page.getByTestId('object-detail')).toBeVisible()
     await expect(page.getByTestId('detail-loading')).toHaveCount(0)
     await expect(page.getByTestId('state-loading')).toHaveCount(0)
+    await expect.poll(() => detailTitle(page)).toBe(name)
   }
 })

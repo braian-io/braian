@@ -95,8 +95,12 @@ show`; add a view from the palette to fill it again.
 ## Detail and the table share space
 
 Arrow keys in an object table select the row and open Detail from the list data right
-away; the full object fills in while you read what is already on screen. Neighbour rows
-are prefetched so normal up/down movement stays instant.
+away. Fast arrowing still updates the highlight and a list preview on every step; only
+the network load for the full object (body, owners, proposals) is debounced to the row
+you land on. The landed row and up to three neighbors on each side are prefetched so
+normal up/down movement stays instant without one request per key repeat. Fields and
+links that are not in the list preview show skeletons until the full object arrives;
+Save stays off until then.
 
 When an object table and a Detail view sit side by side, the table keeps a usable
 minimum width. The split never shrinks it down to a single column, so the Name column

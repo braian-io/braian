@@ -92,18 +92,21 @@ export async function loadObjectDetail(queryClient: QueryClient, id: string): Pr
   }
 }
 
-export function prefetchObjectDetails(queryClient: QueryClient, ids: string[]): void {
+export function prefetchObjectDetails(queryClient: QueryClient, ids: string[]): string[] {
   const unique = [...new Set(ids.filter(Boolean))]
+  const scheduled: string[] = []
   for (const id of unique) {
     const state = queryClient.getQueryState(['object', id])
     if (state?.fetchStatus === 'fetching') continue
     if (state?.data && !isListPreview(state.data)) continue
+    scheduled.push(id)
     void queryClient.prefetchQuery({
       queryKey: ['object', id],
       queryFn: () => loadObjectDetail(queryClient, id),
       ...objectFetchQueryOptions(),
     })
   }
+  return scheduled
 }
 
 export const OBJECT_NAV_DEBOUNCE_MS = 100
