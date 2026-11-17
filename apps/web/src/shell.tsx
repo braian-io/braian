@@ -87,7 +87,6 @@ import {
 } from './active-workspace'
 import { healAgentDockLayout } from './agent-layout-migrate'
 import { decideAgentToggle } from './agent-chat-toggle'
-import { agentsTableNeedsCatalogTab, agentsTablePlacementTarget } from './agents-table-layout'
 import { healDataModelWorkspace, isKnownViewType, layoutHasMissingViews, migrateLegacyModelViews } from './model-workspace-migrate'
 import { persistWorkspaceMigration } from './workspace-migration-persist'
 import { commandPlaceholder, displayViewTitle, migrateSavedWorkspace, singularOf, typeNames, typeOfView } from './type-labels'
@@ -1936,17 +1935,13 @@ export function Shell() {
         workspaceRef.current = nextSurface
         queryClient.setQueryData(['workspace', surfaceNow.id], nextSurface)
       }
-      let current = docRef.current
+      const current = docRef.current
       if (!current || !found) return
-      const catalog = views.map((view) => ({ id: view.id, type: view.type, title: view.title }))
-      const placementTarget = agentsTablePlacementTarget(current.layout, catalog)
-      const placeInCatalog = agentsTableNeedsCatalogTab(current.layout, found.id, placementTarget)
+      const open = layoutViews(current.layout).includes(found.id)
       const result = applyLayoutCommand(
         current,
         'ui.open_view',
-        placeInCatalog && placementTarget
-          ? { id: found.id, zone: 'center', target: placementTarget }
-          : { id: found.id },
+        open ? { id: found.id } : { id: found.id, zone: 'center' },
         {
           views: views.map((view) => ({ id: view.id, title: view.title, type: view.type })),
           canonical: canonicalRef.current,
