@@ -1,4 +1,4 @@
-import { mainTable, setTheme } from './ui'
+import { mainTable, paneWithTab, setTheme } from './ui'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
 
@@ -86,11 +86,19 @@ async function openModelGraph(page: Page) {
 }
 
 async function openArticleGraph(page: Page) {
-  const tab = page.locator('nav.tabs').getByRole('button', { name: /^Articles/ })
-  await tab.click()
-  await expect(tab).toHaveClass(/active/)
-  await page.locator('.pane-tab', { hasText: 'Graph' }).first().click()
+  const workspace = page.locator('nav.tabs').getByRole('button', { name: /^Articles/ })
+  await workspace.click()
+  await expect(workspace).toHaveClass(/active/)
+  const table = paneWithTab(page, 'Articles')
+  await expect(table.getByTestId('object-table')).toBeVisible({ timeout: 60_000 })
+  const row = table.getByTestId('object-row').first()
+  await expect(row).toBeVisible()
+  await row.click()
+  const graphTab = page.locator('.pane-tab[data-view-type="graph"]').first()
+  await expect(graphTab).toBeVisible({ timeout: 60_000 })
+  await graphTab.click()
   await expect(page.locator('canvas[data-testid=graph]')).toBeVisible()
+  await expect(page.locator('canvas[data-testid=graph]')).toHaveAttribute('data-settled', 'true', { timeout: 40_000 })
 }
 
 test('model graph full size keeps the toolbar below the app header', async ({ page }) => {
