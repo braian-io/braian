@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEve
 import { ChevronRight } from 'lucide-react'
 import { Button } from './components/ui/button'
 import { copy } from './i18n'
+import { focusAfterMenuTab } from './menu-keyboard'
 import {
   commandTitle,
   commandsForContext,
@@ -439,6 +440,14 @@ export function SharedContextMenuHost({
         queueMicrotask(() => {
           suppressOpenOnFocus.current = false
         })
+        return
+      }
+      const trigger = restoreFocus.current
+      if (event.key === 'Tab') {
+        close(false)
+        if (trigger && trigger !== document.body && trigger.isConnected) {
+          focusAfterMenuTab(trigger, event.shiftKey)
+        }
         return
       }
       close()
