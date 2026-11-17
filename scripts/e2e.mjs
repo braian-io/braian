@@ -142,6 +142,7 @@ const specs = [
   'e2e/row239-detail-width.spec.ts',
   'e2e/row240-contrast.spec.ts',
   'e2e/row242-search-reset.spec.ts',
+  'e2e/row229-search-isolation.spec.ts',
 ]
 
 // Explicit compose targeting. The default keeps `just up` and CI on the
@@ -264,11 +265,11 @@ const measuredSeconds = {
   'e2e/palette-stack.spec.ts': 5,
   'e2e/palette-drill.spec.ts': 26,
   'e2e/agent-tab.spec.ts': 53,
-  'e2e/agent-presence.spec.ts': 37,
+  'e2e/agent-presence.spec.ts': 42,
   'e2e/agent-session.spec.ts': 32,
   'e2e/agent-rename.spec.ts': 5,
   'e2e/agent-chat-dock.spec.ts': 50,
-  'e2e/agent-chat-pane.spec.ts': 12,
+  'e2e/agent-chat-pane.spec.ts': 20,
   'e2e/agent-chat-keyboard.spec.ts': 60,
   'e2e/open-type-view-ready.spec.ts': 4,
   'e2e/duplicate-type-views.spec.ts': 6,
@@ -332,6 +333,7 @@ const measuredSeconds = {
   'e2e/row239-detail-width.spec.ts': 45,
   'e2e/row240-contrast.spec.ts': 45,
   'e2e/row242-search-reset.spec.ts': 200,
+  'e2e/row229-search-isolation.spec.ts': 240,
 }
 
 const reseedSeconds = 4

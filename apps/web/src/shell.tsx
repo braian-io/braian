@@ -17,7 +17,9 @@ import { CatalogSelector } from './catalog-selector'
 import { api, freeObject, jsonRecord, keepaliveJsonPut, operationId, recordTitle, textValue, type Json } from './api'
 import { AssortmentList, SelectionHost } from './assortments'
 import { humanizeLive, liveOperation, objectIdFromLive } from './activity'
-import { markObjectGone } from './object-gone'
+import { loadObjectDetail, objectQueryStaleTime } from './object-list-preview'
+import { markObjectGone, objectFetchQueryOptions } from './object-gone'
+import { useObjectLand } from './use-object-land'
 import { ImportScreen } from './import/view'
 import { dropImportFiles, onImportLive, openImport, resumeImport, setImportDrag } from './import/controller'
 import { importRefreshesObjects, isFileDrag } from './import/model'
@@ -100,7 +102,9 @@ import {
 import { objectTablesToAutoLinkToTree } from './structure-tree-link'
 import {
   findStructureTreeView,
+  mergeStructureTreeViewState,
   resolveStructureOpenTarget,
+  structureTreeViewNeedsBackfill,
   structureTreeViewState,
   structureTreeViewTitle,
 } from './structure-tree-view'
@@ -470,10 +474,15 @@ export function Shell() {
     queryFn: () => api.get('/v1/workspaces/{id}', { params: { path: { id: workspaceId ?? '' } } }),
     enabled: Boolean(workspaceId),
   })
+  const { settled: objectFetchSettled } = useObjectLand(objectId)
+  const openedPreview = queryClient.getQueryData(['object', objectId])
   const opened = useQuery({
     queryKey: ['object', objectId],
-    queryFn: () => api.get('/v1/objects/{id}', { params: { path: { id: objectId ?? '' } } }),
-    enabled: Boolean(objectId),
+    queryFn: () => loadObjectDetail(queryClient, objectId ?? ''),
+    enabled: Boolean(objectId) && objectFetchSettled,
+    placeholderData: () => queryClient.getQueryData(['object', objectId]),
+    ...objectFetchQueryOptions(),
+    staleTime: objectQueryStaleTime(openedPreview),
   })
   const detailListViews = useMemo(
     () => viewRows(workspace.data?.views).map((view) => ({ id: view.id, type: view.type })),
@@ -1147,7 +1156,8 @@ export function Shell() {
 
 
   useEffect(() => {
-    publishMarked(objectId, opened.data?.type ?? null)
+    const type = opened.data?.type
+    publishMarked(objectId, type == null ? null : String(type))
   }, [objectId, opened.data?.type])
 
   useEffect(() => {
@@ -1981,10 +1991,28 @@ export function Shell() {
     void (async () => {
       try {
         let views: View[] = viewRows(surfaceNow.views)
-        let tree = findStructureTreeView(views, structureKey, defs)
+        const matched = findStructureTreeView(views, structureKey, defs)
+        let tree = matched ? views.find((view) => view.id === matched.id) : undefined
         if (!tree && surfaceNow.locked) {
           toast.error(copy.layoutLocked)
           return
+        }
+        if (tree && structureTreeViewNeedsBackfill(tree, structureKey, defs)) {
+          const state = freeObject(mergeStructureTreeViewState(tree, structureKey, defs))
+          await api.post('/v1/views', {
+            body: {
+              id: tree.id,
+              workspace_id: surfaceNow.id,
+              type: tree.type,
+              title: tree.title,
+              pane: tree.pane ?? 'center',
+              position: tree.position ?? 0,
+              state,
+            },
+          })
+          const updated: View = { ...tree, state }
+          tree = updated
+          views = views.map((view) => (view.id === updated.id ? updated : view))
         }
         if (!tree) {
           const id = crypto.randomUUID()

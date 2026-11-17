@@ -247,7 +247,7 @@ test('Ctrl+K lists agents and Enter opens the tab', async ({ page }) => {
   await page.keyboard.press('Enter')
   await expect(page.getByTestId('palette-crumb')).toContainText('Agents ›')
   await expect(page.getByTestId('palette-input')).toHaveAttribute('placeholder', 'Search agents…')
-  await page.getByTestId('palette-input').fill('before the palette')
+  await page.getByTestId('palette-input').fill('palette lists')
   await expect.poll(async () => palette.locator('.hit.on').count()).toBeGreaterThan(0)
   await expect(palette.locator('.hit.on')).toContainText(sessionName)
   if (process.env.BRAIAN_AGENT_SHOTS) {
@@ -260,7 +260,7 @@ test('Ctrl+K lists agents and Enter opens the tab', async ({ page }) => {
     await page.keyboard.press('Control+k')
     await page.getByTestId('palette-input').fill('Agents')
     await page.keyboard.press('Enter')
-    await page.getByTestId('palette-input').fill('before the palette')
+    await page.getByTestId('palette-input').fill('palette lists')
     await expect(page.getByTestId('command-palette').locator('.hit.on')).toContainText(sessionName)
     await page.screenshot({ path: `${dir}/agent-palette-${other}.png` })
   }
@@ -268,6 +268,13 @@ test('Ctrl+K lists agents and Enter opens the tab', async ({ page }) => {
   await expect(palette).toHaveCount(0)
   await expect(agentTab(page, title)).toBeVisible()
   await expect(agentView(page, title).getByTestId('agent-question')).toBeVisible()
+  await page.keyboard.press('Control+k')
+  await page.getByTestId('palette-input').fill('Agents table')
+  await page.keyboard.press('Enter')
+  const agentsPane = page.locator('section.pane').filter({ has: page.getByTestId('agents-table') })
+  await expect(agentsPane).toBeVisible({ timeout: 30_000 })
+  await agentsPane.locator('.search-field input').fill('palette lists')
+  await expect(agentsPane.getByTestId('agent-table-row').filter({ hasText: sessionName })).toBeVisible()
 })
 
 test('a long active tab keeps its start visible in a crowded strip', async ({ page }) => {

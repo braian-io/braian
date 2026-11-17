@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { takeObjectNavReplace } from './object-nav-signal'
 
 /** URL search params that mirror what the shell is showing. */
 export type UrlState = {
@@ -188,9 +189,19 @@ export function useUrlStateSync(input: {
     // replace instead of pushing.
     const backWorthy =
       parsed.ws !== next.ws || parsed.view !== next.view || parsed.object !== next.object
+    const objectOnly =
+      parsed.ws === next.ws
+      && parsed.view === next.view
+      && parsed.catalog === next.catalog
+      && parsed.object !== next.object
     navigate({
       search: next,
-      replace: Boolean(forceReplace) || !synced.current || !backWorthy || settling.current || navigationInFlight.current,
+      replace: Boolean(forceReplace)
+        || (objectOnly && takeObjectNavReplace())
+        || !synced.current
+        || !backWorthy
+        || settling.current
+        || navigationInFlight.current,
     })
     lastWritten.current = nextKey
     navigationInFlight.current = true

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { agentDisplayTitleFallback, agentDockTabSessionLabel, agentNoticeText, agentNotices, agentPaletteRows, agentRunPrompt, agentRunsForWorkspace, agentSessionAccessibleDescription, agentSessionHeaderTitle, agentStatusLabel, agentTabTitle, agentViewTabPrompt, agentsPaletteRoot, backgroundNotices, backgroundWorkingCount, cleanAgentError, mergeRunSummary, sortAgentRuns, type AgentRunSummary } from './agent-runs'
+import { agentDisplayTitleFallback, agentDockTabSessionLabel, agentNoticeText, agentNotices, agentPaletteRows, agentRunPrompt, agentRunSearchHaystack, agentRunsForWorkspace, agentSessionAccessibleDescription, agentSessionHeaderTitle, agentStatusLabel, agentTabTitle, agentViewTabPrompt, agentsPaletteRoot, backgroundNotices, backgroundWorkingCount, cleanAgentError, mergeRunSummary, sortAgentRuns, type AgentRunSummary } from './agent-runs'
 
 function run(patch: Partial<AgentRunSummary>): AgentRunSummary {
   return {
@@ -143,10 +143,24 @@ describe('agent run presentation', () => {
     expect(agentViewTabPrompt({ type: 'agent', state: { prompt: 'rename Cheddar' } })).toBe('rename Cheddar')
   })
 
-  it('truncates long prompts for the header fallback', () => {
-    const long = `${'x'.repeat(100)} tail`
-    expect(agentDisplayTitleFallback(long)).toMatch(/…$/)
-    expect(agentDisplayTitleFallback(long).length).toBeLessThanOrEqual(81)
+  it('truncates long prompts to six words for the header fallback', () => {
+    const long = Array.from({ length: 12 }, (_, index) => `word${index}`).join(' ')
+    expect(agentDisplayTitleFallback(long)).toBe('word0 word1 word2 word3 word4 word5…')
+  })
+
+  it('indexes the first message for agent search', () => {
+    const haystack = agentRunSearchHaystack(run({
+      title: 'Winter plan',
+      first_message: 'ask me before the palette lists it',
+      status: 'waiting',
+      question: 'Which catalog?',
+    }))
+    expect(haystack.toLowerCase()).toContain('palette lists')
+    const rows = agentPaletteRows([run({
+      title: 'Winter plan',
+      first_message: 'ask me before the palette lists it',
+    })])
+    expect(rows[0]?.keywords?.join(' ').toLowerCase()).toContain('palette lists')
   })
 
   it('uses the short title in the header but keeps the full prompt accessible', () => {

@@ -62,11 +62,24 @@ test('grid focus alone does not select; arrows select Detail; Enter/Space confir
   const secondKey = (await second.locator('[data-column="number"], [data-column="key"]').first().innerText()).trim()
   expect(secondKey).not.toBe(secondObjectId)
   await expect.poll(() => objectParam(page)).toBe(secondKey)
+  const secondName = (await second.locator('[data-column="name"]').innerText()).trim()
+  await expect.poll(async () => (await page.getByTestId('object-detail').locator('.detail-title strong').innerText()).trim()).toBe(secondName)
+
+  // Space still confirms the focused row and keeps Detail on it.
+  await page.keyboard.press('ArrowUp')
+  const firstName = (await first.locator('[data-column="name"]').innerText()).trim()
+  await expect.poll(async () => (await page.getByTestId('object-detail').locator('.detail-title strong').innerText()).trim()).toBe(firstName)
+  await page.keyboard.press('Space')
+  await expect(first).toHaveAttribute('aria-selected', 'true')
+  await expect.poll(() => objectParam(page)).toBe(firstKey)
+  await expect.poll(async () => (await page.getByTestId('object-detail').locator('.detail-title strong').innerText()).trim()).toBe(firstName)
 
   // Enter still confirms the focused row.
+  await page.keyboard.press('ArrowDown')
   await page.keyboard.press('Enter')
   await expect(second).toHaveAttribute('aria-selected', 'true')
   await expect.poll(() => objectParam(page)).toBe(secondKey)
+  await expect.poll(async () => (await page.getByTestId('object-detail').locator('.detail-title strong').innerText()).trim()).toBe(secondName)
 
   // Left/Right still move the active cell on the focused row.
   const activeCell = second.locator('.cell.active-cell')

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Eye, SendToBack } from 'lucide-react'
 import {
@@ -204,6 +204,7 @@ export function AgentView({ runId, title: viewTitle }: AgentViewProps) {
   const [error, setError] = useState('')
   const [announced, setAnnounced] = useState('')
   const previousStatus = useRef('')
+  const descriptionId = useId()
   const runQueryKey = ['agent-run', runId, 'pane'] as const
   const run = useQuery({
     // Pane query is separate from any warm create/run-list cache on ['agent-run', id].
@@ -298,11 +299,17 @@ export function AgentView({ runId, title: viewTitle }: AgentViewProps) {
   }, [run.data?.messages.length, run.data?.status])
   const accessibleTitle = run.data ? agentSessionAccessibleDescription(run.data) : viewTitle
   const heading = run.data ? agentSessionHeaderTitle(run.data) : viewTitle
+  const sessionTitle = (
+    <>
+      {accessibleTitle ? <p id={descriptionId} className="sr-only" data-testid="agent-session-description">{accessibleTitle}</p> : null}
+      <h2 data-testid="agent-session-title" title={accessibleTitle} aria-describedby={accessibleTitle ? descriptionId : undefined}>{heading}</h2>
+    </>
+  )
   if (run.isPending) {
     return (
       <div className="agent-view" data-testid="agent-view" data-run={runId} ref={rootRef}>
         <header className="agent-view-head">
-          <h2 data-testid="agent-session-title" title={accessibleTitle} aria-label={accessibleTitle}>{heading}</h2>
+          {sessionTitle}
         </header>
         <div className="agent-skeleton" data-testid="agent-skeleton" aria-busy="true" aria-live="polite">
           <i />
@@ -317,7 +324,7 @@ export function AgentView({ runId, title: viewTitle }: AgentViewProps) {
     return (
       <div className="agent-view" data-testid="agent-view" data-run={runId} ref={rootRef}>
         <header className="agent-view-head">
-          <h2 data-testid="agent-session-title" title={accessibleTitle} aria-label={accessibleTitle}>{heading}</h2>
+          {sessionTitle}
         </header>
         {missing ? (
           <p className="error" role="alert" data-testid="agent-missing">{copy.agentRunMissing}</p>
@@ -350,7 +357,7 @@ export function AgentView({ runId, title: viewTitle }: AgentViewProps) {
     >
       <p className="sr-only" aria-live="polite" data-testid="agent-status-live">{announced}</p>
       <header className="agent-view-head">
-        <h2 data-testid="agent-session-title" title={accessibleTitle} aria-label={accessibleTitle}>{heading}</h2>
+        {sessionTitle}
         <span className="meta-chip" data-testid="agent-status" data-status={data.status}>{statusLabel(data.status)}</span>
         <div className="agent-head-actions">
           {data.mode === 'foreground' ? (

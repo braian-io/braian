@@ -103,8 +103,12 @@ show`; add a view from the palette to fill it again.
 ## Detail and the table share space
 
 Arrow keys in an object table select the row and open Detail from the list data right
-away; the full object fills in while you read what is already on screen. Neighbour rows
-are prefetched so normal up/down movement stays instant.
+away. Fast arrowing still updates the highlight and a list preview on every step; only
+the network load for the full object (body, owners, proposals) is debounced to the row
+you land on. The landed row and up to three neighbors on each side are prefetched so
+normal up/down movement stays instant without one request per key repeat. Fields and
+links that are not in the list preview show skeletons until the full object arrives;
+Save stays off until then.
 
 When an object table and a Detail view sit side by side, the table keeps a usable
 minimum width. The split never shrinks it down to a single column, so the Name column
@@ -209,9 +213,11 @@ cannot be deleted.
 - The free-text search in the table toolbar (the quick filter) is not saved as a view
   preference. Closing and opening the view again, or reloading the page, starts with
   an empty search box and the full table. While the view stays open, the search stays
-  until you clear it: clear the search box, or press `Clear search` in the empty state
-  when the query matches nothing. The empty state names the query. Press `/` to focus
-  the quick filter.
+  in this browser tab only: another session or user does not see it, and the server
+  never keeps a toolbar search on the shared view row. While you type, remote UI
+  commands cannot replace the search text. Clear it with the search box, or press
+  `Clear search` in the empty state when the query matches nothing. The empty state
+  names the query. Press `/` to focus the quick filter.
 - An object selection is not part of the saved view state.
 
 The layout is saved automatically per workspace and per user. Local changes are

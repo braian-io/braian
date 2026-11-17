@@ -80,6 +80,11 @@ The agent runs in the context you are looking at: the focused view, the selected
 and the current filter. It proposes changes; a person reviews and saves them. See
 [Deleting and restore](/docs/deleting-and-restore) for what the agent may not do.
 
+`Agents ›` and **Agents table** list your sessions. Their search boxes match the
+short **session title**, the **full first message**, status labels, and — while a run
+is waiting — the agent's latest question. Words that appear only in the first message
+still find the session after the title has been shortened.
+
 AI replies require a model to be configured on the server. If it is not, the answer is
 `AI isn't set up for this workspace`, and the agent tab explains that an administrator
 sets `OPENAI_API_KEY` before the agent can reply.

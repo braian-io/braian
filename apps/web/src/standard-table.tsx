@@ -16,6 +16,8 @@ export type StandardTableChromeProps = {
   /** Generic text filter shared by every table that opts in. */
   filterValue?: string
   onFilterChange?: (value: string) => void
+  onFilterFocus?: () => void
+  onFilterBlur?: () => void
   filterOnKeyDown?: (event: ReactKeyboardEvent<HTMLInputElement>) => void
   filterPlaceholder?: string
   /** When true, show Save (same action as Ctrl+S). */
@@ -37,6 +39,8 @@ export function StandardTableChrome({
   rowCount,
   filterValue,
   onFilterChange,
+  onFilterFocus,
+  onFilterBlur,
   filterOnKeyDown,
   filterPlaceholder = copy.search,
   reviewVisible = false,
@@ -55,6 +59,8 @@ export function StandardTableChrome({
               placeholder={filterPlaceholder}
               value={filterValue ?? ''}
               onChange={(event) => onFilterChange(event.target.value)}
+              onFocus={onFilterFocus}
+              onBlur={onFilterBlur}
               onKeyDown={filterOnKeyDown}
             />
             <Kbd>/</Kbd>
