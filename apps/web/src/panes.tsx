@@ -77,6 +77,7 @@ import {
   prefetchObjectDetails,
   seedObjectListPreview,
 } from './object-list-preview'
+import { objectNavDebounceMs } from './object-nav-debounce'
 import { markObjectNavReplace, notifyObjectLandImmediate } from './object-nav-signal'
 import { useObjectLand } from './use-object-land'
 import {
@@ -1501,12 +1502,18 @@ export function ObjectTable({
       runFetches()
       return
     }
+    const debounceMs = objectNavDebounceMs()
+    if (debounceMs === 0) {
+      notifyObjectLandImmediate(row.id)
+      runFetches()
+      return
+    }
     if (objectNavTimer.current) clearTimeout(objectNavTimer.current)
     objectNavTimer.current = setTimeout(() => {
       objectNavTimer.current = null
       notifyObjectLandImmediate(row.id)
       runFetches()
-    }, OBJECT_NAV_DEBOUNCE_MS)
+    }, debounceMs)
   }
   useEffect(() => () => {
     if (objectNavTimer.current) clearTimeout(objectNavTimer.current)

@@ -1,5 +1,11 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Browser, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
+import {
+  ROW269_GET_BUDGET_MAX,
+  ROW269_MEASURED_WITH_DEBOUNCE,
+  ROW269_MEASURED_WITHOUT_DEBOUNCE_MIN,
+  ROW269_RAPID_ARROWS,
+} from '../src/object-nav-get-budget.harness'
 import { mainTable } from './ui'
 
 async function login(page: Page) {
@@ -11,7 +17,12 @@ async function login(page: Page) {
   await expect(page.getByTestId('workspace')).toBeVisible()
 }
 
-async function openProducts(page: Page) {
+async function openProducts(page: Page, disableDebounce = false) {
+  if (disableDebounce) {
+    await page.addInitScript(() => {
+      window.__BRAIAN_DISABLE_OBJECT_NAV_DEBOUNCE__ = true
+    })
+  }
   await login(page)
   await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
   const table = mainTable(page)
@@ -40,6 +51,31 @@ async function detailTitle(page: Page) {
   return (await detail.locator('.detail-title strong').innerText()).trim()
 }
 
+async function countRapidDownObjectGets(page: Page, disableDebounce: boolean) {
+  await openProducts(page, disableDebounce)
+  const gets: string[] = []
+  await page.route('**/v1/objects/**', async (route) => {
+    if (route.request().method() === 'GET' && objectReads(route.request().url())) gets.push(route.request().url())
+    await route.continue()
+  })
+  await page.keyboard.press('ArrowDown')
+  await expect(page.getByTestId('object-detail')).toBeVisible()
+  await expect.poll(async () => page.getByTestId('object-detail').getAttribute('data-detail-ready')).toBe('true')
+  gets.length = 0
+  for (let step = 0; step < ROW269_RAPID_ARROWS; step += 1) await page.keyboard.press('ArrowDown', { delay: 25 })
+  await expect.poll(async () => page.getByTestId('object-detail').getAttribute('data-detail-ready')).toBe('true')
+  return gets.length
+}
+
+async function withFreshPage(browser: Browser, disableDebounce: boolean) {
+  const page = await browser.newPage()
+  try {
+    return await countRapidDownObjectGets(page, disableDebounce)
+  } finally {
+    await page.close()
+  }
+}
+
 test('arrowing through rows keeps Detail visible without a loading screen', async ({ page }) => {
   test.setTimeout(120_000)
   const { rows } = await openProducts(page)
@@ -56,6 +92,17 @@ test('arrowing through rows keeps Detail visible without a loading screen', asyn
   }
 })
 
+test('debounce lowers rapid-arrow object GET count', async ({ browser }) => {
+  test.setTimeout(240_000)
+  const withDebounce = await withFreshPage(browser, false)
+  const withoutDebounce = await withFreshPage(browser, true)
+  expect(withDebounce).toBe(ROW269_MEASURED_WITH_DEBOUNCE)
+  expect(withDebounce).toBeLessThan(withoutDebounce)
+  expect(withDebounce).toBeLessThan(ROW269_GET_BUDGET_MAX)
+  expect(withoutDebounce).toBeGreaterThan(ROW269_GET_BUDGET_MAX)
+  expect(withoutDebounce).toBeGreaterThanOrEqual(ROW269_MEASURED_WITHOUT_DEBOUNCE_MIN)
+})
+
 test('rapid Down arrows bound object GETs and show preview skeletons before the body loads', async ({ page }) => {
   test.setTimeout(120_000)
   const { rows } = await openProducts(page)
@@ -70,12 +117,12 @@ test('rapid Down arrows bound object GETs and show preview skeletons before the 
   await expect.poll(async () => page.getByTestId('object-detail').getAttribute('data-detail-ready')).toBe('true')
   gets.length = 0
 
-  for (let step = 0; step < 24; step += 1) await page.keyboard.press('ArrowDown', { delay: 25 })
+  for (let step = 0; step < ROW269_RAPID_ARROWS; step += 1) await page.keyboard.press('ArrowDown', { delay: 25 })
   await expect.poll(async () => page.getByTestId('object-detail').getAttribute('data-detail-ready')).toBe('true')
 
   expect(gets.length).toBeGreaterThan(0)
-  // Twenty-four steps without debounce would fan out to hundreds of neighbour prefetch GETs.
-  expect(gets.length).toBeLessThan(24 * 5)
+  // ROW269_GET_BUDGET_MAX sits between debounced (48) and immediate (~90+) HTTP totals; see harness.
+  expect(gets.length).toBeLessThan(ROW269_GET_BUDGET_MAX)
 
   let slowLoads = false
   await page.unroute('**/v1/objects/**')
