@@ -98,7 +98,9 @@ import {
 import { objectTablesToAutoLinkToTree } from './structure-tree-link'
 import {
   findStructureTreeView,
+  mergeStructureTreeViewState,
   resolveStructureOpenTarget,
+  structureTreeViewNeedsBackfill,
   structureTreeViewState,
   structureTreeViewTitle,
 } from './structure-tree-view'
@@ -1961,10 +1963,28 @@ export function Shell() {
     void (async () => {
       try {
         let views: View[] = viewRows(surfaceNow.views)
-        let tree = findStructureTreeView(views, structureKey, defs)
+        const matched = findStructureTreeView(views, structureKey, defs)
+        let tree = matched ? views.find((view) => view.id === matched.id) : undefined
         if (!tree && surfaceNow.locked) {
           toast.error(copy.layoutLocked)
           return
+        }
+        if (tree && structureTreeViewNeedsBackfill(tree, structureKey, defs)) {
+          const state = freeObject(mergeStructureTreeViewState(tree, structureKey, defs))
+          await api.post('/v1/views', {
+            body: {
+              id: tree.id,
+              workspace_id: surfaceNow.id,
+              type: tree.type,
+              title: tree.title,
+              pane: tree.pane ?? 'center',
+              position: tree.position ?? 0,
+              state,
+            },
+          })
+          const updated: View = { ...tree, state }
+          tree = updated
+          views = views.map((view) => (view.id === updated.id ? updated : view))
         }
         if (!tree) {
           const id = crypto.randomUUID()
