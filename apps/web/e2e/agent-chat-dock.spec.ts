@@ -1,5 +1,5 @@
 // Docked agent chat: right pane, no overlap with Detail, Products stays open.
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
 import { mainTable, paneWithTab } from './ui'
 
@@ -80,17 +80,21 @@ async function expectNoAgentDetailOverlap(page: Page, detailMinWidth: number) {
   expect((agentBox as Box).x).toBeGreaterThanOrEqual((detailBox as Box).x + (detailBox as Box).width - 2)
 }
 
-async function expectHitTarget(page: Page, testId: string) {
-  const control = page.getByTestId(testId).first()
+async function expectHitTarget(scope: Locator, testId: string) {
+  const control = scope.getByTestId(testId).first()
   await expect(control).toBeVisible()
   const hit = await control.evaluate((node) => {
     const box = node.getBoundingClientRect()
     const x = box.left + box.width / 2
     const y = box.top + box.height / 2
     const top = document.elementFromPoint(x, y)
-  return top === node || (top != null && node.contains(top))
+    return top === node || (top != null && node.contains(top))
   })
   expect(hit, `${testId} must receive pointer hits`).toBe(true)
+}
+
+function expectProductsXStable(before: Box, after: Box) {
+  expect(Math.abs(after.x - before.x), 'Products left edge stays in place when the agent toggles').toBeLessThan(8)
 }
 
 test('Ctrl+J opens a right agent chat while Products stays visible', async ({ page }) => {
@@ -130,6 +134,7 @@ test('Ctrl+J opens a right agent chat while Products stays visible', async ({ pa
   expect(productsAfter && detailAfter, 'products and detail panes need layout boxes after agent opens').toBeTruthy()
   if (stacked) expect(productsAfter!.y).toBeLessThanOrEqual(detailAfter!.y + 2)
   else expect(productsAfter!.x).toBeLessThan(detailAfter!.x + 4)
+  expectProductsXStable(productsBefore, productsAfter!)
   expect(productsAfter!.width, 'Products narrows when the agent takes a dock column').toBeLessThan(productsBefore.width - 8)
 
   await expect(agent.getByTestId('agent-follow-up')).toBeFocused()
@@ -143,8 +148,8 @@ test('Ctrl+J opens a right agent chat while Products stays visible', async ({ pa
     await expect(result).toBeVisible()
     await result.click({ timeout: 15_000 })
     await expect(products.locator(`[id="object-row-${objectId}"] [data-column="name"]`)).toContainText(firstTarget, { timeout: 30_000 })
-    await expectHitTarget(page, 'review-and-save')
-    await expectHitTarget(page, 'discard-draft')
+    await expectHitTarget(detailPane, 'review-and-save')
+    await expectHitTarget(detailPane, 'discard-draft')
 
     const secondTarget = `cola 330 ${Date.now().toString().slice(-4)}`
     await agent.getByTestId('agent-follow-up').fill(`byt namn till ${secondTarget}`, { timeout: 15_000 })
@@ -160,7 +165,7 @@ test('Ctrl+J opens a right agent chat while Products stays visible', async ({ pa
       detailPane.boundingBox(),
     ])
     expect(productsClosed && detailClosed).toBeTruthy()
-    expect(Math.abs((productsClosed as Box).x - productsBefore.x)).toBeLessThan(8)
+    expectProductsXStable(productsBefore, productsClosed as Box)
     expect(Math.abs((detailClosed as Box).x - detailBefore.x)).toBeLessThan(8)
     expect(Math.abs((detailClosed as Box).width - detailBefore.width)).toBeLessThan(8)
 
@@ -178,18 +183,27 @@ test('agent dock does not cover Detail controls at 1280×800 (K2)', async ({ pag
   await page.setViewportSize({ width: 1280, height: 800 })
   await login(page)
   const products = mainTable(page, 'Products')
+  const productsPane = paneWithTable(page)
+  const detailPane = paneWithDetail(page)
   await products.getByTestId('object-row').first().click()
+  const productsBefore = (await productsPane.boundingBox()) as Box
   const prompt = `byt namn på den här produkten till slim ${Date.now().toString().slice(-4)}`
   try {
     await openAgentAsk(page, prompt)
     await expect(agentPane(page)).toBeVisible({ timeout: 30_000 })
     await expect(agentPane(page).getByTestId('agent-status')).toHaveAttribute('data-status', 'done', { timeout: 30_000 })
     await expectNoAgentDetailOverlap(page, 220)
+    const productsOpen = (await productsPane.boundingBox()) as Box
+    expectProductsXStable(productsBefore, productsOpen)
     const result = agentPane(page).getByTestId('agent-result-link').first()
     await expect(result).toBeVisible()
     await result.click({ timeout: 15_000 })
-    await expectHitTarget(page, 'review-and-save')
-    await expectHitTarget(page, 'discard-draft')
+    await expectHitTarget(detailPane, 'review-and-save')
+    await expectHitTarget(detailPane, 'discard-draft')
+    await page.keyboard.press('Control+j')
+    await expect(agentPane(page)).toHaveCount(0)
+    const productsClosed = (await productsPane.boundingBox()) as Box
+    expectProductsXStable(productsBefore, productsClosed)
   } finally {
     await cleanupDrafts(page)
   }
