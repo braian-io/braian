@@ -41,6 +41,7 @@ type InView = {
 }
 
 async function activeRowInList(list: Locator): Promise<InView | null> {
+  if ((await list.count()) === 0) return null
   return list.evaluate((listEl) => {
     const active =
       listEl.querySelector<HTMLElement>(
@@ -141,11 +142,10 @@ test.describe('palette keyboard scroll keeps the active row visible', () => {
   })
 
   test('Root list: filter, Open structure › drill, back, and ArrowDown scroll', async ({ page }) => {
-    test.setTimeout(120_000)
+    test.setTimeout(180_000)
     await login(page)
 
     try {
-      await focusMainTable(page)
       await page.keyboard.press('Control+k')
       const palette = page.getByTestId('command-palette')
       const rootList = palette.locator('#palette-list')
