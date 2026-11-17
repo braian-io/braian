@@ -61,6 +61,8 @@ export function WorkspaceDock({
   agentViews?: string[]
 }) {
   const rootRef = useRef<HTMLDivElement>(null)
+  /** Structure-tree column, measured while the agent dock is closed. */
+  const treePinRef = useRef<TreePin | null>(null)
   const docRef = useRef(doc)
   const changeRef = useRef(onChange)
   const viewsRef = useRef(viewList)
@@ -100,13 +102,27 @@ export function WorkspaceDock({
     doc.layout.type === 'split' && splitLocksAgentDock(doc.layout, viewTypes)
       ? doc.layout.ratios[0] ?? 1
       : null
+  useLayoutEffect(() => {
+    if (catalogRatio != null) return
+    const root = rootRef.current
+    if (!root) return
+    const measure = () => {
+      const next = measureStructureTreePin(docRef.current.layout, new Map(viewsRef.current.map((view) => [view.id, view.type])), root)
+      if (next) treePinRef.current = next
+    }
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => measure())
+    observer.observe(root)
+    return () => observer.disconnect()
+  }, [catalogRatio, doc.layout])
   const zoomHost = doc.zoom ? leaves(doc.layout).find((leaf) => leaf.views.includes(doc.zoom ?? '')) : undefined
   const zoomed = zoomHost && doc.zoom ? { ...zoomHost, views: [doc.zoom], active: 0 } : undefined
   const shared: Frame = {
     doc,
       viewList,
       agentViews: agentViewSet,
-      agentCatalogRatio: catalogRatio,
+      agentTreePin: catalogRatio != null ? treePinRef.current : null,
       drag,
     docRef,
     rootRef,
@@ -192,7 +208,49 @@ type Frame = {
   onDrag: (drag: Drag | null) => void
   renderView: (view: DockView) => ReactNode
   agentViews: Set<string>
-  agentCatalogRatio: number | null
+  /** Pixel width of the structure tree measured before this dock opened. */
+  agentTreePin: TreePin | null
+}
+
+type TreePin = { width: number; ratio: number }
+
+/**
+ * Width to lock the structure-tree column to once the agent dock is open.
+ * `pin.width` is the leaf's rendered width before the dock opened (flex shrink
+ * included). Scaling by the live ratio keeps a divider drag in proportion.
+ */
+function pinnedTreeWidthPx(pin: TreePin | null, ratio: number): number | null {
+  if (!pin || !(pin.width > 0) || !(pin.ratio > 0) || !(ratio > 0)) return null
+  return (pin.width * ratio) / pin.ratio
+}
+
+function splitRatioAt(layout: Node, leafPath: number[]): number | null {
+  const index = leafPath[leafPath.length - 1]
+  if (index == null) return null
+  let node: Node = layout
+  for (const step of leafPath.slice(0, -1)) {
+    if (node.type !== 'split') return null
+    const next = node.children[step]
+    if (!next) return null
+    node = next
+  }
+  if (node.type !== 'split') return null
+  const ratio = node.ratios[index]
+  return typeof ratio === 'number' && Number.isFinite(ratio) && ratio > 0 ? ratio : null
+}
+
+/** The structure-tree leaf's split cell, in pixels, from the layout before the agent dock opens. */
+function measureStructureTreePin(layout: Node, viewTypes: Map<string, string>, root: HTMLElement): TreePin | null {
+  const leaf = leaves(layout).find((item) => item.views.some((id) => viewTypes.get(id) === 'structure_tree'))
+  if (!leaf || leaf.path.length === 0) return null
+  const tab = root.querySelector<HTMLElement>(".pane-tab[data-view-type='structure_tree']")
+  const cell = tab?.closest('section.pane')?.parentElement
+  if (!(cell instanceof HTMLElement) || !cell.classList.contains('split-cell')) return null
+  const width = cell.getBoundingClientRect().width
+  if (!(width > 0)) return null
+  const ratio = splitRatioAt(layout, leaf.path)
+  if (ratio == null || !(ratio > 0)) return null
+  return { width, ratio }
 }
 
 /** A horizontal agent dock must not let the Detail flex rules resize the left subtree. */
@@ -286,15 +344,16 @@ function SplitChild({
   const ratio = node.ratios[index] ?? 0
   const basis = `calc((100% - ${gaps}px) * ${ratio})`
   const flex = hasDetail ? '0 1' : '0 0'
-  const catalogShare = frame.agentCatalogRatio != null && frame.agentCatalogRatio > 0 ? frame.agentCatalogRatio : 1
-  const pinnedTreeWidth =
-    pinTree && index === 0
-      ? `calc((100% - ${gaps}px) / ${catalogShare} * ${pinTreeRatio})`
-      : null
+  const pinnedPx = pinTree && index === 0 ? pinnedTreeWidthPx(frame.agentTreePin, pinTreeRatio) : null
   const cellStyle: CSSProperties =
-    pinTree && index === 0 && pinnedTreeWidth
-      ? { flex: `0 0 ${pinnedTreeWidth}`, width: pinnedTreeWidth, minWidth: pinnedTreeWidth, maxWidth: pinnedTreeWidth }
-      : pinTree && index === 1
+    pinnedPx != null
+      ? {
+          flex: `0 0 ${pinnedPx}px`,
+          width: `${pinnedPx}px`,
+          minWidth: `${pinnedPx}px`,
+          maxWidth: `${pinnedPx}px`,
+        }
+      : pinTree && index === 1 && frame.agentTreePin
         ? { flex: '1 1 0', minWidth: 0 }
         : { flex: `${flex} ${basis}` }
   return (

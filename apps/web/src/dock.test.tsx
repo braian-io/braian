@@ -127,56 +127,64 @@ it('marks a nested Products split that contains Detail so the table can keep its
   expect(cells.map((cell) => cell.style.position)).toEqual(['', ''])
 })
 
-it('pins the structure tree width when the agent dock is open', () => {
-  const layout: LayoutDoc = {
+it('pins the structure tree to the width measured before the agent dock opens', () => {
+  const views = [
+    { id: 'tree', title: 'Food', type: 'structure_tree' },
+    { id: 'products', title: 'Products', type: 'object_table' },
+    { id: 'detail', title: 'Detail', type: 'object_detail' },
+    { id: 'agent', title: 'Ask', type: 'agent' },
+  ]
+  const catalog = {
+    type: 'split' as const,
+    dir: 'horizontal' as const,
+    ratios: [0.22, 0.78],
+    children: [
+      { type: 'tabs' as const, views: ['tree'], active: 0 },
+      {
+        type: 'split' as const,
+        dir: 'horizontal' as const,
+        ratios: [0.55, 0.45],
+        children: [
+          { type: 'tabs' as const, views: ['products'], active: 0 },
+          { type: 'tabs' as const, views: ['detail'], active: 0 },
+        ],
+      },
+    ],
+  }
+  const closed: LayoutDoc = { id: 'ws', title: 'Products', layout: catalog, focus: 'products' }
+  const open: LayoutDoc = {
     id: 'ws',
     title: 'Products',
     layout: {
       type: 'split',
       dir: 'horizontal',
       ratios: [0.7, 0.3],
-      children: [
-        {
-          type: 'split',
-          dir: 'horizontal',
-          ratios: [0.22, 0.78],
-          children: [
-            { type: 'tabs', views: ['tree'], active: 0 },
-            {
-              type: 'split',
-              dir: 'horizontal',
-              ratios: [0.55, 0.45],
-              children: [
-                { type: 'tabs', views: ['products'], active: 0 },
-                { type: 'tabs', views: ['detail'], active: 0 },
-              ],
-            },
-          ],
-        },
-        { type: 'tabs', views: ['agent'], active: 0 },
-      ],
+      children: [catalog, { type: 'tabs', views: ['agent'], active: 0 }],
     },
     focus: 'products',
   }
-  const { container } = render(
-    <WorkspaceDock
-      doc={layout}
-      views={[
-        { id: 'tree', title: 'Food', type: 'structure_tree' },
-        { id: 'products', title: 'Products', type: 'object_table' },
-        { id: 'detail', title: 'Detail', type: 'object_detail' },
-        { id: 'agent', title: 'Ask', type: 'agent' },
-      ]}
-      onChange={() => undefined}
-      renderView={() => <div />}
-      onAddView={() => undefined}
-    />,
-  )
-  const treeSplit = container.querySelector<HTMLElement>(".split.horizontal[data-tree-pinned='true']")
-  expect(treeSplit?.dataset.treePinned).toBe('true')
-  const treeCells = [...(treeSplit?.querySelectorAll<HTMLElement>(':scope > .split-cell') ?? [])]
-  expect(treeCells[0]?.style.flex).toMatch(/^0 0 calc\(0\.3142857142857143\*\(100% - 6px\)\)/)
-  expect(treeCells[1]?.style.flex).toBe('1 1 0px')
+  const rect = (width: number) =>
+    ({ x: 0, y: 0, width, height: 600, top: 0, left: 0, right: width, bottom: 600, toJSON() { return {} } }) as DOMRect
+  const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    const treeCell = this.classList.contains('split-cell') && this.querySelector("[data-view-type='structure_tree']")
+    return rect(treeCell ? 240 : 800)
+  })
+  try {
+    const { container, rerender } = render(
+      <WorkspaceDock doc={closed} views={views} onChange={() => undefined} renderView={() => <div />} onAddView={() => undefined} />,
+    )
+    rerender(
+      <WorkspaceDock doc={open} views={views} onChange={() => undefined} renderView={() => <div />} onAddView={() => undefined} />,
+    )
+    const treeSplit = container.querySelector<HTMLElement>(".split.horizontal[data-tree-pinned='true']")
+    expect(treeSplit?.dataset.treePinned).toBe('true')
+    const treeCells = [...(treeSplit?.querySelectorAll<HTMLElement>(':scope > .split-cell') ?? [])]
+    expect(treeCells[0]?.style.flex).toBe('0 0 240px')
+    expect(treeCells[0]?.style.width).toBe('240px')
+    expect(treeCells[1]?.style.flex).toBe('1 1 0px')
+  } finally {
+    spy.mockRestore()
+  }
 })
 
 it('does not mark the agent dock wrapper as a detail split', () => {

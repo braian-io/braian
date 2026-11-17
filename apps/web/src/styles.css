@@ -472,6 +472,10 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
 .dock-root > .split.horizontal[data-tree-pinned='true'] > .split-cell {
   transition: flex-basis var(--dur) var(--ease), width var(--dur) var(--ease), max-width var(--dur) var(--ease);
 }
+/* The tree column is pinned to a measured pixel width; animating it would slide Products. */
+.dock-root > .split.horizontal[data-tree-pinned='true'] > .split-cell:first-child {
+  transition: none;
+}
 .dock-root > .split.horizontal.split-agent-dock > .split-cell:first-child:has([data-testid='agents-table']) {
   overflow: auto;
 }

@@ -4,10 +4,13 @@ Press **Ctrl+J** to talk to the agent from anywhere in the app. If the palette
 is already open, **Ctrl+J** runs your question with the text in the query box.
 
 The agent opens in its own **docked pane on the far right**. The layout stays
-anchored on the left: the structure tree (when it is open) keeps its width, and
-the **Products** table stays in the same horizontal position. **Products** and
-**Detail** get a little narrower so the agent can take a dedicated column beside
-them. Nothing overlaps Detail.
+anchored on the left. The structure tree, when it is open, keeps the width it
+had before the pane opened, and the **Products** table stays in the same
+horizontal position. Only the area to the right of that tree — **Products**,
+any columns between it and **Detail**, and **Detail** — gets narrower, with a
+short width transition, so the agent can take a dedicated column. Nothing
+overlaps Detail, and its controls stay clickable. On a wide window (1360px and
+up), Detail stays at least 360px.
 
 ## Chat
 

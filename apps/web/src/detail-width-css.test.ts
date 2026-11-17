@@ -38,6 +38,9 @@ describe('Detail width layout (row 239)', () => {
     expect(css).toMatch(
       /\.dock-root > \.split\.horizontal\[data-tree-pinned='true'\] > \.split-cell\s*\{[^}]*transition:/,
     )
+    expect(css).toMatch(
+      /\.dock-root > \.split\.horizontal\[data-tree-pinned='true'\] > \.split-cell:first-child\s*\{[^}]*transition:\s*none/,
+    )
   })
 
   it('does not floor a table beside a direct Detail pane', () => {
