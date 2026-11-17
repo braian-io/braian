@@ -1,6 +1,6 @@
 import { leaves, views, type Node } from './layout'
 
-type CatalogRow = { id: string; type: string }
+type CatalogRow = { id: string; type: string; title?: string }
 
 /** Open the agents table beside catalog views, never as a tab inside the agent dock column. */
 export function agentsTablePlacementTarget(
@@ -12,7 +12,9 @@ export function agentsTablePlacementTarget(
   const types = new Map(catalog.map((row) => [row.id, row.type]))
   const inAgentDock = (id: string) => types.get(id) === 'agent'
   if (focus && open.includes(focus) && !inAgentDock(focus)) return focus
-  const table = catalog.find((row) => row.type === 'object_table' && open.includes(row.id))
+  const table = catalog.find(
+    (row) => (row.type === 'object_table' || row.title === 'Products') && open.includes(row.id),
+  )
   if (table) return table.id
   return open.find((id) => !inAgentDock(id) && types.get(id) !== 'agents')
 }

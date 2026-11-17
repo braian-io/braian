@@ -1928,7 +1928,12 @@ export function Shell() {
       }
       let current = docRef.current
       if (!current || !found) return
-      const catalog = views.map((view) => ({ id: view.id, type: view.type }))
+      const catalog = views.map((view) => ({ id: view.id, type: view.type, title: view.title }))
+      for (const row of catalog) {
+        if (row.type !== 'agent' || !layoutViews(current.layout).includes(row.id)) continue
+        applyRef.current('close_view', { view: row.id })
+      }
+      current = docRef.current ?? current
       const open = layoutViews(current.layout).includes(found.id)
       const misDocked = agentsTableSharesAgentDock(current.layout, catalog, found.id)
       const placementTarget = agentsTablePlacementTarget(current.layout, catalog, current.focus)
