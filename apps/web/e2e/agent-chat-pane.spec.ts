@@ -1,6 +1,6 @@
 // Agent chat pane: tab title, session header, and follow-up focus ring.
 import { expect, test, type Page } from '@playwright/test'
-import { agentPaneTab, agentSessionView, mainTable, paneWithTab } from './ui'
+import { agentPaneTab, agentSessionView, agentTitleStubHint, mainTable, paneWithTab } from './ui'
 import { demoCredentials } from './demo'
 
 async function login(page: Page) {
@@ -61,7 +61,7 @@ test('agent pane tab and session header stay readable', async ({ page }) => {
     const tab = agentPaneTab(page)
     await expect(tab).toBeVisible({ timeout: 30_000 })
     await expect(tab).toHaveText(/^Agent$/)
-    const shortTitle = 'byt namn på den här'
+    const shortTitle = agentTitleStubHint(prompt)
     await expect.poll(async () => tab.getAttribute('title')).toBe(`Agent — ${shortTitle}`)
     const view = agentSessionView(page, shortTitle)
     await expect(view).toBeVisible()
@@ -94,7 +94,7 @@ test('long first message keeps full prompt on the session header', async ({ page
     await openAgentAsk(page, prompt)
     const tab = agentPaneTab(page)
     await expect(tab).toBeVisible({ timeout: 30_000 })
-    const shortTitle = 'Please summarize how this catalog row'
+    const shortTitle = agentTitleStubHint(prompt)
     await expect.poll(async () => tab.getAttribute('title')).toBe(`Agent — ${shortTitle}`)
     const view = agentSessionView(page, marker)
     await expect(view).toBeVisible()
@@ -124,11 +124,11 @@ test('follow-up focus ring matches search fields in three views', async ({ page 
   await page.setViewportSize({ width: 1440, height: 900 })
   await login(page)
   const prompt = `describe the catalog layout ${Date.now().toString().slice(-4)}`
+  const shortTitle = agentTitleStubHint(prompt)
   const products = mainTable(page, 'Products')
   await products.getByTestId('object-row').first().click()
   try {
     await openAgentAsk(page, prompt)
-    const shortTitle = 'describe the catalog layout'
     const view = agentSessionView(page, shortTitle)
     await expect(view).toBeVisible({ timeout: 30_000 })
     const docked = await agentInputChrome(page)

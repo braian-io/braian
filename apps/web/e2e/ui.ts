@@ -13,7 +13,7 @@ export function mainTable(page: Page, title = 'Products'): Locator {
 }
 
 /** Mirrors the server title stub (first five words) used in e2e under BRAIAN_AGENT_MOCK. */
-function agentTitleStubHint(text: string): string {
+export function agentTitleStubHint(text: string): string {
   return text.trim().split(/\s+/).slice(0, 5).join(' ')
 }
 
