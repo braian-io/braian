@@ -175,8 +175,7 @@ it('pins the structure tree width when the agent dock is open', () => {
   const treeSplit = container.querySelector<HTMLElement>(".split.horizontal[data-tree-pinned='true']")
   expect(treeSplit?.dataset.treePinned).toBe('true')
   const treeCells = [...(treeSplit?.querySelectorAll<HTMLElement>(':scope > .split-cell') ?? [])]
-  expect(treeCells[0]?.style.flex).toMatch(/^0 0 calc/)
-  expect(treeCells[0]?.style.flex).toContain('agent-dock-catalog-ratio')
+  expect(treeCells[0]?.style.flex).toMatch(/^0 0 calc\(0\.3142857142857143\*\(100% - 6px\)\)/)
   expect(treeCells[1]?.style.flex).toBe('1 1 0px')
 })
 
@@ -225,7 +224,6 @@ it('does not mark the agent dock wrapper as a detail split', () => {
   expect(innerCells.map((cell) => cell.style.flex.split(' ').slice(0, 2).join(' '))).toEqual(['0 1', '0 1'])
   const outerCells = [...(outer?.querySelectorAll<HTMLElement>(':scope > .split-cell') ?? [])]
   expect(outer?.dataset.agentDock).toBe('true')
-  expect(outer?.style.getPropertyValue('--agent-dock-catalog-ratio')).toBe('0.7')
   expect(outerCells.map((cell) => cell.style.flex.split(' ').slice(0, 2).join(' '))).toEqual(['0 0', '0 0'])
 })
 

@@ -58,6 +58,41 @@ function boxesOverlap(a: Box, b: Box): boolean {
   return intersectionWidth(a, b) > 0 && intersectionHeight(a, b) > 0
 }
 
+async function waitForAgentDockReflow(page: Page) {
+  await page.evaluate(() => {
+    return new Promise<void>((resolve) => {
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        resolve()
+        return
+      }
+      const cell = document.querySelector(
+        ".dock-root > .split.horizontal[data-agent-dock='true'] > .split-cell",
+      )
+      if (!cell) {
+        resolve()
+        return
+      }
+      let done = false
+      const finish = () => {
+        if (done) return
+        done = true
+        cell.removeEventListener('transitionend', onEnd)
+        resolve()
+      }
+      const onEnd = (event: TransitionEvent) => {
+        if (
+          event.target === cell
+          && (event.propertyName === 'width' || event.propertyName === 'flex-basis')
+        ) {
+          finish()
+        }
+      }
+      cell.addEventListener('transitionend', onEnd)
+      window.setTimeout(finish, 220)
+    })
+  })
+}
+
 async function cleanupDrafts(page: Page) {
   await page.getByTestId('discard-draft').first().click({ timeout: 5_000 }).catch(() => undefined)
   const discardAll = page.getByRole('button', { name: 'Discard all' })
@@ -124,6 +159,7 @@ test('Ctrl+J opens a right agent chat while Products stays visible', async ({ pa
   await expect(agent).toBeVisible({ timeout: 30_000 })
   await expect(products).toBeVisible()
   await expect(page.getByTestId('object-detail')).toBeVisible()
+  await waitForAgentDockReflow(page)
 
   await expectNoAgentDetailOverlap(page, 360)
 
@@ -160,6 +196,7 @@ test('Ctrl+J opens a right agent chat while Products stays visible', async ({ pa
     await page.keyboard.press('Control+j')
     await expect(agent).toHaveCount(0)
     await expect(products).toBeVisible()
+    await waitForAgentDockReflow(page)
     const [productsClosed, detailClosed] = await Promise.all([
       productsPane.boundingBox(),
       detailPane.boundingBox(),
@@ -192,6 +229,7 @@ test('agent dock does not cover Detail controls at 1280×800 (K2)', async ({ pag
     await openAgentAsk(page, prompt)
     await expect(agentPane(page)).toBeVisible({ timeout: 30_000 })
     await expect(agentPane(page).getByTestId('agent-status')).toHaveAttribute('data-status', 'done', { timeout: 30_000 })
+    await waitForAgentDockReflow(page)
     await expectNoAgentDetailOverlap(page, 220)
     const productsOpen = (await productsPane.boundingBox()) as Box
     expectProductsXStable(productsBefore, productsOpen)
@@ -202,6 +240,7 @@ test('agent dock does not cover Detail controls at 1280×800 (K2)', async ({ pag
     await expectHitTarget(detailPane, 'discard-draft')
     await page.keyboard.press('Control+j')
     await expect(agentPane(page)).toHaveCount(0)
+    await waitForAgentDockReflow(page)
     const productsClosed = (await productsPane.boundingBox()) as Box
     expectProductsXStable(productsBefore, productsClosed)
   } finally {

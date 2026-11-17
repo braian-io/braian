@@ -95,12 +95,18 @@ export function WorkspaceDock({
   }, [drag])
 
   const open = views(doc.layout)
+  const viewTypes = new Map(viewList.map((view) => [view.id, view.type]))
+  const catalogRatio =
+    doc.layout.type === 'split' && splitLocksAgentDock(doc.layout, viewTypes)
+      ? doc.layout.ratios[0] ?? 1
+      : null
   const zoomHost = doc.zoom ? leaves(doc.layout).find((leaf) => leaf.views.includes(doc.zoom ?? '')) : undefined
   const zoomed = zoomHost && doc.zoom ? { ...zoomHost, views: [doc.zoom], active: 0 } : undefined
   const shared: Frame = {
     doc,
       viewList,
       agentViews: agentViewSet,
+      agentCatalogRatio: catalogRatio,
       drag,
     docRef,
     rootRef,
@@ -186,6 +192,7 @@ type Frame = {
   onDrag: (drag: Drag | null) => void
   renderView: (view: DockView) => ReactNode
   agentViews: Set<string>
+  agentCatalogRatio: number | null
 }
 
 /** A horizontal agent dock must not let the Detail flex rules resize the left subtree. */
@@ -226,10 +233,6 @@ function SplitNode({ frame, node, path, inAgentDock = false }: { frame: Frame; n
   const gaps = Math.max(0, node.children.length - 1) * 6
   const subtreeInAgentDock = inAgentDock || lockRatios
   const pinTree = splitPinsTreeInAgentDock(subtreeInAgentDock && !lockRatios, node, viewTypes)
-  const catalogStyle: CSSProperties | undefined =
-    lockRatios && node.dir === 'horizontal'
-      ? { ['--agent-dock-catalog-ratio' as string]: String(node.ratios[0] ?? 1) }
-      : undefined
   return (
     <div
       className={lockRatios ? `split ${node.dir} split-agent-dock` : `split ${node.dir}`}
@@ -237,7 +240,6 @@ function SplitNode({ frame, node, path, inAgentDock = false }: { frame: Frame; n
       data-has-detail={hasDetail ? 'true' : undefined}
       data-agent-dock={lockRatios ? 'true' : undefined}
       data-tree-pinned={pinTree ? 'true' : undefined}
-      style={catalogStyle}
     >
       {node.children.map((child, index) => (
         <SplitChild
@@ -251,6 +253,7 @@ function SplitNode({ frame, node, path, inAgentDock = false }: { frame: Frame; n
           hasDetail={hasDetail}
           inAgentDock={subtreeInAgentDock}
           pinTree={pinTree}
+          pinTreeRatio={node.ratios[0] ?? 0}
         />
       ))}
     </div>
@@ -267,6 +270,7 @@ function SplitChild({
   hasDetail,
   inAgentDock,
   pinTree,
+  pinTreeRatio,
 }: {
   frame: Frame
   node: Extract<Node, { type: 'split' }>
@@ -277,13 +281,15 @@ function SplitChild({
   hasDetail: boolean
   inAgentDock: boolean
   pinTree: boolean
+  pinTreeRatio: number
 }) {
   const ratio = node.ratios[index] ?? 0
   const basis = `calc((100% - ${gaps}px) * ${ratio})`
   const flex = hasDetail ? '0 1' : '0 0'
+  const catalogShare = frame.agentCatalogRatio != null && frame.agentCatalogRatio > 0 ? frame.agentCatalogRatio : 1
   const pinnedTreeWidth =
     pinTree && index === 0
-      ? `calc((100% - ${gaps}px) / var(--agent-dock-catalog-ratio, 1) * ${ratio})`
+      ? `calc((100% - ${gaps}px) / ${catalogShare} * ${pinTreeRatio})`
       : null
   const cellStyle: CSSProperties =
     pinTree && index === 0 && pinnedTreeWidth
