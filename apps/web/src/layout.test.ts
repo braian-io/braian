@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   LayoutError,
   activate,
+  agentDockShare,
   applyLayoutCommand,
   closeView,
   dockEdge,
@@ -168,6 +169,30 @@ describe('moveView', () => {
     } catch (error) {
       expect(error).toMatchObject({ code: 'target-removed' })
     }
+  })
+})
+
+describe('agentDockShare', () => {
+  it('shrinks the default share when the rightmost leaf starts late', () => {
+    const tree = splitPair(
+      'horizontal',
+      0.22,
+      tabs(['left']),
+      splitPair('horizontal', 0.62, tabs(['products']), tabs(['detail'])),
+    )
+    const types = new Map([
+      ['products', 'object_table'],
+      ['detail', 'object_detail'],
+    ])
+    const share = agentDockShare(tree, 0.3, types)
+    expect(share).toBeLessThan(0.3)
+    const docked = dockEdge(tree, 'agent', 'right', share)
+    const after = leaves(docked)
+    const detail = after.find((leaf) => leaf.views.includes('detail'))
+    const agent = after.find((leaf) => leaf.views.includes('agent'))
+    expect(detail).toBeDefined()
+    expect(agent).toBeDefined()
+    expect(agent!.rect.x).toBeGreaterThan(detail!.rect.x + 0.1)
   })
 })
 

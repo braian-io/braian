@@ -181,6 +181,28 @@ export function dockEdge(node: Node, view: string, zone: Zone, share = 0.3): Nod
   }
 }
 
+const AGENT_DOCK_LEAD = 0.08
+
+/** Narrow the agent share when a wide catalog would start to the right of the default dock line. */
+export function agentDockShare(
+  layout: Node,
+  preferred = 0.3,
+  viewTypes?: ReadonlyMap<string, string>,
+): number {
+  const all = leaves(layout)
+  const detailLefts = viewTypes
+    ? all
+        .filter((leaf) => leaf.views.some((id) => viewTypes.get(id) === 'object_detail'))
+        .map((leaf) => leaf.rect.x)
+    : []
+  const catalogLeft = detailLefts.length > 0
+    ? Math.max(...detailLefts)
+    : Math.max(0, ...all.map((leaf) => leaf.rect.x))
+  if (!Number.isFinite(catalogLeft)) return preferred
+  const maxShare = roundRatio(1 - catalogLeft - AGENT_DOCK_LEAD)
+  return clamp(Math.min(preferred, maxShare), 0.08, 0.45)
+}
+
 /** Move boundary `index` to absolute fraction `position` inside that split. Only the two neighbours change, and each stays at least 0.04. */
 export function setDivider(node: Node, path: number[], index: number, position: number): Node {
   const split = nodeAt(node, path)
@@ -374,6 +396,10 @@ export type CommandResult = {
   summary?: string
 }
 
+function catalogTypes(catalog: Array<{ id: string; type?: string }>): Map<string, string> {
+  return new Map(catalog.map((view) => [view.id, view.type ?? '']))
+}
+
 const layoutCommandNames = new Set([
   'open_view',
   'move_view',
@@ -472,7 +498,15 @@ export function applyLayoutCommand(
   const token = args.view ?? args.entity ?? args.id ?? args.title
   const view = resolveView(token, catalog)
   if (!view) return { doc, handled: true }
+  const opened = catalog.find((row) => row.id === view)
+  const agentView = opened?.type === 'agent'
   if (name === 'ui.open_view' && args.zone == null && args.place == null && !ctx.place) {
+    if (agentView) {
+      return {
+        doc: placeView(doc, view, { zone: 'right', dock: 'edge', share: agentDockShare(doc.layout, 0.3, catalogTypes(catalog)) }),
+        handled: true,
+      }
+    }
     return { doc: ensureInLayout(doc, view, typeof args.target === 'string' ? args.target : undefined), handled: true }
   }
   const fromArgs = placeFrom(args)
@@ -482,6 +516,11 @@ export function applyLayoutCommand(
     dock: fromArgs.dock ?? ctx.place?.dock,
     share: fromArgs.share ?? ctx.place?.share,
     tabIndex: fromArgs.tabIndex ?? ctx.place?.tabIndex,
+  }
+  if (agentView && (name === 'open_view' || name === 'ui.open_view' || name === 'ui.place')) {
+    place.zone = 'right'
+    place.dock = 'edge'
+    place.share = place.share ?? agentDockShare(doc.layout, 0.3, catalogTypes(catalog))
   }
   if ((name === 'open_view' || name === 'ui.place') && !place.zone && place.dock !== 'edge') place.zone = 'right'
   return { doc: placeView(doc, view, place), handled: true }

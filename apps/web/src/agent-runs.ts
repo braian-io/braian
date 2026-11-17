@@ -235,6 +235,41 @@ export function backgroundWorkingLabel(count: number): string {
   return copy.agentsWorking.replace('{count}', String(count))
 }
 
+/** Keep one list row aligned with a run the open view just observed. */
+export function mergeRunSummary(
+  list: AgentRunSummary[] | undefined,
+  detail: AgentRunSummary,
+): AgentRunSummary[] | undefined {
+  if (!list) return list
+  const index = list.findIndex((run) => run.id === detail.id)
+  if (index < 0) return list
+  const current = list[index]
+  if (!current) return list
+  if (current.mode === detail.mode && current.status === detail.status && current.updated_at === detail.updated_at) {
+    return list
+  }
+  const next = list.slice()
+  next[index] = {
+    ...current,
+    title: detail.title,
+    status: detail.status,
+    mode: detail.mode,
+    updated_at: detail.updated_at,
+    error: detail.error,
+    proposal_count: detail.proposal_count,
+    question: detail.question,
+  }
+  return next
+}
+
+export const agentNoticeEvent = 'braian-agent-notice'
+
+/** Tell the shell a background run needs a toast, without waiting for the next list poll. */
+export function requestAgentNotice(run: AgentRunSummary) {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent<AgentRunSummary>(agentNoticeEvent, { detail: run }))
+}
+
 /** A background run that just finished or started waiting for a decision. */
 export function backgroundNotices(previous: AgentRunSummary[], next: AgentRunSummary[]): AgentRunSummary[] {
   const before = new Map(previous.map((run) => [run.id, run]))
@@ -297,7 +332,7 @@ export function agentNotices(runs: AgentRunSummary[]): AgentNotice[] {
     }]
   }
   return runs.map((run) => ({
-    id: `agent-notice-${run.id}-${run.status}`,
+    id: `agent-notice-${run.id}-${run.status}-${run.updated_at}`,
     text: agentNoticeText(run),
     failed: run.status === 'failed',
     run,

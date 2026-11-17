@@ -43,7 +43,7 @@ import {
   takeQueuedOpenTypeView,
 } from './open-type-view-queue'
 import { copy } from './i18n'
-import { applyLayoutCommand, focusView, migrateLayout, views as layoutViews, type LayoutDoc, type Place } from './layout'
+import { agentDockShare, applyLayoutCommand, focusView, migrateLayout, views as layoutViews, type LayoutDoc, type Place } from './layout'
 import { cloneObjectTableView, objectTableTemplateForType, objectTableViewForType } from './open-type-view'
 import { ConsequenceHost } from './consequence'
 import { ModelDraftHost } from './model-draft-ui'
@@ -83,6 +83,7 @@ import {
   resolveActiveWorkspaceId,
   writeActiveWorkspaceId,
 } from './active-workspace'
+import { healAgentDockLayout } from './agent-layout-migrate'
 import { healDataModelWorkspace, isKnownViewType, layoutHasMissingViews, migrateLegacyModelViews } from './model-workspace-migrate'
 import { persistWorkspaceMigration } from './workspace-migration-persist'
 import { commandPlaceholder, displayViewTitle, migrateSavedWorkspace, singularOf, typeNames, typeOfView } from './type-labels'
@@ -139,6 +140,11 @@ type Workspace = { id: string; name: string; locked: boolean; share_token?: stri
 
 function viewRows<T>(views: readonly T[] | null | undefined): T[] {
   return views ? [...views] : []
+}
+
+function agentRunIdFromView(views: View[], viewId: string): string {
+  const view = views.find((item) => item.id === viewId)
+  return String(view?.state?.run_id ?? '')
 }
 type Me = {
   email?: string
@@ -292,6 +298,7 @@ export function Shell() {
   const mineDocRef = useRef<LayoutDoc | null>(null)
   const viewingRunId = useSyncExternalStore(subscribeViewingAgent, viewingAgentRunId, viewingAgentRunId)
   const restoredAgents = useRef<string | null>(null)
+  const elsewhereAnnounced = useRef<string | null>(null)
   const applyViewTypeSourceRef = useRef<(typeId: string, viewId?: string) => Promise<void>>(async () => undefined)
   const applyViewPeerSourceRef = useRef<(peerViewId: string, viewId?: string, linkType?: string) => Promise<void>>(async () => undefined)
   const migratedRef = useRef(new Set<string>())
@@ -532,6 +539,38 @@ export function Shell() {
         setPaletteStartAddView(false)
         setPaletteSourceTargetViewId(null)
         setPaletteStartNewFromTemplate(false)
+        const current = docRef.current
+        const surface = workspaceRef.current
+        if (current && surface && !paletteModeRef.current) {
+          const rows = viewRows(surface.views)
+          const catalog = rows.map((view) => ({ id: view.id, title: view.title, type: view.type }))
+          const agents = catalog.filter((view) => view.type === 'agent')
+          const openIds = layoutViews(current.layout)
+          const openAgents = agents.filter((view) => openIds.includes(view.id))
+          if (openAgents.length > 0) {
+            const focus = current.focus
+            const focused = openAgents.find((view) => view.id === focus)
+            if (focused) {
+              applyRef.current('close_view', { view: focused.id })
+              return
+            }
+            const target = openAgents[openAgents.length - 1]!
+            if (focus !== target.id) applyRef.current('ui.open_view', { id: target.id })
+            window.dispatchEvent(new CustomEvent('braian-focus-agent-input', {
+              detail: { runId: agentRunIdFromView(rows, target.id) },
+            }))
+            return
+          }
+          const hidden = agents.filter((view) => !openIds.includes(view.id))
+          if (hidden.length > 0) {
+            const view = hidden[hidden.length - 1]!
+            const runId = agentRunIdFromView(rows, view.id)
+            if (runId) {
+              openAgentRunRef.current({ id: runId, title: view.title, view_id: view.id, tab_open: true })
+              return
+            }
+          }
+        }
         setPaletteMode('ai')
         setPaletteEpoch((value) => value + 1)
       }),
@@ -735,12 +774,23 @@ export function Shell() {
     restoredAgents.current = surface.id
     void listAgentRuns()
       .then((runs) => {
-        const { here, elsewhere } = agentRunsForWorkspace(runs, surface.id)
-        if (elsewhere.length > 0) toast.message(copy.agentOpenElsewhere)
+        const { here } = agentRunsForWorkspace(runs, surface.id)
         for (const run of here) openAgentRunRef.current(run)
       })
       .catch((reason: unknown) => reportWriteError(reason))
   }, [workspace.data, doc, userId])
+
+  useEffect(() => {
+    const surface = workspace.data
+    const runs = agentRunList.data
+    if (!surface || !runs || !doc) return
+    const { elsewhere } = agentRunsForWorkspace(runs, surface.id)
+    if (elsewhere.length === 0) return
+    const key = `${surface.id}:${elsewhere.map((run) => run.id).sort().join(',')}`
+    if (elsewhereAnnounced.current === key) return
+    elsewhereAnnounced.current = key
+    toast.message(copy.agentOpenElsewhere)
+  }, [agentRunList.data, workspace.data, doc])
 
   useEffect(() => {
     const onRun = (event: Event) => {
@@ -912,15 +962,19 @@ export function Shell() {
     const canonical = canonicalDoc(current)
     canonicalRef.current = canonical.layout
     const local = readLayoutStore(key)
-    const painted = local ? migrateDoc(local.document) : canonical
+    let painted = local ? migrateDoc(local.document) : canonical
     const listed = viewRows(current.views)
-    // Heal against the layout we would paint (local/personal), not only the server
-    // workspace layout — otherwise a healed server + stale personal doc keeps
-    // Unavailable tabs across reloads without re-entering heal.
-    const pendingHeal = healDataModelWorkspace(current, listed, painted.layout).changed
+    const agentHealPainted = healAgentDockLayout(painted.layout, listed, painted.focus)
+    if (agentHealPainted.changed && agentHealPainted.layout) {
+      painted = { ...painted, layout: agentHealPainted.layout }
+    }
+    const modelHealNeeded =
+      healDataModelWorkspace(current, listed, painted.layout).changed
       || healDataModelWorkspace(current, listed, canonical.layout).changed
-    dirtyRef.current = false
-    if (pendingHeal) {
+    const agentHealNeeded =
+      agentHealPainted.changed || healAgentDockLayout(canonical.layout, listed, canonical.focus).changed
+    dirtyRef.current = agentHealPainted.changed
+    if (modelHealNeeded) {
       // Force the heal effect to run even if a prior no-op marked this id.
       migratedRef.current.delete(current.id)
       healPendingFor.current = current.id
@@ -929,6 +983,7 @@ export function Shell() {
       setDoc(null)
       return
     }
+    if (agentHealNeeded) migratedRef.current.delete(current.id)
     healPendingFor.current = null
     setLayoutHealPending(false)
     docRef.current = painted
@@ -939,7 +994,13 @@ export function Shell() {
         if (cancelled || dirtyRef.current || loadedFor.current !== stamp) return
         if (healPendingFor.current === current.id) return
         const fresh = readLayoutStore(key)
-        const next = reconcileLayout(fresh, server, canonical)
+        let next = reconcileLayout(fresh, server, canonical)
+        const agentInline = healAgentDockLayout(next.layout, listed, next.focus)
+        if (agentInline.changed && agentInline.layout) {
+          next = { ...next, layout: agentInline.layout }
+          dirtyRef.current = true
+          migratedRef.current.delete(current.id)
+        }
         if (
           layoutHasMissingViews(next.layout, listed)
           || healDataModelWorkspace(current, listed, next.layout).changed
@@ -1269,16 +1330,27 @@ export function Shell() {
     const key = userId ? layoutStorageKey(userId, current.id) : ''
     const local = key ? readLayoutStore(key) : null
     // Prefer the layout the user would see (local/personal), then server canonical.
-    const paintedLayout = local ? migrateDoc(local.document).layout : migrateLayout(current.layout)
-    const modelFromPainted = healDataModelWorkspace(current, listed, paintedLayout)
-    const modelFromServer = healDataModelWorkspace(current, listed, migrateLayout(current.layout))
+    const paintedDoc = local ? migrateDoc(local.document) : null
+    const paintedLayout = paintedDoc ? paintedDoc.layout : migrateLayout(current.layout)
+    const paintedFocus = paintedDoc?.focus
+    const agentFromPainted = healAgentDockLayout(paintedLayout, listed, paintedFocus)
+    let layoutForPainted =
+      agentFromPainted.changed && agentFromPainted.layout ? agentFromPainted.layout : paintedLayout
+    const serverLayout = migrateLayout(current.layout)
+    const agentFromServer = healAgentDockLayout(serverLayout, listed)
+    const layoutForServer =
+      agentFromServer.changed && agentFromServer.layout ? agentFromServer.layout : serverLayout
+    const modelFromPainted = healDataModelWorkspace(current, listed, layoutForPainted)
+    const modelFromServer = healDataModelWorkspace(current, listed, layoutForServer)
     const modelPatch = modelFromPainted.changed ? modelFromPainted : modelFromServer
+    const agentChanged = agentFromPainted.changed || agentFromServer.changed
+    const agentLayout = agentFromPainted.layout ?? agentFromServer.layout
     const patch = {
-      changed: objectPatch.changed || modelPatch.changed,
+      changed: objectPatch.changed || modelPatch.changed || agentChanged,
       name: objectPatch.name,
       views: [...objectPatch.views, ...modelPatch.views],
       create: modelPatch.create,
-      layout: modelPatch.layout,
+      layout: modelPatch.layout ?? agentLayout,
     }
     migratedRef.current.add(current.id)
     if (!patch.changed) {
@@ -1702,6 +1774,7 @@ export function Shell() {
 
   openAgentRunRef.current = (run) => {
     void (async () => {
+      queryClient.removeQueries({ queryKey: ['agent-run', run.id] })
       const surfaceNow = workspaceRef.current
       const docNow = docRef.current
       if (!surfaceNow || !docNow) return
@@ -1751,13 +1824,34 @@ export function Shell() {
       }
       const current = docRef.current
       if (!current) return
-      if (layoutViews(current.layout).includes(found.id)) return
-      const result = applyLayoutCommand(current, 'ui.open_view', { id: found.id, zone: 'center' }, {
-        views: views.map((view) => ({ id: view.id, title: view.title, type: view.type })),
-        canonical: canonicalRef.current,
-        place: placeOverride.current,
-      })
+      if (layoutViews(current.layout).includes(found.id)) {
+        let next = current
+        if (current.focus !== found.id) next = { ...current, focus: found.id }
+        if (next !== current) commitDoc(next)
+        window.dispatchEvent(new CustomEvent('braian-focus-agent-input', { detail: { runId: run.id } }))
+        return
+      }
+      const result = applyLayoutCommand(
+        current,
+        'ui.open_view',
+        {
+          id: found.id,
+          zone: 'right',
+          dock: 'edge',
+          share: agentDockShare(
+            current.layout,
+            0.3,
+            new Map(views.map((view) => [view.id, view.type])),
+          ),
+        },
+        {
+          views: views.map((view) => ({ id: view.id, title: view.title, type: view.type })),
+          canonical: canonicalRef.current,
+          place: placeOverride.current,
+        },
+      )
       if (result.handled && result.doc !== current) commitDoc(result.doc)
+      window.dispatchEvent(new CustomEvent('braian-focus-agent-input', { detail: { runId: run.id } }))
     })().catch((reason: unknown) => reportWriteError(reason))
   }
 
@@ -2264,7 +2358,7 @@ function ViewBody({ view, session, workspace }: { view: View; session: Session; 
   }
   if (view.type === 'data_model') return <DataModel view={view} />
   if (view.type === 'attribute_definitions') return <AttributeDefinitions />
-  if (view.type === 'agent') return <AgentView runId={String(view.state.run_id ?? '')} push={session.push} />
+  if (view.type === 'agent') return <AgentView runId={String(view.state.run_id ?? '')} title={view.title} push={session.push} />
   if (view.type === 'agents') return <AgentsTable />
   if (view.type === 'proposal') return <ProposalView session={session} />
   if (view.type === 'proposal_list') return <ProposalListView session={session} />

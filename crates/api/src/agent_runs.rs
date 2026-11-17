@@ -1001,7 +1001,7 @@ async fn propose_mock_name(
     say(
         state,
         run_id,
-        "I proposed a new name. Approve or reject it here. I will not apply it myself.",
+        "I proposed a new name. Waiting for Save in the table or Detail.",
     )
     .await
 }
@@ -1096,7 +1096,7 @@ async fn propose_parsed_rename(
         (
             json!({ field: request.value }),
             format!(
-                "I proposed a new identifier for {}. Approve or reject it here. I will not apply it myself.",
+                "I proposed a new identifier for {}. Review and Save in the table or Detail.",
                 target.key
             ),
         )
@@ -1105,7 +1105,7 @@ async fn propose_parsed_rename(
         (
             json!({ "name": { language: request.value } }),
             format!(
-                "I proposed a new name for {}. Approve or reject it here. I will not apply it myself.",
+                "I proposed a new name for {}. Waiting for Save in the table or Detail.",
                 target.key
             ),
         )

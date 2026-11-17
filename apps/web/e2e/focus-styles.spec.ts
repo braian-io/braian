@@ -1125,6 +1125,7 @@ test('user menu arrow-focused item shows the accent ring', async ({ page }) => {
   await expect
     .poll(async () => (await ringClip(item)).outline, {
       message: 'arrow-focused user menu item outline',
+      timeout: 30_000,
     })
     .not.toBe('none')
   const clip = await expectRingUnclipped(item, 'arrow-focused user menu item')

@@ -19,6 +19,22 @@ describe('Detail width layout (row 239)', () => {
     )
   })
 
+  it('does not apply detail-split containment inside an agent dock wrapper', () => {
+    expect(css).toMatch(
+      /\.dock-root > \.split\.horizontal\[data-agent-dock='true'\] \.split\[data-has-detail='true'\]\s*\{[^}]*container-type:\s*normal/,
+    )
+    expect(css).toMatch(
+      /\.dock-root > \.split\.horizontal\.split-agent-dock\s*\{[^}]*position:\s*relative/,
+    )
+    expect(css).toMatch(
+      /\.dock-root > \.split\.horizontal\.split-agent-dock\[data-catalog-scale='full'\] > \.split-cell:first-child > \.split:not\(:has\(\[data-testid='agents-table'\]\)\)\s*\{[^}]*width:\s*calc\(100% \/ var\(--agent-dock-ratio\) \+ 6px\)/,
+    )
+    expect(css).toMatch(
+      /\.dock-root \.split\.horizontal\.split-catalog-frozen\s*\{[^}]*width:\s*100%/,
+    )
+    expect(css).not.toMatch(/translateX\(18px\)/)
+  })
+
   it('does not floor a table beside a direct Detail pane', () => {
     expect(css).toMatch(
       /\.split:has\(> \.split-cell > \.pane \.pane-tab\[data-view-type='object_detail'\]\)\s*>\s*\.split-cell:has\(\.pane-tab\[data-view-type='object_table'\]\.active\):not\(:has\(\.split\)\)\s*\{[^}]*min-width:\s*0/,

@@ -107,6 +107,7 @@ export function recentSlice(
   frecency: Record<string, FrecencyEntry>,
   limit = 4,
   live?: Set<string>,
+  now = Date.now(),
 ): PaletteItem[] {
   return dedupe(items)
     .filter((item) => rememberRecent(item))
@@ -115,7 +116,7 @@ export function recentSlice(
     .sort((left, right) => {
       const last = (frecency[identity(right)]?.last ?? 0) - (frecency[identity(left)]?.last ?? 0)
       if (last !== 0) return last
-      const frec = score(frecency[identity(right)]) - score(frecency[identity(left)])
+      const frec = score(frecency[identity(right)], now) - score(frecency[identity(left)], now)
       if (frec !== 0) return frec
       return labelOrder(left, right)
     })
@@ -391,7 +392,7 @@ export function visibleRows(
   const live = new Set<string>([...pool, ...hits].map((item) => identity(item)))
   if (openObjectId) live.add(`hit:${openObjectId}`)
   const remembered = memory.filter((item) => live.has(identity(item)))
-  const recent = needle ? [] : recentSlice([...pool, ...remembered, ...hits], frecency, 4, live)
+  const recent = needle ? [] : recentSlice([...pool, ...remembered, ...hits], frecency, 4, live, now)
   const recentIds = new Set(recent.map((item) => identity(item)))
   const matched = pool
     .filter((item) => (!needle || paletteMatchScore(item, needle) > 0) && !recentIds.has(identity(item)))
@@ -444,7 +445,7 @@ export function withRecent(
 ): PaletteItem[] {
   if (query.trim()) return rows
   const live = new Set(rows.map((item) => identity(item)))
-  const recent = recentSlice([...rows, ...extras.filter((item) => live.has(identity(item)))], frecency, 4, live)
+  const recent = recentSlice([...rows, ...extras.filter((item) => live.has(identity(item)))], frecency, 4, live, _now)
   const recentIds = new Set(recent.map((item) => identity(item)))
   return [
     ...recent,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { agentNoticeText, agentNotices, agentPaletteRows, agentRunPrompt, agentRunsForWorkspace, agentStatusLabel, agentTabTitle, agentsPaletteRoot, backgroundNotices, backgroundWorkingCount, cleanAgentError, sortAgentRuns, type AgentRunSummary } from './agent-runs'
+import { agentNoticeText, agentNotices, agentPaletteRows, agentRunPrompt, agentRunsForWorkspace, agentStatusLabel, agentTabTitle, agentsPaletteRoot, backgroundNotices, backgroundWorkingCount, cleanAgentError, mergeRunSummary, sortAgentRuns, type AgentRunSummary } from './agent-runs'
 
 function run(patch: Partial<AgentRunSummary>): AgentRunSummary {
   return {
@@ -79,6 +79,21 @@ describe('agent run presentation', () => {
     const foreground = run({ id: 'b', mode: 'foreground', status: 'waiting' })
     const sentBack = run({ ...foreground, mode: 'background' })
     expect(backgroundNotices([foreground], [sentBack]).map((item) => item.id)).toEqual(['b'])
+    const sentBackAgain = run({ ...sentBack, mode: 'background', updated_at: '2026-11-05T12:10:00Z' })
+    const broughtFront = run({ ...sentBackAgain, mode: 'foreground', updated_at: '2026-11-05T12:11:00Z' })
+    const notices = agentNotices(backgroundNotices([broughtFront], [sentBackAgain]))
+    expect(notices.map((notice) => notice.actionLabel)).toEqual(['Answer'])
+    expect(notices[0]?.id).not.toBe(`agent-notice-b-waiting-${foreground.updated_at}`)
+    const list = [foreground, working]
+    expect(mergeRunSummary(list, foreground)).toBe(list)
+    const merged = mergeRunSummary(list, sentBack)
+    expect(merged?.[0]?.mode).toBe('background')
+    expect(merged?.[1]).toBe(working)
+    // A poll that never sampled foreground cannot see the trip back to background.
+    expect(backgroundNotices([sentBackAgain], [sentBackAgain])).toEqual([])
+    const seen = mergeRunSummary([sentBackAgain], broughtFront)
+    const sentBackAfter = run({ ...broughtFront, mode: 'background', updated_at: '2026-11-05T12:12:00Z' })
+    expect(backgroundNotices(seen ?? [], [sentBackAfter]).map((item) => item.id)).toEqual(['b'])
   })
 
   it('sorts waiting ahead of working and done', () => {

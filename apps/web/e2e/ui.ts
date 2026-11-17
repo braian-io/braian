@@ -4,12 +4,72 @@ import { expect, type Locator, type Page } from '@playwright/test'
 export function paneWithTab(page: Page, title: string): Locator {
   return page.locator('section.pane').filter({
     has: page.locator('.pane-tab[data-view-type="object_table"]', { hasText: title }),
-  })
+  }).first()
 }
 
 /** Main object table in a type workspace. Products is the default type workspace. */
 export function mainTable(page: Page, title = 'Products'): Locator {
   return paneWithTab(page, title).getByTestId('object-table').first()
+}
+
+/** Close every open agent pane tab so layout reset can paint the catalog again. */
+export async function closeAllAgentTabs(page: Page) {
+  for (let guard = 0; guard < 16; guard += 1) {
+    const tabs = page.locator('.pane-tab[data-view-type="agent"]')
+    const count = await tabs.count()
+    if (count === 0) return
+    const tab = tabs.first()
+    await tab.hover({ timeout: 3_000 }).catch(() => undefined)
+    await tab.getByRole('button', { name: 'Close tab' }).click({ timeout: 3_000 }).catch(() => undefined)
+    if ((await tabs.count()) >= count) {
+      await page.keyboard.press('Control+j').catch(() => undefined)
+    }
+  }
+}
+
+export async function resetProductsLayout(page: Page, title = 'Products') {
+  await closeAllAgentTabs(page).catch(() => undefined)
+  await page.getByTestId('discard-draft').first().click({ timeout: 2_000 }).catch(() => undefined)
+  await page.evaluate(() => sessionStorage.setItem('braian.layout.suppressFlush', '1'))
+  const listed = await page.request.get('/v1/workspaces')
+  const body = (await listed.json()) as { workspaces: Array<{ id: string; name: string }> }
+  const workspace = body.workspaces.find((item) => item.name === title)
+  const me = await page.request.get('/v1/me')
+  const userId = ((await me.json()) as { user_id?: string }).user_id
+  if (userId && workspace) {
+    await page.evaluate((key) => localStorage.removeItem(key), `braian.layout.${userId}.default.${workspace.id}`)
+    await page.request.delete(`/v1/workspaces/${workspace.id}/state?environment=default`)
+  }
+  await page.reload()
+  await expect(page.locator('nav.tabs')).toBeVisible({ timeout: 60_000 })
+  await page.evaluate(() => sessionStorage.removeItem('braian.layout.suppressFlush'))
+  await showProductsInner(page, title)
+}
+
+async function showProductsInner(page: Page, title = 'Products') {
+  await page.locator('nav.tabs').getByRole('button', { name: new RegExp(`^${title}`) }).click()
+  const rows = mainTable(page, title).getByTestId('object-row')
+  if (await rows.first().isVisible().catch(() => false)) return
+  const pane = paneWithTab(page, title)
+  const tab = pane.locator('.pane-tab[data-view-type="object_table"]', { hasText: title }).first()
+  await tab.scrollIntoViewIfNeeded()
+  await tab.click()
+  await expect(rows.first()).toBeVisible({ timeout: 60_000 })
+}
+
+/** Focus the Products table in the pane that owns the main object table. */
+export async function showProducts(page: Page, title = 'Products') {
+  try {
+    await showProductsInner(page, title)
+  } catch {
+    await resetProductsLayout(page, title)
+  }
+}
+
+/** Draft links live in chat; review and save stay on the object table pane. */
+export async function openAgentDraftInTable(page: Page, view: Locator, title = 'Products') {
+  await view.getByTestId('agent-result-link').first().click({ timeout: 15_000 })
+  await showProducts(page, title)
 }
 
 /**

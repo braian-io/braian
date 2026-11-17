@@ -201,7 +201,7 @@ describe('palette rows', () => {
       'view:a': { uses: 4, last: now - 500 },
       'view:z': { uses: 4, last: now - 500 },
     }
-    expect(recentSlice([zebra, apple], tied).map((row) => row.title)).toEqual(['Open apple ›', 'Open zebra ›'])
+    expect(recentSlice([zebra, apple], tied, 4, undefined, now).map((row) => row.title)).toEqual(['Open apple ›', 'Open zebra ›'])
     expect(resultAnnouncement(0, '')).toBe('')
     expect(resultAnnouncement(12, '   ')).toBe('')
     expect(resultAnnouncement(1, 'a')).toBe('1 result')

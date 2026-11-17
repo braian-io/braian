@@ -438,7 +438,12 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
 .icon-btn:hover { background: var(--accent-dim); color: var(--text); }
 
 .workspace { position: relative; z-index: 0; min-height: 0; min-width: 0; overflow: hidden; }
-.dock-root { position: absolute; inset: 6px; min-width: 0; min-height: 0; }
+.dock-root {
+  position: absolute;
+  inset: 6px;
+  min-width: 0;
+  min-height: 0;
+}
 .dock-root > .split, .dock-root > .pane { width: 100%; height: 100%; }
 .split { min-height: 0; min-width: 0; width: 100%; height: 100%; display: flex; align-items: stretch; }
 .split.horizontal { flex-direction: row; }
@@ -459,6 +464,66 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
   .split-cell:has(.pane-tab[data-view-type='object_table'].active):not(:has(.split)) {
     min-width: 440px;
   }
+}
+/* Edge-docked agent chat: pin the catalog subtree at the left edge (absolute layout). */
+.dock-root > .split.horizontal.split-agent-dock {
+  display: block;
+  position: relative;
+}
+.dock-root > .split.horizontal[data-agent-dock='true'] > .split-cell {
+  min-width: 0;
+}
+.dock-root > .split.horizontal.split-agent-dock > .split-cell:first-child {
+  overflow: clip;
+  contain: paint;
+}
+.dock-root > .split.horizontal.split-agent-dock > .split-cell:last-child {
+  z-index: 2;
+  isolation: isolate;
+}
+.dock-root > .split.horizontal.split-agent-dock > .split-cell:first-child:has([data-testid='agents-table']) {
+  overflow: auto;
+  contain: none;
+}
+/* Lay the catalog out at the full dock width so existing panes keep their
+   coordinates. The left cell is (dock - 6px divider) * ratio, so 100% / ratio
+   is 6px short of the dock. Adding the divider back reaches the dock width.
+   A container-query width (100cqw) livelocks layout. The same scale must not
+   apply to a nested frozen split: Detail is pinned to that split's right edge
+   and slides about 31px. */
+.dock-root > .split.horizontal.split-agent-dock[data-catalog-scale='full'] > .split-cell:first-child > .split:not(:has([data-testid='agents-table'])) {
+  width: calc(100% / var(--agent-dock-ratio) + 6px);
+  min-width: calc(100% / var(--agent-dock-ratio) + 6px);
+}
+.dock-root > .split.horizontal[data-agent-dock='true'] .split[data-has-detail='true'] {
+  container-type: normal;
+  container-name: none;
+}
+.dock-root > .split.horizontal[data-agent-dock='true'] .split[data-has-detail='true']
+  > .split-cell:has(.pane-tab[data-view-type='object_table'].active):not(:has(.split)) {
+  min-width: 0;
+}
+.dock-root > .split.horizontal[data-agent-dock='true'] .split
+  > .split-cell:has(.pane-tab[data-view-type='object_detail'].active):not(:has(.split)) {
+  min-width: 0;
+}
+.dock-root > .split.horizontal.split-agent-dock > .split-divider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  margin: 0;
+}
+.dock-root .split.horizontal.split-catalog-frozen {
+  display: block;
+  position: relative;
+  height: 100%;
+  width: 100%;
+}
+.dock-root .split.horizontal.split-catalog-frozen > .split-divider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  margin: 0;
 }
 /* A table that shares its split with a direct Detail pane gives way to it. */
 .split:has(> .split-cell > .pane .pane-tab[data-view-type='object_detail'])
@@ -520,6 +585,10 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
   padding: 0 var(--space-1_5);
   background: var(--surface);
   overflow: hidden;
+  pointer-events: none;
+}
+.pane-tabs > * {
+  pointer-events: auto;
 }
 .pane-tab-list {
   display: flex;
@@ -533,7 +602,7 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
   overflow-anchor: none;
   scrollbar-width: none;
   position: relative;
-  z-index: 1;
+  z-index: 2;
 }
 .pane-tab-list::-webkit-scrollbar { display: none; }
 .pane-tab-pad { flex: none; width: 0; }
@@ -604,9 +673,18 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
   flex: 0 0 auto;
   gap: var(--space-0_5);
   min-width: 0;
+  position: relative;
+  z-index: 1;
+  visibility: hidden;
   opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur) var(--ease);
 }
-.pane:hover .pane-chrome, .pane.focused .pane-chrome, .pane-chrome:focus-within { opacity: 1; }
+.pane:hover .pane-chrome, .pane.focused .pane-chrome, .pane-chrome:focus-within {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+}
 .pane-chrome .icon-btn { width: 22px; padding: 0; justify-content: center; }
 .catalog-admin { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); overflow: auto; }
 .catalog-admin input, .catalog-admin select, .catalog-admin textarea { font: inherit; }
@@ -695,7 +773,19 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
   color: var(--muted);
   align-self: center;
 }
-.agent-view { display: flex; flex-direction: column; gap: var(--space-3); }
+.agent-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: 0;
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+  flex: 1 1 auto;
+}
+.pane-body > .agent-view {
+  overflow: hidden;
+}
 .agent-view-head { display: flex; align-items: center; gap: var(--space-1_5); flex-wrap: nowrap; min-width: 0; }
 .agent-view-head h2 { margin: 0; font-size: var(--text-lg); font-weight: 600; min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent-view-head time { color: var(--muted); font-size: var(--text-md); margin-left: auto; flex: none; }
@@ -710,8 +800,41 @@ button.agent-mode {
   opacity: 1;
 }
 button.agent-mode:hover:not(:disabled) { background: var(--hover); }
-.agent-log { display: flex; flex-direction: column; gap: var(--space-1_5); }
+.agent-log {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1_5);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
 .agent-line { margin: 0; }
+.agent-chat-user {
+  margin: 0 0 0 auto;
+  max-width: 92%;
+  padding: var(--space-1_5) var(--space-2);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.agent-chat-assistant {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-0_5);
+  max-width: 100%;
+}
+.agent-result-link {
+  padding: 0;
+  min-height: 0;
+  min-width: 0;
+  max-width: 100%;
+  height: auto;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: start;
+  font-size: inherit;
+}
 .agent-proposal { border: 0; border-top: 1px solid var(--border); border-radius: 0; padding: var(--space-2_5) 0 0; display: flex; flex-direction: column; gap: var(--space-2); }
 .agent-proposal header { display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; }
 .agent-approve { background: var(--accent); color: #fff; }
@@ -729,10 +852,12 @@ button.agent-approve:disabled:hover {
 .agent-skeleton i:first-child { width: 42%; height: 16px; }
 .agent-skeleton i:nth-child(2) { width: 88%; }
 .agent-skeleton i:nth-child(3) { width: 70%; }
-.agent-failed, .agent-fetch-error { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
-.agent-failed p, .agent-fetch-error p { margin: 0; }
-.agent-follow { display: flex; gap: var(--space-2); align-items: center; }
-.agent-follow input { flex: 1 1 auto; }
+.agent-failed, .agent-fetch-error { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); min-width: 0; max-width: 100%; }
+.agent-failed p, .agent-fetch-error p { margin: 0; max-width: 100%; overflow-wrap: anywhere; }
+.agent-failed button, .agent-fetch-error button { max-width: 100%; }
+.agent-follow { display: flex; gap: var(--space-2); align-items: flex-end; flex: none; min-width: 0; max-width: 100%; }
+.agent-follow-input,
+.agent-follow input { flex: 1 1 auto; width: 100%; min-width: 0; max-width: 100%; min-height: 2.6rem; max-height: 9rem; resize: vertical; }
 .agent-follow .agent-action { flex: none; justify-content: center; width: 28px; padding: 0; }
 /* Disabled Send next to "Agent is working…" must look inactive; keep --muted for contrast checks. */
 .agent-follow .agent-action:disabled,
@@ -844,6 +969,25 @@ button.agent-bg-indicator strong { font-variant-numeric: tabular-nums; }
 .pane-body > .table-wrap,
 .pane-body > .graph-wrap,
 .pane-body > .detail-form { overflow: hidden; }
+.pane-body:has(> .table-wrap[data-testid='agents-table']) {
+  overflow: auto;
+}
+.pane-body > .table-wrap[data-testid='agents-table'] {
+  overflow-x: visible;
+  overflow-y: visible;
+}
+.dock-root > .split.horizontal.split-agent-dock .pane:has([data-testid='agents-table']) .pane-body {
+  overflow: auto;
+}
+.dock-root > .split.horizontal.split-agent-dock:has([data-testid='agents-table']) > .split-cell:first-child {
+  overflow: auto;
+  contain: none;
+}
+.dock-root > .split.horizontal.split-agent-dock .pane:has([data-testid='agents-table']) .standard-grid,
+.dock-root > .split.horizontal.split-agent-dock .pane:has([data-testid='agents-table']) .table-wrap {
+  overflow: visible;
+  min-height: 0;
+}
 .dock-preview {
   position: absolute;
   z-index: 4;

@@ -75,6 +75,111 @@ it('lets every cell give way in a split that contains Detail', () => {
   expect(cells.map((cell) => cell.style.flex.split(' ').slice(0, 2).join(' '))).toEqual(['0 1', '0 1', '0 1'])
 })
 
+it('marks a nested Products split that contains Detail so the table can keep its floor', () => {
+  const layout: LayoutDoc = {
+    id: 'ws',
+    title: 'Products',
+    layout: {
+      type: 'split',
+      dir: 'horizontal',
+      ratios: [0.22, 0.78],
+      children: [
+        { type: 'tabs', views: ['tree'], active: 0 },
+        {
+          type: 'split',
+          dir: 'horizontal',
+          ratios: [0.5, 0.5],
+          children: [
+            { type: 'tabs', views: ['products'], active: 0 },
+            {
+              type: 'split',
+              dir: 'horizontal',
+              ratios: [0.5, 0.5],
+              children: [
+                { type: 'tabs', views: ['articles'], active: 0 },
+                { type: 'tabs', views: ['detail'], active: 0 },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    focus: 'products',
+  }
+  const { container } = render(
+    <WorkspaceDock
+      doc={layout}
+      views={[
+        { id: 'tree', title: 'Food', type: 'structure_tree' },
+        { id: 'products', title: 'Products', type: 'object_table' },
+        { id: 'articles', title: 'Articles', type: 'object_table' },
+        { id: 'detail', title: 'Detail', type: 'object_detail' },
+      ]}
+      onChange={() => undefined}
+      renderView={() => <div />}
+      onAddView={() => undefined}
+    />,
+  )
+  const middle = container.querySelector<HTMLElement>(".split.horizontal[data-path='1']")
+  expect(middle?.dataset.hasDetail).toBe('true')
+  const cells = [...(middle?.querySelectorAll<HTMLElement>(':scope > .split-cell') ?? [])]
+  expect(cells.map((cell) => cell.style.flex.split(' ').slice(0, 2).join(' '))).toEqual(['0 1', '0 1'])
+  expect(cells.map((cell) => cell.style.position)).toEqual(['', ''])
+})
+
+it('does not mark the agent dock wrapper as a detail split', () => {
+  const layout: LayoutDoc = {
+    id: 'ws',
+    title: 'Workspace',
+    layout: {
+      type: 'split',
+      dir: 'horizontal',
+      ratios: [0.7, 0.3],
+      children: [
+        {
+          type: 'split',
+          dir: 'horizontal',
+          ratios: [0.55, 0.45],
+          children: [
+            { type: 'tabs', views: ['products'], active: 0 },
+            { type: 'tabs', views: ['detail'], active: 0 },
+          ],
+        },
+        { type: 'tabs', views: ['agent'], active: 0 },
+      ],
+    },
+    focus: 'products',
+  }
+  const { container } = render(
+    <WorkspaceDock
+      doc={layout}
+      views={[
+        { id: 'products', title: 'Products', type: 'object_table' },
+        { id: 'detail', title: 'Detail', type: 'object_detail' },
+        { id: 'agent', title: 'Ask', type: 'agent' },
+      ]}
+      onChange={() => undefined}
+      renderView={() => <div />}
+      onAddView={() => undefined}
+    />,
+  )
+  const outer = container.querySelector<HTMLElement>(".split.horizontal[data-path='root']")
+  const inner = container.querySelector<HTMLElement>(".split.horizontal[data-path='0']")
+  expect(outer?.dataset.hasDetail).toBeUndefined()
+  expect(inner?.dataset.hasDetail).toBe('true')
+  expect(inner?.dataset.catalogFrozen).toBe('true')
+  const innerCells = [...(inner?.querySelectorAll<HTMLElement>(':scope > .split-cell') ?? [])]
+  expect(innerCells.map((cell) => cell.style.position)).toEqual(['absolute', 'absolute'])
+  const outerCells = [...(outer?.querySelectorAll<HTMLElement>(':scope > .split-cell') ?? [])]
+  expect(outer?.dataset.agentDock).toBe('true')
+  expect(outerCells.map((cell) => cell.style.position)).toEqual(['absolute', 'absolute'])
+  expect(outerCells[0]?.style.left).toBe('0px')
+  expect(outerCells[0]?.style.maxWidth).toBe(outerCells[0]?.style.width)
+  expect(outer?.dataset.catalogScale).toBe('full')
+  expect(outer?.style.getPropertyValue('--agent-dock-ratio')).toBe('0.7')
+  expect(outerCells[1]?.style.right).toBe('0px')
+})
+
 it('keeps the full tab title on the truncated tab button', () => {
   const title = 'A very long view title that the tab strip truncates'
   render(
