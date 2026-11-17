@@ -152,15 +152,26 @@ function storedFromDraft(ctx: MeasureEditContext, draft: MeasureEditDraft): { va
   return { value: formatMeasureStorageNumber(storedNum), unit: ctx.storageUnit }
 }
 
+/** Whether a measure draft would persist the same stored value as on the object. */
+export function measureEditStoredUnchanged(
+  ctx: MeasureEditContext,
+  stored: { value: string; unit: string },
+): boolean {
+  if (!ctx.stored) return false
+  const nextNum = Number(stored.value)
+  if (!Number.isFinite(nextNum)) return false
+  return (
+    stored.unit === ctx.stored.unit
+    && formatMeasureStorageNumber(nextNum) === formatMeasureStorageNumber(ctx.stored.value)
+  )
+}
+
 export function commitMeasureEdit(ctx: MeasureEditContext, draft: MeasureEditDraft): MeasureCommitResult {
   const trimmed = draft.valueText.trim()
   if (!trimmed) return { ok: false, reason: 'empty' }
   const stored = storedFromDraft(ctx, draft)
   if (!stored) return { ok: false, reason: 'invalid' }
-  const parsed = parseDecimalInput(draft.valueText)!
-  const roundedDisplay = roundDisplayMeasure(convertMeasure(parsed, draft.unit, ctx.displayUnit, ctx.factors))
-  const priorDisplay = roundedDisplayOfStored(ctx)
-  const unchanged = priorDisplay != null && roundedDisplay === priorDisplay && draft.unit === ctx.displayUnit
+  const unchanged = measureEditStoredUnchanged(ctx, stored)
   const proposedText = formatConvertedMeasure(
     convertMeasure(Number(stored.value), stored.unit, ctx.displayUnit, ctx.factors),
     ctx.displayUnit,

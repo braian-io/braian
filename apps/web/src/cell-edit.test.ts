@@ -5,6 +5,7 @@ import {
   cellEditValuesBody,
   columnBaseKey,
   commitMeasureEdit,
+  type MeasureEditContext,
   displayMeasureText,
   inlineMeasureEditContext,
   isEditableColumn,
@@ -13,6 +14,7 @@ import {
   measureEditContext,
   measureEditInitialDraft,
   measureEditShouldPatch,
+  measureEditStoredUnchanged,
   measureEditStoredValue,
   resolveCellEditInitial,
   valueListKeyForColumn,
@@ -255,6 +257,49 @@ describe('measure inline edit', () => {
       ok: true,
       stored: { value: '2000', unit: 'kJ' },
     })
+  })
+
+  it('commits when sub-cent values differ after display rounding (0.125 → 0.126)', () => {
+    const doc = {
+      a_018f0000_0000_7000_8000_000000000099: '0.125',
+      a_018f0000_0000_7000_8000_000000000099__unit: 'kJ',
+    }
+    const kjColumn = 'energy#unit:kJ'
+    const ctx = inlineMeasureEditContext(kjColumn, doc, energyEnergyDefs)
+    expect(ctx).not.toBeNull()
+    expect(measureEditInitialDraft(ctx!)).toEqual({ valueText: '0.125', unit: 'kJ' })
+    const changed = commitMeasureEdit(ctx!, { valueText: '0.126', unit: 'kJ' })
+    expect(changed).toMatchObject({
+      ok: true,
+      unchanged: false,
+      stored: { value: '0.126', unit: 'kJ' },
+    })
+  })
+})
+
+describe('measureEditStoredUnchanged', () => {
+  const ctx: MeasureEditContext = {
+    stored: { value: 0.125, unit: 'kg' },
+    displayUnit: 'kg',
+    factors: { kg: 1, g: 0.001 },
+    storageUnit: 'kg',
+  }
+
+  it('detects equal stored values at full precision', () => {
+    expect(measureEditStoredUnchanged(ctx, { value: '0.125', unit: 'kg' })).toBe(true)
+  })
+
+  it('detects a real change when display rounding would hide it (0.125 vs 0.126)', () => {
+    expect(measureEditStoredUnchanged(ctx, { value: '0.126', unit: 'kg' })).toBe(false)
+  })
+
+  it('treats parse/format storage round-trips as unchanged', () => {
+    expect(measureEditStoredUnchanged(ctx, { value: '0.125000', unit: 'kg' })).toBe(true)
+  })
+
+  it('returns false when there is no prior stored value', () => {
+    const empty: MeasureEditContext = { ...ctx, stored: null }
+    expect(measureEditStoredUnchanged(empty, { value: '1', unit: 'kg' })).toBe(false)
   })
 })
 
