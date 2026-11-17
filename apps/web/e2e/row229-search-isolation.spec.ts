@@ -48,12 +48,12 @@ async function createProductsWorkspace(page: Page): Promise<{ id: string; name: 
   return { id, name, viewId }
 }
 
-async function openWorkspaceTab(page: Page, name: string) {
-  const tab = page.locator('nav.tabs button.tab').filter({ hasText: name }).first()
-  await tab.click()
-  await expect(tab).toHaveClass(/active/)
+async function openWorkspace(page: Page, workspaceId: string) {
+  await page.goto(`/?ws=${encodeURIComponent(workspaceId)}`)
+  await expect(page.getByTestId('dock')).toBeVisible({ timeout: 60_000 })
   const table = mainTable(page)
   await expect(table).toBeVisible({ timeout: 30_000 })
+  await expect(table.getByTestId('quick-filter')).toHaveValue('')
   await expect(table.getByTestId('object-row').first()).toBeVisible({ timeout: 60_000 })
   return table
 }
@@ -71,7 +71,6 @@ test('table search stays local per browser session', async ({ browser }) => {
   test.setTimeout(300_000)
   let workspaceId = ''
   let viewId = ''
-  let workspaceName = ''
   const contexts: Array<Awaited<ReturnType<Browser['newContext']>>> = []
 
   try {
@@ -82,7 +81,6 @@ test('table search stays local per browser session', async ({ browser }) => {
     const workspace = await createProductsWorkspace(seedPage)
     workspaceId = workspace.id
     viewId = workspace.viewId
-    workspaceName = workspace.name
     await seed.close()
 
     const contextA = await browser.newContext()
@@ -93,10 +91,8 @@ test('table search stays local per browser session', async ({ browser }) => {
     await login(pageA)
     await login(pageB)
 
-    await pageA.reload()
-    await pageB.reload()
-    await openWorkspaceTab(pageA, workspaceName)
-    await openWorkspaceTab(pageB, workspaceName)
+    await openWorkspace(pageA, workspaceId)
+    await openWorkspace(pageB, workspaceId)
 
     const termA = `ROW229-A-${Date.now()}`
     const termB = `ROW229-B-${Date.now() + 1}`
@@ -133,9 +129,9 @@ test('table search stays local per browser session', async ({ browser }) => {
     expect(poisoned.ok(), `poison view ${poisoned.status()}`).toBeTruthy()
     expect(await storedTableFilter(pageB, workspaceId, viewId)).toBe('')
 
-    await pageA.reload()
-    await openWorkspaceTab(pageA, workspaceName)
-    await expect(mainTable(pageA).getByTestId('quick-filter')).toHaveValue('')
+    // Reload must not resurrect server-side or other-session search text.
+    await pageA.reload({ waitUntil: 'domcontentloaded', timeout: 60_000 })
+    await openWorkspace(pageA, workspaceId)
 
     await quickA.fill(termA)
     await expect(quickA).toHaveValue(termA)
