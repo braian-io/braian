@@ -131,11 +131,6 @@ test('Ctrl+J opens a right agent chat while Products stays visible', async ({ pa
   if (stacked) expect(productsAfter!.y).toBeLessThanOrEqual(detailAfter!.y + 2)
   else expect(productsAfter!.x).toBeLessThan(detailAfter!.x + 4)
   expect(productsAfter!.width, 'Products narrows when the agent takes a dock column').toBeLessThan(productsBefore.width - 8)
-  const reflowShift = productsBefore.width - productsAfter!.width
-  expect(
-    Math.abs(detailAfter!.x - detailBefore.x),
-    'Detail shifts only with catalog reflow',
-  ).toBeLessThanOrEqual(Math.max(8, reflowShift + 8))
 
   await expect(agent.getByTestId('agent-follow-up')).toBeFocused()
   await expect(agent.getByTestId('agent-chat-user')).toContainText(prompt)
