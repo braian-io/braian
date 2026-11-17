@@ -1,6 +1,6 @@
 // Agent chat pane: tab title, session header, and follow-up focus ring.
 import { expect, test, type Page } from '@playwright/test'
-import { agentPaneTab, agentSessionView, agentSessionViewByFullPrompt, mainTable, paneWithTab } from './ui'
+import { agentPaneTab, agentSessionView, mainTable, paneWithTab } from './ui'
 import { demoCredentials } from './demo'
 
 async function login(page: Page) {
@@ -96,7 +96,7 @@ test('long first message keeps full prompt on the session header', async ({ page
     await expect(tab).toBeVisible({ timeout: 30_000 })
     const shortTitle = 'Please summarize how this catalog row'
     await expect.poll(async () => tab.getAttribute('title')).toBe(`Agent — ${shortTitle}`)
-    const view = agentSessionViewByFullPrompt(page, marker)
+    const view = agentSessionView(page, marker)
     await expect(view).toBeVisible()
     const heading = view.getByTestId('agent-session-title')
     await expect(heading).toHaveAttribute('title', prompt)
