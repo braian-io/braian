@@ -153,18 +153,21 @@ test.describe('palette keyboard scroll keeps the active row visible', () => {
       await waitForStableOptions(palette)
 
       await expect(palette.locator('[data-value="layout:open-structure"]')).toBeVisible({ timeout: 60_000 })
-      await page.getByTestId('palette-input').fill('open structure')
-      await expect(palette.locator('#palette-list [data-value="layout:open-structure"]')).toHaveAttribute(
-        'aria-selected',
-        'true',
-        { timeout: 60_000 },
-      )
-      await expect
-        .poll(async () => (await activeRowInList(rootList))?.inView ?? false, {
-          message: 'open structure pick in list viewport',
-          timeout: 10_000,
-        })
-        .toBe(true)
+      let onOpenStructure = false
+      for (let step = 0; step < 80; step += 1) {
+        const active = palette.locator('#palette-list .hit.on')
+        if ((await active.count()) > 0 && (await active.getAttribute('data-value')) === 'layout:open-structure') {
+          onOpenStructure = true
+          const pick = await activeRowInList(rootList)
+          expect(pick?.inView, `open structure pick step ${step}: highlight outside list viewport`).toBe(true)
+          break
+        }
+        await page.keyboard.press('ArrowDown')
+        const scrolled = await activeRowInList(rootList)
+        expect(scrolled, `open structure search step ${step}: active row should exist`).not.toBeNull()
+        expect(scrolled!.inView, `open structure search step ${step}: highlight outside list viewport`).toBe(true)
+      }
+      expect(onOpenStructure, 'could not keyboard-navigate to Open structure ›').toBe(true)
       await page.keyboard.press('Tab')
       await expect(page.getByTestId('palette-crumb')).toContainText('Open structure ›')
       const drillState = await activeRowInList(rootList)
