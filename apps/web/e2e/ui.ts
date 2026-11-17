@@ -29,6 +29,13 @@ export function agentSessionView(page: Page, sessionTitle: string) {
   }).last()
 }
 
+export function agentSessionViewByFullPrompt(page: Page, fragment: string) {
+  const escaped = fragment.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  return page.getByTestId('agent-view').filter({
+    has: page.locator(`[data-testid="agent-session-title"][title*="${escaped}"]`),
+  }).last()
+}
+
 /** Close every open agent pane tab so layout reset can paint the catalog again. */
 export async function closeAllAgentTabs(page: Page) {
   for (let guard = 0; guard < 16; guard += 1) {

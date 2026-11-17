@@ -81,6 +81,18 @@ pub struct AgentRunUpdate<'a> {
 }
 
 impl Store {
+    pub async fn set_agent_session_title(&self, id: Uuid, title: &str) -> Result<bool, Error> {
+        let client = self.checkout().await?;
+        let changed = client
+            .execute(
+                "UPDATE agent_runs SET title = $2, session_title_ready = true, updated_at = now()
+                 WHERE id = $1 AND NOT session_title_ready",
+                &[&id, &title],
+            )
+            .await?;
+        Ok(changed > 0)
+    }
+
     pub async fn insert_agent_run(&self, run: &NewAgentRun) -> Result<(), Error> {
         let client = self.checkout().await?;
         client
