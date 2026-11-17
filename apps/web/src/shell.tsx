@@ -1963,7 +1963,8 @@ export function Shell() {
     void (async () => {
       try {
         let views: View[] = viewRows(surfaceNow.views)
-        let tree = findStructureTreeView(views, structureKey, defs)
+        const matched = findStructureTreeView(views, structureKey, defs)
+        let tree = matched ? views.find((view) => view.id === matched.id) : undefined
         if (!tree && surfaceNow.locked) {
           toast.error(copy.layoutLocked)
           return
@@ -1981,8 +1982,9 @@ export function Shell() {
               state,
             },
           })
-          tree = { ...tree, state }
-          views = views.map((view) => (view.id === tree.id ? tree! : view))
+          const updated: View = { ...tree, state }
+          tree = updated
+          views = views.map((view) => (view.id === updated.id ? updated : view))
         }
         if (!tree) {
           const id = crypto.randomUUID()
