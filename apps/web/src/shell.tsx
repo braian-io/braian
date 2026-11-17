@@ -2216,12 +2216,18 @@ export function Shell() {
             doc={doc}
             views={viewRows(surface.views).map((view) => {
               const prompt = view.type === 'agent' ? String(view.state?.prompt ?? view.title) : undefined
+              const bound = typeOfView(view, typeCatalog)
+              const peerActive = view.type === 'object_table' && Boolean(peerSourceOf(view.state))
+              const allOfType = bound?.plural ? copy.allOfType.replace('{type}', bound.plural) : ''
               return {
                 ...view,
                 title: view.type === 'agent' ? copy.agent : displayViewTitle(view, typeCatalog, openTypeKey),
                 prompt,
                 sourceLabel: viewSourceLabel(view, typeCatalog, workspaceCatalogRef(surface), catalogNamesById, peerLabelFor(view)),
-                sourceLabelClearable: view.type === 'object_table' && Boolean(peerSourceOf(view.state)),
+                sourceLabelClearable: peerActive,
+                sourceLabelClearAriaLabel: peerActive && allOfType
+                  ? copy.clearViewSource.replace('{label}', allOfType)
+                  : undefined,
               }
             })}
             onChange={commitDoc}
