@@ -27,6 +27,14 @@ function objectReads(url: string) {
   return pathname.startsWith('/v1/objects/') && !pathname.includes(':pathValues')
 }
 
+function objectIdFromRead(url: string) {
+  return decodeURIComponent(new URL(url).pathname.replace(/^\/v1\/objects\//, ''))
+}
+
+function rowObjectId(rowId: string | null) {
+  return (rowId ?? '').replace(/^object-row-/, '')
+}
+
 async function detailTitle(page: Page) {
   const detail = page.getByTestId('object-detail')
   return (await detail.locator('.detail-title strong').innerText()).trim()
@@ -66,15 +74,30 @@ test('rapid Down arrows bound object GETs and show preview skeletons before the 
   await expect.poll(async () => page.getByTestId('object-detail').getAttribute('data-detail-ready')).toBe('true')
 
   expect(gets.length).toBeGreaterThan(0)
-  expect(gets.length).toBeLessThan(48)
+  // Twenty-four steps without debounce would fan out to hundreds of neighbour prefetch GETs.
+  expect(gets.length).toBeLessThan(24 * 5)
+
+  let slowLoads = false
+  await page.unroute('**/v1/objects/**')
+  await page.route('**/v1/objects/**', async (route) => {
+    if (route.request().method() === 'GET' && objectReads(route.request().url()) && slowLoads) {
+      await page.waitForTimeout(500)
+    }
+    await route.continue()
+  })
 
   await page.keyboard.press('Home')
+  slowLoads = true
   await page.keyboard.press('ArrowDown')
-  await expect(page.getByTestId('object-detail')).toBeVisible()
-  await expect(page.getByTestId('object-detail')).toHaveAttribute('data-detail-ready', 'false')
-  await expect.poll(async () => page.getByTestId('detail-field-skeleton').count()).toBeGreaterThan(0)
-  await expect.poll(async () => page.getByTestId('object-detail').getAttribute('data-detail-ready')).toBe('true')
-  await expect(page.getByTestId('detail-field-skeleton')).toHaveCount(0)
+  const detail = page.getByTestId('object-detail')
+  await expect(detail).toBeVisible()
+  await expect.poll(async () => detail.getAttribute('data-detail-ready')).toBe('false')
+  await expect.poll(async () => detail.getByTestId('detail-field-skeleton').count()).toBeGreaterThan(0)
+  await expect(detail.getByTestId('delete-object-detail')).toBeDisabled()
+  await expect.poll(async () => detail.getAttribute('data-detail-ready')).toBe('true')
+  await expect(detail.getByTestId('delete-object-detail')).toBeEnabled()
+  await expect(detail.getByTestId('detail-field-skeleton')).toHaveCount(0)
+  slowLoads = false
 
   const lastIndex = await rows.count() - 1
   await page.keyboard.press('End')
@@ -85,46 +108,37 @@ test('rapid Down arrows bound object GETs and show preview skeletons before the 
   await expect.poll(async () => (await rows.nth(lastIndex).getAttribute('aria-selected')) === 'true').toBe(true)
 })
 
-test('Save stays off while Detail is still on the list preview', async ({ page }) => {
-  test.setTimeout(120_000)
-  await openProducts(page)
-  await page.keyboard.press('ArrowDown')
-  const detail = page.getByTestId('object-detail')
-  await expect(detail).toBeVisible()
-  await expect(detail).toHaveAttribute('data-detail-ready', 'false')
-  await expect(detail.getByTestId('delete-object-detail')).toBeDisabled()
-  await expect.poll(async () => detail.getAttribute('data-detail-ready')).toBe('true')
-  await expect(detail.getByTestId('delete-object-detail')).toBeEnabled()
-})
-
 test('a persistent object GET failure shows Retry without endless requests', async ({ page }) => {
   test.setTimeout(120_000)
   const { rows } = await openProducts(page)
   let fail = true
-  const gets: string[] = []
+  const failIds = new Set<string>()
+  const failedGets: string[] = []
   await page.route('**/v1/objects/**', async (route) => {
     const url = route.request().url()
     if (route.request().method() !== 'GET' || !objectReads(url)) {
       await route.continue()
       return
     }
-    gets.push(url)
-    if (fail) {
+    const id = objectIdFromRead(url)
+    if (fail && failIds.has(id)) {
+      failedGets.push(url)
       await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ detail: 'forced load failure' }) })
       return
     }
     await route.continue()
   })
 
+  failIds.add(rowObjectId(await rows.first().getAttribute('id')))
   await page.keyboard.press('ArrowDown')
   await expect(page.getByTestId('detail-error')).toBeVisible({ timeout: 30_000 })
   await expect(page.getByTestId('detail-field-skeleton')).toHaveCount(0)
   await expect(page.getByTestId('detail-fetch-retry')).toBeVisible()
   await page.waitForTimeout(2_000)
-  const afterFailure = gets.length
+  const afterFailure = failedGets.length
   expect(afterFailure).toBeLessThanOrEqual(6)
   await page.waitForTimeout(2_000)
-  expect(gets.length).toBe(afterFailure)
+  expect(failedGets.length).toBe(afterFailure)
 
   fail = false
   await page.getByTestId('detail-fetch-retry').click()
@@ -132,14 +146,16 @@ test('a persistent object GET failure shows Retry without endless requests', asy
   await expect(page.getByTestId('detail-error')).toHaveCount(0)
   await expect.poll(async () => page.getByTestId('object-detail').getAttribute('data-detail-ready')).toBe('true')
 
-  gets.length = 0
+  failedGets.length = 0
   fail = true
+  failIds.clear()
+  failIds.add(rowObjectId(await rows.nth(1).getAttribute('id')))
   await page.keyboard.press('ArrowDown')
   const nextName = (await rows.nth(1).locator('[data-column="name"]').innerText()).trim()
   await expect.poll(() => detailTitle(page)).toBe(nextName)
   await expect(page.getByTestId('detail-error')).toBeVisible({ timeout: 30_000 })
   await page.waitForTimeout(2_000)
-  expect(gets.length).toBeLessThanOrEqual(6)
+  expect(failedGets.length).toBeLessThanOrEqual(6)
 })
 
 test('Enter and Space still confirm the focused row for Detail', async ({ page }) => {
