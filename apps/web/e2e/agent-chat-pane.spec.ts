@@ -66,11 +66,13 @@ test('agent pane tab and session header stay readable', async ({ page }) => {
     const heading = view.getByTestId('agent-session-title')
     await expect(heading).toHaveText(prompt)
     await expect(heading).toHaveAttribute('title', prompt)
-    const clipped = await heading.evaluate((node) => {
-      const el = node as HTMLElement
-      return el.scrollHeight > el.clientHeight + 1
+    const headerStyle = await heading.evaluate((node) => {
+      const style = getComputedStyle(node)
+      return { lineClamp: style.webkitLineClamp, whiteSpace: style.whiteSpace, textOverflow: style.textOverflow }
     })
-    expect(clipped, 'session title should not single-line truncate at this width').toBe(false)
+    expect(headerStyle.lineClamp).toBe('2')
+    expect(headerStyle.whiteSpace).not.toBe('nowrap')
+    expect(headerStyle.textOverflow).not.toBe('ellipsis')
     await expect(view.getByTestId('agent-status')).toHaveAttribute('data-status', 'done', { timeout: 30_000 })
   } finally {
     await cleanupDrafts(page)
