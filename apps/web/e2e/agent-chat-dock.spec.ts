@@ -105,6 +105,6 @@ test('Ctrl+J opens a right agent chat while Products stays visible', async ({ pa
   } finally {
     await page.getByTestId('discard-draft').first().click({ timeout: 5_000 }).catch(() => undefined)
     const discardAll = page.getByRole('button', { name: 'Discard all' })
-    if (await discardAll.isEnabled().catch(() => false)) await discardAll.click()
+    if ((await discardAll.count()) > 0 && (await discardAll.isEnabled())) await discardAll.click({ timeout: 15_000 })
   }
 })
