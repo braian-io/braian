@@ -3356,7 +3356,10 @@ button.primary[aria-disabled='true'] {
 [data-testid='agents-table'] .standard-grid-row:nth-child(even):not(.on) {
   background: color-mix(in srgb, var(--surface) 72%, var(--panel));
 }
-[data-testid='agents-table'] .standard-grid-cell[data-column='name'] { flex: 1 1 auto; }
+[data-testid='agents-table'] .standard-grid-cell[data-column='name'] {
+  flex: 1 1 10rem;
+  min-width: 6rem;
+}
 .standard-grid-row.draft { background: color-mix(in oklab, var(--warn, #c90) 10%, transparent); }
 .standard-grid-row.read-only { color: var(--muted); opacity: 0.7; }
 .standard-grid-reorder,
