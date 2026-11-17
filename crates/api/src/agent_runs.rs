@@ -1981,7 +1981,10 @@ mod session_tests {
 
     #[test]
     fn display_title_fallback_uses_six_words() {
-        let long = (0..12).map(|n| format!("word{n}")).collect::<Vec<_>>().join(" ");
+        let long = (0..12)
+            .map(|n| format!("word{n}"))
+            .collect::<Vec<_>>()
+            .join(" ");
         let fallback = display_title_fallback(&long);
         assert_eq!(fallback, "word0 word1 word2 word3 word4 word5…");
         assert_eq!(
