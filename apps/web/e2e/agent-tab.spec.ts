@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
-import { mainTable, openAgentDraftInTable, resetProductsLayout, setTheme, showProducts } from './ui'
+import { agentPaneTab, agentSessionView, mainTable, openAgentDraftInTable, resetProductsLayout, setTheme, showProducts } from './ui'
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -62,13 +62,12 @@ async function ask(page: Page, prompt: string) {
   await page.keyboard.press('Control+j')
 }
 
-function agentTab(page: Page, title: string) {
-  const exact = new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`)
-  return page.locator('.pane-tab[data-view-type="agent"]').filter({ hasText: exact }).last()
+function agentTab(page: Page, sessionTitle?: string) {
+  return agentPaneTab(page, sessionTitle)
 }
 
 function agentView(page: Page, title: string) {
-  return page.getByTestId('agent-view').filter({ has: page.getByRole('heading', { level: 2, name: title, exact: true }) }).last()
+  return agentSessionView(page, title)
 }
 
 test('the agent tab opens and the rest of the app stays usable', async ({ page }) => {
@@ -309,7 +308,7 @@ test('escape inside the agent tab does not close it', async ({ page }) => {
   await expect(agentView(page, title)).toBeVisible()
 })
 
-test('an agent tab in another workspace is announced', async ({ page }) => {
+test('agent tabs from another workspace stay hidden', async ({ page }) => {
   test.setTimeout(120_000)
   await login(page)
   try {
@@ -356,8 +355,8 @@ test('an agent tab in another workspace is announced', async ({ page }) => {
   })
   await page.reload()
   await showProducts(page)
-  await expect(page.locator('[data-sonner-toast]')).toContainText('another workspace')
-  await expect(page.locator('.pane-tab', { hasText: 'agent in another workspace' })).toHaveCount(0)
+  await expect(page.locator('.pane-tab[data-view-type="agent"][title*="agent in another workspace"]')).toHaveCount(0)
+  await expect(page.locator('[data-sonner-toast]')).toHaveCount(0)
   } finally {
     await page.unroute('**/v1/agent/runs').catch(() => undefined)
     await resetProductsLayout(page).catch(() => undefined)

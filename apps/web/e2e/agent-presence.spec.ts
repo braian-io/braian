@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
-import { expectToastClearsLists, mainTable, resetProductsLayout, setTheme, showProducts } from './ui'
+import { agentPaneTab, agentSessionView, expectToastClearsLists, mainTable, resetProductsLayout, setTheme, showProducts } from './ui'
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -20,19 +20,18 @@ async function ask(page: Page, prompt: string) {
 }
 
 function agentTab(page: Page, title: string) {
-  const exact = new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`)
-  return page.locator('.pane-tab[data-view-type="agent"]').filter({ hasText: exact }).last()
+  return agentPaneTab(page, title)
 }
 
 function agentView(page: Page, title: string) {
-  return page.getByTestId('agent-view').filter({ has: page.getByRole('heading', { level: 2, name: title, exact: true }) }).last()
+  return agentSessionView(page, title)
 }
 
 async function closeAgentTab(page: Page, title: string) {
-  const exact = new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`)
-  const tabs = page.locator('.pane-tab[data-view-type="agent"]').filter({ hasText: exact })
+  const tab = agentPaneTab(page, title)
+  const escaped = title.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  const tabs = page.locator(`.pane-tab[data-view-type="agent"][title*="${escaped}"]`)
   const before = await tabs.count()
-  const tab = tabs.last()
   await tab.hover()
   await tab.getByRole('button', { name: 'Close tab' }).click()
   await expect(tabs).toHaveCount(before - 1)
@@ -277,14 +276,14 @@ test('a long active tab keeps its start visible in a crowded strip', async ({ pa
     'ask me before the neighbor tab stays fully readable',
     'ask me before the active name begins at the left',
   ]
-  const tabFor = (prefix: string) => page.locator('.pane-tab[data-view-type="agent"]').filter({ hasText: prefix }).last()
+  const tabFor = (sessionTitle: string) => agentPaneTab(page, sessionTitle)
   for (const title of titles) {
     await ask(page, title)
     await expect(page.getByTestId('command-palette')).toHaveCount(0)
-    await expect(tabFor(title.slice(0, 24))).toBeAttached()
+    await expect(tabFor(title)).toBeAttached()
     await expect(agentView(page, title).getByTestId('agent-follow-up')).toBeVisible()
   }
-  const active = titles[2].slice(0, 24)
+  const active = titles[2]
   await tabFor(active).click({ force: true })
   const tab = tabFor(active)
   const strip = tab.locator('xpath=ancestor::div[contains(@class,"pane-tab-list")]')
@@ -323,7 +322,7 @@ test('a long active tab keeps its start visible in a crowded strip', async ({ pa
   ])
   expect(overflow).toBe(true)
   expect(tabLeft).toBeLessThanOrEqual(stripLeft + 8)
-  expect(truncated).toBe(true)
+  expect(truncated).toBe(false)
   const cut = await page.locator('.pane-tab-list').evaluateAll((lists) => lists.flatMap((list) => {
     const view = list.getBoundingClientRect()
     return [...list.querySelectorAll<HTMLElement>('[data-tab]')].flatMap((item) => {

@@ -12,6 +12,23 @@ export function mainTable(page: Page, title = 'Products'): Locator {
   return paneWithTab(page, title).getByTestId('object-table').first()
 }
 
+export function agentPaneTab(page: Page, sessionTitle?: string, which: 'first' | 'last' = 'last') {
+  let tabs = page.locator('.pane-tab[data-view-type="agent"]')
+  if (sessionTitle) {
+    const escaped = sessionTitle.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+    tabs = page.locator(`.pane-tab[data-view-type="agent"][title*="${escaped}"]`)
+  } else {
+    tabs = tabs.filter({ hasText: /^Agent$/ })
+  }
+  return which === 'first' ? tabs.first() : tabs.last()
+}
+
+export function agentSessionView(page: Page, sessionTitle: string) {
+  return page.getByTestId('agent-view').filter({
+    has: page.getByTestId('agent-session-title').filter({ hasText: sessionTitle }),
+  }).last()
+}
+
 /** Close every open agent pane tab so layout reset can paint the catalog again. */
 export async function closeAllAgentTabs(page: Page) {
   for (let guard = 0; guard < 16; guard += 1) {

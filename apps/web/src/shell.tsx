@@ -61,7 +61,7 @@ import { prepareFeedbackCapture, type FeedbackCapture } from './feedback'
 import { AgentPresence } from './agent-presence'
 import { AgentView } from './agent-view'
 import { AgentsTable } from './agents-table'
-import { agentRunPrompt, agentRunsForWorkspace, agentTabTitle, backToMySessionEvent, listAgentRuns, openAgentEvent, openAgentsTableEvent, patchAgentRun, requestBackToMySession, showAgentSessionEvent, takeOverAgentRun, type AgentMessage, type AgentRunSummary } from './agent-runs'
+import { agentRunPrompt, agentRunsForWorkspace, backToMySessionEvent, listAgentRuns, openAgentEvent, openAgentsTableEvent, patchAgentRun, requestBackToMySession, showAgentSessionEvent, takeOverAgentRun, type AgentMessage, type AgentRunSummary } from './agent-runs'
 import { agentSessionLayout, controllingAgentRuns, holdLayoutFlush, layoutFlushHeld, agentMarkerViewIds, setViewingAgentRun, subscribeViewingAgent, viewingAgentRunId } from './agent-session'
 import { CommandPalette } from './palette'
 import { SharedContextMenuHost, prefersNativeContextMenu } from './shared-context-menu'
@@ -298,7 +298,6 @@ export function Shell() {
   const mineDocRef = useRef<LayoutDoc | null>(null)
   const viewingRunId = useSyncExternalStore(subscribeViewingAgent, viewingAgentRunId, viewingAgentRunId)
   const restoredAgents = useRef<string | null>(null)
-  const elsewhereAnnounced = useRef<string | null>(null)
   const applyViewTypeSourceRef = useRef<(typeId: string, viewId?: string) => Promise<void>>(async () => undefined)
   const applyViewPeerSourceRef = useRef<(peerViewId: string, viewId?: string, linkType?: string) => Promise<void>>(async () => undefined)
   const migratedRef = useRef(new Set<string>())
@@ -779,18 +778,6 @@ export function Shell() {
       })
       .catch((reason: unknown) => reportWriteError(reason))
   }, [workspace.data, doc, userId])
-
-  useEffect(() => {
-    const surface = workspace.data
-    const runs = agentRunList.data
-    if (!surface || !runs || !doc) return
-    const { elsewhere } = agentRunsForWorkspace(runs, surface.id)
-    if (elsewhere.length === 0) return
-    const key = `${surface.id}:${elsewhere.map((run) => run.id).sort().join(',')}`
-    if (elsewhereAnnounced.current === key) return
-    elsewhereAnnounced.current = key
-    toast.message(copy.agentOpenElsewhere)
-  }, [agentRunList.data, workspace.data, doc])
 
   useEffect(() => {
     const onRun = (event: Event) => {
@@ -1783,7 +1770,7 @@ export function Shell() {
       if (!found) {
         const id = crypto.randomUUID()
         const prompt = agentRunPrompt(run)
-        const title = agentTabTitle(prompt) || copy.agent
+        const title = copy.agent
         found = {
           id,
           type: 'agent',
@@ -2112,7 +2099,7 @@ export function Shell() {
               const prompt = view.type === 'agent' ? String(view.state?.prompt ?? view.title) : undefined
               return {
                 ...view,
-                title: prompt ? agentTabTitle(prompt) : displayViewTitle(view, typeCatalog, openTypeKey),
+                title: view.type === 'agent' ? copy.agent : displayViewTitle(view, typeCatalog, openTypeKey),
                 prompt,
                 sourceLabel: viewSourceLabel(view, typeCatalog, workspaceCatalogRef(surface), catalogNamesById, peerLabelFor(view)),
               }
@@ -2358,7 +2345,10 @@ function ViewBody({ view, session, workspace }: { view: View; session: Session; 
   }
   if (view.type === 'data_model') return <DataModel view={view} />
   if (view.type === 'attribute_definitions') return <AttributeDefinitions />
-  if (view.type === 'agent') return <AgentView runId={String(view.state.run_id ?? '')} title={view.title} push={session.push} />
+  if (view.type === 'agent') {
+    const prompt = String(view.state?.prompt ?? '').trim()
+    return <AgentView runId={String(view.state.run_id ?? '')} title={prompt || view.title} push={session.push} />
+  }
   if (view.type === 'agents') return <AgentsTable />
   if (view.type === 'proposal') return <ProposalView session={session} />
   if (view.type === 'proposal_list') return <ProposalListView session={session} />
