@@ -17,7 +17,9 @@ async function login(page: Page) {
   await page.getByTestId('password').fill(demo.password)
   await page.getByRole('button', { name: 'Sign in' }).click()
   await expect(page.getByTestId('dock')).toBeVisible({ timeout: 60_000 })
-  await expect(page.locator('.pane-tab[data-view-type="object_table"]', { hasText: 'Products' })).toBeVisible({ timeout: 60_000 })
+  await expect(
+    page.locator('.pane-tab[data-view-type="object_table"]').filter({ hasText: 'Products' }).first(),
+  ).toBeVisible({ timeout: 60_000 })
 }
 
 async function resetProductsLayout(page: Page) {
