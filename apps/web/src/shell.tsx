@@ -61,7 +61,7 @@ import { prepareFeedbackCapture, type FeedbackCapture } from './feedback'
 import { AgentPresence } from './agent-presence'
 import { AgentView } from './agent-view'
 import { AgentsTable } from './agents-table'
-import { agentRunPrompt, agentRunsForWorkspace, backToMySessionEvent, listAgentRuns, openAgentEvent, openAgentsTableEvent, patchAgentRun, requestBackToMySession, showAgentSessionEvent, takeOverAgentRun, type AgentMessage, type AgentRunSummary } from './agent-runs'
+import { agentDockTabSessionLabel, agentRunPrompt, agentRunsForWorkspace, backToMySessionEvent, listAgentRuns, openAgentEvent, openAgentsTableEvent, patchAgentRun, requestBackToMySession, showAgentSessionEvent, takeOverAgentRun, type AgentMessage, type AgentRunSummary } from './agent-runs'
 import { agentSessionLayout, controllingAgentRuns, holdLayoutFlush, layoutFlushHeld, agentMarkerViewIds, setViewingAgentRun, subscribeViewingAgent, viewingAgentRunId } from './agent-session'
 import { CommandPalette } from './palette'
 import { SharedContextMenuHost, prefersNativeContextMenu } from './shared-context-menu'
@@ -2227,7 +2227,7 @@ export function Shell() {
           <WorkspaceDock
             doc={doc}
             views={viewRows(surface.views).map((view) => {
-              const prompt = view.type === 'agent' ? String(view.state?.prompt ?? view.title) : undefined
+              const prompt = agentDockTabSessionLabel(view, agentRunList.data)
               const bound = typeOfView(view, typeCatalog)
               const peerActive = view.type === 'object_table' && Boolean(peerSourceOf(view.state))
               const allOfType = bound?.plural ? copy.allOfType.replace('{type}', bound.plural) : ''
