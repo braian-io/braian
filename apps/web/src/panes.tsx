@@ -97,7 +97,7 @@ import { useOpenObjectProposals } from './use-open-proposals'
 import { shouldHoldTablePaint, shouldRefreshTableSnapshot } from './table-live-paint'
 import { searchPeerArticles, type PeerPickOption } from './peer-search'
 import { linkedPeerIds } from './peer-source'
-import { isExplicitAllSource, peerEmptyState, peerIdsFilter, peerNodeFilter, peerSourceOf } from './view-source'
+import { clearExplicitAllSource, isExplicitAllSource, peerEmptyState, peerIdsFilter, peerNodeFilter, peerSourceOf } from './view-source'
 import { FieldDiff } from './field-diff-view'
 import { proposeInAgentSession } from './agent-runs'
 import { viewingAgentRunId } from './agent-session'
@@ -448,6 +448,11 @@ export function ObjectTable({
   useEffect(() => {
     publishSelectionLabels(labelCodes(labelFilter.split(' && ').map((part) => part.replace(/^a_[A-Za-z0-9_]+:=/, ''))))
   }, [labelFilter])
+  // A peer source replaces the global group filter: the view follows the other
+  // view's row/node, not whatever group happens to be selected in the tree.
+  const peerSource = peerSourceOf(view.state)
+  const explicitAll = isExplicitAllSource(view.state)
+  const groupFilterApplies = !peerSource && !explicitAll
   useEffect(() => {
     const onApply = (event: Event) => {
       const item = (event as CustomEvent<Json>).detail
@@ -455,6 +460,8 @@ export function ObjectTable({
       const query = (item.query as Json) ?? {}
       const dynamicFilter = selectionFilterText(query)
       const emptyManual = !dynamicFilter && isEmptyManualQuery(query)
+      // Group/label assortments do not apply while a peer source drives the table.
+      if (peerSource && !dynamicFilter && !emptyManual) return
       setActiveSelectionId(String(item.id ?? ''))
       setFilter('')
       setSelectionFilter(dynamicFilter || (emptyManual ? EMPTY_MANUAL_FILTER : ''))
@@ -463,11 +470,10 @@ export function ObjectTable({
     }
     window.addEventListener(SELECTION_APPLIED_EVENT, onApply)
     return () => window.removeEventListener(SELECTION_APPLIED_EVENT, onApply)
-  }, [session, typeKey, bound?.id, defs.data])
-  // A peer source replaces the global group filter: the view follows the other
-  // view's row/node, not whatever group happens to be selected in the tree.
-  const peerSource = peerSourceOf(view.state)
-  const explicitAll = isExplicitAllSource(view.state)
+  }, [session, typeKey, bound?.id, defs.data, peerSource])
+  useEffect(() => {
+    if (peerSource) setActiveSelectionId('')
+  }, [peerSource])
   const peerSourceView = peerSource
     ? ((workspace.views as PanesView[] | null | undefined) ?? []).find((item) => item.id === peerSource.viewId)
     : undefined
@@ -516,6 +522,28 @@ export function ObjectTable({
   const filterBy = [objectTableFilter(typeKey, peerSource || explicitAll ? null : session.group, defs.data), peerFilter, selectionFilter, labelFilter, ...pathFilters]
     .filter(Boolean)
     .join(' && ')
+  const enableGroupAssortmentFilter = useCallback(async () => {
+    if (!explicitAll || workspace.locked) return
+    const nextState = clearExplicitAllSource(view.state)
+    const body = {
+      id: view.id,
+      workspace_id: workspace.id,
+      type: view.type,
+      title: view.title,
+      pane: view.pane ?? 'center',
+      position: view.position ?? 0,
+      state: freeObject(nextState),
+    }
+    const surface = queryClient.getQueryData<Json>(['workspace', workspace.id])
+    if (surface && typeof surface === 'object' && !Array.isArray(surface)) {
+      const views = (surface.views as Json[] | undefined) ?? []
+      queryClient.setQueryData(['workspace', workspace.id], {
+        ...surface,
+        views: views.map((item) => (String(item.id) === view.id ? { ...item, state: nextState } : item)),
+      })
+    }
+    await api.post('/v1/views', { body })
+  }, [explicitAll, workspace.id, workspace.locked, view, queryClient])
   const attributePaths = useQuery({
     queryKey: ['attribute-paths', typeKey],
     queryFn: () =>
@@ -2158,7 +2186,8 @@ export function ObjectTable({
           setActiveSelectionId={setActiveSelectionId}
           activeFilter={filter}
           assortments={selectionRows}
-          groupFilterApplies={!peerSource && !explicitAll}
+          groupFilterApplies={groupFilterApplies}
+          onBeforeGroupAssortment={peerSource ? undefined : enableGroupAssortmentFilter}
           defs={defs.data}
         />
       </div>
@@ -2687,6 +2716,7 @@ function TableFilters({
   activeFilter,
   assortments,
   groupFilterApplies,
+  onBeforeGroupAssortment,
   defs,
 }: {
   groupBy: string
@@ -2703,6 +2733,7 @@ function TableFilters({
   activeFilter: string
   assortments: Json[]
   groupFilterApplies: boolean
+  onBeforeGroupAssortment?: () => void | Promise<void>
   defs?: Json
 }) {
   const clear = () => {
@@ -2713,21 +2744,22 @@ function TableFilters({
     setSelectionFilter('')
     setActiveSelectionId('')
   }
+  const chipContext = {
+    activeGroup,
+    activeLabelFilter,
+    activeSelectionFilter,
+    activeSelectionId,
+    activeFilter,
+    groupFilterApplies,
+    defs,
+  }
   const applyAssortment = (item: Json) => {
     const query = (item.query as Json) ?? {}
     const dynamicFilter = selectionFilterText(query)
     const emptyManual = !dynamicFilter && isEmptyManualQuery(query)
     const nextGroup = query.group ? String(query.group) : null
     const nextLabels = labelSearchFilter(query, defs)
-    // Toggle off when the same selection is already active.
-    const same = dynamicFilter
-      ? dynamicFilter === activeSelectionFilter
-      : emptyManual
-        ? activeSelectionFilter === EMPTY_MANUAL_FILTER
-        : groupFilterApplies
-          && (nextGroup ?? '') === (activeGroup ?? '')
-          && nextLabels === activeLabelFilter
-          && !activeSelectionFilter
+    const same = assortmentChipActive(item, chipContext)
     if (same) {
       setGroup(null)
       setLabelFilter('')
@@ -2735,6 +2767,11 @@ function TableFilters({
       setFilter('')
       setActiveSelectionId('')
       return
+    }
+    const needsGroupFilter = !dynamicFilter && !emptyManual
+    if (needsGroupFilter && !groupFilterApplies) {
+      if (!onBeforeGroupAssortment) return
+      void onBeforeGroupAssortment()
     }
     setFilter('')
     setActiveSelectionId(String(item.id ?? ''))
@@ -2748,15 +2785,7 @@ function TableFilters({
     setGroup(dynamicFilter ? null : nextGroup)
     setLabelFilter(dynamicFilter ? '' : nextLabels)
   }
-  const assortmentActive = (item: Json) => assortmentChipActive(item, {
-    activeGroup,
-    activeLabelFilter,
-    activeSelectionFilter,
-    activeSelectionId,
-    activeFilter,
-    groupFilterApplies,
-    defs,
-  })
+  const assortmentActive = (item: Json) => assortmentChipActive(item, chipContext)
   const selectionOn = Boolean(
     (groupFilterApplies && activeGroup)
     || activeLabelFilter

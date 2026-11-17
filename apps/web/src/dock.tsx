@@ -544,6 +544,7 @@ function Pane({ frame, leaf }: { frame: Frame; leaf: Leaf }) {
                 className="pane-source"
                 data-testid="view-source-label"
                 title={label}
+                aria-label={copy.clearViewSource.replace('{label}', label)}
                 onClick={() => frame.onSourceLabelClear?.(activeId)}
               >
                 {label}

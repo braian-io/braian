@@ -1701,7 +1701,7 @@ export function Shell() {
       ?? views.find((view) => view.type === 'object_table')
     if (!target) return
     const nextState = applyTypeSource(target.state, type)
-    const updated: View = { ...target, title: type.plural, state: freeObject(nextState) }
+    const updated: View = { ...target, state: freeObject(nextState) }
     await api.post('/v1/views', {
       body: {
         id: updated.id,

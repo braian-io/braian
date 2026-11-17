@@ -33,5 +33,5 @@ export function assortmentChipActive(item: Json, ctx: AssortmentChipContext): bo
     if (a === b || wantGroup === ctx.activeGroup) return wantLabels === ctx.activeLabelFilter
   }
   if (!wantGroup && wantLabels && wantLabels === ctx.activeLabelFilter && !ctx.activeGroup) return true
-  return Boolean(ctx.activeSelectionId && String(item.id ?? '') === ctx.activeSelectionId)
+  return false
 }
