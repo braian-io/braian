@@ -2649,11 +2649,22 @@ kbd {
   gap: var(--space-2);
   min-height: 0;
 }
-.graph-full-placeholder {
-  flex: 1 1 auto;
-  min-height: 0;
-  visibility: hidden;
-  pointer-events: none;
+/* Full-size graph escapes the pane scrollport. Keep the overlay below the app chrome
+   and let fixed descendants paint without clipping. */
+body[data-graph-full-open] .workspace,
+body[data-graph-full-open] .dock-root,
+body[data-graph-full-open] .split,
+body[data-graph-full-open] .split-cell,
+body[data-graph-full-open] .pane:has([data-testid='graph-full']),
+body[data-graph-full-open] .pane:has([data-testid='graph-full']) .pane-body,
+body[data-graph-full-open] .pane-body:has([data-testid='graph-full']) {
+  overflow: visible;
+}
+body[data-graph-full-open] .pane-body > .graph-wrap.graph-full {
+  overflow: visible;
+}
+body[data-graph-full-open] .workspace {
+  z-index: 36;
 }
 .model-tree:focus-visible { outline: 2px solid var(--accent); border-radius: var(--r-md); }
 button, .pane-tab, .hit, .class-row, .attr-card {
