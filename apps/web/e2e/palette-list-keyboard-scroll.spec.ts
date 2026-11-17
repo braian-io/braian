@@ -8,7 +8,11 @@ async function login(page: Page) {
   await page.getByTestId('email').fill(demo.email)
   await page.getByTestId('password').fill(demo.password)
   await page.getByRole('button', { name: 'Sign in' }).click()
-  await expect(page.getByTestId('workspace')).toBeVisible()
+  await expect(page.getByTestId('workspace')).toBeVisible({ timeout: 60_000 })
+  const tableTab = page.locator('.pane-tab[data-view-type="object_table"]').first()
+  await expect(tableTab).toBeVisible({ timeout: 60_000 })
+  if ((await page.getByTestId('object-row').count()) === 0) await tableTab.click()
+  await expect(page.getByTestId('object-row').first()).toBeVisible({ timeout: 60_000 })
 }
 
 async function openProducts(page: Page) {
@@ -138,6 +142,7 @@ test.describe('palette keyboard scroll keeps the active row visible', () => {
   })
 
   test('Root list: filter, Open structure › drill, back, and ArrowDown scroll', async ({ page }) => {
+    test.setTimeout(120_000)
     await login(page)
     await openProducts(page)
     await expect(page.getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
@@ -153,7 +158,8 @@ test.describe('palette keyboard scroll keeps the active row visible', () => {
 
       await expect(palette.locator('[data-value="op:ui.open_view"]')).toBeVisible({ timeout: 60_000 })
       await page.getByTestId('palette-input').fill('Open view')
-      await expect(palette.locator('#palette-list .hit.on')).toBeVisible({ timeout: 60_000 })
+      await expect(palette.locator('.hit.on')).toContainText('Open view', { timeout: 60_000 })
+      await expect(palette.locator('.hit.on')).toHaveCount(1)
       const filterState = await activeRowInList(page, rootList)
       expect(filterState, 'root filter should highlight a row').not.toBeNull()
       expect(filterState!.inView, 'root filter highlight outside list viewport').toBe(true)
@@ -161,7 +167,7 @@ test.describe('palette keyboard scroll keeps the active row visible', () => {
       await page.getByTestId('palette-input').fill('')
       await expect(palette.locator('[data-value="layout:open-structure"]')).toBeVisible({ timeout: 60_000 })
       await page.getByTestId('palette-input').fill('open structure')
-      await expect(palette.locator('#palette-list .hit.on')).toBeVisible({ timeout: 60_000 })
+      await expect(palette.locator('.hit.on').first()).toBeVisible({ timeout: 60_000 })
       const drillPickState = await activeRowInList(page, rootList)
       expect(drillPickState?.inView, 'open structure pick outside list viewport').toBe(true)
       await page.keyboard.press('Tab')

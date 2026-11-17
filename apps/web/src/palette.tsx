@@ -253,6 +253,7 @@ export function CommandPalette({
     queryKey: ['operations'],
     queryFn: () => api.get('/v1/operations'),
     staleTime: 60_000,
+    placeholderData: (previous) => previous,
   })
   const remoteFrecency = useQuery({
     queryKey: ['frecency'],
