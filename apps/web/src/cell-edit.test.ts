@@ -275,6 +275,59 @@ describe('measure inline edit', () => {
       stored: { value: '0.126', unit: 'kJ' },
     })
   })
+
+  it('treats commitMeasureEdit(measureEditInitialDraft(ctx)) as unchanged in a kcal column over kJ storage', () => {
+    const ctx = inlineMeasureEditContext(columnId, energyDoc, energyEnergyDefs)
+    expect(ctx).not.toBeNull()
+    const initial = measureEditInitialDraft(ctx!)
+    const unchanged = commitMeasureEdit(ctx!, initial)
+    expect(unchanged).toMatchObject({ ok: true, unchanged: true })
+    for (let kj = 1; kj <= 5000; kj += 1) {
+      const doc = {
+        a_018f0000_0000_7000_8000_000000000099: String(kj),
+        a_018f0000_0000_7000_8000_000000000099__unit: 'kJ',
+      }
+      const loopCtx = inlineMeasureEditContext(columnId, doc, energyEnergyDefs)
+      expect(loopCtx).not.toBeNull()
+      const loopInitial = measureEditInitialDraft(loopCtx!)
+      expect(commitMeasureEdit(loopCtx!, loopInitial)).toMatchObject({ ok: true, unchanged: true })
+    }
+  })
+})
+
+const massMassDefs = {
+  attributes: [
+    {
+      id: '018f0000-0000-7000-8000-000000000088',
+      key: 'net_weight',
+      kind: { type: 'number', unit_family: '018f0000-0000-7000-8000-000000000015' },
+    },
+  ],
+  unit_families: [
+    {
+      id: '018f0000-0000-7000-8000-000000000015',
+      key: 'mass',
+      units: [
+        { code: 'g', factor: '1' },
+        { code: 'oz', factor: '28.349523125' },
+      ],
+    },
+  ],
+}
+
+describe('measure inline edit across display units', () => {
+  it('treats commitMeasureEdit(measureEditInitialDraft(ctx)) as unchanged when g is shown in oz', () => {
+    const doc = {
+      a_018f0000_0000_7000_8000_000000000088: '100',
+      a_018f0000_0000_7000_8000_000000000088__unit: 'g',
+    }
+    const ozColumn = 'net_weight#unit:oz'
+    const ctx = inlineMeasureEditContext(ozColumn, doc, massMassDefs)
+    expect(ctx).not.toBeNull()
+    const initial = measureEditInitialDraft(ctx!)
+    expect(initial.unit).toBe('oz')
+    expect(commitMeasureEdit(ctx!, initial)).toMatchObject({ ok: true, unchanged: true })
+  })
 })
 
 describe('measureEditStoredUnchanged', () => {

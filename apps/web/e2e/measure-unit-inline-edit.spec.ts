@@ -398,6 +398,13 @@ test.describe('measure unit inline edit', () => {
       await expect(valueInput).toHaveValue('2000')
       await valueInput.press('Enter')
       expect(await readEnergy(page, objectId)).toEqual({ value: '2000', unit: 'kJ' })
+
+      const kcalCell = row.locator('[data-testid="path-cell-energy#unit:kcal"]')
+      await kcalCell.dblclick()
+      const kcalValueInput = page.locator('[data-testid="cell-editor-energy#unit:kcal-value"]')
+      await expect(kcalValueInput).not.toHaveValue('')
+      await kcalValueInput.press('Enter')
+      expect(await readEnergy(page, objectId)).toEqual({ value: '2000', unit: 'kJ' })
     } finally {
       try {
         if (objectId) await restoreEnergy(page, objectId, energyBefore)
