@@ -40,6 +40,15 @@ The active row carries a `Current` chip.
    yield the target type is listed. The table shows the objects placed in that group.
    The filter is the exact placed group, not the whole subtree.
 
+When you add a structure tree to the workspace — **Open view**, **Add view**, or a
+future Open structure command — any open object table whose type can use that tree
+is linked to it automatically, even if the table was on **All {type}**. The pane
+header then shows `All {type} · {tree} › {node}`. Click the header once to return
+to **All {type}**; that choice stays until another structure tree is added to the
+layout. Selection chips in the filter bar light up only when their filter is really
+applied to the table (on **All {type}**, a tree-side group selection does not
+highlight a matching assortment chip).
+
 Sources that cannot produce the target type are not listed. A Products view never
 offers an Article-only source, and a source with no derivation path never appears.
 
