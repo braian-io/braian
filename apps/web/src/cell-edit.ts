@@ -166,12 +166,25 @@ export function measureEditStoredUnchanged(
   )
 }
 
+function normalizeMeasureDraftText(text: string): string {
+  return text.trim().replace(/[\s\u00A0\u202F]+/g, ' ')
+}
+
+/** Whether the draft text and unit match the seeded editor state (display unit, unmodified). */
+export function measureEditDraftUnchanged(ctx: MeasureEditContext, draft: MeasureEditDraft): boolean {
+  const initial = measureEditInitialDraft(ctx)
+  return (
+    draft.unit === initial.unit
+    && normalizeMeasureDraftText(draft.valueText) === normalizeMeasureDraftText(initial.valueText)
+  )
+}
+
 export function commitMeasureEdit(ctx: MeasureEditContext, draft: MeasureEditDraft): MeasureCommitResult {
   const trimmed = draft.valueText.trim()
   if (!trimmed) return { ok: false, reason: 'empty' }
   const stored = storedFromDraft(ctx, draft)
   if (!stored) return { ok: false, reason: 'invalid' }
-  const unchanged = measureEditStoredUnchanged(ctx, stored)
+  const unchanged = measureEditStoredUnchanged(ctx, stored) || measureEditDraftUnchanged(ctx, draft)
   const proposedText = formatConvertedMeasure(
     convertMeasure(Number(stored.value), stored.unit, ctx.displayUnit, ctx.factors),
     ctx.displayUnit,
@@ -184,9 +197,16 @@ export function commitMeasureEdit(ctx: MeasureEditContext, draft: MeasureEditDra
  * Ignores display rounding: unchanged rounded text must not write.
  */
 export function measureEditShouldPatch(ctx: MeasureEditContext, draft: string): boolean {
+  const trimmed = draft.trim()
+  const displayed = displayMeasureText(ctx).trim()
+  if (trimmed === displayed) return false
   const parsed = parseMeasureInput(draft)
+  if (parsed == null) return trimmed !== displayed
+  const bare = trimmed.replace(/\s*[a-zA-Z°%µ].*$/u, '').trim()
+  const measureDraft: MeasureEditDraft = { valueText: bare, unit: ctx.displayUnit }
+  const result = commitMeasureEdit(ctx, measureDraft)
+  if (result.ok && result.unchanged) return false
   const roundedDisplay = roundedDisplayOfStored(ctx)
-  if (parsed == null) return draft.trim() !== displayMeasureText(ctx).trim()
   if (roundedDisplay == null) return true
   return roundDisplayMeasure(parsed) !== roundedDisplay
 }
