@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { dockEdge, type Node } from './layout'
-import { agentsTablePlacementTarget } from './agents-table-layout'
+import { agentsTablePlacementTarget, agentsTableSharesAgentDock } from './agents-table-layout'
 
 const catalog = [
   { id: 'products', type: 'object_table' },
@@ -18,5 +18,11 @@ describe('agentsTablePlacementTarget', () => {
   it('prefers the object table when focus is missing', () => {
     const layout = dockEdge({ type: 'tabs', views: ['products'], active: 0 }, 'agent-a', 'right', 0.3) as Node
     expect(agentsTablePlacementTarget(layout, catalog)).toBe('products')
+  })
+
+  it('detects agents table tabbed into the agent dock', () => {
+    let layout = dockEdge({ type: 'tabs', views: ['products'], active: 0 }, 'agent-a', 'right', 0.3) as Node
+    layout = { type: 'tabs', views: ['agent-a', 'agents-list'], active: 1 }
+    expect(agentsTableSharesAgentDock(layout, catalog, 'agents-list')).toBe(true)
   })
 })
