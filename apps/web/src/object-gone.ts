@@ -53,10 +53,14 @@ export function clearObjectGone(queryClient: QueryClient, id: string): void {
 /** Prefetched neighbors and a landed row stay fresh through fast arrow navigation. */
 export const OBJECT_FETCH_STALE_MS = 60_000
 
+/** Bounded retries so a persistent 5xx cannot spin forever on list-preview fetches. */
+export const OBJECT_FETCH_MAX_RETRIES = 2
+
 export function objectFetchQueryOptions() {
   return {
     staleTime: OBJECT_FETCH_STALE_MS,
-    retry: (_count: number, error: Error) => !objectGone(error),
+    retry: (count: number, error: Error) => !objectGone(error) && count < OBJECT_FETCH_MAX_RETRIES,
+    retryDelay: (attempt: number) => Math.min(1_000 * 2 ** attempt, 8_000),
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   }

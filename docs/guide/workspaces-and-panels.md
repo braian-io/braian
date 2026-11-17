@@ -108,7 +108,9 @@ the network load for the full object (body, owners, proposals) is debounced to t
 you land on. The landed row and up to three neighbors on each side are prefetched so
 normal up/down movement stays instant without one request per key repeat. Fields and
 links that are not in the list preview show skeletons until the full object arrives;
-Save stays off until then.
+Save stays off until then. If the full object cannot be loaded, Detail shows a clear
+error with **Retry** instead of endless skeletons; arrowing to another row clears the
+error and tries again.
 
 When an object table and a Detail view sit side by side, the table keeps a usable
 minimum width. The split never shrinks it down to a single column, so the Name column

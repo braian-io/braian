@@ -249,7 +249,7 @@ const measuredSeconds = {
   'e2e/column-prefs-multitab.spec.ts': 19,
   'e2e/object-table-default-columns.spec.ts': 6,
   'e2e/grid-focus-select.spec.ts': 5,
-  'e2e/row269-instant-detail-arrow.spec.ts': 6,
+  'e2e/row269-instant-detail-arrow.spec.ts': 8,
   'e2e/row270-open-structure.spec.ts': 20,
   'e2e/column-drag-and-system-fields.spec.ts': 13,
   'e2e/column-move-target.spec.ts': 19,

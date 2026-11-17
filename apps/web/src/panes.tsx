@@ -1115,7 +1115,7 @@ export function ObjectTable({
     if (extend) applySelection(row, clamped, active, extend)
     else {
       setSelected([row.id])
-      followRowImpl.current(row, clamped, 'debounced')
+      if (row.id !== session.objectId) followRowImpl.current(row, clamped, 'debounced')
     }
   }
 
@@ -1477,12 +1477,13 @@ export function ObjectTable({
   const previewPathValuesRef = useRef(paintPathValues?.values)
   previewPathValuesRef.current = paintPathValues?.values
   followRowImpl.current = (row, index, fetch) => {
+    const previousId = session.objectId
     seedObjectListPreview(
       queryClient,
       buildListPreviewFromRow(row, defs.data, session.language, previewPathValuesRef.current?.[row.id]),
     )
     session.setObjectId(row.id)
-    if (fetch === 'debounced') markObjectNavReplace()
+    if (fetch === 'debounced' && row.id !== previousId) markObjectNavReplace()
     const runFetches = () => {
       const ids: string[] = []
       for (let cursor = index - OBJECT_PREFETCH_RADIUS; cursor <= index + OBJECT_PREFETCH_RADIUS; cursor += 1) {
@@ -3036,9 +3037,9 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   const { settled: objectFetchSettled } = useObjectLand(session.objectId)
   const objectGoneState = objectQueryGone(queryClient, session.objectId)
   const previewCached = queryClient.getQueryData<Json>(['object', session.objectId])
-  const object = useQuery({
+  const object = useQuery<Json, Error>({
     queryKey: ['object', session.objectId],
-    queryFn: () => loadObjectDetail(queryClient, session.objectId ?? ''),
+    queryFn: ({ signal }) => loadObjectDetail(queryClient, session.objectId ?? '', signal),
     enabled: Boolean(session.objectId) && !objectGoneState && objectFetchSettled,
     placeholderData: () => queryClient.getQueryData<Json>(['object', session.objectId]),
     ...objectFetchQueryOptions(),
@@ -3046,8 +3047,11 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   })
   const provenance = useQuery({
     queryKey: ['object-origin', session.objectId],
-    queryFn: async () => {
-      const response = await fetch(`/v1/objects/${session.objectId}?include=owners,origin`, { credentials: 'include' })
+    queryFn: async ({ signal }) => {
+      const response = await fetch(`/v1/objects/${session.objectId}?include=owners,origin`, {
+        credentials: 'include',
+        signal,
+      })
       if (!response.ok) {
         const body = await response.json().catch(() => null)
         throw new Error(typeof body?.detail === 'string' ? body.detail : `HTTP ${response.status}`)
@@ -3118,23 +3122,35 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   if (objectGone(object.error) || objectGoneState) {
     return <StateNote tone="empty" title={copy.objectDeleted} detail={copy.objectDeletedHint} testId="detail-deleted" />
   }
+  const refetchDetail = () => {
+    void queryClient.invalidateQueries({ queryKey: ['object', session.objectId] })
+    void queryClient.invalidateQueries({ queryKey: ['object-origin', session.objectId] })
+    void queryClient.invalidateQueries({ queryKey: ['proposals', 'detail', session.objectId] })
+  }
+  const detailFetchRetry = (
+    <Button type="button" variant="primary" data-testid="detail-fetch-retry" onClick={() => refetchDetail()}>
+      {copy.agentRetry}
+    </Button>
+  )
   if (provenance.isError && objectFetchSettled) {
     return (
       <StateNote
         tone="error"
-        title={copy.graphError}
+        title={copy.detailLoadFailed}
         detail={provenance.error instanceof Error ? provenance.error.message : copy.validation}
         testId="detail-error"
+        action={detailFetchRetry}
       />
     )
   }
-  if (object.isError && (!object.data || isListPreview(object.data))) {
+  if (object.isError && objectFetchSettled && (!object.data || isListPreview(object.data))) {
     return (
       <StateNote
         tone="error"
-        title={copy.graphError}
+        title={copy.detailLoadFailed}
         detail={object.error instanceof Error ? object.error.message : copy.validation}
         testId="detail-error"
+        action={detailFetchRetry}
       />
     )
   }

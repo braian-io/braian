@@ -4,6 +4,7 @@ import { ApiError } from './api/client'
 import {
   clearObjectGone,
   markObjectGone,
+  OBJECT_FETCH_MAX_RETRIES,
   OBJECT_FETCH_STALE_MS,
   objectFetchQueryOptions,
   objectGone,
@@ -22,6 +23,16 @@ describe('objectGone', () => {
 describe('objectFetchQueryOptions', () => {
   it('keeps prefetched object reads warm through fast table arrows', () => {
     expect(objectFetchQueryOptions().staleTime).toBe(OBJECT_FETCH_STALE_MS)
+  })
+
+  it('retries transient read failures a bounded number of times', () => {
+    const { retry, retryDelay } = objectFetchQueryOptions()
+    const error = new Error('server error')
+    expect(retry?.(0, error)).toBe(true)
+    expect(retry?.(OBJECT_FETCH_MAX_RETRIES - 1, error)).toBe(true)
+    expect(retry?.(OBJECT_FETCH_MAX_RETRIES, error)).toBe(false)
+    expect(retryDelay?.(0)).toBe(1_000)
+    expect(retryDelay?.(1)).toBe(2_000)
   })
 })
 
