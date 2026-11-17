@@ -30,6 +30,16 @@ function agentPane(page: Page) {
   return page.getByTestId('agent-view').last()
 }
 
+// Ctrl+J closes the dock only while the agent pane is the focused view.
+// A result link focuses Products, so the shortcut would refocus the agent
+// instead of closing it. Click the agent title (not a field) first.
+async function closeAgentDock(page: Page) {
+  const agent = agentPane(page)
+  await agent.locator('.agent-view-head h2').click()
+  await page.keyboard.press('Control+j')
+  await expect(agent).toHaveCount(0)
+}
+
 function paneWithTable(page: Page) {
   return paneWithTab(page, 'Products')
 }
@@ -226,8 +236,7 @@ test('Ctrl+J opens a right agent chat while Products stays visible', async ({ pa
     await expect(agent.getByTestId('agent-status')).toHaveAttribute('data-status', 'done', { timeout: 30_000 })
     await expect(agent.getByTestId('agent-chat-user').filter({ hasText: secondTarget })).toBeVisible()
     await expect(agent.getByTestId('agent-send')).toBeDisabled()
-    await page.keyboard.press('Control+j')
-    await expect(agent).toHaveCount(0)
+    await closeAgentDock(page)
     await expect(products).toBeVisible()
     await waitForAgentDockReflow(page)
     const [productsClosed, detailClosed] = await Promise.all([
@@ -274,8 +283,7 @@ test('agent dock does not cover Detail controls at 1280×800 (K2)', async ({ pag
     await result.click({ timeout: 15_000 })
     await expectHitTarget(detailPane, 'review-and-save')
     await expectHitTarget(detailPane, 'discard-draft')
-    await page.keyboard.press('Control+j')
-    await expect(agentPane(page)).toHaveCount(0)
+    await closeAgentDock(page)
     await waitForAgentDockReflow(page)
     const productsClosed = (await productsPane.boundingBox()) as Box
     expectProductsXStable(productsBefore, productsClosed)
@@ -310,8 +318,7 @@ test('agent dock keeps Products and the tree fixed at 1920×1080', async ({ page
     await result.click({ timeout: 15_000 })
     await expectHitTarget(detailPane, 'review-and-save')
     await expectHitTarget(detailPane, 'discard-draft')
-    await page.keyboard.press('Control+j')
-    await expect(agentPane(page)).toHaveCount(0)
+    await closeAgentDock(page)
     await waitForAgentDockReflow(page)
     const productsClosed = (await productsPane.boundingBox()) as Box
     expectProductsXStable(productsBefore, productsClosed)
