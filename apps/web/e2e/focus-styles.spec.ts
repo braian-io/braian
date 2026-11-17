@@ -558,7 +558,7 @@ test('Tab shows one keyboard ring on the user menu, tree and table', async ({ pa
         await page.keyboard.press('ArrowDown')
         await page.keyboard.press('ArrowRight')
         await expect.poll(() => grid.evaluate((element) => element.matches(':focus-visible'))).toBe(true)
-        const activeCell = table.locator('.row.active .cell.active-cell').first()
+        const activeCell = table.locator('.row.selected .cell.active-cell, .row.active .cell.active-cell').first()
         await expect(activeCell).toBeVisible()
         const value = await paint(activeCell)
         expectOneIndicator(value, 'tab table keyboard focus')

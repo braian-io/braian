@@ -260,7 +260,7 @@ test('Ctrl+K lists agents and Enter opens the tab', async ({ page }) => {
     await page.keyboard.press('Control+k')
     await page.getByTestId('palette-input').fill('Agents')
     await page.keyboard.press('Enter')
-    await page.getByTestId('palette-input').fill('palette lists')
+    await page.getByTestId('palette-input').fill('before the palette')
     await expect(page.getByTestId('command-palette').locator('.hit.on')).toContainText(sessionName)
     await page.screenshot({ path: `${dir}/agent-palette-${other}.png` })
   }
