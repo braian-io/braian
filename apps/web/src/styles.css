@@ -478,6 +478,14 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
 .dock-root > .split.horizontal.split-agent-dock > .split-cell:first-child {
   overflow: hidden;
 }
+/* The catalog is laid out at the full dock width and clipped here. The agent
+   cell has to stay above that overflow so chat actions receive the pointer. */
+.dock-root > .split.horizontal.split-agent-dock > .split-cell:first-child:not(:has([data-testid='agents-table'])) {
+  contain: paint;
+}
+.dock-root > .split.horizontal.split-agent-dock > .split-cell:last-child {
+  z-index: 2;
+}
 .dock-root > .split.horizontal.split-agent-dock > .split-cell:first-child:has([data-testid='agents-table']) {
   overflow: auto;
 }

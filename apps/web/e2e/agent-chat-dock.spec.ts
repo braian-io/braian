@@ -85,7 +85,9 @@ test('Ctrl+J opens a right agent chat while Products stays visible', async ({ pa
   await expect(agent.getByTestId('agent-answer').first()).toContainText(/Waiting for Save|proposed/i)
   const objectId = ((await row.getAttribute('id')) ?? '').replace('object-row-', '')
   try {
-    await agent.getByTestId('agent-result-link').first().click()
+    const result = agent.getByTestId('agent-result-link').first()
+    await expect(result).toBeVisible()
+    await result.click({ timeout: 15_000 })
     await expect(products.locator(`[id="object-row-${objectId}"] [data-column="name"]`)).toContainText(firstTarget, { timeout: 30_000 })
     const secondTarget = `cola 330 ${Date.now().toString().slice(-4)}`
     await agent.getByTestId('agent-follow-up').fill(`byt namn till ${secondTarget}`)

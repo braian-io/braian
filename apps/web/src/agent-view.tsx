@@ -5,14 +5,18 @@ import {
   AgentRunError,
   agentDisplayText,
   agentStatusLabel,
+  backgroundNotices,
   cleanAgentError,
   fetchAgentRun,
   followAgentRun,
+  mergeRunSummary,
   patchAgentRun,
+  requestAgentNotice,
   requestShowAgentSession,
   type AgentMessage,
   type AgentProposal,
   type AgentRunDetail,
+  type AgentRunSummary,
 } from './agent-runs'
 import { subscribeViewingAgent, viewingAgentRunId } from './agent-session'
 import { Button } from './components/ui/button'
@@ -223,7 +227,15 @@ export function AgentView({ runId, title: viewTitle }: AgentViewProps) {
   const modeChange = useMutation({
     mutationFn: (mode: 'foreground' | 'background') => patchAgentRun(runId, { mode }),
     onSuccess: (detail) => {
+      // The runs list polls once a second. A foreground trip shorter than that
+      // gap never shows up in the previous sample, so the waiting toast is skipped.
+      // Announce from the mode change itself, then align the list cache.
+      const before = queryClient.getQueryData<AgentRunDetail>(runQueryKey)
       queryClient.setQueryData(runQueryKey, detail)
+      queryClient.setQueryData<AgentRunSummary[] | undefined>(['agent-runs'], (current) => mergeRunSummary(current, detail))
+      if (before) {
+        for (const run of backgroundNotices([before], [detail])) requestAgentNotice(run)
+      }
       setError('')
       void queryClient.invalidateQueries({ queryKey: ['agent-runs'] })
     },
