@@ -11,6 +11,24 @@ async function login(page: Page) {
   await expect(page.getByTestId('dock')).toBeVisible()
 }
 
+async function nextTabStopAfter(page: Page, trigger: Locator) {
+  const handle = await trigger.elementHandle()
+  if (!handle) throw new Error('missing tab trigger')
+  return page.evaluateHandle((triggerEl) => {
+    const stops = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    ).filter((el) => {
+      if (el.getClientRects().length === 0) return false
+      if (el.closest('[inert], [aria-hidden="true"]')) return false
+      return true
+    })
+    const index = stops.indexOf(triggerEl!)
+    return index >= 0 ? (stops[index + 1] ?? null) : null
+  }, handle)
+}
+
 async function highlightedRing(menu: Locator) {
   const item = menu.locator('[data-highlighted]').first()
   await expect(item).toBeVisible()
@@ -71,7 +89,8 @@ test.describe('row 219 menu Tab and focus ring', () => {
     await login(page)
     const tab = page.locator('nav.tabs .tab.active').first()
     await expect(tab).toBeVisible()
-    const nextTab = page.locator('nav.tabs .tab-new').first()
+    const expected = await nextTabStopAfter(page, tab)
+    expect(await expected.evaluate((el) => el !== null), 'workspace tab has a following tab stop').toBe(true)
     const box = await tab.boundingBox()
     if (!box) throw new Error('missing workspace tab box')
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2, { button: 'right' })
@@ -79,8 +98,10 @@ test.describe('row 219 menu Tab and focus ring', () => {
     await expect(menu).toBeVisible()
     await page.keyboard.press('Tab')
     await expect(menu).toHaveCount(0)
-    const onNext = await page.evaluate(() => document.activeElement === document.querySelector('[data-testid="workspace-new-button"]'))
-    expect(onNext, 'Tab from workspace menu reaches the next top-nav control').toBe(true)
-    void nextTab
+    await expect
+      .poll(() => expected.evaluate((el) => el === document.activeElement), {
+        message: 'Tab from workspace menu focuses the next tab stop after the tab',
+      })
+      .toBe(true)
   })
 })
