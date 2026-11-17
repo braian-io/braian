@@ -1831,6 +1831,62 @@ fn reply_text(payload: &Value) -> String {
     join_reply_parts(&parts)
 }
 
+const SESSION_TITLE_SYSTEM: &str = "Write a short session title using 3 to 6 words in the same language as the user message. Reply with only the title: no quotes, no trailing punctuation, no explanation.";
+
+pub(crate) fn stub_session_title(prompt: &str) -> String {
+    prompt
+        .split_whitespace()
+        .take(5)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+pub(crate) fn normalize_session_title(text: &str) -> String {
+    let one_line = text.lines().next().unwrap_or(text).trim();
+    let stripped = one_line.trim_matches('"').trim_matches('\'').trim();
+    stripped
+        .split_whitespace()
+        .take(8)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Cheap title for the session header and tab tooltip. Never blocks the main agent loop.
+pub(crate) async fn generate_session_title(prompt: &str) -> Option<String> {
+    let trimmed = prompt.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let key = std::env::var("OPENAI_API_KEY").unwrap_or_default();
+    let mock = std::env::var("BRAIAN_AGENT_MOCK").ok().as_deref() == Some("1");
+    if key.trim().is_empty() || mock {
+        let title = normalize_session_title(&stub_session_title(trimmed));
+        return (!title.is_empty()).then_some(title);
+    }
+    let model = std::env::var("BRAIAN_AGENT_MODEL").unwrap_or_else(|_| "gpt-6-luna".into());
+    let client = reqwest::Client::new();
+    let url = openai_responses_url();
+    let body = json!({
+        "model": model,
+        "input": [
+            {"role": "system", "content": SESSION_TITLE_SYSTEM},
+            {"role": "user", "content": trimmed}
+        ],
+        "reasoning": { "effort": "none" },
+        "max_output_tokens": 32
+    });
+    match post_openai(&client, &url, &key, &body).await {
+        Ok(payload) => {
+            let title = normalize_session_title(&reply_text(&payload));
+            if title.is_empty() { None } else { Some(title) }
+        }
+        Err(problem) => {
+            tracing::warn!(detail = %problem.detail, "agent session title generation failed");
+            None
+        }
+    }
+}
+
 fn join_reply_parts(parts: &[&str]) -> String {
     let mut out = String::new();
     for part in parts {

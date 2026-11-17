@@ -61,7 +61,7 @@ import { prepareFeedbackCapture, type FeedbackCapture } from './feedback'
 import { AgentPresence } from './agent-presence'
 import { AgentView } from './agent-view'
 import { AgentsTable } from './agents-table'
-import { agentRunPrompt, agentRunsForWorkspace, backToMySessionEvent, listAgentRuns, openAgentEvent, openAgentsTableEvent, patchAgentRun, requestBackToMySession, showAgentSessionEvent, takeOverAgentRun, type AgentMessage, type AgentRunSummary } from './agent-runs'
+import { agentDockTabSessionLabel, agentRunPrompt, agentRunsForWorkspace, backToMySessionEvent, listAgentRuns, openAgentEvent, openAgentsTableEvent, patchAgentRun, requestBackToMySession, showAgentSessionEvent, takeOverAgentRun, type AgentMessage, type AgentRunSummary } from './agent-runs'
 import { agentSessionLayout, controllingAgentRuns, holdLayoutFlush, layoutFlushHeld, agentMarkerViewIds, setViewingAgentRun, subscribeViewingAgent, viewingAgentRunId } from './agent-session'
 import { CommandPalette } from './palette'
 import { SharedContextMenuHost, prefersNativeContextMenu } from './shared-context-menu'
@@ -99,6 +99,7 @@ import {
 import { objectTablesToAutoLinkToTree } from './structure-tree-link'
 import {
   findStructureTreeView,
+  resolveStructureOpenTarget,
   structureTreeViewState,
   structureTreeViewTitle,
 } from './structure-tree-view'
@@ -1953,6 +1954,10 @@ export function Shell() {
       try {
         let views: View[] = viewRows(surfaceNow.views)
         let tree = findStructureTreeView(views, structureKey, defs)
+        if (!tree && surfaceNow.locked) {
+          toast.error(copy.layoutLocked)
+          return
+        }
         if (!tree) {
           const id = crypto.randomUUID()
           const title = structureTreeViewTitle(structureKey, defs)
@@ -1962,7 +1967,7 @@ export function Shell() {
             title,
             pane: 'center',
             position: views.length,
-            state: freeObject(structureTreeViewState(structureKey)),
+            state: freeObject(structureTreeViewState(structureKey, defs)),
           }
           await api.post('/v1/views', {
             body: {
@@ -1991,13 +1996,20 @@ export function Shell() {
         queryClient.setQueryData(['workspace', surfaceNow.id], nextSurface)
         const current = docRef.current
         if (!current || !tree) return
+        const openIds = layoutViews(current.layout)
+        const target = resolveStructureOpenTarget(
+          views,
+          placement.target ?? current.focus,
+          openIds,
+          placement.zone,
+        )
         placeOverride.current = placement.zone === 'right'
-          ? { zone: 'right', ...(placement.target ? { target: placement.target } : {}) }
-          : { target: placement.target, zone: 'center' }
+          ? { zone: 'right', ...(target ? { target } : {}) }
+          : { target, zone: 'center' }
         const result = applyLayoutCommand(current, 'ui.open_view', {
           id: tree.id,
           zone: placement.zone,
-          ...(placement.target ? { target: placement.target } : {}),
+          ...(target ? { target } : {}),
         }, {
           views: views.map((view) => ({ id: view.id, title: view.title, type: view.type })),
           canonical: canonicalRef.current,
@@ -2207,13 +2219,19 @@ export function Shell() {
           <WorkspaceDock
             doc={doc}
             views={viewRows(surface.views).map((view) => {
-              const prompt = view.type === 'agent' ? String(view.state?.prompt ?? view.title) : undefined
+              const prompt = agentDockTabSessionLabel(view, agentRunList.data)
+              const bound = typeOfView(view, typeCatalog)
+              const peerActive = view.type === 'object_table' && Boolean(peerSourceOf(view.state))
+              const allOfType = bound?.plural ? copy.allOfType.replace('{type}', bound.plural) : ''
               return {
                 ...view,
                 title: view.type === 'agent' ? copy.agent : displayViewTitle(view, typeCatalog, openTypeKey),
                 prompt,
                 sourceLabel: viewSourceLabel(view, typeCatalog, workspaceCatalogRef(surface), catalogNamesById, peerLabelFor(view)),
-                sourceLabelClearable: view.type === 'object_table' && Boolean(peerSourceOf(view.state)),
+                sourceLabelClearable: peerActive,
+                sourceLabelClearAriaLabel: peerActive && allOfType
+                  ? copy.clearViewSource.replace('{label}', allOfType)
+                  : undefined,
               }
             })}
             onChange={commitDoc}
@@ -2513,7 +2531,11 @@ export function StructureTree({ session, view }: { session: Session; view: View 
   const [menu, setMenu] = useState<{ x: number; y: number; row: TreeEntry } | null>(null)
   const [editing, setEditing] = useState<{ row: TreeEntry; mode: 'rename' | 'child' | 'sibling' | 'key'; value: string } | null>(null)
   const [dropId, setDropId] = useState<string | null>(null)
-  const structures = (defs.data?.structures as Json[] | undefined) ?? []
+  const allStructures = (defs.data?.structures as Json[] | undefined) ?? []
+  const boundStructureKey = String(view.state?.structure_key ?? view.state?.structure ?? '').trim()
+  const structures = boundStructureKey
+    ? allStructures.filter((structure) => String(structure.key ?? '') === boundStructureKey)
+    : allStructures
   const typeKey = session.workspaceType || session.listType || ''
   const typeRow = ((defs.data?.types as Json[]) ?? []).find((item) => String(item.key) === typeKey)
   const allowedTrees = Array.isArray(typeRow?.structures) ? (typeRow.structures as unknown[]).map(String) : null

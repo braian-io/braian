@@ -1,6 +1,6 @@
 // Agent chat pane: tab title, session header, and follow-up focus ring.
 import { expect, test, type Page } from '@playwright/test'
-import { agentPaneTab, agentSessionView, mainTable, paneWithTab } from './ui'
+import { agentPaneTab, agentSessionView, agentTitleStubHint, mainTable, paneWithTab } from './ui'
 import { demoCredentials } from './demo'
 
 async function login(page: Page) {
@@ -61,10 +61,12 @@ test('agent pane tab and session header stay readable', async ({ page }) => {
     const tab = agentPaneTab(page)
     await expect(tab).toBeVisible({ timeout: 30_000 })
     await expect(tab).toHaveText(/^Agent$/)
-    const view = agentSessionView(page, prompt)
+    const shortTitle = agentTitleStubHint(prompt)
+    await expect.poll(async () => tab.getAttribute('title')).toBe(`Agent — ${shortTitle}`)
+    const view = agentSessionView(page, shortTitle)
     await expect(view).toBeVisible()
     const heading = view.getByTestId('agent-session-title')
-    await expect(heading).toHaveText(prompt)
+    await expect(heading).toContainText(shortTitle)
     await expect(heading).toHaveAttribute('title', prompt)
     const headerStyle = await heading.evaluate((node) => {
       const style = getComputedStyle(node)
@@ -79,16 +81,55 @@ test('agent pane tab and session header stay readable', async ({ page }) => {
   }
 })
 
+test('long first message keeps full prompt on the session header', async ({ page }) => {
+  test.setTimeout(120_000)
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await login(page)
+  const marker = `k2-${Date.now().toString().slice(-6)}`
+  const longToken = `${'Z'.repeat(72)}${marker}`
+  const prompt = `Please summarize how this catalog row differs from its assortment baseline without changing any values — ${longToken}`
+  const products = mainTable(page, 'Products')
+  await products.getByTestId('object-row').first().click()
+  try {
+    await openAgentAsk(page, prompt)
+    const tab = agentPaneTab(page)
+    await expect(tab).toBeVisible({ timeout: 30_000 })
+    const shortTitle = agentTitleStubHint(prompt)
+    await expect.poll(async () => tab.getAttribute('title')).toBe(`Agent — ${shortTitle}`)
+    const view = agentSessionView(page, marker)
+    await expect(view).toBeVisible()
+    const heading = view.getByTestId('agent-session-title')
+    await expect(heading).toHaveAttribute('title', prompt)
+    const overflow = await view.evaluate((node) => {
+      const pane = node.closest('section.pane')
+      const title = node.querySelector<HTMLElement>('[data-testid="agent-session-title"]')
+      if (!pane || !title) return { ok: false }
+      const paneBox = pane.getBoundingClientRect()
+      const titleBox = title.getBoundingClientRect()
+      return {
+        ok: titleBox.right <= paneBox.right + 1 && titleBox.left >= paneBox.left - 1,
+        paneWidth: paneBox.width,
+        titleWidth: titleBox.width,
+      }
+    })
+    expect(overflow.ok, `title box ${overflow.titleWidth} vs pane ${overflow.paneWidth}`).toBe(true)
+    await expect(view.getByTestId('agent-status')).toHaveAttribute('data-status', 'done', { timeout: 30_000 })
+  } finally {
+    await cleanupDrafts(page)
+  }
+})
+
 test('follow-up focus ring matches search fields in three views', async ({ page }) => {
   test.setTimeout(120_000)
   await page.setViewportSize({ width: 1440, height: 900 })
   await login(page)
   const prompt = `describe the catalog layout ${Date.now().toString().slice(-4)}`
+  const shortTitle = agentTitleStubHint(prompt)
   const products = mainTable(page, 'Products')
   await products.getByTestId('object-row').first().click()
   try {
     await openAgentAsk(page, prompt)
-    const view = agentSessionView(page, prompt)
+    const view = agentSessionView(page, shortTitle)
     await expect(view).toBeVisible({ timeout: 30_000 })
     const docked = await agentInputChrome(page)
 
@@ -107,7 +148,7 @@ test('follow-up focus ring matches search fields in three views', async ({ page 
     expect(docked.boxShadow).toBe(agents.boxShadow)
     expect(docked.outlineWidth).toBe(agents.outlineWidth)
 
-    await agentPaneTab(page, prompt).click()
+    await agentPaneTab(page, shortTitle).click()
     await expect(view.getByTestId('agent-follow-up')).toBeFocused()
     const refocused = await agentInputChrome(page)
     expect(refocused).toEqual(docked)

@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { assortmentChipActive } from './table-filters'
+import { assortmentChipActive, isGroupOnlyManualSelection, manualSelectionHasGroup } from './table-filters'
 
 const cheeseAssortment = {
   id: 'sel-cheese',
   name: 'Cheese',
   query: { group: 'food:cheese' },
+}
+
+const organicAssortment = {
+  id: 'sel-organic',
+  name: 'Organic',
+  query: { labels: 'organic_eu' },
 }
 
 const baseCtx = {
@@ -14,6 +20,17 @@ const baseCtx = {
   activeFilter: '',
   defs: undefined as undefined,
 }
+
+describe('manualSelectionHasGroup / isGroupOnlyManualSelection', () => {
+  it('treats stored group, not dynamic filter, as group assortment', () => {
+    expect(manualSelectionHasGroup(cheeseAssortment.query)).toBe(true)
+    expect(manualSelectionHasGroup(organicAssortment.query)).toBe(false)
+    expect(manualSelectionHasGroup({ filter: 'groups:=food:cheese' })).toBe(false)
+    expect(isGroupOnlyManualSelection(cheeseAssortment.query)).toBe(true)
+    expect(isGroupOnlyManualSelection(organicAssortment.query)).toBe(false)
+    expect(isGroupOnlyManualSelection({ group: 'food:cheese', labels: 'organic_eu' })).toBe(false)
+  })
+})
 
 describe('assortmentChipActive', () => {
   it('does not highlight a group chip when the table ignores session.group', () => {
@@ -67,6 +84,16 @@ describe('assortmentChipActive', () => {
       groupFilterApplies: false,
     })
     expect(active).toBe(false)
+  })
+
+  it('highlights a label chip when only the label filter applies (peer-linked table)', () => {
+    const active = assortmentChipActive(organicAssortment, {
+      ...baseCtx,
+      activeGroup: 'food:cheese',
+      activeLabelFilter: 'a_labels:=organic_eu',
+      groupFilterApplies: false,
+    })
+    expect(active).toBe(true)
   })
 
   it('toggles off only when the group filter really applies', () => {
