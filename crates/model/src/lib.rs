@@ -58,7 +58,8 @@ pub use path::{
 };
 pub use refs::{
     RefKind, ResolvedRef, attribute_index_field, key_rename_warning, resolve,
-    translate_assortment_query, translate_import_mapping, translate_view_state,
+    strip_ephemeral_table_search, translate_assortment_query, translate_import_mapping,
+    translate_view_state,
 };
 pub use review::{
     DraftOrigin, DraftStatus, ReviewAction, ReviewActor, ReviewDraft, ReviewGate, ReviewKind,

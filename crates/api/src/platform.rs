@@ -1088,8 +1088,13 @@ async fn translate_workspace_views(state: &AppState, workspace: &mut Value) {
         return;
     };
     for view in views {
+        let view_type = view
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
         if let Some(view_state) = view.get_mut("state") {
             braian_model::translate_view_state(view_state, &cached.defs);
+            braian_model::strip_ephemeral_table_search(view_type, view_state);
         }
     }
 }
@@ -3039,6 +3044,7 @@ async fn save_view(
     if let Ok(cached) = state.models.get(&state.store).await {
         braian_model::translate_view_state(&mut view_state, &cached.defs);
     }
+    braian_model::strip_ephemeral_table_search(&body.r#type, &mut view_state);
     state
         .store
         .save_view(

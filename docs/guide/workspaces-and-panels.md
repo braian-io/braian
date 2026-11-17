@@ -201,9 +201,11 @@ cannot be deleted.
 - The free-text search in the table toolbar (the quick filter) is not saved as a view
   preference. Closing and opening the view again, or reloading the page, starts with
   an empty search box and the full table. While the view stays open, the search stays
-  until you clear it: clear the search box, or press `Clear search` in the empty state
-  when the query matches nothing. The empty state names the query. Press `/` to focus
-  the quick filter.
+  in this browser tab only: another session or user does not see it, and the server
+  never keeps a toolbar search on the shared view row. While you type, remote UI
+  commands cannot replace the search text. Clear it with the search box, or press
+  `Clear search` in the empty state when the query matches nothing. The empty state
+  names the query. Press `/` to focus the quick filter.
 - An object selection is not part of the saved view state.
 
 The layout is saved automatically per workspace and per user. Local changes are
