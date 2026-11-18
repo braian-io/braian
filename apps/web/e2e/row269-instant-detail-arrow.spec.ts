@@ -80,12 +80,13 @@ test('rapid Down arrows show preview skeletons before the body loads', async ({ 
   await expect.poll(async () => page.getByTestId('object-detail').getAttribute('data-detail-ready')).toBe('true')
 
   let slowLoads = false
-  let releaseSlowObject: (() => void) | undefined
+  let releaseSlowObjects = () => {}
+  const slowGate = new Promise<void>((resolve) => {
+    releaseSlowObjects = resolve
+  })
   await page.route('**/v1/objects/**', async (route) => {
     if (route.request().method() === 'GET' && objectReads(route.request().url()) && slowLoads) {
-      await new Promise<void>((resolve) => {
-        releaseSlowObject = resolve
-      })
+      await slowGate
     }
     await route.continue()
   })
@@ -106,7 +107,7 @@ test('rapid Down arrows show preview skeletons before the body loads', async ({ 
   // `description` is on the product type and is not part of the list-row preview.
   await expect.poll(async () => detail.locator('[data-testid="detail-field-skeleton"][data-field="description"]').count()).toBeGreaterThan(0)
   await expect(detail.getByTestId('delete-object-detail')).toBeDisabled()
-  releaseSlowObject?.()
+  releaseSlowObjects()
   await expect.poll(async () => detail.getAttribute('data-detail-ready'), { timeout: 30_000 }).toBe('true')
   await expect(detail.getByTestId('delete-object-detail')).toBeEnabled()
   await expect(detail.getByTestId('detail-field-skeleton')).toHaveCount(0)
