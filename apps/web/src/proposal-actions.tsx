@@ -1,4 +1,4 @@
-import type { MouseEvent } from 'react'
+import type { KeyboardEvent, MouseEvent } from 'react'
 import { Button } from './components/ui/button'
 import { copy } from './i18n'
 
@@ -10,8 +10,15 @@ function bulkButtonProps(inactive: boolean, explained: boolean, reason: string, 
       'aria-disabled': true as const,
       tabIndex: 0,
       title: reason,
+      onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          event.stopPropagation()
+        }
+      },
       onClick: (event: MouseEvent<HTMLButtonElement>) => {
         event.preventDefault()
+        event.stopPropagation()
       },
     }
   }
@@ -42,11 +49,11 @@ export function ProposalBulkActions({
   status,
   rows,
   loading = false,
+  stale = false,
   saveDisabled,
   discardDisabled,
   onSave,
   onDiscard,
-  discardFirst = false,
   saveVariant = 'default',
   saveTestId = 'save-all',
   discardTestId = 'discard-all',
@@ -57,11 +64,12 @@ export function ProposalBulkActions({
   status?: unknown
   rows: ProposalActionRow[]
   loading?: boolean
+  /** Open proposal whose base moved. Save stays inactive and says why; Discard still works. */
+  stale?: boolean
   saveDisabled: boolean
   discardDisabled: boolean
   onSave: () => void
   onDiscard: () => void
-  discardFirst?: boolean
   saveVariant?: 'default' | 'primary'
   saveTestId?: string
   discardTestId?: string
@@ -69,20 +77,22 @@ export function ProposalBulkActions({
   reasonTestId?: string
   loadingTestId?: string
 }) {
-  const reason = loading ? null : closedProposalReason(status, rows)
+  const closed = loading ? null : closedProposalReason(status, rows)
+  const saveReason = closed ?? (!loading && stale ? copy.agentStaleApprove : null)
+  const discardReason = closed
+  const reason = saveReason ?? discardReason
   const descriptionId = reason ? reasonTestId : undefined
-  const explained = Boolean(reason)
   const saveInactive = loading || saveDisabled
   const discardInactive = loading || discardDisabled
-  const settled = explained && !loading
+  const settled = Boolean(closed) && !loading
   const save = (
     <Button
       type="button"
       variant={saveVariant}
       data-testid={saveTestId}
-      aria-describedby={descriptionId}
+      aria-describedby={saveReason ? descriptionId : undefined}
       className={settled && saveInactive ? 'transition-none' : undefined}
-      {...bulkButtonProps(saveInactive, explained, reason ?? '', onSave)}
+      {...bulkButtonProps(saveInactive, Boolean(saveReason), saveReason ?? '', onSave)}
     >
       {copy.saveAll}
     </Button>
@@ -92,17 +102,17 @@ export function ProposalBulkActions({
       type="button"
       variant={settled && discardInactive ? 'default' : 'danger'}
       data-testid={discardTestId}
-      aria-describedby={descriptionId}
+      aria-describedby={discardReason ? descriptionId : undefined}
       className={settled && discardInactive ? 'transition-none' : undefined}
-      {...bulkButtonProps(discardInactive, explained, reason ?? '', onDiscard)}
+      {...bulkButtonProps(discardInactive, Boolean(discardReason), discardReason ?? '', onDiscard)}
     >
       {copy.discardAll}
     </Button>
   )
   return (
     <span className="proposal-actions" data-testid={actionsTestId} title={reason ?? undefined}>
-      {discardFirst ? discard : save}
-      {discardFirst ? save : discard}
+      {save}
+      {discard}
       {reason ? (
         <span className="proposal-actions-reason" id={descriptionId} title={reason} data-testid={reasonTestId}>
           {reason}

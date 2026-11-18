@@ -1319,6 +1319,16 @@ export function CommandPalette({
     }
   }
 
+  useEffect(() => {
+    const onAsk = () => {
+      const live = inputRef.current?.value ?? ''
+      if (live.trim()) void ask(live)
+      else setMode('ai')
+    }
+    window.addEventListener('braian-palette-ask', onAsk)
+    return () => window.removeEventListener('braian-palette-ask', onAsk)
+  }, [ask])
+
   const openActions = (item: PaletteItem | undefined) => {
     if (!item) return
     const actions = secondaryOf(item)
@@ -1369,7 +1379,10 @@ export function CommandPalette({
       return
     }
     if (effect.type === 'ask') {
-      if (query.trim()) void ask(query)
+      // The document shortcut already asked (and preventDefault) when it saw Ctrl+J.
+      if (event.defaultPrevented) return
+      const live = inputRef.current?.value ?? query
+      if (live.trim()) void ask(live)
       else setMode('ai')
       return
     }
