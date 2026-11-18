@@ -3425,7 +3425,6 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
                       className="detail-delete icon-danger"
                       data-testid="delete-object-detail"
                       aria-label={copy.delete}
-                      title={copy.delete}
                       disabled={!editingReady}
                       onClick={() => requestDeleteObjects([objectId])}
                     >
