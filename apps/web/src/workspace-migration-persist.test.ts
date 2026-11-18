@@ -110,15 +110,37 @@ describe('persistWorkspaceMigration view-then-layout', () => {
     const second = trackingDeps()
     await persistWorkspaceMigration(ws, p, second.deps)
     expect(second.views).toEqual(['ot', 'lt'])
-    expect(second.workspaces).toHaveLength(1)
-    expect(JSON.stringify(second.workspaces[0])).toContain('lt')
+    expect(second.workspaces).toHaveLength(0)
   })
 
   it('writes layout only after every create succeeds', async () => {
     const { deps, views, workspaces } = trackingDeps()
     await persistWorkspaceMigration(workspace(), patch(), deps)
     expect(views).toEqual(['ot', 'lt'])
+    expect(workspaces).toHaveLength(0)
+  })
+
+  it('does not POST shared workspace layout when only the layout patch changes', async () => {
+    const { deps, views, workspaces } = trackingDeps()
+    await persistWorkspaceMigration(workspace(), { ...patch(), name: undefined }, deps)
+    expect(views).toEqual(['ot', 'lt'])
+    expect(workspaces, 'layout heal must stay personal, not POST /v1/workspaces').toEqual([])
+  })
+
+  it('POSTs shared workspace only for a rename, keeping the existing shared layout', async () => {
+    const ws = workspace()
+    const { deps, workspaces } = trackingDeps()
+    await persistWorkspaceMigration(
+      ws,
+      {
+        ...patch(),
+        name: 'Renamed',
+        layout: { type: 'tabs', views: ['hacked'], active: 0 },
+      },
+      deps,
+    )
     expect(workspaces).toHaveLength(1)
+    expect(JSON.stringify(workspaces[0])).toBe(JSON.stringify(ws.layout))
   })
 
   it('is red against the old layout-first order (layout saved even when create fails)', async () => {
