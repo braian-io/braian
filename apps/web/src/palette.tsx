@@ -13,7 +13,7 @@ import { Command, CommandInput, CommandItem, CommandList } from './components/ui
 import { Kbd } from './components/ui/kbd'
 import { dynamicSelectionFilter, emitSavedSelection, requestDeleteSelection, requestEditSelection, requestNewSelection, selectionMatchesType } from './assortment-filter'
 import { workspaceDisplayName } from './demo-labels'
-import { sourceLabel, suggestedTitle } from './field-diff'
+import { suggestedTitle } from './field-diff'
 import { copy, uiLanguage } from './i18n'
 import { structureCaption } from './graph-scene'
 import { chordForCommand } from './shortcuts'
@@ -60,8 +60,6 @@ import {
 } from './palette-switch-catalog'
 import { useCatalogsQuery } from './catalog-list'
 import { MASTER_CATALOG_ID } from './catalog-ref'
-import { ProposalBulkActions } from './proposal-actions'
-import { DiscardProposalDialog } from './discard-proposal-dialog'
 import { publishProposal } from './proposal-bus'
 import { modelFocus, openModelDialog, requestDiscardDraft, requestReview, stageModel } from './model-stage'
 import { isStandardAttribute, queueViewType, requestAttributeAction } from './attribute-actions'
@@ -110,18 +108,6 @@ type SessionLike = {
 
 type Turn = { role: 'user' | 'assistant'; text: string }
 type Step = { id: string; text: string; state: 'run' | 'done' }
-type ProposalPreview = {
-  id: string
-  title: string
-  status?: string
-  rows: Json[]
-  lines: string[]
-  source?: string
-  actor_name?: unknown
-  behalf_name?: unknown
-  error?: string
-}
-
 
 /** True when the key event targets the palette query field (caret / selection). */
 function isPaletteQueryInput(target: EventTarget | null): boolean {
@@ -211,11 +197,6 @@ export function CommandPalette({
   const [steps, setSteps] = useState<Step[]>([])
   const [answer, setAnswer] = useState('')
   const [running, setRunning] = useState(false)
-  const [proposal, setProposal] = useState<ProposalPreview | null>(null)
-  const [confirmDiscardProposal, setConfirmDiscardProposal] = useState(false)
-  useEffect(() => {
-    setConfirmDiscardProposal(false)
-  }, [proposal?.id])
   const [editing, setEditing] = useState<number | null>(null)
   const [debouncedQuery, setDebouncedQuery] = useState(query)
   useEffect(() => {
@@ -1557,50 +1538,6 @@ export function CommandPalette({
               </ol>
             ) : null}
             {answer ? <p className="ai-answer" data-testid="ai-answer">{renderAgentAnswer(answer)}</p> : null}
-            {proposal ? (
-              <div data-testid="palette-proposal">
-                <strong>{proposal.title}</strong>
-                {proposal.source ? <span className="meta-chip neutral" data-testid="source-badge">{sourceLabel(proposal)}</span> : null}
-                <p>{proposal.rows.length} rows</p>
-                {proposal.lines.length > 0 ? (
-                  <ul className="proposal-tree">
-                    {proposal.lines.map((line) => (
-                      <li key={line}>{line}</li>
-                    ))}
-                  </ul>
-                ) : null}
-                {proposal.rows.slice(0, 3).map((row) => (
-                  <p key={String(row.id)}>{String(row.object_key ?? row.object_id ?? '')}</p>
-                ))}
-                {proposal.error ? <p className="error">{proposal.error}</p> : null}
-                <div className="toolbar">
-                  <ProposalBulkActions
-                    status={proposal.status}
-                    rows={proposal.rows}
-                    loading={!proposal.status}
-                    saveDisabled={!proposal.rows.some((row) => row.status === 'pending')}
-                    discardDisabled={!proposal.rows.some((row) => row.status === 'pending')}
-                    saveVariant={proposal.rows.some((row) => row.status === 'pending') ? 'primary' : 'default'}
-                    saveTestId="palette-save-all"
-                    discardTestId="palette-discard-all"
-                    reasonTestId="palette-proposal-reason"
-                    loadingTestId="palette-proposal-loading"
-                    onDiscard={() => setConfirmDiscardProposal(true)}
-                    onSave={() => void api.post('/v1/proposals/{id}/accept', { params: { path: { id: proposal.id } }, body: {} }).then(() => { session.setProposalId(proposal.id); setProposal(null); session.push(copy.saved) })}
-                  />
-                </div>
-                <DiscardProposalDialog
-                  open={confirmDiscardProposal}
-                  title={proposal.title}
-                  lines={proposal.lines}
-                  onCancel={() => setConfirmDiscardProposal(false)}
-                  onConfirm={() => {
-                    setConfirmDiscardProposal(false)
-                    void api.post('/v1/proposals/{id}/discard', { params: { path: { id: proposal.id } } }).then(() => setProposal(null))
-                  }}
-                />
-              </div>
-            ) : null}
           </div>
         ) : (
             <CommandList ref={paletteListRef} id="palette-list" data-testid="palette-list" role="listbox">

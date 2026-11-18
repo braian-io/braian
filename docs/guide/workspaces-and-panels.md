@@ -252,8 +252,11 @@ disappears if the draft is gone.
 When a proposal is open and has pending rows, `Save all` is the primary action. It
 paints as the filled accent button with full opacity; it never looks grey or disabled.
 `Discard all` is the secondary danger action. It keeps its danger treatment so you can
-recognise it, but it does not dominate `Save all`. The command palette uses the same
-`Save all` / `Discard all` hierarchy and order as the Review view.
+recognise it, but it does not dominate `Save all`.
+
+When a proposal is already accepted or discarded, both bulk actions are inactive.
+They stay keyboard-focusable and expose the explanation via `aria-describedby` and the
+button `title`, not only as a hover tooltip on the wrapper.
 
 Discarding a server proposal asks for confirmation first. The dialog shows the
 proposal name and the consequence: the proposal's consequence lines when it has them,
