@@ -124,4 +124,30 @@ test.describe('palette keyboard scroll keeps the active row visible', () => {
     }
   })
 
+  test('Root list: filter moves with arrows and Enter runs the highlight', async ({ page }) => {
+    await login(page)
+    await focusMainTable(page)
+    await page.keyboard.press('Control+k')
+    const palette = page.getByTestId('command-palette')
+    await expect(palette).toBeVisible()
+    await page.getByTestId('palette-input').fill('cheese')
+    await expect(palette.locator('.hit').filter({ hasText: '·' }).first()).toBeVisible()
+    const highlighted = palette.locator('#palette-list .hit.on')
+    await expect(highlighted).toHaveCount(1)
+    const first = await highlighted.getAttribute('data-value')
+    expect(first).toBeTruthy()
+    await page.keyboard.press('ArrowDown')
+    await page.keyboard.press('ArrowDown')
+    await expect(highlighted).not.toHaveAttribute('data-value', first!)
+    const picked = await highlighted.getAttribute('data-value')
+    expect(picked).toBeTruthy()
+    expect(picked!.startsWith('hit:')).toBe(true)
+    const openName = (await highlighted.locator('.hit-title').innerText()).split('·')[0]?.trim() ?? ''
+    expect(openName.length).toBeGreaterThan(0)
+    await page.keyboard.press('Enter')
+    await expect(palette).toHaveCount(0)
+    await page.locator('[data-view-type="object_detail"]').first().click()
+    await expect(page.getByTestId('object-detail')).toContainText(openName)
+  })
+
 })

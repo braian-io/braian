@@ -577,13 +577,16 @@ export function CommandPalette({
   const paletteActiveFromPointer = useRef(false)
   const filterScrollQuery = useRef('')
   useLayoutEffect(() => {
-    if (mode !== 'list' || stack.length > 0 || !query.trim()) return
-    if (filterScrollQuery.current !== query) {
-      filterScrollQuery.current = query
-      paletteScrollList.current = true
+    if (mode !== 'list' || stack.length > 0) return
+    if (!query.trim()) {
+      if (filterScrollQuery.current !== '') filterScrollQuery.current = ''
+      return
     }
+    if (filterScrollQuery.current === query) return
+    filterScrollQuery.current = query
+    paletteScrollList.current = true
     setActive(resolveActiveAfterQuery(rows, query))
-  }, [query, mode, stack.length, queryMatchId, rows.length])
+  }, [query, mode, stack.length])
   useEffect(() => {
     if (mode !== 'list' || stack.length === 0 || !query.trim()) return
     paletteScrollList.current = true
@@ -1429,10 +1432,7 @@ export function CommandPalette({
       : commandPlaceholder(types)
   const userTurns = turns.filter((turn) => turn.role === 'user')
   const question = userTurns.at(-1)?.text ?? ''
-  const selected =
-    mode === 'list' && stack.length === 0 && query.trim()
-      ? resolveActiveAfterQuery(rows, query)
-      : active
+  const selected = active
 
 
   if (mode === 'fields') {
