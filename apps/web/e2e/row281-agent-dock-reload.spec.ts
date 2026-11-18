@@ -203,9 +203,13 @@ async function exerciseReloadCloseAt(page: Page, width: number, height: number) 
   }
 }
 
-test('reload with agent open keeps Products pinned at 1280, 1440 and 1920 (K1–K3)', async ({ page }) => {
-  test.setTimeout(360_000)
-  await exerciseReloadCloseAt(page, 1280, 800)
-  await exerciseReloadCloseAt(page, 1440, 900)
-  await exerciseReloadCloseAt(page, 1920, 1080)
-})
+for (const { width, height } of [
+  { width: 1280, height: 800 },
+  { width: 1440, height: 900 },
+  { width: 1920, height: 1080 },
+] as const) {
+  test(`reload with agent open keeps Products pinned at ${width}px (K1–K3)`, async ({ page }) => {
+    test.setTimeout(180_000)
+    await exerciseReloadCloseAt(page, width, height)
+  })
+}
