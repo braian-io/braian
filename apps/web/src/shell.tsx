@@ -987,9 +987,7 @@ export function Shell() {
     if (agentHealPainted.changed && agentHealPainted.layout) {
       painted = { ...painted, layout: agentHealPainted.layout }
     }
-    const modelHealNeeded =
-      healDataModelWorkspace(current, listed, painted.layout).changed
-      || healDataModelWorkspace(current, listed, canonical.layout).changed
+    const modelHealNeeded = healDataModelWorkspace(current, listed, painted.layout).changed
     const agentHealNeeded =
       agentHealPainted.changed || healAgentDockLayout(canonical.layout, listed, canonical.focus).changed
     dirtyRef.current = agentHealPainted.changed
@@ -1389,9 +1387,14 @@ export function Shell() {
       agentFromServer.changed && agentFromServer.layout ? agentFromServer.layout : serverLayout
     const modelFromPainted = healDataModelWorkspace(current, listed, layoutForPainted)
     const modelFromServer = healDataModelWorkspace(current, listed, layoutForServer)
-    const modelPatch = modelFromPainted.changed ? modelFromPainted : modelFromServer
-    const agentChanged = agentFromPainted.changed || agentFromServer.changed
-    const agentLayout = agentFromPainted.layout ?? agentFromServer.layout
+    const hasPersonalLayout = Boolean(paintedDoc)
+    const modelPatch = modelFromPainted.changed
+      ? modelFromPainted
+      : hasPersonalLayout
+        ? { changed: false, views: [], create: [], layout: undefined, removed: [] as string[] }
+        : modelFromServer
+    const agentChanged = agentFromPainted.changed || (!hasPersonalLayout && agentFromServer.changed)
+    const agentLayout = agentFromPainted.layout ?? (hasPersonalLayout ? undefined : agentFromServer.layout)
     const patch = {
       changed: objectPatch.changed || modelPatch.changed || agentChanged,
       name: objectPatch.name,
