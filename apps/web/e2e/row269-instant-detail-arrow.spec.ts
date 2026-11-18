@@ -102,6 +102,8 @@ test('rapid Down arrows show preview skeletons before the body loads', async ({ 
   await expect(detail).toBeVisible()
   await expect.poll(() => detailTitle(page)).toBe(rowName)
   await expect(detail.getByTestId('state-loading')).toHaveCount(0)
+  const showMore = detail.getByTestId('detail-show-more-fields')
+  if (await showMore.isVisible()) await showMore.click()
   await expect.poll(async () => detail.getAttribute('data-detail-ready'), { timeout: 30_000 }).toBe('false')
   await expect.poll(async () => detail.getByTestId('detail-field-skeleton').count()).toBeGreaterThan(0)
   await expect(detail.getByTestId('delete-object-detail')).toBeDisabled()
@@ -137,7 +139,7 @@ test('a persistent object GET failure shows Retry without endless requests', asy
     const id = objectIdFromRead(url)
     const shouldFail =
       fail &&
-      (failIds.has(id) || (anchoredObjectId && failIds.size === 0 && id !== anchoredObjectId))
+      (failIds.has(id) || (failIds.size === 0 && anchoredObjectId && id !== anchoredObjectId))
     if (shouldFail) {
       failIds.add(id)
       failedGets.push(url)
@@ -170,6 +172,7 @@ test('a persistent object GET failure shows Retry without endless requests', asy
   anchoredObjectId = rowObjectId(await selectedRow(table).getAttribute('id'))
   await focusProductsGrid(page)
   await page.keyboard.press('ArrowDown')
+  await expect.poll(async () => rowObjectId(await selectedRow(table).getAttribute('id'))).not.toBe(anchoredObjectId)
   await expect(page.getByTestId('detail-error')).toBeVisible({ timeout: 30_000 })
   await page.waitForTimeout(2_000)
   expect(failedGets.length).toBeLessThanOrEqual(6)
