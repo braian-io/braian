@@ -22,6 +22,17 @@ export function isPaletteListTransitionKey(key: string): boolean {
   )
 }
 
+/**
+ * Stack changes reuse the same list element, so a root scroll offset would leave
+ * the new highlight outside the viewport. Zero it, then nudge only if the active
+ * row is still clipped.
+ */
+export function resetPaletteListScroll(list: HTMLElement | null | undefined): void {
+  if (!list) return
+  list.scrollTop = 0
+  scrollPaletteActiveItem(list)
+}
+
 /** Keep the active row inside a scrollable palette list; adjust scrollTop only when needed. */
 export function scrollPaletteActiveItem(list: HTMLElement | null | undefined): void {
   if (!list) return
