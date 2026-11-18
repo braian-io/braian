@@ -3,6 +3,7 @@ import {
   LayoutError,
   activate,
   agentDockShare,
+  agentDockShellSlot,
   applyLayoutCommand,
   closeView,
   dockEdge,
@@ -15,6 +16,7 @@ import {
   moveView,
   neighbour,
   normalize,
+  openAgentInDockShell,
   placeView,
   remove,
   resetLayout,
@@ -91,6 +93,17 @@ describe('views and leaves', () => {
 })
 
 describe('normalize', () => {
+  it('keeps an empty right tab group in the root agent dock instead of collapsing the catalog', () => {
+    const docked = dockEdge(splitPair('horizontal', 0.22, tabs(['tree']), tabs(['products'])), 'agent', 'right', 0.3)
+    const closed = remove(docked, 'agent')
+    expect(closed.type).toBe('split')
+    if (closed.type === 'split') {
+      expect(closed.children).toHaveLength(2)
+      expect(closed.children[1]?.type).toBe('tabs')
+      expect(views(closed.children[1]!)).toEqual([])
+    }
+  })
+
   it('drops an empty tab group, rescales the remaining ratios, and collapses a single child', () => {
     const node: Node = {
       type: 'split',
@@ -303,6 +316,18 @@ describe('placeView and ensureInLayout', () => {
     expect(result.doc.layout).toEqual(layout)
     expect(result.doc.focus).toBe('b')
     expect(leaves(result.doc.layout).map((leaf) => leaf.views)).toEqual([['a'], ['b']])
+  })
+})
+
+describe('agent dock shell', () => {
+  it('finds the empty slot after closing the agent and reuses it on reopen', () => {
+    const catalog = splitPair('horizontal', 0.22, tabs(['tree']), tabs(['products']))
+    const docked = dockEdge(catalog, 'agent', 'right', 0.3)
+    const closed = remove(docked, 'agent')
+    expect(agentDockShellSlot(closed)).toEqual({ path: [], childIndex: 1 })
+    const reopened = openAgentInDockShell(closed, 'agent', 0.3)
+    expect(reopened && views(reopened).includes('agent')).toBe(true)
+    expect(agentDockShellSlot(reopened!)).toBeNull()
   })
 })
 

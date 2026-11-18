@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
-import { WorkspaceDock } from './dock'
+import { WorkspaceDock, catalogRatioToFullDockPin } from './dock'
 import { views, type LayoutDoc } from './layout'
 
 afterEach(() => {
@@ -125,6 +125,71 @@ it('marks a nested Products split that contains Detail so the table can keep its
   const cells = [...(middle?.querySelectorAll<HTMLElement>(':scope > .split-cell') ?? [])]
   expect(cells.map((cell) => cell.style.flex.split(' ').slice(0, 2).join(' '))).toEqual(['0 1', '0 1'])
   expect(cells.map((cell) => cell.style.position)).toEqual(['', ''])
+})
+
+it('scales a tree pin measured inside the catalog column to full-dock width', () => {
+  expect(catalogRatioToFullDockPin({ width: 154, ratio: 0.22 }, 0.7)).toEqual({ width: 220, ratio: 0.22 })
+  expect(catalogRatioToFullDockPin({ width: 154, ratio: 0.22 }, null)).toEqual({ width: 154, ratio: 0.22 })
+})
+
+it('pins the structure tree when the layout loads with the agent dock already open', async () => {
+  const viewSpecs = [
+    { id: 'tree', title: 'Food', type: 'structure_tree' },
+    { id: 'products', title: 'Products', type: 'object_table' },
+    { id: 'detail', title: 'Detail', type: 'object_detail' },
+    { id: 'agent', title: 'Ask', type: 'agent' },
+  ]
+  const catalog = {
+    type: 'split' as const,
+    dir: 'horizontal' as const,
+    ratios: [0.22, 0.78],
+    children: [
+      { type: 'tabs' as const, views: ['tree'], active: 0 },
+      {
+        type: 'split' as const,
+        dir: 'horizontal' as const,
+        ratios: [0.55, 0.45],
+        children: [
+          { type: 'tabs' as const, views: ['products'], active: 0 },
+          { type: 'tabs' as const, views: ['detail'], active: 0 },
+        ],
+      },
+    ],
+  }
+  const open: LayoutDoc = {
+    id: 'ws',
+    title: 'Products',
+    layout: {
+      type: 'split',
+      dir: 'horizontal',
+      ratios: [0.7, 0.3],
+      children: [catalog, { type: 'tabs', views: ['agent'], active: 0 }],
+    },
+    focus: 'products',
+  }
+  const rect = (width: number) =>
+    ({ x: 0, y: 0, width, height: 600, top: 0, left: 0, right: width, bottom: 600, toJSON() { return {} } }) as DOMRect
+  const catalogWidth = 0.7 * 800
+  const treeWidthInCatalog = 0.22 * catalogWidth
+  const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    const treeCell = this.classList.contains('split-cell') && this.querySelector("[data-view-type='structure_tree']")
+    return rect(treeCell ? treeWidthInCatalog : 800)
+  })
+  try {
+    const { container } = render(
+      <WorkspaceDock doc={open} views={viewSpecs} onChange={() => undefined} renderView={() => <div />} onAddView={() => undefined} />,
+    )
+    const treeSplit = await waitFor(() => {
+      const split = container.querySelector<HTMLElement>(".split.horizontal[data-tree-pinned='true']")
+      const cell = split?.querySelector<HTMLElement>(':scope > .split-cell')
+      expect(Number.parseFloat(cell?.style.width ?? '0')).toBeCloseTo(0.22 * 800, 4)
+      return split
+    })
+    const treeCells = [...(treeSplit?.querySelectorAll<HTMLElement>(':scope > .split-cell') ?? [])]
+    expect(Number.parseFloat(treeCells[0]?.style.width ?? '0')).toBeCloseTo(0.22 * 800, 4)
+  } finally {
+    spy.mockRestore()
+  }
 })
 
 it('pins the structure tree to the width measured before the agent dock opens', () => {

@@ -1599,6 +1599,17 @@ export function GraphMap({
   const pinned = Boolean(
     pinTick >= 0 && simRef.current?.nodes().some((node) => node.id === selected && node.fx != null && node.fy != null),
   )
+  useLayoutEffect(() => {
+    // Selecting a node grows the inspector. Refit while the camera is still
+    // the system's so the published node marker stays on the canvas, not under
+    // the panel (a drag that starts under the panel never pins).
+    if (movedRef.current) return
+    const inspector = inspectorRef.current
+    if (!inspector) return
+    const box = inspector.getBoundingClientRect()
+    if (box.width < 2 || box.height < 2) return
+    apiRef.current.fit()
+  }, [selected, showProperties, pinned, placement, chrome.maxHeightPx])
   const shown = placed.nodes.filter((node) => !isLegendHidden(hidden, node))
   const shownFocus = focused || menuFocusRef.current
   const focusedNode = shownFocus ? shown.find((node) => node.id === shownFocus) : undefined
