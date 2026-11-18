@@ -54,13 +54,18 @@ const GHOST_X = 18
 const GHOST_Y = 22
 const EDGE_SHARE = 0.3
 const SPLIT_GAP = 6
-/** Viewports where a flex dock cannot keep Detail at 360px and Products within 25%. */
+/**
+ * Below 1360px a 30% column cannot keep Detail at 360px and Products within
+ * 25% of its closed width. 200px still sits in the row (it does not cover
+ * Detail): at 1280px the catalog keeps about 1062px, so Products stays near
+ * 386px (about 21% under the closed 489px) and Detail stays above 360px.
+ */
 const NARROW_AGENT_DOCK = '(max-width: 1359px)'
-const AGENT_OVERLAY_PX = 300
+const NARROW_AGENT_DOCK_PX = 200
 
 function useMatchMedia(query: string) {
   const [matches, setMatches] = useState(false)
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (typeof window.matchMedia !== 'function') return
     const media = window.matchMedia(query)
     const apply = () => setMatches(media.matches)
@@ -69,6 +74,13 @@ function useMatchMedia(query: string) {
     return () => media.removeEventListener('change', apply)
   }, [query])
   return matches
+}
+
+/** Pixel width of the open agent column. Both ends of the transition are px so the width interpolates. */
+function agentColumnPx(dockBox: number, ratio: number, gaps: number, narrow: boolean): number {
+  if (narrow) return NARROW_AGENT_DOCK_PX
+  if (!(dockBox > 0) || !(ratio > 0)) return 0
+  return Math.max(0, Math.round((dockBox - gaps) * ratio))
 }
 
 export function WorkspaceDock({
@@ -129,9 +141,12 @@ export function WorkspaceDock({
   const open = views(doc.layout)
   const viewTypes = new Map(viewList.map((view) => [view.id, view.type]))
   const narrowDock = useMatchMedia(NARROW_AGENT_DOCK)
+  const [dockBox, setDockBox] = useState(0)
   const rootAgentOpen = doc.layout.type === 'split' && splitLocksAgentDock(doc.layout, viewTypes)
   const [holdClosed, setHoldClosed] = useState(false)
   const motionReady = useRef(false)
+  // Paint one closed frame before expanding, after the browser has painted.
+  // A rAF started from the layout effect runs before that paint and skips the animation.
   useLayoutEffect(() => {
     const reduce =
       typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -141,9 +156,12 @@ export function WorkspaceDock({
       return
     }
     setHoldClosed(true)
+  }, [rootAgentOpen])
+  useEffect(() => {
+    if (!holdClosed) return
     const id = window.requestAnimationFrame(() => setHoldClosed(false))
     return () => window.cancelAnimationFrame(id)
-  }, [rootAgentOpen])
+  }, [holdClosed])
   const presentAgentOpen = rootAgentOpen && !holdClosed
   const catalogRatio =
     doc.layout.type === 'split' && splitLocksAgentDock(doc.layout, viewTypes)
@@ -153,6 +171,8 @@ export function WorkspaceDock({
     const root = rootRef.current
     if (!root) return
     const measure = () => {
+      const box = root.clientWidth
+      setDockBox((current) => (current === box ? current : box))
       const next = measureStructureTreePin(docRef.current.layout, new Map(viewsRef.current.map((view) => [view.id, view.type])), root)
       if (!next) return
       const scaled =
@@ -224,6 +244,7 @@ export function WorkspaceDock({
           path={[]}
           narrowDock={narrowDock}
           presentAgentOpen={presentAgentOpen}
+          dockBox={dockBox}
         />
       )}
       {(['left', 'right', 'top', 'bottom'] as const).map((zone) => (
@@ -359,6 +380,7 @@ function SplitNode({
   inAgentDock = false,
   narrowDock = false,
   presentAgentOpen = false,
+  dockBox = 0,
 }: {
   frame: Frame
   node: Node
@@ -366,6 +388,7 @@ function SplitNode({
   inAgentDock?: boolean
   narrowDock?: boolean
   presentAgentOpen?: boolean
+  dockBox?: number
 }) {
   if (node.type !== 'split') {
     const leaf = leaves(node)[0]
@@ -375,7 +398,6 @@ function SplitNode({
   const viewTypes = new Map(frame.viewList.map((view) => [view.id, view.type]))
   const lockRatios = splitLocksAgentDock(node, viewTypes)
   const agentShell = isAgentDockSplit(node, viewTypes)
-  const overlay = agentShell && narrowDock
   // Same rule as main: a split that contains Detail anywhere can shrink so the
   // table floor (440px once the split is at least 640px) holds and Detail
   // gives way. The agent-dock wrapper also contains Detail, but marking it
@@ -388,7 +410,6 @@ function SplitNode({
     'split',
     node.dir,
     lockRatios ? 'split-agent-dock' : '',
-    overlay ? 'split-agent-overlay' : '',
   ].filter(Boolean).join(' ')
   return (
     <div
@@ -414,7 +435,7 @@ function SplitNode({
           pinTreeRatio={node.ratios[0] ?? 0}
           narrowDock={narrowDock}
           presentAgentOpen={presentAgentOpen}
-          overlay={overlay}
+          dockBox={dockBox}
           agentShell={agentShell}
         />
       ))}
@@ -435,7 +456,7 @@ function SplitChild({
   pinTreeRatio,
   narrowDock,
   presentAgentOpen,
-  overlay,
+  dockBox,
   agentShell,
 }: {
   frame: Frame
@@ -450,7 +471,7 @@ function SplitChild({
   pinTreeRatio: number
   narrowDock: boolean
   presentAgentOpen: boolean
-  overlay: boolean
+  dockBox: number
   agentShell: boolean
 }) {
   const ratio = node.ratios[index] ?? 0
@@ -458,49 +479,28 @@ function SplitChild({
   const flex = hasDetail ? '0 1' : '0 0'
   const pinnedPx = pinTree && index === 0 ? pinnedTreeWidthPx(frame.agentTreePin, pinTreeRatio) : null
   const agentShellRight = agentShell && index === 1
-  const paintOpen = presentAgentOpen && agentShellRight && overlay
   const collapsedAgent: CSSProperties = {
     flex: '0 0 0px',
-    width: 0,
+    width: '0px',
     minWidth: 0,
-    maxWidth: 0,
+    maxWidth: '0px',
     overflow: 'hidden',
     pointerEvents: 'none',
   }
-  const cellStyle: CSSProperties = agentShellRight && overlay
-    ? paintOpen
+  const openPx = agentColumnPx(dockBox, ratio, gaps, narrowDock)
+  const cellStyle: CSSProperties = agentShellRight
+    ? presentAgentOpen
       ? {
-          position: 'absolute',
-          top: 0,
-          right: 0,
-          bottom: 0,
-          width: `${AGENT_OVERLAY_PX}px`,
+          flex: `0 0 ${openPx}px`,
+          width: `${openPx}px`,
           minWidth: 0,
-          maxWidth: `${AGENT_OVERLAY_PX}px`,
-          flex: 'none',
+          maxWidth: `${openPx}px`,
           overflow: 'hidden',
-          zIndex: 6,
         }
-      : {
-          position: 'absolute',
-          top: 0,
-          right: 0,
-          bottom: 0,
-          width: 0,
-          minWidth: 0,
-          maxWidth: 0,
-          flex: '0 0 0px',
-          overflow: 'hidden',
-          pointerEvents: 'none',
-          zIndex: 6,
-        }
-    : overlay && index === 0
-      ? { flex: '1 1 auto', width: '100%', minWidth: 0, maxWidth: 'none' }
-      : agentShellRight && !presentAgentOpen
-        ? collapsedAgent
-        : agentShellRight
-          ? { flex: `0 0 ${basis}`, width: basis, minWidth: 0, maxWidth: basis }
-          : pinnedPx != null
+      : collapsedAgent
+    : agentShell && index === 0 && narrowDock
+      ? { flex: '1 1 auto', width: 'auto', minWidth: 0, maxWidth: 'none' }
+      : pinnedPx != null
           ? {
               flex: `0 0 ${pinnedPx}px`,
               width: `${pinnedPx}px`,
@@ -519,7 +519,6 @@ function SplitChild({
           index={index - 1}
           path={path}
           count={node.children.length}
-          hidden={overlay}
         />
       ) : null}
       <div
@@ -534,6 +533,7 @@ function SplitChild({
             inAgentDock={inAgentDock}
             narrowDock={narrowDock}
             presentAgentOpen={presentAgentOpen}
+            dockBox={dockBox}
           />
       </div>
     </>

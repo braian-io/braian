@@ -475,22 +475,8 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
 .dock-root > .split.horizontal[data-agent-shell='true'] > .split-cell {
   transition: flex-basis var(--dur) var(--ease), width var(--dur) var(--ease), max-width var(--dur) var(--ease), min-width var(--dur) var(--ease);
 }
-/* Below 1360 the flex share cannot keep Detail at 360px and Products within 25%
-   of its closed width. The dock overlays the catalog instead of taking a column. */
-.dock-root > .split.horizontal.split-agent-overlay {
-  position: relative;
-}
-.dock-root > .split.horizontal.split-agent-overlay > .split-divider {
-  flex: 0 0 0px;
-  width: 0;
-  min-width: 0;
-  overflow: hidden;
-  pointer-events: none;
-}
-.dock-root > .split.horizontal.split-agent-overlay[data-agent-dock='true'] > .split-cell[data-agent-dock-cell] {
-  background: var(--panel);
-  box-shadow: -8px 0 24px #00000033;
-}
+/* Below 1360px the dock column is 200px, set inline, so it stays in the row.
+   A 30% share cannot keep Detail at 360px and Products within 25% of its closed width. */
 .dock-root > .split.horizontal[data-tree-pinned='true'] > .split-cell {
   transition: flex-basis var(--dur) var(--ease), width var(--dur) var(--ease), max-width var(--dur) var(--ease);
 }

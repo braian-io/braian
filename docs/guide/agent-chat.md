@@ -10,12 +10,11 @@ had before the pane opened, and the **Products** table stays in the same
 horizontal position. Opening and closing both run a short width transition.
 With reduced motion that transition is skipped and the pane snaps.
 
-From 1360px up the agent takes a column, and only the area to the right of the
-tree gets narrower. Below that, a column would push **Detail** under 360px or
-take more than a quarter of **Products**, so the dock overlays the right edge
-instead. With the dock open from 1280px up, **Detail** stays at least 360px.
-At 1280px, **Products** keeps at least 75% of the width it had while the dock
-was closed.
+The agent takes a column. From 1360px up that column is a share of the dock,
+and only the area to the right of the tree gets narrower. Below 1360px the
+column is 200px wide, still in the row, so it does not cover **Detail**. With
+the dock open from 1280px up, **Detail** stays at least 360px. At 1280px,
+**Products** keeps at least 75% of the width it had while the dock was closed.
 
 ## Pane chrome
 
