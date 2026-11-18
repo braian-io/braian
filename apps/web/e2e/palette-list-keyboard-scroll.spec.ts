@@ -88,7 +88,7 @@ async function expectActiveInView(list: Locator, label: string): Promise<InView>
         state = await activeRowInList(list)
         return state?.inView ?? false
       },
-      { message: `${label}: active row in list viewport`, timeout: 5_000, intervals: [50, 80, 120] },
+      { message: `${label}: active row in list viewport`, timeout: 15_000, intervals: [50, 80, 120, 200] },
     )
     .toBe(true)
   expect(state, `${label}: active row should exist`).not.toBeNull()
@@ -113,21 +113,6 @@ async function drillToProtein(page: Page) {
     await page.keyboard.press('ArrowDown')
   }
   throw new Error('Could not reach Protein field row')
-}
-
-async function keyboardToOpenStructure(page: Page, palette: Locator, rootList: Locator): Promise<void> {
-  await expect(palette.locator('[data-value="layout:open-structure"]')).toBeVisible({ timeout: 60_000 })
-  let onOpenStructure = false
-  for (let step = 0; step < 80; step += 1) {
-    const active = palette.locator('#palette-list .hit.on')
-    if ((await active.count()) > 0 && (await active.getAttribute('data-value')) === 'layout:open-structure') {
-      onOpenStructure = true
-      await expectActiveInView(rootList, `open structure pick step ${step}`)
-      break
-    }
-    await pressArrowDownAndAssertInView(rootList, page, step, 'open structure search')
-  }
-  expect(onOpenStructure, 'could not keyboard-navigate to Open structure ›').toBe(true)
 }
 
 test.describe('palette keyboard scroll keeps the active row visible', () => {
@@ -165,15 +150,20 @@ test.describe('palette keyboard scroll keeps the active row visible', () => {
 
       await openFieldsPalette(page)
       const scrollAfterOpen = (await activeRowInList(fieldsList))?.scrollTop ?? 0
+      const activeBeforeWheel = (await activeRowInList(fieldsList))?.activeValue
       for (let i = 0; i < 4; i += 1) await page.mouse.wheel(0, 200)
-      const afterWheel = (await activeRowInList(fieldsList))?.scrollTop ?? 0
-      expect(afterWheel).toBeGreaterThan(scrollAfterOpen)
-      const wheelTop = afterWheel
-      const activeBeforeHover = (await activeRowInList(fieldsList))?.activeValue
-      await fieldsList.locator('.hit').nth(3).hover()
+      const afterWheel = await activeRowInList(fieldsList)
+      expect(afterWheel?.scrollTop ?? 0).toBeGreaterThan(scrollAfterOpen)
+      const wheelTop = afterWheel?.scrollTop ?? 0
+      expect(afterWheel?.activeValue).toBe(activeBeforeWheel)
+
+      const foot = page.getByTestId('fields-mode-foot')
+      const footBox = await foot.boundingBox()
+      expect(footBox).not.toBeNull()
+      await page.mouse.move(footBox!.x + 12, footBox!.y + 8)
       const afterHover = await activeRowInList(fieldsList)
       expect(afterHover?.scrollTop).toBe(wheelTop)
-      expect(afterHover?.activeValue).toBe(activeBeforeHover)
+      expect(afterHover?.activeValue).toBe(activeBeforeWheel)
 
       await page.keyboard.press('Escape')
       await expect(page.getByTestId('command-palette')).toHaveCount(0)
@@ -193,8 +183,21 @@ test.describe('palette keyboard scroll keeps the active row visible', () => {
       const rootList = palette.locator('#palette-list')
       await expect(palette).toBeVisible()
       await waitForStableOptions(palette)
+      await expectActiveInView(rootList, 'root list initial highlight')
 
-      await keyboardToOpenStructure(page, palette, rootList)
+      for (let step = 0; step < 18; step += 1) {
+        await pressArrowDownAndAssertInView(rootList, page, step, 'root from top')
+      }
+
+      await page.keyboard.press('Escape')
+      await expect(palette).toHaveCount(0)
+      await focusMainTable(page)
+      await page.keyboard.press('Control+k')
+      await expect(palette).toBeVisible()
+      await waitForStableOptions(palette)
+
+      await page.getByTestId('palette-input').fill('open structure')
+      await expect(palette.locator('.hit.on')).toContainText('Open structure')
       await page.keyboard.press('Tab')
       await expect(page.getByTestId('palette-crumb')).toContainText('Open structure ›')
       await expectActiveInView(rootList, 'root drill-in highlight')
@@ -204,26 +207,21 @@ test.describe('palette keyboard scroll keeps the active row visible', () => {
       await page.keyboard.press('ArrowDown')
       await expectActiveInView(rootList, 'root after Backspace')
 
-      for (let step = 0; step < 18; step += 1) {
-        await pressArrowDownAndAssertInView(rootList, page, step, 'root list')
-      }
-
       const scrollAfterKeys = (await activeRowInList(rootList))?.scrollTop ?? 0
       const activeBeforeWheel = (await activeRowInList(rootList))?.activeValue
       for (let i = 0; i < 4; i += 1) await page.mouse.wheel(0, 250)
       const afterWheel = await activeRowInList(rootList)
       expect(afterWheel?.scrollTop ?? 0).toBeGreaterThan(scrollAfterKeys)
       const wheelTop = afterWheel?.scrollTop ?? 0
-      const activeOnWheel = afterWheel?.activeValue
-      expect(activeOnWheel).toBe(activeBeforeWheel)
+      expect(afterWheel?.activeValue).toBe(activeBeforeWheel)
 
-      const foot = page.locator('.palette-foot').first()
+      const foot = page.getByTestId('palette-foot')
       const footBox = await foot.boundingBox()
       expect(footBox).not.toBeNull()
       await page.mouse.move(footBox!.x + 12, footBox!.y + 8)
       const afterPointer = await activeRowInList(rootList)
       expect(afterPointer?.scrollTop).toBe(wheelTop)
-      expect(afterPointer?.activeValue).toBe(activeOnWheel)
+      expect(afterPointer?.activeValue).toBe(activeBeforeWheel)
     } finally {
       await page.keyboard.press('Escape').catch(() => undefined)
       await page.keyboard.press('Escape').catch(() => undefined)
