@@ -172,6 +172,13 @@ async function exerciseReloadCloseAt(page: Page, width: number, height: number) 
     await expect(mainTable(page, 'Products').getByTestId('object-row').first()).toBeVisible({ timeout: 60_000 })
     await expect(page.getByTestId('agent-view').last()).toBeVisible({ timeout: 30_000 })
     await assertProductsPaneState(page, paneStateBeforeAgent, 'reloads with the dock open')
+    const detailOpenAfterReload = (await detailPane.boundingBox()) as Box
+    expect(detailOpenAfterReload).toBeTruthy()
+    const detailMinOpen = width >= 1360 ? 360 : 220
+    expect(
+      detailOpenAfterReload.width,
+      `Detail keeps width with the agent open after reload at ${width}px`,
+    ).toBeGreaterThanOrEqual(detailMinOpen)
 
     await page.keyboard.press('Control+j')
     await expect(page.getByTestId('agent-view')).toHaveCount(0)
@@ -180,16 +187,15 @@ async function exerciseReloadCloseAt(page: Page, width: number, height: number) 
     expectAnchorsStable(anchorsBefore, await anchorBoxes(page), `closes after reload at ${width}px`)
     await assertProductsPaneState(page, paneStateBeforeAgent, 'closes after reload')
 
-    const productsAfterClose = (await productsPane.boundingBox()) as Box
-    const detailBox = (await detailPane.boundingBox()) as Box
-    expect(detailBox && productsAfterClose).toBeTruthy()
-    if (width >= 1280) {
-      expect(detailBox!.width, `Detail keeps width beside the agent shell at ${width}px`).toBeGreaterThanOrEqual(width === 1280 ? 360 : 220)
-    }
-
     await page.keyboard.press('Control+j')
     await expect(page.getByTestId('agent-view').last()).toBeVisible({ timeout: 30_000 })
     await waitForAgentDockReflow(page)
+    const detailOpenAgain = (await detailPane.boundingBox()) as Box
+    expect(detailOpenAgain).toBeTruthy()
+    expect(
+      detailOpenAgain.width,
+      `Detail keeps width when the agent reopens after reload at ${width}px`,
+    ).toBeGreaterThanOrEqual(detailMinOpen)
     expectAnchorsStable(anchorsBefore, await anchorBoxes(page), `opens again at ${width}px after reload`)
     await assertProductsPaneState(page, paneStateBeforeAgent, 'opens again after reload')
   } finally {
