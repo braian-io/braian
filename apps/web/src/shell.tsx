@@ -993,11 +993,23 @@ export function Shell() {
     dirtyRef.current = false
     const local = readLayoutStore(key)
     const listed = viewRows(current.views)
-    // Paint local or the shared layout first. Do not heal, and do not mark the
-    // document dirty, until the server's personal document is known.
+    // Paint local or the shared layout first. A dangling or incomplete model
+    // layout stays behind the heal gate until the personal-state GET decides,
+    // so ghost panes never flash as Unavailable.
     const provisional = local ? migrateDoc(local.document) : canonical
-    docRef.current = provisional
-    setDoc(provisional)
+    const holdForHeal =
+      layoutHasMissingViews(provisional.layout, listed)
+      || healDataModelWorkspace(current, listed, provisional.layout).changed
+    if (holdForHeal) {
+      migratedRef.current.delete(current.id)
+      healPendingFor.current = current.id
+      setLayoutHealPending(true)
+      docRef.current = null
+      setDoc(null)
+    } else {
+      docRef.current = provisional
+      setDoc(provisional)
+    }
     setPersonalGate(null)
     let cancelled = false
     void api.get('/v1/workspaces/{id}/state', { params: { path: { id: workspaceId }, query: { environment: LAYOUT_ENVIRONMENT } } })
@@ -1041,6 +1053,8 @@ export function Shell() {
           sharedLayoutDirtyRef.current = true
           saveGen.current += 1
         }
+        healPendingFor.current = null
+        setLayoutHealPending(false)
         setDoc(next)
         // A normalized copy of an existing personal document must not become a
         // newer local edit that the next load writes back over the server.
