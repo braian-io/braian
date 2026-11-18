@@ -74,12 +74,14 @@ export function ProposalBulkActions({
   const explained = Boolean(reason)
   const saveInactive = loading || saveDisabled
   const discardInactive = loading || discardDisabled
+  const settled = explained && !loading
   const save = (
     <Button
       type="button"
       variant={saveVariant}
       data-testid={saveTestId}
       aria-describedby={descriptionId}
+      className={settled && saveInactive ? 'transition-none' : undefined}
       {...bulkButtonProps(saveInactive, explained, reason ?? '', onSave)}
     >
       {copy.saveAll}
@@ -91,6 +93,7 @@ export function ProposalBulkActions({
       variant="danger"
       data-testid={discardTestId}
       aria-describedby={descriptionId}
+      className={settled && discardInactive ? 'transition-none' : undefined}
       {...bulkButtonProps(discardInactive, explained, reason ?? '', onDiscard)}
     >
       {copy.discardAll}
