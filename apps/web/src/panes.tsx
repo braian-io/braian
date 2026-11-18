@@ -77,8 +77,8 @@ import {
   prefetchObjectDetails,
   seedObjectListPreview,
 } from './object-list-preview'
-import { objectNavDebounceMs } from './object-nav-debounce'
-import { markObjectNavReplace, notifyObjectLandImmediate } from './object-nav-signal'
+import { commitImmediateTableNavLand, scheduleDebouncedTableNavLand } from './object-table-nav'
+import { markObjectNavReplace } from './object-nav-signal'
 import { useObjectLand } from './use-object-land'
 import {
   discardObjectDraft,
@@ -1491,33 +1491,13 @@ export function ObjectTable({
         const item = rowAt(cursor)
         if (item) ids.push(item.id)
       }
-      const scheduled = prefetchObjectDetails(queryClient, ids)
-      if (typeof window !== 'undefined' && window.__BRAIAN_TRACK_OBJECT_NAV_PREFETCH__) {
-        window.__BRAIAN_NAV_PREFETCH_BATCHES__ = (window.__BRAIAN_NAV_PREFETCH_BATCHES__ ?? 0) + 1
-        window.__BRAIAN_NAV_PREFETCH_SCHEDULED__ = (window.__BRAIAN_NAV_PREFETCH_SCHEDULED__ ?? 0) + scheduled.length
-      }
+      prefetchObjectDetails(queryClient, ids)
     }
     if (fetch === 'immediate') {
-      if (objectNavTimer.current) {
-        clearTimeout(objectNavTimer.current)
-        objectNavTimer.current = null
-      }
-      notifyObjectLandImmediate(row.id)
-      runFetches()
+      commitImmediateTableNavLand(objectNavTimer, row.id, runFetches)
       return
     }
-    const debounceMs = objectNavDebounceMs()
-    if (debounceMs === 0) {
-      notifyObjectLandImmediate(row.id)
-      runFetches()
-      return
-    }
-    if (objectNavTimer.current) clearTimeout(objectNavTimer.current)
-    objectNavTimer.current = setTimeout(() => {
-      objectNavTimer.current = null
-      notifyObjectLandImmediate(row.id)
-      runFetches()
-    }, debounceMs)
+    scheduleDebouncedTableNavLand(objectNavTimer, OBJECT_NAV_DEBOUNCE_MS, row.id, runFetches)
   }
   useEffect(() => () => {
     if (objectNavTimer.current) clearTimeout(objectNavTimer.current)

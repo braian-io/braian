@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { objectNavDebounceMs } from './object-nav-debounce'
+import { OBJECT_NAV_DEBOUNCE_MS } from './object-list-preview'
 import { OBJECT_LAND_IMMEDIATE } from './object-nav-signal'
 
 /** Debounce full object fetches so fast table arrows only load the landed row. */
@@ -31,7 +31,7 @@ export function useObjectLand(objectId: string | null) {
     timer.current = setTimeout(() => {
       timer.current = null
       setLandedId(objectId)
-    }, objectNavDebounceMs())
+    }, OBJECT_NAV_DEBOUNCE_MS)
     return () => {
       if (timer.current) {
         clearTimeout(timer.current)
