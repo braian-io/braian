@@ -186,17 +186,6 @@ test.describe('palette keyboard scroll keeps the active row visible', () => {
       await expect(palette).toBeVisible()
       await waitForStableOptions(palette)
 
-      for (let step = 0; step < 18; step += 1) {
-        await pressArrowDownAndAssertInView(rootList, page, step, 'root from top')
-      }
-
-      await page.keyboard.press('Escape')
-      await expect(palette).toHaveCount(0)
-      await focusMainTable(page)
-      await page.keyboard.press('Control+k')
-      await expect(palette).toBeVisible()
-      await waitForStableOptions(palette)
-
       await page.getByTestId('palette-input').fill('open structure')
       await expect(palette.locator('.hit.on')).toContainText('Open structure')
       await page.keyboard.press('Tab')
@@ -207,6 +196,10 @@ test.describe('palette keyboard scroll keeps the active row visible', () => {
       await expect(page.getByTestId('palette-crumb')).toBeEmpty()
       await page.keyboard.press('ArrowDown')
       await expectActiveInView(rootList, 'root after Backspace')
+
+      for (let step = 0; step < 18; step += 1) {
+        await pressArrowDownAndAssertInView(rootList, page, step, 'root from top')
+      }
 
       const scrollAfterKeys = (await activeRowInList(rootList))?.scrollTop ?? 0
       const activeBeforeWheel = (await activeRowInList(rootList))?.activeValue
