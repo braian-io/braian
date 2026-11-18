@@ -3,9 +3,25 @@ import {
   EMPTY_MANUAL_FILTER,
   groupKeyOf,
   isEmptyManualQuery,
+  labelCodes,
   labelSearchFilter,
   selectionFilterText,
 } from './assortment-filter'
+
+/** Manual assortment stored with a group (not a dynamic filter query). */
+export function manualSelectionHasGroup(query: unknown): boolean {
+  if (!query || typeof query !== 'object') return false
+  if (selectionFilterText(query)) return false
+  const group = (query as { group?: unknown }).group
+  return typeof group === 'string' && group.length > 0
+}
+
+/** Group-only manual assortment — label-only selections are not included. */
+export function isGroupOnlyManualSelection(query: unknown): boolean {
+  if (!manualSelectionHasGroup(query)) return false
+  if (isEmptyManualQuery(query)) return false
+  return labelCodes((query as { labels?: unknown }).labels).length === 0
+}
 
 export type AssortmentChipContext = {
   activeGroup: string | null
@@ -32,6 +48,6 @@ export function assortmentChipActive(item: Json, ctx: AssortmentChipContext): bo
     const b = groupKeyOf(ctx.activeGroup, ctx.defs)
     if (a === b || wantGroup === ctx.activeGroup) return wantLabels === ctx.activeLabelFilter
   }
-  if (!wantGroup && wantLabels && wantLabels === ctx.activeLabelFilter && !ctx.activeGroup) return true
+  if (!wantGroup && wantLabels && wantLabels === ctx.activeLabelFilter && (!ctx.activeGroup || !ctx.groupFilterApplies)) return true
   return false
 }

@@ -3,14 +3,21 @@
 Press **Ctrl+J** to talk to the agent from anywhere in the app. If the palette
 is already open, **Ctrl+J** runs your question with the text in the query box.
 
-The agent opens in its own **docked pane on the far right**. Products, Detail,
-and your other views stay where they are in the center layout.
+The agent opens in its own **docked pane on the far right**. Opening it
+**reflows** the workspace: the center panes (for example Products and Detail)
+**share** the width with the new docked column instead of keeping their previous
+size.
 
 ## Pane chrome
 
 The dock tab is always named **Agent**, even when several runs are open at once.
-Tell sessions apart from the **session title** at the top of the chat (your first
-message or run title) and from the tab tooltip, which shows the full prompt.
+Tell sessions apart from the **short session title** at the top of the chat and
+from the tab tooltip (`Agent —` that title). The title is generated once from your
+first message (about ten seconds at most). Until it is ready, and if generation
+times out or fails, the header keeps a short fallback — the first six words of
+your message, with an ellipsis when it is longer — so the label does not jump through
+a long truncation first. Hover the header for the full first message; assistive tech
+gets that full text through `aria-describedby` on the visible title.
 
 ## Chat
 

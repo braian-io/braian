@@ -36,6 +36,8 @@ export type DockView = {
   sourceLabel?: string
   /** Peer source is active; one click on the label returns to all-of-type. */
   sourceLabelClearable?: boolean
+  /** Accessible name for clearing a peer source (destination All …, not the live peer label). */
+  sourceLabelClearAriaLabel?: string
   prompt?: string
 }
 
@@ -544,7 +546,7 @@ function Pane({ frame, leaf }: { frame: Frame; leaf: Leaf }) {
                 className="pane-source"
                 data-testid="view-source-label"
                 title={label}
-                aria-label={copy.clearViewSource.replace('{label}', label)}
+                aria-label={meta.sourceLabelClearAriaLabel ?? copy.clearViewSource.replace('{label}', label)}
                 onClick={() => frame.onSourceLabelClear?.(activeId)}
               >
                 {label}

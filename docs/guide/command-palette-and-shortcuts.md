@@ -15,8 +15,11 @@ Common root commands include:
   focused pane and never lists old agent-run tabs.
 - `Open structure` lists every structure in the active catalog by label and key.
   Choose one to open its tree in the focused pane (`Enter`) or in a new pane to
-  the right (`Ctrl+Enter`). An existing tree view for that structure is reused;
-  otherwise Braian creates one.
+  the right (`Ctrl+Enter` or `Cmd+Enter`). An existing tree view for that structure
+  is reused by structure key or id in the view state (not by title); otherwise Braian
+  creates one. When Detail is focused, `Enter` opens the tree beside Detail (on the
+  table or tree pane), not as a tab on Detail. On a locked workspace, creating a new
+  tree shows `layout is locked`; an existing tree still opens.
 - `Add view`, `New from template`, and `Switch catalog`. `Add view` is the way to
   bring an existing view into the focused pane. A type row always creates a new copy
   of that type's object table in a new pane immediately to the right of the open
@@ -45,7 +48,7 @@ opened with `Shift+F10` or the context-menu key.
 | `Tab` | Enter a sub-list when the row takes an argument |
 | `Backspace` | Go up one level when the query is empty |
 | `Escape` | Close the palette |
-| `Ctrl+Enter` or `Ctrl+.` | Open the action panel for the highlighted entity |
+| `Ctrl+Enter` or `Ctrl+.` | Open the action panel for the highlighted entity, or run Open structure to the right |
 | `→` | Open the action panel for an entity row |
 | `Ctrl+J` | Ask AI with the current query |
 
@@ -71,6 +74,11 @@ turns are shown as clickable chips; send with `Enter` and close with `Escape`.
 The agent runs in the context you are looking at: the focused view, the selected rows
 and the current filter. It proposes changes; a person reviews and saves them. See
 [Deleting and restore](/docs/deleting-and-restore) for what the agent may not do.
+
+`Agents ›` and **Agents table** list your sessions. Their search boxes match the
+short **session title**, the **full first message**, status labels, and — while a run
+is waiting — the agent's latest question. Words that appear only in the first message
+still find the session after the title has been shortened.
 
 AI replies require a model to be configured on the server. If it is not, the answer is
 `AI isn't set up for this workspace`, and the agent tab explains that an administrator

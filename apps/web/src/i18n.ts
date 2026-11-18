@@ -150,6 +150,7 @@ export const copy = {
   longText: 'Long text',
   loading: 'Loading…',
   workspaceOpeningWhenReady: 'Opening when the workspace is ready…',
+  layoutLocked: 'layout is locked',
   saved: 'Saved',
   conflict: 'Conflict',
   agent: 'Agent',

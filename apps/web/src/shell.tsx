@@ -17,7 +17,9 @@ import { CatalogSelector } from './catalog-selector'
 import { api, freeObject, jsonRecord, keepaliveJsonPut, operationId, recordTitle, textValue, type Json } from './api'
 import { AssortmentList, SelectionHost } from './assortments'
 import { humanizeLive, liveOperation, objectIdFromLive } from './activity'
-import { markObjectGone } from './object-gone'
+import { loadObjectDetail, objectQueryStaleTime } from './object-list-preview'
+import { markObjectGone, objectFetchQueryOptions } from './object-gone'
+import { useObjectLand } from './use-object-land'
 import { ImportScreen } from './import/view'
 import { dropImportFiles, onImportLive, openImport, resumeImport, setImportDrag } from './import/controller'
 import { importRefreshesObjects, isFileDrag } from './import/model'
@@ -61,9 +63,10 @@ import { prepareFeedbackCapture, type FeedbackCapture } from './feedback'
 import { AgentPresence } from './agent-presence'
 import { AgentView } from './agent-view'
 import { AgentsTable } from './agents-table'
-import { agentRunPrompt, agentRunsForWorkspace, backToMySessionEvent, listAgentRuns, openAgentEvent, openAgentsTableEvent, patchAgentRun, requestBackToMySession, showAgentSessionEvent, takeOverAgentRun, type AgentMessage, type AgentRunSummary } from './agent-runs'
+import { agentDockTabSessionLabel, agentRunPrompt, agentRunsForWorkspace, backToMySessionEvent, listAgentRuns, openAgentEvent, openAgentsTableEvent, patchAgentRun, requestBackToMySession, showAgentSessionEvent, takeOverAgentRun, type AgentMessage, type AgentRunSummary } from './agent-runs'
 import { agentSessionLayout, controllingAgentRuns, holdLayoutFlush, layoutFlushHeld, agentMarkerViewIds, setViewingAgentRun, subscribeViewingAgent, viewingAgentRunId } from './agent-session'
 import { CommandPalette } from './palette'
+import { focusAfterMenuTab } from './menu-keyboard'
 import { SharedContextMenuHost, prefersNativeContextMenu } from './shared-context-menu'
 import { StateNote } from './states'
 import { requestNewSelection } from './assortment-filter'
@@ -98,6 +101,9 @@ import {
 import { objectTablesToAutoLinkToTree } from './structure-tree-link'
 import {
   findStructureTreeView,
+  mergeStructureTreeViewState,
+  resolveStructureOpenTarget,
+  structureTreeViewNeedsBackfill,
   structureTreeViewState,
   structureTreeViewTitle,
 } from './structure-tree-view'
@@ -282,6 +288,7 @@ export function Shell() {
   const [configFiles, setConfigFiles] = useState<File[] | null>(null)
   const [help, setHelp] = useState(false)
   const [tabMenu, setTabMenu] = useState<{ x: number; y: number; id: string } | null>(null)
+  const tabMenuTriggerRef = useRef<HTMLButtonElement | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string } | null>(null)
   const [trashOpen, setTrashOpen] = useState(false)
   const [deleteError, setDeleteError] = useState('')
@@ -467,10 +474,15 @@ export function Shell() {
     queryFn: () => api.get('/v1/workspaces/{id}', { params: { path: { id: workspaceId ?? '' } } }),
     enabled: Boolean(workspaceId),
   })
+  const { settled: objectFetchSettled } = useObjectLand(objectId)
+  const openedPreview = queryClient.getQueryData(['object', objectId])
   const opened = useQuery({
     queryKey: ['object', objectId],
-    queryFn: () => api.get('/v1/objects/{id}', { params: { path: { id: objectId ?? '' } } }),
-    enabled: Boolean(objectId),
+    queryFn: () => loadObjectDetail(queryClient, objectId ?? ''),
+    enabled: Boolean(objectId) && objectFetchSettled,
+    placeholderData: () => queryClient.getQueryData(['object', objectId]),
+    ...objectFetchQueryOptions(),
+    staleTime: objectQueryStaleTime(openedPreview),
   })
   const detailListViews = useMemo(
     () => viewRows(workspace.data?.views).map((view) => ({ id: view.id, type: view.type })),
@@ -1097,6 +1109,23 @@ export function Shell() {
     }
   }, [workspaceId])
 
+  useEffect(() => {
+    if (!tabMenu) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' && event.key !== 'Tab') return
+      event.preventDefault()
+      event.stopPropagation()
+      const trigger = tabMenuTriggerRef.current
+      setTabMenu(null)
+      tabMenuTriggerRef.current = null
+      if (!trigger?.isConnected) return
+      if (event.key === 'Tab') focusAfterMenuTab(trigger, event.shiftKey)
+      else trigger.focus({ preventScroll: true })
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [tabMenu])
+
   useShortcutBindings({
     openPalette: () => {
       // Ctrl+K does nothing while the command list is already open.
@@ -1153,7 +1182,8 @@ export function Shell() {
 
 
   useEffect(() => {
-    publishMarked(objectId, opened.data?.type ?? null)
+    const type = opened.data?.type
+    publishMarked(objectId, type == null ? null : String(type))
   }, [objectId, opened.data?.type])
 
   useEffect(() => {
@@ -1960,7 +1990,29 @@ export function Shell() {
     void (async () => {
       try {
         let views: View[] = viewRows(surfaceNow.views)
-        let tree = findStructureTreeView(views, structureKey, defs)
+        const matched = findStructureTreeView(views, structureKey, defs)
+        let tree = matched ? views.find((view) => view.id === matched.id) : undefined
+        if (!tree && surfaceNow.locked) {
+          toast.error(copy.layoutLocked)
+          return
+        }
+        if (tree && structureTreeViewNeedsBackfill(tree, structureKey, defs)) {
+          const state = freeObject(mergeStructureTreeViewState(tree, structureKey, defs))
+          await api.post('/v1/views', {
+            body: {
+              id: tree.id,
+              workspace_id: surfaceNow.id,
+              type: tree.type,
+              title: tree.title,
+              pane: tree.pane ?? 'center',
+              position: tree.position ?? 0,
+              state,
+            },
+          })
+          const updated: View = { ...tree, state }
+          tree = updated
+          views = views.map((view) => (view.id === updated.id ? updated : view))
+        }
         if (!tree) {
           const id = crypto.randomUUID()
           const title = structureTreeViewTitle(structureKey, defs)
@@ -1970,7 +2022,7 @@ export function Shell() {
             title,
             pane: 'center',
             position: views.length,
-            state: freeObject(structureTreeViewState(structureKey)),
+            state: freeObject(structureTreeViewState(structureKey, defs)),
           }
           await api.post('/v1/views', {
             body: {
@@ -1999,13 +2051,20 @@ export function Shell() {
         queryClient.setQueryData(['workspace', surfaceNow.id], nextSurface)
         const current = docRef.current
         if (!current || !tree) return
+        const openIds = layoutViews(current.layout)
+        const target = resolveStructureOpenTarget(
+          views,
+          placement.target ?? current.focus,
+          openIds,
+          placement.zone,
+        )
         placeOverride.current = placement.zone === 'right'
-          ? { zone: 'right', ...(placement.target ? { target: placement.target } : {}) }
-          : { target: placement.target, zone: 'center' }
+          ? { zone: 'right', ...(target ? { target } : {}) }
+          : { target, zone: 'center' }
         const result = applyLayoutCommand(current, 'ui.open_view', {
           id: tree.id,
           zone: placement.zone,
-          ...(placement.target ? { target: placement.target } : {}),
+          ...(target ? { target } : {}),
         }, {
           views: views.map((view) => ({ id: view.id, title: view.title, type: view.type })),
           canonical: canonicalRef.current,
@@ -2138,6 +2197,7 @@ export function Shell() {
               onContextMenu={(event) => {
                 if (prefersNativeContextMenu(event.target)) return
                 event.preventDefault()
+                tabMenuTriggerRef.current = event.currentTarget
                 setTabMenu({ x: event.clientX, y: event.clientY, id: item.id })
               }}
             >
@@ -2215,13 +2275,19 @@ export function Shell() {
           <WorkspaceDock
             doc={doc}
             views={viewRows(surface.views).map((view) => {
-              const prompt = view.type === 'agent' ? String(view.state?.prompt ?? view.title) : undefined
+              const prompt = agentDockTabSessionLabel(view, agentRunList.data)
+              const bound = typeOfView(view, typeCatalog)
+              const peerActive = view.type === 'object_table' && Boolean(peerSourceOf(view.state))
+              const allOfType = bound?.plural ? copy.allOfType.replace('{type}', bound.plural) : ''
               return {
                 ...view,
                 title: view.type === 'agent' ? copy.agent : displayViewTitle(view, typeCatalog, openTypeKey),
                 prompt,
                 sourceLabel: viewSourceLabel(view, typeCatalog, workspaceCatalogRef(surface), catalogNamesById, peerLabelFor(view)),
-                sourceLabelClearable: view.type === 'object_table' && Boolean(peerSourceOf(view.state)),
+                sourceLabelClearable: peerActive,
+                sourceLabelClearAriaLabel: peerActive && allOfType
+                  ? copy.clearViewSource.replace('{label}', allOfType)
+                  : undefined,
               }
             })}
             onChange={commitDoc}
@@ -2338,7 +2404,12 @@ export function Shell() {
         />
       ) : null}
       {tabMenu ? (
-        <div className="menu" style={{ left: tabMenu.x, top: tabMenu.y }} data-testid="workspace-menu">
+        <div
+          className="menu"
+          style={{ left: tabMenu.x, top: tabMenu.y }}
+          data-testid="workspace-menu"
+          role="menu"
+        >
           {workspaces.data?.workspaces.filter((item) => item.id === tabMenu.id).map((item) => {
             const last = orderedWorkspaces.length <= 1
             const locked = Boolean(item.locked)
@@ -2521,7 +2592,11 @@ export function StructureTree({ session, view }: { session: Session; view: View 
   const [menu, setMenu] = useState<{ x: number; y: number; row: TreeEntry } | null>(null)
   const [editing, setEditing] = useState<{ row: TreeEntry; mode: 'rename' | 'child' | 'sibling' | 'key'; value: string } | null>(null)
   const [dropId, setDropId] = useState<string | null>(null)
-  const structures = (defs.data?.structures as Json[] | undefined) ?? []
+  const allStructures = (defs.data?.structures as Json[] | undefined) ?? []
+  const boundStructureKey = String(view.state?.structure_key ?? view.state?.structure ?? '').trim()
+  const structures = boundStructureKey
+    ? allStructures.filter((structure) => String(structure.key ?? '') === boundStructureKey)
+    : allStructures
   const typeKey = session.workspaceType || session.listType || ''
   const typeRow = ((defs.data?.types as Json[]) ?? []).find((item) => String(item.key) === typeKey)
   const allowedTrees = Array.isArray(typeRow?.structures) ? (typeRow.structures as unknown[]).map(String) : null

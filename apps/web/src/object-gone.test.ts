@@ -4,6 +4,7 @@ import { ApiError } from './api/client'
 import {
   clearObjectGone,
   markObjectGone,
+  OBJECT_FETCH_STALE_MS,
   objectFetchQueryOptions,
   objectGone,
   objectQueryGone,
@@ -15,6 +16,12 @@ describe('objectGone', () => {
     expect(objectGone(new ApiError(404, 'not found', { code: 'deleted' }))).toBe(true)
     expect(objectGone(new ApiError(404, 'not found', { code: 'not_found' }))).toBe(false)
     expect(objectGone(new ApiError(422, 'bad', {}))).toBe(false)
+  })
+})
+
+describe('objectFetchQueryOptions', () => {
+  it('keeps prefetched object reads warm through fast table arrows', () => {
+    expect(objectFetchQueryOptions().staleTime).toBe(OBJECT_FETCH_STALE_MS)
   })
 })
 

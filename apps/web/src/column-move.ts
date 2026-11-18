@@ -67,3 +67,6 @@ export function columnMoveAppliesTo(args: Json, viewId: string) {
   const focused = readUiContext().focused
   return !focused || focused === viewId
 }
+
+/** UI commands that change one table follow the same targeting rules as column moves. */
+export const uiCommandAppliesToView = columnMoveAppliesTo

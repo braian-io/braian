@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { UserMenu, userInitial } from './user-menu'
 
@@ -71,6 +71,21 @@ describe('UserMenu', () => {
     expect(screen.getByTestId('user-menu-content')).toBeTruthy()
     fireEvent.keyDown(screen.getByTestId('user-menu-content'), { key: 'Escape' })
     expect(screen.queryByTestId('user-menu-content')).toBeNull()
+  })
+
+  it('closes on Tab and moves focus past the trigger', async () => {
+    const { trigger } = mount()
+    const after = document.createElement('button')
+    after.type = 'button'
+    after.textContent = 'After'
+    document.body.appendChild(after)
+    fireEvent.keyDown(trigger, { key: 'Enter' })
+    const menu = screen.getByTestId('user-menu-content')
+    expect(menu).toBeTruthy()
+    fireEvent.keyDown(menu, { key: 'Tab' })
+    await waitFor(() => expect(screen.queryByTestId('user-menu-content')).toBeNull())
+    await waitFor(() => expect(document.activeElement).toBe(after))
+    after.remove()
   })
 
   it('shows offline in the menu', () => {

@@ -1088,8 +1088,14 @@ async fn translate_workspace_views(state: &AppState, workspace: &mut Value) {
         return;
     };
     for view in views {
+        let view_type = view
+            .get("type")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+            .unwrap_or_default();
         if let Some(view_state) = view.get_mut("state") {
             braian_model::translate_view_state(view_state, &cached.defs);
+            braian_model::strip_ephemeral_table_search(&view_type, view_state);
         }
     }
 }
@@ -1829,6 +1835,106 @@ fn reply_text(payload: &Value) -> String {
         }
     }
     join_reply_parts(&parts)
+}
+
+const SESSION_TITLE_SYSTEM: &str = "Write a short session title using 3 to 6 words in the same language as the user message. Reply with only the title: no quotes, no trailing punctuation, no explanation.";
+
+pub(crate) fn stub_session_title(prompt: &str) -> String {
+    prompt
+        .split_whitespace()
+        .take(5)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+const SESSION_TITLE_MAX_CHARS: usize = 80;
+const SESSION_TITLE_FALLBACK_WORDS: usize = 6;
+const SESSION_TITLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Word-boundary fallback when title generation is pending or failed.
+pub(crate) fn session_title_word_fallback(prompt: &str) -> String {
+    let trimmed = prompt.trim();
+    if trimmed.is_empty() {
+        return "Agent".to_owned();
+    }
+    let words: Vec<&str> = trimmed.split_whitespace().collect();
+    if words.len() <= SESSION_TITLE_FALLBACK_WORDS {
+        return words.join(" ");
+    }
+    format!(
+        "{}…",
+        words
+            .into_iter()
+            .take(SESSION_TITLE_FALLBACK_WORDS)
+            .collect::<Vec<_>>()
+            .join(" ")
+    )
+}
+
+pub(crate) fn normalize_session_title(text: &str) -> String {
+    let one_line = text.lines().next().unwrap_or(text).trim();
+    let stripped = one_line.trim_matches('"').trim_matches('\'').trim();
+    let joined = stripped
+        .split_whitespace()
+        .take(8)
+        .collect::<Vec<_>>()
+        .join(" ");
+    if joined.chars().count() <= SESSION_TITLE_MAX_CHARS {
+        return joined;
+    }
+    let mut out: String = joined.chars().take(SESSION_TITLE_MAX_CHARS).collect();
+    if !out.ends_with('…') {
+        out.push('…');
+    }
+    out
+}
+
+/// Cheap title for the session header and tab tooltip. Never blocks the main agent loop.
+pub(crate) async fn generate_session_title(prompt: &str) -> Option<String> {
+    let trimmed = prompt.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let key = std::env::var("OPENAI_API_KEY").unwrap_or_default();
+    let mock = std::env::var("BRAIAN_AGENT_MOCK").ok().as_deref() == Some("1");
+    if mock && trimmed.starts_with("title-fail-e2e:") {
+        return None;
+    }
+    if key.trim().is_empty() || mock {
+        let title = normalize_session_title(&stub_session_title(trimmed));
+        return (!title.is_empty()).then_some(title);
+    }
+    let model = std::env::var("BRAIAN_AGENT_MODEL").unwrap_or_else(|_| "gpt-6-luna".into());
+    let client = reqwest::Client::new();
+    let url = openai_responses_url();
+    let body = json!({
+        "model": model,
+        "input": [
+            {"role": "system", "content": SESSION_TITLE_SYSTEM},
+            {"role": "user", "content": trimmed}
+        ],
+        "reasoning": { "effort": "none" },
+        "max_output_tokens": 32
+    });
+    match tokio::time::timeout(
+        SESSION_TITLE_TIMEOUT,
+        post_openai(&client, &url, &key, &body),
+    )
+    .await
+    {
+        Ok(Ok(payload)) => {
+            let title = normalize_session_title(&reply_text(&payload));
+            if title.is_empty() { None } else { Some(title) }
+        }
+        Ok(Err(problem)) => {
+            tracing::warn!(detail = %problem.detail, "agent session title generation failed");
+            None
+        }
+        Err(_) => {
+            tracing::warn!("agent session title generation timed out");
+            None
+        }
+    }
 }
 
 fn join_reply_parts(parts: &[&str]) -> String {
@@ -3039,6 +3145,7 @@ async fn save_view(
     if let Ok(cached) = state.models.get(&state.store).await {
         braian_model::translate_view_state(&mut view_state, &cached.defs);
     }
+    braian_model::strip_ephemeral_table_search(&body.r#type, &mut view_state);
     state
         .store
         .save_view(

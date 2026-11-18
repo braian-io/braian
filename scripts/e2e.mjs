@@ -38,6 +38,7 @@ const specs = [
   'e2e/row128f-graph-camera.spec.ts',
   'e2e/row128g-graph-menu-fit.spec.ts',
   'e2e/row226-graph-fixes.spec.ts',
+  'e2e/row251-220-graph-full-toolbar.spec.ts',
   'e2e/history.spec.ts',
   'e2e/restore-dialog.spec.ts',
   'e2e/import.spec.ts',
@@ -102,6 +103,7 @@ const specs = [
   'e2e/template-picker.spec.ts',
   'e2e/shortcut-registry.spec.ts',
   'e2e/user-menu.spec.ts',
+  'e2e/row219-menu-tab-focus.spec.ts',
   'e2e/new-version-status.spec.ts',
   'e2e/view-source-type.spec.ts',
   'e2e/peer-source.spec.ts',
@@ -112,6 +114,7 @@ const specs = [
   'e2e/select-source-derivable.spec.ts',
   'e2e/source-all-explicit.spec.ts',
   'e2e/row41-structure-tree-auto-link.spec.ts',
+  'e2e/row272-peer-label-selection.spec.ts',
   'e2e/link-source-repair.spec.ts',
   'e2e/link-types.spec.ts',
   'e2e/save-confirm.spec.ts',
@@ -139,6 +142,7 @@ const specs = [
   'e2e/row239-detail-width.spec.ts',
   'e2e/row240-contrast.spec.ts',
   'e2e/row242-search-reset.spec.ts',
+  'e2e/row229-search-isolation.spec.ts',
 ]
 
 // Explicit compose targeting. The default keeps `just up` and CI on the
@@ -225,6 +229,7 @@ const measuredSeconds = {
   'e2e/row128f-graph-camera.spec.ts': 66,
   'e2e/row128g-graph-menu-fit.spec.ts': 59,
   'e2e/row226-graph-fixes.spec.ts': 70,
+  'e2e/row251-220-graph-full-toolbar.spec.ts': 45,
   'e2e/history.spec.ts': 5,
   'e2e/restore-dialog.spec.ts': 8,
   'e2e/import.spec.ts': 3,
@@ -260,11 +265,11 @@ const measuredSeconds = {
   'e2e/palette-stack.spec.ts': 5,
   'e2e/palette-drill.spec.ts': 26,
   'e2e/agent-tab.spec.ts': 53,
-  'e2e/agent-presence.spec.ts': 37,
+  'e2e/agent-presence.spec.ts': 42,
   'e2e/agent-session.spec.ts': 32,
   'e2e/agent-rename.spec.ts': 5,
   'e2e/agent-chat-dock.spec.ts': 50,
-  'e2e/agent-chat-pane.spec.ts': 12,
+  'e2e/agent-chat-pane.spec.ts': 20,
   'e2e/open-type-view-ready.spec.ts': 4,
   'e2e/duplicate-type-views.spec.ts': 6,
   'e2e/legacy-model-workspace.spec.ts': 6,
@@ -289,6 +294,7 @@ const measuredSeconds = {
   'e2e/template-picker.spec.ts': 10,
   'e2e/shortcut-registry.spec.ts': 9,
   'e2e/user-menu.spec.ts': 13,
+  'e2e/row219-menu-tab-focus.spec.ts': 12,
   'e2e/new-version-status.spec.ts': 4,
   'e2e/view-source-type.spec.ts': 5,
   'e2e/peer-source.spec.ts': 6,
@@ -299,6 +305,7 @@ const measuredSeconds = {
   'e2e/select-source-derivable.spec.ts': 15,
   'e2e/source-all-explicit.spec.ts': 6,
   'e2e/row41-structure-tree-auto-link.spec.ts': 8,
+  'e2e/row272-peer-label-selection.spec.ts': 9,
   'e2e/link-source-repair.spec.ts': 4,
   'e2e/link-types.spec.ts': 18,
   'e2e/save-confirm.spec.ts': 16,
@@ -326,6 +333,7 @@ const measuredSeconds = {
   'e2e/row239-detail-width.spec.ts': 45,
   'e2e/row240-contrast.spec.ts': 45,
   'e2e/row242-search-reset.spec.ts': 200,
+  'e2e/row229-search-isolation.spec.ts': 240,
 }
 
 const reseedSeconds = 4

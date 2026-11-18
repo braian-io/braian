@@ -345,6 +345,16 @@ describe('palette key effect', () => {
     expect(paletteKeyEffect({ ...entity, key: 'j', ctrlKey: true })).toEqual({ type: 'ask' })
   })
 
+  it('activates open structure rows on Ctrl+Enter instead of opening actions', () => {
+    const structure = {
+      ...base,
+      stackDepth: 1,
+      row: { argument: false, entity: false, ask: false, disabled: false, openStructure: true },
+    }
+    expect(paletteKeyEffect({ ...structure, key: 'Enter', ctrlKey: true })).toEqual({ type: 'activate', index: 0 })
+    expect(paletteKeyEffect({ ...structure, key: 'Enter', metaKey: true })).toEqual({ type: 'activate', index: 0 })
+  })
+
   it('leaves Home and End to the query caret', () => {
     expect(paletteKeyEffect({ ...base, key: 'Home' })).toEqual({ type: 'caret' })
     expect(paletteKeyEffect({ ...base, key: 'End', inQueryField: true })).toEqual({ type: 'caret' })

@@ -74,6 +74,8 @@ export type StandardEditableTableProps<T extends { id: string }> = {
   activeRowId?: string | null
   filterValue?: string
   onFilterChange?: (value: string) => void
+  /** Extra text matched by the toolbar filter, for values not shown in a column. */
+  rowFilterText?: (row: T) => string
   filterOnKeyDown?: (event: ReactKeyboardEvent<HTMLInputElement>) => void
   testId?: string
   /** Enable inline editing (Enter / F2). Off for product object table. */
@@ -221,6 +223,7 @@ export function StandardEditableTable<T extends { id: string }>({
   activeRowId: activeRowIdProp,
   filterValue,
   onFilterChange,
+  rowFilterText,
   filterOnKeyDown,
   testId = 'standard-editable-table',
   editable = true,
@@ -286,10 +289,12 @@ export function StandardEditableTable<T extends { id: string }>({
   const filtered = useMemo(() => {
     const needle = (filterValue ?? '').trim().toLowerCase()
     if (!needle) return merged
-    return merged.filter((row) =>
-      columns.some((column) => String(column.read(row) ?? '').toLowerCase().includes(needle)),
-    )
-  }, [merged, filterValue, columns])
+    return merged.filter((row) => {
+      const extra = rowFilterText?.(row) ?? ''
+      if (extra.toLowerCase().includes(needle)) return true
+      return columns.some((column) => String(column.read(row) ?? '').toLowerCase().includes(needle))
+    })
+  }, [merged, filterValue, columns, rowFilterText])
 
   useEffect(() => {
     if (editing) inputRef.current?.focus()

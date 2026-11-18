@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { markObjectNavReplace } from './object-nav-signal'
 import {
   parseUrlState,
   serializeUrlState,
@@ -309,5 +310,23 @@ describe('URL sync', () => {
     const hook = setup({ search: { ws: 'w1', view: 'v1' }, ready: false })
     expect(hook.apply).not.toHaveBeenCalled()
     expect(hook.navigate).not.toHaveBeenCalled()
+  })
+
+  it('replaces history for table arrow object changes', () => {
+    const hook = setup({
+      search: { ws: 'w1', view: 'v1', catalog: 'master', object: 'o1' },
+      state: { ...base, objectId: 'o1' },
+    })
+    hook.navigate.mockClear()
+    markObjectNavReplace()
+    hook.rerender({
+      search: { ws: 'w1', view: 'v1', catalog: 'master', object: 'o1' },
+      state: { ...base, objectId: 'o2' },
+      ready: true,
+    })
+    expect(hook.navigate).toHaveBeenCalledWith({
+      search: { ws: 'w1', view: 'v1', catalog: 'master', object: 'o2' },
+      replace: true,
+    })
   })
 })

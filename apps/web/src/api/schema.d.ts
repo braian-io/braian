@@ -1818,6 +1818,7 @@ export interface components {
             created_at: string;
             error?: string | null;
             finished_at?: string | null;
+            first_message?: string | null;
             hidden: boolean;
             /** Format: uuid */
             id: string;
@@ -1859,6 +1860,8 @@ export interface components {
             created_at: string;
             error?: string | null;
             finished_at?: string | null;
+            /** @description First user message in the session. */
+            first_message?: string | null;
             hidden: boolean;
             /** Format: uuid */
             id: string;

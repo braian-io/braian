@@ -69,12 +69,16 @@ import { applyObjectWrite, currentSearchWaitSeq, reconcileObjectWrite } from './
 import { markObjectGone, objectFetchQueryOptions, objectGone, objectQueryGone } from './object-gone'
 import {
   buildListPreviewFromRow,
+  isListPreview,
   loadObjectDetail,
+  objectQueryStaleTime,
   OBJECT_NAV_DEBOUNCE_MS,
   OBJECT_PREFETCH_RADIUS,
   prefetchObjectDetails,
   seedObjectListPreview,
 } from './object-list-preview'
+import { markObjectNavReplace, notifyObjectLandImmediate } from './object-nav-signal'
+import { useObjectLand } from './use-object-land'
 import {
   discardObjectDraft,
   displayOf,
@@ -137,9 +141,9 @@ import { commitDetailMeasureDraft, detailMeasureCommittedText, type MeasureField
 import { beginLinkDrag, dispatchLinkDrop, endLinkDrag, linkDragActive, linkDragContains, linkDragLabel, linkDragMime, linkDragObjects, linkDragPayload, linkDropDecision, readLinkDrag, setLinkDragHint } from './link-drag'
 import { EMPTY_MANUAL_FILTER, isEmptyManualQuery, labelCodes, labelSearchFilter, publishSelectionLabels, SELECTION_APPLIED_EVENT, selectionFilterText, selectionMatchesType } from './assortment-filter'
 import { appendPathFilter, objectTableFilter } from './table-filter'
-import { assortmentChipActive } from './table-filters'
+import { assortmentChipActive, isGroupOnlyManualSelection, manualSelectionHasGroup } from './table-filters'
 import { dispatchUi, onUi } from './ui-bus'
-import { columnMoveAppliesTo } from './column-move'
+import { columnMoveAppliesTo, uiCommandAppliesToView } from './column-move'
 import {
   EMPTY_SELECTION,
   enrichSelection,
@@ -286,7 +290,10 @@ export function ObjectTable({
   const openProposals = useOpenObjectProposals()
   const queryClient = useQueryClient()
   const objectNavTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingFollowIndex = useRef<number | null>(null)
   const parent = useRef<HTMLDivElement>(null)
+  /** Remote ui.filter must not stomp text the user is entering locally. */
+  const searchFocusedRef = useRef(false)
   const prefsApplied = useRef(false)
   /** dataUpdatedAt we last applied; re-apply when invalidate lands a newer fetch. */
   const prefsAppliedAt = useRef(0)
@@ -460,8 +467,8 @@ export function ObjectTable({
       const query = (item.query as Json) ?? {}
       const dynamicFilter = selectionFilterText(query)
       const emptyManual = !dynamicFilter && isEmptyManualQuery(query)
-      // Group/label assortments do not apply while a peer source drives the table.
-      if (peerSource && !dynamicFilter && !emptyManual) return
+      // Pure group assortments do not apply while a peer source drives the table.
+      if (peerSource && isGroupOnlyManualSelection(query)) return
       setActiveSelectionId(String(item.id ?? ''))
       setFilter('')
       setSelectionFilter(dynamicFilter || (emptyManual ? EMPTY_MANUAL_FILTER : ''))
@@ -524,6 +531,7 @@ export function ObjectTable({
     .join(' && ')
   const enableGroupAssortmentFilter = useCallback(async () => {
     if (!explicitAll || workspace.locked) return
+    const prevState = view.state
     const nextState = clearExplicitAllSource(view.state)
     const body = {
       id: view.id,
@@ -542,7 +550,19 @@ export function ObjectTable({
         views: views.map((item) => (String(item.id) === view.id ? { ...item, state: nextState } : item)),
       })
     }
-    await api.post('/v1/views', { body })
+    try {
+      await api.post('/v1/views', { body })
+    } catch (reason) {
+      if (surface && typeof surface === 'object' && !Array.isArray(surface)) {
+        const views = (surface.views as Json[] | undefined) ?? []
+        queryClient.setQueryData(['workspace', workspace.id], {
+          ...surface,
+          views: views.map((item) => (String(item.id) === view.id ? { ...item, state: prevState } : item)),
+        })
+      }
+      reportWriteError(reason)
+      throw reason
+    }
   }, [explicitAll, workspace.id, workspace.locked, view, queryClient])
   const attributePaths = useQuery({
     queryKey: ['attribute-paths', typeKey],
@@ -967,9 +987,19 @@ export function ObjectTable({
       resetColumnsToDefault()
       return
     }
-    if (event.name === 'ui.filter') setFilter(String(args.q ?? args.text ?? args.filter ?? ''))
-    if (event.name === 'ui.group') setGroupBy(String(args.group ?? args.by ?? ''))
-    if (event.name === 'ui.sort' && args.sort) setSort(String(args.sort))
+    if (event.name === 'ui.filter') {
+      if (!uiCommandAppliesToView(args, view.id)) return
+      if (searchFocusedRef.current) return
+      setFilter(String(args.q ?? args.text ?? args.filter ?? ''))
+    }
+    if (event.name === 'ui.group') {
+      if (!uiCommandAppliesToView(args, view.id)) return
+      setGroupBy(String(args.group ?? args.by ?? ''))
+    }
+    if (event.name === 'ui.sort' && args.sort) {
+      if (!uiCommandAppliesToView(args, view.id)) return
+      setSort(String(args.sort))
+    }
     if (event.name === 'ui.select' && args.id) {
       const id = String(args.id)
       session.setObjectId(id)
@@ -1077,7 +1107,11 @@ export function ObjectTable({
     const clamped = Math.max(0, Math.min(listCount - 1, next))
     setActive(clamped)
     const row = rowAt(clamped)
-    if (!row) return
+    if (!row) {
+      if (!extend) pendingFollowIndex.current = clamped
+      return
+    }
+    pendingFollowIndex.current = null
     if (extend) applySelection(row, clamped, active, extend)
     else {
       setSelected([row.id])
@@ -1448,6 +1482,7 @@ export function ObjectTable({
       buildListPreviewFromRow(row, defs.data, session.language, previewPathValuesRef.current?.[row.id]),
     )
     session.setObjectId(row.id)
+    if (fetch === 'debounced') markObjectNavReplace()
     const runFetches = () => {
       const ids: string[] = []
       for (let cursor = index - OBJECT_PREFETCH_RADIUS; cursor <= index + OBJECT_PREFETCH_RADIUS; cursor += 1) {
@@ -1461,18 +1496,30 @@ export function ObjectTable({
         clearTimeout(objectNavTimer.current)
         objectNavTimer.current = null
       }
+      notifyObjectLandImmediate(row.id)
       runFetches()
       return
     }
     if (objectNavTimer.current) clearTimeout(objectNavTimer.current)
     objectNavTimer.current = setTimeout(() => {
       objectNavTimer.current = null
+      notifyObjectLandImmediate(row.id)
       runFetches()
     }, OBJECT_NAV_DEBOUNCE_MS)
   }
   useEffect(() => () => {
     if (objectNavTimer.current) clearTimeout(objectNavTimer.current)
   }, [])
+  // PageDown/End can land on an index before its page is in memory.
+  useEffect(() => {
+    const index = pendingFollowIndex.current
+    if (index == null || index < 0) return
+    const row = rowAt(index)
+    if (!row) return
+    pendingFollowIndex.current = null
+    setSelected([row.id])
+    followRowImpl.current(row, index, 'debounced')
+  }, [knownStamp, groupedRows.length, found])
   const cellDisplayText = (row: ObjRow, id: string) => {
     const apiPath = parseColumnId(id).path
     if (columnNeedsPathValues(id)) {
@@ -2094,6 +2141,8 @@ export function ObjectTable({
       rowCount={prefsReady && probe.isFetched ? (groupBy ? groups.reduce((sum, group) => sum + group.found, 0) : found) : undefined}
       filterValue={filter}
       onFilterChange={setFilter}
+      onFilterFocus={() => { searchFocusedRef.current = true }}
+      onFilterBlur={() => { searchFocusedRef.current = false }}
     >
       <ObjectDraftBar
         count={draftCount}
@@ -2753,7 +2802,7 @@ function TableFilters({
     groupFilterApplies,
     defs,
   }
-  const applyAssortment = (item: Json) => {
+  const applyAssortment = async (item: Json) => {
     const query = (item.query as Json) ?? {}
     const dynamicFilter = selectionFilterText(query)
     const emptyManual = !dynamicFilter && isEmptyManualQuery(query)
@@ -2768,10 +2817,14 @@ function TableFilters({
       setActiveSelectionId('')
       return
     }
-    const needsGroupFilter = !dynamicFilter && !emptyManual
+    const needsGroupFilter = manualSelectionHasGroup(query)
     if (needsGroupFilter && !groupFilterApplies) {
       if (!onBeforeGroupAssortment) return
-      void onBeforeGroupAssortment()
+      try {
+        await onBeforeGroupAssortment()
+      } catch {
+        return
+      }
     }
     setFilter('')
     setActiveSelectionId(String(item.id ?? ''))
@@ -2804,7 +2857,7 @@ function TableFilters({
           className={assortmentActive(item) ? 'filter-chip on' : 'filter-chip'}
           data-testid="assortment"
           aria-pressed={assortmentActive(item)}
-          onClick={() => applyAssortment(item)}
+          onClick={() => { void applyAssortment(item) }}
         >
           {assortmentDisplayName(String(item.name))}
         </Button>
@@ -2980,28 +3033,35 @@ export function ClassAttributes({ session }: { session: PanesSession }) {
 export function ObjectDetail({ session }: { session: PanesSession }) {
   const queryClient = useQueryClient()
   const objectId = session.objectId ?? ''
+  const { settled: objectFetchSettled } = useObjectLand(session.objectId)
   const objectGoneState = objectQueryGone(queryClient, session.objectId)
+  const previewCached = queryClient.getQueryData<Json>(['object', session.objectId])
   const object = useQuery({
     queryKey: ['object', session.objectId],
     queryFn: () => loadObjectDetail(queryClient, session.objectId ?? ''),
-    enabled: Boolean(session.objectId) && !objectGoneState,
+    enabled: Boolean(session.objectId) && !objectGoneState && objectFetchSettled,
+    placeholderData: () => queryClient.getQueryData<Json>(['object', session.objectId]),
     ...objectFetchQueryOptions(),
+    staleTime: objectQueryStaleTime(previewCached),
   })
   const provenance = useQuery({
     queryKey: ['object-origin', session.objectId],
     queryFn: async () => {
       const response = await fetch(`/v1/objects/${session.objectId}?include=owners,origin`, { credentials: 'include' })
-      if (!response.ok) return { owners: {} as Record<string, string>, origin: null as Json | null }
+      if (!response.ok) {
+        const body = await response.json().catch(() => null)
+        throw new Error(typeof body?.detail === 'string' ? body.detail : `HTTP ${response.status}`)
+      }
       return response.json() as Promise<{ owners?: Record<string, string>; origin?: Json | null }>
     },
-    enabled: Boolean(session.objectId) && !objectGoneState,
+    enabled: Boolean(session.objectId) && !objectGoneState && objectFetchSettled,
     ...objectFetchQueryOptions(),
   })
   const defs = useQuery({ queryKey: ['definitions'], queryFn: () => api.get('/v1/definitions') })
   const suggestions = useQuery({
     queryKey: ['proposals', 'detail', session.objectId],
     queryFn: () => api.get('/v1/proposals', { params: { query: { status: 'open', limit: 200 } } }),
-    enabled: Boolean(session.objectId) && !objectGoneState,
+    enabled: Boolean(session.objectId) && !objectGoneState && objectFetchSettled,
   })
   const drafts = useSyncExternalStore(subscribeObjectDrafts, getObjectDraftSnapshot, getObjectDraftSnapshot)
   const draftSaving = useObjectDraftSaving()
@@ -3058,10 +3118,29 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   if (objectGone(object.error) || objectGoneState) {
     return <StateNote tone="empty" title={copy.objectDeleted} detail={copy.objectDeletedHint} testId="detail-deleted" />
   }
-  if (object.isError && !object.data) {
-    return <StateNote tone="error" title={copy.graphError} detail={copy.validation} testId="detail-error" />
+  if (provenance.isError && objectFetchSettled) {
+    return (
+      <StateNote
+        tone="error"
+        title={copy.graphError}
+        detail={provenance.error instanceof Error ? provenance.error.message : copy.validation}
+        testId="detail-error"
+      />
+    )
+  }
+  if (object.isError && (!object.data || isListPreview(object.data))) {
+    return (
+      <StateNote
+        tone="error"
+        title={copy.graphError}
+        detail={object.error instanceof Error ? object.error.message : copy.validation}
+        testId="detail-error"
+      />
+    )
   }
   if (!object.data || !session.objectId) return <StateNote tone="loading" title={copy.loading} testId="detail-loading" />
+  const objectPreview = isListPreview(object.data)
+  const editingReady = !objectPreview
   const serverValues = (object.data.values as Json) ?? {}
   const serverVersion = Number(object.data.version ?? 0)
   const values = overlayValues(objectId, serverValues, serverVersion)
@@ -3095,6 +3174,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
     return value
   }
   const stageField = (key: string, next: unknown) => {
+    if (!editingReady) return
     const attribute = attributes.find((item) => item.key === key)
     const baseVersion = editBaseVersion(objectId, serverVersion)
     const before = values[key]
@@ -3148,6 +3228,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
     roleCanWrite: me.data ? roleCanWrite(me.data.role) : true,
   })
   const save = () => {
+    if (!editingReady) return
     if (!fieldDraftRef.current?.flush()) return
     setError('')
     const plan = draftSavePlan({
@@ -3191,6 +3272,12 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   const visibleKeys = showMoreFields ? [...primaryKeys, ...moreKeys] : primaryKeys
   const owners = provenance.data?.owners ?? {}
   const origin = provenance.data?.origin
+  const previewValues = (object.data.values as Json) ?? {}
+  const fieldKnownInPreview = (key: string) => {
+    if (!objectPreview) return true
+    if (key === 'number' || key === 'name' || key === 'status') return true
+    return Object.prototype.hasOwnProperty.call(previewValues, key)
+  }
   const renderField = (key: string) => {
     const attribute = attributes.find((item) => item.key === key)
     const kind = (attribute?.kind as Json) ?? {}
@@ -3207,6 +3294,9 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       <div key={key} className={owner ? 'field locked' : 'field'} data-testid={owner ? 'locked-field' : undefined}>
         <label>{fieldLabel}{owner ? ` · ${copy.ownedBy} ${owner}` : ''}</label>
         <div className={controlClass}>
+          {!fieldKnownInPreview(key) ? (
+            <span className="detail-field-skeleton" data-testid="detail-field-skeleton" aria-busy="true" />
+          ) : (
           <Editor
             fieldKey={key}
             kind={String(kind.type ?? 'text')}
@@ -3217,9 +3307,10 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
             value={fieldDisplayValue(key)}
             options={optionsFor(lists, String(kind.list ?? ''))}
             units={unitsFor(families, String(kind.unit_family ?? ''))}
-            readOnly={Boolean(owner)}
+            readOnly={Boolean(owner) || !editingReady}
             onChange={(next) => stageField(key, next)}
           />
+          )}
           {proposalKeyCells.map((cell) => (
             <div key={cell.id} className="pending-field" data-testid="pending-field" data-field={key} data-stale={cell.stale ? 'true' : 'false'}>
               <span className="pending-chip" data-testid={cell.stale ? 'pending-stale' : 'pending-chip'}>{cell.stale ? copy.proposalStale : copy.pending}</span>
@@ -3241,6 +3332,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       ref={formRef}
       className={flashId === session.objectId ? 'detail-form form flash' : 'detail-form form'}
       data-testid="object-detail"
+      data-detail-ready={editingReady ? 'true' : 'false'}
       onSubmit={(event) => {
         // Enter in a Detail field stages nothing and never saves.
         event.preventDefault()
@@ -3290,6 +3382,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
                       data-testid="delete-object-detail"
                       aria-label={copy.delete}
                       title={copy.delete}
+                      disabled={!editingReady}
                       onClick={() => requestDeleteObjects([objectId])}
                     >
                       <Trash2 aria-hidden="true" size={14} />
@@ -3300,11 +3393,15 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
               </TooltipProvider>
             )}
           </div>
+          {objectPreview ? (
+            <p className="detail-section-skeleton" data-testid="detail-meta-skeleton" aria-busy="true" />
+          ) : (
           <DetailMeta
             createdAt={typeof object.data.created_at === 'string' ? object.data.created_at : ''}
             updatedAt={typeof object.data.updated_at === 'string' ? object.data.updated_at : ''}
             updatedBy={object.data.updated_by}
           />
+          )}
           <div className="field-chips">
             <MetaChip>{typeLabel(defs.data, String(object.data.type), uiLanguage)}</MetaChip>
             <MetaChip tone={status ? statusTone(status) : 'neutral'}>
@@ -3322,6 +3419,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
           defs={defs.data}
           defsLoading={defs.isLoading}
           links={(object.data.links as never) ?? []}
+          bodyLoading={objectPreview}
           onOpen={(id) => session.setObjectId(id)}
         />
         {fieldSections(visibleKeys).map((section) => (
@@ -3349,8 +3447,8 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       {dirty ? (
         <ObjectDraftBar
           count={localCells.length + (proposalCells.length > 0 ? 1 : 0)}
-          canSave={detailReview.canSave}
-          canDiscard={detailReview.canDiscard}
+          canSave={detailReview.canSave && editingReady}
+          canDiscard={detailReview.canDiscard && editingReady}
           saveReason={detailReview.saveReason}
           discardReason={detailReview.discardReason}
           pending={draftSaving}
