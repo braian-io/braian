@@ -737,11 +737,12 @@ test('context menu keeps focus and highlight on one item', async ({ page }) => {
       const item = items.nth(index)
       const isMarked = await item.evaluate((element) => element.hasAttribute('data-highlighted'))
       const value = await paint(item)
-      expect(indicators(value).outline, `${label}: item ${index} outline`).toBe(false)
       if (isMarked) {
         marked.push(index)
+        expectOneIndicator(value, `${label}: item ${index} highlighted`)
         expect(value.backgroundColor, `${label}: item ${index} fill`).toBe(value.accentDim)
       } else {
+        expect(indicators(value).outline, `${label}: item ${index} outline`).toBe(false)
         expect(value.backgroundColor, `${label}: item ${index} background`).toBe('rgba(0, 0, 0, 0)')
       }
     }

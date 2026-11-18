@@ -66,6 +66,7 @@ import { AgentsTable } from './agents-table'
 import { agentDockTabSessionLabel, agentRunPrompt, agentRunsForWorkspace, backToMySessionEvent, listAgentRuns, openAgentEvent, openAgentsTableEvent, patchAgentRun, requestBackToMySession, showAgentSessionEvent, takeOverAgentRun, type AgentMessage, type AgentRunSummary } from './agent-runs'
 import { agentSessionLayout, controllingAgentRuns, holdLayoutFlush, layoutFlushHeld, agentMarkerViewIds, setViewingAgentRun, subscribeViewingAgent, viewingAgentRunId } from './agent-session'
 import { CommandPalette } from './palette'
+import { focusAfterMenuTab } from './menu-keyboard'
 import { SharedContextMenuHost, prefersNativeContextMenu } from './shared-context-menu'
 import { StateNote } from './states'
 import { requestNewSelection } from './assortment-filter'
@@ -288,6 +289,7 @@ export function Shell() {
   const [configFiles, setConfigFiles] = useState<File[] | null>(null)
   const [help, setHelp] = useState(false)
   const [tabMenu, setTabMenu] = useState<{ x: number; y: number; id: string } | null>(null)
+  const tabMenuTriggerRef = useRef<HTMLButtonElement | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string } | null>(null)
   const [trashOpen, setTrashOpen] = useState(false)
   const [deleteError, setDeleteError] = useState('')
@@ -1098,6 +1100,23 @@ export function Shell() {
       document.removeEventListener('visibilitychange', onHide)
     }
   }, [workspaceId])
+
+  useEffect(() => {
+    if (!tabMenu) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' && event.key !== 'Tab') return
+      event.preventDefault()
+      event.stopPropagation()
+      const trigger = tabMenuTriggerRef.current
+      setTabMenu(null)
+      tabMenuTriggerRef.current = null
+      if (!trigger?.isConnected) return
+      if (event.key === 'Tab') focusAfterMenuTab(trigger, event.shiftKey)
+      else trigger.focus({ preventScroll: true })
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [tabMenu])
 
   useShortcutBindings({
     openPalette: () => {
@@ -2170,6 +2189,7 @@ export function Shell() {
               onContextMenu={(event) => {
                 if (prefersNativeContextMenu(event.target)) return
                 event.preventDefault()
+                tabMenuTriggerRef.current = event.currentTarget
                 setTabMenu({ x: event.clientX, y: event.clientY, id: item.id })
               }}
             >
@@ -2376,7 +2396,12 @@ export function Shell() {
         />
       ) : null}
       {tabMenu ? (
-        <div className="menu" style={{ left: tabMenu.x, top: tabMenu.y }} data-testid="workspace-menu">
+        <div
+          className="menu"
+          style={{ left: tabMenu.x, top: tabMenu.y }}
+          data-testid="workspace-menu"
+          role="menu"
+        >
           {workspaces.data?.workspaces.filter((item) => item.id === tabMenu.id).map((item) => {
             const last = orderedWorkspaces.length <= 1
             const locked = Boolean(item.locked)
