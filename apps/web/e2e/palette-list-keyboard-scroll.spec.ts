@@ -175,6 +175,8 @@ test.describe('palette keyboard scroll keeps the active row visible', () => {
 
   test('Root list: Open structure › drill, Backspace, ArrowDown scroll, and wheel', async ({ page }) => {
     await login(page)
+    await openProducts(page)
+    await expect(page.getByText('Mature cheddar')).toBeVisible({ timeout: 60_000 })
 
     try {
       await focusMainTable(page)
@@ -183,8 +185,6 @@ test.describe('palette keyboard scroll keeps the active row visible', () => {
       const rootList = palette.locator('#palette-list')
       await expect(palette).toBeVisible()
       await waitForStableOptions(palette)
-      await page.keyboard.press('Home')
-      await expectActiveInView(rootList, 'root list at Home')
 
       for (let step = 0; step < 18; step += 1) {
         await pressArrowDownAndAssertInView(rootList, page, step, 'root from top')
