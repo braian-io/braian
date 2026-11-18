@@ -101,11 +101,7 @@ async function showProductsInner(page: Page, title = 'Products') {
 
 /** Focus the Products table in the pane that owns the main object table. */
 export async function showProducts(page: Page, title = 'Products') {
-  try {
-    await showProductsInner(page, title)
-  } catch {
-    await resetProductsLayout(page, title)
-  }
+  await showProductsInner(page, title)
 }
 
 /** Draft links live in chat; review and save stay on the object table pane. */
