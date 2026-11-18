@@ -63,23 +63,34 @@ test('grid focus alone does not select; arrows select Detail; Enter/Space confir
   expect(secondKey).not.toBe(secondObjectId)
   await expect.poll(() => objectParam(page)).toBe(secondKey)
   const secondName = (await second.locator('[data-column="name"]').innerText()).trim()
-  await expect.poll(async () => (await page.getByTestId('object-detail').locator('.detail-title strong').innerText()).trim()).toBe(secondName)
-
-  // Space still confirms the focused row and keeps Detail on it.
-  await page.keyboard.press('ArrowUp')
   const firstName = (await first.locator('[data-column="name"]').innerText()).trim()
-  await expect.poll(async () => (await page.getByTestId('object-detail').locator('.detail-title strong').innerText()).trim()).toBe(firstName)
-  await page.keyboard.press('Space')
-  await expect(first).toHaveAttribute('aria-selected', 'true')
-  await expect.poll(() => objectParam(page)).toBe(firstKey)
-  await expect.poll(async () => (await page.getByTestId('object-detail').locator('.detail-title strong').innerText()).trim()).toBe(firstName)
-
-  // Enter still confirms the focused row.
-  await page.keyboard.press('ArrowDown')
-  await page.keyboard.press('Enter')
-  await expect(second).toHaveAttribute('aria-selected', 'true')
-  await expect.poll(() => objectParam(page)).toBe(secondKey)
   await expect.poll(async () => (await page.getByTestId('object-detail').locator('.detail-title strong').innerText()).trim()).toBe(secondName)
+
+  const detailTitle = async () => (await page.getByTestId('object-detail').locator('.detail-title strong').innerText()).trim()
+  const selectedRows = table.getByTestId('object-row').and(table.locator('[aria-selected="true"]'))
+
+  // Shift+Arrow extends the range. Space confirms only the focused row.
+  await page.keyboard.press('Shift+ArrowUp')
+  await expect(first).toHaveAttribute('aria-selected', 'true')
+  await expect(second).toHaveAttribute('aria-selected', 'true')
+  await expect.poll(detailTitle).toBe(firstName)
+  await page.keyboard.press('Space')
+  await expect(selectedRows).toHaveCount(1)
+  await expect(first).toHaveAttribute('aria-selected', 'true')
+  await expect(second).toHaveAttribute('aria-selected', 'false')
+  await expect.poll(() => objectParam(page)).toBe(firstKey)
+  await expect.poll(detailTitle).toBe(firstName)
+
+  // Enter confirms only the focused row after another extended move.
+  await page.keyboard.press('Shift+ArrowDown')
+  await expect(first).toHaveAttribute('aria-selected', 'true')
+  await expect(second).toHaveAttribute('aria-selected', 'true')
+  await page.keyboard.press('Enter')
+  await expect(selectedRows).toHaveCount(1)
+  await expect(second).toHaveAttribute('aria-selected', 'true')
+  await expect(first).toHaveAttribute('aria-selected', 'false')
+  await expect.poll(() => objectParam(page)).toBe(secondKey)
+  await expect.poll(detailTitle).toBe(secondName)
 
   // Left/Right still move the active cell on the focused row.
   const activeCell = second.locator('.cell.active-cell')

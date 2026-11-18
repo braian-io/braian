@@ -176,7 +176,7 @@ test('a persistent object GET failure shows Retry without endless requests', asy
 
 test('Enter and Space still confirm the focused row for Detail', async ({ page }) => {
   test.setTimeout(120_000)
-  const { rows } = await openProducts(page)
+  const { rows, table } = await openProducts(page)
   const first = rows.first()
   const second = rows.nth(1)
   const firstKey = (await first.locator('[data-column="number"], [data-column="key"]').first().innerText()).trim()
@@ -184,16 +184,34 @@ test('Enter and Space still confirm the focused row for Detail', async ({ page }
   const firstName = (await first.locator('[data-column="name"]').innerText()).trim()
   const secondName = (await second.locator('[data-column="name"]').innerText()).trim()
 
-  await page.keyboard.press('ArrowDown')
-  await expect.poll(() => detailTitle(page)).toBe(firstName)
-  await page.keyboard.press('Space')
-  await expect(first).toHaveAttribute('aria-selected', 'true')
-  await expect.poll(() => new URL(page.url()).searchParams.get('object')).toBe(firstKey)
-  await expect.poll(() => detailTitle(page)).toBe(firstName)
+  const third = rows.nth(2)
+  const thirdKey = (await third.locator('[data-column="number"], [data-column="key"]').first().innerText()).trim()
+  const thirdName = (await third.locator('[data-column="name"]').innerText()).trim()
+  const selectedRows = table.getByTestId('object-row').and(table.locator('[aria-selected="true"]'))
 
   await page.keyboard.press('ArrowDown')
-  await page.keyboard.press('Enter')
+  await expect.poll(() => detailTitle(page)).toBe(firstName)
+  await expect(first).toHaveAttribute('aria-selected', 'true')
+
+  // Space collapses an extended range onto the focused row.
+  await page.keyboard.press('Shift+ArrowDown')
+  await expect(first).toHaveAttribute('aria-selected', 'true')
   await expect(second).toHaveAttribute('aria-selected', 'true')
+  await page.keyboard.press('Space')
+  await expect(selectedRows).toHaveCount(1)
+  await expect(second).toHaveAttribute('aria-selected', 'true')
+  await expect(first).toHaveAttribute('aria-selected', 'false')
   await expect.poll(() => new URL(page.url()).searchParams.get('object')).toBe(secondKey)
   await expect.poll(() => detailTitle(page)).toBe(secondName)
+
+  // Enter does the same after another extended move.
+  await page.keyboard.press('Shift+ArrowDown')
+  await expect(second).toHaveAttribute('aria-selected', 'true')
+  await expect(third).toHaveAttribute('aria-selected', 'true')
+  await page.keyboard.press('Enter')
+  await expect(selectedRows).toHaveCount(1)
+  await expect(third).toHaveAttribute('aria-selected', 'true')
+  await expect(second).toHaveAttribute('aria-selected', 'false')
+  await expect.poll(() => new URL(page.url()).searchParams.get('object')).toBe(thirdKey)
+  await expect.poll(() => detailTitle(page)).toBe(thirdName)
 })
