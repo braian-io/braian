@@ -21,7 +21,7 @@ import { mergeFrecency, readFrecency, touch, writeFrecency } from './frecency'
 import { withModelCommand } from './model-command'
 import { activeAfterQuery, filterPaletteRows, frecencyId, groupOrder, groupTitle, markedTitle, readPaletteMemory, rememberPaletteItem, rememberRecent, resolveActiveAfterQuery, resultAnnouncement, selectedObjectId, sublistPlaceholder, visibleRows, withRecent, type PaletteItem } from './palette-model'
 import { argumentBreadcrumb, isObjectParam, objectTypeFilter, paletteKeyEffect, placeTargetId, tabHint, type PaletteFrame } from './palette-core'
-import { scrollPaletteActiveItem } from './palette-list-scroll'
+import { resetPaletteListScroll, scrollPaletteActiveItem } from './palette-list-scroll'
 import { argumentCommands, type OperationRecord } from './palette-operations'
 import { objectPaletteRows } from './palette-objects'
 import { viewPaletteRows } from './palette-views'
@@ -604,6 +604,16 @@ export function CommandPalette({
   useEffect(() => {
     paletteStackScroll.current = true
   }, [stack.length])
+  useLayoutEffect(() => {
+    if (mode !== 'list') return
+    const list = paletteListRef.current
+    resetPaletteListScroll(list)
+    // cmdk measures the new rows after this layout pass.
+    const frame = requestAnimationFrame(() => {
+      scrollPaletteActiveItem(paletteListRef.current)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [stack.length, mode])
   useLayoutEffect(() => {
     if (mode !== 'list') return
     if (paletteActiveFromPointer.current) {
