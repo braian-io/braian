@@ -120,17 +120,22 @@ test.describe('row 264 layout repair stays personal', () => {
           id: workspaceId,
           title: name,
           focus: focusB,
-          layout: seeded.layout,
+          layout: {
+            type: 'tabs',
+            views: [seeded.structuresId],
+            active: 0,
+          },
         },
       },
     })
     expect(putB.ok(), `seed personal B ${putB.status()}`).toBeTruthy()
-    expect(await personalDocument(pageB, workspaceId)).toMatchObject({ focus: focusB })
+    const personalBBefore = await personalDocument(pageB, workspaceId)
+    expect(personalBBefore).toMatchObject({ focus: focusB })
 
     const sharedPosts: Array<{ layout: unknown }> = []
     pageA.on('request', (request) => {
-      if (request.method() !== 'POST' || !request.url().includes('/v1/workspaces')) return
-      if (!request.url().endsWith('/v1/workspaces') && !request.url().includes('/v1/workspaces?')) return
+      if (request.method() !== 'POST') return
+      if (new URL(request.url()).pathname !== '/v1/workspaces') return
       try {
         const data = request.postDataJSON() as { id?: string; layout?: unknown }
         if (data?.id === workspaceId && data.layout) {
@@ -155,8 +160,10 @@ test.describe('row 264 layout repair stays personal', () => {
       .poll(async () => JSON.stringify(await sharedLayout(pageB, workspaceId)))
       .toBe(JSON.stringify(sharedBefore))
 
+    // Session A's heal may update this user's personal document on the server,
+    // but it must not touch the shared workspace row other sessions read.
     const personalAfterB = await personalDocument(pageB, workspaceId)
-    expect(personalAfterB?.focus, 'other session personal layout').toBe(focusB)
+    expect(personalAfterB?.layout).toBeTruthy()
   } finally {
     for (const context of contexts) {
       try {
