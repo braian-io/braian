@@ -471,9 +471,12 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
 /* Edge-docked agent chat: catalog and agent share the dock width via flex splits.
    The shell attribute stays on after the agent view is removed, so the same
    transition is still in force on the frame that sets the column to 0. */
-.dock-root > .split.horizontal[data-agent-dock='true'] > .split-cell,
-.dock-root > .split.horizontal[data-agent-shell='true'] > .split-cell {
-  transition: flex-basis var(--dur) var(--ease), width var(--dur) var(--ease), max-width var(--dur) var(--ease), min-width var(--dur) var(--ease);
+/* Only width moves. flex-basis and max-width stay put, so the used width
+   interpolates instead of holding the start size until the transition ends. */
+.dock-root > .split.horizontal[data-agent-dock='true'] > .split-cell[data-agent-dock-cell],
+.dock-root > .split.horizontal[data-agent-shell='true'] > .split-cell[data-agent-dock-cell] {
+  transition: width var(--dur) var(--ease);
+  min-width: 0;
 }
 /* Below 1360px the dock column is 200px, set inline, so it stays in the row.
    A 30% share cannot keep Detail at 360px and Products within 25% of its closed width. */
@@ -1080,6 +1083,8 @@ select.link-type-line { width: 100%; font-weight: 600; }
   .dock-preview, .split-divider > span,
   .dock-root > .split.horizontal[data-agent-dock='true'] > .split-cell,
   .dock-root > .split.horizontal[data-agent-shell='true'] > .split-cell,
+  .dock-root > .split.horizontal[data-agent-dock='true'] > .split-cell[data-agent-dock-cell],
+  .dock-root > .split.horizontal[data-agent-shell='true'] > .split-cell[data-agent-dock-cell],
   .dock-root > .split.horizontal[data-tree-pinned='true'] > .split-cell { transition: none; }
 }
 

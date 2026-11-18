@@ -479,25 +479,18 @@ function SplitChild({
   const flex = hasDetail ? '0 1' : '0 0'
   const pinnedPx = pinTree && index === 0 ? pinnedTreeWidthPx(frame.agentTreePin, pinTreeRatio) : null
   const agentShellRight = agentShell && index === 1
-  const collapsedAgent: CSSProperties = {
-    flex: '0 0 0px',
-    width: '0px',
-    minWidth: 0,
-    maxWidth: '0px',
-    overflow: 'hidden',
-    pointerEvents: 'none',
-  }
   const openPx = agentColumnPx(dockBox, ratio, gaps, narrowDock)
+  /* flex-basis stays auto so the width property is the size that transitions. */
+  const agentWidth = presentAgentOpen ? openPx : 0
   const cellStyle: CSSProperties = agentShellRight
-    ? presentAgentOpen
-      ? {
-          flex: `0 0 ${openPx}px`,
-          width: `${openPx}px`,
-          minWidth: 0,
-          maxWidth: `${openPx}px`,
-          overflow: 'hidden',
-        }
-      : collapsedAgent
+    ? {
+        flex: '0 0 auto',
+        width: `${agentWidth}px`,
+        minWidth: 0,
+        maxWidth: 'none',
+        overflow: 'hidden',
+        pointerEvents: presentAgentOpen ? undefined : 'none',
+      }
     : agentShell && index === 0 && narrowDock
       ? { flex: '1 1 auto', width: 'auto', minWidth: 0, maxWidth: 'none' }
       : pinnedPx != null

@@ -35,10 +35,10 @@ describe('Detail width layout (row 239)', () => {
     )
     expect(css).not.toMatch(/@media \(min-width:\s*1360px\)\s*\{[\s\S]*?min-width:\s*360px/)
     expect(css).toMatch(
-      /\.dock-root > \.split\.horizontal\[data-agent-dock='true'\] > \.split-cell[\s\S]*?transition:[^;]*var\(--dur\)/,
+      /\.dock-root > \.split\.horizontal\[data-agent-dock='true'\] > \.split-cell\[data-agent-dock-cell\][\s\S]*?transition:\s*width var\(--dur\)/,
     )
     expect(css).toMatch(
-      /\.dock-root > \.split\.horizontal\[data-agent-shell='true'\] > \.split-cell[\s\S]*?transition:[^;]*var\(--dur\)/,
+      /\.dock-root > \.split\.horizontal\[data-agent-shell='true'\] > \.split-cell\[data-agent-dock-cell\][\s\S]*?transition:\s*width var\(--dur\)/,
     )
     expect(css).toMatch(
       /\.dock-root > \.split\.horizontal\[data-tree-pinned='true'\] > \.split-cell\s*\{[^}]*transition:/,

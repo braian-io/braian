@@ -181,57 +181,41 @@ async function paneWidth(page: Page, title: string) {
 /** Open or close the dock and require a real width transition, unless reduced motion is on. */
 async function toggleAgentDock(page: Page, mode: 'open' | 'close') {
   const reduced = await page.evaluate(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches)
-  await page.evaluate(() => {
-    const host = window as Window & {
-      __dockToken?: number
-      __dock?: { duration: number; widths: number[] } | null
-      __dockListen?: boolean
-    }
-    if (!host.__dockListen) {
-      host.__dockListen = true
-      document.addEventListener('transitionrun', (event) => {
-        const token = host.__dockToken ?? 0
-        const target = event.target
-        if (!(target instanceof HTMLElement) || target.dataset.agentDockCell !== 'true') return
-        if (event.propertyName !== 'width' && event.propertyName !== 'flex-basis' && event.propertyName !== 'max-width') return
-        if (event.timeStamp + 30 < token) return
-        const duration = Number.parseFloat(getComputedStyle(target).transitionDuration) || 0
-        const bucket = (host.__dock ??= { duration: 0, widths: [] })
-        bucket.duration = Math.max(bucket.duration, duration)
-        bucket.widths.push(target.getBoundingClientRect().width)
-        const sample = () => {
-          bucket.widths.push(target.getBoundingClientRect().width)
-          if (bucket.widths.length < 10) requestAnimationFrame(sample)
-        }
-        requestAnimationFrame(sample)
-      }, true)
-    }
-    host.__dockToken = performance.now()
-    host.__dock = { duration: 0, widths: [] }
-  })
   const before = await page.locator('[data-agent-dock-cell]').evaluate((el) => ({
     width: el.getBoundingClientRect().width,
     duration: Number.parseFloat(getComputedStyle(el).transitionDuration) || 0,
   })).catch(() => ({ width: 0, duration: 0 }))
+  await page.evaluate(() => {
+    const host = window as Window & { __dock?: { duration: number; widths: number[] } }
+    const cell = document.querySelector<HTMLElement>('[data-agent-dock-cell]')
+    const bucket = (host.__dock = { duration: 0, widths: [] })
+    if (!cell) return
+    const started = performance.now()
+    const sample = () => {
+      bucket.duration = Math.max(bucket.duration, Number.parseFloat(getComputedStyle(cell).transitionDuration) || 0)
+      bucket.widths.push(cell.getBoundingClientRect().width)
+      if (performance.now() - started < 180) requestAnimationFrame(sample)
+    }
+    requestAnimationFrame(sample)
+  })
   await page.keyboard.press('Control+j')
   if (mode === 'close') await expect(page.getByTestId('agent-view')).toHaveCount(0)
   else await expect(page.getByTestId('agent-view').last()).toBeVisible({ timeout: 30_000 })
   if (reduced) {
     await page.waitForTimeout(80)
-    const seen = await page.evaluate(() => (window as Window & { __dock?: { widths: number[] } | null }).__dock)
-    expect(seen?.widths.length ?? 0, 'reduced motion does not run a dock width transition').toBe(0)
     const duration = await page.locator('[data-agent-dock-cell]').evaluate((el) => (
       Number.parseFloat(getComputedStyle(el).transitionDuration) || 0
     ))
     expect(duration, 'reduced motion sets the dock transition duration to 0').toBe(0)
+    const seen = await page.evaluate(() => (window as Window & { __dock?: { widths: number[] } }).__dock)
+    const widths = seen?.widths ?? []
+    const low = Math.min(...widths, before.width)
+    const high = Math.max(...widths, before.width)
+    const mid = widths.some((value) => value > low + 8 && value < high - 8)
+    expect(mid, 'reduced motion does not pass through an intermediate dock width').toBe(false)
     return
   }
   expect(before.duration, `dock transition duration is set before it ${mode}s`).toBeGreaterThan(0)
-  await page.waitForFunction(
-    () => ((window as Window & { __dock?: { widths: number[] } }).__dock?.widths.length ?? 0) > 0,
-    null,
-    { timeout: 2_000 },
-  )
   await page.waitForTimeout(200)
   const seen = await page.evaluate(() => (
     window as Window & { __dock?: { duration: number; widths: number[] } }
