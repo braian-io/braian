@@ -84,7 +84,7 @@ test.describe('row 216 delete object', () => {
     await expect(page.getByTestId('command-palette')).toBeHidden()
     const detail = page.getByTestId('object-detail')
     await expect(detail).toBeVisible()
-    await detail.getByRole('button', { name: 'Delete' }).click()
+    await detail.getByTestId('delete-object-detail').click()
     await expect(page.getByTestId('delete-object-dialog')).toBeVisible()
     await page.screenshot({ path: testInfo.outputPath('row216-detail-dialog.png') })
     await cancelWithEscape(page)
