@@ -183,7 +183,8 @@ test.describe('palette keyboard scroll keeps the active row visible', () => {
       const rootList = palette.locator('#palette-list')
       await expect(palette).toBeVisible()
       await waitForStableOptions(palette)
-      await expectActiveInView(rootList, 'root list initial highlight')
+      await page.keyboard.press('Home')
+      await expectActiveInView(rootList, 'root list at Home')
 
       for (let step = 0; step < 18; step += 1) {
         await pressArrowDownAndAssertInView(rootList, page, step, 'root from top')
