@@ -29,6 +29,22 @@ export function layoutFlushHeld() {
   return flushHeld
 }
 
+/**
+ * True when a debounced or unload layout save must not run.
+ * The e2e harness sets the session flag before it deletes personal state;
+ * a save already scheduled has to see that flag when it fires, or it writes
+ * the dirty layout back after the delete.
+ */
+export function layoutSaveBlocked(read: (key: string) => string | null = readSessionFlag): boolean {
+  if (flushHeld) return true
+  return read('braian.layout.suppressFlush') === '1'
+}
+
+function readSessionFlag(key: string): string | null {
+  if (typeof sessionStorage === 'undefined') return null
+  return sessionStorage.getItem(key)
+}
+
 /** One tab group of the views the agent is working in, plus its own tab when that tab exists. */
 export function agentSessionLayout(current: LayoutDoc, viewIds: string[]): LayoutDoc {
   const ids = [...new Set(viewIds.filter((id) => id.length > 0))]

@@ -57,6 +57,14 @@ function row(id: string, status: string) {
   }
 }
 
+/** Browser activation: Enter clicks on keydown, Space clicks on keyup, unless prevented. */
+function pressKey(button: HTMLElement, key: 'Enter' | ' ') {
+  const down = fireEvent.keyDown(button, { key })
+  if (down !== false && key === 'Enter') fireEvent.click(button)
+  const up = fireEvent.keyUp(button, { key })
+  if (down !== false && up !== false && key === ' ') fireEvent.click(button)
+}
+
 function inactive(testId: string) {
   const el = screen.getByTestId(testId) as HTMLButtonElement
   return el.disabled || el.getAttribute('aria-disabled') === 'true'
@@ -333,6 +341,61 @@ describe('closed proposal bulk actions', () => {
       const background = variables.get('panel')!
       expect(contrast(foreground, background), `${theme} reason contrast`).toBeGreaterThanOrEqual(4.5)
     }
+  })
+
+  it('does not call save or discard on click, Enter, or Space when aria-disabled', () => {
+    const onSave = vi.fn()
+    const onDiscard = vi.fn()
+    render(
+      <ProposalBulkActions
+        status="accepted"
+        rows={[row('r1', 'accepted')]}
+        saveDisabled
+        discardDisabled
+        onSave={onSave}
+        onDiscard={onDiscard}
+      />,
+    )
+    for (const testId of ['save-all', 'discard-all']) {
+      const button = screen.getByTestId(testId)
+      expect(button.getAttribute('aria-disabled')).toBe('true')
+      fireEvent.click(button)
+      pressKey(button, 'Enter')
+      pressKey(button, ' ')
+    }
+    expect(onSave).not.toHaveBeenCalled()
+    expect(onDiscard).not.toHaveBeenCalled()
+  })
+
+  it('explains an inactive Save all on a stale open proposal and still discards', () => {
+    const onSave = vi.fn()
+    const onDiscard = vi.fn()
+    render(
+      <ProposalBulkActions
+        status="open"
+        rows={[row('r1', 'pending')]}
+        stale
+        saveDisabled
+        discardDisabled={false}
+        onSave={onSave}
+        onDiscard={onDiscard}
+      />,
+    )
+    const save = screen.getByTestId('save-all')
+    expect(save.getAttribute('aria-disabled')).toBe('true')
+    expect(save.getAttribute('title')).toBe(copy.agentStaleApprove)
+    expect(screen.getByTestId('proposal-actions-reason').textContent).toBe(copy.agentStaleApprove)
+    expect(save.getAttribute('aria-describedby')).toBe(screen.getByTestId('proposal-actions-reason').id)
+    fireEvent.click(save)
+    pressKey(save, 'Enter')
+    pressKey(save, ' ')
+    expect(onSave).not.toHaveBeenCalled()
+    const discard = screen.getByTestId('discard-all')
+    expect(discard.hasAttribute('disabled')).toBe(false)
+    expect(discard.getAttribute('aria-disabled')).toBeNull()
+    expect(discard.getAttribute('aria-describedby')).toBeNull()
+    fireEvent.click(discard)
+    expect(onDiscard).toHaveBeenCalledTimes(1)
   })
 
   it('exposes the closed explanation when a disabled bulk action receives focus', async () => {

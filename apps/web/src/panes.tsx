@@ -4337,6 +4337,7 @@ export function ProposalView({ session }: { session: PanesSession }) {
           status={proposal.data?.status}
           rows={rows}
           loading={proposalLoading}
+          stale={proposalStale && hasPendingRows}
           saveDisabled={loadingObjects || accept.isPending || discard.isPending || proposalStale || !hasPendingRows}
           discardDisabled={discardDisabled}
           saveVariant={hasPendingRows ? 'primary' : 'default'}

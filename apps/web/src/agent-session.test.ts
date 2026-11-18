@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { agentMarkerViewIds, agentSessionLayout, controllingAgentRuns, markedAgentViewIds } from './agent-session'
+import { agentMarkerViewIds, agentSessionLayout, controllingAgentRuns, holdLayoutFlush, layoutSaveBlocked, markedAgentViewIds } from './agent-session'
 import type { AgentRunSummary } from './agent-runs'
 import { tabGroup, type LayoutDoc } from './layout'
 
@@ -30,6 +30,21 @@ const doc: LayoutDoc = {
   },
   focus: 'products',
 }
+
+describe('layout save gate', () => {
+  it('blocks a save that was already scheduled when flush is held or e2e suppress is set', () => {
+    const flag = 'braian.layout.suppressFlush'
+    expect(layoutSaveBlocked(() => null)).toBe(false)
+    holdLayoutFlush(true)
+    try {
+      expect(layoutSaveBlocked(() => null)).toBe(true)
+    } finally {
+      holdLayoutFlush(false)
+    }
+    expect(layoutSaveBlocked((key) => (key === flag ? '1' : null))).toBe(true)
+    expect(layoutSaveBlocked(() => null)).toBe(false)
+  })
+})
 
 describe('agent session layout', () => {
   it('replaces the person layout with the views the agent is working in', () => {

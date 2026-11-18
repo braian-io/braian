@@ -1010,6 +1010,8 @@ button.agent-bg-indicator strong { font-variant-numeric: tabular-nums; }
   pointer-events: none;
   transition: left var(--dur) var(--ease), top var(--dur) var(--ease), width var(--dur) var(--ease), height var(--dur) var(--ease);
 }
+/* The zone under the pointer is the preview. Animating from the previous zone leaves a box the hit test has already left. */
+.dock-root.dragging .dock-preview { transition: none; }
 .dock-preview span {
   justify-self: center;
   align-self: center;
