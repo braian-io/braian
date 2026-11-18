@@ -132,7 +132,7 @@ test.describe('palette keyboard scroll keeps the active row visible', () => {
     await expect(palette).toBeVisible()
     await page.getByTestId('palette-input').fill('cheese')
     await expect(palette.locator('.hit').filter({ hasText: '·' }).first()).toBeVisible()
-    const highlighted = palette.locator('#palette-list .hit.on')
+    const highlighted = palette.locator('.hit.on')
     await expect(highlighted).toHaveCount(1)
     const first = await highlighted.getAttribute('data-value')
     expect(first).toBeTruthy()

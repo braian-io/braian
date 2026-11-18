@@ -582,11 +582,19 @@ export function CommandPalette({
       if (filterScrollQuery.current !== '') filterScrollQuery.current = ''
       return
     }
-    if (filterScrollQuery.current === query) return
-    filterScrollQuery.current = query
-    paletteScrollList.current = true
-    setActive(resolveActiveAfterQuery(rows, query))
-  }, [query, mode, stack.length])
+    const pick = resolveActiveAfterQuery(rows, query)
+    const queryChanged = filterScrollQuery.current !== query
+    if (queryChanged) {
+      filterScrollQuery.current = query
+      paletteScrollList.current = true
+      setActive(pick)
+      return
+    }
+    if (active == null && pick != null) {
+      paletteScrollList.current = true
+      setActive(pick)
+    }
+  }, [query, mode, stack.length, queryMatchId, active])
   useEffect(() => {
     if (mode !== 'list' || stack.length === 0 || !query.trim()) return
     paletteScrollList.current = true
