@@ -1,4 +1,4 @@
-import { recordNumber, recordTitle, type Json } from './api'
+import { ApiError, recordNumber, recordTitle, type Json } from './api'
 import { copy, uiLanguage } from './i18n'
 
 export function isRollbackProposal(source: unknown): boolean {
@@ -34,4 +34,21 @@ export function versionAtSeq(changes: Json[] | undefined, targetSeq: number | un
   const entry = changes.find((row) => Number(row.seq) === targetSeq)
   const version = entry?.version
   return typeof version === 'number' && Number.isFinite(version) ? version : undefined
+}
+
+/** History rollback passes `rollbackSeq` in the open event; Review opens the same proposal without it. */
+export function discardRestoreOnDismiss(rollbackSeq: number | undefined): boolean {
+  return rollbackSeq != null
+}
+
+export type RestoreDismissOutcome = { close: boolean; message: string | null }
+
+/** Maps discard failures when closing the restore dialog. 404 closes quietly. */
+export function restoreDiscardFailure(reason: unknown): RestoreDismissOutcome {
+  if (reason instanceof ApiError) {
+    if (reason.status === 404) return { close: true, message: null }
+    if (reason.status === 409) return { close: true, message: copy.proposalAlreadyClosed }
+  }
+  const message = reason instanceof Error ? reason.message : copy.validation
+  return { close: false, message }
 }
