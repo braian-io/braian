@@ -242,7 +242,7 @@ const measuredSeconds = {
   'e2e/pane-scroll.spec.ts': 5,
   'e2e/model-tree.spec.ts': 4,
   'e2e/change-flow.spec.ts': 15,
-  'e2e/row221-review-keyboard.spec.ts': 8,
+  'e2e/row221-review-keyboard.spec.ts': 40,
   'e2e/proposal-lifecycle.spec.ts': 27,
   'e2e/config-apply.spec.ts': 3,
   'e2e/config-drop.spec.ts': 7,

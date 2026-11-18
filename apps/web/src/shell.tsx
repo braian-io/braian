@@ -64,7 +64,7 @@ import { AgentPresence } from './agent-presence'
 import { AgentView } from './agent-view'
 import { AgentsTable } from './agents-table'
 import { agentDockTabSessionLabel, agentRunPrompt, agentRunsForWorkspace, backToMySessionEvent, listAgentRuns, openAgentEvent, openAgentsTableEvent, patchAgentRun, requestBackToMySession, showAgentSessionEvent, takeOverAgentRun, type AgentMessage, type AgentRunSummary } from './agent-runs'
-import { agentSessionLayout, controllingAgentRuns, holdLayoutFlush, layoutFlushHeld, agentMarkerViewIds, setViewingAgentRun, subscribeViewingAgent, viewingAgentRunId } from './agent-session'
+import { agentSessionLayout, controllingAgentRuns, holdLayoutFlush, layoutFlushHeld, layoutSaveBlocked, agentMarkerViewIds, setViewingAgentRun, subscribeViewingAgent, viewingAgentRunId } from './agent-session'
 import { CommandPalette } from './palette'
 import { focusAfterMenuTab } from './menu-keyboard'
 import { SharedContextMenuHost, prefersNativeContextMenu } from './shared-context-menu'
@@ -1054,6 +1054,9 @@ export function Shell() {
     if (!doc || !dirtyRef.current || !workspaceId || !userId) return
     const gen = saveGen.current
     const timer = window.setTimeout(() => {
+      // Checked at fire time. The flag is set without a re-render, so the
+      // effect cleanup does not cancel this timer before a delete + reload.
+      if (layoutSaveBlocked()) return
       const current = docRef.current
       const ws = workspaceRef.current
       if (!current || !ws || ws.id !== workspaceId || saveGen.current !== gen) return
@@ -1084,8 +1087,7 @@ export function Shell() {
 
   useEffect(() => {
     const flush = () => {
-      if (layoutFlushHeld()) return
-      if (sessionStorage.getItem('braian.layout.suppressFlush') === '1') return
+      if (layoutSaveBlocked()) return
       const current = docRef.current
       if (!dirtyRef.current || !current || !workspaceId) return
       keepaliveJsonPut(`/v1/workspaces/${workspaceId}/state`, {
@@ -1142,7 +1144,15 @@ export function Shell() {
       })
       document.querySelector<HTMLInputElement>('[data-testid="palette-input"]')?.focus()
     },
-    openAi: () => { void runCommand('agent:open') },
+    openAi: () => {
+      // Ctrl+J while the palette is open asks with the query, even if a pane
+      // stole focus and the key never reached the palette input.
+      if (paletteModeRef.current) {
+        window.dispatchEvent(new Event('braian-palette-ask'))
+        return
+      }
+      void runCommand('agent:open')
+    },
     saveReview: () => window.dispatchEvent(new Event('braian-review-save')),
     openFeedback: feedbackEnabled ? openFeedback : undefined,
     openHelp: () => setHelp(true),
@@ -1698,6 +1708,13 @@ export function Shell() {
     const focus = result.doc.focus
     if (focus) {
       requestAnimationFrame(() => {
+        const active = document.activeElement
+        // A layout commit while the palette or a field is focused must not
+        // take the caret. Ctrl+J is delivered to the focused node.
+        if (
+          active instanceof HTMLElement
+          && active.closest('[data-testid="command-palette"], input, textarea, select')
+        ) return
         document.querySelector<HTMLElement>(`[data-pane="${CSS.escape(focus)}"]`)?.focus()
       })
     }
