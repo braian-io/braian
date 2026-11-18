@@ -188,7 +188,8 @@ test.describe('palette keyboard scroll keeps the active row visible', () => {
 
       await page.getByTestId('palette-input').fill('open structure')
       await expect(palette.locator('.hit.on')).toContainText('Open structure')
-      await page.keyboard.press('Tab')
+      await expect(palette.locator('.hit.on')).toHaveAttribute('data-value', 'layout:open-structure')
+      await page.keyboard.press('Enter')
       await expect(page.getByTestId('palette-crumb')).toContainText('Open structure ›')
       await expectActiveInView(rootList, 'root drill-in highlight')
 
