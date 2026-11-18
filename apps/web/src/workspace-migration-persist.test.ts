@@ -82,42 +82,59 @@ function patch(): PersistPatch {
 function trackingDeps(failOnCreateId?: string) {
   const views: string[] = []
   const workspaces: unknown[] = []
+  const personal: unknown[] = []
+  const order: string[] = []
   const deps: PersistDeps = {
     freeObject,
     postView: async (body) => {
       const id = String(body.id)
       if (failOnCreateId && id === failOnCreateId) throw new Error(`create failed: ${id}`)
       views.push(id)
+      order.push(`view:${id}`)
     },
     postWorkspace: async (body) => {
       workspaces.push(body.layout)
+      order.push('shared')
+    },
+    putPersonalLayout: async (layout) => {
+      personal.push(layout)
+      order.push('personal')
     },
   }
-  return { deps, views, workspaces }
+  return { deps, views, workspaces, personal, order }
 }
 
 describe('persistWorkspaceMigration view-then-layout', () => {
-  it('does not write layout when a view create fails, then succeeds on retry', async () => {
+  it('does not write personal layout when a view create fails, then writes it after creates succeed on retry', async () => {
     const ws = workspace()
     const p = patch()
 
     const first = trackingDeps('lt')
     await expect(persistWorkspaceMigration(ws, p, first.deps)).rejects.toThrow('create failed: lt')
     expect(first.views).toEqual(['ot'])
-    expect(first.workspaces, 'layout must not be saved after a failed create').toEqual([])
+    expect(first.order).toEqual(['view:ot'])
+    expect(first.personal, 'personal layout must not be saved after a failed create').toEqual([])
+    expect(first.workspaces, 'shared layout must not be saved after a failed create').toEqual([])
 
-    // Retry after the failed create (migratedRef cleared by shell): all creates ok → layout written.
+    // Retry after the failed create (migratedRef cleared by shell): creates finish, then personal PUT.
     const second = trackingDeps()
     await persistWorkspaceMigration(ws, p, second.deps)
     expect(second.views).toEqual(['ot', 'lt'])
-    expect(second.workspaces).toHaveLength(0)
+    expect(second.order).toEqual(['view:ot', 'view:lt', 'personal'])
+    expect(second.personal).toHaveLength(1)
+    expect(second.workspaces).toEqual([])
   })
 
-  it('writes layout only after every create succeeds', async () => {
-    const { deps, views, workspaces } = trackingDeps()
+  it('writes the personal layout only after every view create succeeds', async () => {
+    const { deps, views, workspaces, personal, order } = trackingDeps()
     await persistWorkspaceMigration(workspace(), patch(), deps)
     expect(views).toEqual(['ot', 'lt'])
-    expect(workspaces).toHaveLength(0)
+    expect(order).toEqual(['view:ot', 'view:lt', 'personal'])
+    const personalAt = order.indexOf('personal')
+    expect(personalAt).toBeGreaterThan(order.lastIndexOf('view:ot'))
+    expect(personalAt).toBeGreaterThan(order.lastIndexOf('view:lt'))
+    expect(personal).toHaveLength(1)
+    expect(workspaces).toEqual([])
   })
 
   it('does not POST shared workspace layout when only the layout patch changes', async () => {
