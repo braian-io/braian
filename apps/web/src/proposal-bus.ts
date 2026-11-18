@@ -19,3 +19,7 @@ export function onProposal(listen: Listener) {
     listeners.delete(listen)
   }
 }
+
+if (import.meta.env.DEV && typeof window !== 'undefined') {
+  (window as Window & { __braianPublishProposal?: typeof publishProposal }).__braianPublishProposal = publishProposal
+}
