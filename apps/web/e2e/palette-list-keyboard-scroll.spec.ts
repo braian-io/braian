@@ -63,19 +63,40 @@ async function activeRowInList(list: Locator): Promise<InView | null> {
   })
 }
 
+type PaletteOptionSnapshot = {
+  count: number
+  firstValue: string
+  signature: string
+}
+
+async function snapshotPaletteOptions(palette: Locator): Promise<PaletteOptionSnapshot> {
+  const values = await palette
+    .getByRole('option')
+    .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-value') ?? ''))
+  return {
+    count: values.length,
+    firstValue: values[0] ?? '',
+    signature: values.join('\u0000'),
+  }
+}
+
+/** Two consecutive reads with the same count, first data-value, and full order. */
 async function waitForStableOptions(palette: Locator, timeout = 60_000): Promise<void> {
-  let stable: string[] = []
+  let stable: PaletteOptionSnapshot | null = null
   await expect
     .poll(
       async () => {
-        const values = await palette
-          .getByRole('option')
-          .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-value') ?? ''))
-        const settled = values.length > 1 && values.join('\u0000') === stable.join('\u0000')
-        stable = values
+        const snap = await snapshotPaletteOptions(palette)
+        const settled =
+          snap.count > 0
+          && stable != null
+          && snap.count === stable.count
+          && snap.firstValue === stable.firstValue
+          && snap.signature === stable.signature
+        stable = snap
         return settled
       },
-      { message: 'palette option order', timeout, intervals: [100, 100, 150, 200, 250] },
+      { message: 'palette option count, first data-value, and order', timeout, intervals: [100, 100, 150, 200, 250] },
     )
     .toBe(true)
 }
