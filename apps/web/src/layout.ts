@@ -99,7 +99,20 @@ export function normalize(node: Node): Node {
   const kept: Array<{ child: Node; ratio: number }> = []
   node.children.forEach((child, index) => {
     const next = normalize(child)
-    if (views(next).length === 0) return
+    if (views(next).length === 0) {
+      // Keep the agent-dock shell so catalog panes do not remount when the agent closes.
+      if (
+        node.dir === 'horizontal'
+        && node.children.length === 2
+        && index === 1
+        && child.type === 'tabs'
+        && node.children[0]?.type === 'split'
+        && views(node.children[0]).length > 0
+      ) {
+        kept.push({ child: next, ratio: 0 })
+      }
+      return
+    }
     const ratio = node.ratios[index]
     kept.push({ child: next, ratio: typeof ratio === 'number' && ratio > 0 && Number.isFinite(ratio) ? ratio : 0 })
   })
@@ -303,6 +316,46 @@ export function setTabIndex(node: Node, view: string, index: number): Node {
   return { ...node, children: node.children.map((child) => setTabIndex(child, view, index)) }
 }
 
+/** Root-level horizontal split with an empty right tab group left after closing the agent. */
+export function agentDockShellSlot(node: Node, path: number[] = []): { path: number[]; childIndex: number } | null {
+  if (node.type !== 'split' || node.dir !== 'horizontal' || node.children.length !== 2) {
+    if (node.type !== 'split') return null
+    for (let index = 0; index < node.children.length; index += 1) {
+      const found = agentDockShellSlot(node.children[index], [...path, index])
+      if (found) return found
+    }
+    return null
+  }
+  const right = node.children[1]
+  if (right.type === 'tabs' && right.views.length === 0) return { path, childIndex: 1 }
+  return null
+}
+
+export function openAgentInDockShell(layout: Node, view: string, share: number): Node | null {
+  const slot = agentDockShellSlot(layout)
+  if (!slot) return null
+  const split = nodeAt(layout, slot.path)
+  if (!split || split.type !== 'split') return null
+  const right = split.children[slot.childIndex]
+  if (!right || right.type !== 'tabs') return null
+  const portion = roundRatio(clamp(Number.isFinite(share) ? share : 0.3, 0.08, 0.45))
+  const catalogShare = roundRatio(1 - portion)
+  const nextSplit: SplitNode = {
+    ...split,
+    ratios: [catalogShare, portion],
+    children: split.children.map((child, index) =>
+      index === slot.childIndex ? addTab(right, view) : child,
+    ),
+  }
+  return replaceAt(layout, slot.path, nextSplit)
+}
+
+function placeAgentEdgeView(doc: LayoutDoc, view: string, share: number): LayoutDoc {
+  const reused = openAgentInDockShell(doc.layout, view, share)
+  if (reused) return { ...doc, layout: activate(reused, view), focus: view }
+  return placeView(doc, view, { zone: 'right', dock: 'edge', share })
+}
+
 export function placeView(doc: LayoutDoc, view: string, place: Place = {}): LayoutDoc {
   let layout = doc.layout
   if (place.dock === 'edge') {
@@ -502,10 +555,8 @@ export function applyLayoutCommand(
   const agentView = opened?.type === 'agent'
   if (name === 'ui.open_view' && args.zone == null && args.place == null && !ctx.place) {
     if (agentView) {
-      return {
-        doc: placeView(doc, view, { zone: 'right', dock: 'edge', share: agentDockShare(doc.layout, 0.3, catalogTypes(catalog)) }),
-        handled: true,
-      }
+      const share = agentDockShare(doc.layout, 0.3, catalogTypes(catalog))
+      return { doc: placeAgentEdgeView(doc, view, share), handled: true }
     }
     return { doc: ensureInLayout(doc, view, typeof args.target === 'string' ? args.target : undefined), handled: true }
   }
@@ -521,6 +572,10 @@ export function applyLayoutCommand(
     place.zone = 'right'
     place.dock = 'edge'
     place.share = place.share ?? agentDockShare(doc.layout, 0.3, catalogTypes(catalog))
+    return {
+      doc: placeAgentEdgeView(doc, view, place.share ?? agentDockShare(doc.layout, 0.3, catalogTypes(catalog))),
+      handled: true,
+    }
   }
   if ((name === 'open_view' || name === 'ui.place') && !place.zone && place.dock !== 'edge') place.zone = 'right'
   return { doc: placeView(doc, view, place), handled: true }

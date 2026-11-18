@@ -76,6 +76,7 @@ export function WorkspaceDock({
   const rootRef = useRef<HTMLDivElement>(null)
   /** Structure-tree column, measured while the agent dock is closed. */
   const treePinRef = useRef<TreePin | null>(null)
+  const [measuredTreePin, setMeasuredTreePin] = useState<TreePin | null>(null)
   const docRef = useRef(doc)
   const changeRef = useRef(onChange)
   const viewsRef = useRef(viewList)
@@ -116,12 +117,19 @@ export function WorkspaceDock({
       ? doc.layout.ratios[0] ?? 1
       : null
   useLayoutEffect(() => {
-    if (catalogRatio != null) return
     const root = rootRef.current
     if (!root) return
     const measure = () => {
       const next = measureStructureTreePin(docRef.current.layout, new Map(viewsRef.current.map((view) => [view.id, view.type])), root)
-      if (next) treePinRef.current = next
+      if (!next) return
+      const scaled =
+        catalogRatio != null && treePinRef.current
+          ? treePinRef.current
+          : catalogRatio != null
+            ? catalogRatioToFullDockPin(next, catalogRatio)
+            : next
+      treePinRef.current = scaled
+      setMeasuredTreePin(scaled)
     }
     measure()
     if (typeof ResizeObserver === 'undefined') return
@@ -135,7 +143,7 @@ export function WorkspaceDock({
     doc,
       viewList,
       agentViews: agentViewSet,
-      agentTreePin: catalogRatio != null ? treePinRef.current : null,
+      agentTreePin: catalogRatio != null ? measuredTreePin : null,
       drag,
     docRef,
     rootRef,
@@ -227,7 +235,13 @@ type Frame = {
   agentTreePin: TreePin | null
 }
 
-type TreePin = { width: number; ratio: number }
+export type TreePin = { width: number; ratio: number }
+
+/** Tree width measured inside the shrunk catalog column maps to full-dock pixels. */
+export function catalogRatioToFullDockPin(pin: TreePin, catalogRatio: number | null): TreePin {
+  if (catalogRatio == null || !(catalogRatio > 0) || catalogRatio >= 0.999) return pin
+  return { width: pin.width / catalogRatio, ratio: pin.ratio }
+}
 
 /**
  * Width to lock the structure-tree column to once the agent dock is open.
@@ -236,7 +250,7 @@ type TreePin = { width: number; ratio: number }
  */
 function pinnedTreeWidthPx(pin: TreePin | null, ratio: number): number | null {
   if (!pin || !(pin.width > 0) || !(pin.ratio > 0) || !(ratio > 0)) return null
-  return (pin.width * ratio) / pin.ratio
+  return Math.round((pin.width * ratio) / pin.ratio)
 }
 
 function splitRatioAt(layout: Node, leafPath: number[]): number | null {
@@ -811,5 +825,7 @@ function asRefs(list: DockView[]): ViewRef[] {
 }
 
 function cellKey(path: number[], index: number, node: Node) {
-  return `${path.join('.')}:${index}:${views(node).join(',')}`
+  const ids = views(node)
+  if (ids.length > 0) return ids.slice().sort().join('+')
+  return `${path.join('.')}:${index}:empty`
 }
