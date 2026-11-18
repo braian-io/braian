@@ -38,6 +38,12 @@ async function clearPersonalLayout(page: Page, workspaceId: string) {
   }
   const deleted = await page.request.delete(`/v1/workspaces/${workspaceId}/state?environment=default`)
   expect(deleted.ok() || deleted.status() === 204).toBeTruthy()
+  await expect.poll(async () => {
+    const state = await page.request.get(`/v1/workspaces/${workspaceId}/state?environment=default`)
+    if (!state.ok()) return false
+    const body = (await state.json()) as { document?: unknown }
+    return body.document == null
+  }).toBe(true)
   await page.reload()
   await expect(page.getByTestId('dock')).toBeVisible()
   await page.evaluate(() => sessionStorage.removeItem('braian.layout.suppressFlush'))
@@ -92,8 +98,14 @@ test('dragging a pane tab docks it and can be restored', async ({ page }) => {
     await page.mouse.down()
     await page.mouse.move(paneBox.x + paneBox.width * 0.9, paneBox.y + paneBox.height * 0.5, { steps: 12 })
     await expect(page.getByTestId('drop-right')).toBeVisible()
+    const layoutSaved = page.waitForResponse((response) => {
+      return response.request().method() === 'PUT'
+        && response.url().includes(`/v1/workspaces/${before.id}/state`)
+        && response.ok()
+    })
     await page.mouse.up()
     await expect(page.getByTestId('split-divider')).toHaveCount(dividers + 1)
+    await layoutSaved
   } finally {
     await clearPersonalLayout(page, before.id)
     await expect(page.getByTestId('split-divider')).toHaveCount(dividers)
