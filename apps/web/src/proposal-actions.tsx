@@ -1,7 +1,25 @@
+import type { MouseEvent } from 'react'
 import { Button } from './components/ui/button'
 import { copy } from './i18n'
 
 export type ProposalActionRow = { status?: unknown }
+
+function bulkButtonProps(inactive: boolean, explained: boolean, reason: string, onClick: () => void) {
+  if (explained && inactive) {
+    return {
+      'aria-disabled': true as const,
+      tabIndex: 0,
+      title: reason,
+      onClick: (event: MouseEvent<HTMLButtonElement>) => {
+        event.preventDefault()
+      },
+    }
+  }
+  return {
+    disabled: inactive,
+    onClick,
+  }
+}
 
 /**
  * Explains why the bulk actions are closed. Only a proposal without pending
@@ -53,14 +71,16 @@ export function ProposalBulkActions({
 }) {
   const reason = loading ? null : closedProposalReason(status, rows)
   const descriptionId = reason ? reasonTestId : undefined
+  const explained = Boolean(reason)
+  const saveInactive = loading || saveDisabled
+  const discardInactive = loading || discardDisabled
   const save = (
     <Button
       type="button"
       variant={saveVariant}
       data-testid={saveTestId}
-      disabled={loading || saveDisabled}
       aria-describedby={descriptionId}
-      onClick={onSave}
+      {...bulkButtonProps(saveInactive, explained, reason ?? '', onSave)}
     >
       {copy.saveAll}
     </Button>
@@ -70,9 +90,8 @@ export function ProposalBulkActions({
       type="button"
       variant="danger"
       data-testid={discardTestId}
-      disabled={loading || discardDisabled}
       aria-describedby={descriptionId}
-      onClick={onDiscard}
+      {...bulkButtonProps(discardInactive, explained, reason ?? '', onDiscard)}
     >
       {copy.discardAll}
     </Button>
