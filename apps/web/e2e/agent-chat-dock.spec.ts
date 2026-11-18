@@ -30,16 +30,6 @@ function agentPane(page: Page) {
   return page.getByTestId('agent-view').last()
 }
 
-// Ctrl+J closes the dock only while that agent view is focused. A result link
-// focuses Products, so the shortcut would refocus the agent instead of closing
-// it. The tab's click handler focuses the view; the long title does not.
-async function closeAgentDock(page: Page) {
-  const tab = page.locator('.pane-tab[data-view-type="agent"]').last()
-  await tab.locator('button.pane-tab-open').click({ timeout: 5_000 })
-  await page.keyboard.press('Control+j')
-  await expect(page.getByTestId('agent-view')).toHaveCount(0)
-}
-
 function paneWithTable(page: Page) {
   return paneWithTab(page, 'Products')
 }
@@ -283,7 +273,8 @@ test('agent dock does not cover Detail controls at 1280×800 (K2)', async ({ pag
     await result.click({ timeout: 15_000 })
     await expectHitTarget(detailPane, 'review-and-save')
     await expectHitTarget(detailPane, 'discard-draft')
-    await closeAgentDock(page)
+    await page.keyboard.press('Control+j')
+    await expect(agentPane(page)).toHaveCount(0)
     await waitForAgentDockReflow(page)
     const productsClosed = (await productsPane.boundingBox()) as Box
     expectProductsXStable(productsBefore, productsClosed)
@@ -318,7 +309,8 @@ test('agent dock keeps Products and the tree fixed at 1920×1080', async ({ page
     await result.click({ timeout: 15_000 })
     await expectHitTarget(detailPane, 'review-and-save')
     await expectHitTarget(detailPane, 'discard-draft')
-    await closeAgentDock(page)
+    await page.keyboard.press('Control+j')
+    await expect(agentPane(page)).toHaveCount(0)
     await waitForAgentDockReflow(page)
     const productsClosed = (await productsPane.boundingBox()) as Box
     expectProductsXStable(productsBefore, productsClosed)

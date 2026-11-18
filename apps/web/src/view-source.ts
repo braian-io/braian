@@ -23,6 +23,14 @@ export function isExplicitAllSource(state: Json | undefined): boolean {
   return (raw as Json).kind === 'all'
 }
 
+/** Drop an explicit all-of-type marker so session.group filters apply again. */
+export function clearExplicitAllSource(state: Json | undefined): Json {
+  if (!state || typeof state !== 'object' || Array.isArray(state)) return {}
+  const next = { ...(state as Json) }
+  delete next.source
+  return next
+}
+
 /**
  * Persist a live source: another view's selected row or tree node.
  * The selection itself is read from the UI registry, never copied into state.

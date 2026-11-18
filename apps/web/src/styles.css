@@ -84,6 +84,9 @@
   --purple: var(--accent);
   --purple-bg: var(--accent-dim);
   --shadow: var(--shadow-md);
+  /* Fixed overlays (full-size graph) portalled to document.body use these inset anchors. */
+  --app-chrome-top: 40px;
+  --app-chrome-bottom: 24px;
   font-family: var(--font-sans);
   font-feature-settings: "cv11", "ss01";
   font-size: var(--text-base);
@@ -844,6 +847,16 @@ button.agent-approve:disabled:hover {
 .agent-skeleton i:first-child { width: 42%; height: 16px; }
 .agent-skeleton i:nth-child(2) { width: 88%; }
 .agent-skeleton i:nth-child(3) { width: 70%; }
+.detail-field-skeleton,
+.detail-link-skeleton,
+.detail-section-skeleton {
+  display: block;
+  height: 2rem;
+  border-radius: var(--r-sm);
+  background: linear-gradient(90deg, var(--surface) 0%, var(--surface-2, var(--surface)) 50%, var(--surface) 100%);
+}
+.detail-section-skeleton { height: 3.5rem; margin: var(--space-1) 0; }
+.detail-link-skeleton { margin: var(--space-1) 0 var(--space-2); max-width: 70%; }
 .agent-failed, .agent-fetch-error { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); min-width: 0; max-width: 100%; }
 .agent-failed p, .agent-fetch-error p { margin: 0; max-width: 100%; overflow-wrap: anywhere; }
 .agent-failed button, .agent-fetch-error button { max-width: 100%; }
@@ -2079,13 +2092,15 @@ canvas.graph.panning { cursor: grabbing; }
 .menu button[data-highlighted], .menu-item[data-highlighted] { background: var(--accent-dim); }
 /* Focus and highlight move together here, so the fill is the only mark.
    Legacy menus without a highlighted item keep the global focus ring. */
-.menu:has([data-highlighted]) button:focus-visible,
-.menu:has([data-highlighted]) .menu-item:focus-visible { outline: none; }
-/* The account menu is arrow-navigated: the highlighted item is the focused
-   item, so it keeps the same 2px accent ring as other keyboard-focused
-   controls even when the browser does not match :focus-visible for arrow
-   navigation. The ring sits inside the item so the menu edge never clips it. */
-.menu.user-menu-content .menu-item[data-highlighted] {
+.menu:has([data-highlighted]) button:focus-visible:not([data-highlighted]),
+.menu:has([data-highlighted]) .menu-item:focus-visible:not([data-highlighted]) { outline: none; }
+/* Arrow-navigated menus mark the active item with data-highlighted. It is also
+   the focused item, so it keeps the same 2px accent ring as other
+   keyboard-focused controls even when the browser does not match
+   :focus-visible for arrow navigation. The ring sits inside the item so the
+   menu edge never clips it. */
+.menu button[data-highlighted],
+.menu .menu-item[data-highlighted] {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
@@ -2643,8 +2658,11 @@ kbd {
 [data-testid='proposal'] > label { display: flex; gap: var(--space-2); align-items: center; }
 .graph-full {
   position: fixed;
-  inset: 16px;
   z-index: 35;
+  left: var(--space-4);
+  right: var(--space-4);
+  top: calc(var(--app-chrome-top) + var(--space-2));
+  bottom: calc(var(--app-chrome-bottom) + var(--space-2));
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--r-xl);
@@ -2653,6 +2671,24 @@ kbd {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  min-height: 0;
+}
+/* Full-size graph escapes the pane scrollport. Keep the overlay below the app chrome
+   and let fixed descendants paint without clipping. */
+body[data-graph-full-open] .workspace,
+body[data-graph-full-open] .dock-root,
+body[data-graph-full-open] .split,
+body[data-graph-full-open] .split-cell,
+body[data-graph-full-open] .pane:has([data-testid='graph-full']),
+body[data-graph-full-open] .pane:has([data-testid='graph-full']) .pane-body,
+body[data-graph-full-open] .pane-body:has([data-testid='graph-full']) {
+  overflow: visible;
+}
+body[data-graph-full-open] .pane-body > .graph-wrap.graph-full {
+  overflow: visible;
+}
+body[data-graph-full-open] .workspace {
+  z-index: 36;
 }
 .model-tree:focus-visible { outline: 2px solid var(--accent); border-radius: var(--r-md); }
 button, .pane-tab, .hit, .class-row, .attr-card {
@@ -3334,7 +3370,10 @@ button.primary[aria-disabled='true'] {
 [data-testid='agents-table'] .standard-grid-row:nth-child(even):not(.on) {
   background: color-mix(in srgb, var(--surface) 72%, var(--panel));
 }
-[data-testid='agents-table'] .standard-grid-cell[data-column='name'] { flex: 1 1 auto; }
+[data-testid='agents-table'] .standard-grid-cell[data-column='name'] {
+  flex: 1 1 10rem;
+  min-width: 6rem;
+}
 .standard-grid-row.draft { background: color-mix(in oklab, var(--warn, #c90) 10%, transparent); }
 .standard-grid-row.read-only { color: var(--muted); opacity: 0.7; }
 .standard-grid-reorder,

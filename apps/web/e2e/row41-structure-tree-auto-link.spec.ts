@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
+import { SEED_CHEESE_PRODUCT_NAMES, SEED_MILK_PRODUCT_NAMES } from './seed-product-names'
 
 const PRODUCT_TYPE_ID = '018f0000-0000-7000-8000-000000000200'
 
@@ -105,16 +106,20 @@ test.describe('structure tree auto-links object tables (Notion row 41)', () => {
       const cheeseChip = products.getByTestId('assortment').filter({ hasText: 'Cheese' })
       await expect(cheeseChip).not.toHaveClass(/\bon\b/)
 
-      await expect.poll(async () => products.getByTestId('object-row').count()).toBeLessThan(allRows)
-      const cheeseCount = await products.getByTestId('object-row').count()
-      expect(cheeseCount).toBeGreaterThan(0)
+      await expect.poll(async () => products.getByTestId('object-row').count()).toBe(SEED_CHEESE_PRODUCT_NAMES.length)
+      for (const name of SEED_CHEESE_PRODUCT_NAMES) {
+        await expect(products.getByTestId('object-row').filter({ hasText: name })).toHaveCount(1)
+      }
 
       await tree.getByRole('treeitem').filter({ hasText: 'Milk' }).first().click()
       await expect(products.getByTestId('view-source-label')).toContainText('Food › Milk', { timeout: 30_000 })
-      await expect.poll(async () => products.getByTestId('object-row').count()).not.toBe(cheeseCount)
-      const milkCount = await products.getByTestId('object-row').count()
-      expect(milkCount).toBeGreaterThan(0)
-      expect(milkCount).toBeLessThan(allRows)
+      await expect.poll(async () => products.getByTestId('object-row').count()).toBe(SEED_MILK_PRODUCT_NAMES.length)
+      for (const name of SEED_MILK_PRODUCT_NAMES) {
+        await expect(products.getByTestId('object-row').filter({ hasText: name })).toHaveCount(1)
+      }
+      for (const name of SEED_CHEESE_PRODUCT_NAMES) {
+        await expect(products.getByTestId('object-row').filter({ hasText: name })).toHaveCount(0)
+      }
 
       await products.getByTestId('view-source-label').click()
       await expect(products.getByTestId('view-source-label')).toHaveText('All Products', { timeout: 30_000 })

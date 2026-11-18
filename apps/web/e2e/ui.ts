@@ -12,10 +12,29 @@ export function mainTable(page: Page, title = 'Products'): Locator {
   return paneWithTab(page, title).getByTestId('object-table').first()
 }
 
+/** Full Postgres body loaded; list preview and debounced nav have settled. */
+export async function waitDetailReady(page: Page, detail = page.getByTestId('object-detail')) {
+  await expect(detail).toBeVisible()
+  await expect(detail).toHaveAttribute('data-detail-ready', 'true', { timeout: 60_000 })
+}
+
+/** Mirrors the server title stub (first five words) used in e2e under BRAIAN_AGENT_MOCK. */
+export function agentTitleStubHint(text: string): string {
+  return text.trim().split(/\s+/).slice(0, 5).join(' ')
+}
+
+/** Mirrors session_title_word_fallback (six words) on the server. */
+export function agentWordFallbackHint(text: string): string {
+  const words = text.trim().split(/\s+/)
+  if (words.length <= 6) return words.join(' ')
+  return `${words.slice(0, 6).join(' ')}…`
+}
+
 export function agentPaneTab(page: Page, sessionTitle?: string, which: 'first' | 'last' = 'last') {
   let tabs = page.locator('.pane-tab[data-view-type="agent"]')
   if (sessionTitle) {
-    const escaped = sessionTitle.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+    const hint = agentTitleStubHint(sessionTitle)
+    const escaped = hint.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
     tabs = page.locator(`.pane-tab[data-view-type="agent"][title*="${escaped}"]`)
   } else {
     tabs = tabs.filter({ hasText: /^Agent$/ })
@@ -23,10 +42,16 @@ export function agentPaneTab(page: Page, sessionTitle?: string, which: 'first' |
   return which === 'first' ? tabs.first() : tabs.last()
 }
 
-export function agentSessionView(page: Page, sessionTitle: string) {
+export function agentSessionView(page: Page, needle: string) {
+  const escaped = needle.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  const heading = page.getByTestId('agent-session-title')
   return page.getByTestId('agent-view').filter({
-    has: page.getByTestId('agent-session-title').filter({ hasText: sessionTitle }),
+    has: heading.filter({ hasText: needle }).or(page.locator(`[data-testid="agent-session-title"][title*="${escaped}"]`)),
   }).last()
+}
+
+export function agentSessionViewByFullPrompt(page: Page, fragment: string) {
+  return agentSessionView(page, fragment)
 }
 
 /** Close every open agent pane tab so layout reset can paint the catalog again. */
@@ -76,11 +101,7 @@ async function showProductsInner(page: Page, title = 'Products') {
 
 /** Focus the Products table in the pane that owns the main object table. */
 export async function showProducts(page: Page, title = 'Products') {
-  try {
-    await showProductsInner(page, title)
-  } catch {
-    await resetProductsLayout(page, title)
-  }
+  await showProductsInner(page, title)
 }
 
 /** Draft links live in chat; review and save stay on the object table pane. */

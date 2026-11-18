@@ -289,6 +289,23 @@ pub fn rename_needs_reindex(kind: &str) -> bool {
     matches!(kind, "type" | "structure" | "group")
 }
 
+/// Free-text toolbar search must not persist on the shared view row.
+pub fn strip_ephemeral_table_search(view_type: &str, state: &mut Value) {
+    if view_type != "object_table" && view_type != "table" {
+        return;
+    }
+    let Some(object) = state.as_object_mut() else {
+        return;
+    };
+    object.remove("filter");
+    let table = object
+        .entry("table")
+        .or_insert_with(|| Value::Object(Map::new()));
+    if let Some(table) = table.as_object_mut() {
+        table.insert("filter".into(), Value::String(String::new()));
+    }
+}
+
 pub fn translate_view_state(state: &mut Value, defs: &DefinitionSet) {
     let Some(object) = state.as_object_mut() else {
         return;
@@ -680,6 +697,22 @@ mod tests {
         assert_eq!(by_key, by_id);
         assert_eq!(by_key.key, "sku");
         assert!(!by_key.label.is_empty());
+    }
+
+    #[test]
+    fn ephemeral_table_search_is_stripped_from_object_table_state() {
+        let mut state = serde_json::json!({
+            "filter": "QA144-43110500",
+            "table": { "filter": "QA144-43110500", "sort": "a_number:asc" }
+        });
+        strip_ephemeral_table_search("object_table", &mut state);
+        assert_eq!(state.get("filter"), None);
+        assert_eq!(state["table"]["filter"], "");
+        assert_eq!(state["table"]["sort"], "a_number:asc");
+
+        let mut graph = serde_json::json!({ "filter": "keep" });
+        strip_ephemeral_table_search("graph", &mut graph);
+        assert_eq!(graph["filter"], "keep");
     }
 
     #[test]

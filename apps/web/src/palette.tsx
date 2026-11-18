@@ -28,6 +28,14 @@ import { viewPaletteRows } from './palette-views'
 import { workspacePaletteRows } from './palette-workspaces'
 import { addViewRootItem, addViewSubmenuRows, isAddViewRoot, parseAddViewChoice } from './palette-add-view'
 import {
+  isOpenStructureSubmenuFrame,
+  isOpenStructureRoot,
+  OPEN_STRUCTURE_EMPTY_MESSAGE,
+  openStructureRootItem,
+  openStructureSubmenuRows,
+  parseOpenStructureChoice,
+} from './palette-open-structure'
+import {
   isSelectSourceRoot,
   parseSelectSourceChoice,
   resolveSourceTarget,
@@ -96,6 +104,7 @@ type SessionLike = {
   push: (line: string) => void
   openWorkspace: (id: string) => void
   openTypeView?: (typeId: string) => void
+  openStructureView?: (structureKey: string, placement?: { zone: 'center' | 'right'; target?: string }) => void
   workspaceId?: string | null
 }
 
@@ -131,6 +140,7 @@ export function CommandPalette({
   focusViewId,
   sourceTargetViewId,
   onPrepareAddView,
+  onPrepareOpenStructure,
   startAddView,
   startSelectSource,
   startNewFromTemplate,
@@ -157,6 +167,7 @@ export function CommandPalette({
   /** Dock menu target. Keeps the picker on that view even when another pane has focus. */
   sourceTargetViewId?: string | null
   onPrepareAddView?: () => void
+  onPrepareOpenStructure?: () => void
   startAddView?: boolean
   startSelectSource?: boolean
   startNewFromTemplate?: boolean
@@ -569,6 +580,7 @@ export function CommandPalette({
   }, [query, mode, stack.length])
   const paletteListRef = useRef<HTMLDivElement>(null)
   const paletteKeyboardScroll = useRef(false)
+  const openStructurePlacementRef = useRef<'center' | 'right'>('center')
   useLayoutEffect(() => {
     if (!paletteKeyboardScroll.current) return
     paletteKeyboardScroll.current = false
@@ -701,6 +713,26 @@ export function CommandPalette({
       }])
       setQuery('')
       setActive(0)
+      return
+    }
+    if (isOpenStructureRoot(id)) {
+      onPrepareOpenStructure?.()
+      setStack((current) => [...current, {
+        label: item.title,
+        rows: openStructureSubmenuRows(defs.data),
+      }])
+      setQuery('')
+      setActive(0)
+      return
+    }
+    const structureKey = parseOpenStructureChoice(id)
+    if (structureKey) {
+      session.openStructureView?.(structureKey, {
+        zone: openStructurePlacementRef.current,
+        target: focusViewId || undefined,
+      })
+      openStructurePlacementRef.current = 'center'
+      onClose()
       return
     }
     if (isNewFromTemplateRoot(id)) {
@@ -1292,6 +1324,7 @@ export function CommandPalette({
             entity: secondaryOf(row).length > 0,
             ask: row.group === 'ask' || row.id === 'ask',
             disabled: row.disabled,
+            openStructure: Boolean(parseOpenStructureChoice(row.sourceId ?? row.id)),
           }
         : undefined,
     })
@@ -1322,6 +1355,9 @@ export function CommandPalette({
     }
     if (effect.type === 'activate') {
       const item = rows[effect.index]
+      if (item && parseOpenStructureChoice(item.sourceId ?? item.id)) {
+        openStructurePlacementRef.current = event.ctrlKey || event.metaKey ? 'right' : 'center'
+      }
       if (item) run(item)
       return
     }
@@ -1358,6 +1394,11 @@ export function CommandPalette({
   const askRow = rows.find((row) => row.group === 'ask')
   const resultCount = rows.filter((row) => row.group !== 'ask' && row.id !== 'ask').length
   const showEmpty = mode === 'list' && query.trim().length > 0 && resultCount === 0
+  const showOpenStructureEmpty = mode === 'list'
+    && !query.trim()
+    && stack.length > 0
+    && isOpenStructureSubmenuFrame(stack[stack.length - 1]?.label ?? '')
+    && resultCount === 0
   const placeholder = mode === 'ai'
     ? copy.askAi
     : topFrame
@@ -1520,6 +1561,9 @@ export function CommandPalette({
               {showEmpty ? (
                 <p className="palette-empty" data-testid="palette-empty">No results for &quot;{query.trim()}&quot;</p>
               ) : null}
+              {showOpenStructureEmpty ? (
+                <p className="palette-empty" data-testid="palette-open-structure-empty">{OPEN_STRUCTURE_EMPTY_MESSAGE}</p>
+              ) : null}
               {groups.map((group) => (
                 <div key={group.name} className="palette-group">
                   {group.name !== 'ask' && !(sublist && group.name !== 'recent') ? <div className="palette-heading">{group.name === 'search' ? searchGroupTitle(hits.map((hit) => hit.typeKey ?? ''), types) : groupTitle[group.name]}</div> : null}
@@ -1641,6 +1685,9 @@ function buildCatalog(
         group: 'views' as const,
         title: displayViewTitle(view, types, openTypeKey),
         subtitle: 'Open view',
+        ...(view.type === 'structure_tree'
+          ? { keywords: [view.type, view.title, 'tree', 'structure'] as string[] }
+          : {}),
       })),
     newFromTemplateRootItem(),
     { id: 'import:file', group: 'views', title: copy.importFile, subtitle: 'Drop an Excel or CSV file' },
@@ -1660,6 +1707,7 @@ function buildCatalog(
     { id: 'layout:reset_layout', group: 'views', title: 'Reset layout', subtitle: 'Restore the saved workspace layout' },
     { id: 'workspace:delete', group: 'views', title: 'Delete workspace', subtitle: 'Remove the active workspace and its layout', keywords: ['delete', 'remove', 'workspace'] },
     addViewRootItem(),
+    openStructureRootItem(),
     ...(showSelectSource ? [selectSourceRootItem()] : []),
   ]
   if (feedbackEnabled) {

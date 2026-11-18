@@ -195,6 +195,7 @@ fn template_name() -> String {
         include_str!("../migrations/V42__agent_session.sql"),
         include_str!("../migrations/V43__soft_delete.sql"),
         include_str!("../migrations/V44__proposal_recoveries.sql"),
+        include_str!("../migrations/V45__agent_session_title.sql"),
     ];
     for sql in sqls {
         for byte in sql.as_bytes() {

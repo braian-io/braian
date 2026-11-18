@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Eye, SendToBack } from 'lucide-react'
 import {
   AgentRunError,
   agentDisplayText,
+  agentSessionAccessibleDescription,
+  agentSessionHeaderTitle,
   agentStatusLabel,
   backgroundNotices,
   cleanAgentError,
@@ -24,6 +26,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from './components/ui/tooltip
 import { formatTimestamp } from './format'
 import { copy } from './i18n'
 import { reviewOperation } from './review-cells'
+import { readAgentFollowDraft, writeAgentFollowDraft } from './agent-follow-draft'
+import { runCommand } from './command-registry'
 import type { Json } from './api'
 
 type AgentViewProps = {
@@ -196,10 +200,11 @@ export function AgentView({ runId, title: viewTitle }: AgentViewProps) {
   const logRef = useRef<HTMLDivElement>(null)
   const followRef = useRef<HTMLTextAreaElement>(null)
   const opened = useRef(false)
-  const [draft, setDraft] = useState('')
+  const [draft, setDraft] = useState(() => readAgentFollowDraft(runId))
   const [error, setError] = useState('')
   const [announced, setAnnounced] = useState('')
   const previousStatus = useRef('')
+  const descriptionId = useId()
   const runQueryKey = ['agent-run', runId, 'pane'] as const
   const run = useQuery({
     // Pane query is separate from any warm create/run-list cache on ['agent-run', id].
@@ -248,6 +253,7 @@ export function AgentView({ runId, title: viewTitle }: AgentViewProps) {
     onSuccess: (detail) => {
       queryClient.setQueryData(runQueryKey, detail)
       setDraft('')
+      writeAgentFollowDraft(runId, '')
       setError('')
       refresh()
       focusInput()
@@ -291,12 +297,19 @@ export function AgentView({ runId, title: viewTitle }: AgentViewProps) {
     if (linkBox.bottom > logBox.bottom) log.scrollTop += linkBox.bottom - logBox.bottom
     else if (linkBox.top < logBox.top) log.scrollTop -= logBox.top - linkBox.top
   }, [run.data?.messages.length, run.data?.status])
-  const heading = run.data?.title ?? viewTitle
+  const accessibleTitle = run.data ? agentSessionAccessibleDescription(run.data) : viewTitle
+  const heading = run.data ? agentSessionHeaderTitle(run.data) : viewTitle
+  const sessionTitle = (
+    <>
+      {accessibleTitle ? <p id={descriptionId} className="sr-only" data-testid="agent-session-description">{accessibleTitle}</p> : null}
+      <h2 data-testid="agent-session-title" title={accessibleTitle} aria-describedby={accessibleTitle ? descriptionId : undefined}>{heading}</h2>
+    </>
+  )
   if (run.isPending) {
     return (
       <div className="agent-view" data-testid="agent-view" data-run={runId} ref={rootRef}>
         <header className="agent-view-head">
-          <h2 data-testid="agent-session-title" title={heading}>{heading}</h2>
+          {sessionTitle}
         </header>
         <div className="agent-skeleton" data-testid="agent-skeleton" aria-busy="true" aria-live="polite">
           <i />
@@ -311,7 +324,7 @@ export function AgentView({ runId, title: viewTitle }: AgentViewProps) {
     return (
       <div className="agent-view" data-testid="agent-view" data-run={runId} ref={rootRef}>
         <header className="agent-view-head">
-          <h2 data-testid="agent-session-title" title={heading}>{heading}</h2>
+          {sessionTitle}
         </header>
         {missing ? (
           <p className="error" role="alert" data-testid="agent-missing">{copy.agentRunMissing}</p>
@@ -341,15 +354,10 @@ export function AgentView({ runId, title: viewTitle }: AgentViewProps) {
       data-session-kind={data.session_kind}
       data-hidden={data.hidden ? 'true' : 'false'}
       ref={rootRef}
-      onKeyDownCapture={(event) => {
-        if (event.key !== 'Escape') return
-        event.preventDefault()
-        event.stopPropagation()
-      }}
     >
       <p className="sr-only" aria-live="polite" data-testid="agent-status-live">{announced}</p>
       <header className="agent-view-head">
-        <h2 data-testid="agent-session-title" title={data.title}>{data.title}</h2>
+        {sessionTitle}
         <span className="meta-chip" data-testid="agent-status" data-status={data.status}>{statusLabel(data.status)}</span>
         <div className="agent-head-actions">
           {data.mode === 'foreground' ? (
@@ -421,8 +429,20 @@ export function AgentView({ runId, title: viewTitle }: AgentViewProps) {
           value={draft}
           placeholder={working ? copy.agentWorkingPlaceholder : copy.agentFollowUp}
           disabled={working || follow.isPending}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => {
+            const next = event.target.value
+            setDraft(next)
+            writeAgentFollowDraft(runId, next)
+          }}
           onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault()
+              event.stopPropagation()
+              writeAgentFollowDraft(runId, draft)
+              event.currentTarget.blur()
+              void runCommand('layout:focus:left')
+              return
+            }
             if (event.key !== 'Enter') return
             if (event.shiftKey) return
             event.preventDefault()

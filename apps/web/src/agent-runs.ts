@@ -21,6 +21,7 @@ export type AgentRunSummary = {
   finished_at?: string | null
   proposal_count?: number
   question?: string | null
+  first_message?: string | null
 }
 
 export type AgentMessage = {
@@ -160,15 +161,74 @@ export function cleanAgentError(text: string): string {
   return cleaned || copy.agentFailed
 }
 
+const SESSION_DISPLAY_TITLE_WORDS = 6
+
 /** Pane tab label. Session text lives in the header and tab tooltip. */
 export function agentTabTitle(_prompt?: string): string {
   return copy.agent
 }
 
-export function agentRunPrompt(run: { title: string; messages?: AgentMessage[] }): string {
+export function agentRunPrompt(run: { title: string; first_message?: string | null; messages?: AgentMessage[] }): string {
   const text = run.messages?.find((message) => message.kind === 'user')?.body.text
   if (typeof text === 'string' && text.trim()) return text.trim()
+  const stored = run.first_message?.trim()
+  if (stored) return stored
   return run.title
+}
+
+/** Truncated first-message fallback while the short session title is pending. */
+export function agentDisplayTitleFallback(text: string): string {
+  const trimmed = text.trim()
+  if (!trimmed) return copy.agent
+  const words = trimmed.split(/\s+/)
+  if (words.length <= SESSION_DISPLAY_TITLE_WORDS) return trimmed
+  return `${words.slice(0, SESSION_DISPLAY_TITLE_WORDS).join(' ')}…`
+}
+
+/** Palette and Agents table search: title, first message, status, and waiting question. */
+export function agentRunSearchHaystack(run: AgentRunSummary): string {
+  return [
+    run.title,
+    run.first_message,
+    run.question,
+    run.status,
+    run.mode,
+    agentStatusLabel(run.status),
+  ]
+    .map((part) => (typeof part === 'string' ? part.trim() : ''))
+    .filter(Boolean)
+    .join(' ')
+}
+
+/** Short title for the session header and dock tooltip. */
+export function agentSessionHeaderTitle(run: { title: string; messages?: AgentMessage[] }): string {
+  const short = run.title.trim()
+  if (short && short !== copy.agent) return short
+  return agentDisplayTitleFallback(agentRunPrompt(run))
+}
+
+/** Full first message for the header tooltip and accessible description. */
+export function agentSessionAccessibleDescription(run: { title: string; messages?: AgentMessage[] }): string {
+  return agentRunPrompt(run)
+}
+
+/** Dock tab tooltip suffix. Legacy agent views without a run title show only "Agent". */
+export function agentDockTabSessionLabel(
+  view: { type: string; state?: { prompt?: unknown; run_id?: unknown } },
+  runs?: AgentRunSummary[],
+): string | undefined {
+  if (view.type !== 'agent') return undefined
+  const runId = String(view.state?.run_id ?? '')
+  const fromRun = runs?.find((run) => run.id === runId)?.title?.trim()
+  if (fromRun && fromRun !== copy.agent) return fromRun
+  const stored = typeof view.state?.prompt === 'string' ? view.state.prompt.trim() : ''
+  if (stored) return agentDisplayTitleFallback(stored)
+  return undefined
+}
+
+/** @deprecated use agentDockTabSessionLabel */
+export function agentViewTabPrompt(view: { type: string; state?: { prompt?: unknown } }): string | undefined {
+  return agentDockTabSessionLabel(view)
 }
 
 export const openAgentEvent = 'braian-open-agent'
@@ -359,12 +419,13 @@ export function agentsTablePaletteItem(): PaletteItem {
 export function agentPaletteRows(runs: AgentRunSummary[]): PaletteItem[] {
   return runs.map((run) => {
     const question = run.question?.trim() ?? ''
+    const firstMessage = run.first_message?.trim() ?? ''
     return {
       id: `agent-run:${run.id}`,
       group: 'views' as const,
       title: run.title,
       subtitle: run.status === 'waiting' && question ? question : '',
-      keywords: [run.status, run.mode, agentStatusLabel(run.status), question, 'agent'],
+      keywords: [agentRunSearchHaystack(run), question, firstMessage, 'agent'],
       chips: [{ text: agentStatusLabel(run.status), tone: agentStatusTone(run.status) }],
     }
   })

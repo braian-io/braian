@@ -50,8 +50,12 @@ export function clearObjectGone(queryClient: QueryClient, id: string): void {
   }
 }
 
+/** Prefetched neighbors and a landed row stay fresh through fast arrow navigation. */
+export const OBJECT_FETCH_STALE_MS = 60_000
+
 export function objectFetchQueryOptions() {
   return {
+    staleTime: OBJECT_FETCH_STALE_MS,
     retry: (_count: number, error: Error) => !objectGone(error),
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
