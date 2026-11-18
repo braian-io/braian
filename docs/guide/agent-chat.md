@@ -4,10 +4,14 @@ Press **Ctrl+J** to talk to the agent from anywhere in the app. If the command
 palette is already open, **Ctrl+J** runs your question with the text in the query
 box instead of toggling the pane.
 
-The agent opens in its own **docked pane on the far right**. Opening it
-**reflows** the workspace: the center panes (for example Products and Detail)
-**share** the width with the new docked column instead of keeping their previous
-size.
+The agent opens in its own **docked pane on the far right**. The layout stays
+anchored on the left. The structure tree, when it is open, keeps the width it
+had before the pane opened, and the **Products** table stays in the same
+horizontal position. Only the area to the right of that tree — **Products**,
+any columns between it and **Detail**, and **Detail** — gets narrower, with a
+short width transition, so the agent can take a dedicated column. Nothing
+overlaps Detail, and its controls stay clickable. On a wide window (1360px and
+up), Detail stays at least 360px.
 
 ## Pane chrome
 
@@ -60,4 +64,5 @@ text stays in the input. **Esc** does not close the agent pane.
 Use **Ctrl+J** when you want to hide the whole agent column.
 
 Use **Ctrl+K** any time for commands, navigation, and a new agent question with
-a fresh prompt.
+a fresh prompt. Opening or closing the agent pane respects **prefers-reduced-motion**:
+the reflow is instant when reduced motion is on.

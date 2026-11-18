@@ -74,6 +74,8 @@ export function WorkspaceDock({
   agentViews?: string[]
 }) {
   const rootRef = useRef<HTMLDivElement>(null)
+  /** Structure-tree column, measured while the agent dock is closed. */
+  const treePinRef = useRef<TreePin | null>(null)
   const docRef = useRef(doc)
   const changeRef = useRef(onChange)
   const viewsRef = useRef(viewList)
@@ -108,12 +110,32 @@ export function WorkspaceDock({
   }, [drag])
 
   const open = views(doc.layout)
+  const viewTypes = new Map(viewList.map((view) => [view.id, view.type]))
+  const catalogRatio =
+    doc.layout.type === 'split' && splitLocksAgentDock(doc.layout, viewTypes)
+      ? doc.layout.ratios[0] ?? 1
+      : null
+  useLayoutEffect(() => {
+    if (catalogRatio != null) return
+    const root = rootRef.current
+    if (!root) return
+    const measure = () => {
+      const next = measureStructureTreePin(docRef.current.layout, new Map(viewsRef.current.map((view) => [view.id, view.type])), root)
+      if (next) treePinRef.current = next
+    }
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => measure())
+    observer.observe(root)
+    return () => observer.disconnect()
+  }, [catalogRatio, doc.layout])
   const zoomHost = doc.zoom ? leaves(doc.layout).find((leaf) => leaf.views.includes(doc.zoom ?? '')) : undefined
   const zoomed = zoomHost && doc.zoom ? { ...zoomHost, views: [doc.zoom], active: 0 } : undefined
   const shared: Frame = {
     doc,
       viewList,
       agentViews: agentViewSet,
+      agentTreePin: catalogRatio != null ? treePinRef.current : null,
       drag,
     docRef,
     rootRef,
@@ -201,6 +223,49 @@ type Frame = {
   onDrag: (drag: Drag | null) => void
   renderView: (view: DockView) => ReactNode
   agentViews: Set<string>
+  /** Pixel width of the structure tree measured before this dock opened. */
+  agentTreePin: TreePin | null
+}
+
+type TreePin = { width: number; ratio: number }
+
+/**
+ * Width to lock the structure-tree column to once the agent dock is open.
+ * `pin.width` is the leaf's rendered width before the dock opened (flex shrink
+ * included). Scaling by the live ratio keeps a divider drag in proportion.
+ */
+function pinnedTreeWidthPx(pin: TreePin | null, ratio: number): number | null {
+  if (!pin || !(pin.width > 0) || !(pin.ratio > 0) || !(ratio > 0)) return null
+  return (pin.width * ratio) / pin.ratio
+}
+
+function splitRatioAt(layout: Node, leafPath: number[]): number | null {
+  const index = leafPath[leafPath.length - 1]
+  if (index == null) return null
+  let node: Node = layout
+  for (const step of leafPath.slice(0, -1)) {
+    if (node.type !== 'split') return null
+    const next = node.children[step]
+    if (!next) return null
+    node = next
+  }
+  if (node.type !== 'split') return null
+  const ratio = node.ratios[index]
+  return typeof ratio === 'number' && Number.isFinite(ratio) && ratio > 0 ? ratio : null
+}
+
+/** The structure-tree leaf's split cell, in pixels, from the layout before the agent dock opens. */
+function measureStructureTreePin(layout: Node, viewTypes: Map<string, string>, root: HTMLElement): TreePin | null {
+  const leaf = leaves(layout).find((item) => item.views.some((id) => viewTypes.get(id) === 'structure_tree'))
+  if (!leaf || leaf.path.length === 0) return null
+  const tab = root.querySelector<HTMLElement>(".pane-tab[data-view-type='structure_tree']")
+  const cell = tab?.closest('section.pane')?.parentElement
+  if (!(cell instanceof HTMLElement) || !cell.classList.contains('split-cell')) return null
+  const width = cell.getBoundingClientRect().width
+  if (!(width > 0)) return null
+  const ratio = splitRatioAt(layout, leaf.path)
+  if (ratio == null || !(ratio > 0)) return null
+  return { width, ratio }
 }
 
 /** A horizontal agent dock must not let the Detail flex rules resize the left subtree. */
@@ -209,6 +274,20 @@ function splitLocksAgentDock(node: Extract<Node, { type: 'split' }>, viewTypes: 
   return node.children.some(
     (child) => child.type === 'tabs' && child.views.some((id) => viewTypes.get(id) === 'agent'),
   )
+}
+
+function childIsStructureTree(child: Node, viewTypes: Map<string, string>) {
+  return child.type === 'tabs' && child.views.some((id) => viewTypes.get(id) === 'structure_tree')
+}
+
+/** Pin the Food/structure tree so catalog shrink only narrows Products and Detail. */
+function splitPinsTreeInAgentDock(
+  inAgentDock: boolean,
+  node: Extract<Node, { type: 'split' }>,
+  viewTypes: Map<string, string>,
+) {
+  if (!inAgentDock || node.dir !== 'horizontal' || node.children.length !== 2) return false
+  return childIsStructureTree(node.children[0], viewTypes)
 }
 
 function SplitNode({ frame, node, path, inAgentDock = false }: { frame: Frame; node: Node; path: number[]; inAgentDock?: boolean }) {
@@ -226,12 +305,14 @@ function SplitNode({ frame, node, path, inAgentDock = false }: { frame: Frame; n
   const hasDetail = !lockRatios && views(node).some((id) => viewTypes.get(id) === 'object_detail')
   const gaps = Math.max(0, node.children.length - 1) * 6
   const subtreeInAgentDock = inAgentDock || lockRatios
+  const pinTree = splitPinsTreeInAgentDock(subtreeInAgentDock && !lockRatios, node, viewTypes)
   return (
     <div
       className={lockRatios ? `split ${node.dir} split-agent-dock` : `split ${node.dir}`}
       data-path={path.join('.') || 'root'}
       data-has-detail={hasDetail ? 'true' : undefined}
       data-agent-dock={lockRatios ? 'true' : undefined}
+      data-tree-pinned={pinTree ? 'true' : undefined}
     >
       {node.children.map((child, index) => (
         <SplitChild
@@ -244,6 +325,8 @@ function SplitNode({ frame, node, path, inAgentDock = false }: { frame: Frame; n
           gaps={gaps}
           hasDetail={hasDetail}
           inAgentDock={subtreeInAgentDock}
+          pinTree={pinTree}
+          pinTreeRatio={node.ratios[0] ?? 0}
         />
       ))}
     </div>
@@ -259,6 +342,8 @@ function SplitChild({
   gaps,
   hasDetail,
   inAgentDock,
+  pinTree,
+  pinTreeRatio,
 }: {
   frame: Frame
   node: Extract<Node, { type: 'split' }>
@@ -268,9 +353,24 @@ function SplitChild({
   gaps: number
   hasDetail: boolean
   inAgentDock: boolean
+  pinTree: boolean
+  pinTreeRatio: number
 }) {
-  const basis = `calc((100% - ${gaps}px) * ${node.ratios[index] ?? 0})`
+  const ratio = node.ratios[index] ?? 0
+  const basis = `calc((100% - ${gaps}px) * ${ratio})`
   const flex = hasDetail ? '0 1' : '0 0'
+  const pinnedPx = pinTree && index === 0 ? pinnedTreeWidthPx(frame.agentTreePin, pinTreeRatio) : null
+  const cellStyle: CSSProperties =
+    pinnedPx != null
+      ? {
+          flex: `0 0 ${pinnedPx}px`,
+          width: `${pinnedPx}px`,
+          minWidth: `${pinnedPx}px`,
+          maxWidth: `${pinnedPx}px`,
+        }
+      : pinTree && index === 1 && frame.agentTreePin
+        ? { flex: '1 1 0', minWidth: 0 }
+        : { flex: `${flex} ${basis}` }
   return (
     <>
       {index > 0 ? (
@@ -282,7 +382,7 @@ function SplitChild({
           count={node.children.length}
         />
       ) : null}
-      <div className="split-cell" style={{ flex: `${flex} ${basis}` }}>
+      <div className="split-cell" style={cellStyle}>
         <SplitNode frame={frame} node={child} path={[...path, index]} inAgentDock={inAgentDock} />
       </div>
     </>

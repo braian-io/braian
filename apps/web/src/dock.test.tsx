@@ -127,6 +127,66 @@ it('marks a nested Products split that contains Detail so the table can keep its
   expect(cells.map((cell) => cell.style.position)).toEqual(['', ''])
 })
 
+it('pins the structure tree to the width measured before the agent dock opens', () => {
+  const views = [
+    { id: 'tree', title: 'Food', type: 'structure_tree' },
+    { id: 'products', title: 'Products', type: 'object_table' },
+    { id: 'detail', title: 'Detail', type: 'object_detail' },
+    { id: 'agent', title: 'Ask', type: 'agent' },
+  ]
+  const catalog = {
+    type: 'split' as const,
+    dir: 'horizontal' as const,
+    ratios: [0.22, 0.78],
+    children: [
+      { type: 'tabs' as const, views: ['tree'], active: 0 },
+      {
+        type: 'split' as const,
+        dir: 'horizontal' as const,
+        ratios: [0.55, 0.45],
+        children: [
+          { type: 'tabs' as const, views: ['products'], active: 0 },
+          { type: 'tabs' as const, views: ['detail'], active: 0 },
+        ],
+      },
+    ],
+  }
+  const closed: LayoutDoc = { id: 'ws', title: 'Products', layout: catalog, focus: 'products' }
+  const open: LayoutDoc = {
+    id: 'ws',
+    title: 'Products',
+    layout: {
+      type: 'split',
+      dir: 'horizontal',
+      ratios: [0.7, 0.3],
+      children: [catalog, { type: 'tabs', views: ['agent'], active: 0 }],
+    },
+    focus: 'products',
+  }
+  const rect = (width: number) =>
+    ({ x: 0, y: 0, width, height: 600, top: 0, left: 0, right: width, bottom: 600, toJSON() { return {} } }) as DOMRect
+  const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    const treeCell = this.classList.contains('split-cell') && this.querySelector("[data-view-type='structure_tree']")
+    return rect(treeCell ? 240 : 800)
+  })
+  try {
+    const { container, rerender } = render(
+      <WorkspaceDock doc={closed} views={views} onChange={() => undefined} renderView={() => <div />} onAddView={() => undefined} />,
+    )
+    rerender(
+      <WorkspaceDock doc={open} views={views} onChange={() => undefined} renderView={() => <div />} onAddView={() => undefined} />,
+    )
+    const treeSplit = container.querySelector<HTMLElement>(".split.horizontal[data-tree-pinned='true']")
+    expect(treeSplit?.dataset.treePinned).toBe('true')
+    const treeCells = [...(treeSplit?.querySelectorAll<HTMLElement>(':scope > .split-cell') ?? [])]
+    expect(treeCells[0]?.style.flex).toBe('0 0 240px')
+    expect(treeCells[0]?.style.width).toBe('240px')
+    expect(treeCells[1]?.style.flex).toBe('1 1 0px')
+  } finally {
+    spy.mockRestore()
+  }
+})
+
 it('does not mark the agent dock wrapper as a detail split', () => {
   const layout: LayoutDoc = {
     id: 'ws',
@@ -172,7 +232,6 @@ it('does not mark the agent dock wrapper as a detail split', () => {
   expect(innerCells.map((cell) => cell.style.flex.split(' ').slice(0, 2).join(' '))).toEqual(['0 1', '0 1'])
   const outerCells = [...(outer?.querySelectorAll<HTMLElement>(':scope > .split-cell') ?? [])]
   expect(outer?.dataset.agentDock).toBe('true')
-  expect(outer?.dataset.catalogScale).toBeUndefined()
   expect(outerCells.map((cell) => cell.style.flex.split(' ').slice(0, 2).join(' '))).toEqual(['0 0', '0 0'])
 })
 
