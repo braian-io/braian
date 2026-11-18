@@ -297,9 +297,15 @@ export function Shell() {
   const [doc, setDoc] = useState<LayoutDoc | null>(null)
   // Gate dock paint while a dangling/incomplete Data model layout is healed in one pass.
   const [layoutHealPending, setLayoutHealPending] = useState(false)
+  // Server personal document for the workspace currently being healed. Null until
+  // GET /v1/workspaces/{id}/state returns. Heal must not decide from localStorage alone.
+  const [personalGate, setPersonalGate] = useState<{ workspaceId: string; document: LayoutDoc | null } | null>(null)
   const docRef = useRef<LayoutDoc | null>(null)
   const healPendingFor = useRef<string | null>(null)
   const dirtyRef = useRef(false)
+  // Set only from an explicit layout edit (commitDoc). Automatic heal sets dirtyRef
+  // for the personal PUT and leaves this false, so the debounce cannot POST shared.
+  const sharedLayoutDirtyRef = useRef(false)
   const saveGen = useRef(0)
   const canonicalRef = useRef<LayoutDoc['layout'] | undefined>(undefined)
   const placeOverride = useRef<Place | undefined>(undefined)
@@ -898,13 +904,16 @@ export function Shell() {
           })
           return
         }
+        // Catalog is the explicit change. Send the shared layout, not a healed
+        // personal document that may be sitting on the painted doc.
+        const sharedLayout = canonicalRef.current ?? surfaceNow.layout ?? { tabs: [] }
         void api.post('/v1/workspaces', {
           body: {
             id: surfaceNow.id,
             name: surfaceNow.name,
             locked: surfaceNow.locked,
             share_token: surfaceNow.share_token ?? undefined,
-            layout: surfaceNow.layout ?? {},
+            layout: freeObject(sharedLayout as object),
             catalog: { catalogId },
           },
         }).then(() => {
@@ -980,66 +989,63 @@ export function Shell() {
     const key = layoutStorageKey(userId, workspaceId)
     const canonical = canonicalDoc(current)
     canonicalRef.current = canonical.layout
+    sharedLayoutDirtyRef.current = false
+    dirtyRef.current = false
     const local = readLayoutStore(key)
-    let painted = local ? migrateDoc(local.document) : canonical
     const listed = viewRows(current.views)
-    const agentHealPainted = healAgentDockLayout(painted.layout, listed, painted.focus)
-    if (agentHealPainted.changed && agentHealPainted.layout) {
-      painted = { ...painted, layout: agentHealPainted.layout }
-    }
-    const modelHealNeeded = healDataModelWorkspace(current, listed, painted.layout).changed
-    const agentHealNeeded =
-      agentHealPainted.changed || healAgentDockLayout(canonical.layout, listed, canonical.focus).changed
-    dirtyRef.current = agentHealPainted.changed
-    if (modelHealNeeded) {
-      // Force the heal effect to run even if a prior no-op marked this id.
-      migratedRef.current.delete(current.id)
-      healPendingFor.current = current.id
-      setLayoutHealPending(true)
-      docRef.current = null
-      setDoc(null)
-      return
-    }
-    if (agentHealNeeded) migratedRef.current.delete(current.id)
-    healPendingFor.current = null
-    setLayoutHealPending(false)
-    docRef.current = painted
-    setDoc(painted)
+    // Paint local or the shared layout first. Do not heal, and do not mark the
+    // document dirty, until the server's personal document is known.
+    const provisional = local ? migrateDoc(local.document) : canonical
+    docRef.current = provisional
+    setDoc(provisional)
+    setPersonalGate(null)
     let cancelled = false
     void api.get('/v1/workspaces/{id}/state', { params: { path: { id: workspaceId }, query: { environment: LAYOUT_ENVIRONMENT } } })
       .then((server) => {
-        if (cancelled || dirtyRef.current || loadedFor.current !== stamp) return
-        if (healPendingFor.current === current.id) return
+        if (cancelled || loadedFor.current !== stamp) return
+        const serverDoc = server.document ? migrateDoc(server.document) : null
+        const serverHasPersonal = Boolean(server.document)
+        setPersonalGate({ workspaceId, document: serverDoc })
+        // An explicit edit landed while the personal document was in flight.
+        if (sharedLayoutDirtyRef.current) return
         const fresh = readLayoutStore(key)
         let next = reconcileLayout(fresh, server, canonical)
-        const agentInline = healAgentDockLayout(next.layout, listed, next.focus)
-        if (agentInline.changed && agentInline.layout) {
-          next = { ...next, layout: agentInline.layout }
-          dirtyRef.current = true
-          migratedRef.current.delete(current.id)
-        }
-        if (
-          layoutHasMissingViews(next.layout, listed)
-          || healDataModelWorkspace(current, listed, next.layout).changed
-        ) {
-          // Stale personal state still references missing views — let heal rebuild once.
-          healPendingFor.current = current.id
-          setLayoutHealPending(true)
-          docRef.current = null
-          setDoc(null)
-          migratedRef.current.delete(current.id)
-          return
+        if (!serverHasPersonal) {
+          const agentInline = healAgentDockLayout(next.layout, listed, next.focus)
+          if (agentInline.changed && agentInline.layout) {
+            next = { ...next, layout: agentInline.layout }
+            // Personal create only. sharedLayoutDirtyRef stays false.
+            dirtyRef.current = true
+            saveGen.current += 1
+            migratedRef.current.delete(current.id)
+          }
+          if (
+            layoutHasMissingViews(next.layout, listed)
+            || healDataModelWorkspace(current, listed, next.layout).changed
+          ) {
+            migratedRef.current.delete(current.id)
+            healPendingFor.current = current.id
+            setLayoutHealPending(true)
+            docRef.current = null
+            setDoc(null)
+            return
+          }
         }
         const serverAt = server.updated_at ? Date.parse(server.updated_at) : 0
-        const serverDoc = server.document ? migrateDoc(server.document) : null
         const diverged = Boolean(
           fresh && fresh.savedAt > serverAt && (!serverDoc || JSON.stringify(next) !== JSON.stringify(serverDoc)),
         )
         docRef.current = next
-        dirtyRef.current = diverged
-        if (diverged) saveGen.current += 1
+        if (diverged) {
+          dirtyRef.current = true
+          sharedLayoutDirtyRef.current = true
+          saveGen.current += 1
+        }
         setDoc(next)
-        writeLayoutStore(key, next)
+        // A normalized copy of an existing personal document must not become a
+        // newer local edit that the next load writes back over the server.
+        const sameAsServer = Boolean(serverDoc && JSON.stringify(next) === JSON.stringify(serverDoc))
+        if (!serverHasPersonal || sameAsServer || diverged) writeLayoutStore(key, next)
       })
       .catch((reason: unknown) => {
         // A missing personal layout is a 200 with a null document. Anything else
@@ -1070,7 +1076,9 @@ export function Shell() {
       }).catch((reason: unknown) => {
         reportWriteError(reason)
       })
-      if (!editsArePersonal(ws)) {
+      // Healed and other automatic layouts stay on the personal PUT above.
+      // Shared POST is only an explicit layout edit on an unlocked private workspace.
+      if (sharedLayoutDirtyRef.current && !editsArePersonal(ws)) {
         void api.post('/v1/workspaces', { body: {
             id: ws.id,
             name: ws.name,
@@ -1078,6 +1086,8 @@ export function Shell() {
             share_token: ws.share_token,
             layout: current.layout,
           } }).then(() => {
+          if (saveGen.current !== gen) return
+          sharedLayoutDirtyRef.current = false
           canonicalRef.current = current.layout
         }).catch((reason: unknown) => {
           reportWriteError(reason)
@@ -1366,16 +1376,20 @@ export function Shell() {
   useEffect(() => {
     const current = workspace.data
     if (!current || !defs.data || migratedRef.current.has(current.id)) return
+    if (!userId || !personalGate || personalGate.workspaceId !== current.id) return
+    const serverDoc = personalGate.document
+    const serverHasPersonal = Boolean(serverDoc)
     const types = typeNames(defs.data)
     const objectPatch =
       types.length > 0
         ? migrateSavedWorkspace(current, viewRows(current.views), types)
         : { changed: false as const, name: undefined, views: [] as Array<{ id: string; title: string; state: Json; type?: string }> }
     const listed = viewRows(current.views)
-    const key = userId ? layoutStorageKey(userId, current.id) : ''
-    const local = key ? readLayoutStore(key) : null
-    // Prefer the layout the user would see (local/personal), then server canonical.
-    const paintedDoc = local ? migrateDoc(local.document) : null
+    const key = layoutStorageKey(userId, current.id)
+    const local = readLayoutStore(key)
+    // Personal layout is the server document when this device has no local copy.
+    const paintedDoc = local ? migrateDoc(local.document) : serverDoc
+    const hasPersonalLayout = Boolean(paintedDoc)
     const paintedLayout = paintedDoc ? paintedDoc.layout : migrateLayout(current.layout)
     const paintedFocus = paintedDoc?.focus
     const agentFromPainted = healAgentDockLayout(paintedLayout, listed, paintedFocus)
@@ -1387,20 +1401,24 @@ export function Shell() {
       agentFromServer.changed && agentFromServer.layout ? agentFromServer.layout : serverLayout
     const modelFromPainted = healDataModelWorkspace(current, listed, layoutForPainted)
     const modelFromServer = healDataModelWorkspace(current, listed, layoutForServer)
-    const hasPersonalLayout = Boolean(paintedDoc)
     const modelPatch = modelFromPainted.changed
       ? modelFromPainted
       : hasPersonalLayout
         ? { changed: false, views: [], create: [], layout: undefined, removed: [] as string[] }
         : modelFromServer
-    const agentChanged = agentFromPainted.changed || (!hasPersonalLayout && agentFromServer.changed)
     const agentLayout = agentFromPainted.layout ?? (hasPersonalLayout ? undefined : agentFromServer.layout)
+    // An existing personal server document is never replaced by a heal.
+    const layout = serverHasPersonal ? undefined : (modelPatch.layout ?? agentLayout)
     const patch = {
-      changed: objectPatch.changed || modelPatch.changed || agentChanged,
+      changed:
+        objectPatch.changed
+        || modelPatch.views.length > 0
+        || (modelPatch.create?.length ?? 0) > 0
+        || Boolean(layout),
       name: objectPatch.name,
       views: [...objectPatch.views, ...modelPatch.views],
       create: modelPatch.create,
-      layout: modelPatch.layout ?? agentLayout,
+      layout,
     }
     migratedRef.current.add(current.id)
     if (!patch.changed) {
@@ -1415,6 +1433,25 @@ export function Shell() {
     void persistWorkspaceMigration(current, patch, {
       postView: (body) => api.post('/v1/views', { body }),
       postWorkspace: (body) => api.post('/v1/workspaces', { body }),
+      putPersonalLayout: async (layout) => {
+        if (serverHasPersonal) return
+        const next = canonicalDoc({
+          id: current.id,
+          name: patch.name ?? current.name,
+          layout,
+          owner_id: current.owner_id,
+        })
+        writeLayoutStore(key, next)
+        docRef.current = next
+        dirtyRef.current = false
+        sharedLayoutDirtyRef.current = false
+        setDoc(next)
+        loadedFor.current = `${userId}:${current.id}`
+        await api.put('/v1/workspaces/{id}/state', {
+          params: { path: { id: current.id } },
+          body: { environment: LAYOUT_ENVIRONMENT, document: stampedLayout(next) },
+        })
+      },
       freeObject,
     })
       .then(async () => {
@@ -1451,39 +1488,16 @@ export function Shell() {
           } as typeof listed[number])
         }
         const nextViews = [...byId.values()]
-        const nextLayout = freeObject(
-          (patch.layout && typeof patch.layout === 'object' ? patch.layout : current.layout) as object,
-        )
+        // Keep the shared layout. A healed layout is personal state only, so a
+        // catalog switch cannot POST it back onto the workspace row.
         const nextWorkspace = {
           ...current,
           name: patch.name ?? current.name,
-          layout: nextLayout,
+          layout: current.layout,
           views: nextViews,
         }
         queryClient.setQueryData(['workspace', current.id], nextWorkspace)
         workspaceRef.current = nextWorkspace
-        if (patch.layout) {
-          const next = canonicalDoc({
-            id: current.id,
-            name: patch.name ?? current.name,
-            layout: patch.layout,
-            owner_id: current.owner_id,
-          })
-          if (userId) writeLayoutStore(layoutStorageKey(userId, current.id), next)
-          docRef.current = next
-          dirtyRef.current = false
-          setDoc(next)
-          canonicalRef.current = next.layout
-          if (userId) {
-            loadedFor.current = `${userId}:${current.id}`
-            void api.put('/v1/workspaces/{id}/state', {
-              params: { path: { id: current.id } },
-              body: { environment: LAYOUT_ENVIRONMENT, document: stampedLayout(next) },
-            }).catch((reason: unknown) => {
-              reportWriteError(reason)
-            })
-          }
-        }
         healPendingFor.current = null
         setLayoutHealPending(false)
         await queryClient.invalidateQueries({ queryKey: ['workspace', current.id] })
@@ -1500,7 +1514,7 @@ export function Shell() {
         docRef.current = fallback
         setDoc(fallback)
       })
-  }, [workspace.data, defs.data, queryClient, userId])
+  }, [workspace.data, defs.data, queryClient, userId, personalGate])
 
   const session: Session = {
     group,
@@ -1678,6 +1692,7 @@ export function Shell() {
     }
     docRef.current = next
     dirtyRef.current = true
+    sharedLayoutDirtyRef.current = true
     saveGen.current += 1
     writeLayoutStore(layoutStorageKey(user.user_id, workspaceId), next)
     setDoc(next)

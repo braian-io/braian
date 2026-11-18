@@ -13,52 +13,59 @@ async function login(page: Page) {
   await expect(page.getByTestId('dock')).toBeVisible()
 }
 
-async function seedDanglingWorkspace(page: Page, name: string) {
+async function seedUnlockedWorkspace(page: Page, name: string) {
   const workspaceId = crypto.randomUUID()
-  const structuresId = crypto.randomUUID()
-  const ghostLeft = crypto.randomUUID()
-  const ghostMid = crypto.randomUUID()
-  const ghostRight = crypto.randomUUID()
+  const historyId = crypto.randomUUID()
+  const agentId = crypto.randomUUID()
+  // Agent shares the main tab group, so opening the workspace runs agent-dock
+  // heal. No share_token and unlocked: that is the debounce path that used to
+  // POST the healed layout onto the shared workspace row.
   const layout = {
-    type: 'split',
-    dir: 'horizontal',
-    ratios: [0.22, 0.78],
-    children: [
-      { type: 'tabs', views: [structuresId, ghostLeft], active: 0 },
-      {
-        type: 'split',
-        dir: 'horizontal',
-        ratios: [0.55, 0.45],
-        children: [
-          { type: 'tabs', views: [ghostMid], active: 0 },
-          { type: 'tabs', views: [ghostRight], active: 0 },
-        ],
-      },
-    ],
+    type: 'tabs',
+    views: [historyId, agentId],
+    active: 0,
   }
   const created = await page.request.post('/v1/workspaces', {
     data: {
       id: workspaceId,
       name,
       locked: false,
-      share_token: `row264-heal-${workspaceId.slice(0, 8)}`,
       layout,
     },
   })
   expect(created.ok(), `create workspace ${created.status()}`).toBeTruthy()
-  const structures = await page.request.post('/v1/views', {
+  const createdBody = (await created.json()) as { id?: string }
+  expect(createdBody.id).toBe(workspaceId)
+  const history = await page.request.post('/v1/views', {
     data: {
-      id: structuresId,
+      id: historyId,
       workspace_id: workspaceId,
-      type: 'data_model',
-      title: 'Structures',
+      type: 'history',
+      title: 'History',
       pane: 'main',
       position: 0,
-      state: { mode: 'tree' },
+      state: {},
     },
   })
-  expect(structures.ok(), `create Structures ${structures.status()}`).toBeTruthy()
-  return { workspaceId, structuresId, layout }
+  expect(history.ok(), `create History ${history.status()}`).toBeTruthy()
+  const agent = await page.request.post('/v1/views', {
+    data: {
+      id: agentId,
+      workspace_id: workspaceId,
+      type: 'agent',
+      title: 'Ask',
+      pane: 'main',
+      position: 1,
+      state: {},
+    },
+  })
+  expect(agent.ok(), `create agent ${agent.status()}`).toBeTruthy()
+  const readback = await page.request.get(`/v1/workspaces/${workspaceId}`)
+  expect(readback.ok()).toBeTruthy()
+  const stored = (await readback.json()) as { share_token?: string | null; locked?: boolean }
+  expect(stored.share_token ?? null).toBeNull()
+  expect(stored.locked).toBe(false)
+  return { workspaceId, historyId, layout }
 }
 
 async function sharedLayout(page: Page, workspaceId: string) {
@@ -84,8 +91,7 @@ async function openWorkspaceTab(page: Page, name: string) {
   const tab = page.locator('nav.tabs').getByRole('button', { name: new RegExp(escaped) })
   await expect(tab).toBeVisible({ timeout: 30_000 })
   await tab.click()
-  await expect(page.locator('.pane-tab').filter({ hasText: 'Structures' })).toBeVisible({ timeout: 60_000 })
-  await expect(page.locator('.pane-tab').filter({ hasText: 'Object types' })).toBeVisible({ timeout: 60_000 })
+  await expect(page.locator('.pane-tab').filter({ hasText: 'History' })).toBeVisible({ timeout: 60_000 })
 }
 
 test.describe('row 264 layout repair stays personal', () => {
@@ -100,7 +106,7 @@ test.describe('row 264 layout repair stays personal', () => {
     const seedPage = await seed.newPage()
     await login(seedPage)
     const name = `Row264 heal ${Date.now()}`
-    const seeded = await seedDanglingWorkspace(seedPage, name)
+    const seeded = await seedUnlockedWorkspace(seedPage, name)
     workspaceId = seeded.workspaceId
     const sharedBefore = await sharedLayout(seedPage, workspaceId)
 
@@ -109,6 +115,8 @@ test.describe('row 264 layout repair stays personal', () => {
     contexts.push(sessionB, sessionA)
     const pageB = await sessionB.newPage()
     const pageA = await sessionA.newPage()
+    await pageA.goto('/')
+    expect(await pageA.evaluate(() => localStorage.length), 'new device starts with empty localStorage').toBe(0)
     await login(pageB)
     await login(pageA)
 
@@ -122,7 +130,7 @@ test.describe('row 264 layout repair stays personal', () => {
           focus: focusB,
           layout: {
             type: 'tabs',
-            views: [seeded.structuresId],
+            views: [seeded.historyId],
             active: 0,
           },
         },
@@ -160,10 +168,16 @@ test.describe('row 264 layout repair stays personal', () => {
       .poll(async () => JSON.stringify(await sharedLayout(pageB, workspaceId)))
       .toBe(JSON.stringify(sharedBefore))
 
-    // Session A's heal may update this user's personal document on the server,
-    // but it must not touch the shared workspace row other sessions read.
+    // The debounced shared POST fires 700ms after paint. Read again after that
+    // window so a late write cannot pass the poll above.
+    await pageA.waitForTimeout(1_500)
+    expect(
+      sharedPosts,
+      'automatic heal must not POST a new shared layout to /v1/workspaces',
+    ).toEqual([])
+    expect(JSON.stringify(await sharedLayout(pageA, workspaceId))).toBe(JSON.stringify(sharedBefore))
     const personalAfterB = await personalDocument(pageB, workspaceId)
-    expect(personalAfterB?.layout).toBeTruthy()
+    expect(personalAfterB?.focus, 'other session personal layout').toBe(focusB)
   } finally {
     for (const context of contexts) {
       try {
