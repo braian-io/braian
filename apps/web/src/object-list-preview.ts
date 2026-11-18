@@ -55,14 +55,6 @@ export function buildListPreviewFromRow(
       }
     }
   }
-  for (const attribute of ((defs?.attributes as Json[] | undefined) ?? [])) {
-    const key = String(attribute.key ?? '')
-    if (!key || values[key] != null) continue
-    const text = readIndexed(row.doc, defs, key)
-    if (!text) continue
-    if (attribute.language_dependent) values[key] = { [language]: text }
-    else values[key] = text
-  }
   return {
     id: row.id,
     key: row.key,

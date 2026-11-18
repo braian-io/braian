@@ -173,6 +173,7 @@ test('a persistent object GET failure shows Retry without endless requests', asy
   await focusProductsGrid(page)
   await page.keyboard.press('ArrowDown')
   await expect.poll(async () => rowObjectId(await selectedRow(table).getAttribute('id'))).not.toBe(anchoredObjectId)
+  await page.keyboard.press('Enter')
   await expect(page.getByTestId('detail-error')).toBeVisible({ timeout: 30_000 })
   await page.waitForTimeout(2_000)
   expect(failedGets.length).toBeLessThanOrEqual(6)
