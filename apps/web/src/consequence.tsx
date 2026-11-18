@@ -11,8 +11,10 @@ import { describeModelSteps } from './model-step-text'
 import { affectedLabel, typeNames } from './type-labels'
 import { onProposal } from './proposal-bus'
 import {
+  discardRestoreOnDismiss,
   isRollbackProposal,
   objectDisplayLabel,
+  restoreDiscardFailure,
   restoreTitle,
   rollbackTargetSeqFromPatch,
   versionAtSeq,
@@ -192,8 +194,14 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
   }, [id, isRollback, proposal.isPending, proposal.isError, rollbackTitle, restoreDiff.length])
   if (!id) return null
   const close = dismiss
+  const historyRollback = discardRestoreOnDismiss(rollbackSeq)
+  const requestClose = () => {
+    if (busy) return
+    if (isRollback && historyRollback) discard()
+    else close()
+  }
   const discard = () => {
-    if (!id || discardPending.current) return
+    if (!id || discardPending.current || busy) return
     discardPending.current = true
     setBusy(true)
     void api.post('/v1/proposals/{id}/discard', { params: { path: { id: id } } })
@@ -202,7 +210,16 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
         void queryClient.invalidateQueries({ queryKey: ['proposals'] })
         close()
       })
-      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : copy.validation))
+      .catch((reason: unknown) => {
+        const failure = restoreDiscardFailure(reason)
+        if (failure.close) {
+          void queryClient.invalidateQueries({ queryKey: ['proposals'] })
+          if (failure.message) setError(failure.message)
+          close()
+          return
+        }
+        setError(failure.message ?? copy.validation)
+      })
       .finally(() => {
         setBusy(false)
         discardPending.current = false
@@ -236,20 +253,16 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
   }
   return (
     <Dialog open onOpenChange={(next) => {
-      if (!next) {
-        if (isRollback) discard()
-        else dismiss()
-      }
+      if (!next) requestClose()
     }}>
       <DialogContent
         className="consequence"
         data-testid={isRollback ? 'restore-dialog' : 'consequence'}
         onEscapeKeyDown={(event) => {
           event.stopPropagation()
-          if (isRollback) {
-            event.preventDefault()
-            discard()
-          }
+          if (!isRollback) return
+          event.preventDefault()
+          requestClose()
         }}
         onOpenAutoFocus={(event) => {
           if (isRollback) event.preventDefault()

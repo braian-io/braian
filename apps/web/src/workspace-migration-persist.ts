@@ -90,12 +90,13 @@ export async function persistWorkspaceMigration(
       state: deps.freeObject(view.state),
     })
   }
-  // Layout only after every view create/update above succeeded.
-  if ((patch.name && patch.name !== workspace.name) || patch.layout) {
-    const layout = patch.layout ?? workspace.layout ?? { tabs: [] }
+  // Shared workspace metadata (rename) only — automatic layout repair is persisted
+  // as personal state (PUT /v1/workspaces/{id}/state), never POST /v1/workspaces.
+  if (patch.name && patch.name !== workspace.name) {
+    const layout = workspace.layout ?? { tabs: [] }
     await deps.postWorkspace({
       id: workspace.id,
-      name: patch.name ?? workspace.name,
+      name: patch.name,
       locked: workspace.locked,
       share_token: workspace.share_token,
       layout: deps.freeObject(layout && typeof layout === 'object' ? (layout as object) : { tabs: [] }),

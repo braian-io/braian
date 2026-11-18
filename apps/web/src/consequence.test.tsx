@@ -268,7 +268,55 @@ describe('rollback restore dialog', () => {
     expect(screen.getByTestId('confirm-restore').textContent).toBe('Restore')
   })
 
-  it('discards rollback proposals on Escape like Cancel', async () => {
+  it('closes a Review rollback on Escape without discarding', async () => {
+    const rollbackProposal: Json = {
+      title: 'Restore',
+      source: 'rollback',
+      rows: [{
+        id: 'row-1',
+        object_id: 'object-1',
+        object_key: 'PROD-1',
+        type_key: 'product',
+        base_version: 4,
+        patch: {
+          _rollback_seq: 2,
+          values: { number: '430' },
+        },
+        base_values: { name: { en: 'Cola' }, number: '431' },
+        status: 'pending',
+        conflict: false,
+        position: 0,
+      }],
+      consequence: { affected_objects: 0, samples: [], jobs: [] },
+    }
+    mock.use((path) => {
+      if (path === '/v1/definitions') {
+        return Promise.resolve({
+          languages: ['en'],
+          types: [{ key: 'product', singular: { en: 'Product' } }],
+          attributes: [
+            { key: 'number', labels: { en: 'Number' } },
+            { key: 'name', labels: { en: 'Name' } },
+          ],
+        })
+      }
+      if (path.startsWith('/v1/proposals/')) return Promise.resolve(rollbackProposal)
+      if (path.includes('/changes')) return Promise.resolve([{ seq: 2, version: 3 }])
+      if (path.includes('/objects/object-1')) {
+        return Promise.resolve({ values: { name: { en: 'Cola' }, number: '431' } })
+      }
+      return Promise.resolve({})
+    })
+    render(<Host />)
+    publishProposal('proposal-rollback-review', 'rollback')
+
+    const dialog = await screen.findByTestId('restore-dialog')
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByTestId('restore-dialog')).toBeNull())
+    expect(mock.methods.post).not.toHaveBeenCalled()
+  })
+
+  it('discards History rollbacks on Escape', async () => {
     const rollbackProposal: Json = {
       title: 'Restore',
       source: 'rollback',
@@ -317,6 +365,129 @@ describe('rollback restore dialog', () => {
     expect(mock.methods.post).toHaveBeenCalledWith('/v1/proposals/{id}/discard', {
       params: { path: { id: 'proposal-rollback-esc' } },
     })
+  })
+
+  it('ignores Escape while accept is in progress', async () => {
+    const rollbackProposal: Json = {
+      title: 'Restore',
+      source: 'rollback',
+      rows: [{
+        id: 'row-1',
+        object_id: 'object-1',
+        object_key: 'PROD-1',
+        type_key: 'product',
+        base_version: 4,
+        patch: {
+          _rollback_seq: 2,
+          values: { number: '430' },
+        },
+        base_values: { name: { en: 'Cola' }, number: '431' },
+        status: 'pending',
+        conflict: false,
+        position: 0,
+      }],
+      consequence: { affected_objects: 0, samples: [], jobs: [] },
+    }
+    let release: (() => void) | undefined
+    const pending = new Promise<Json>((resolve) => {
+      release = () => resolve({ ok: true })
+    })
+    mock.use((path, init) => {
+      if (path === '/v1/definitions') {
+        return Promise.resolve({
+          languages: ['en'],
+          types: [{ key: 'product', singular: { en: 'Product' } }],
+          attributes: [
+            { key: 'number', labels: { en: 'Number' } },
+            { key: 'name', labels: { en: 'Name' } },
+          ],
+        })
+      }
+      if (String(path).endsWith('/accept')) return pending
+      if (path.startsWith('/v1/proposals/')) return Promise.resolve(rollbackProposal)
+      if (path.includes('/changes')) return Promise.resolve([{ seq: 2, version: 3 }])
+      if (path.includes('/objects/object-1')) {
+        return Promise.resolve({ values: { name: { en: 'Cola' }, number: '431' } })
+      }
+      return Promise.resolve({})
+    })
+    render(<Host />)
+    publishProposal('proposal-rollback-busy', 'rollback', { targetSeq: 2 })
+
+    const dialog = await screen.findByTestId('restore-dialog')
+    fireEvent.click(screen.getByTestId('confirm-restore'))
+    await waitFor(() => expect((screen.getByTestId('confirm-restore') as HTMLButtonElement).disabled).toBe(true))
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+    expect(screen.getByTestId('restore-dialog')).toBeTruthy()
+    const discardCalls = mock.methods.post.mock.calls.filter(([url]) => String(url).includes('/discard'))
+    expect(discardCalls).toEqual([])
+    release?.()
+    await waitFor(() => expect(screen.queryByTestId('restore-dialog')).toBeNull())
+  })
+
+  it('closes after discard 404 and explains 409', async () => {
+    const rollbackProposal: Json = {
+      title: 'Restore',
+      source: 'rollback',
+      rows: [{
+        id: 'row-1',
+        object_id: 'object-1',
+        object_key: 'PROD-1',
+        type_key: 'product',
+        base_version: 4,
+        patch: { _rollback_seq: 2, values: { number: '430' } },
+        base_values: { name: { en: 'Cola' }, number: '431' },
+        status: 'pending',
+        conflict: false,
+        position: 0,
+      }],
+      consequence: { affected_objects: 0, samples: [], jobs: [] },
+    }
+    const { ApiError } = await import('./api')
+    mock.use((path) => {
+      if (path === '/v1/definitions') {
+        return Promise.resolve({
+          languages: ['en'],
+          types: [{ key: 'product', singular: { en: 'Product' } }],
+          attributes: [{ key: 'number', labels: { en: 'Number' } }],
+        })
+      }
+      if (path === '/v1/proposals/{id}/discard') return Promise.reject(new ApiError(404, 'missing', null))
+      if (path.startsWith('/v1/proposals/')) return Promise.resolve(rollbackProposal)
+      if (path.includes('/changes')) return Promise.resolve([{ seq: 2, version: 3 }])
+      if (path.includes('/objects/object-1')) {
+        return Promise.resolve({ values: { name: { en: 'Cola' }, number: '431' } })
+      }
+      return Promise.resolve({})
+    })
+    render(<Host />)
+    publishProposal('proposal-rollback-404', 'rollback', { targetSeq: 2 })
+    await screen.findByTestId('restore-dialog')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByTestId('restore-dialog')).toBeNull())
+    expect(screen.queryByText(copy.proposalAlreadyClosed)).toBeNull()
+
+    mock.methods.post.mockReset()
+    mock.use((path) => {
+      if (path === '/v1/definitions') {
+        return Promise.resolve({
+          languages: ['en'],
+          types: [{ key: 'product', singular: { en: 'Product' } }],
+          attributes: [{ key: 'number', labels: { en: 'Number' } }],
+        })
+      }
+      if (path === '/v1/proposals/{id}/discard') return Promise.reject(new ApiError(409, 'busy', null))
+      if (path.startsWith('/v1/proposals/')) return Promise.resolve(rollbackProposal)
+      if (path.includes('/changes')) return Promise.resolve([{ seq: 2, version: 3 }])
+      if (path.includes('/objects/object-1')) {
+        return Promise.resolve({ values: { name: { en: 'Cola' }, number: '431' } })
+      }
+      return Promise.resolve({})
+    })
+    publishProposal('proposal-rollback-409', 'rollback', { targetSeq: 2 })
+    await screen.findByTestId('restore-dialog')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByTestId('restore-dialog')).toBeNull())
   })
 
   it('disables restore when the diff is empty', async () => {

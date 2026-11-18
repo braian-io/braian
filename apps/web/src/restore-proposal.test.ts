@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
+import { ApiError } from './api'
+import { copy } from './i18n'
 import {
+  discardRestoreOnDismiss,
   isRollbackProposal,
   objectDisplayLabel,
+  restoreDiscardFailure,
   restoreTitle,
   rollbackTargetSeqFromPatch,
   versionAtSeq,
@@ -28,5 +32,19 @@ describe('restore proposal helpers', () => {
     const changes = [{ seq: 1, version: 1 }, { seq: 2, version: 2 }]
     expect(versionAtSeq(changes, 2)).toBe(2)
     expect(versionAtSeq(changes, 9)).toBeUndefined()
+  })
+
+  it('auto-discards only when History passed rollbackSeq', () => {
+    expect(discardRestoreOnDismiss(2)).toBe(true)
+    expect(discardRestoreOnDismiss(undefined)).toBe(false)
+  })
+
+  it('closes quietly on missing rollback proposals and explains conflicts', () => {
+    expect(restoreDiscardFailure(new ApiError(404, 'missing', null))).toEqual({ close: true, message: null })
+    expect(restoreDiscardFailure(new ApiError(409, 'busy', null))).toEqual({
+      close: true,
+      message: copy.proposalAlreadyClosed,
+    })
+    expect(restoreDiscardFailure(new Error('nope'))).toEqual({ close: false, message: 'nope' })
   })
 })
