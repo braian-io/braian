@@ -212,6 +212,8 @@ pub struct AgentRunSummary {
     pub proposal_count: i32,
     /// The question shown while status is `waiting`.
     pub question: Option<String>,
+    /// First user message in the session.
+    pub first_message: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -258,6 +260,7 @@ pub struct AgentRunDetail {
     pub finished_at: Option<String>,
     pub proposal_count: i32,
     pub question: Option<String>,
+    pub first_message: Option<String>,
     pub messages: Vec<AgentMessageView>,
     pub proposals: Vec<AgentProposalView>,
 }

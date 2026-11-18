@@ -13,8 +13,11 @@ size.
 The dock tab is always named **Agent**, even when several runs are open at once.
 Tell sessions apart from the **short session title** at the top of the chat and
 from the tab tooltip (`Agent —` that title). The title is generated once from your
-first message. Until it is ready, the header shows a truncated preview of that
-message. Hover the header or use assistive tech to read the **full first message**.
+first message (about ten seconds at most). Until it is ready, and if generation
+times out or fails, the header keeps a short fallback — the first six words of
+your message, with an ellipsis when it is longer — so the label does not jump through
+a long truncation first. Hover the header for the full first message; assistive tech
+gets that full text through `aria-describedby` on the visible title.
 
 ## Chat
 
