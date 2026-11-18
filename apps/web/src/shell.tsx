@@ -63,7 +63,7 @@ import { prepareFeedbackCapture, type FeedbackCapture } from './feedback'
 import { AgentPresence } from './agent-presence'
 import { AgentView } from './agent-view'
 import { AgentsTable } from './agents-table'
-import { agentDockTabSessionLabel, agentRunPrompt, agentRunsForWorkspace, backToMySessionEvent, listAgentRuns, openAgentEvent, openAgentsTableEvent, patchAgentRun, requestBackToMySession, showAgentSessionEvent, takeOverAgentRun, type AgentMessage, type AgentRunSummary } from './agent-runs'
+import { agentDockTabSessionLabel, agentRunPrompt, agentRunsForWorkspace, agentRunsToRestoreInLayout, backToMySessionEvent, listAgentRuns, openAgentEvent, openAgentsTableEvent, patchAgentRun, requestBackToMySession, showAgentSessionEvent, takeOverAgentRun, type AgentMessage, type AgentRunSummary } from './agent-runs'
 import { agentSessionLayout, controllingAgentRuns, holdLayoutFlush, layoutFlushHeld, layoutSaveBlocked, agentMarkerViewIds, setViewingAgentRun, subscribeViewingAgent, viewingAgentRunId } from './agent-session'
 import { CommandPalette } from './palette'
 import { focusAfterMenuTab } from './menu-keyboard'
@@ -801,8 +801,12 @@ export function Shell() {
     restoredAgents.current = surface.id
     void listAgentRuns()
       .then((runs) => {
-        const { here } = agentRunsForWorkspace(runs, surface.id)
-        for (const run of here) openAgentRunRef.current(run)
+        const openViewIds = layoutViews(doc.layout)
+        const { restore, stale } = agentRunsToRestoreInLayout(runs, surface.id, openViewIds)
+        for (const run of stale) {
+          void patchAgentRun(run.id, { tab_open: false }).catch((reason: unknown) => reportWriteError(reason))
+        }
+        for (const run of restore) openAgentRunRef.current(run)
       })
       .catch((reason: unknown) => reportWriteError(reason))
   }, [workspace.data, doc, userId])

@@ -431,6 +431,24 @@ export function agentPaletteRows(runs: AgentRunSummary[]): PaletteItem[] {
   })
 }
 
+/** Foreground runs with tab_open whose agent view is actually open in the layout. */
+export function agentRunsToRestoreInLayout(
+  runs: AgentRunSummary[],
+  workspaceId: string,
+  openViewIds: readonly string[],
+): { restore: AgentRunSummary[]; stale: AgentRunSummary[] } {
+  const open = new Set(openViewIds)
+  const { here } = agentRunsForWorkspace(runs, workspaceId)
+  const restore: AgentRunSummary[] = []
+  const stale: AgentRunSummary[] = []
+  for (const item of here) {
+    const viewId = item.view_id?.trim() ?? ''
+    if (viewId && open.has(viewId)) restore.push(item)
+    else stale.push(item)
+  }
+  return { restore, stale }
+}
+
 /** Open tabs for this workspace, and open tabs that belong somewhere else. */
 export function agentRunsForWorkspace(runs: AgentRunSummary[], workspaceId: string) {
   const here: AgentRunSummary[] = []

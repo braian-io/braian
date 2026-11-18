@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { agentDisplayTitleFallback, agentDockTabSessionLabel, agentNoticeText, agentNotices, agentPaletteRows, agentRunPrompt, agentRunSearchHaystack, agentRunsForWorkspace, agentSessionAccessibleDescription, agentSessionHeaderTitle, agentStatusLabel, agentTabTitle, agentViewTabPrompt, agentsPaletteRoot, backgroundNotices, backgroundWorkingCount, cleanAgentError, mergeRunSummary, sortAgentRuns, type AgentRunSummary } from './agent-runs'
+import { agentDisplayTitleFallback, agentDockTabSessionLabel, agentNoticeText, agentNotices, agentPaletteRows, agentRunPrompt, agentRunSearchHaystack, agentRunsForWorkspace, agentRunsToRestoreInLayout, agentSessionAccessibleDescription, agentSessionHeaderTitle, agentStatusLabel, agentTabTitle, agentViewTabPrompt, agentsPaletteRoot, backgroundNotices, backgroundWorkingCount, cleanAgentError, mergeRunSummary, sortAgentRuns, type AgentRunSummary } from './agent-runs'
 
 function run(patch: Partial<AgentRunSummary>): AgentRunSummary {
   return {
@@ -28,6 +28,16 @@ describe('agent run presentation', () => {
     expect(cleanAgentError('openai error: the model request failed (status 500)')).toBe(
       'The model request failed. Try again, or check the AI settings.',
     )
+  })
+
+  it('only restores tab_open runs whose agent view is open in the layout', () => {
+    const runs = [
+      run({ id: 'open', view_id: 'agent-a', workspace_id: 'ws-a' }),
+      run({ id: 'stale', view_id: 'agent-b', workspace_id: 'ws-a' }),
+    ]
+    const split = agentRunsToRestoreInLayout(runs, 'ws-a', ['products', 'agent-a'])
+    expect(split.restore.map((item) => item.id)).toEqual(['open'])
+    expect(split.stale.map((item) => item.id)).toEqual(['stale'])
   })
 
   it('keeps another workspace visible instead of dropping the tab', () => {

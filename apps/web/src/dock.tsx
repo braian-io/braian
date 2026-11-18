@@ -374,8 +374,23 @@ function SplitChild({
   const basis = `calc((100% - ${gaps}px) * ${ratio})`
   const flex = hasDetail ? '0 1' : '0 0'
   const pinnedPx = pinTree && index === 0 ? pinnedTreeWidthPx(frame.agentTreePin, pinTreeRatio) : null
-  const cellStyle: CSSProperties =
-    pinnedPx != null
+  const closedAgentShell =
+    child.type === 'tabs'
+    && views(child).length === 0
+    && index === 1
+    && node.dir === 'horizontal'
+    && node.children.length === 2
+    && node.children[0]?.type === 'split'
+  const cellStyle: CSSProperties = closedAgentShell
+    ? {
+        flex: '0 0 0px',
+        width: 0,
+        minWidth: 0,
+        maxWidth: 0,
+        overflow: 'hidden',
+        pointerEvents: 'none',
+      }
+    : pinnedPx != null
       ? {
           flex: `0 0 ${pinnedPx}px`,
           width: `${pinnedPx}px`,
