@@ -1,5 +1,5 @@
 import { Command as CommandPrimitive } from 'cmdk'
-import { forwardRef, useEffect, useLayoutEffect, useRef, type ComponentProps } from 'react'
+import { forwardRef, useLayoutEffect, useRef, type ComponentProps } from 'react'
 import { cn } from '@/lib/utils'
 
 export function Command({ className, ...props }: ComponentProps<typeof CommandPrimitive>) {
@@ -61,28 +61,8 @@ export const CommandInput = forwardRef<
 export const CommandList = forwardRef<
   HTMLDivElement,
   ComponentProps<typeof CommandPrimitive.List>
->(function CommandList({ className, id, ...props }, ref) {
-  const nodeRef = useRef<HTMLDivElement | null>(null)
-  // cmdk stamps its own useId() onto the list after our id prop, so #palette-list
-  // would not exist. Put the caller's id back after that render and after cmdk's effects.
-  const pinId = () => {
-    const node = nodeRef.current
-    if (id && node && node.id !== id) node.id = id
-  }
-  useLayoutEffect(pinId)
-  useEffect(pinId)
-  return (
-    <CommandPrimitive.List
-      {...props}
-      id={id}
-      ref={(node) => {
-        nodeRef.current = node
-        if (typeof ref === 'function') ref(node)
-        else if (ref) ref.current = node
-      }}
-      className={cn('palette-list', className)}
-    />
-  )
+>(function CommandList({ className, ...props }, ref) {
+  return <CommandPrimitive.List ref={ref} className={cn('palette-list', className)} {...props} />
 })
 
 export function CommandEmpty({ ...props }: ComponentProps<typeof CommandPrimitive.Empty>) {

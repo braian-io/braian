@@ -203,7 +203,7 @@ test.describe('palette keyboard scroll keeps the active row visible', () => {
       await focusMainTable(page)
       await page.keyboard.press('Control+k')
       const palette = page.getByTestId('command-palette')
-      const rootList = palette.locator('#palette-list')
+      const rootList = palette.getByTestId('palette-list')
       await expect(palette).toBeVisible()
       await waitForStableOptions(palette)
 

@@ -1603,7 +1603,7 @@ export function CommandPalette({
             ) : null}
           </div>
         ) : (
-            <CommandList ref={paletteListRef} id="palette-list" role="listbox">
+            <CommandList ref={paletteListRef} id="palette-list" data-testid="palette-list" role="listbox">
               {showEmpty ? (
                 <p className="palette-empty" data-testid="palette-empty">No results for &quot;{query.trim()}&quot;</p>
               ) : null}
