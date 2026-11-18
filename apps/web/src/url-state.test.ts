@@ -329,4 +329,22 @@ describe('URL sync', () => {
       replace: true,
     })
   })
+
+  it('pushes the next object change when arrowing at the edge did not mark replace', () => {
+    const hook = setup({
+      search: { ws: 'w1', view: 'v1', catalog: 'master', object: 'o1' },
+      state: { ...base, objectId: 'o1' },
+    })
+    hook.navigate.mockClear()
+
+    hook.rerender({
+      search: { ws: 'w1', view: 'v1', catalog: 'master', object: 'o1' },
+      state: { ...base, objectId: 'o2' },
+      ready: true,
+    })
+    expect(hook.navigate).toHaveBeenCalledWith({
+      search: { ws: 'w1', view: 'v1', catalog: 'master', object: 'o2' },
+      replace: false,
+    })
+  })
 })

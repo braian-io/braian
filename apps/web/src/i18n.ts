@@ -506,6 +506,7 @@ export const copy = {
   graphEmpty: 'Select an object to see its graph.',
   graphLoading: 'Drawing the graph…',
   graphError: 'The graph could not be loaded.',
+  detailLoadFailed: 'Could not load this object.',
   attributeProvenance: 'Attribute provenance',
   moreActions: 'More actions',
   chooseFile: 'Choose file',

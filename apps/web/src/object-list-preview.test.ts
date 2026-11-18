@@ -44,7 +44,7 @@ describe('object list preview', () => {
     expect(preview.id).toBe('obj-1')
     expect((preview.values as Json).number).toBe('ART-1')
     expect(((preview.values as Json).name as Json).en).toBe('Demo')
-    expect((preview.values as Json).description).toEqual({ en: 'Blurb' })
+    expect((preview.values as Json).description).toBeUndefined()
     expect(isListPreview(preview)).toBe(true)
   })
 

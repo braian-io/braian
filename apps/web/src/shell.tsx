@@ -17,7 +17,7 @@ import { CatalogSelector } from './catalog-selector'
 import { api, freeObject, jsonRecord, keepaliveJsonPut, operationId, recordTitle, textValue, type Json } from './api'
 import { AssortmentList, SelectionHost } from './assortments'
 import { humanizeLive, liveOperation, objectIdFromLive } from './activity'
-import { loadObjectDetail, objectQueryStaleTime } from './object-list-preview'
+import { isListPreview, loadObjectDetail, objectQueryStaleTime } from './object-list-preview'
 import { markObjectGone, objectFetchQueryOptions } from './object-gone'
 import { useObjectLand } from './use-object-land'
 import { ImportScreen } from './import/view'
@@ -477,11 +477,11 @@ export function Shell() {
   })
   const { settled: objectFetchSettled } = useObjectLand(objectId)
   const openedPreview = queryClient.getQueryData(['object', objectId])
-  const opened = useQuery({
+  const opened = useQuery<Json, Error>({
     queryKey: ['object', objectId],
-    queryFn: () => loadObjectDetail(queryClient, objectId ?? ''),
+    queryFn: ({ signal }) => loadObjectDetail(queryClient, objectId ?? '', signal),
     enabled: Boolean(objectId) && objectFetchSettled,
-    placeholderData: () => queryClient.getQueryData(['object', objectId]),
+    placeholderData: () => queryClient.getQueryData<Json>(['object', objectId]),
     ...objectFetchQueryOptions(),
     staleTime: objectQueryStaleTime(openedPreview),
   })
@@ -532,7 +532,12 @@ export function Shell() {
     viewTypeKey: (id) => urlObjectTypeKey(id, null, urlViews),
     objectId,
     objectKey,
-    objectLoaded: Boolean(objectId && opened.isSuccess && opened.data?.id === objectId),
+    objectLoaded: Boolean(
+      objectId
+      && opened.isSuccess
+      && opened.data?.id === objectId
+      && !isListPreview(opened.data),
+    ),
     navigate: (next) => {
       void navigate({ to: '/', search: next.search, replace: next.replace })
     },

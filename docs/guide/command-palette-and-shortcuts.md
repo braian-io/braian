@@ -134,7 +134,8 @@ Some keys belong to a view rather than to the app:
 
 - **Object table.** Arrow keys select the row and update Detail immediately. Fast
   arrowing still shows every highlight; only the network fetch for the full object is
-  debounced to the row you land on. `Enter` or `Space` confirms the focused row, and
+  debounced to the row you land on. A failed full load shows **Retry** in Detail; Save
+  stays off until the body is loaded. `Enter` or `Space` confirms the focused row, and
   `Shift` plus an arrow key extends the selection. `←` and `→` move the active column.
   `Shift+F10` or the context-menu key opens the row menu. Double-click a
   cell to edit it, and press `/` to focus the quick filter.

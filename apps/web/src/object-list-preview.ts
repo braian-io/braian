@@ -55,14 +55,6 @@ export function buildListPreviewFromRow(
       }
     }
   }
-  for (const attribute of ((defs?.attributes as Json[] | undefined) ?? [])) {
-    const key = String(attribute.key ?? '')
-    if (!key || values[key] != null) continue
-    const text = readIndexed(row.doc, defs, key)
-    if (!text) continue
-    if (attribute.language_dependent) values[key] = { [language]: text }
-    else values[key] = text
-  }
   return {
     id: row.id,
     key: row.key,
@@ -83,10 +75,18 @@ export function seedObjectListPreview(queryClient: QueryClient, preview: Json): 
   queryClient.setQueryData(queryKey, preview)
 }
 
-export async function loadObjectDetail(queryClient: QueryClient, id: string): Promise<Json> {
+export async function loadObjectDetail(
+  queryClient: QueryClient,
+  id: string,
+  signal?: AbortSignal,
+): Promise<Json> {
   try {
-    return reconcileObjectWrite(id, await api.get('/v1/objects/{id}', { params: { path: { id } } }))
+    return reconcileObjectWrite(id, await api.get('/v1/objects/{id}', {
+      params: { path: { id } },
+      signal,
+    }))
   } catch (reason) {
+    if (signal?.aborted) throw reason
     if (objectGone(reason)) markObjectGone(queryClient, id)
     throw reason
   }
@@ -103,7 +103,7 @@ export function prefetchObjectDetails(queryClient: QueryClient, ids: string[]): 
     const cached = queryClient.getQueryData(['object', id])
     void queryClient.prefetchQuery({
       queryKey: ['object', id],
-      queryFn: () => loadObjectDetail(queryClient, id),
+      queryFn: ({ signal }) => loadObjectDetail(queryClient, id, signal),
       ...objectFetchQueryOptions(),
       staleTime: objectQueryStaleTime(cached),
     })
