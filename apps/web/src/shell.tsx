@@ -63,7 +63,7 @@ import { prepareFeedbackCapture, type FeedbackCapture } from './feedback'
 import { AgentPresence } from './agent-presence'
 import { AgentView } from './agent-view'
 import { AgentsTable } from './agents-table'
-import { agentDockTabSessionLabel, agentRunPrompt, agentRunsForWorkspace, agentRunsToRestoreInLayout, backToMySessionEvent, listAgentRuns, openAgentEvent, openAgentsTableEvent, patchAgentRun, requestBackToMySession, showAgentSessionEvent, takeOverAgentRun, type AgentMessage, type AgentRunSummary } from './agent-runs'
+import { agentDockTabSessionLabel, agentRunPrompt, agentRunsForWorkspace, agentRunsToRestoreInLayout, backToMySessionEvent, listAgentRuns, openAgentEvent, openAgentsTableEvent, patchAgentRun, requestBackToMySession, showAgentSessionEvent, staleAgentTabsWhenLayoutReady, takeOverAgentRun, type AgentMessage, type AgentRunSummary } from './agent-runs'
 import { agentSessionLayout, controllingAgentRuns, holdLayoutFlush, layoutFlushHeld, layoutSaveBlocked, agentMarkerViewIds, setViewingAgentRun, subscribeViewingAgent, viewingAgentRunId } from './agent-session'
 import { CommandPalette } from './palette'
 import { focusAfterMenuTab } from './menu-keyboard'
@@ -314,6 +314,9 @@ export function Shell() {
   const mineDocRef = useRef<LayoutDoc | null>(null)
   const viewingRunId = useSyncExternalStore(subscribeViewingAgent, viewingAgentRunId, viewingAgentRunId)
   const restoredAgents = useRef<string | null>(null)
+  // Empty until GET /v1/workspaces/{id}/state has been applied. The first painted
+  // doc can be the canonical layout, which does not contain this browser's tabs.
+  const [personalLayoutStamp, setPersonalLayoutStamp] = useState('')
   const applyViewTypeSourceRef = useRef<(typeId: string, viewId?: string) => Promise<void>>(async () => undefined)
   const applyViewPeerSourceRef = useRef<(peerViewId: string, viewId?: string, linkType?: string) => Promise<void>>(async () => undefined)
   const autoLinkStructureTreeRef = useRef<(treeViewId: string) => Promise<void>>(async () => undefined)
@@ -797,19 +800,22 @@ export function Shell() {
   useEffect(() => {
     const surface = workspace.data
     if (!surface || !doc || !userId) return
+    const personalLayoutLoaded = personalLayoutStamp === `${userId}:${surface.id}`
+    if (!personalLayoutLoaded) return
     if (restoredAgents.current === surface.id) return
     restoredAgents.current = surface.id
+    const openViewIds = layoutViews(doc.layout)
     void listAgentRuns()
       .then((runs) => {
-        const openViewIds = layoutViews(doc.layout)
-        const { restore, stale } = agentRunsToRestoreInLayout(runs, surface.id, openViewIds)
+        const { restore } = agentRunsToRestoreInLayout(runs, surface.id, openViewIds)
+        const stale = staleAgentTabsWhenLayoutReady(runs, surface.id, openViewIds, true)
         for (const run of stale) {
           void patchAgentRun(run.id, { tab_open: false }).catch((reason: unknown) => reportWriteError(reason))
         }
         for (const run of restore) openAgentRunRef.current(run)
       })
       .catch((reason: unknown) => reportWriteError(reason))
-  }, [workspace.data, doc, userId])
+  }, [workspace.data, doc, userId, personalLayoutStamp])
 
   useEffect(() => {
     const onRun = (event: Event) => {
@@ -977,6 +983,7 @@ export function Shell() {
     const stamp = `${userId}:${workspaceId}`
     if (loadedFor.current === stamp) return
     loadedFor.current = stamp
+    setPersonalLayoutStamp('')
     const key = layoutStorageKey(userId, workspaceId)
     const canonical = canonicalDoc(current)
     canonicalRef.current = canonical.layout
@@ -1041,6 +1048,7 @@ export function Shell() {
         dirtyRef.current = diverged
         if (diverged) saveGen.current += 1
         setDoc(next)
+        setPersonalLayoutStamp(stamp)
         writeLayoutStore(key, next)
       })
       .catch((reason: unknown) => {
@@ -1470,6 +1478,7 @@ export function Shell() {
           docRef.current = next
           dirtyRef.current = false
           setDoc(next)
+          if (userId) setPersonalLayoutStamp(`${userId}:${current.id}`)
           canonicalRef.current = next.layout
           if (userId) {
             loadedFor.current = `${userId}:${current.id}`

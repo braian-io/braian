@@ -300,6 +300,60 @@ it('does not mark the agent dock wrapper as a detail split', () => {
   expect(outerCells.map((cell) => cell.style.flex.split(' ').slice(0, 2).join(' '))).toEqual(['0 0', '0 0'])
 })
 
+it('keeps the same agent shell cell when the dock closes', () => {
+  const views = [
+    { id: 'products', title: 'Products', type: 'object_table' },
+    { id: 'detail', title: 'Detail', type: 'object_detail' },
+    { id: 'agent', title: 'Ask', type: 'agent' },
+  ]
+  const catalog = {
+    type: 'split' as const,
+    dir: 'horizontal' as const,
+    ratios: [0.6, 0.4],
+    children: [
+      { type: 'tabs' as const, views: ['products'], active: 0 },
+      { type: 'tabs' as const, views: ['detail'], active: 0 },
+    ],
+  }
+  const open: LayoutDoc = {
+    id: 'ws',
+    title: 'Products',
+    layout: {
+      type: 'split',
+      dir: 'horizontal',
+      ratios: [0.7, 0.3],
+      children: [catalog, { type: 'tabs', views: ['agent'], active: 0 }],
+    },
+    focus: 'agent',
+  }
+  const closed: LayoutDoc = {
+    ...open,
+    focus: 'products',
+    layout: {
+      type: 'split',
+      dir: 'horizontal',
+      ratios: [1, 0],
+      children: [catalog, { type: 'tabs', views: [], active: 0 }],
+    },
+  }
+  const { container, rerender } = render(
+    <WorkspaceDock doc={open} views={views} onChange={() => undefined} renderView={() => <div />} onAddView={() => undefined} />,
+  )
+  const cell = container.querySelector<HTMLElement>('[data-agent-dock-cell="true"]')
+  expect(cell).toBeTruthy()
+  ;(cell as HTMLElement & { __row281?: number }).__row281 = 281
+  expect(container.querySelector('[data-agent-shell="true"]')).toBeTruthy()
+  rerender(
+    <WorkspaceDock doc={closed} views={views} onChange={() => undefined} renderView={() => <div />} onAddView={() => undefined} />,
+  )
+  const again = container.querySelector<HTMLElement>('[data-agent-dock-cell="true"]')
+  expect(again).toBe(cell)
+  expect((again as HTMLElement & { __row281?: number }).__row281).toBe(281)
+  expect(again?.style.width).toBe('0px')
+  expect(container.querySelector('[data-agent-shell="true"]')).toBeTruthy()
+  expect(container.querySelector('[data-agent-dock="true"]')).toBeNull()
+})
+
 it('keeps the full tab title on the truncated tab button', () => {
   const title = 'A very long view title that the tab strip truncates'
   render(

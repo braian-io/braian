@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { agentDisplayTitleFallback, agentDockTabSessionLabel, agentNoticeText, agentNotices, agentPaletteRows, agentRunPrompt, agentRunSearchHaystack, agentRunsForWorkspace, agentRunsToRestoreInLayout, agentSessionAccessibleDescription, agentSessionHeaderTitle, agentStatusLabel, agentTabTitle, agentViewTabPrompt, agentsPaletteRoot, backgroundNotices, backgroundWorkingCount, cleanAgentError, mergeRunSummary, sortAgentRuns, type AgentRunSummary } from './agent-runs'
+import { agentDisplayTitleFallback, agentDockTabSessionLabel, agentNoticeText, agentNotices, agentPaletteRows, agentRunPrompt, agentRunSearchHaystack, agentRunsForWorkspace, agentRunsToRestoreInLayout, staleAgentTabsWhenLayoutReady, agentSessionAccessibleDescription, agentSessionHeaderTitle, agentStatusLabel, agentTabTitle, agentViewTabPrompt, agentsPaletteRoot, backgroundNotices, backgroundWorkingCount, cleanAgentError, mergeRunSummary, sortAgentRuns, type AgentRunSummary } from './agent-runs'
 
 function run(patch: Partial<AgentRunSummary>): AgentRunSummary {
   return {
@@ -28,6 +28,13 @@ describe('agent run presentation', () => {
     expect(cleanAgentError('openai error: the model request failed (status 500)')).toBe(
       'The model request failed. Try again, or check the AI settings.',
     )
+  })
+
+  it('does not close agent tabs before the personal layout has loaded', () => {
+    const runs = [run({ id: 'kept', view_id: 'agent-a', workspace_id: 'ws-a' })]
+    expect(staleAgentTabsWhenLayoutReady(runs, 'ws-a', [], false)).toEqual([])
+    expect(staleAgentTabsWhenLayoutReady(runs, 'ws-a', [], true).map((item) => item.id)).toEqual(['kept'])
+    expect(staleAgentTabsWhenLayoutReady(runs, 'ws-a', ['agent-a'], true)).toEqual([])
   })
 
   it('only restores tab_open runs whose agent view is open in the layout', () => {

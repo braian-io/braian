@@ -7,6 +7,7 @@ import {
   clampSheetBoxes,
   detailPlacement,
   fitCamera,
+  graphAutoRefit,
   graphDensity,
   inspectorChrome,
   legendLayout,
@@ -20,6 +21,13 @@ import {
 } from './graph-chrome'
 
 const bounds = { minX: -100, minY: -80, maxX: 100, maxY: 80 }
+
+describe('graph camera ownership', () => {
+  it('skips automatic refit after the user has panned, dragged or zoomed', () => {
+    expect(graphAutoRefit(false)).toBe(true)
+    expect(graphAutoRefit(true)).toBe(false)
+  })
+})
 
 describe('graph pane breakpoint', () => {
   it('treats panes under 720px as narrow and the rest as wide', () => {

@@ -19,7 +19,7 @@ describe('Detail width layout (row 239)', () => {
     )
   })
 
-  it('lays out the agent dock with flex splits instead of overlaying the catalog', () => {
+  it('keeps a wide agent dock in the flex split and overlays it below 1360px', () => {
     expect(css).not.toMatch(/split-catalog-frozen/)
     expect(css).not.toMatch(/data-catalog-scale/)
     expect(css).not.toMatch(/translateX\(18px\)/)
@@ -30,10 +30,15 @@ describe('Detail width layout (row 239)', () => {
       /\.dock-root > \.split\.horizontal\[data-agent-dock='true'\] \.split\[data-has-detail='true'\]\s*\{[^}]*container-type:\s*normal/,
     )
     expect(css).toMatch(
-      /@media \(min-width:\s*1360px\)\s*\{[\s\S]*?min-width:\s*360px/,
+      /@media \(min-width:\s*1280px\)\s*\{[\s\S]*?min-width:\s*360px/,
+    )
+    expect(css).not.toMatch(/@media \(min-width:\s*1360px\)\s*\{[\s\S]*?min-width:\s*360px/)
+    expect(css).toMatch(/\.split-agent-overlay\s*\{[^}]*position:\s*relative/)
+    expect(css).toMatch(
+      /\.dock-root > \.split\.horizontal\[data-agent-dock='true'\] > \.split-cell[\s\S]*?transition:[^;]*var\(--dur\)/,
     )
     expect(css).toMatch(
-      /\.dock-root > \.split\.horizontal\[data-agent-dock='true'\] > \.split-cell\s*\{[^}]*transition:[^}]*var\(--dur\)/,
+      /\.dock-root > \.split\.horizontal\[data-agent-shell='true'\] > \.split-cell[\s\S]*?transition:[^;]*var\(--dur\)/,
     )
     expect(css).toMatch(
       /\.dock-root > \.split\.horizontal\[data-tree-pinned='true'\] > \.split-cell\s*\{[^}]*transition:/,

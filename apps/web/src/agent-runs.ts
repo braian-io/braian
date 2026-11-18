@@ -431,6 +431,21 @@ export function agentPaletteRows(runs: AgentRunSummary[]): PaletteItem[] {
   })
 }
 
+/**
+ * Tabs to close because their view is not in the layout.
+ * A new browser paints the canonical layout before the personal document
+ * arrives; closing tabs in that window drops runs the user still had open.
+ */
+export function staleAgentTabsWhenLayoutReady(
+  runs: AgentRunSummary[],
+  workspaceId: string,
+  openViewIds: readonly string[],
+  personalLayoutLoaded: boolean,
+): AgentRunSummary[] {
+  if (!personalLayoutLoaded) return []
+  return agentRunsToRestoreInLayout(runs, workspaceId, openViewIds).stale
+}
+
 /** Foreground runs with tab_open whose agent view is actually open in the layout. */
 export function agentRunsToRestoreInLayout(
   runs: AgentRunSummary[],

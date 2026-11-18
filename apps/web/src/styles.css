@@ -468,9 +468,28 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
     min-width: 440px;
   }
 }
-/* Edge-docked agent chat: catalog and agent share the dock width via flex splits. */
-.dock-root > .split.horizontal[data-agent-dock='true'] > .split-cell {
-  transition: flex-basis var(--dur) var(--ease), width var(--dur) var(--ease), max-width var(--dur) var(--ease);
+/* Edge-docked agent chat: catalog and agent share the dock width via flex splits.
+   The shell attribute stays on after the agent view is removed, so the same
+   transition is still in force on the frame that sets the column to 0. */
+.dock-root > .split.horizontal[data-agent-dock='true'] > .split-cell,
+.dock-root > .split.horizontal[data-agent-shell='true'] > .split-cell {
+  transition: flex-basis var(--dur) var(--ease), width var(--dur) var(--ease), max-width var(--dur) var(--ease), min-width var(--dur) var(--ease);
+}
+/* Below 1360 the flex share cannot keep Detail at 360px and Products within 25%
+   of its closed width. The dock overlays the catalog instead of taking a column. */
+.dock-root > .split.horizontal.split-agent-overlay {
+  position: relative;
+}
+.dock-root > .split.horizontal.split-agent-overlay > .split-divider {
+  flex: 0 0 0px;
+  width: 0;
+  min-width: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.dock-root > .split.horizontal.split-agent-overlay[data-agent-dock='true'] > .split-cell[data-agent-dock-cell] {
+  background: var(--panel);
+  box-shadow: -8px 0 24px #00000033;
 }
 .dock-root > .split.horizontal[data-tree-pinned='true'] > .split-cell {
   transition: flex-basis var(--dur) var(--ease), width var(--dur) var(--ease), max-width var(--dur) var(--ease);
@@ -491,7 +510,7 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
   > .split-cell:has(.pane-tab[data-view-type='object_table'].active):not(:has(.split)) {
   min-width: 0;
 }
-@media (min-width: 1360px) {
+@media (min-width: 1280px) {
   .dock-root > .split.horizontal[data-agent-dock='true'] .split
     > .split-cell:has(.pane-tab[data-view-type='object_detail'].active):not(:has(.split)) {
     min-width: 360px;
@@ -1074,6 +1093,7 @@ select.link-type-line { width: 100%; font-weight: 600; }
 @media (prefers-reduced-motion: reduce) {
   .dock-preview, .split-divider > span,
   .dock-root > .split.horizontal[data-agent-dock='true'] > .split-cell,
+  .dock-root > .split.horizontal[data-agent-shell='true'] > .split-cell,
   .dock-root > .split.horizontal[data-tree-pinned='true'] > .split-cell { transition: none; }
 }
 

@@ -194,6 +194,25 @@ async function previewZoom(page: Page) {
   return Number(await graphCanvas(page).getAttribute('data-zoom'))
 }
 
+async function camera(page: Page) {
+  const canvas = graphCanvas(page)
+  return {
+    k: Number(await canvas.getAttribute('data-zoom')),
+    x: Number(await canvas.getAttribute('data-camera-x')),
+    y: Number(await canvas.getAttribute('data-camera-y')),
+  }
+}
+
+function expectCameraHeld(
+  before: { k: number; x: number; y: number },
+  after: { k: number; x: number; y: number },
+  when: string,
+) {
+  expect(after.k, `zoom stays after ${when}`).toBeCloseTo(before.k, 2)
+  expect(after.x, `camera x stays after ${when}`).toBeCloseTo(before.x, 0)
+  expect(after.y, `camera y stays after ${when}`).toBeCloseTo(before.y, 0)
+}
+
 async function visibleNodeBoxes(page: Page) {
   return page
     .getByTestId('graph-nodes')
@@ -576,4 +595,82 @@ test('right-click on empty canvas never opens Chrome menu and Esc leaves a focus
     // "or nothing" is allowed, but never Chrome's own menu (proven above).
     await expect(menu).toHaveCount(0)
   }
+})
+
+test('refit is skipped after the user has panned, dragged or zoomed', async ({ page }) => {
+  test.setTimeout(180_000)
+  await login(page)
+  await applyLayout(page, wideGraphLayout)
+  await openGraph(page, 'Products', PRODUCT.key)
+
+  const fitted = await camera(page)
+  const canvas = (await graphCanvas(page).boundingBox())!
+  const nodes = await page.getByTestId('graph-nodes').locator('[data-node-id][data-x]').evaluateAll((elements) =>
+    elements.map((element) => ({
+      x: Number(element.getAttribute('data-x')),
+      y: Number(element.getAttribute('data-y')),
+      r: Number(element.getAttribute('data-r')),
+    })),
+  )
+  const covered = await page.evaluate(() => {
+    const boxes: Array<{ x: number; y: number; width: number; height: number }> = []
+    for (const element of Array.from(document.querySelectorAll('.graph-inspector, .graph-legend'))) {
+      const rect = element.getBoundingClientRect()
+      if (rect.width > 0 && rect.height > 0) boxes.push({ x: rect.left, y: rect.top, width: rect.width, height: rect.height })
+    }
+    return boxes
+  })
+  let origin: { x: number; y: number } | undefined
+  for (let y = canvas.y + 24; y < canvas.y + canvas.height - 24 && !origin; y += 18) {
+    for (let x = canvas.x + 24; x < canvas.x + canvas.width - 24; x += 18) {
+      const onChrome = covered.some((box) => x >= box.x && x <= box.x + box.width && y >= box.y && y <= box.y + box.height)
+      const near = nodes.some((node) => Math.hypot(node.x - x, node.y - y) < node.r + 36)
+      if (!onChrome && !near) {
+        origin = { x, y }
+        break
+      }
+    }
+  }
+  expect(origin, 'an empty canvas point to pan from').toBeTruthy()
+  await page.mouse.move(origin!.x, origin!.y)
+  await page.mouse.down()
+  await page.mouse.move(origin!.x + 120, origin!.y + 70, { steps: 12 })
+  await page.mouse.up()
+  const panned = await camera(page)
+  expect(
+    Math.hypot(panned.x - fitted.x, panned.y - fitted.y),
+    'panning moves the camera (movedRef)',
+  ).toBeGreaterThan(20)
+  await page.setViewportSize({ width: 1180, height: 820 })
+  await page.waitForTimeout(400)
+  expectCameraHeld(panned, await camera(page), 'a resize that follows a pan')
+
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.getByTestId('graph-relayout').click()
+  await waitGraph(page)
+  const marker = await nodeMarker(page, `object:${PRODUCT.id}`)
+  await page.mouse.move(marker.x, marker.y)
+  await page.mouse.down()
+  await page.mouse.move(marker.x + 70, marker.y + 36, { steps: 12 })
+  await page.mouse.up()
+  await waitGraph(page)
+  const dragged = await camera(page)
+  await page.setViewportSize({ width: 1200, height: 860 })
+  await page.waitForTimeout(400)
+  expectCameraHeld(dragged, await camera(page), 'a resize that follows a node drag')
+
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.getByTestId('graph-relayout').click()
+  await waitGraph(page)
+  const refitted = await camera(page)
+  await setZoomWithWheel(page, false)
+  const zoomed = await camera(page)
+  expect(Math.abs(zoomed.k - refitted.k) / refitted.k, 'the wheel zoom leaves the fitted scale').toBeGreaterThan(0.02)
+  await page.getByRole('button', { name: 'Open full size', exact: true }).click()
+  await expect(page.getByTestId('graph-full')).toBeVisible()
+  await page.waitForTimeout(400)
+  expectCameraHeld(zoomed, await camera(page), 'full size that follows a zoom')
+  await page.getByRole('button', { name: 'Close full size', exact: true }).click()
+  await page.waitForTimeout(400)
+  expectCameraHeld(zoomed, await camera(page), 'leaving full size after a zoom')
 })

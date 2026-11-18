@@ -195,6 +195,15 @@ function anchorEdge(box: Box, stage: { width: number; height: number }): 'left' 
   return pool[0] ?? 'bottom'
 }
 
+/**
+ * Automatic fit (resize, fullscreen, inspector growth, late captions) runs only
+ * while the camera is still the system's. Pan, node drag and wheel zoom set
+ * `movedByUser` and the camera stays where the user left it.
+ */
+export function graphAutoRefit(movedByUser: boolean): boolean {
+  return !movedByUser
+}
+
 /** Place the camera so the bounds sit in the free frame, not under the chrome. */
 export function fitCamera(input: {
   frame: GraphFrame

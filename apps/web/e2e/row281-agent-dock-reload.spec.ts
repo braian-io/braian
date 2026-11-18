@@ -114,10 +114,8 @@ function expectAnchorsStable(
 
 async function productsScrollState(page: Page, table: Locator) {
   return table.evaluate((root) => {
-    const scroller =
-      root.querySelector('.table-wrap')
-      ?? root.closest('.pane-body')
-      ?? root
+    const grid = root.querySelector('.grid')
+    const scroller = (grid ?? root.querySelector('.table-wrap') ?? root.closest('.pane-body') ?? root) as HTMLElement
     const selected = root.querySelector('[data-testid="object-row"][aria-selected="true"]')
       ?? root.querySelector('[data-testid="object-row"].selected')
       ?? root.querySelector('[data-testid="object-row"].active')
@@ -130,23 +128,130 @@ async function productsScrollState(page: Page, table: Locator) {
   })
 }
 
-async function assertProductsPaneState(
+/** Scroll the real grid and tag the pane so a remount cannot pass as "still there". */
+async function pinProductsPane(page: Page) {
+  const pinned = await paneWithTab(page, 'Products').evaluate((root) => {
+    const grid = root.querySelector('.grid') as HTMLElement | null
+    const scroller = grid && grid.scrollHeight > grid.clientHeight + 8 ? grid : (root.querySelector('.pane-body') as HTMLElement | null)
+    if (!scroller) return { scrollTop: 0, max: 0 }
+    const max = scroller.scrollHeight - scroller.clientHeight
+    scroller.scrollTop = Math.min(360, max)
+    root.dataset.row281Pane = 'live'
+    ;(root as HTMLElement & { __row281?: number }).__row281 = 281
+    if (grid) (grid as HTMLElement & { __row281?: number }).__row281 = 281
+    return { scrollTop: scroller.scrollTop, max }
+  })
+  expect(pinned.max, 'Products pane has somewhere to scroll').toBeGreaterThan(0)
+  expect(pinned.scrollTop, 'Products scroll starts below the top').toBeGreaterThan(0)
+  return pinned
+}
+
+async function assertProductsPaneIdentity(page: Page, when: string) {
+  const alive = await paneWithTab(page, 'Products').evaluate((root) => {
+    const grid = root.querySelector('.grid') as (HTMLElement & { __row281?: number }) | null
+    const node = root as HTMLElement & { __row281?: number }
+    return {
+      pane: node.dataset.row281Pane === 'live' && node.__row281 === 281,
+      grid: grid?.__row281 === 281,
+      scrollTop: grid?.scrollTop ?? 0,
+    }
+  })
+  expect(alive.pane, `Products pane node survives when the agent ${when}`).toBe(true)
+  expect(alive.grid, `Products grid node survives when the agent ${when}`).toBe(true)
+  expect(alive.scrollTop, `Products scroll stays below the top when the agent ${when}`).toBeGreaterThan(0)
+}
+
+async function assertProductsRow(
   page: Page,
-  before: { scrollTop: number; rowId: string },
+  before: { rowId: string },
   when: string,
 ) {
   const table = mainTable(page, 'Products')
   const after = await productsScrollState(page, table)
   expect(after.rowId, `selected Products row survives when the agent ${when}`).toBe(before.rowId)
   expect(after.rowId.length, `Products row id must be set when the agent ${when}`).toBeGreaterThan(0)
-  expect(Math.abs(after.scrollTop - before.scrollTop), `Products scroll survives when the agent ${when}`).toBeLessThan(8)
+}
+
+async function paneWidth(page: Page, title: string) {
+  const box = await paneWithTab(page, title).boundingBox()
+  expect(box, `${title} pane has a layout box`).toBeTruthy()
+  return box!.width
+}
+
+/** Open or close the dock and require a real width transition, unless reduced motion is on. */
+async function toggleAgentDock(page: Page, mode: 'open' | 'close') {
+  const reduced = await page.evaluate(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+  await page.evaluate(() => {
+    const host = window as Window & {
+      __dockToken?: number
+      __dock?: { duration: number; widths: number[] } | null
+      __dockListen?: boolean
+    }
+    if (!host.__dockListen) {
+      host.__dockListen = true
+      document.addEventListener('transitionrun', (event) => {
+        const token = host.__dockToken ?? 0
+        const target = event.target
+        if (!(target instanceof HTMLElement) || target.dataset.agentDockCell !== 'true') return
+        if (event.propertyName !== 'width' && event.propertyName !== 'flex-basis' && event.propertyName !== 'max-width') return
+        if (event.timeStamp + 30 < token) return
+        const duration = Number.parseFloat(getComputedStyle(target).transitionDuration) || 0
+        const bucket = (host.__dock ??= { duration: 0, widths: [] })
+        bucket.duration = Math.max(bucket.duration, duration)
+        bucket.widths.push(target.getBoundingClientRect().width)
+        const sample = () => {
+          bucket.widths.push(target.getBoundingClientRect().width)
+          if (bucket.widths.length < 10) requestAnimationFrame(sample)
+        }
+        requestAnimationFrame(sample)
+      }, true)
+    }
+    host.__dockToken = performance.now()
+    host.__dock = { duration: 0, widths: [] }
+  })
+  const before = await page.locator('[data-agent-dock-cell]').evaluate((el) => ({
+    width: el.getBoundingClientRect().width,
+    duration: Number.parseFloat(getComputedStyle(el).transitionDuration) || 0,
+  })).catch(() => ({ width: 0, duration: 0 }))
+  await page.keyboard.press('Control+j')
+  if (mode === 'close') await expect(page.getByTestId('agent-view')).toHaveCount(0)
+  else await expect(page.getByTestId('agent-view').last()).toBeVisible({ timeout: 30_000 })
+  if (reduced) {
+    await page.waitForTimeout(80)
+    const seen = await page.evaluate(() => (window as Window & { __dock?: { widths: number[] } | null }).__dock)
+    expect(seen?.widths.length ?? 0, 'reduced motion does not run a dock width transition').toBe(0)
+    const duration = await page.locator('[data-agent-dock-cell]').evaluate((el) => (
+      Number.parseFloat(getComputedStyle(el).transitionDuration) || 0
+    ))
+    expect(duration, 'reduced motion sets the dock transition duration to 0').toBe(0)
+    return
+  }
+  expect(before.duration, `dock transition duration is set before it ${mode}s`).toBeGreaterThan(0)
+  await page.waitForFunction(
+    () => ((window as Window & { __dock?: { widths: number[] } }).__dock?.widths.length ?? 0) > 0,
+    null,
+    { timeout: 2_000 },
+  )
+  await page.waitForTimeout(200)
+  const seen = await page.evaluate(() => (
+    window as Window & { __dock?: { duration: number; widths: number[] } }
+  ).__dock)
+  expect(seen?.duration, `dock transition duration stays above 0 as it ${mode}s`).toBeGreaterThan(0)
+  const widths = [before.width, ...(seen?.widths ?? [])]
+  const low = Math.min(...widths)
+  const high = Math.max(...widths)
+  expect(high - low, `dock width moves when it ${mode}s`).toBeGreaterThan(24)
+  const mid = widths.some((value) => value > low + 8 && value < high - 8)
+  expect(
+    mid,
+    `dock ${mode} passes through an intermediate width (${widths.map((value) => Math.round(value)).join(',')})`,
+  ).toBe(true)
 }
 
 async function exerciseReloadCloseAt(page: Page, width: number, height: number) {
   await page.setViewportSize({ width, height })
   await login(page)
   const products = mainTable(page, 'Products')
-  const productsPane = paneWithTab(page, 'Products')
   const detailPane = page.locator('section.pane').filter({ has: page.getByTestId('object-detail') })
   const row = products.getByTestId('object-row').nth(8)
   await row.scrollIntoViewIfNeeded()
@@ -154,6 +259,7 @@ async function exerciseReloadCloseAt(page: Page, width: number, height: number) 
   await expect(detailPane).toBeVisible()
 
   const anchorsBefore = await anchorBoxes(page)
+  const productsClosed = await paneWidth(page, 'Products')
   const paneStateBeforeAgent = await productsScrollState(page, products)
 
   const prompt = `row281 reload pin ${width} ${Date.now().toString().slice(-5)}`
@@ -163,6 +269,20 @@ async function exerciseReloadCloseAt(page: Page, width: number, height: number) 
     await expect(agent).toBeVisible({ timeout: 30_000 })
     await expect(agent.getByTestId('agent-status')).toHaveAttribute('data-status', 'done', { timeout: 30_000 })
     await waitForAgentDockReflow(page)
+    const productsOpen = await paneWidth(page, 'Products')
+    const detailOpen = (await detailPane.boundingBox()) as Box
+    expect(detailOpen, `Detail has a box with the agent open at ${width}px`).toBeTruthy()
+    const loss = (productsClosed - productsOpen) / productsClosed
+    console.log(
+      `row281@${width} productsClosed=${productsClosed.toFixed(1)} productsOpen=${productsOpen.toFixed(1)} detail=${detailOpen.width.toFixed(1)} loss=${(loss * 100).toFixed(1)}%`,
+    )
+    expect(detailOpen.width, `Detail stays at least 360px with the agent open at ${width}px`).toBeGreaterThanOrEqual(360)
+    if (width <= 1359) {
+      expect(
+        loss,
+        `Products loses ${(loss * 100).toFixed(1)}% at ${width}px (closed ${productsClosed.toFixed(0)}px, open ${productsOpen.toFixed(0)}px)`,
+      ).toBeLessThanOrEqual(0.25)
+    }
     const savePromise = waitForLayoutSave(page)
     await page.locator('.pane-tab[data-view-type="agent"].active').last().click().catch(() => undefined)
     await savePromise
@@ -171,34 +291,48 @@ async function exerciseReloadCloseAt(page: Page, width: number, height: number) 
     await expect(page.locator('nav.tabs')).toBeVisible({ timeout: 60_000 })
     await expect(mainTable(page, 'Products').getByTestId('object-row').first()).toBeVisible({ timeout: 60_000 })
     await expect(page.getByTestId('agent-view').last()).toBeVisible({ timeout: 30_000 })
-    await assertProductsPaneState(page, paneStateBeforeAgent, 'reloads with the dock open')
+    await assertProductsRow(page, paneStateBeforeAgent, 'reloads with the dock open')
     const detailOpenAfterReload = (await detailPane.boundingBox()) as Box
+    const productsAfterReload = await paneWidth(page, 'Products')
     expect(detailOpenAfterReload).toBeTruthy()
-    const detailMinOpen = width >= 1360 ? 360 : 220
+    const lossAfterReload = (productsClosed - productsAfterReload) / productsClosed
+    console.log(
+      `row281@${width} after reload productsOpen=${productsAfterReload.toFixed(1)} detail=${detailOpenAfterReload.width.toFixed(1)} loss=${(lossAfterReload * 100).toFixed(1)}%`,
+    )
     expect(
       detailOpenAfterReload.width,
       `Detail keeps width with the agent open after reload at ${width}px`,
-    ).toBeGreaterThanOrEqual(detailMinOpen)
+    ).toBeGreaterThanOrEqual(360)
+    if (width <= 1359) {
+      expect(lossAfterReload, `Products width after reload at ${width}px`).toBeLessThanOrEqual(0.25)
+    }
 
-    await page.keyboard.press('Control+j')
-    await expect(page.getByTestId('agent-view')).toHaveCount(0)
+    await pinProductsPane(page)
+    await toggleAgentDock(page, 'close')
     await waitForAgentDockReflow(page)
 
     expectAnchorsStable(anchorsBefore, await anchorBoxes(page), `closes after reload at ${width}px`)
-    await assertProductsPaneState(page, paneStateBeforeAgent, 'closes after reload')
+    await assertProductsRow(page, paneStateBeforeAgent, 'closes after reload')
+    await assertProductsPaneIdentity(page, 'closes after reload')
 
-    await page.keyboard.press('Control+j')
-    await expect(page.getByTestId('agent-view').last()).toBeVisible({ timeout: 30_000 })
+    await toggleAgentDock(page, 'open')
     await waitForAgentDockReflow(page)
     const detailOpenAgain = (await detailPane.boundingBox()) as Box
     expect(detailOpenAgain).toBeTruthy()
     expect(
       detailOpenAgain.width,
       `Detail keeps width when the agent reopens after reload at ${width}px`,
-    ).toBeGreaterThanOrEqual(detailMinOpen)
+    ).toBeGreaterThanOrEqual(360)
     expectAnchorsStable(anchorsBefore, await anchorBoxes(page), `opens again at ${width}px after reload`)
-    await assertProductsPaneState(page, paneStateBeforeAgent, 'opens again after reload')
+    await assertProductsRow(page, paneStateBeforeAgent, 'opens again after reload')
+    await assertProductsPaneIdentity(page, 'opens again after reload')
+
+    if (width === 1280) {
+      await page.emulateMedia({ reducedMotion: 'reduce' })
+      await toggleAgentDock(page, 'close')
+    }
   } finally {
+    await page.emulateMedia({ reducedMotion: 'no-preference' }).catch(() => undefined)
     await cleanupDrafts(page)
   }
 }

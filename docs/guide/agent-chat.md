@@ -7,11 +7,15 @@ box instead of toggling the pane.
 The agent opens in its own **docked pane on the far right**. The layout stays
 anchored on the left. The structure tree, when it is open, keeps the width it
 had before the pane opened, and the **Products** table stays in the same
-horizontal position. Only the area to the right of that tree — **Products**,
-any columns between it and **Detail**, and **Detail** — gets narrower, with a
-short width transition, so the agent can take a dedicated column. Nothing
-overlaps Detail, and its controls stay clickable. On a wide window (1360px and
-up), Detail stays at least 360px.
+horizontal position. Opening and closing both run a short width transition.
+With reduced motion that transition is skipped and the pane snaps.
+
+From 1360px up the agent takes a column, and only the area to the right of the
+tree gets narrower. Below that, a column would push **Detail** under 360px or
+take more than a quarter of **Products**, so the dock overlays the right edge
+instead. With the dock open from 1280px up, **Detail** stays at least 360px.
+At 1280px, **Products** keeps at least 75% of the width it had while the dock
+was closed.
 
 ## Pane chrome
 

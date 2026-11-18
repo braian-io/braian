@@ -40,6 +40,7 @@ import {
 import {
   detailPlacement,
   fitCamera,
+  graphAutoRefit,
   graphDensity,
   inspectorChrome,
   legendLayout,
@@ -886,6 +887,8 @@ export function GraphMap({
       const edgeRects: Record<string, Rect> = {}
 
       canvas.dataset.zoom = transform.k.toFixed(2)
+      canvas.dataset.cameraX = transform.x.toFixed(1)
+      canvas.dataset.cameraY = transform.y.toFixed(1)
       context.setTransform(dpr, 0, 0, dpr, 0, 0)
       context.clearRect(0, 0, width, height)
       context.fillStyle = colors.bg
@@ -1401,7 +1404,7 @@ export function GraphMap({
     // the camera is still untouched. Once the user has zoomed or panned, the
     // camera belongs to them: only repaint at the current transform.
     const observer = new ResizeObserver(() => {
-      if (!movedRef.current && canvas.dataset.dragging !== 'true') {
+      if (graphAutoRefit(movedRef.current) && canvas.dataset.dragging !== 'true') {
         if (fit()) return
       }
       // Publish the new client rects too: the a11y nodes and menu anchors must
@@ -1553,7 +1556,7 @@ export function GraphMap({
     // pane and its measured chrome have their new size, and only while the
     // camera is still the system's rather than the user's.
     const fitIfIdle = () => {
-      if (!movedRef.current) apiRef.current.fit()
+      if (graphAutoRefit(movedRef.current)) apiRef.current.fit()
     }
     const frame = requestAnimationFrame(fitIfIdle)
     const timer = setTimeout(fitIfIdle, 120)
@@ -1587,7 +1590,7 @@ export function GraphMap({
     idleCaptionsRef.current = captions
     if (idleIdsRef.current == null) idleIdsRef.current = ids
     if (ids !== idleIdsRef.current || previousCaptions === captions) return
-    if (!movedRef.current) apiRef.current.fit()
+    if (graphAutoRefit(movedRef.current)) apiRef.current.fit()
   }, [scene])
 
   const selectedNode = scene.nodes.find((node) => node.id === selected) ?? null
@@ -1603,7 +1606,7 @@ export function GraphMap({
     // Selecting a node grows the inspector. Refit while the camera is still
     // the system's so the published node marker stays on the canvas, not under
     // the panel (a drag that starts under the panel never pins).
-    if (movedRef.current) return
+    if (!graphAutoRefit(movedRef.current)) return
     const inspector = inspectorRef.current
     if (!inspector) return
     const box = inspector.getBoundingClientRect()

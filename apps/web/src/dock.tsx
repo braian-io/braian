@@ -54,6 +54,22 @@ const GHOST_X = 18
 const GHOST_Y = 22
 const EDGE_SHARE = 0.3
 const SPLIT_GAP = 6
+/** Viewports where a flex dock cannot keep Detail at 360px and Products within 25%. */
+const NARROW_AGENT_DOCK = '(max-width: 1359px)'
+const AGENT_OVERLAY_PX = 300
+
+function useMatchMedia(query: string) {
+  const [matches, setMatches] = useState(false)
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const media = window.matchMedia(query)
+    const apply = () => setMatches(media.matches)
+    apply()
+    media.addEventListener('change', apply)
+    return () => media.removeEventListener('change', apply)
+  }, [query])
+  return matches
+}
 
 export function WorkspaceDock({
   doc,
@@ -112,6 +128,23 @@ export function WorkspaceDock({
 
   const open = views(doc.layout)
   const viewTypes = new Map(viewList.map((view) => [view.id, view.type]))
+  const narrowDock = useMatchMedia(NARROW_AGENT_DOCK)
+  const rootAgentOpen = doc.layout.type === 'split' && splitLocksAgentDock(doc.layout, viewTypes)
+  const [holdClosed, setHoldClosed] = useState(false)
+  const motionReady = useRef(false)
+  useLayoutEffect(() => {
+    const reduce =
+      typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (!rootAgentOpen || reduce || !motionReady.current) {
+      motionReady.current = true
+      setHoldClosed(false)
+      return
+    }
+    setHoldClosed(true)
+    const id = window.requestAnimationFrame(() => setHoldClosed(false))
+    return () => window.cancelAnimationFrame(id)
+  }, [rootAgentOpen])
+  const presentAgentOpen = rootAgentOpen && !holdClosed
   const catalogRatio =
     doc.layout.type === 'split' && splitLocksAgentDock(doc.layout, viewTypes)
       ? doc.layout.ratios[0] ?? 1
@@ -185,7 +218,13 @@ export function WorkspaceDock({
       ) : zoomed ? (
         <Pane frame={shared} leaf={zoomed} />
       ) : (
-        <SplitNode frame={shared} node={doc.layout} path={[]} />
+        <SplitNode
+          frame={shared}
+          node={doc.layout}
+          path={[]}
+          narrowDock={narrowDock}
+          presentAgentOpen={presentAgentOpen}
+        />
       )}
       {(['left', 'right', 'top', 'bottom'] as const).map((zone) => (
         <div key={zone} className={`edge-band ${zone}`} data-testid={`edge-${zone}`} />
@@ -282,6 +321,15 @@ function measureStructureTreePin(layout: Node, viewTypes: Map<string, string>, r
   return { width, ratio }
 }
 
+/** Open agent column, or the empty shell left behind so catalog panes are not remounted. */
+function isAgentDockSplit(node: Extract<Node, { type: 'split' }>, viewTypes: Map<string, string>) {
+  if (node.dir !== 'horizontal' || node.children.length !== 2) return false
+  const right = node.children[1]
+  if (!right || right.type !== 'tabs') return false
+  if (right.views.some((id) => viewTypes.get(id) === 'agent')) return true
+  return right.views.length === 0 && node.children[0]?.type === 'split'
+}
+
 /** A horizontal agent dock must not let the Detail flex rules resize the left subtree. */
 function splitLocksAgentDock(node: Extract<Node, { type: 'split' }>, viewTypes: Map<string, string>) {
   if (node.dir !== 'horizontal' || node.children.length !== 2) return false
@@ -304,7 +352,21 @@ function splitPinsTreeInAgentDock(
   return childIsStructureTree(node.children[0], viewTypes)
 }
 
-function SplitNode({ frame, node, path, inAgentDock = false }: { frame: Frame; node: Node; path: number[]; inAgentDock?: boolean }) {
+function SplitNode({
+  frame,
+  node,
+  path,
+  inAgentDock = false,
+  narrowDock = false,
+  presentAgentOpen = false,
+}: {
+  frame: Frame
+  node: Node
+  path: number[]
+  inAgentDock?: boolean
+  narrowDock?: boolean
+  presentAgentOpen?: boolean
+}) {
   if (node.type !== 'split') {
     const leaf = leaves(node)[0]
     if (!leaf) return null
@@ -312,6 +374,8 @@ function SplitNode({ frame, node, path, inAgentDock = false }: { frame: Frame; n
   }
   const viewTypes = new Map(frame.viewList.map((view) => [view.id, view.type]))
   const lockRatios = splitLocksAgentDock(node, viewTypes)
+  const agentShell = isAgentDockSplit(node, viewTypes)
+  const overlay = agentShell && narrowDock
   // Same rule as main: a split that contains Detail anywhere can shrink so the
   // table floor (440px once the split is at least 640px) holds and Detail
   // gives way. The agent-dock wrapper also contains Detail, but marking it
@@ -320,17 +384,24 @@ function SplitNode({ frame, node, path, inAgentDock = false }: { frame: Frame; n
   const gaps = Math.max(0, node.children.length - 1) * 6
   const subtreeInAgentDock = inAgentDock || lockRatios
   const pinTree = splitPinsTreeInAgentDock(subtreeInAgentDock && !lockRatios, node, viewTypes)
+  const className = [
+    'split',
+    node.dir,
+    lockRatios ? 'split-agent-dock' : '',
+    overlay ? 'split-agent-overlay' : '',
+  ].filter(Boolean).join(' ')
   return (
     <div
-      className={lockRatios ? `split ${node.dir} split-agent-dock` : `split ${node.dir}`}
+      className={className}
       data-path={path.join('.') || 'root'}
       data-has-detail={hasDetail ? 'true' : undefined}
       data-agent-dock={lockRatios ? 'true' : undefined}
+      data-agent-shell={agentShell ? 'true' : undefined}
       data-tree-pinned={pinTree ? 'true' : undefined}
     >
       {node.children.map((child, index) => (
         <SplitChild
-          key={cellKey(path, index, child)}
+          key={agentShell && index === 1 ? 'agent-dock-shell' : cellKey(path, index, child)}
           frame={frame}
           node={node}
           child={child}
@@ -341,6 +412,10 @@ function SplitNode({ frame, node, path, inAgentDock = false }: { frame: Frame; n
           inAgentDock={subtreeInAgentDock}
           pinTree={pinTree}
           pinTreeRatio={node.ratios[0] ?? 0}
+          narrowDock={narrowDock}
+          presentAgentOpen={presentAgentOpen}
+          overlay={overlay}
+          agentShell={agentShell}
         />
       ))}
     </div>
@@ -358,6 +433,10 @@ function SplitChild({
   inAgentDock,
   pinTree,
   pinTreeRatio,
+  narrowDock,
+  presentAgentOpen,
+  overlay,
+  agentShell,
 }: {
   frame: Frame
   node: Extract<Node, { type: 'split' }>
@@ -369,37 +448,68 @@ function SplitChild({
   inAgentDock: boolean
   pinTree: boolean
   pinTreeRatio: number
+  narrowDock: boolean
+  presentAgentOpen: boolean
+  overlay: boolean
+  agentShell: boolean
 }) {
   const ratio = node.ratios[index] ?? 0
   const basis = `calc((100% - ${gaps}px) * ${ratio})`
   const flex = hasDetail ? '0 1' : '0 0'
   const pinnedPx = pinTree && index === 0 ? pinnedTreeWidthPx(frame.agentTreePin, pinTreeRatio) : null
-  const closedAgentShell =
-    child.type === 'tabs'
-    && views(child).length === 0
-    && index === 1
-    && node.dir === 'horizontal'
-    && node.children.length === 2
-    && node.children[0]?.type === 'split'
-  const cellStyle: CSSProperties = closedAgentShell
-    ? {
-        flex: '0 0 0px',
-        width: 0,
-        minWidth: 0,
-        maxWidth: 0,
-        overflow: 'hidden',
-        pointerEvents: 'none',
-      }
-    : pinnedPx != null
+  const agentShellRight = agentShell && index === 1
+  const paintOpen = presentAgentOpen && agentShellRight && overlay
+  const collapsedAgent: CSSProperties = {
+    flex: '0 0 0px',
+    width: 0,
+    minWidth: 0,
+    maxWidth: 0,
+    overflow: 'hidden',
+    pointerEvents: 'none',
+  }
+  const cellStyle: CSSProperties = agentShellRight && overlay
+    ? paintOpen
       ? {
-          flex: `0 0 ${pinnedPx}px`,
-          width: `${pinnedPx}px`,
-          minWidth: `${pinnedPx}px`,
-          maxWidth: `${pinnedPx}px`,
+          position: 'absolute',
+          top: 0,
+          right: 0,
+          bottom: 0,
+          width: `${AGENT_OVERLAY_PX}px`,
+          minWidth: 0,
+          maxWidth: `${AGENT_OVERLAY_PX}px`,
+          flex: 'none',
+          overflow: 'hidden',
+          zIndex: 6,
         }
-      : pinTree && index === 1 && frame.agentTreePin
-        ? { flex: '1 1 0', minWidth: 0 }
-        : { flex: `${flex} ${basis}` }
+      : {
+          position: 'absolute',
+          top: 0,
+          right: 0,
+          bottom: 0,
+          width: 0,
+          minWidth: 0,
+          maxWidth: 0,
+          flex: '0 0 0px',
+          overflow: 'hidden',
+          pointerEvents: 'none',
+          zIndex: 6,
+        }
+    : overlay && index === 0
+      ? { flex: '1 1 auto', width: '100%', minWidth: 0, maxWidth: 'none' }
+      : agentShellRight && !presentAgentOpen
+        ? collapsedAgent
+        : agentShellRight
+          ? { flex: `0 0 ${basis}`, width: basis, minWidth: 0, maxWidth: basis }
+          : pinnedPx != null
+          ? {
+              flex: `0 0 ${pinnedPx}px`,
+              width: `${pinnedPx}px`,
+              minWidth: `${pinnedPx}px`,
+              maxWidth: `${pinnedPx}px`,
+            }
+          : pinTree && index === 1 && frame.agentTreePin
+            ? { flex: '1 1 0', minWidth: 0 }
+            : { flex: `${flex} ${basis}` }
   return (
     <>
       {index > 0 ? (
@@ -409,10 +519,22 @@ function SplitChild({
           index={index - 1}
           path={path}
           count={node.children.length}
+          hidden={overlay}
         />
       ) : null}
-      <div className="split-cell" style={cellStyle}>
-        <SplitNode frame={frame} node={child} path={[...path, index]} inAgentDock={inAgentDock} />
+      <div
+        className="split-cell"
+        style={cellStyle}
+        data-agent-dock-cell={agentShellRight ? 'true' : undefined}
+      >
+          <SplitNode
+            frame={frame}
+            node={child}
+            path={[...path, index]}
+            inAgentDock={inAgentDock}
+            narrowDock={narrowDock}
+            presentAgentOpen={presentAgentOpen}
+          />
       </div>
     </>
   )
@@ -425,6 +547,7 @@ function Divider({
   path,
   count,
   dockedLeft,
+  hidden = false,
 }: {
   frame: Frame
   dir: 'horizontal' | 'vertical'
@@ -432,6 +555,7 @@ function Divider({
   path: number[]
   count: number
   dockedLeft?: string
+  hidden?: boolean
 }) {
   const [active, setActive] = useState(false)
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -465,7 +589,13 @@ function Divider({
       data-active={active ? 'true' : 'false'}
       role="separator"
       aria-orientation={dir === 'horizontal' ? 'vertical' : 'horizontal'}
-      style={dockedLeft ? { position: 'absolute', left: dockedLeft, top: 0, bottom: 0, margin: 0 } : undefined}
+      style={
+        hidden
+          ? { flex: '0 0 0px', width: 0, minWidth: 0, overflow: 'hidden', pointerEvents: 'none' }
+          : dockedLeft
+            ? { position: 'absolute', left: dockedLeft, top: 0, bottom: 0, margin: 0 }
+            : undefined
+      }
       onPointerDown={onPointerDown}
     >
       <span />
