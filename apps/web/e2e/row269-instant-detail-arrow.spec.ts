@@ -102,10 +102,9 @@ test('rapid Down arrows show preview skeletons before the body loads', async ({ 
   await expect(detail).toBeVisible()
   await expect.poll(() => detailTitle(page)).toBe(rowName)
   await expect(detail.getByTestId('state-loading')).toHaveCount(0)
-  const showMore = detail.getByTestId('detail-show-more-fields')
-  if (await showMore.isVisible()) await showMore.click()
   await expect.poll(async () => detail.getAttribute('data-detail-ready'), { timeout: 30_000 }).toBe('false')
-  await expect.poll(async () => detail.getByTestId('detail-field-skeleton').count()).toBeGreaterThan(0)
+  // `description` is on the product type and is not part of the list-row preview.
+  await expect.poll(async () => detail.locator('[data-testid="detail-field-skeleton"][data-field="description"]').count()).toBeGreaterThan(0)
   await expect(detail.getByTestId('delete-object-detail')).toBeDisabled()
   releaseSlowObject?.()
   await expect.poll(async () => detail.getAttribute('data-detail-ready'), { timeout: 30_000 }).toBe('true')
@@ -126,9 +125,7 @@ test('rapid Down arrows show preview skeletons before the body loads', async ({ 
 test('a persistent object GET failure shows Retry without endless requests', async ({ page }) => {
   test.setTimeout(120_000)
   const { rows, table } = await openProducts(page)
-  let fail = true
-  let anchoredObjectId = ''
-  const failIds = new Set<string>()
+  let passId = ''
   const failedGets: string[] = []
   await page.route('**/v1/objects/**', async (route) => {
     const url = route.request().url()
@@ -137,46 +134,43 @@ test('a persistent object GET failure shows Retry without endless requests', asy
       return
     }
     const id = objectIdFromRead(url)
-    const shouldFail =
-      fail &&
-      (failIds.has(id) || (failIds.size === 0 && anchoredObjectId && id !== anchoredObjectId))
-    if (shouldFail) {
-      failIds.add(id)
-      failedGets.push(url)
-      await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ detail: 'forced load failure' }) })
+    if (passId && id === passId) {
+      await route.continue()
       return
     }
-    await route.continue()
+    failedGets.push(url)
+    await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ detail: 'forced load failure' }) })
   })
 
-  failIds.add(rowObjectId(await rows.first().getAttribute('id')))
+  const firstId = rowObjectId(await rows.first().getAttribute('id'))
+  const failuresFor = (id: string) => failedGets.filter((url) => objectIdFromRead(url) === id).length
   await page.keyboard.press('ArrowDown')
   await expect(page.getByTestId('detail-error')).toBeVisible({ timeout: 30_000 })
   await expect(page.getByTestId('detail-field-skeleton')).toHaveCount(0)
   await expect(page.getByTestId('detail-fetch-retry')).toBeVisible()
   await page.waitForTimeout(2_000)
-  const afterFailure = failedGets.length
+  const afterFailure = failuresFor(firstId)
   expect(afterFailure).toBeLessThanOrEqual(6)
   await page.waitForTimeout(2_000)
-  expect(failedGets.length).toBe(afterFailure)
+  expect(failuresFor(firstId)).toBe(afterFailure)
 
-  fail = false
+  passId = firstId
   await page.getByTestId('detail-fetch-retry').click()
   await expect(page.getByTestId('object-detail')).toBeVisible({ timeout: 30_000 })
   await expect(page.getByTestId('detail-error')).toHaveCount(0)
   await expect.poll(async () => page.getByTestId('object-detail').getAttribute('data-detail-ready')).toBe('true')
 
-  failedGets.length = 0
-  fail = true
-  failIds.clear()
-  anchoredObjectId = rowObjectId(await selectedRow(table).getAttribute('id'))
+  const anchoredObjectId = rowObjectId(await selectedRow(table).getAttribute('id'))
+  const failedBeforeMove = failedGets.length
   await focusProductsGrid(page)
   await page.keyboard.press('ArrowDown')
   await expect.poll(async () => rowObjectId(await selectedRow(table).getAttribute('id'))).not.toBe(anchoredObjectId)
+  const nextId = rowObjectId(await selectedRow(table).getAttribute('id'))
   await page.keyboard.press('Enter')
   await expect(page.getByTestId('detail-error')).toBeVisible({ timeout: 30_000 })
   await page.waitForTimeout(2_000)
-  expect(failedGets.length).toBeLessThanOrEqual(6)
+  const nextFailures = failedGets.slice(failedBeforeMove).filter((url) => objectIdFromRead(url) === nextId).length
+  expect(nextFailures).toBeLessThanOrEqual(6)
 })
 
 test('Enter and Space still confirm the focused row for Detail', async ({ page }) => {

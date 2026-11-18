@@ -3274,7 +3274,13 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   const proposalKeys = proposalCells
     .map((cell) => cell.attribute)
     .filter((attribute) => attribute !== '$delete')
-  const valueKeys = [...new Set([...Object.keys(values), ...proposalKeys, ...fileKeys])]
+  const typeAttributeKeys = objectPreview
+    ? attributes
+      .filter((item) => typeIds.has(String(item.id)))
+      .map((item) => String(item.key ?? ''))
+      .filter(Boolean)
+    : []
+  const valueKeys = [...new Set([...Object.keys(values), ...typeAttributeKeys, ...proposalKeys, ...fileKeys])]
   const { primaryKeys, moreKeys } = splitDetailKeys(defs.data, valueKeys)
   const visibleKeys = showMoreFields ? [...primaryKeys, ...moreKeys] : primaryKeys
   const owners = provenance.data?.owners ?? {}
@@ -3302,7 +3308,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
         <label>{fieldLabel}{owner ? ` · ${copy.ownedBy} ${owner}` : ''}</label>
         <div className={controlClass}>
           {!fieldKnownInPreview(key) ? (
-            <span className="detail-field-skeleton" data-testid="detail-field-skeleton" aria-busy="true" />
+            <span className="detail-field-skeleton" data-testid="detail-field-skeleton" data-field={key} aria-busy="true" />
           ) : (
           <Editor
             fieldKey={key}
