@@ -90,7 +90,7 @@ export function ProposalBulkActions({
   const discard = (
     <Button
       type="button"
-      variant="danger"
+      variant={settled && discardInactive ? 'default' : 'danger'}
       data-testid={discardTestId}
       aria-describedby={descriptionId}
       className={settled && discardInactive ? 'transition-none' : undefined}
