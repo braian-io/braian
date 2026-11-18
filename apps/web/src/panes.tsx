@@ -78,7 +78,7 @@ import {
   seedObjectListPreview,
 } from './object-list-preview'
 import { commitImmediateTableNavLand, scheduleDebouncedTableNavLand } from './object-table-nav'
-import { markObjectNavReplace } from './object-nav-signal'
+import { clearObjectNavReplace, markObjectNavReplace } from './object-nav-signal'
 import { useObjectLand } from './use-object-land'
 import {
   discardObjectDraft,
@@ -291,6 +291,8 @@ export function ObjectTable({
   const openProposals = useOpenObjectProposals()
   const queryClient = useQueryClient()
   const objectNavTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** Object id when the current arrow burst started. Returning to it drops a pending URL replace. */
+  const navBurstOrigin = useRef<string | null | undefined>(undefined)
   const pendingFollowIndex = useRef<number | null>(null)
   const parent = useRef<HTMLDivElement>(null)
   /** Remote ui.filter must not stomp text the user is entering locally. */
@@ -1088,7 +1090,8 @@ export function ObjectTable({
       if (item) ids.push(item.id)
     }
     setSelected(ids.length > 0 ? ids : [row.id])
-    followRowImpl.current(row, index, 'immediate')
+    // Shift+Arrow extends the range and lands on the same debounced fetch as a plain arrow.
+    followRowImpl.current(row, index, 'debounced')
   }
 
   // Keep the focused row in view. A virtualized row may mount a frame later;
@@ -1484,8 +1487,17 @@ export function ObjectTable({
       buildListPreviewFromRow(row, defs.data, session.language, previewPathValuesRef.current?.[row.id]),
     )
     session.setObjectId(row.id)
-    if (fetch === 'debounced' && row.id !== previousId) markObjectNavReplace()
+    if (fetch === 'immediate') {
+      // A click or Enter/Space is its own history step.
+      clearObjectNavReplace()
+    } else if (row.id !== previousId) {
+      if (navBurstOrigin.current === undefined) navBurstOrigin.current = previousId
+      // A → B → A inside one debounce never writes a URL, so the mark must not linger.
+      if (navBurstOrigin.current != null && row.id === navBurstOrigin.current) clearObjectNavReplace()
+      else markObjectNavReplace(row.id)
+    }
     const runFetches = () => {
+      navBurstOrigin.current = undefined
       const ids: string[] = []
       for (let cursor = index - OBJECT_PREFETCH_RADIUS; cursor <= index + OBJECT_PREFETCH_RADIUS; cursor += 1) {
         const item = rowAt(cursor)
@@ -3086,6 +3098,17 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
     setError('')
     setShowMoreFields(false)
   }, [session.objectId])
+  const detailLoadFailed = Boolean(
+    session.objectId
+    && objectFetchSettled
+    && (
+      provenance.isError
+      || (object.isError && (!object.data || isListPreview(object.data)))
+    ),
+  )
+  useEffect(() => {
+    if (detailLoadFailed && session.objectId) clearObjectNavReplace(session.objectId)
+  }, [detailLoadFailed, session.objectId])
   useEffect(() => {
     if (!session.objectId || !object.data) return
     const stored = (object.data.values as Json) ?? {}
@@ -3118,9 +3141,17 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
     void queryClient.invalidateQueries({ queryKey: ['object-origin', session.objectId] })
     void queryClient.invalidateQueries({ queryKey: ['proposals', 'detail', session.objectId] })
   }
+  const detailRetrying = object.isFetching || provenance.isFetching
   const detailFetchRetry = (
-    <Button type="button" variant="primary" data-testid="detail-fetch-retry" onClick={() => refetchDetail()}>
-      {copy.agentRetry}
+    <Button
+      type="button"
+      variant="primary"
+      data-testid="detail-fetch-retry"
+      aria-busy={detailRetrying}
+      disabled={detailRetrying}
+      onClick={() => refetchDetail()}
+    >
+      {detailRetrying ? copy.loading : copy.agentRetry}
     </Button>
   )
   if (provenance.isError && objectFetchSettled) {

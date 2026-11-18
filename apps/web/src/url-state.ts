@@ -92,10 +92,12 @@ export function useUrlStateSync(input: {
   viewOpen?: (id: string) => boolean
   /** A resolution-driven write (for example a renamed key) replaces. */
   forceReplace?: boolean
+  /** Uuid of the object being shown. Arrow replace applies only when it matches. */
+  navObjectId?: string | null
   navigate: (next: UrlStateNavigation) => void
   apply: (next: UrlStateApply) => void
 }) {
-  const { search, state, ready, valid, viewOpen, forceReplace, navigate, apply } = input
+  const { search, state, ready, valid, viewOpen, forceReplace, navObjectId, navigate, apply } = input
   const parsed = parseUrlState(search)
   const key = urlStateKey(parsed)
   const validRef = useRef(valid)
@@ -194,10 +196,11 @@ export function useUrlStateSync(input: {
       && parsed.view === next.view
       && parsed.catalog === next.catalog
       && parsed.object !== next.object
+    const arrowReplace = objectOnly && takeObjectNavReplace(navObjectId)
     navigate({
       search: next,
       replace: Boolean(forceReplace)
-        || (objectOnly && takeObjectNavReplace())
+        || arrowReplace
         || !synced.current
         || !backWorthy
         || settling.current
@@ -206,7 +209,7 @@ export function useUrlStateSync(input: {
     lastWritten.current = nextKey
     navigationInFlight.current = true
     synced.current = true
-  }, [ready, key, state.workspaceId, state.viewId, state.catalogId, state.objectId, parsed.ws, parsed.view, parsed.catalog, parsed.object, forceReplace])
+  }, [ready, key, state.workspaceId, state.viewId, state.catalogId, state.objectId, parsed.ws, parsed.view, parsed.catalog, parsed.object, forceReplace, navObjectId])
 }
 
 function isValid(param: Param, value: string, valid: UrlStateValidity): boolean {

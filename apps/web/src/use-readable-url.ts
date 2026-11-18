@@ -171,6 +171,7 @@ export function useReadableUrl(input: {
       return Boolean(id && input.openViewIds.includes(id))
     },
     forceReplace: resolutionReplace,
+    navObjectId: input.objectId,
     navigate: input.navigate,
     apply: (next) => {
       if (next.workspaceId) {
