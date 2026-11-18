@@ -45,19 +45,23 @@ opened with `Shift+F10` or the context-menu key.
 | `PageDown` / `PageUp` | Move a page at a time |
 | `Home` / `End` | Jump to the first or last row |
 | `Enter` | Run the highlighted row |
-| `Tab` | Enter a sub-list when the row takes an argument |
-| `Backspace` | Go up one level when the query is empty |
-| `Escape` | Close the palette |
+| `Tab` | Open the argument sub-list for the highlighted row when that row takes a parameter (e.g. **Open structure ›**) |
+| `Backspace` | Go up one level when the query field is empty and you are in a sub-list |
+| `Escape` | Close the palette (does not go up a level) |
 | `Ctrl+Enter` or `Ctrl+.` | Open the action panel for the highlighted entity, or run Open structure to the right |
-| `→` | Open the action panel for an entity row |
+| `→` | Open the action panel for a highlighted entity row (objects, views, workspaces); does not drill into argument sub-lists — use `Tab` for those |
 | `Ctrl+J` | Ask AI with the current query |
 
-`Enter` runs the highlighted row. `Ctrl+Enter` (or `Ctrl+K` on a result) opens its
-actions. `Backspace` on an empty query goes up one level; `Escape` closes the palette
-and does not go up a level. Rows whose command has a chord show it. Not every command
-has one. The footer shows `Enter Run`, `Tab Open`, `⌫ Back`, `Ctrl+J Ask AI`, and
-`Esc Close` as a reminder. When no row matches, the palette shows `No results for
-"{query}"`.
+`Enter` runs the highlighted row. `Tab` on a highlighted argument row (including **Open
+structure ›**, **Open view**, and similar) pushes the searchable sub-list without
+running the command. `Ctrl+Enter` (or `Ctrl+.` on a row) opens secondary actions for
+entity rows. `Backspace` with an empty query pops one breadcrumb level; there is no
+`←` back shortcut on the root palette itself — only `Backspace`. `Escape` always
+closes the palette and does not pop a level. Pointer hover and the mouse wheel scroll
+the list without moving the keyboard highlight or snapping scroll back to the active
+row. Rows whose command has a chord show it. Not every command has one. The footer
+shows `Enter Run`, `Tab Open`, `⌫ Back`, `Ctrl+J Ask AI`, and `Esc Close` as a
+reminder. When no row matches, the palette shows `No results for "{query}"`.
 
 ## Action panels
 
