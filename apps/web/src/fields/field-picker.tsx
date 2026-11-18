@@ -1,11 +1,12 @@
 import {
+  useEffect,
   useLayoutEffect,
   useRef,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from 'react'
-import { isPaletteListNavKey, scrollPaletteActiveItem } from '../palette-list-scroll'
+import { isPaletteListTransitionKey, scrollPaletteActiveItem } from '../palette-list-scroll'
 import { Command, CommandInput, CommandList } from '../components/ui/command'
 import { Checkbox } from '../components/ui/checkbox'
 import { Kbd } from '../components/ui/kbd'
@@ -70,18 +71,33 @@ export function FieldPicker({
    */
   const hoverArmed = useRef(false)
   const keyboardScroll = useRef(false)
+  const levelScroll = useRef(false)
+  const activeFromPointer = useRef(false)
   const listRef = useRef<HTMLDivElement>(null)
   const onPointerMove = (index: number) => {
     if (hoverArmed.current) return
     hoverArmed.current = true
+    activeFromPointer.current = true
     onActive(index)
   }
 
+  useEffect(() => {
+    levelScroll.current = true
+  }, [levelKey])
+
   useLayoutEffect(() => {
-    if (!keyboardScroll.current) return
+    if (activeFromPointer.current) {
+      activeFromPointer.current = false
+      keyboardScroll.current = false
+      levelScroll.current = false
+      return
+    }
+    const shouldScroll = keyboardScroll.current || levelScroll.current
     keyboardScroll.current = false
+    levelScroll.current = false
+    if (!shouldScroll) return
     scrollPaletteActiveItem(listRef.current)
-  }, [selected, levelKey])
+  }, [selected, levelKey, rows.length])
 
   return (
     <div className="palette" data-testid={root} data-picker-mode={mode} onMouseDown={onBackdrop}>
@@ -121,7 +137,7 @@ export function FieldPicker({
         onMouseDown={(event) => event.stopPropagation()}
         onKeyDownCapture={(event) => {
           hoverArmed.current = false
-          if (isPaletteListNavKey(event.key)) keyboardScroll.current = true
+          if (isPaletteListTransitionKey(event.key)) keyboardScroll.current = true
           onKeyDown(event)
         }}
       >
@@ -137,6 +153,7 @@ export function FieldPicker({
             value={query}
             placeholder={placeholder}
             onValueChange={(value) => {
+              if (value.trim()) keyboardScroll.current = true
               onQuery(value)
               onActive(0)
             }}
@@ -153,12 +170,16 @@ export function FieldPicker({
                 data-testid={`${testPrefix}-row-${row.id}`}
                 data-active={index === selected ? 'true' : undefined}
                 onMouseEnter={() => {
-                  if (hoverArmed.current) onActive(index)
+                  if (hoverArmed.current) {
+                    activeFromPointer.current = true
+                    onActive(index)
+                  }
                 }}
                 onMouseMove={() => onPointerMove(index)}
                 onClick={(event) => {
                   event.preventDefault()
                   event.stopPropagation()
+                  activeFromPointer.current = true
                   onActive(index)
                   row.run()
                 }}

@@ -1,12 +1,19 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
-import { isPaletteListNavKey, scrollPaletteActiveItem } from './palette-list-scroll'
+import { isPaletteListNavKey, isPaletteListTransitionKey, scrollPaletteActiveItem } from './palette-list-scroll'
 
 describe('palette-list-scroll', () => {
   it('recognizes list navigation keys', () => {
     expect(isPaletteListNavKey('ArrowDown')).toBe(true)
     expect(isPaletteListNavKey('PageUp')).toBe(true)
     expect(isPaletteListNavKey('Enter')).toBe(false)
+  })
+
+  it('recognizes transition keys that should scroll the list', () => {
+    expect(isPaletteListTransitionKey('ArrowDown')).toBe(true)
+    expect(isPaletteListTransitionKey('ArrowLeft')).toBe(true)
+    expect(isPaletteListTransitionKey('Enter')).toBe(true)
+    expect(isPaletteListTransitionKey('a')).toBe(false)
   })
 
   it('scrolls the list only enough to reveal the active row', () => {

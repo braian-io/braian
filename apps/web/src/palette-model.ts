@@ -436,6 +436,20 @@ export function activeAfterQuery(rows: PaletteItem[], query: string): number | n
   return best >= 0 ? best : null
 }
 
+/** Highlight index while filtering, including the first visible match when ranking ties at zero. */
+export function resolveActiveAfterQuery(rows: PaletteItem[], query: string): number | null {
+  const picked = activeAfterQuery(rows, query)
+  if (picked != null) return picked
+  const needle = query.trim().toLowerCase()
+  if (!needle) return null
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index]!
+    if (row.group === 'ask' || row.group === 'recent') continue
+    if (paletteMatchScore(row, needle) > 0) return index
+  }
+  return null
+}
+
 /** Recent rows at the top of a sub-list. A query hides them so the matches stay first. */
 export function withRecent(
   rows: PaletteItem[],

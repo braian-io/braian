@@ -19,7 +19,7 @@ import { structureCaption } from './graph-scene'
 import { chordForCommand } from './shortcuts'
 import { mergeFrecency, readFrecency, touch, writeFrecency } from './frecency'
 import { withModelCommand } from './model-command'
-import { activeAfterQuery, filterPaletteRows, frecencyId, groupOrder, groupTitle, markedTitle, readPaletteMemory, rememberPaletteItem, rememberRecent, resultAnnouncement, selectedObjectId, sublistPlaceholder, visibleRows, withRecent, type PaletteItem } from './palette-model'
+import { activeAfterQuery, filterPaletteRows, frecencyId, groupOrder, groupTitle, markedTitle, readPaletteMemory, rememberPaletteItem, rememberRecent, resolveActiveAfterQuery, resultAnnouncement, selectedObjectId, sublistPlaceholder, visibleRows, withRecent, type PaletteItem } from './palette-model'
 import { argumentBreadcrumb, isObjectParam, objectTypeFilter, paletteKeyEffect, placeTargetId, tabHint, type PaletteFrame } from './palette-core'
 import { scrollPaletteActiveItem } from './palette-list-scroll'
 import { argumentCommands, type OperationRecord } from './palette-operations'
@@ -255,6 +255,7 @@ export function CommandPalette({
     queryKey: ['operations'],
     queryFn: () => api.get('/v1/operations'),
     staleTime: 60_000,
+    placeholderData: (previous) => previous,
   })
   const remoteFrecency = useQuery({
     queryKey: ['frecency'],
@@ -568,24 +569,55 @@ export function CommandPalette({
   const activeRow = active == null ? undefined : rows[active]
   const queryMatchId = !query.trim() || stack.length > 0
     ? ''
-    : rows[activeAfterQuery(rows, query) ?? -1]?.id ?? ''
+    : rows[resolveActiveAfterQuery(rows, query) ?? -1]?.id ?? ''
 
-  useEffect(() => {
-    if (mode !== 'list' || stack.length > 0 || !query.trim()) return
-    setActive(activeAfterQuery(rows, query))
-  }, [query, mode, stack.length, queryMatchId])
+  const paletteListRef = useRef<HTMLDivElement>(null)
+  const paletteScrollList = useRef(false)
+  const paletteStackScroll = useRef(false)
+  const paletteActiveFromPointer = useRef(false)
+  const filterScrollQuery = useRef('')
+  useLayoutEffect(() => {
+    if (mode !== 'list' || stack.length > 0) return
+    if (!query.trim()) {
+      if (filterScrollQuery.current !== '') filterScrollQuery.current = ''
+      return
+    }
+    const pick = resolveActiveAfterQuery(rows, query)
+    const queryChanged = filterScrollQuery.current !== query
+    if (queryChanged) {
+      filterScrollQuery.current = query
+      paletteScrollList.current = true
+      setActive(pick)
+      return
+    }
+    if (active == null && pick != null) {
+      paletteScrollList.current = true
+      setActive(pick)
+    }
+  }, [query, mode, stack.length, queryMatchId, active])
   useEffect(() => {
     if (mode !== 'list' || stack.length === 0 || !query.trim()) return
+    paletteScrollList.current = true
     setActive(0)
   }, [query, mode, stack.length])
-  const paletteListRef = useRef<HTMLDivElement>(null)
-  const paletteKeyboardScroll = useRef(false)
   const openStructurePlacementRef = useRef<'center' | 'right'>('center')
+  useEffect(() => {
+    paletteStackScroll.current = true
+  }, [stack.length])
   useLayoutEffect(() => {
-    if (!paletteKeyboardScroll.current) return
-    paletteKeyboardScroll.current = false
+    if (mode !== 'list') return
+    if (paletteActiveFromPointer.current) {
+      paletteActiveFromPointer.current = false
+      paletteScrollList.current = false
+      paletteStackScroll.current = false
+      return
+    }
+    const shouldScroll = paletteScrollList.current || paletteStackScroll.current
+    paletteScrollList.current = false
+    paletteStackScroll.current = false
+    if (!shouldScroll) return
     scrollPaletteActiveItem(paletteListRef.current)
-  }, [active, rows.length])
+  }, [active, rows.length, stack.length, queryMatchId, mode])
 
   const needsWorkspace = (commandId: string) =>
     commandId.startsWith('view:')
@@ -1340,6 +1372,7 @@ export function CommandPalette({
       return
     }
     if (effect.type === 'back') {
+      paletteScrollList.current = true
       setStack((current) => current.slice(0, -1))
       setActive(null)
       return
@@ -1350,6 +1383,7 @@ export function CommandPalette({
       return
     }
     if (effect.type === 'actions') {
+      paletteScrollList.current = true
       openActions(rows[effect.index])
       return
     }
@@ -1361,7 +1395,7 @@ export function CommandPalette({
       if (item) run(item)
       return
     }
-    if (effect.type === 'move') paletteKeyboardScroll.current = true
+    if (effect.type === 'move') paletteScrollList.current = true
     setActive(effect.index)
   }
 
@@ -1482,8 +1516,10 @@ export function CommandPalette({
             value={query}
             placeholder={placeholder}
             onValueChange={(value) => {
+              if (value.trim() && mode === 'list') paletteScrollList.current = true
               setQuery(value)
-              setActive(value.trim() ? (stack.length > 0 ? 0 : null) : 0)
+              if (stack.length > 0) setActive(value.trim() ? 0 : 0)
+              else if (!value.trim()) setActive(0)
             }}
           />
           {mode === 'ai' ? (
@@ -1580,7 +1616,10 @@ export function CommandPalette({
                         className={`${index === selected ? 'hit on' : 'hit'}${row.group === 'ask' ? ' ask' : ''}${row.disabled ? ' disabled' : ''}`}
                         disabled={row.disabled}
                         aria-disabled={row.disabled ? true : undefined}
-                        onPointerDown={() => setActive(index)}
+                        onPointerDown={() => {
+                          paletteActiveFromPointer.current = true
+                          setActive(index)
+                        }}
                         onSelect={() => run(row)}
                       >
                         <span className="hit-copy">
@@ -1610,7 +1649,10 @@ export function CommandPalette({
             role="option"
             aria-selected={rows.indexOf(askRow) === selected}
             className={rows.indexOf(askRow) === selected ? 'hit on ask' : 'hit ask'}
-            onPointerDown={() => setActive(rows.indexOf(askRow))}
+            onPointerDown={() => {
+              paletteActiveFromPointer.current = true
+              setActive(rows.indexOf(askRow))
+            }}
             onSelect={() => run(askRow)}
           >
             <span className="hit-copy">

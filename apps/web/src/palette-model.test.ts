@@ -3,7 +3,7 @@ import { catalogName } from './api'
 import { argumentBreadcrumb, isObjectParam, objectTypeFilter, paletteKeyEffect, placeTargetId, tabHint } from './palette-core'
 import { argumentCommands } from './palette-operations'
 import { objectPaletteRows } from './palette-objects'
-import { activeAfterQuery, askIndex, markedTitle, paletteMatchScore, readPaletteMemory, recentSlice, rememberPaletteItem, rememberRecent, resultAnnouncement, selectedObjectId, sublistPlaceholder, visibleRows, withRecent, type PaletteItem } from './palette-model'
+import { activeAfterQuery, askIndex, markedTitle, paletteMatchScore, readPaletteMemory, recentSlice, rememberPaletteItem, rememberRecent, resolveActiveAfterQuery, resultAnnouncement, selectedObjectId, sublistPlaceholder, visibleRows, withRecent, type PaletteItem } from './palette-model'
 
 function memoryStorage() {
   const data = new Map<string, string>()
@@ -90,6 +90,7 @@ describe('palette rows', () => {
     expect(opened.find((row) => row.id === 'op:ui.open_view')?.argument).toEqual({ name: 'id', type: 'view' })
     expect(opened.some((row) => row.id === 'view:a' || row.sourceId === 'view:a')).toBe(false)
     expect(activeAfterQuery(opened, 'Open view')).toBe(opened.findIndex((row) => row.id === 'op:ui.open_view'))
+    expect(resolveActiveAfterQuery(opened, 'Open view')).toBe(opened.findIndex((row) => row.id === 'op:ui.open_view'))
     expect(visibleRows('Articles', [command, ...views], [], {}).some((row) => row.title === 'Articles')).toBe(true)
 
     const overview: PaletteItem = { id: 'view:overview', group: 'views', title: 'Overview', subtitle: 'Open view', entity: true }
