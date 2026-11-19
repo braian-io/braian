@@ -47,8 +47,14 @@ export type RestoreDismissOutcome = { close: boolean; message: string | null }
 export function restoreDiscardFailure(reason: unknown): RestoreDismissOutcome {
   if (reason instanceof ApiError) {
     if (reason.status === 404) return { close: true, message: null }
-    if (reason.status === 409) return { close: true, message: copy.proposalAlreadyClosed }
+    if (reason.status === 409) return { close: false, message: copy.restoreConflict }
+    if (reason.status >= 500) return { close: false, message: copy.saveFailed }
   }
   const message = reason instanceof Error ? reason.message : copy.validation
   return { close: false, message }
+}
+
+export function restoreAcceptConflictMessage(reason: unknown): string | null {
+  if (reason instanceof ApiError && reason.status === 409) return copy.restoreConflict
+  return null
 }
