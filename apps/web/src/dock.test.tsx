@@ -315,6 +315,15 @@ it('keeps a positive shell width on the first closed frame so the close can anim
     { id: 'detail', title: 'Detail', type: 'object_detail' },
     { id: 'agent', title: 'Ask', type: 'agent' },
   ]
+  const catalog = {
+    type: 'split' as const,
+    dir: 'horizontal' as const,
+    ratios: [0.6, 0.4],
+    children: [
+      { type: 'tabs' as const, views: ['products'], active: 0 },
+      { type: 'tabs' as const, views: ['detail'], active: 0 },
+    ],
+  }
   const open: LayoutDoc = {
     id: 'ws',
     title: 'Products',
@@ -322,18 +331,7 @@ it('keeps a positive shell width on the first closed frame so the close can anim
       type: 'split',
       dir: 'horizontal',
       ratios: [0.7, 0.3],
-      children: [
-        {
-          type: 'split',
-          dir: 'horizontal',
-          ratios: [0.6, 0.4],
-          children: [
-            { type: 'tabs', views: ['products'], active: 0 },
-            { type: 'tabs', views: ['detail'], active: 0 },
-          ],
-        },
-        { type: 'tabs', views: ['agent'], active: 0 },
-      ],
+      children: [catalog, { type: 'tabs', views: ['agent'], active: 0 }],
     },
     focus: 'agent',
   }
@@ -344,13 +342,9 @@ it('keeps a positive shell width on the first closed frame so the close can anim
       type: 'split',
       dir: 'horizontal',
       ratios: [1, 0],
-      children: [
-        open.layout.children[0]!,
-        { type: 'tabs', views: [], active: 0 },
-      ],
+      children: [catalog, { type: 'tabs', views: [], active: 0 }],
     },
   }
-  const root = { clientWidth: 1280 } as HTMLDivElement
   const rect = (width: number) =>
     ({ x: 0, y: 0, width, height: 600, top: 0, left: 0, right: width, bottom: 600, toJSON() { return {} } }) as DOMRect
   const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {

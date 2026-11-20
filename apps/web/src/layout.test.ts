@@ -320,6 +320,24 @@ describe('placeView and ensureInLayout', () => {
 })
 
 describe('agent dock shell', () => {
+  it('keeps the root shell with a pinned tree catalog after the agent closes', () => {
+    const catalog = splitPair(
+      'horizontal',
+      0.22,
+      tabs(['tree']),
+      splitPair('horizontal', 0.55, tabs(['products']), tabs(['detail'])),
+    )
+    const docked = dockEdge(catalog, 'agent', 'right', 0.3)
+    const closed = remove(docked, 'agent')
+    expect(closed.type).toBe('split')
+    if (closed.type === 'split') {
+      expect(closed.children).toHaveLength(2)
+      expect(closed.children[0]?.type).toBe('split')
+      expect(closed.children[1]?.type).toBe('tabs')
+      expect(views(closed.children[1]!)).toEqual([])
+    }
+  })
+
   it('finds the empty slot after closing the agent and reuses it on reopen', () => {
     const catalog = splitPair('horizontal', 0.22, tabs(['tree']), tabs(['products']))
     const docked = dockEdge(catalog, 'agent', 'right', 0.3)

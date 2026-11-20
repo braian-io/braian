@@ -494,8 +494,12 @@ function SplitChild({
   const [shrinkFrom, setShrinkFrom] = useState<number | null>(null)
   const [shrinkToZero, setShrinkToZero] = useState(false)
   useLayoutEffect(() => {
-    if (agentDockedOpen && openPx > 0) lastOpenPx.current = openPx
-  }, [agentDockedOpen, openPx])
+    if (!agentShellRight || !agentDockedOpen) return
+    if (openPx > 0) lastOpenPx.current = openPx
+    const el = cellRef.current
+    const measured = el?.getBoundingClientRect().width ?? 0
+    if (measured > lastOpenPx.current) lastOpenPx.current = measured
+  }, [agentShellRight, agentDockedOpen, openPx, presentAgentOpen])
   useLayoutEffect(() => {
     if (!agentShellRight) return
     if (presentAgentOpen) {
@@ -513,7 +517,11 @@ function SplitChild({
     }
     const el = cellRef.current
     const measured = el?.getBoundingClientRect().width ?? 0
-    const start = Math.max(measured, lastOpenPx.current, openPx)
+    const fromStyle =
+      el && typeof window.getComputedStyle === 'function'
+        ? Number.parseFloat(window.getComputedStyle(el).width)
+        : 0
+    const start = Math.max(measured, lastOpenPx.current, openPx, fromStyle)
     if (!(start > 1)) return
     setShrinkFrom(start)
   }, [presentAgentOpen, agentShellRight, openPx, shrinkFrom])
@@ -524,7 +532,10 @@ function SplitChild({
       el.style.width = `${shrinkFrom}px`
       void el.offsetWidth
     }
-    const id = window.requestAnimationFrame(() => setShrinkToZero(true))
+    const id = window.requestAnimationFrame(() => {
+      setShrinkToZero(true)
+      if (el) el.style.width = '0px'
+    })
     return () => window.cancelAnimationFrame(id)
   }, [shrinkFrom, shrinkToZero])
   useEffect(() => {
