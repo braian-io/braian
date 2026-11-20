@@ -144,40 +144,25 @@ export function WorkspaceDock({
   const [dockBox, setDockBox] = useState(0)
   const rootAgentOpen = doc.layout.type === 'split' && splitLocksAgentDock(doc.layout, viewTypes)
   const [holdClosed, setHoldClosed] = useState(false)
-  const [holdClosing, setHoldClosing] = useState(false)
   const motionReady = useRef(false)
-  const rootAgentOpenRef = useRef(rootAgentOpen)
-  // Paint one closed frame before expanding, and one open frame before shrinking,
-  // after the browser has painted. A rAF from layout effect alone runs too early.
+  // Paint one closed frame before expanding, after the browser has painted.
+  // A rAF started from the layout effect runs before that paint and skips the animation.
   useLayoutEffect(() => {
     const reduce =
       typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    const wasOpen = rootAgentOpenRef.current
-    rootAgentOpenRef.current = rootAgentOpen
-    if (rootAgentOpen) {
-      setHoldClosing(false)
-      if (reduce || !motionReady.current) {
-        motionReady.current = true
-        setHoldClosed(false)
-        return
-      }
-      setHoldClosed(true)
+    if (!rootAgentOpen || reduce || !motionReady.current) {
+      motionReady.current = true
+      setHoldClosed(false)
       return
     }
-    setHoldClosed(false)
-    motionReady.current = true
-    if (wasOpen && !reduce) setHoldClosing(true)
-    else setHoldClosing(false)
+    setHoldClosed(true)
   }, [rootAgentOpen])
   useEffect(() => {
-    if (!holdClosed && !holdClosing) return
-    const id = window.requestAnimationFrame(() => {
-      setHoldClosed(false)
-      setHoldClosing(false)
-    })
+    if (!holdClosed) return
+    const id = window.requestAnimationFrame(() => setHoldClosed(false))
     return () => window.cancelAnimationFrame(id)
-  }, [holdClosed, holdClosing])
-  const presentAgentOpen = (rootAgentOpen && !holdClosed) || holdClosing
+  }, [holdClosed])
+  const presentAgentOpen = rootAgentOpen && !holdClosed
   const catalogRatio =
     doc.layout.type === 'split' && splitLocksAgentDock(doc.layout, viewTypes)
       ? doc.layout.ratios[0] ?? 1
@@ -259,6 +244,7 @@ export function WorkspaceDock({
           path={[]}
           narrowDock={narrowDock}
           presentAgentOpen={presentAgentOpen}
+          agentDockedOpen={rootAgentOpen}
           dockBox={dockBox}
         />
       )}
@@ -395,6 +381,7 @@ function SplitNode({
   inAgentDock = false,
   narrowDock = false,
   presentAgentOpen = false,
+  agentDockedOpen = false,
   dockBox = 0,
 }: {
   frame: Frame
@@ -403,6 +390,7 @@ function SplitNode({
   inAgentDock?: boolean
   narrowDock?: boolean
   presentAgentOpen?: boolean
+  agentDockedOpen?: boolean
   dockBox?: number
 }) {
   if (node.type !== 'split') {
@@ -450,6 +438,7 @@ function SplitNode({
           pinTreeRatio={node.ratios[0] ?? 0}
           narrowDock={narrowDock}
           presentAgentOpen={presentAgentOpen}
+          agentDockedOpen={agentDockedOpen}
           dockBox={dockBox}
           agentShell={agentShell}
         />
@@ -471,6 +460,7 @@ function SplitChild({
   pinTreeRatio,
   narrowDock,
   presentAgentOpen,
+  agentDockedOpen,
   dockBox,
   agentShell,
 }: {
@@ -486,6 +476,7 @@ function SplitChild({
   pinTreeRatio: number
   narrowDock: boolean
   presentAgentOpen: boolean
+  agentDockedOpen: boolean
   dockBox: number
   agentShell: boolean
 }) {
@@ -495,8 +486,24 @@ function SplitChild({
   const pinnedPx = pinTree && index === 0 ? pinnedTreeWidthPx(frame.agentTreePin, pinTreeRatio) : null
   const agentShellRight = agentShell && index === 1
   const openPx = agentColumnPx(dockBox, ratio, gaps, narrowDock)
+  const cellRef = useRef<HTMLDivElement>(null)
+  const openPxRef = useRef(openPx)
+  const presentRef = useRef(presentAgentOpen)
+  openPxRef.current = openPx
   /* flex-basis stays auto so the width property is the size that transitions. */
   const agentWidth = presentAgentOpen ? openPx : 0
+  useLayoutEffect(() => {
+    const el = cellRef.current
+    if (!el || !agentShellRight) return
+    const reduce =
+      typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const wasOpen = presentRef.current
+    presentRef.current = presentAgentOpen
+    if (!wasOpen || presentAgentOpen || reduce || !(openPxRef.current > 0)) return
+    el.style.width = `${openPxRef.current}px`
+    void el.offsetWidth
+    el.style.width = '0px'
+  }, [presentAgentOpen, agentShellRight])
   const cellStyle: CSSProperties = agentShellRight
     ? {
         flex: '0 0 auto',
@@ -504,7 +511,7 @@ function SplitChild({
         minWidth: 0,
         maxWidth: 'none',
         overflow: 'hidden',
-        pointerEvents: presentAgentOpen ? undefined : 'none',
+        pointerEvents: agentDockedOpen ? undefined : 'none',
       }
     : agentShell && index === 0 && narrowDock
       ? { flex: '1 1 auto', width: 'auto', minWidth: 0, maxWidth: 'none' }
@@ -530,6 +537,7 @@ function SplitChild({
         />
       ) : null}
       <div
+        ref={agentShellRight ? cellRef : undefined}
         className="split-cell"
         style={cellStyle}
         data-agent-dock-cell={agentShellRight ? 'true' : undefined}
@@ -541,6 +549,7 @@ function SplitChild({
             inAgentDock={inAgentDock}
             narrowDock={narrowDock}
             presentAgentOpen={presentAgentOpen}
+            agentDockedOpen={agentDockedOpen}
             dockBox={dockBox}
           />
       </div>

@@ -65,9 +65,13 @@ async function waitForAgentDockReflow(page: Page) {
         resolve()
         return
       }
-      const cell = document.querySelector(
-        ".dock-root > .split.horizontal[data-agent-dock='true'] > .split-cell",
-      )
+      const cell = document.querySelector<HTMLElement>('[data-agent-dock-cell="true"]')
+        ?? document.querySelector(
+          ".dock-root > .split.horizontal[data-agent-dock='true'] > .split-cell[data-agent-dock-cell]",
+        )
+        ?? document.querySelector(
+          ".dock-root > .split.horizontal[data-agent-shell='true'] > .split-cell[data-agent-dock-cell]",
+        )
       if (!cell) {
         resolve()
         return
