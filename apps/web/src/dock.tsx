@@ -489,32 +489,70 @@ function SplitChild({
   const agentShellRight = agentShell && index === 1
   const openPx = agentColumnPx(dockBox, ratio, gaps, narrowDock)
   const cellRef = useRef<HTMLDivElement>(null)
-  const closeAnimStarted = useRef(false)
-  /* flex-basis stays auto so the width property is the size that transitions. */
-  const agentWidth = presentAgentOpen ? openPx : 0
+  const lastOpenPx = useRef(openPx)
+  const [shrinkFrom, setShrinkFrom] = useState<number | null>(null)
+  const [shrinkToZero, setShrinkToZero] = useState(false)
   useLayoutEffect(() => {
-    const el = cellRef.current
-    if (!agentShellRight || !el) return
-    const reduce =
-      typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (presentAgentOpen && openPx > 0) lastOpenPx.current = openPx
+  }, [presentAgentOpen, openPx])
+  useLayoutEffect(() => {
+    if (!agentShellRight) return
     if (presentAgentOpen) {
-      closeAnimStarted.current = false
+      setShrinkFrom(null)
+      setShrinkToZero(false)
       return
     }
-    if (closeAnimStarted.current || reduce) return
-    const start = el.getBoundingClientRect().width
+    if (shrinkFrom != null) return
+    const reduce =
+      typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (reduce) return
+    const el = cellRef.current
+    const measured = el?.getBoundingClientRect().width ?? 0
+    const start = Math.max(measured, lastOpenPx.current, openPx)
     if (!(start > 1)) return
-    closeAnimStarted.current = true
-    el.style.width = `${start}px`
-    void el.offsetWidth
-    el.style.width = '0px'
-  }, [presentAgentOpen, agentShellRight])
+    setShrinkFrom(start)
+  }, [presentAgentOpen, agentShellRight, openPx, shrinkFrom])
+  useLayoutEffect(() => {
+    if (shrinkFrom == null || shrinkToZero) return
+    const id = window.requestAnimationFrame(() => setShrinkToZero(true))
+    return () => window.cancelAnimationFrame(id)
+  }, [shrinkFrom, shrinkToZero])
+  useEffect(() => {
+    if (shrinkFrom == null || !shrinkToZero) return
+    const el = cellRef.current
+    if (!el) {
+      setShrinkFrom(null)
+      setShrinkToZero(false)
+      return
+    }
+    const finish = () => {
+      setShrinkFrom(null)
+      setShrinkToZero(false)
+    }
+    const onEnd = (event: Event) => {
+      if (!(event instanceof TransitionEvent)) return
+      if (event.target !== el || event.propertyName !== 'width') return
+      finish()
+    }
+    el.addEventListener('transitionend', onEnd)
+    const timer = window.setTimeout(finish, 280)
+    return () => {
+      el.removeEventListener('transitionend', onEnd)
+      window.clearTimeout(timer)
+    }
+  }, [shrinkFrom, shrinkToZero])
+  /* flex-basis stays auto so the width property is the size that transitions. */
+  const agentWidth = presentAgentOpen
+    ? openPx
+    : shrinkFrom != null
+      ? (shrinkToZero ? 0 : shrinkFrom)
+      : 0
   const cellStyle: CSSProperties = agentShellRight
     ? {
-        flex: presentAgentOpen ? '0 0 auto' : '0 0 0px',
+        flex: '0 0 auto',
         width: `${agentWidth}px`,
         minWidth: 0,
-        maxWidth: presentAgentOpen ? 'none' : 0,
+        maxWidth: 'none',
         overflow: 'hidden',
         pointerEvents: agentDockedOpen ? undefined : 'none',
       }
