@@ -217,6 +217,7 @@ export const copy = {
   proposalAlreadyAccepted: 'Proposal already accepted',
   proposalAlreadyDiscarded: 'Proposal already discarded',
   proposalAlreadyClosed: 'Proposal already closed',
+  restoreConflict: 'Someone else changed this. Reload to see the latest version.',
   discardProposalTitle: 'Discard all?',
   discardProposalDescription: 'This discards the pending rows and closes the proposal without saving.',
   discardProposalFallback: 'Pending rows will be thrown away and the proposal will be closed without saving.',

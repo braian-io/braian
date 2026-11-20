@@ -42,8 +42,12 @@ describe('restore proposal helpers', () => {
   it('closes quietly on missing rollback proposals and explains conflicts', () => {
     expect(restoreDiscardFailure(new ApiError(404, 'missing', null))).toEqual({ close: true, message: null })
     expect(restoreDiscardFailure(new ApiError(409, 'busy', null))).toEqual({
-      close: true,
-      message: copy.proposalAlreadyClosed,
+      close: false,
+      message: copy.restoreConflict,
+    })
+    expect(restoreDiscardFailure(new ApiError(500, 'fail', null))).toEqual({
+      close: false,
+      message: copy.saveFailed,
     })
     expect(restoreDiscardFailure(new Error('nope'))).toEqual({ close: false, message: 'nope' })
   })

@@ -44,9 +44,13 @@ async function waitForAgentDockReflow(page: Page) {
         resolve()
         return
       }
-      const cell = document.querySelector(
-        ".dock-root > .split.horizontal[data-agent-dock='true'] > .split-cell",
-      ) ?? document.querySelector('.dock-root > .split.horizontal > .split-cell')
+      const cell = document.querySelector<HTMLElement>('[data-agent-dock-cell="true"]')
+        ?? document.querySelector(
+          ".dock-root > .split.horizontal[data-agent-dock='true'] > .split-cell[data-agent-dock-cell]",
+        )
+        ?? document.querySelector(
+          ".dock-root > .split.horizontal[data-agent-shell='true'] > .split-cell[data-agent-dock-cell]",
+        )
       if (!cell) {
         resolve()
         return
@@ -188,7 +192,7 @@ async function toggleAgentDock(page: Page, mode: 'open' | 'close') {
   await page.evaluate(() => {
     const host = window as Window & { __dock?: { duration: number; widths: number[] } }
     const cell = document.querySelector<HTMLElement>('[data-agent-dock-cell]')
-    const bucket = (host.__dock = { duration: 0, widths: [] })
+    const bucket: { duration: number; widths: number[] } = (host.__dock = { duration: 0, widths: [] })
     if (!cell) return
     const started = performance.now()
     const sample = () => {

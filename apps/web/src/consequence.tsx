@@ -14,6 +14,7 @@ import {
   discardRestoreOnDismiss,
   isRollbackProposal,
   objectDisplayLabel,
+  restoreAcceptConflictMessage,
   restoreDiscardFailure,
   restoreTitle,
   rollbackTargetSeqFromPatch,
@@ -79,6 +80,8 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
   const opener = useRef<HTMLElement | null>(null)
   const confirmRef = useRef<HTMLButtonElement | null>(null)
   const discardPending = useRef(false)
+  /** After a failed discard, dismiss without another POST so the draft stays on the server. */
+  const dismissWithoutDiscard = useRef(false)
   const dismiss = () => {
     const target = opener.current
     opener.current = null
@@ -89,6 +92,7 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
   useEffect(() => onProposal((proposal) => {
     opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     setError('')
+    dismissWithoutDiscard.current = false
     setOperation(proposal.operation)
     setRollbackSeq(proposal.rollback?.targetSeq)
     setId(proposal.id)
@@ -197,8 +201,20 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
   const historyRollback = discardRestoreOnDismiss(rollbackSeq)
   const requestClose = () => {
     if (busy) return
+    if (dismissWithoutDiscard.current) {
+      close()
+      return
+    }
     if (isRollback && historyRollback) discard()
     else close()
+  }
+  const cancel = () => {
+    if (busy) return
+    if (dismissWithoutDiscard.current) {
+      close()
+      return
+    }
+    discard()
   }
   const discard = () => {
     if (!id || discardPending.current || busy) return
@@ -214,10 +230,10 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
         const failure = restoreDiscardFailure(reason)
         if (failure.close) {
           void queryClient.invalidateQueries({ queryKey: ['proposals'] })
-          if (failure.message) setError(failure.message)
           close()
           return
         }
+        dismissWithoutDiscard.current = true
         setError(failure.message ?? copy.validation)
       })
       .finally(() => {
@@ -248,7 +264,15 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
         void queryClient.invalidateQueries({ queryKey: ['history'] })
         close()
       })
-      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : copy.validation))
+      .catch((reason: unknown) => {
+        const conflict = restoreAcceptConflictMessage(reason)
+        if (conflict) {
+          dismissWithoutDiscard.current = true
+          setError(conflict)
+          return
+        }
+        setError(reason instanceof Error ? reason.message : copy.validation)
+      })
       .finally(() => setBusy(false))
   }
   return (
@@ -334,7 +358,7 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
         )) : null}
         {error ? <p className="error">{error}</p> : null}
         <div className="toolbar">
-          <Button type="button" variant="ghost" onClick={discard} disabled={busy}>{copy.cancel}</Button>
+          <Button type="button" variant="ghost" onClick={cancel} disabled={busy}>{copy.cancel}</Button>
           <Button
             type="button"
             ref={confirmRef}

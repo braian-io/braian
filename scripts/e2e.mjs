@@ -283,7 +283,7 @@ const measuredSeconds = {
   'e2e/duplicate-type-views.spec.ts': 6,
   'e2e/legacy-model-workspace.spec.ts': 6,
   'e2e/dangling-model-workspace.spec.ts': 8,
-  'e2e/row264-layout-repair-personal.spec.ts': 90,
+  'e2e/row264-layout-repair-personal.spec.ts': 15,
   'e2e/inline-cell-edit.spec.ts': 7,
   'e2e/write-error.spec.ts': 5,
   'e2e/create-dialog.spec.ts': 45,

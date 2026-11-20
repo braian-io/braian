@@ -144,25 +144,40 @@ export function WorkspaceDock({
   const [dockBox, setDockBox] = useState(0)
   const rootAgentOpen = doc.layout.type === 'split' && splitLocksAgentDock(doc.layout, viewTypes)
   const [holdClosed, setHoldClosed] = useState(false)
+  const [holdClosing, setHoldClosing] = useState(false)
   const motionReady = useRef(false)
-  // Paint one closed frame before expanding, after the browser has painted.
-  // A rAF started from the layout effect runs before that paint and skips the animation.
+  const rootAgentOpenRef = useRef(rootAgentOpen)
+  // Paint one closed frame before expanding, and one open frame before shrinking,
+  // after the browser has painted. A rAF from layout effect alone runs too early.
   useLayoutEffect(() => {
     const reduce =
       typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    if (!rootAgentOpen || reduce || !motionReady.current) {
-      motionReady.current = true
-      setHoldClosed(false)
+    const wasOpen = rootAgentOpenRef.current
+    rootAgentOpenRef.current = rootAgentOpen
+    if (rootAgentOpen) {
+      setHoldClosing(false)
+      if (reduce || !motionReady.current) {
+        motionReady.current = true
+        setHoldClosed(false)
+        return
+      }
+      setHoldClosed(true)
       return
     }
-    setHoldClosed(true)
+    setHoldClosed(false)
+    motionReady.current = true
+    if (wasOpen && !reduce) setHoldClosing(true)
+    else setHoldClosing(false)
   }, [rootAgentOpen])
   useEffect(() => {
-    if (!holdClosed) return
-    const id = window.requestAnimationFrame(() => setHoldClosed(false))
+    if (!holdClosed && !holdClosing) return
+    const id = window.requestAnimationFrame(() => {
+      setHoldClosed(false)
+      setHoldClosing(false)
+    })
     return () => window.cancelAnimationFrame(id)
-  }, [holdClosed])
-  const presentAgentOpen = rootAgentOpen && !holdClosed
+  }, [holdClosed, holdClosing])
+  const presentAgentOpen = (rootAgentOpen && !holdClosed) || holdClosing
   const catalogRatio =
     doc.layout.type === 'split' && splitLocksAgentDock(doc.layout, viewTypes)
       ? doc.layout.ratios[0] ?? 1
