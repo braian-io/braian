@@ -475,6 +475,8 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
    interpolates instead of holding the start size until the transition ends. */
 .dock-root > .split.horizontal[data-agent-dock='true'] > .split-cell[data-agent-dock-cell],
 .dock-root > .split.horizontal[data-agent-shell='true'] > .split-cell[data-agent-dock-cell] {
+  position: relative;
+  z-index: 1;
   transition: width var(--dur) var(--ease);
   min-width: 0;
 }
@@ -519,16 +521,32 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
   position: relative;
   background: transparent;
   touch-action: none;
+  pointer-events: none;
+  z-index: 0;
 }
 .split-divider::before {
   content: "";
   position: absolute;
-  z-index: 3;
+  pointer-events: auto;
+  z-index: 0;
 }
 .split-divider.horizontal { cursor: col-resize; }
 .split-divider.vertical { cursor: row-resize; }
-.split-divider.horizontal::before { top: 0; bottom: 0; left: -1px; width: 8px; }
-.split-divider.vertical::before { left: 0; right: 0; top: -1px; height: 8px; }
+/* Keep the default hit target inside the 6px gutter so it cannot sit above the agent column. */
+.split-divider.horizontal::before { top: 0; bottom: 0; left: 0; width: 6px; }
+.split-divider.vertical::before { left: 0; right: 0; top: 0; height: 6px; }
+.split-divider.horizontal:hover::before,
+.split-divider.horizontal[data-active='true']::before {
+  left: -3px;
+  width: 12px;
+  z-index: 2;
+}
+.split-divider.vertical:hover::before,
+.split-divider.vertical[data-active='true']::before {
+  top: -3px;
+  height: 12px;
+  z-index: 2;
+}
 .split-divider > span {
   position: absolute;
   border-radius: 99px;

@@ -145,17 +145,34 @@ export function WorkspaceDock({
   const rootAgentOpen = doc.layout.type === 'split' && splitLocksAgentDock(doc.layout, viewTypes)
   const [holdClosed, setHoldClosed] = useState(false)
   const motionReady = useRef(false)
-  // Paint one closed frame before expanding, after the browser has painted.
-  // A rAF started from the layout effect runs before that paint and skips the animation.
+  const agentWasOpen = useRef(false)
+  // Paint one closed frame before expanding on a user open (closed → open).
+  // Skip on first paint with the dock already open (reload / personal layout restore).
   useLayoutEffect(() => {
     const reduce =
       typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    if (!rootAgentOpen || reduce || !motionReady.current) {
+    const wasOpen = agentWasOpen.current
+    agentWasOpen.current = rootAgentOpen
+    if (!rootAgentOpen) {
       motionReady.current = true
       setHoldClosed(false)
       return
     }
-    setHoldClosed(true)
+    if (reduce) {
+      motionReady.current = true
+      setHoldClosed(false)
+      return
+    }
+    if (!wasOpen) {
+      if (!motionReady.current) {
+        motionReady.current = true
+        setHoldClosed(false)
+        return
+      }
+      setHoldClosed(true)
+      return
+    }
+    setHoldClosed(false)
   }, [rootAgentOpen])
   useEffect(() => {
     if (!holdClosed) return
