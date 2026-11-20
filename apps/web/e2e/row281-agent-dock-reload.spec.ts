@@ -1,7 +1,7 @@
 // Row 281: tree/catalog pin must survive reload with the agent dock already open.
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
-import { closeAllAgentTabs, mainTable, paneWithTab } from './ui'
+import { agentSessionView, closeAllAgentTabs, mainTable, paneWithTab } from './ui'
 
 type Box = { x: number; y: number; width: number; height: number }
 
@@ -26,14 +26,27 @@ async function openAgentAsk(page: Page, prompt: string) {
   await expect(page.getByTestId('command-palette')).toHaveCount(0)
 }
 
+function layoutStatePut(response: { request: () => { method: () => string }; url: () => string; ok: () => boolean }) {
+  return response.request().method() === 'PUT'
+    && new URL(response.url()).pathname.endsWith('/state')
+    && response.ok()
+}
+
+/** Wait for a personal layout PUT; start listening before the layout change that dirties the doc. */
 async function waitForLayoutSave(page: Page) {
-  const saved = page.waitForResponse(
-    (response) =>
-      response.request().method() === 'PUT'
-      && new URL(response.url()).pathname.endsWith('/state')
-      && response.ok(),
-    { timeout: 30_000 },
-  )
+  await page.waitForResponse(layoutStatePut, { timeout: 30_000 })
+}
+
+/** Agent open already saved once; nudge focus so another PUT lands before reload. */
+async function ensureLayoutPersisted(page: Page) {
+  await page.waitForResponse(layoutStatePut, { timeout: 3_000 }).catch(() => undefined)
+  const saved = page.waitForResponse(layoutStatePut, { timeout: 30_000 })
+  const productsTab = page
+    .locator('.pane-tab[data-view-type="object_table"]')
+    .filter({ hasText: /^Products/ })
+    .first()
+  await productsTab.click()
+  await page.locator('.pane-tab[data-view-type="agent"]').last().click()
   await saved
 }
 
@@ -203,8 +216,9 @@ async function toggleAgentDock(page: Page, mode: 'open' | 'close') {
     requestAnimationFrame(sample)
   })
   await page.keyboard.press('Control+j')
-  if (mode === 'close') await expect(page.getByTestId('agent-view')).toHaveCount(0)
-  else await expect(page.getByTestId('agent-view').last()).toBeVisible({ timeout: 30_000 })
+  if (mode === 'close') {
+    await expect(page.locator('.pane-tab[data-view-type="agent"]')).toHaveCount(0)
+  }
   if (reduced) {
     await page.waitForTimeout(80)
     const duration = await page.locator('[data-agent-dock-cell]').evaluate((el) => (
@@ -239,6 +253,7 @@ async function toggleAgentDock(page: Page, mode: 'open' | 'close') {
 async function exerciseReloadCloseAt(page: Page, width: number, height: number) {
   await page.setViewportSize({ width, height })
   await login(page)
+  await closeAllAgentTabs(page)
   const products = mainTable(page, 'Products')
   const detailPane = page.locator('section.pane').filter({ has: page.getByTestId('object-detail') })
   const row = products.getByTestId('object-row').nth(8)
@@ -251,11 +266,14 @@ async function exerciseReloadCloseAt(page: Page, width: number, height: number) 
   const paneStateBeforeAgent = await productsScrollState(page, products)
 
   const prompt = `row281 reload pin ${width} ${Date.now().toString().slice(-5)}`
+  const agentNeedle = 'row281 reload pin'
   try {
+    const layoutSaved = waitForLayoutSave(page)
     await openAgentAsk(page, prompt)
-    const agent = page.getByTestId('agent-view').last()
+    const agent = agentSessionView(page, agentNeedle)
     await expect(agent).toBeVisible({ timeout: 30_000 })
     await expect(agent.getByTestId('agent-status')).toHaveAttribute('data-status', 'done', { timeout: 30_000 })
+    await layoutSaved
     await waitForAgentDockReflow(page)
     const productsOpen = await paneWidth(page, 'Products')
     const detailOpen = (await detailPane.boundingBox()) as Box
@@ -271,14 +289,13 @@ async function exerciseReloadCloseAt(page: Page, width: number, height: number) 
         `Products loses ${(loss * 100).toFixed(1)}% at ${width}px (closed ${productsClosed.toFixed(0)}px, open ${productsOpen.toFixed(0)}px)`,
       ).toBeLessThanOrEqual(0.25)
     }
-    const savePromise = waitForLayoutSave(page)
-    await page.locator('.pane-tab[data-view-type="agent"].active').last().click().catch(() => undefined)
-    await savePromise
+    await ensureLayoutPersisted(page)
 
     await page.reload()
     await expect(page.locator('nav.tabs')).toBeVisible({ timeout: 60_000 })
     await expect(mainTable(page, 'Products').getByTestId('object-row').first()).toBeVisible({ timeout: 60_000 })
-    await expect(page.getByTestId('agent-view').last()).toBeVisible({ timeout: 30_000 })
+    const agentAfterReload = agentSessionView(page, agentNeedle)
+    await expect(agentAfterReload).toBeVisible({ timeout: 30_000 })
     await assertProductsRow(page, paneStateBeforeAgent, 'reloads with the dock open')
     const detailOpenAfterReload = (await detailPane.boundingBox()) as Box
     const productsAfterReload = await paneWidth(page, 'Products')
