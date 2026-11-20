@@ -499,7 +499,6 @@ function SplitChild({
       typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
     if (presentAgentOpen) {
       closeAnimStarted.current = false
-      el.style.removeProperty('width')
       return
     }
     if (closeAnimStarted.current || reduce) return
