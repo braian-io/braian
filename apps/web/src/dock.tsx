@@ -190,6 +190,8 @@ export function WorkspaceDock({
     observer.observe(root)
     return () => observer.disconnect()
   }, [catalogRatio, doc.layout])
+  // State can lag the first layout pass after reload; read the root synchronously.
+  const layoutDockBox = dockBox > 0 ? dockBox : (rootRef.current?.clientWidth ?? 0)
   const zoomHost = doc.zoom ? leaves(doc.layout).find((leaf) => leaf.views.includes(doc.zoom ?? '')) : undefined
   const zoomed = zoomHost && doc.zoom ? { ...zoomHost, views: [doc.zoom], active: 0 } : undefined
   const shared: Frame = {
@@ -245,7 +247,7 @@ export function WorkspaceDock({
           narrowDock={narrowDock}
           presentAgentOpen={presentAgentOpen}
           agentDockedOpen={rootAgentOpen}
-          dockBox={dockBox}
+          dockBox={layoutDockBox}
         />
       )}
       {(['left', 'right', 'top', 'bottom'] as const).map((zone) => (

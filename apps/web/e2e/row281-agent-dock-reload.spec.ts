@@ -296,6 +296,7 @@ async function exerciseReloadCloseAt(page: Page, width: number, height: number) 
     }
 
     await pinProductsPane(page)
+    await expect(page.locator('[data-agent-dock-cell]')).toHaveCSS('width', /[1-9]\d+px/)
     await toggleAgentDock(page, 'close')
     await waitForAgentDockReflow(page)
 
