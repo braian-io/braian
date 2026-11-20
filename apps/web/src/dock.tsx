@@ -489,29 +489,33 @@ function SplitChild({
   const agentShellRight = agentShell && index === 1
   const openPx = agentColumnPx(dockBox, ratio, gaps, narrowDock)
   const cellRef = useRef<HTMLDivElement>(null)
-  const openPxRef = useRef(openPx)
-  const presentRef = useRef(presentAgentOpen)
-  openPxRef.current = openPx
+  const closeAnimStarted = useRef(false)
   /* flex-basis stays auto so the width property is the size that transitions. */
   const agentWidth = presentAgentOpen ? openPx : 0
   useLayoutEffect(() => {
     const el = cellRef.current
-    if (!el || !agentShellRight) return
+    if (!agentShellRight || !el) return
     const reduce =
       typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    const wasOpen = presentRef.current
-    presentRef.current = presentAgentOpen
-    if (!wasOpen || presentAgentOpen || reduce || !(openPxRef.current > 0)) return
-    el.style.width = `${openPxRef.current}px`
+    if (presentAgentOpen) {
+      closeAnimStarted.current = false
+      el.style.removeProperty('width')
+      return
+    }
+    if (closeAnimStarted.current || reduce) return
+    const start = el.getBoundingClientRect().width
+    if (!(start > 1)) return
+    closeAnimStarted.current = true
+    el.style.width = `${start}px`
     void el.offsetWidth
     el.style.width = '0px'
   }, [presentAgentOpen, agentShellRight])
   const cellStyle: CSSProperties = agentShellRight
     ? {
-        flex: '0 0 auto',
+        flex: presentAgentOpen ? '0 0 auto' : '0 0 0px',
         width: `${agentWidth}px`,
         minWidth: 0,
-        maxWidth: 'none',
+        maxWidth: presentAgentOpen ? 'none' : 0,
         overflow: 'hidden',
         pointerEvents: agentDockedOpen ? undefined : 'none',
       }
