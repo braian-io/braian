@@ -300,7 +300,84 @@ it('does not mark the agent dock wrapper as a detail split', () => {
   expect(outerCells.map((cell) => cell.style.flex.split(' ').slice(0, 2).join(' '))).toEqual(['0 0', '0 0'])
 })
 
+it('keeps a positive shell width on the first closed frame so the close can animate', () => {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches: query.includes('prefers-reduced-motion') ? false : query.includes('max-width: 1359px'),
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })),
+  })
+  const views = [
+    { id: 'products', title: 'Products', type: 'object_table' },
+    { id: 'detail', title: 'Detail', type: 'object_detail' },
+    { id: 'agent', title: 'Ask', type: 'agent' },
+  ]
+  const open: LayoutDoc = {
+    id: 'ws',
+    title: 'Products',
+    layout: {
+      type: 'split',
+      dir: 'horizontal',
+      ratios: [0.7, 0.3],
+      children: [
+        {
+          type: 'split',
+          dir: 'horizontal',
+          ratios: [0.6, 0.4],
+          children: [
+            { type: 'tabs', views: ['products'], active: 0 },
+            { type: 'tabs', views: ['detail'], active: 0 },
+          ],
+        },
+        { type: 'tabs', views: ['agent'], active: 0 },
+      ],
+    },
+    focus: 'agent',
+  }
+  const closed: LayoutDoc = {
+    ...open,
+    focus: 'products',
+    layout: {
+      type: 'split',
+      dir: 'horizontal',
+      ratios: [1, 0],
+      children: [
+        open.layout.children[0]!,
+        { type: 'tabs', views: [], active: 0 },
+      ],
+    },
+  }
+  const root = { clientWidth: 1280 } as HTMLDivElement
+  const rect = (width: number) =>
+    ({ x: 0, y: 0, width, height: 600, top: 0, left: 0, right: width, bottom: 600, toJSON() { return {} } }) as DOMRect
+  const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    const shell = this.dataset.agentDockCell === 'true'
+    return rect(shell ? 200 : 1280)
+  })
+  const { container, rerender } = render(
+    <WorkspaceDock doc={open} views={views} onChange={() => undefined} renderView={() => <div data-testid="view" />} onAddView={() => undefined} />,
+  )
+  rerender(
+    <WorkspaceDock doc={closed} views={views} onChange={() => undefined} renderView={() => <div data-testid="view" />} onAddView={() => undefined} />,
+  )
+  const cell = container.querySelector<HTMLElement>('[data-agent-dock-cell="true"]')
+  expect(Number.parseFloat(cell?.style.width ?? '0')).toBeGreaterThan(1)
+  spy.mockRestore()
+})
+
 it('keeps the same agent shell cell when the dock closes', () => {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches: query.includes('prefers-reduced-motion'),
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })),
+  })
   const views = [
     { id: 'products', title: 'Products', type: 'object_table' },
     { id: 'detail', title: 'Detail', type: 'object_detail' },

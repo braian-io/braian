@@ -490,14 +490,16 @@ function SplitChild({
   const openPx = agentColumnPx(dockBox, ratio, gaps, narrowDock)
   const cellRef = useRef<HTMLDivElement>(null)
   const lastOpenPx = useRef(openPx)
+  const shellClosedAtZero = useRef(false)
   const [shrinkFrom, setShrinkFrom] = useState<number | null>(null)
   const [shrinkToZero, setShrinkToZero] = useState(false)
   useLayoutEffect(() => {
-    if (presentAgentOpen && openPx > 0) lastOpenPx.current = openPx
-  }, [presentAgentOpen, openPx])
+    if (agentDockedOpen && openPx > 0) lastOpenPx.current = openPx
+  }, [agentDockedOpen, openPx])
   useLayoutEffect(() => {
     if (!agentShellRight) return
     if (presentAgentOpen) {
+      shellClosedAtZero.current = false
       setShrinkFrom(null)
       setShrinkToZero(false)
       return
@@ -505,7 +507,10 @@ function SplitChild({
     if (shrinkFrom != null) return
     const reduce =
       typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    if (reduce) return
+    if (reduce) {
+      shellClosedAtZero.current = true
+      return
+    }
     const el = cellRef.current
     const measured = el?.getBoundingClientRect().width ?? 0
     const start = Math.max(measured, lastOpenPx.current, openPx)
@@ -514,6 +519,11 @@ function SplitChild({
   }, [presentAgentOpen, agentShellRight, openPx, shrinkFrom])
   useLayoutEffect(() => {
     if (shrinkFrom == null || shrinkToZero) return
+    const el = cellRef.current
+    if (el) {
+      el.style.width = `${shrinkFrom}px`
+      void el.offsetWidth
+    }
     const id = window.requestAnimationFrame(() => setShrinkToZero(true))
     return () => window.cancelAnimationFrame(id)
   }, [shrinkFrom, shrinkToZero])
@@ -526,6 +536,7 @@ function SplitChild({
       return
     }
     const finish = () => {
+      shellClosedAtZero.current = true
       setShrinkFrom(null)
       setShrinkToZero(false)
     }
@@ -546,7 +557,11 @@ function SplitChild({
     ? openPx
     : shrinkFrom != null
       ? (shrinkToZero ? 0 : shrinkFrom)
-      : 0
+      : shellClosedAtZero.current
+        ? 0
+        : lastOpenPx.current > 1
+          ? lastOpenPx.current
+          : 0
   const cellStyle: CSSProperties = agentShellRight
     ? {
         flex: '0 0 auto',
