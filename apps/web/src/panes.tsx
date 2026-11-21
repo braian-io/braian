@@ -345,7 +345,9 @@ export function ObjectTable({
     )
   }
 
-  const virtualizerRef = useRef<{ scrollToIndex: (index: number) => void }>({ scrollToIndex: () => {} })
+  const virtualizerRef = useRef<{
+    scrollToIndex: (index: number, options?: { align?: 'start' | 'center' | 'end' | 'auto' }) => void
+  }>({ scrollToIndex: () => {} })
   const locateRef = useRef<(id: string) => number>(() => -1)
   const selectTries = useRef(0)
   useEffect(() => onFlash(setFlashId), [])
