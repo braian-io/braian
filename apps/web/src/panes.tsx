@@ -1110,7 +1110,9 @@ export function ObjectTable({
   const visibleColumnsKey = shown.join('\0')
   useLayoutEffect(() => {
     if (active < 0 || !cellColumn) return
-    scrollObjectTableActiveColumn(parent.current)
+    const grid = parent.current
+    if (!grid) return
+    requestAnimationFrame(() => scrollObjectTableActiveColumn(grid))
   }, [active, activeColumn, cellColumn, visibleColumnsKey])
 
   const moveActive = (next: number, extend: boolean) => {

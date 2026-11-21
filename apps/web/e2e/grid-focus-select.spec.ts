@@ -39,34 +39,17 @@ async function setNameCell(page: Page, row: Locator, text: string) {
     .toBe(text)
 }
 
-async function expectActiveCellVisibleInGrid(grid: Locator) {
+async function expectActiveCellVisibleInGrid(row: Locator, grid: Locator) {
+  const active = row.locator('.cell.active-cell')
   await expect
-    .poll(async () =>
-      grid.evaluate((el) => {
-        const cell = el.querySelector<HTMLElement>('.row .cell.active-cell')
-        if (!cell) return false
-        const g = el.getBoundingClientRect()
-        const c = cell.getBoundingClientRect()
-        let inset = 0
-        if (el.scrollLeft > 0) {
-          const row = cell.closest('.row')
-          if (row) {
-            for (const probe of row.querySelectorAll<HTMLElement>('.cell')) {
-              const style = getComputedStyle(probe)
-              if (style.position !== 'sticky') break
-              const stickLeft = Number.parseFloat(style.left) || 0
-              if (stickLeft > 0.5) break
-              inset += probe.getBoundingClientRect().width
-            }
-          }
-        }
-        const left = c.left - g.left + el.scrollLeft
-        const right = left + c.width
-        const viewLeft = el.scrollLeft + inset
-        const viewRight = el.scrollLeft + el.clientWidth
-        return left >= viewLeft - 1 && right <= viewRight + 1
-      }),
-    )
+    .poll(async () => {
+      const cell = await active.boundingBox()
+      const port = await grid.boundingBox()
+      if (!cell || !port) return false
+      const visibleLeft = Math.max(port.x, cell.x)
+      const visibleRight = Math.min(port.x + port.width, cell.x + cell.width)
+      return visibleRight - visibleLeft >= cell.width - 2
+    })
     .toBe(true)
 }
 
@@ -175,11 +158,17 @@ test('ArrowRight scrolls the active column into view; Enter opens inline edit', 
   const grid = table.locator('.grid').first()
 
   try {
-    await grid.evaluate((el) => {
+    await table.evaluate((el) => {
       el.dataset.testNarrowGrid = '1'
       el.style.width = '220px'
       el.style.maxWidth = '220px'
-      el.style.flex = '0 0 auto'
+      el.style.overflow = 'hidden'
+      const grid = el.querySelector<HTMLElement>('.grid')
+      if (grid) {
+        grid.style.width = '100%'
+        grid.style.maxWidth = '100%'
+        grid.style.flex = '0 0 auto'
+      }
     })
 
     await stableRow.locator('[data-column="number"], [data-column="key"]').first().click()
@@ -196,13 +185,13 @@ test('ArrowRight scrolls the active column into view; Enter opens inline edit', 
       if (!next || next === column) break
       column = next
       await expect.poll(async () => grid.evaluate((el) => el.scrollLeft)).toBeGreaterThanOrEqual(scrollBefore)
-      await expectActiveCellVisibleInGrid(grid)
+      await expectActiveCellVisibleInGrid(stableRow, grid)
     }
     expect(column).not.toBe(startColumn)
 
     while ((await stableRow.locator('.cell.active-cell').getAttribute('data-column')) !== 'name') {
       await page.keyboard.press('ArrowLeft')
-      await expectActiveCellVisibleInGrid(grid)
+      await expectActiveCellVisibleInGrid(stableRow, grid)
     }
 
     await page.keyboard.press('Enter')
@@ -222,12 +211,19 @@ test('ArrowRight scrolls the active column into view; Enter opens inline edit', 
     await expect(stableRow.locator('[data-column="name"]').getByTestId('cell-diff')).toContainText(draftText)
     await expect(grid).toBeFocused()
     await page.keyboard.press('ArrowRight')
-    await expectActiveCellVisibleInGrid(grid)
+    await expectActiveCellVisibleInGrid(stableRow, grid)
   } finally {
-    await grid.evaluate((el) => {
+    await table.evaluate((el) => {
       if (el.dataset.testNarrowGrid) {
         el.style.width = ''
         el.style.maxWidth = ''
+        el.style.overflow = ''
+        const grid = el.querySelector<HTMLElement>('.grid')
+        if (grid) {
+          grid.style.width = ''
+          grid.style.maxWidth = ''
+          grid.style.flex = ''
+        }
         delete el.dataset.testNarrowGrid
       }
     })

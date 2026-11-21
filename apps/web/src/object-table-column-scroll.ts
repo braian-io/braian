@@ -62,4 +62,7 @@ export function scrollObjectTableActiveColumn(grid: HTMLElement | null | undefin
   }
   nextScroll = Math.max(0, nextScroll)
   if (nextScroll !== grid.scrollLeft) grid.scrollLeft = nextScroll
+  if (!isActiveObjectTableColumnVisible(grid)) {
+    cell.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }
 }
