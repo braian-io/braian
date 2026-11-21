@@ -19,6 +19,21 @@ export type DetailMeasureCommitResult =
  * Parse a detail measure draft. Flush (Save) rejects invalid input without staging.
  * Blur may stage a cleared value when the field is empty.
  */
+export type FlushDetailMeasureResult =
+  | { ok: true; kind: 'unchanged' }
+  | { ok: true; kind: 'committed'; next: MeasureFieldRecord; displayText: string }
+  | { ok: false }
+
+/** Save-time commit: unchanged drafts (including empty untouched) are valid. */
+export function flushDetailMeasureDraft(text: string, record: MeasureFieldRecord): FlushDetailMeasureResult {
+  if (text === detailMeasureCommittedText(record)) {
+    return { ok: true, kind: 'unchanged' }
+  }
+  const result = commitDetailMeasureDraft(text, record, 'flush')
+  if (!result.ok) return { ok: false }
+  return { ok: true, kind: 'committed', next: result.next, displayText: result.displayText }
+}
+
 export function commitDetailMeasureDraft(
   text: string,
   record: MeasureFieldRecord,

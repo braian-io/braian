@@ -141,8 +141,8 @@ import { classSections } from './class-sections'
 import { LinkSections } from './link-section'
 import { DetailMeta } from './detail-meta'
 import { splitDetailKeys } from './detail-fields'
-import { DetailFieldDraftHost, useDetailFieldDraft, type DetailFieldDraftHandle } from './detail-field-draft'
-import { commitDetailMeasureDraft, detailMeasureCommittedText, type MeasureFieldRecord } from './detail-measure-commit'
+import { DetailFieldDraftHost, type DetailFieldDraftHandle } from './detail-field-draft'
+import { DetailNumberMeasureField } from './detail-number-measure-field'
 import { beginLinkDrag, dispatchLinkDrop, endLinkDrag, linkDragActive, linkDragContains, linkDragLabel, linkDragMime, linkDragObjects, linkDragPayload, linkDropDecision, readLinkDrag, setLinkDragHint } from './link-drag'
 import { EMPTY_MANUAL_FILTER, isEmptyManualQuery, labelCodes, labelSearchFilter, publishSelectionLabels, SELECTION_APPLIED_EVENT, selectionFilterText, selectionMatchesType } from './assortment-filter'
 import { appendPathFilter, objectTableFilter } from './table-filter'
@@ -3386,7 +3386,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
     return (
       <div key={key} className={owner ? 'field locked' : 'field'} data-testid={owner ? 'locked-field' : undefined}>
         <label>{fieldLabel}{owner ? ` · ${copy.ownedBy} ${owner}` : ''}</label>
-        <div className={controlClass}>
+        <div className={controlClass} data-testid={`detail-field-control-${key}`}>
           {!fieldKnownInPreview(key) ? (
             <span className="detail-field-skeleton" data-testid="detail-field-skeleton" data-field={key} aria-busy="true" />
           ) : (
@@ -3604,86 +3604,6 @@ function modelLanguages(defs: Json | undefined): string[] {
   return listed.length > 0 ? listed : ['en']
 }
 
-function NumberMeasureField({
-  fieldKey,
-  value,
-  units,
-  onChange,
-}: {
-  fieldKey: string
-  value: unknown
-  units: string[]
-  onChange: (value: unknown) => void
-}) {
-  const record = (value && typeof value === 'object' ? value : { value }) as MeasureFieldRecord
-  const committedText = detailMeasureCommittedText(record)
-  const [draft, setDraft] = useState(committedText)
-  const [invalid, setInvalid] = useState(false)
-  const skipBlurCommitRef = useRef(false)
-  const draftRef = useRef(draft)
-  draftRef.current = draft
-  const recordRef = useRef(record)
-  recordRef.current = record
-  const valueStamp = `${String(record.value ?? '')}\0${String(record.unit ?? '')}`
-  useEffect(() => {
-    setDraft(committedText)
-    setInvalid(false)
-  }, [valueStamp, committedText])
-
-  const applyCommit = useCallback((text: string, mode: 'blur' | 'flush') => {
-    const result = commitDetailMeasureDraft(text, recordRef.current, mode)
-    if (!result.ok) {
-      setInvalid(true)
-      return false
-    }
-    setInvalid(false)
-    onChange(result.next)
-    setDraft(result.displayText)
-    return true
-  }, [onChange])
-
-  const commitForSave = useCallback(() => applyCommit(draftRef.current, 'flush'), [applyCommit])
-  const discardLocal = useCallback(() => {
-    skipBlurCommitRef.current = true
-    setDraft(committedText)
-    setInvalid(false)
-  }, [committedText])
-
-  useDetailFieldDraft({ commit: commitForSave, discard: discardLocal })
-
-  return (
-    <span className="measure" data-testid={`detail-measure-field-${fieldKey}`}>
-      <input
-        data-field="true"
-        data-testid="detail-measure-value"
-        value={draft}
-        title={draft}
-        aria-invalid={invalid || undefined}
-        onChange={(event) => {
-          setInvalid(false)
-          setDraft(event.target.value)
-        }}
-        onBlur={() => {
-          if (skipBlurCommitRef.current) {
-            skipBlurCommitRef.current = false
-            return
-          }
-          applyCommit(draft, 'blur')
-        }}
-      />
-      <UnitSuffix
-        units={units}
-        value={String(record.unit ?? units[0] ?? '')}
-        onChange={(unit) => {
-          skipBlurCommitRef.current = true
-          setInvalid(false)
-          onChange({ ...record, unit })
-        }}
-      />
-    </span>
-  )
-}
-
 function Editor({
   fieldKey,
   kind,
@@ -3801,7 +3721,7 @@ function Editor({
     )
   }
   if (kind === 'number') {
-    return <NumberMeasureField fieldKey={fieldKey} value={value} units={units} onChange={onChange} />
+    return <DetailNumberMeasureField fieldKey={fieldKey} value={value} units={units} onChange={onChange} />
   }
   if (form === 'long' || (typeof value === 'string' && value.length > 80)) {
     return <AutoResizeTextarea data-field="true" value={textValue(value)} onChange={(event) => onChange(event.target.value)} />
