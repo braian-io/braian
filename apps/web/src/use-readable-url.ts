@@ -15,6 +15,7 @@ import {
   type NamedId,
 } from './url-public'
 import { parseUrlState, useUrlStateSync, type UrlStateNavigation } from './url-state'
+import { useUrlObjectMirror } from './use-url-object-mirror'
 
 type ListObjects = typeof listObjectsWithKey
 type ListObjectsByIdSuffix = typeof listObjectsByIdSuffix
@@ -149,6 +150,7 @@ export function useReadableUrl(input: {
     view: viewToken,
     catalog: catalogToken,
   }, catalogs.isSuccess)
+  const urlObject = useUrlObjectMirror(hookObject)
 
   useUrlStateSync({
     search: input.search,
@@ -157,7 +159,7 @@ export function useReadableUrl(input: {
       workspaceId: wsToken,
       viewId: viewToken,
       catalogId: catalogToken,
-      objectId: hookObject,
+      objectId: urlObject,
     },
     valid: {
       workspace: (token) => resolvePublicToken(input.workspaces, token) != null,
