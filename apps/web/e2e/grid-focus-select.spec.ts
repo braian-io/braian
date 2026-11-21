@@ -215,17 +215,17 @@ test('ArrowRight scrolls the active column into view; Enter opens inline edit', 
     const startColumn = await stableRow.locator('.cell.active-cell').getAttribute('data-column')
     expect(startColumn).toBeTruthy()
     let column = startColumn
+    // Products has six columns (number, name, type, status, version, brand).
+    // ArrowRight on the last one stays there; keep going only while the column changes.
     for (let i = 0; i < 8; i += 1) {
       await page.keyboard.press('ArrowRight')
-      await expect
-        .poll(async () => stableRow.locator('.cell.active-cell').getAttribute('data-column'))
-        .not.toBe(column)
       const next = await stableRow.locator('.cell.active-cell').getAttribute('data-column')
-      if (!next) break
+      if (!next || next === column) break
       column = next
       await expectActiveCellVisibleInGrid(grid)
     }
     expect(column).not.toBe(startColumn)
+    await expectActiveCellVisibleInGrid(grid)
 
     while ((await stableRow.locator('.cell.active-cell').getAttribute('data-column')) !== 'name') {
       await page.keyboard.press('ArrowLeft')
