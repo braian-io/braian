@@ -495,10 +495,14 @@ pub fn sanitize_view_table_prefs(
     let Value::Object(table) = table else {
         return Err("table must be an object");
     };
-    if let Some(sort) = table.get("sort") && !sort.is_string() {
+    if let Some(sort) = table.get("sort")
+        && !sort.is_string()
+    {
         return Err("table.sort must be a string");
     }
-    if let Some(group) = table.get("groupBy") && !group.is_string() {
+    if let Some(group) = table.get("groupBy")
+        && !group.is_string()
+    {
         return Err("table.groupBy must be a string");
     }
     normalize_view_table_map(table, defs);
