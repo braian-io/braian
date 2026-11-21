@@ -24,21 +24,6 @@ function rowByName(page: Page, name: RegExp | string) {
   return mainTable(page).getByTestId('object-row').filter({ hasText: name }).first()
 }
 
-async function setNameCell(page: Page, row: Locator, text: string) {
-  await row.locator('[data-column="name"]').first().dblclick()
-  const editor = page.getByTestId('cell-editor-name')
-  await expect(editor).toBeVisible()
-  await editor.fill(text)
-  await editor.press('Enter')
-  await expect(page.getByTestId('cell-editor-name')).toHaveCount(0)
-  await mainTable(page).getByTestId('review-and-save').click()
-  await expect
-    .poll(async () => (await rowByName(page, text).locator('[data-column="name"]').textContent())?.trim() ?? '', {
-      timeout: 30_000,
-    })
-    .toBe(text)
-}
-
 async function expectActiveCellVisibleInGrid(grid: Locator) {
   // Same rule as isActiveObjectTableColumnVisible. A column wider than the
   // scrollport (Name is 280px; this test forces the grid to 220px) cannot sit
@@ -269,11 +254,15 @@ test('ArrowRight scrolls the active column into view; Enter opens inline edit', 
     await openProducts(page)
     const current = rowByName(page, new RegExp(`${original}|${draftText}|Should not stick`))
     if (await current.count()) {
-      const name = (await current.locator('[data-column="name"]').textContent())?.trim() ?? ''
-      const diff = current.locator('[data-column="name"]').getByTestId('cell-diff')
-      if (name !== original || (await diff.count()) > 0) {
-        await setNameCell(page, current, original)
+      const nameCell = current.locator('[data-column="name"]').first()
+      // Enter stages a local draft. Typing the seed name back is not a patch
+      // (it equals the stored value), so Save would write the staged draft.
+      // Discard drops it and leaves the seed object unchanged.
+      if (await nameCell.getByTestId('cell-diff').count()) {
+        await table.getByTestId('discard-draft').click()
       }
+      await expect(nameCell.getByTestId('cell-diff')).toHaveCount(0)
+      await expect.poll(async () => (await nameCell.textContent())?.trim() ?? '').toBe(original)
     }
   }
 })
