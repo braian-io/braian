@@ -74,7 +74,7 @@ export function WorkspaceDock({
   agentViews?: string[]
 }) {
   const rootRef = useRef<HTMLDivElement>(null)
-  /** Structure-tree column, measured while the agent dock is closed. */
+  /** Full-dock structure-tree width for pinning while the agent dock is open. */
   const treePinRef = useRef<TreePin | null>(null)
   const [measuredTreePin, setMeasuredTreePin] = useState<TreePin | null>(null)
   const docRef = useRef(doc)
@@ -120,13 +120,16 @@ export function WorkspaceDock({
     const root = rootRef.current
     if (!root) return
     const measure = () => {
-      const next = measureStructureTreePin(docRef.current.layout, new Map(viewsRef.current.map((view) => [view.id, view.type])), root)
+      const layout = docRef.current.layout
+      const types = new Map(viewsRef.current.map((view) => [view.id, view.type]))
+      const dockCatalogRatio = catalogRatio ?? agentDockCatalogRatio(layout)
+      const next = measureStructureTreePin(layout, types, root)
       if (!next) return
       const scaled =
         catalogRatio != null && treePinRef.current
           ? treePinRef.current
-          : catalogRatio != null
-            ? catalogRatioToFullDockPin(next, catalogRatio)
+          : dockCatalogRatio != null
+            ? catalogRatioToFullDockPin(next, dockCatalogRatio)
             : next
       treePinRef.current = scaled
       setMeasuredTreePin(scaled)
@@ -280,6 +283,15 @@ function measureStructureTreePin(layout: Node, viewTypes: Map<string, string>, r
   const ratio = splitRatioAt(layout, leaf.path)
   if (ratio == null || !(ratio > 0)) return null
   return { width, ratio }
+}
+
+/** Left-hand catalog share when the root split reserves a right-hand tab column (agent or empty shell). */
+export function agentDockCatalogRatio(layout: Node): number | null {
+  if (layout.type !== 'split' || layout.dir !== 'horizontal' || layout.children.length !== 2) return null
+  const right = layout.children[1]
+  if (right?.type !== 'tabs') return null
+  const ratio = layout.ratios[0]
+  return typeof ratio === 'number' && Number.isFinite(ratio) && ratio > 0 && ratio < 0.999 ? ratio : null
 }
 
 /** A horizontal agent dock must not let the Detail flex rules resize the left subtree. */

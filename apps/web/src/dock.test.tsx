@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
-import { WorkspaceDock, catalogRatioToFullDockPin } from './dock'
+import { WorkspaceDock, agentDockCatalogRatio, catalogRatioToFullDockPin } from './dock'
 import { views, type LayoutDoc } from './layout'
 
 afterEach(() => {
@@ -132,6 +132,20 @@ it('scales a tree pin measured inside the catalog column to full-dock width', ()
   expect(catalogRatioToFullDockPin({ width: 154, ratio: 0.22 }, null)).toEqual({ width: 154, ratio: 0.22 })
 })
 
+it('reads the catalog share from an empty agent shell', () => {
+  const layout = {
+    type: 'split' as const,
+    dir: 'horizontal' as const,
+    ratios: [0.7, 0.3],
+    children: [
+      { type: 'split' as const, dir: 'horizontal' as const, ratios: [0.5, 0.5], children: [] },
+      { type: 'tabs' as const, views: [], active: 0 },
+    ],
+  }
+  expect(agentDockCatalogRatio(layout)).toBe(0.7)
+  expect(agentDockCatalogRatio({ type: 'tabs', views: ['x'], active: 0 })).toBeNull()
+})
+
 it('pins the structure tree when the layout loads with the agent dock already open', async () => {
   const viewSpecs = [
     { id: 'tree', title: 'Food', type: 'structure_tree' },
@@ -187,6 +201,76 @@ it('pins the structure tree when the layout loads with the agent dock already op
     })
     const treeCells = [...(treeSplit?.querySelectorAll<HTMLElement>(':scope > .split-cell') ?? [])]
     expect(Number.parseFloat(treeCells[0]?.style.width ?? '0')).toBeCloseTo(0.22 * 800, 4)
+  } finally {
+    spy.mockRestore()
+  }
+})
+
+it('rescales the tree pin when the agent dock locks after a shrunk-catalog measure', async () => {
+  const viewSpecs = [
+    { id: 'tree', title: 'Food', type: 'structure_tree' },
+    { id: 'products', title: 'Products', type: 'object_table' },
+    { id: 'detail', title: 'Detail', type: 'object_detail' },
+    { id: 'agent', title: 'Ask', type: 'agent' },
+  ]
+  const catalog = {
+    type: 'split' as const,
+    dir: 'horizontal' as const,
+    ratios: [0.22, 0.78],
+    children: [
+      { type: 'tabs' as const, views: ['tree'], active: 0 },
+      {
+        type: 'split' as const,
+        dir: 'horizontal' as const,
+        ratios: [0.55, 0.45],
+        children: [
+          { type: 'tabs' as const, views: ['products'], active: 0 },
+          { type: 'tabs' as const, views: ['detail'], active: 0 },
+        ],
+      },
+    ],
+  }
+  const shell: LayoutDoc = {
+    id: 'ws',
+    title: 'Products',
+    layout: {
+      type: 'split',
+      dir: 'horizontal',
+      ratios: [0.7, 0.3],
+      children: [catalog, { type: 'tabs', views: [], active: 0 }],
+    },
+    focus: 'products',
+  }
+  const open: LayoutDoc = {
+    ...shell,
+    layout: {
+      type: 'split',
+      dir: 'horizontal',
+      ratios: [0.7, 0.3],
+      children: [catalog, { type: 'tabs', views: ['agent'], active: 0 }],
+    },
+  }
+  const treeWidthInCatalog = 0.22 * 0.7 * 800
+  const rect = (width: number) =>
+    ({ x: 0, y: 0, width, height: 600, top: 0, left: 0, right: width, bottom: 600, toJSON() { return {} } }) as DOMRect
+  const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    const treeCell = this.classList.contains('split-cell') && this.querySelector("[data-view-type='structure_tree']")
+    return rect(treeCell ? treeWidthInCatalog : 800)
+  })
+  try {
+    const { container, rerender } = render(
+      <WorkspaceDock doc={shell} views={viewSpecs} onChange={() => undefined} renderView={() => <div />} onAddView={() => undefined} />,
+    )
+    rerender(
+      <WorkspaceDock doc={open} views={viewSpecs} onChange={() => undefined} renderView={() => <div />} onAddView={() => undefined} />,
+    )
+    const treeSplit = await waitFor(() => {
+      const split = container.querySelector<HTMLElement>(".split.horizontal[data-tree-pinned='true']")
+      const cell = split?.querySelector<HTMLElement>(':scope > .split-cell')
+      expect(Number.parseFloat(cell?.style.width ?? '0')).toBeCloseTo(0.22 * 800, 4)
+      return split
+    })
+    expect(treeSplit?.dataset.treePinned).toBe('true')
   } finally {
     spy.mockRestore()
   }
