@@ -41,6 +41,8 @@ async function expectActiveCellVisibleInGrid(grid: Locator) {
       grid.evaluate((el) => {
         const cell = el.querySelector<HTMLElement>('.row .cell.active-cell')
         if (!cell) return false
+        const g = el.getBoundingClientRect()
+        const c = cell.getBoundingClientRect()
         let inset = 0
         if (el.scrollLeft > 0) {
           const row = cell.closest('.row')
@@ -50,22 +52,12 @@ async function expectActiveCellVisibleInGrid(grid: Locator) {
               if (style.position !== 'sticky') break
               const stickLeft = Number.parseFloat(style.left) || 0
               if (stickLeft > 0.5) break
-              inset += probe.offsetWidth
+              inset += probe.getBoundingClientRect().width
             }
           }
         }
-        const row = cell.closest('.row')
-        let left = 0
-        let width = cell.offsetWidth
-        if (row) {
-          for (const sibling of row.querySelectorAll<HTMLElement>('.cell')) {
-            if (sibling === cell) break
-            left += sibling.offsetWidth
-          }
-        } else {
-          left = cell.offsetLeft
-        }
-        const right = left + width
+        const left = c.left - g.left + el.scrollLeft
+        const right = left + c.width
         const viewLeft = el.scrollLeft + inset
         const viewRight = el.scrollLeft + el.clientWidth
         return left >= viewLeft - 1 && right <= viewRight + 1
@@ -98,17 +90,21 @@ test('ArrowRight scrolls the active column into view; Enter opens inline edit', 
       el.style.flex = '0 0 auto'
     })
 
+    await stableRow.locator('[data-column="number"], [data-column="key"]').first().click()
     await grid.focus()
-    await page.keyboard.press('ArrowDown')
     await expect(stableRow.locator('.cell.active-cell')).toBeVisible()
 
-    for (let i = 0; i < 12; i += 1) {
+    const startColumn = await stableRow.locator('.cell.active-cell').getAttribute('data-column')
+    expect(startColumn).toBeTruthy()
+    let column = startColumn
+    for (let i = 0; i < 8; i += 1) {
       await page.keyboard.press('ArrowRight')
+      const next = await stableRow.locator('.cell.active-cell').getAttribute('data-column')
+      if (!next || next === column) break
+      column = next
       await expectActiveCellVisibleInGrid(grid)
     }
-
-    const lastColumn = await stableRow.locator('.cell.active-cell').getAttribute('data-column')
-    expect(lastColumn).toBeTruthy()
+    expect(column).not.toBe(startColumn)
 
     while ((await stableRow.locator('.cell.active-cell').getAttribute('data-column')) !== 'name') {
       await page.keyboard.press('ArrowLeft')

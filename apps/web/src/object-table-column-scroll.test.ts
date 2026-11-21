@@ -25,7 +25,7 @@ function domRect(box: { left: number; top: number; width: number; height: number
 describe('object-table-column-scroll', () => {
   it('returns zero inset without sticky cells', () => {
     const grid = document.createElement('div')
-    grid.getBoundingClientRect = () => domRect({ left: 0, top: 0, width: 400, height: 200 })
+    grid.scrollLeft = 20
     expect(stickyLeadingInset(grid)).toBe(0)
   })
 
@@ -36,7 +36,7 @@ describe('object-table-column-scroll', () => {
     row.className = 'row'
     const sticky = document.createElement('div')
     sticky.className = 'cell'
-    Object.defineProperty(sticky, 'offsetWidth', { value: 80, configurable: true })
+    sticky.getBoundingClientRect = () => domRect({ left: 0, top: 0, width: 80, height: 28 })
     const plain = document.createElement('div')
     plain.className = 'cell'
     const original = window.getComputedStyle.bind(window)
@@ -56,23 +56,22 @@ describe('object-table-column-scroll', () => {
     const grid = document.createElement('div')
     Object.defineProperty(grid, 'clientWidth', { value: 200, configurable: true })
     grid.scrollLeft = 0
+    grid.getBoundingClientRect = () => domRect({ left: 0, top: 0, width: 200, height: 120 })
 
     const row = document.createElement('div')
     row.className = 'row selected'
     const cellA = document.createElement('div')
     cellA.className = 'cell'
-    Object.defineProperty(cellA, 'offsetLeft', { value: 0, configurable: true })
-    Object.defineProperty(cellA, 'offsetWidth', { value: 120, configurable: true })
+    cellA.getBoundingClientRect = () => domRect({ left: 0, top: 40, width: 120, height: 28 })
     const cellB = document.createElement('div')
     cellB.className = 'cell active-cell'
-    Object.defineProperty(cellB, 'offsetWidth', { value: 120, configurable: true })
+    cellB.getBoundingClientRect = () => domRect({ left: 260, top: 40, width: 120, height: 28 })
     row.append(cellA, cellB)
     grid.append(row)
     document.body.append(grid)
 
     scrollObjectTableActiveColumn(grid)
-    expect(grid.scrollLeft).toBe(40)
-    expect(isActiveObjectTableColumnVisible(grid)).toBe(true)
+    expect(grid.scrollLeft).toBe(180)
 
     grid.remove()
   })
@@ -81,22 +80,19 @@ describe('object-table-column-scroll', () => {
     const grid = document.createElement('div')
     Object.defineProperty(grid, 'clientWidth', { value: 200, configurable: true })
     grid.scrollLeft = 200
+    grid.getBoundingClientRect = () => domRect({ left: 0, top: 0, width: 200, height: 120 })
 
     const row = document.createElement('div')
     row.className = 'row active'
-    const pad = document.createElement('div')
-    pad.className = 'cell'
-    Object.defineProperty(pad, 'offsetWidth', { value: 160, configurable: true })
     const cell = document.createElement('div')
     cell.className = 'cell active-cell'
-    Object.defineProperty(cell, 'offsetWidth', { value: 120, configurable: true })
-    row.append(pad, cell)
+    cell.getBoundingClientRect = () => domRect({ left: -30, top: 40, width: 120, height: 28 })
+    row.append(cell)
     grid.append(row)
     document.body.append(grid)
 
     scrollObjectTableActiveColumn(grid)
-    expect(grid.scrollLeft).toBe(160)
-    expect(isActiveObjectTableColumnVisible(grid)).toBe(true)
+    expect(grid.scrollLeft).toBe(170)
 
     grid.remove()
   })

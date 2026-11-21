@@ -1,12 +1,10 @@
-function cellContentOffset(cell: HTMLElement): { left: number; width: number } {
-  const row = cell.closest<HTMLElement>('.row, .head')
-  if (!row) return { left: cell.offsetLeft, width: cell.offsetWidth }
-  let left = 0
-  for (const sibling of row.querySelectorAll<HTMLElement>('.cell')) {
-    if (sibling === cell) return { left, width: sibling.offsetWidth }
-    left += sibling.offsetWidth
+function cellInScrollContent(grid: HTMLElement, cell: HTMLElement): { left: number; width: number } {
+  const gridRect = grid.getBoundingClientRect()
+  const cellRect = cell.getBoundingClientRect()
+  return {
+    left: cellRect.left - gridRect.left + grid.scrollLeft,
+    width: cellRect.width,
   }
-  return { left: cell.offsetLeft, width: cell.offsetWidth }
 }
 
 /** Width of leading sticky column cells in the first body row (when scrolled). */
@@ -20,7 +18,7 @@ export function stickyLeadingInset(grid: HTMLElement): number {
     if (style.position !== 'sticky') break
     const stickLeft = Number.parseFloat(style.left) || 0
     if (stickLeft > 0.5) break
-    inset += cell.offsetWidth
+    inset += cell.getBoundingClientRect().width
   }
   return inset
 }
@@ -39,7 +37,7 @@ export function isActiveObjectTableColumnVisible(grid: HTMLElement): boolean {
   const cell = activeObjectTableCell(grid)
   if (!cell) return false
   const inset = stickyLeadingInset(grid)
-  const { left: cellLeft, width } = cellContentOffset(cell)
+  const { left: cellLeft, width } = cellInScrollContent(grid, cell)
   const cellRight = cellLeft + width
   const viewLeft = grid.scrollLeft + inset
   const viewRight = grid.scrollLeft + grid.clientWidth
@@ -52,7 +50,7 @@ export function scrollObjectTableActiveColumn(grid: HTMLElement | null | undefin
   const cell = activeObjectTableCell(grid)
   if (!cell) return
   const inset = stickyLeadingInset(grid)
-  const { left: cellLeft, width } = cellContentOffset(cell)
+  const { left: cellLeft, width } = cellInScrollContent(grid, cell)
   const cellRight = cellLeft + width
   const viewLeft = grid.scrollLeft + inset
   const viewRight = grid.scrollLeft + grid.clientWidth
