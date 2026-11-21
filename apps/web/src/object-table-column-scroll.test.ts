@@ -36,6 +36,7 @@ describe('object-table-column-scroll', () => {
     row.className = 'row'
     const sticky = document.createElement('div')
     sticky.className = 'cell'
+    Object.defineProperty(sticky, 'offsetWidth', { value: 80, configurable: true })
     sticky.getBoundingClientRect = () => domRect({ left: 0, top: 0, width: 80, height: 28 })
     const plain = document.createElement('div')
     plain.className = 'cell'
@@ -55,23 +56,23 @@ describe('object-table-column-scroll', () => {
   it('scrolls horizontally when the active cell is clipped on the right', () => {
     const grid = document.createElement('div')
     Object.defineProperty(grid, 'clientWidth', { value: 200, configurable: true })
+    Object.defineProperty(grid, 'scrollWidth', { value: 400, configurable: true })
     grid.scrollLeft = 0
-    grid.getBoundingClientRect = () => domRect({ left: 0, top: 0, width: 200, height: 120 })
 
     const row = document.createElement('div')
     row.className = 'row selected'
     const cellA = document.createElement('div')
     cellA.className = 'cell'
-    cellA.getBoundingClientRect = () => domRect({ left: 0, top: 40, width: 120, height: 28 })
+    Object.defineProperty(cellA, 'offsetWidth', { value: 120, configurable: true })
     const cellB = document.createElement('div')
     cellB.className = 'cell active-cell'
-    cellB.getBoundingClientRect = () => domRect({ left: 260, top: 40, width: 120, height: 28 })
+    Object.defineProperty(cellB, 'offsetWidth', { value: 120, configurable: true })
     row.append(cellA, cellB)
     grid.append(row)
     document.body.append(grid)
 
     scrollObjectTableActiveColumn(grid)
-    expect(grid.scrollLeft).toBe(180)
+    expect(grid.scrollLeft).toBe(40)
 
     grid.remove()
   })
@@ -79,20 +80,20 @@ describe('object-table-column-scroll', () => {
   it('scrolls back when the active cell is clipped on the left', () => {
     const grid = document.createElement('div')
     Object.defineProperty(grid, 'clientWidth', { value: 200, configurable: true })
+    Object.defineProperty(grid, 'scrollWidth', { value: 500, configurable: true })
     grid.scrollLeft = 200
-    grid.getBoundingClientRect = () => domRect({ left: 0, top: 0, width: 200, height: 120 })
 
     const row = document.createElement('div')
     row.className = 'row active'
     const cell = document.createElement('div')
     cell.className = 'cell active-cell'
-    cell.getBoundingClientRect = () => domRect({ left: -30, top: 40, width: 120, height: 28 })
+    Object.defineProperty(cell, 'offsetWidth', { value: 120, configurable: true })
     row.append(cell)
     grid.append(row)
     document.body.append(grid)
 
     scrollObjectTableActiveColumn(grid)
-    expect(grid.scrollLeft).toBe(170)
+    expect(grid.scrollLeft).toBe(0)
 
     grid.remove()
   })

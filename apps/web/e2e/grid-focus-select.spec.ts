@@ -43,26 +43,29 @@ async function expectActiveCellVisibleInGrid(grid: Locator) {
   await expect
     .poll(async () =>
       grid.evaluate((el) => {
-        const cell =
-          el.querySelector<HTMLElement>('.row.selected .cell.active-cell') ??
-          el.querySelector<HTMLElement>('.row.active .cell.active-cell') ??
-          el.querySelector<HTMLElement>('.cell.active-cell')
+        const cell = el.querySelector<HTMLElement>('.cell.active-cell')
         if (!cell) return false
-        const gridRect = el.getBoundingClientRect()
-        const cellRect = cell.getBoundingClientRect()
-        const cellLeft = cellRect.left - gridRect.left + el.scrollLeft
-        const cellRight = cellLeft + cellRect.width
+        const row = cell.closest<HTMLElement>('.row')
+        if (!row) return false
+        let cellLeft = 0
+        let width = 0
+        for (const probe of row.querySelectorAll<HTMLElement>('.cell')) {
+          const w = probe.offsetWidth
+          if (probe === cell) {
+            width = w
+            break
+          }
+          cellLeft += w
+        }
+        const cellRight = cellLeft + width
         let inset = 0
         if (el.scrollLeft > 0) {
-          const row = cell.closest('.row')
-          if (row) {
-            for (const probe of row.querySelectorAll<HTMLElement>('.cell')) {
-              const style = getComputedStyle(probe)
-              if (style.position !== 'sticky') break
-              const stickLeft = Number.parseFloat(style.left) || 0
-              if (stickLeft > 0.5) break
-              inset += probe.getBoundingClientRect().width
-            }
+          for (const probe of row.querySelectorAll<HTMLElement>('.cell')) {
+            const style = getComputedStyle(probe)
+            if (style.position !== 'sticky') break
+            const stickLeft = Number.parseFloat(style.left) || 0
+            if (stickLeft > 0.5) break
+            inset += probe.offsetWidth
           }
         }
         const viewLeft = el.scrollLeft + inset
@@ -195,6 +198,7 @@ test('ArrowRight scrolls the active column into view; Enter opens inline edit', 
 
     await stableRow.locator('[data-column="number"], [data-column="key"]').first().click()
     await grid.focus()
+    await expect.poll(async () => grid.getAttribute('aria-activedescendant')).toBe(rowId)
     await expect(stableRow.locator('.cell.active-cell')).toBeVisible()
 
     const startColumn = await stableRow.locator('.cell.active-cell').getAttribute('data-column')
