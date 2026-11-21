@@ -257,7 +257,7 @@ const measuredSeconds = {
   'e2e/unit-field-single-choice.spec.ts': 40,
   'e2e/column-prefs-multitab.spec.ts': 19,
   'e2e/object-table-default-columns.spec.ts': 6,
-  'e2e/grid-focus-select.spec.ts': 5,
+  'e2e/grid-focus-select.spec.ts': 75,
   'e2e/row269-instant-detail-arrow.spec.ts': 49,
   'e2e/row270-open-structure.spec.ts': 20,
   'e2e/column-drag-and-system-fields.spec.ts': 13,
