@@ -1,4 +1,5 @@
 import { isValidElement, useMemo, useEffect, useLayoutEffect, useCallback, useRef, useState, useSyncExternalStore, type CSSProperties, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
+import { flushSync } from 'react-dom'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { History as HistoryIcon, Trash2 } from 'lucide-react'
@@ -1110,9 +1111,7 @@ export function ObjectTable({
   const visibleColumnsKey = shown.join('\0')
   useLayoutEffect(() => {
     if (active < 0 || !cellColumn) return
-    const grid = parent.current
-    if (!grid) return
-    requestAnimationFrame(() => scrollObjectTableActiveColumn(grid))
+    scrollObjectTableActiveColumn(parent.current)
   }, [active, activeColumn, cellColumn, visibleColumnsKey])
 
   const moveActive = (next: number, extend: boolean) => {
@@ -1383,7 +1382,10 @@ export function ObjectTable({
       event.preventDefault()
       const at = shown.indexOf(cellColumn)
       const next = shown[Math.max(0, Math.min(shown.length - 1, at + (event.key === 'ArrowRight' ? 1 : -1)))]
-      if (next) activateColumn(next)
+      if (next && next !== cellColumn) {
+        flushSync(() => activateColumn(next))
+        scrollObjectTableActiveColumn(parent.current)
+      }
       return
     }
     if (!['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End', 'Enter', ' ', 'Escape'].includes(event.key)) return
