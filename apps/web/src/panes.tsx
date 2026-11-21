@@ -10,7 +10,8 @@ import { useCatalogIdToKey } from './catalog-list'
 import { CreateDialog, requireText, type CreateDialogField } from './create-dialog'
 import { createObjectFields, createObjectFieldValues } from './create-object-fields'
 import { newObjectBody } from './new-object'
-import { attributeByKey, headerSortState, indexSort, normalizeTableSort, readIndexed, sortKeyForColumnId } from './index-fields'
+import { attributeByKey, headerSortState, indexSort, readIndexed, sortKeyForColumnId } from './index-fields'
+import { coerceTableGroupBy, coerceTableSort } from './table-prefs-coerce'
 import {
   cellEditShouldPatch,
   cellEditValuesBody,
@@ -209,12 +210,13 @@ function orderBase(current: string[]) {
 /** Saved table prefs to apply when the view mounts. The free-text quick filter is
  * never restored from the view row (row 242): a query saved earlier must not hide
  * rows when the view is opened again. */
-export function savedTable(view: PanesView) {
+export function savedTable(view: PanesView, defs?: Json) {
   const table = (view.state.table as Json | undefined) ?? {}
+  const sort = table.sort ?? 'a_number:asc'
   return {
     filter: '',
-    sort: String(table.sort ?? 'a_number:asc'),
-    groupBy: String(table.groupBy ?? ''),
+    sort: coerceTableSort(sort, defs),
+    groupBy: coerceTableGroupBy(table.groupBy, defs),
     order: Array.isArray(table.order) ? table.order.map(String) : columns.map((column) => column.id),
     sizes: (table.sizes as Record<string, number> | undefined) ?? {},
   }
@@ -404,10 +406,12 @@ export function ObjectTable({
   })
   // Align restored view-row sort tokens with Typesense fields once definitions load.
   useEffect(() => {
-    if (!defs.data || !sort) return
-    const normalized = normalizeTableSort(sort, defs.data)
-    if (normalized !== sort) setSort(normalized)
-  }, [defs.data, sort])
+    if (!defs.data) return
+    const coercedSort = coerceTableSort(sort, defs.data)
+    if (coercedSort !== sort) setSort(coercedSort)
+    const coercedGroup = coerceTableGroupBy(groupBy, defs.data)
+    if (coercedGroup !== groupBy) setGroupBy(coercedGroup)
+  }, [defs.data, sort, groupBy])
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey) return

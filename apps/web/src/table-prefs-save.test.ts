@@ -108,6 +108,17 @@ describe('savedTable', () => {
     expect(initial.groupBy).toBe('a_status')
     expect(initial.sizes).toEqual({ name: 320 })
   })
+
+  it('coerces a malformed bare column sort to the number default', () => {
+    const initial = savedTable({
+      id: 'view-1',
+      type: 'object_table',
+      title: 'Products',
+      state: { table: { sort: 'number', groupBy: '', sizes: {} } },
+    })
+    expect(initial.sort).toBe('a_number:asc')
+    expect(initial.groupBy).toBe('')
+  })
 })
 
 describe('createTablePrefsSaver', () => {

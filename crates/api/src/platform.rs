@@ -3144,6 +3144,14 @@ async fn save_view(
     let mut view_state = body.state.unwrap_or(json!({}));
     if let Ok(cached) = state.models.get(&state.store).await {
         braian_model::translate_view_state(&mut view_state, &cached.defs);
+        braian_model::sanitize_view_table_prefs(&body.r#type, &mut view_state, &cached.defs)
+            .map_err(|detail| {
+                Problem::new(
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "invalid_view_state",
+                    detail,
+                )
+            })?;
     }
     braian_model::strip_ephemeral_table_search(&body.r#type, &mut view_state);
     state

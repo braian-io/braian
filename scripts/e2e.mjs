@@ -149,6 +149,7 @@ const specs = [
   'e2e/row240-contrast.spec.ts',
   'e2e/row242-search-reset.spec.ts',
   'e2e/row229-search-isolation.spec.ts',
+  'e2e/row275-invalid-table-sort.spec.ts',
 ]
 
 // Explicit compose targeting. The default keeps `just up` and CI on the
@@ -346,6 +347,7 @@ const measuredSeconds = {
   'e2e/row240-contrast.spec.ts': 45,
   'e2e/row242-search-reset.spec.ts': 200,
   'e2e/row229-search-isolation.spec.ts': 240,
+  'e2e/row275-invalid-table-sort.spec.ts': 200,
 }
 
 const reseedSeconds = 4
