@@ -3363,7 +3363,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
     return (
       <div key={key} className={owner ? 'field locked' : 'field'} data-testid={owner ? 'locked-field' : undefined}>
         <label>{fieldLabel}{owner ? ` · ${copy.ownedBy} ${owner}` : ''}</label>
-        <div className={controlClass}>
+        <div className={controlClass} data-testid={`detail-field-control-${key}`}>
           {!fieldKnownInPreview(key) ? (
             <span className="detail-field-skeleton" data-testid="detail-field-skeleton" data-field={key} aria-busy="true" />
           ) : (

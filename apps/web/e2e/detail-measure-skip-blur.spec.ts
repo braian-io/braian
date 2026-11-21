@@ -87,6 +87,7 @@ test.describe('detail measure skip-blur', () => {
       await replaceMeasureInput(valueInput, '2')
       await valueInput.blur()
 
+      await expect(detail.getByTestId('detail-field-control-energy')).toHaveClass(/draft-user/)
       await expect(detail.getByTestId('object-draft-bar')).toBeVisible()
     } finally {
       if (objectId) {
