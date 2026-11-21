@@ -18,6 +18,7 @@ mod patch;
 pub mod path;
 pub mod refs;
 mod review;
+mod type_workspace;
 pub mod standard;
 pub mod structure;
 pub mod system_view_columns;
@@ -73,6 +74,7 @@ pub use standard::{
     standard_ids, structures_from_usage,
 };
 pub use structure::{GroupRemoval, StructureError, StructureErrorCode};
+pub use type_workspace::type_share_token;
 pub use system_view_columns::{
     SYSTEM_VIEW_COLUMNS, SystemViewColumn, ensure_system_view_columns, is_system_view_column,
     system_view_columns_json,

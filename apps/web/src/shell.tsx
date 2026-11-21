@@ -457,6 +457,14 @@ export function Shell() {
   }, [workspaceId, me.data?.user_id])
 
   useEffect(() => {
+    const types = typeNames(defs.data)
+    const keys = new Set(types.map((type) => type.key))
+    for (const key of ensuredTypes.current) {
+      if (!keys.has(key)) ensuredTypes.current.delete(key)
+    }
+  }, [defs.data])
+
+  useEffect(() => {
     const rows = workspaces.data?.workspaces
     const types = typeNames(defs.data)
     if (!rows || types.length === 0) return
