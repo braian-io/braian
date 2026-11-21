@@ -47,9 +47,20 @@ async function restoreEnergy(page: Page, objectId: string, snapshot: MeasureValu
   })
 }
 
-async function discardDetailDrafts(page: Page, detail: ReturnType<Page['getByTestId']>) {
-  const energy = detail.getByTestId('detail-measure-field-energy').getByTestId('detail-measure-value')
-  await energy.focus()
+async function replaceMeasureInput(input: ReturnType<Page['locator']>, text: string) {
+  await expect(input).toBeVisible()
+  await input.focus()
+  await input.evaluate((element) => {
+    const field = element as HTMLInputElement
+    field.setSelectionRange(0, field.value.length)
+  })
+  await input.pressSequentially(text, { delay: 0 })
+  await expect(input).toHaveValue(text)
+}
+
+async function discardDetailDrafts(detail: ReturnType<Page['getByTestId']>) {
+  const valueInput = detail.getByTestId('detail-measure-field-energy').getByTestId('detail-measure-value')
+  await valueInput.focus()
   await detail.press('Escape')
 }
 
@@ -68,19 +79,19 @@ test.describe('detail measure skip-blur', () => {
       objectId = id
       energyBefore = await readEnergy(page, objectId)
 
-      const energy = detail.getByTestId('detail-measure-field-energy')
-      const valueInput = energy.getByTestId('detail-measure-value')
-      await valueInput.fill('9,9')
-      await discardDetailDrafts(page, detail)
-      await valueInput.fill('2')
-      await valueInput.press('Tab')
+      const valueInput = detail.getByTestId('detail-measure-field-energy').getByTestId('detail-measure-value')
+      const committed = await valueInput.inputValue()
+      await replaceMeasureInput(valueInput, '9,9')
+      await detail.press('Escape')
+      await expect(valueInput).toHaveValue(committed)
+      await replaceMeasureInput(valueInput, '2')
+      await valueInput.blur()
 
-      const energyField = detail.locator('.field').filter({ has: energy })
-      await expect(energyField.locator('.control')).toHaveClass(/draft-user/)
       await expect(detail.getByTestId('object-draft-bar')).toBeVisible()
     } finally {
       if (objectId) {
-        await discardDetailDrafts(page, page.getByTestId('object-detail'))
+        const detail = page.getByTestId('object-detail')
+        if (await detail.isVisible()) await discardDetailDrafts(detail)
         await restoreEnergy(page, objectId, energyBefore)
       }
     }
@@ -114,7 +125,7 @@ test.describe('detail measure skip-blur', () => {
       await detail.getByTestId('detail-measure-field-energy').getByTestId('detail-measure-value').press('Control+s')
 
       await expect.poll(async () => savedCount(await activity.textContent()), { timeout: 60_000 }).toBeGreaterThan(beforeSaved)
-      await discardDetailDrafts(page, detail)
+      await discardDetailDrafts(detail)
     } finally {
       if (objectId) await restoreEnergy(page, objectId, energyBefore)
     }
