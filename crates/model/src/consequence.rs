@@ -100,7 +100,10 @@ pub fn purge_for(defs: &DefinitionSet, changes: &[ModelChange]) -> DataPurge {
         push_unique(&mut merged.limit_types, step.limit_types);
         push_unique(&mut merged.limit_groups, step.limit_groups);
         push_unique(&mut merged.delete_types, step.delete_types);
-        push_unique_strings(&mut merged.delete_type_workspace_tokens, step.delete_type_workspace_tokens);
+        push_unique_strings(
+            &mut merged.delete_type_workspace_tokens,
+            step.delete_type_workspace_tokens,
+        );
         push_unique(&mut merged.unplace_groups, step.unplace_groups);
         if merged.match_value.is_none() {
             merged.match_value = step.match_value;
@@ -358,7 +361,9 @@ fn type_purge(defs: &DefinitionSet, token: &str) -> DataPurge {
         confirm_name: object_type.singular_label("en"),
         link_attributes,
         delete_types: vec![object_type.id.as_uuid()],
-        delete_type_workspace_tokens: vec![crate::type_workspace::type_share_token(&object_type.key)],
+        delete_type_workspace_tokens: vec![crate::type_workspace::type_share_token(
+            &object_type.key,
+        )],
         ..DataPurge::default()
     }
 }

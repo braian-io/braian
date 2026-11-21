@@ -44,7 +44,7 @@ test('deleting a new object type removes its workspace tab immediately and after
     const saved = page.waitForResponse(
       (response) => response.url().includes('/v1/model/draft/save') && response.request().method() === 'POST',
     )
-    await table.getByTestId('review-and-save').click()
+    await page.getByTestId('review-save').click()
     expect((await saved).ok()).toBeTruthy()
     await expect(page.getByTestId('review-dialog')).toHaveCount(0)
     await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)

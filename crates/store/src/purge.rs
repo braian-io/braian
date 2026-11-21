@@ -423,10 +423,7 @@ async fn unplace(
 }
 
 /// Soft-deletes canonical type workspaces. Personal copies keep their tokens.
-async fn delete_type_workspaces(
-    tx: &Transaction<'_>,
-    tokens: &[String],
-) -> Result<i64, Error> {
+async fn delete_type_workspaces(tx: &Transaction<'_>, tokens: &[String]) -> Result<i64, Error> {
     let rows = tx
         .query(
             "UPDATE workspaces SET deleted_at = now()

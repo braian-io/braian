@@ -8,13 +8,7 @@ pub fn type_share_token(key: &str) -> String {
         .trim()
         .to_lowercase()
         .chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() {
-                ch
-            } else {
-                '-'
-            }
-        })
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '-' })
         .collect();
     let slug = slug.trim_matches('-');
     if slug.is_empty() {

@@ -74,9 +74,7 @@ async fn call(
 async fn app() -> (TestDb, axum::Router, Uuid) {
     load_env();
     let db = TestDb::create().await;
-    let identities = braian_api::identities(db.store(), HUMAN)
-        .await
-        .unwrap();
+    let identities = braian_api::identities(db.store(), HUMAN).await.unwrap();
     let actor = identities
         .iter()
         .find(|item| item.handle == "ada")
