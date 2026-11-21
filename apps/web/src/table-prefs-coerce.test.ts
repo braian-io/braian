@@ -19,6 +19,12 @@ describe('coerceTableSort', () => {
     expect(coerceTableSort(42, defs)).toBe(DEFAULT_TABLE_SORT)
     expect(coerceTableSort('', defs)).toBe('')
   })
+
+  it('keeps attribute-id sorts until definitions are available', () => {
+    const persisted = `${defs.attributes[0].id}:asc`
+    expect(coerceTableSort(persisted)).toBe(persisted)
+    expect(coerceTableSort('a_name__en:desc')).toBe('a_name__en:desc')
+  })
 })
 
 describe('coerceTableGroupBy', () => {

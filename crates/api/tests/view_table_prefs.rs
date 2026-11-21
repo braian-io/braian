@@ -85,7 +85,9 @@ async fn login(app: &axum::Router, db: &TestDb, email: &str, password: &str) -> 
         .method("POST")
         .uri("/v1/login")
         .header("content-type", "application/json")
-        .body(Body::from(json!({ "email": email, "password": password }).to_string()))
+        .body(Body::from(
+            json!({ "email": email, "password": password }).to_string(),
+        ))
         .unwrap();
     let response = app.clone().oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
