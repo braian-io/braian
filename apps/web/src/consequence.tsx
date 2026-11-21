@@ -256,6 +256,9 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
         // removal is still waiting for something.
         if (!destructiveIntent) session.push(copy.confirm)
         void queryClient.invalidateQueries({ queryKey: ['definitions'] })
+        if (operation === 'model.delete_type') {
+          void queryClient.invalidateQueries({ queryKey: ['workspaces'] })
+        }
         void queryClient.invalidateQueries({ queryKey: ['proposals'] })
         void queryClient.invalidateQueries({ queryKey: ['proposal', id] })
         void queryClient.invalidateQueries({ queryKey: ['objects'] })

@@ -21,6 +21,7 @@ mod review;
 pub mod standard;
 pub mod structure;
 pub mod system_view_columns;
+mod type_workspace;
 
 pub use consequence::{
     ConsequenceCounts, DataPurge, UsageFixture, ValueMatch, consequence_lines,
@@ -77,4 +78,5 @@ pub use system_view_columns::{
     SYSTEM_VIEW_COLUMNS, SystemViewColumn, ensure_system_view_columns, is_system_view_column,
     system_view_columns_json,
 };
+pub use type_workspace::type_share_token;
 pub use uuid::Uuid;

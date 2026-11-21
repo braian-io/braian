@@ -567,6 +567,7 @@ export function ModelDraftHost() {
             opener.current = null
             refresh()
           }}
+          invalidateWorkspaces={() => { void queryClient.invalidateQueries({ queryKey: ['workspaces'] }) }}
         />
       ) : null}
       {dialog ? <CreateDialog kind={dialog} onClose={() => setDialog(null)} /> : null}
@@ -580,12 +581,14 @@ function ReviewDialog({
   onClose,
   onRevert,
   onSaved,
+  invalidateWorkspaces,
 }: {
   body: Json
   created: StagedStructures[]
   onClose: () => void
   onRevert: (created: StagedStructures[]) => void
   onSaved: () => void
+  invalidateWorkspaces: () => void
 }) {
   const blocked = draftSaveGate(body) === 'blocked'
   const destructive = asRecord(body.consequence)?.destructive === true
@@ -611,7 +614,11 @@ function ReviewDialog({
     setBusy(true)
     setError('')
     void api.post('/v1/model/draft/save', { body: draftSaveBody(body) })
-      .then(() => onSaved())
+      .then(() => {
+        const steps = (body.steps as Json[] | undefined) ?? []
+        if (steps.some((step) => step.op === 'delete_type')) invalidateWorkspaces()
+        onSaved()
+      })
       .catch((reason: unknown) => {
         const message = writeErrorMessage(reason)
         if (message) setError(message)

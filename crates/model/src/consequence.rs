@@ -30,6 +30,8 @@ pub struct DataPurge {
     pub match_value: Option<ValueMatch>,
     /// Objects of these types are deleted, with their values, links and selections.
     pub delete_types: Vec<Uuid>,
+    /// Canonical type workspaces (`braian-type-*` share tokens) removed with the type.
+    pub delete_type_workspace_tokens: Vec<String>,
     /// Placements in these groups are removed. The objects stay.
     pub unplace_groups: Vec<Uuid>,
 }
@@ -98,6 +100,10 @@ pub fn purge_for(defs: &DefinitionSet, changes: &[ModelChange]) -> DataPurge {
         push_unique(&mut merged.limit_types, step.limit_types);
         push_unique(&mut merged.limit_groups, step.limit_groups);
         push_unique(&mut merged.delete_types, step.delete_types);
+        push_unique_strings(
+            &mut merged.delete_type_workspace_tokens,
+            step.delete_type_workspace_tokens,
+        );
         push_unique(&mut merged.unplace_groups, step.unplace_groups);
         if merged.match_value.is_none() {
             merged.match_value = step.match_value;
@@ -279,6 +285,14 @@ fn push_unique(into: &mut Vec<Uuid>, values: Vec<Uuid>) {
     }
 }
 
+fn push_unique_strings(into: &mut Vec<String>, values: Vec<String>) {
+    for value in values {
+        if !into.contains(&value) {
+            into.push(value);
+        }
+    }
+}
+
 fn purge_one(defs: &DefinitionSet, change: &ModelChange) -> DataPurge {
     if !deletes_data(change) {
         return DataPurge::default();
@@ -347,6 +361,9 @@ fn type_purge(defs: &DefinitionSet, token: &str) -> DataPurge {
         confirm_name: object_type.singular_label("en"),
         link_attributes,
         delete_types: vec![object_type.id.as_uuid()],
+        delete_type_workspace_tokens: vec![crate::type_workspace::type_share_token(
+            &object_type.key,
+        )],
         ..DataPurge::default()
     }
 }
@@ -1293,5 +1310,9 @@ mod tests {
         assert_eq!(counts.removed, 1);
         assert_eq!(counts.links, 1);
         assert_eq!(purge.confirm_name, "Article");
+        assert_eq!(
+            purge.delete_type_workspace_tokens,
+            vec!["braian-type-article"]
+        );
     }
 }
