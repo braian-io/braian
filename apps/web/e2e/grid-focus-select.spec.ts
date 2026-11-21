@@ -40,6 +40,10 @@ async function setNameCell(page: Page, row: Locator, text: string) {
 }
 
 async function expectActiveCellVisibleInGrid(grid: Locator) {
+  // Same rule as isActiveObjectTableColumnVisible. A column wider than the
+  // scrollport (Name is 280px; this test forces the grid to 220px) cannot sit
+  // entirely inside it. Visibility then means the port is filled by the cell
+  // and scrollLeft pins the cell's leading edge, past any sticky inset.
   await expect
     .poll(async () =>
       grid.evaluate((el) => {
@@ -70,7 +74,14 @@ async function expectActiveCellVisibleInGrid(grid: Locator) {
         }
         const viewLeft = el.scrollLeft + inset
         const viewRight = el.scrollLeft + el.clientWidth
-        return cellLeft >= viewLeft - 1 && cellRight <= viewRight + 1
+        const available = Math.max(0, viewRight - viewLeft)
+        const overlap = Math.min(cellRight, viewRight) - Math.max(cellLeft, viewLeft)
+        const target = Math.min(width, available)
+        if (overlap < target - 1) return false
+        if (width <= available + 1) return true
+        const maxScroll = Math.max(0, el.scrollWidth - el.clientWidth)
+        const lead = Math.max(0, Math.min(cellLeft - inset, maxScroll))
+        return Math.abs(el.scrollLeft - lead) <= 1
       }),
     )
     .toBe(true)

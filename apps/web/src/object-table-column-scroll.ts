@@ -1,3 +1,5 @@
+const EPS = 1
+
 function cellBox(cell: HTMLElement): { left: number; width: number } {
   const row = cell.closest<HTMLElement>('.row')
   if (!row) {
@@ -34,36 +36,79 @@ export function activeObjectTableCell(grid: HTMLElement): HTMLElement | null {
   return grid.querySelector<HTMLElement>('.cell.active-cell')
 }
 
-/** True when the active cell's layout box sits inside the grid scrollport (for tests). */
+type Frame = {
+  inset: number
+  cellLeft: number
+  cellRight: number
+  width: number
+  viewLeft: number
+  viewRight: number
+  available: number
+}
+
+function frameOf(grid: HTMLElement, cell: HTMLElement): Frame {
+  const inset = stickyLeadingInset(grid)
+  const { left: cellLeft, width } = cellBox(cell)
+  const viewLeft = grid.scrollLeft + inset
+  const viewRight = grid.scrollLeft + grid.clientWidth
+  return {
+    inset,
+    cellLeft,
+    cellRight: cellLeft + width,
+    width,
+    viewLeft,
+    viewRight,
+    available: Math.max(0, viewRight - viewLeft),
+  }
+}
+
+function maxScroll(grid: HTMLElement): number {
+  return Math.max(0, grid.scrollWidth - grid.clientWidth)
+}
+
+/** Scroll offset that puts the active cell fully in view, or pins its start when it cannot fit. */
+function targetScroll(grid: HTMLElement, frame: Frame): number {
+  let next = grid.scrollLeft
+  if (frame.width > frame.available + EPS) {
+    // A column wider than the scrollport cannot be fully shown. Pin its start
+    // so the value is readable; aligning the trailing edge hides that start.
+    next = frame.cellLeft - frame.inset
+  } else if (frame.cellLeft < frame.viewLeft - EPS) {
+    next = frame.cellLeft - frame.inset
+  } else if (frame.cellRight > frame.viewRight + EPS) {
+    next = frame.cellRight - grid.clientWidth
+  }
+  return Math.max(0, Math.min(next, maxScroll(grid)))
+}
+
+/**
+ * True when the active cell is fully inside the scrollport, or — when it is
+ * wider than the port — scrolled so its leading edge is in view and the port
+ * is filled by the cell.
+ */
 export function isActiveObjectTableColumnVisible(grid: HTMLElement): boolean {
   const cell = activeObjectTableCell(grid)
   if (!cell) return false
-  const inset = stickyLeadingInset(grid)
-  const { left: cellLeft, width } = cellBox(cell)
-  const cellRight = cellLeft + width
-  const viewLeft = grid.scrollLeft + inset
-  const viewRight = grid.scrollLeft + grid.clientWidth
-  return cellLeft >= viewLeft - 1 && cellRight <= viewRight + 1
+  const frame = frameOf(grid, cell)
+  const overlap = Math.min(frame.cellRight, frame.viewRight) - Math.max(frame.cellLeft, frame.viewLeft)
+  const target = Math.min(frame.width, frame.available)
+  if (overlap < target - EPS) return false
+  if (frame.width <= frame.available + EPS) return true
+  return Math.abs(grid.scrollLeft - targetScroll(grid, frame)) <= EPS
 }
 
-/** Keep the keyboard-active column fully inside the grid's horizontal scrollport. */
+/** Keep the keyboard-active column inside the grid's horizontal scrollport. */
 export function scrollObjectTableActiveColumn(grid: HTMLElement | null | undefined): void {
   if (!grid) return
   const cell = activeObjectTableCell(grid)
   if (!cell) return
-  const inset = stickyLeadingInset(grid)
-  const { left: cellLeft, width } = cellBox(cell)
-  const cellRight = cellLeft + width
-  const viewLeft = grid.scrollLeft + inset
-  const viewRight = grid.scrollLeft + grid.clientWidth
-  let nextScroll = grid.scrollLeft
-  if (cellLeft < viewLeft) {
-    nextScroll = cellLeft - inset
-  } else if (cellRight > viewRight) {
-    nextScroll = cellRight - grid.clientWidth
+  // The first assignment can move scrollLeft off 0, which is when a leading
+  // sticky column starts covering the cell. The second pass includes that inset.
+  for (let pass = 0; pass < 2; pass += 1) {
+    const next = targetScroll(grid, frameOf(grid, cell))
+    if (Math.abs(next - grid.scrollLeft) <= EPS) break
+    grid.scrollLeft = next
   }
-  nextScroll = Math.max(0, Math.min(nextScroll, grid.scrollWidth - grid.clientWidth))
-  if (nextScroll !== grid.scrollLeft) grid.scrollLeft = nextScroll
   if (!isActiveObjectTableColumnVisible(grid)) {
     cell.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }

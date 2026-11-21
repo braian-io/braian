@@ -77,6 +77,69 @@ describe('object-table-column-scroll', () => {
     grid.remove()
   })
 
+  it('pins the start of a column wider than the scrollport', () => {
+    const grid = document.createElement('div')
+    Object.defineProperty(grid, 'clientWidth', { value: 220, configurable: true })
+    Object.defineProperty(grid, 'scrollWidth', { value: 900, configurable: true })
+    grid.scrollLeft = 0
+
+    const row = document.createElement('div')
+    row.className = 'row selected'
+    const number = document.createElement('div')
+    number.className = 'cell'
+    Object.defineProperty(number, 'offsetWidth', { value: 160, configurable: true })
+    const name = document.createElement('div')
+    name.className = 'cell active-cell'
+    Object.defineProperty(name, 'offsetWidth', { value: 280, configurable: true })
+    row.append(number, name)
+    grid.append(row)
+    document.body.append(grid)
+
+    scrollObjectTableActiveColumn(grid)
+    // Trailing alignment would be 280+160-220 = 220 and hide the start of Name.
+    expect(grid.scrollLeft).toBe(160)
+    expect(isActiveObjectTableColumnVisible(grid)).toBe(true)
+
+    grid.remove()
+  })
+
+  it('includes a sticky inset that appears only after the first scroll', () => {
+    const grid = document.createElement('div')
+    Object.defineProperty(grid, 'clientWidth', { value: 200, configurable: true })
+    Object.defineProperty(grid, 'scrollWidth', { value: 500, configurable: true })
+    grid.scrollLeft = 0
+
+    const row = document.createElement('div')
+    row.className = 'row'
+    const sticky = document.createElement('div')
+    sticky.className = 'cell'
+    Object.defineProperty(sticky, 'offsetWidth', { value: 80, configurable: true })
+    const middle = document.createElement('div')
+    middle.className = 'cell'
+    Object.defineProperty(middle, 'offsetWidth', { value: 120, configurable: true })
+    const active = document.createElement('div')
+    active.className = 'cell active-cell'
+    Object.defineProperty(active, 'offsetWidth', { value: 150, configurable: true })
+    row.append(sticky, middle, active)
+    grid.append(row)
+    document.body.append(grid)
+
+    const original = window.getComputedStyle.bind(window)
+    vi.spyOn(window, 'getComputedStyle').mockImplementation((element) => {
+      if (element === sticky) return { position: 'sticky', left: '0px' } as CSSStyleDeclaration
+      return original(element)
+    })
+
+    scrollObjectTableActiveColumn(grid)
+    // First pass ignores the inset (scrollLeft is still 0) and would land at 150.
+    // The second pass sees the sticky cover and pins the cell's start after it.
+    expect(grid.scrollLeft).toBe(120)
+    expect(isActiveObjectTableColumnVisible(grid)).toBe(true)
+
+    vi.restoreAllMocks()
+    grid.remove()
+  })
+
   it('scrolls back when the active cell is clipped on the left', () => {
     const grid = document.createElement('div')
     Object.defineProperty(grid, 'clientWidth', { value: 200, configurable: true })
