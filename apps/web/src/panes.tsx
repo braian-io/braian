@@ -78,6 +78,7 @@ import {
   seedObjectListPreview,
 } from './object-list-preview'
 import { commitImmediateTableNavLand, scheduleDebouncedTableNavLand } from './object-table-nav'
+import { scrollObjectTableActiveColumn } from './object-table-column-scroll'
 import { clearObjectNavReplace, markObjectNavReplace } from './object-nav-signal'
 import { useObjectLand } from './use-object-land'
 import {
@@ -1106,6 +1107,11 @@ export function ObjectTable({
     }
   }, [active, groupBy])
 
+  useLayoutEffect(() => {
+    if (active < 0 || !cellColumn) return
+    scrollObjectTableActiveColumn(parent.current)
+  }, [active, activeColumn, cellColumn, shown])
+
   const moveActive = (next: number, extend: boolean) => {
     if (listCount <= 0) return
     const clamped = Math.max(0, Math.min(listCount - 1, next))
@@ -1384,7 +1390,17 @@ export function ObjectTable({
     event.preventDefault()
     if (event.key === 'Enter' || event.key === ' ') {
       const row = rowAt(active)
-      if (row) applySelection(row, active, active, false)
+      if (!row) return
+      if (selected.length > 1) {
+        applySelection(row, active, active, false)
+        return
+      }
+      if (event.key === 'Enter') {
+        const owned = row.id === session.objectId ? new Set(Object.keys(ownersForRow)) : undefined
+        if (isEditableColumn(cellColumn, owned)) beginCellEdit(row, cellColumn)
+        return
+      }
+      applySelection(row, active, active, false)
       return
     }
     const next = event.key === 'ArrowDown'
@@ -1624,6 +1640,7 @@ export function ObjectTable({
     setEditingMeasureDraft(null)
     editingMeasureRef.current = null
     setEditingMeasureError(null)
+    focusGrid()
   }
 
   const syncMeasureDraft = (draft: MeasureEditDraft) => {
@@ -1830,6 +1847,7 @@ export function ObjectTable({
               return
             }
             commitCellEdit(row, id, editingDraft)
+            focusGrid()
           }}
           onKeyDown={(event) => {
             // Never let grid / shell shortcuts see keys while the caret is in the editor.
@@ -1843,6 +1861,7 @@ export function ObjectTable({
             if (event.key === 'Enter') {
               event.preventDefault()
               commitCellEdit(row, id, editingDraft)
+              focusGrid()
             }
             if (event.key === 'Escape') {
               event.preventDefault()
