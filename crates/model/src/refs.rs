@@ -419,9 +419,9 @@ fn normalize_stored_table_sort(sort: &str, defs: &DefinitionSet) -> String {
         return ensure_search_sort_direction(&translated);
     }
     match trimmed {
-        "number" | "key" => return default_table_sort(defs),
-        "type" => return "type_key:asc".into(),
-        "version" => return "version:asc".into(),
+        "number" | "key" => default_table_sort(defs),
+        "type" => "type_key:asc".into(),
+        "version" => "version:asc".into(),
         _ => default_table_sort(defs),
     }
 }
@@ -495,15 +495,11 @@ pub fn sanitize_view_table_prefs(
     let Value::Object(table) = table else {
         return Err("table must be an object");
     };
-    if let Some(sort) = table.get("sort") {
-        if !sort.is_string() {
-            return Err("table.sort must be a string");
-        }
+    if let Some(sort) = table.get("sort") && !sort.is_string() {
+        return Err("table.sort must be a string");
     }
-    if let Some(group) = table.get("groupBy") {
-        if !group.is_string() {
-            return Err("table.groupBy must be a string");
-        }
+    if let Some(group) = table.get("groupBy") && !group.is_string() {
+        return Err("table.groupBy must be a string");
     }
     normalize_view_table_map(table, defs);
     Ok(())
