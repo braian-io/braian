@@ -11,6 +11,7 @@ use uuid::Uuid;
 use crate::definition::{AttributeKind, DefinitionSet, Structure};
 use crate::id::{AttributeId, GroupId, StructureId, TypeId, UnitFamilyId, ValueListId};
 use crate::language::LanguageTag;
+use crate::standard;
 
 /// What a caller asked to address.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -401,6 +402,113 @@ fn translate_table(table: &mut Map<String, Value>, defs: &DefinitionSet) {
     }
 }
 
+/// Default object-table sort when stored prefs are missing or invalid.
+pub fn default_table_sort(_defs: &DefinitionSet) -> String {
+    format!("{}:asc", attribute_index_field(standard::number_id(), None))
+}
+
+fn normalize_stored_table_sort(sort: &str, defs: &DefinitionSet) -> String {
+    let trimmed = sort.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    if let Ok(translated) = crate::path::translate_sort_expression(trimmed, defs) {
+        if translated.is_empty() {
+            return String::new();
+        }
+        return ensure_search_sort_direction(&translated);
+    }
+    match trimmed {
+        "number" | "key" => default_table_sort(defs),
+        "type" => "type_key:asc".into(),
+        "version" => "version:asc".into(),
+        _ => default_table_sort(defs),
+    }
+}
+
+fn normalize_stored_table_group(group: &str, defs: &DefinitionSet) -> String {
+    let trimmed = group.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    if let Ok(translated) = crate::path::translate_sort_expression(trimmed, defs) {
+        if translated.is_empty() {
+            return String::new();
+        }
+        return translated;
+    }
+    match trimmed {
+        "type" => "type_key".into(),
+        "number" => attribute_index_field(standard::number_id(), None),
+        "type_key" | "version" | "key" => trimmed.to_owned(),
+        _ => String::new(),
+    }
+}
+
+fn ensure_search_sort_direction(sort: &str) -> String {
+    if let Some((field, direction)) = sort.rsplit_once(':').filter(|(_, direction)| {
+        direction.eq_ignore_ascii_case("asc") || direction.eq_ignore_ascii_case("desc")
+    }) {
+        return format!("{field}:{direction}");
+    }
+    if sort.is_empty() {
+        String::new()
+    } else {
+        format!("{sort}:asc")
+    }
+}
+
+fn normalize_view_table_map(table: &mut Map<String, Value>, defs: &DefinitionSet) {
+    if let Some(sort) = table.get("sort") {
+        let next = if let Some(text) = sort.as_str() {
+            normalize_stored_table_sort(text, defs)
+        } else {
+            default_table_sort(defs)
+        };
+        table.insert("sort".into(), Value::String(next));
+    }
+    if let Some(group) = table.get("groupBy") {
+        let next = if let Some(text) = group.as_str() {
+            normalize_stored_table_group(text, defs)
+        } else {
+            String::new()
+        };
+        table.insert("groupBy".into(), Value::String(next));
+    }
+}
+
+/// Reject malformed table pref shapes on write; coerce unknown sort/group tokens.
+pub fn sanitize_view_table_prefs(
+    view_type: &str,
+    state: &mut Value,
+    defs: &DefinitionSet,
+) -> Result<(), &'static str> {
+    if view_type != "object_table" && view_type != "table" {
+        return Ok(());
+    }
+    let Some(object) = state.as_object_mut() else {
+        return Ok(());
+    };
+    let Some(table) = object.get_mut("table") else {
+        return Ok(());
+    };
+    let Value::Object(table) = table else {
+        return Err("table must be an object");
+    };
+    if let Some(sort) = table.get("sort")
+        && !sort.is_string()
+    {
+        return Err("table.sort must be a string");
+    }
+    if let Some(group) = table.get("groupBy")
+        && !group.is_string()
+    {
+        return Err("table.groupBy must be a string");
+    }
+    normalize_view_table_map(table, defs);
+    Ok(())
+}
+
 /// Object-table column ids. `name` and `status` are also attribute keys, and
 /// the table addresses columns by these ids, not by the attribute.
 fn translate_table_column(token: &str, defs: &DefinitionSet) -> String {
@@ -697,6 +805,22 @@ mod tests {
         assert_eq!(by_key, by_id);
         assert_eq!(by_key.key, "sku");
         assert!(!by_key.label.is_empty());
+    }
+
+    #[test]
+    fn malformed_table_sort_and_group_prefs_are_coerced() {
+        let defs = defs();
+        let number = default_table_sort(&defs);
+        assert!(number.ends_with(":asc"));
+        let mut state = serde_json::json!({
+            "table": { "sort": "number", "groupBy": "not_a_field", "sizes": {} }
+        });
+        sanitize_view_table_prefs("object_table", &mut state, &defs).unwrap();
+        assert_eq!(state["table"]["sort"], number);
+        assert_eq!(state["table"]["groupBy"], "");
+
+        let mut bad_shape = serde_json::json!({ "table": { "sort": 7 } });
+        assert!(sanitize_view_table_prefs("object_table", &mut bad_shape, &defs).is_err());
     }
 
     #[test]
