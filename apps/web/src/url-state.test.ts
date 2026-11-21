@@ -361,6 +361,35 @@ describe('URL sync', () => {
     })
   })
 
+  it('does not apply a stale object param while the router is catching up', () => {
+    const hook = setup({
+      search: { ws: 'w1', view: 'v1', catalog: 'master', object: 'o1' },
+      state: { ...base, objectId: 'o1' },
+    })
+    hook.rerender({
+      search: { ws: 'w1', view: 'v1', catalog: 'master', object: 'o1' },
+      state: { ...base, objectId: 'o1' },
+      ready: true,
+    })
+    hook.navigate.mockClear()
+    hook.apply.mockClear()
+
+    hook.rerender({
+      search: { ws: 'w1', view: 'v1', catalog: 'master', object: 'o1' },
+      state: { ...base, objectId: 'o3' },
+      ready: true,
+    })
+    expect(hook.navigate).toHaveBeenCalled()
+
+    hook.apply.mockClear()
+    hook.rerender({
+      search: { ws: 'w1', view: 'v1', catalog: 'master', object: 'o2' },
+      state: { ...base, objectId: 'o3' },
+      ready: true,
+    })
+    expect(hook.apply).not.toHaveBeenCalledWith(expect.objectContaining({ objectId: 'o2' }))
+  })
+
   it('pushes the next object change when arrowing at the edge did not mark replace', () => {
     const hook = setup({
       search: { ws: 'w1', view: 'v1', catalog: 'master', object: 'o1' },

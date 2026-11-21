@@ -119,13 +119,26 @@ export function useUrlStateSync(input: {
   const navigationInFlight = useRef(false)
 
   useEffect(() => {
+    const onPop = () => {
+      lastWritten.current = null
+      navigationInFlight.current = false
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+
+  useEffect(() => {
     if (!ready) return
     if (lastKey.current !== key) {
       lastKey.current = key
       pending.current = new Set(URL_STATE_PARAMS.filter((param) => parsed[param] !== undefined))
       settling.current = true
-      lastWritten.current = null
-      navigationInFlight.current = false
+      // Only treat the location as caught up when it matches the last write. An
+      // intermediate object token from a fast arrow burst must not clear inFlight.
+      if (lastWritten.current === key) {
+        lastWritten.current = null
+        navigationInFlight.current = false
+      }
     }
     if (pending.current.size === 0) return
 
@@ -154,6 +167,9 @@ export function useUrlStateSync(input: {
         pending.current.delete(param)
         continue
       }
+      // A router write can lag behind fast table arrows. Do not pin a stale object
+      // token from the URL while the outgoing navigation is still in flight.
+      if (param === 'object' && navigationInFlight.current) continue
       const stateKey = VALUE_KEY[param]
       if (state[stateKey] !== value) changes[stateKey] = value
       pending.current.delete(param)
