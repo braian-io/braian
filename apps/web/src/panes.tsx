@@ -1,4 +1,5 @@
 import { isValidElement, useMemo, useEffect, useLayoutEffect, useCallback, useRef, useState, useSyncExternalStore, type CSSProperties, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
+import { flushSync } from 'react-dom'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { History as HistoryIcon, Trash2 } from 'lucide-react'
@@ -78,6 +79,7 @@ import {
   seedObjectListPreview,
 } from './object-list-preview'
 import { commitImmediateTableNavLand, scheduleDebouncedTableNavLand } from './object-table-nav'
+import { scrollObjectTableActiveColumn } from './object-table-column-scroll'
 import { clearObjectNavReplace, markObjectNavReplace } from './object-nav-signal'
 import { useObjectLand } from './use-object-land'
 import {
@@ -1106,6 +1108,12 @@ export function ObjectTable({
     }
   }, [active, groupBy])
 
+  const visibleColumnsKey = shown.join('\0')
+  useLayoutEffect(() => {
+    if (active < 0 || !cellColumn) return
+    scrollObjectTableActiveColumn(parent.current)
+  }, [active, activeColumn, cellColumn, visibleColumnsKey])
+
   const moveActive = (next: number, extend: boolean) => {
     if (listCount <= 0) return
     const clamped = Math.max(0, Math.min(listCount - 1, next))
@@ -1374,7 +1382,10 @@ export function ObjectTable({
       event.preventDefault()
       const at = shown.indexOf(cellColumn)
       const next = shown[Math.max(0, Math.min(shown.length - 1, at + (event.key === 'ArrowRight' ? 1 : -1)))]
-      if (next) activateColumn(next)
+      if (next && next !== cellColumn) {
+        flushSync(() => activateColumn(next))
+        scrollObjectTableActiveColumn(parent.current)
+      }
       return
     }
     if (!['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End', 'Enter', ' ', 'Escape'].includes(event.key)) return
@@ -1384,7 +1395,17 @@ export function ObjectTable({
     event.preventDefault()
     if (event.key === 'Enter' || event.key === ' ') {
       const row = rowAt(active)
-      if (row) applySelection(row, active, active, false)
+      if (!row) return
+      if (selected.length > 1) {
+        applySelection(row, active, active, false)
+        return
+      }
+      if (event.key === 'Enter') {
+        const owned = row.id === session.objectId ? new Set(Object.keys(ownersForRow)) : undefined
+        if (isEditableColumn(cellColumn, owned)) beginCellEdit(row, cellColumn)
+        return
+      }
+      applySelection(row, active, active, false)
       return
     }
     const next = event.key === 'ArrowDown'
@@ -1625,6 +1646,10 @@ export function ObjectTable({
     editingMeasureRef.current = null
     setEditingMeasureError(null)
   }
+  const endCellEdit = () => {
+    cancelCellEdit()
+    focusGrid()
+  }
 
   const syncMeasureDraft = (draft: MeasureEditDraft) => {
     editingMeasureRef.current = draft
@@ -1767,7 +1792,7 @@ export function ObjectTable({
               commitCellEdit(row, id, '')
             }}
             onCommit={() => commitCellEdit(row, id, '')}
-            onCancel={cancelCellEdit}
+            onCancel={endCellEdit}
           />
         )
       }
@@ -1797,7 +1822,7 @@ export function ObjectTable({
                     skipBlurCommitRef.current = false
                     return
                   }
-                  cancelCellEdit()
+                  endCellEdit()
                 }, 0)
               }}
             >
@@ -1843,10 +1868,11 @@ export function ObjectTable({
             if (event.key === 'Enter') {
               event.preventDefault()
               commitCellEdit(row, id, editingDraft)
+              focusGrid()
             }
             if (event.key === 'Escape') {
               event.preventDefault()
-              cancelCellEdit()
+              endCellEdit()
             }
           }}
           onClick={(event) => event.stopPropagation()}
