@@ -80,6 +80,7 @@ import {
 } from './object-list-preview'
 import { commitImmediateTableNavLand, scheduleDebouncedTableNavLand } from './object-table-nav'
 import { scrollObjectTableActiveColumn } from './object-table-column-scroll'
+import { scrollObjectTableActiveRow, type ObjectTableRowScrollDirection } from './object-table-row-scroll'
 import { clearObjectNavReplace, markObjectNavReplace } from './object-nav-signal'
 import { useObjectLand } from './use-object-land'
 import {
@@ -296,6 +297,7 @@ export function ObjectTable({
   /** Object id when the current arrow burst started. Returning to it drops a pending URL replace. */
   const navBurstOrigin = useRef<string | null | undefined>(undefined)
   const pendingFollowIndex = useRef<number | null>(null)
+  const activeScrollDir = useRef<ObjectTableRowScrollDirection>('nearest')
   const parent = useRef<HTMLDivElement>(null)
   /** Remote ui.filter must not stomp text the user is entering locally. */
   const searchFocusedRef = useRef(false)
@@ -733,6 +735,7 @@ export function ObjectTable({
     getScrollElement: () => parent.current,
     estimateSize: () => 28,
     overscan: 16,
+    scrollPaddingStart: 28,
   })
   const visible = virtualizer.getVirtualItems()
   const start = visible[0]?.index ?? 0
@@ -1098,14 +1101,20 @@ export function ObjectTable({
 
   // Keep the focused row in view. A virtualized row may mount a frame later;
   // scrolling active is independent of committing a selection.
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (active < 0) return
-    if (groupBy) {
-      const row = rowAt(active)
-      if (row) document.getElementById(objectRowId(row.id))?.scrollIntoView({ block: 'nearest' })
-    } else {
-      virtualizerRef.current.scrollToIndex(active)
+    const grid = parent.current
+    const direction = activeScrollDir.current
+    activeScrollDir.current = 'nearest'
+    if (!groupBy) {
+      const align = direction === 'up' ? 'start' : direction === 'down' ? 'end' : 'auto'
+      virtualizerRef.current.scrollToIndex(active, { align })
     }
+    scrollObjectTableActiveRow(grid, direction)
+    const frame = requestAnimationFrame(() => {
+      scrollObjectTableActiveRow(parent.current, direction)
+    })
+    return () => cancelAnimationFrame(frame)
   }, [active, groupBy])
 
   const visibleColumnsKey = shown.join('\0')
@@ -1114,9 +1123,15 @@ export function ObjectTable({
     scrollObjectTableActiveColumn(parent.current)
   }, [active, activeColumn, cellColumn, visibleColumnsKey])
 
+  const noteActiveScrollDir = (nextIndex: number) => {
+    if (active < 0 || nextIndex === active) activeScrollDir.current = 'nearest'
+    else activeScrollDir.current = nextIndex > active ? 'down' : 'up'
+  }
+
   const moveActive = (next: number, extend: boolean) => {
     if (listCount <= 0) return
     const clamped = Math.max(0, Math.min(listCount - 1, next))
+    noteActiveScrollDir(clamped)
     setActive(clamped)
     const row = rowAt(clamped)
     if (!row) {
@@ -1419,6 +1434,8 @@ export function ObjectTable({
             : event.key === 'Home'
               ? 0
               : listCount - 1
+    if (event.key === 'Home') activeScrollDir.current = 'up'
+    else if (event.key === 'End') activeScrollDir.current = 'down'
     moveActive(next, event.shiftKey)
   }
 
