@@ -65,14 +65,13 @@ describe('object-table-column-scroll', () => {
     Object.defineProperty(cellA, 'offsetWidth', { value: 120, configurable: true })
     const cellB = document.createElement('div')
     cellB.className = 'cell active-cell'
-    Object.defineProperty(cellB, 'offsetLeft', { value: 260, configurable: true })
     Object.defineProperty(cellB, 'offsetWidth', { value: 120, configurable: true })
     row.append(cellA, cellB)
     grid.append(row)
     document.body.append(grid)
 
     scrollObjectTableActiveColumn(grid)
-    expect(grid.scrollLeft).toBe(180)
+    expect(grid.scrollLeft).toBe(40)
     expect(isActiveObjectTableColumnVisible(grid)).toBe(true)
 
     grid.remove()
@@ -85,16 +84,18 @@ describe('object-table-column-scroll', () => {
 
     const row = document.createElement('div')
     row.className = 'row active'
+    const pad = document.createElement('div')
+    pad.className = 'cell'
+    Object.defineProperty(pad, 'offsetWidth', { value: 160, configurable: true })
     const cell = document.createElement('div')
     cell.className = 'cell active-cell'
-    Object.defineProperty(cell, 'offsetLeft', { value: 40, configurable: true })
     Object.defineProperty(cell, 'offsetWidth', { value: 120, configurable: true })
-    row.append(cell)
+    row.append(pad, cell)
     grid.append(row)
     document.body.append(grid)
 
     scrollObjectTableActiveColumn(grid)
-    expect(grid.scrollLeft).toBe(40)
+    expect(grid.scrollLeft).toBe(160)
     expect(isActiveObjectTableColumnVisible(grid)).toBe(true)
 
     grid.remove()

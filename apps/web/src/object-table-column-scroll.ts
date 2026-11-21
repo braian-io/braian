@@ -1,3 +1,14 @@
+function cellContentOffset(cell: HTMLElement): { left: number; width: number } {
+  const row = cell.closest<HTMLElement>('.row, .head')
+  if (!row) return { left: cell.offsetLeft, width: cell.offsetWidth }
+  let left = 0
+  for (const sibling of row.querySelectorAll<HTMLElement>('.cell')) {
+    if (sibling === cell) return { left, width: sibling.offsetWidth }
+    left += sibling.offsetWidth
+  }
+  return { left: cell.offsetLeft, width: cell.offsetWidth }
+}
+
 /** Width of leading sticky column cells in the first body row (when scrolled). */
 export function stickyLeadingInset(grid: HTMLElement): number {
   if (grid.scrollLeft <= 0) return 0
@@ -28,8 +39,8 @@ export function isActiveObjectTableColumnVisible(grid: HTMLElement): boolean {
   const cell = activeObjectTableCell(grid)
   if (!cell) return false
   const inset = stickyLeadingInset(grid)
-  const cellLeft = cell.offsetLeft
-  const cellRight = cellLeft + cell.offsetWidth
+  const { left: cellLeft, width } = cellContentOffset(cell)
+  const cellRight = cellLeft + width
   const viewLeft = grid.scrollLeft + inset
   const viewRight = grid.scrollLeft + grid.clientWidth
   return cellLeft >= viewLeft - 1 && cellRight <= viewRight + 1
@@ -41,8 +52,8 @@ export function scrollObjectTableActiveColumn(grid: HTMLElement | null | undefin
   const cell = activeObjectTableCell(grid)
   if (!cell) return
   const inset = stickyLeadingInset(grid)
-  const cellLeft = cell.offsetLeft
-  const cellRight = cellLeft + cell.offsetWidth
+  const { left: cellLeft, width } = cellContentOffset(cell)
+  const cellRight = cellLeft + width
   const viewLeft = grid.scrollLeft + inset
   const viewRight = grid.scrollLeft + grid.clientWidth
   let nextScroll = grid.scrollLeft

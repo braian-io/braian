@@ -54,8 +54,18 @@ async function expectActiveCellVisibleInGrid(grid: Locator) {
             }
           }
         }
-        const left = cell.offsetLeft
-        const right = left + cell.offsetWidth
+        const row = cell.closest('.row')
+        let left = 0
+        let width = cell.offsetWidth
+        if (row) {
+          for (const sibling of row.querySelectorAll<HTMLElement>('.cell')) {
+            if (sibling === cell) break
+            left += sibling.offsetWidth
+          }
+        } else {
+          left = cell.offsetLeft
+        }
+        const right = left + width
         const viewLeft = el.scrollLeft + inset
         const viewRight = el.scrollLeft + el.clientWidth
         return left >= viewLeft - 1 && right <= viewRight + 1
