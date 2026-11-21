@@ -8,7 +8,8 @@ use serde_json::{Value, json};
 use tower::ServiceExt;
 use uuid::Uuid;
 
-const HUMAN: &str = "ada:human:token-ada";
+const TOKENS: &str = "ada:human:token-ada";
+const HUMAN: &str = "token-ada";
 
 fn load_env() {
     if std::env::var_os("BRAIAN_TEST_DATABASE_URL").is_some() {
@@ -44,12 +45,12 @@ async fn call(
     app: &axum::Router,
     method: &str,
     path: &str,
-    cookie: Option<&str>,
+    token: Option<&str>,
     body: Option<&str>,
 ) -> (StatusCode, Value) {
     let mut builder = Request::builder().method(method).uri(path);
-    if let Some(cookie) = cookie {
-        builder = builder.header("cookie", cookie);
+    if let Some(token) = token {
+        builder = builder.header("authorization", format!("Bearer {token}"));
     }
     if body.is_some() {
         builder = builder.header("content-type", "application/json");
@@ -74,7 +75,7 @@ async fn call(
 async fn app() -> (TestDb, axum::Router, Uuid) {
     load_env();
     let db = TestDb::create().await;
-    let identities = braian_api::identities(db.store(), HUMAN).await.unwrap();
+    let identities = braian_api::identities(db.store(), TOKENS).await.unwrap();
     let actor = identities
         .iter()
         .find(|item| item.handle == "ada")
