@@ -1107,10 +1107,11 @@ export function ObjectTable({
     }
   }, [active, groupBy])
 
+  const visibleColumnsKey = shown.join('\0')
   useLayoutEffect(() => {
     if (active < 0 || !cellColumn) return
     scrollObjectTableActiveColumn(parent.current)
-  }, [active, activeColumn, cellColumn, shown])
+  }, [active, activeColumn, cellColumn, visibleColumnsKey])
 
   const moveActive = (next: number, extend: boolean) => {
     if (listCount <= 0) return
@@ -1380,7 +1381,10 @@ export function ObjectTable({
       event.preventDefault()
       const at = shown.indexOf(cellColumn)
       const next = shown[Math.max(0, Math.min(shown.length - 1, at + (event.key === 'ArrowRight' ? 1 : -1)))]
-      if (next) activateColumn(next)
+      if (next) {
+        activateColumn(next)
+        scrollObjectTableActiveColumn(parent.current)
+      }
       return
     }
     if (!['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End', 'Enter', ' ', 'Escape'].includes(event.key)) return
@@ -1640,6 +1644,9 @@ export function ObjectTable({
     setEditingMeasureDraft(null)
     editingMeasureRef.current = null
     setEditingMeasureError(null)
+  }
+  const endCellEdit = () => {
+    cancelCellEdit()
     focusGrid()
   }
 
@@ -1784,7 +1791,7 @@ export function ObjectTable({
               commitCellEdit(row, id, '')
             }}
             onCommit={() => commitCellEdit(row, id, '')}
-            onCancel={cancelCellEdit}
+            onCancel={endCellEdit}
           />
         )
       }
@@ -1814,7 +1821,7 @@ export function ObjectTable({
                     skipBlurCommitRef.current = false
                     return
                   }
-                  cancelCellEdit()
+                  endCellEdit()
                 }, 0)
               }}
             >
@@ -1847,7 +1854,6 @@ export function ObjectTable({
               return
             }
             commitCellEdit(row, id, editingDraft)
-            focusGrid()
           }}
           onKeyDown={(event) => {
             // Never let grid / shell shortcuts see keys while the caret is in the editor.
@@ -1865,7 +1871,7 @@ export function ObjectTable({
             }
             if (event.key === 'Escape') {
               event.preventDefault()
-              cancelCellEdit()
+              endCellEdit()
             }
           }}
           onClick={(event) => event.stopPropagation()}

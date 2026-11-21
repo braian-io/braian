@@ -41,19 +41,24 @@ async function expectActiveCellVisibleInGrid(grid: Locator) {
       grid.evaluate((el) => {
         const cell = el.querySelector<HTMLElement>('.row .cell.active-cell')
         if (!cell) return false
-        const g = el.getBoundingClientRect()
-        const c = cell.getBoundingClientRect()
-        let left = g.left
-        for (const probe of el.querySelectorAll<HTMLElement>('.head .cell, .row .cell')) {
-          const style = getComputedStyle(probe)
-          if (style.position !== 'sticky') continue
-          const stickLeft = Number.parseFloat(style.left) || 0
-          if (stickLeft > 0.5) continue
-          const rect = probe.getBoundingClientRect()
-          if (Math.abs(rect.left - (g.left + stickLeft)) > 2) continue
-          left = Math.max(left, rect.right)
+        let inset = 0
+        if (el.scrollLeft > 0) {
+          const row = cell.closest('.row')
+          if (row) {
+            for (const probe of row.querySelectorAll<HTMLElement>('.cell')) {
+              const style = getComputedStyle(probe)
+              if (style.position !== 'sticky') break
+              const stickLeft = Number.parseFloat(style.left) || 0
+              if (stickLeft > 0.5) break
+              inset += probe.offsetWidth
+            }
+          }
         }
-        return c.left >= left - 1 && c.right <= g.right + 1
+        const left = cell.offsetLeft
+        const right = left + cell.offsetWidth
+        const viewLeft = el.scrollLeft + inset
+        const viewRight = el.scrollLeft + el.clientWidth
+        return left >= viewLeft - 1 && right <= viewRight + 1
       }),
     )
     .toBe(true)
@@ -78,8 +83,9 @@ test('ArrowRight scrolls the active column into view; Enter opens inline edit', 
   try {
     await grid.evaluate((el) => {
       el.dataset.testNarrowGrid = '1'
-      el.style.width = '260px'
-      el.style.maxWidth = '260px'
+      el.style.width = '220px'
+      el.style.maxWidth = '220px'
+      el.style.flex = '0 0 auto'
     })
 
     await grid.focus()
