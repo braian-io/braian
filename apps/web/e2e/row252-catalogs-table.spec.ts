@@ -64,7 +64,7 @@ async function deleteCatalog(page: Page, key: string) {
 test('catalogs table creates, renames and deletes a source catalog', async ({ page }) => {
   test.setTimeout(180_000)
   const suffix = Date.now().toString(36)
-  const key = `e2e-cat-${suffix}`
+  const key = `e2ecat${suffix}`
   const createdName = `E2E ${suffix}`
   const renamed = `E2E catalog ${suffix}`
 
