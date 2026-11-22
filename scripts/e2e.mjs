@@ -331,6 +331,7 @@ const measuredSeconds = {
   'e2e/save-confirm.spec.ts': 16,
   'e2e/attribute-table-bool-columns.spec.ts': 12,
   'e2e/switch-catalog-view.spec.ts': 5,
+  'e2e/row252-catalogs-table.spec.ts': 30,
   'e2e/z-catalogs.spec.ts': 13,
   'e2e/readable-urls.spec.ts': 44,
   'e2e/row129-allowed-trees.spec.ts': 15,
