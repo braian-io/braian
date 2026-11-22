@@ -3110,9 +3110,6 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   const objectPreviewLoading = Boolean(
     object.data && isListPreview(object.data) && (object.isFetching || object.isPending),
   )
-  const objectDetailReady = Boolean(
-    session.objectId && object.data && !isListPreview(object.data),
-  )
   const provenance = useQuery({
     queryKey: ['object-origin', session.objectId],
     queryFn: async ({ signal }) => {
