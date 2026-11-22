@@ -1563,8 +1563,10 @@ export function Shell() {
     setObjectAllowDeleted,
     openTrashObject: (id) => {
       clearObjectGone(queryClient, id)
+      queryClient.removeQueries({ queryKey: ['object', id, 'deleted'] })
       setObjectAllowDeleted(true)
       setObjectId(id)
+      applyRef.current('ui.open_view', { title: 'Detail', zone: 'center' })
     },
     setListType,
     setProposalId,

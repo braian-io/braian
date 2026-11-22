@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
-import { mainTable, waitDetailReady } from './ui'
+import { mainTable } from './ui'
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -44,8 +44,9 @@ test('trash table restore and purge', async ({ page }) => {
     await expect(row.locator('[data-column="name"]')).toContainText(number)
     await expect(row.locator('[data-column="type"]')).toContainText('product')
     await row.click()
-    await page.locator('.pane-tab[data-view-type="object_detail"]').first().click()
-    await waitDetailReady(page)
+    const detail = page.getByTestId('object-detail')
+    await expect(detail).toBeVisible({ timeout: 60_000 })
+    await expect(detail).toHaveAttribute('data-detail-ready', 'true', { timeout: 60_000 })
     await expect(page.getByTestId('object-detail')).toContainText(number)
     await page.getByTestId('trash-detail-restore').click()
     await expect(row).toHaveCount(0)

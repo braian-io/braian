@@ -83,18 +83,18 @@ pub async fn list_trash(
             let mut number = row.number;
             let mut label = row.label;
             let mut type_key = row.type_key;
-            if row.kind == "object" {
-                if let Some(stored) = by_id.get(&row.id) {
-                    type_key = wire::type_key(&cached.defs, stored.object.type_id);
-                    if number.is_empty() && !stored.key.is_empty() {
-                        number = stored.key.clone();
-                    }
-                    if label.is_empty() {
-                        label = object_trash_label(stored);
-                    }
-                    if label.is_empty() && !type_key.is_empty() {
-                        label = type_key.clone();
-                    }
+            if row.kind == "object"
+                && let Some(stored) = by_id.get(&row.id)
+            {
+                type_key = wire::type_key(&cached.defs, stored.object.type_id);
+                if number.is_empty() && !stored.key.is_empty() {
+                    number = stored.key.clone();
+                }
+                if label.is_empty() {
+                    label = object_trash_label(stored);
+                }
+                if label.is_empty() && !type_key.is_empty() {
+                    label = type_key.clone();
                 }
             }
             if label.is_empty() {
@@ -241,7 +241,7 @@ async fn restore_trash(
                 .find(|(stored, _)| *stored == object_id)
                 .map(|(_, version)| *version)
                 .unwrap_or(0);
-            note_write(&state, "update", id, version, receipt.last_seq, "");
+            note_write(state, "update", id, version, receipt.last_seq, "");
         }
         "workspace" => {
             let user_id = identity.user_id.ok_or_else(|| {

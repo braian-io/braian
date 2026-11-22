@@ -3127,7 +3127,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       }
       return response.json() as Promise<{ owners?: Record<string, string>; origin?: Json | null }>
     },
-    enabled: Boolean(session.objectId) && !objectGoneState && objectFetchSettled && objectDetailReady,
+    enabled: Boolean(session.objectId) && !objectGoneState && objectFetchSettled && !object.isError,
     ...objectFetchQueryOptions(),
   })
   const defs = useQuery({ queryKey: ['definitions'], queryFn: () => api.get('/v1/definitions') })
