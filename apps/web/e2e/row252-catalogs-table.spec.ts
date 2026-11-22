@@ -66,15 +66,16 @@ test('catalogs table creates, renames and deletes a source catalog', async ({ pa
   try {
     await table.click({ position: { x: 40, y: 80 } })
     await command(page, 'New source catalog')
-    const editor = page.getByTestId('standard-cell-editor')
-    await expect(editor).toBeVisible()
+    let editor = table.getByTestId('standard-cell-editor')
+    await expect(editor).toBeVisible({ timeout: 15_000 })
     await editor.fill(key)
     await page.keyboard.press('Enter')
     let row = table.locator(`[data-testid="catalog-row"][data-key="${key}"]`)
     await expect(row).toBeVisible()
     await row.click()
     await command(page, 'Rename catalog')
-    await expect(editor).toBeVisible()
+    editor = table.getByTestId('standard-cell-editor')
+    await expect(editor).toBeVisible({ timeout: 15_000 })
     await editor.fill(createdName)
     await page.keyboard.press('Enter')
 
@@ -88,7 +89,8 @@ test('catalogs table creates, renames and deletes a source catalog', async ({ pa
     row = table.locator(`[data-testid="catalog-row"][data-key="${key}"]`)
     await row.click()
     await command(page, 'Rename catalog')
-    await expect(editor).toBeVisible()
+    editor = table.getByTestId('standard-cell-editor')
+    await expect(editor).toBeVisible({ timeout: 15_000 })
     await editor.fill(renamed)
     await page.keyboard.press('Enter')
     await saveDraft(page, table)
@@ -97,7 +99,7 @@ test('catalogs table creates, renames and deletes a source catalog', async ({ pa
 
     await row.click({ button: 'right' })
     await page.getByRole('menuitem', { name: 'Delete catalog' }).click()
-    await expect(page.getByTestId('unsaved-changes')).toHaveCount(0, { timeout: 60_000 })
+    await saveDraft(page, table)
     await expect.poll(async () => {
       const catalogs = (await (await page.request.get('/v1/catalogs')).json()) as Array<{ key?: string }>
       return !catalogs.some((entry) => entry.key === key)

@@ -459,6 +459,9 @@ export function CommandPalette({
       { id: 'model:new-list', group: 'model' as const, title: copy.newValueList, subtitle: copy.dataModel, keywords: ['create', 'list', 'option'] },
       { id: 'model:new-family', group: 'model' as const, title: copy.newUnitFamily, subtitle: copy.dataModel, keywords: ['create', 'unit'] },
       { id: 'model:new-tree', group: 'model' as const, title: copy.newTree, subtitle: copy.dataModel, keywords: ['create', 'structure', 'tree'] },
+      { id: 'catalog:new', group: 'model' as const, title: copy.newCatalog, subtitle: copy.catalogs, keywords: ['catalog', 'source', 'create'] },
+      { id: 'catalog:rename', group: 'model' as const, title: copy.renameCatalog, subtitle: copy.catalogs, keywords: ['catalog', 'rename', 'name'] },
+      { id: 'catalog:delete', group: 'model' as const, title: copy.deleteCatalog, subtitle: copy.catalogs, keywords: ['catalog', 'delete', 'remove', 'source'] },
       { id: 'model:review', group: 'model' as const, title: copy.reviewAndSave, subtitle: copy.dataModel, keywords: ['draft', 'save'], kbd: 'Ctrl+S' },
       { id: 'model:discard', group: 'model' as const, title: copy.discardDraft, subtitle: copy.dataModel, keywords: ['draft'] },
       { id: 'model:undo', group: 'model' as const, title: copy.undoModel, subtitle: copy.dataModel, keywords: ['undo'] },
@@ -1085,6 +1088,11 @@ export function CommandPalette({
     }
     if (id === 'attr:delete') {
       requestAttributeAction('delete')
+      onClose()
+      return
+    }
+    if (id === 'catalog:new' || id === 'catalog:rename' || id === 'catalog:delete' || id === 'catalog:infer' || id === 'catalog:cleanup') {
+      void runCommand(id)
       onClose()
       return
     }
