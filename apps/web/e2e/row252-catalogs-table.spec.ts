@@ -19,8 +19,11 @@ async function openCatalogsTable(page: Page) {
 }
 
 async function editCell(row: Locator, column: string, value: string, page: Page) {
-  await row.locator(`[data-column="${column}"]`).dblclick()
-  const editor = row.getByTestId('standard-cell-editor')
+  const cell = row.locator(`[data-column="${column}"]`)
+  await row.click()
+  await cell.click()
+  await page.keyboard.press('F2')
+  const editor = page.getByTestId('standard-cell-editor')
   await expect(editor).toBeVisible()
   await editor.fill(value)
   await page.keyboard.press('Enter')
@@ -69,7 +72,8 @@ test('catalogs table creates, renames and deletes a source catalog', async ({ pa
 
   try {
     await table.getByTestId('table-add-row').click()
-    const draftRow = table.locator('[data-testid="catalog-row"]').last()
+    const draftRow = table.locator('[data-testid="catalog-row"][data-key^="catalog-new-"]').first()
+    await expect(draftRow).toBeVisible()
     await editCell(draftRow, 'key', key, page)
     await editCell(draftRow, 'name', `E2E ${suffix}`, page)
 
