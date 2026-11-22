@@ -45,7 +45,7 @@ async function saveDraft(page: Page, table: ReturnType<Page['getByTestId']>) {
   }
   const dialog = page.getByTestId('review-dialog')
   if (await dialog.count()) {
-    await dialog.getByRole('button', { name: 'Save' }).click()
+    await dialog.getByTestId('confirm-review').click()
     await expect(dialog).toHaveCount(0)
   }
   await expect(page.getByTestId('unsaved-changes')).toHaveCount(0, { timeout: 60_000 })
@@ -106,7 +106,7 @@ test('catalogs table creates, renames and deletes a source catalog', async ({ pa
     await page.getByRole('menuitem', { name: 'Delete catalog' }).click()
     const reviewDialog = page.getByTestId('review-dialog')
     await expect(reviewDialog).toBeVisible({ timeout: 60_000 })
-    await reviewDialog.getByRole('button', { name: 'Save' }).click()
+    await reviewDialog.getByTestId('confirm-review').click()
     await expect(reviewDialog).toHaveCount(0, { timeout: 60_000 })
     await expect(page.getByTestId('unsaved-changes')).toHaveCount(0, { timeout: 60_000 })
     await expect.poll(async () => {
