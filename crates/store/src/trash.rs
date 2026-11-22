@@ -427,17 +427,35 @@ impl Store {
     pub async fn purge_trash(&self, kind: &str, id: Uuid) -> Result<(), Error> {
         match kind {
             "object" => self.purge_deleted_object(id).await,
-            "workspace" => purge_row(&self, "workspaces", id, "That workspace was not found.").await,
+            "workspace" => {
+                purge_row(&self, "workspaces", id, "That workspace was not found.").await
+            }
             "view" => purge_row(&self, "views", id, "That view was not found.").await,
-            "assortment" => purge_row(&self, "assortments", id, "That selection was not found.").await,
+            "assortment" => {
+                purge_row(&self, "assortments", id, "That selection was not found.").await
+            }
             "import_mapping" => {
-                purge_row(&self, "import_mappings", id, "That import mapping was not found.").await
+                purge_row(
+                    &self,
+                    "import_mappings",
+                    id,
+                    "That import mapping was not found.",
+                )
+                .await
             }
             "catalog" => self.purge_deleted_catalog(id).await,
             "merge_profile" => {
-                purge_row(&self, "merge_profiles", id, "That merge profile was not found.").await
+                purge_row(
+                    &self,
+                    "merge_profiles",
+                    id,
+                    "That merge profile was not found.",
+                )
+                .await
             }
-            "merge_link" => purge_row(&self, "merge_links", id, "That merge link was not found.").await,
+            "merge_link" => {
+                purge_row(&self, "merge_links", id, "That merge link was not found.").await
+            }
             _ => Err(Error::UnknownEntity(format!("unknown trash kind {kind}"))),
         }
     }
@@ -488,13 +506,18 @@ impl Store {
         let mut client = self.checkout().await?;
         let tx = client.transaction().await?;
         let row = tx
-            .query_opt("SELECT deleted_at FROM catalogs WHERE id = $1 FOR UPDATE", &[&id])
+            .query_opt(
+                "SELECT deleted_at FROM catalogs WHERE id = $1 FOR UPDATE",
+                &[&id],
+            )
             .await?;
         let Some(row) = row else {
             return Err(Error::UnknownEntity("That catalog was not found.".into()));
         };
         if row.get::<_, Option<DateTime<Utc>>>(0).is_none() {
-            return Err(Error::RestoreBlocked("This catalog is not in the trash.".into()));
+            return Err(Error::RestoreBlocked(
+                "This catalog is not in the trash.".into(),
+            ));
         }
         crate::retention::purge_catalog_contents(&tx, id).await?;
         tx.commit().await?;
@@ -582,7 +605,7 @@ async fn purge_row(store: &Store, table: &str, id: Uuid, missing: &str) -> Resul
     let Some(row) = row else {
         return Err(Error::UnknownEntity(missing.into()));
     };
-  if row.get::<_, Option<DateTime<Utc>>>(0).is_none() {
+    if row.get::<_, Option<DateTime<Utc>>>(0).is_none() {
         return Err(Error::RestoreBlocked(format!(
             "This row is not in the trash."
         )));

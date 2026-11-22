@@ -23,6 +23,8 @@ test('trash table restore and purge', async ({ page }) => {
   const stamp = Date.now().toString().slice(-7)
   const number = `R227-${stamp}`
   await login(page)
+  await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
+  await expect(page.getByTestId('object-table-chrome').first()).toBeVisible()
   const created = await page.request.post('/v1/objects', {
     data: {
       type: 'product',
