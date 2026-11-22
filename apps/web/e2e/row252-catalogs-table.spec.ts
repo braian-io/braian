@@ -104,7 +104,12 @@ test('catalogs table creates, renames and deletes a source catalog', async ({ pa
 
     await row.click({ button: 'right' })
     await page.getByRole('menuitem', { name: 'Delete catalog' }).click()
-    await saveDraft(page, table)
+    const reviewDialog = page.getByTestId('review-dialog')
+    if (await reviewDialog.count()) {
+      await reviewDialog.getByRole('button', { name: 'Save' }).click()
+      await expect(reviewDialog).toHaveCount(0)
+    }
+    await expect(page.getByTestId('unsaved-changes')).toHaveCount(0, { timeout: 120_000 })
     await expect.poll(async () => {
       const catalogs = (await (await page.request.get('/v1/catalogs')).json()) as Array<{ key?: string }>
       return !catalogs.some((entry) => entry.key === key)
