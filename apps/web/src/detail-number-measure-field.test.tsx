@@ -44,6 +44,42 @@ describe('DetailNumberMeasureField skip-blur', () => {
   })
 })
 
+describe('DetailNumberMeasureField unchanged blur', () => {
+  it('does not stage when the user retypes the same number with a comma decimal', () => {
+    const onChange = vi.fn()
+    render(
+      <DetailNumberMeasureField
+        fieldKey="energy"
+        value={{ value: '485.181644', unit: 'kJ' }}
+        units={['kJ']}
+        onChange={onChange}
+      />,
+    )
+    const input = screen.getByTestId('detail-measure-value') as HTMLInputElement
+    fireEvent.change(input, { target: { value: '485,181644' } })
+    fireEvent.blur(input)
+    expect(onChange).not.toHaveBeenCalled()
+    expect(input.value).toBe('485.181644')
+  })
+
+  it('does not stage when the user adds a trailing zero', () => {
+    const onChange = vi.fn()
+    render(
+      <DetailNumberMeasureField
+        fieldKey="energy"
+        value={{ value: '10', unit: 'kJ' }}
+        units={['kJ']}
+        onChange={onChange}
+      />,
+    )
+    const input = screen.getByTestId('detail-measure-value') as HTMLInputElement
+    fireEvent.change(input, { target: { value: '10.0' } })
+    fireEvent.blur(input)
+    expect(onChange).not.toHaveBeenCalled()
+    expect(input.value).toBe('10')
+  })
+})
+
 describe('DetailNumberMeasureField flush', () => {
   it('does not block save for an empty untouched field', () => {
     const hostRef = { current: null as DetailFieldDraftHandle | null }

@@ -76,7 +76,7 @@ export function DetailNumberMeasureField({
       return false
     }
     setInvalid(false)
-    onChange(result.next)
+    if (result.kind === 'committed') onChange(result.next)
     setDraft(result.displayText)
     return true
   }, [onChange])
