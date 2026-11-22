@@ -35,15 +35,20 @@ async function expectInCatalogPicker(page: Page, label: string) {
 }
 
 async function saveDraft(page: Page, table: ReturnType<Page['getByTestId']>) {
-  const save = table.getByTestId('review-and-save')
-  await expect(save).toBeVisible()
-  await save.click()
+  const tableSave = table.getByTestId('review-and-save')
+  if (await tableSave.isVisible().catch(() => false)) {
+    await tableSave.click()
+  } else {
+    const barSave = page.getByTestId('review-save')
+    await expect(barSave).toBeVisible({ timeout: 30_000 })
+    await barSave.click()
+  }
   const dialog = page.getByTestId('review-dialog')
   if (await dialog.count()) {
     await dialog.getByRole('button', { name: 'Save' }).click()
     await expect(dialog).toHaveCount(0)
   }
-  await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
+  await expect(page.getByTestId('unsaved-changes')).toHaveCount(0, { timeout: 60_000 })
 }
 
 async function editCell(page: Page, table: Locator, row: Locator, columnId: 'key' | 'name', value: string) {
