@@ -95,10 +95,13 @@ for the focused view only; the top-bar selector sets it for the whole workspace.
 view uses its own override when it has one, otherwise the workspace catalog, otherwise
 the master catalog.
 
-The `Catalogs` view in the `Sources` workspace lists catalogs with their name, key,
-and kind. A source catalog has `Infer model` and `Clean up` actions, and the view has
-a `New source catalog` form with `Catalog key`, `Catalog name`, `Editable`, and
-`Save`.
+The `Catalogs` view in the `Sources` workspace is a standard table with columns
+`Name`, `Key`, `Kind` (master or source), and `Editable`. Use **+** to add a source
+catalog row, edit cells inline, then **Save** (Review when the draft has more than a
+trivial change). **Rename catalog** and **Delete catalog** live in the row context
+menu and in **Ctrl+K**; the master catalog cannot be deleted, and **Key** cannot
+change after creation. Column headers show tooltips for **Key** and **Editable**.
+Source catalogs also offer **Infer model** and **Clean up** from the row menu.
 
 ## Source catalogs and merges
 

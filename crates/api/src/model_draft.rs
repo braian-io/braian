@@ -426,6 +426,20 @@ pub(crate) async fn commit_steps(
         };
         match write {
             Ok(receipt) => {
+                for change in changes {
+                    if matches!(
+                        change,
+                        ModelChange::UpsertCatalog { .. } | ModelChange::DeleteCatalog { .. }
+                    ) && let Some(reference) =
+                        crate::model_proposal::reference_write(state, Uuid::nil(), change).await?
+                    {
+                        state
+                            .store
+                            .apply_proposal_write(actor, reference)
+                            .await
+                            .map_err(store_status)?;
+                    }
+                }
                 state.models.invalidate().await;
                 let source = state
                     .store

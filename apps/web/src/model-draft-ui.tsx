@@ -347,6 +347,7 @@ export function ModelDraftHost() {
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ['model-draft'] })
     void queryClient.invalidateQueries({ queryKey: ['definitions'] })
+    void queryClient.invalidateQueries({ queryKey: ['catalogs'] })
   }
   // Cancel removes only the steps this dialog created, so other draft work survives.
   // The cached draft is reverted first; the server call follows. On failure the

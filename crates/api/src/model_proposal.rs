@@ -329,7 +329,7 @@ fn ownership_references_profile(key: &str, attributes: &[String]) -> Problem {
 
 /// Catalogs, merge profiles and ownership live outside the definition set.
 /// Their keys resolve to ids just before the row commits.
-async fn reference_write(
+pub(crate) async fn reference_write(
     state: &AppState,
     proposal_id: Uuid,
     change: &ModelChange,

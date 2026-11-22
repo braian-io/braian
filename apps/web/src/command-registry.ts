@@ -16,6 +16,7 @@ export type MenuContext =
   | 'model-option'
   | 'model-family'
   | 'model-unit'
+  | 'model-catalog'
   | 'assortment'
   | 'attribute'
   | 'dock-view'
@@ -41,6 +42,8 @@ export type CommandTarget = {
   optionCode?: string
   familyKey?: string
   unitCode?: string
+  catalogKey?: string
+  catalogKind?: string
   workspaceId?: string
   feedbackEnabled?: boolean
   hiddenColumns?: Array<{ id: string; header: string }>
@@ -312,6 +315,44 @@ export const registryCommands: RegistryCommand[] = [
     group: 'object',
     danger: true,
     when: (target) => Boolean(target.typeKey),
+  },
+  {
+    id: 'catalog:new',
+    global: true,
+    title: copy.newCatalog,
+    contexts: ['model', 'model-catalog'],
+    group: 'object',
+    keywords: ['catalog', 'source'],
+  },
+  {
+    id: 'catalog:rename',
+    title: copy.renameCatalog,
+    contexts: ['model-catalog'],
+    group: 'object',
+    when: (target) => Boolean(target.catalogKey),
+  },
+  {
+    id: 'catalog:delete',
+    title: copy.deleteCatalog,
+    contexts: ['model-catalog'],
+    group: 'object',
+    danger: true,
+    when: (target) => Boolean(target.catalogKey) && target.catalogKind !== 'master',
+  },
+  {
+    id: 'catalog:infer',
+    title: copy.inferModel,
+    contexts: ['model-catalog'],
+    group: 'object',
+    when: (target) => target.catalogKind === 'source' && Boolean(target.catalogKey),
+  },
+  {
+    id: 'catalog:cleanup',
+    title: copy.cleanupCatalog,
+    contexts: ['model-catalog'],
+    group: 'object',
+    danger: true,
+    when: (target) => target.catalogKind === 'source' && Boolean(target.catalogKey),
   },
   {
     id: 'model:new-list',
