@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
 
 async function login(page: Page) {
@@ -10,23 +10,20 @@ async function login(page: Page) {
   await expect(page.getByTestId('workspace')).toBeVisible()
 }
 
+async function command(page: Page, query: string) {
+  await page.keyboard.press('Control+K')
+  const input = page.getByTestId('palette-input')
+  await expect(input).toBeVisible()
+  await input.fill(query)
+  await page.keyboard.press('Enter')
+}
+
 async function openCatalogsTable(page: Page) {
   await page.locator('nav.tabs').getByRole('button', { name: 'Sources' }).click()
   await page.locator('.pane-tab-list').getByRole('button', { name: 'Catalogs', exact: true }).click()
   const table = page.getByTestId('catalogs-table-chrome')
   await expect(table).toBeVisible()
   return table
-}
-
-async function editCell(row: Locator, column: string, value: string, page: Page) {
-  const cell = row.locator(`[data-column="${column}"]`)
-  await row.click()
-  await cell.click()
-  await page.keyboard.press('F2')
-  const editor = page.getByTestId('standard-cell-editor')
-  await expect(editor).toBeVisible()
-  await editor.fill(value)
-  await page.keyboard.press('Enter')
 }
 
 async function expectInCatalogPicker(page: Page, label: string) {
@@ -50,11 +47,6 @@ async function saveDraft(page: Page, table: ReturnType<Page['getByTestId']>) {
 }
 
 async function deleteCatalog(page: Page, key: string) {
-  const response = await page.request.get('/v1/catalogs')
-  if (!response.ok()) return
-  const catalogs = (await response.json()) as Array<{ id?: string; key?: string }>
-  const row = catalogs.find((item) => item.key === key)
-  if (!row?.id) return
   await page.request.post('/v1/model/draft/steps', {
     data: { steps: [{ op: 'delete_catalog', key }] },
   })
@@ -65,38 +57,50 @@ test('catalogs table creates, renames and deletes a source catalog', async ({ pa
   test.setTimeout(180_000)
   const suffix = Date.now().toString(36)
   const key = `e2e-cat-${suffix}`
+  const createdName = `E2E ${suffix}`
   const renamed = `E2E catalog ${suffix}`
 
   await login(page)
   const table = await openCatalogsTable(page)
 
   try {
-    await table.getByTestId('table-add-row').click()
-    const draftRow = table.locator('[data-testid="catalog-row"][data-key^="catalog-new-"]').first()
-    await expect(draftRow).toBeVisible()
-    await editCell(draftRow, 'key', key, page)
-    await editCell(draftRow, 'name', `E2E ${suffix}`, page)
+    await table.click({ position: { x: 40, y: 80 } })
+    await command(page, 'New source catalog')
+    const editor = page.getByTestId('standard-cell-editor')
+    await expect(editor).toBeVisible()
+    await editor.fill(key)
+    await page.keyboard.press('Enter')
+    let row = table.locator(`[data-testid="catalog-row"][data-key="${key}"]`)
+    await expect(row).toBeVisible()
+    await row.click()
+    await command(page, 'Rename catalog')
+    await expect(editor).toBeVisible()
+    await editor.fill(createdName)
+    await page.keyboard.press('Enter')
 
     await saveDraft(page, table)
     await expect.poll(async () => {
       const catalogs = (await (await page.request.get('/v1/catalogs')).json()) as Array<{ key?: string }>
-      return catalogs.some((row) => row.key === key)
+      return catalogs.some((entry) => entry.key === key)
     }).toBe(true)
-    await expectInCatalogPicker(page, `E2E ${suffix}`)
+    await expectInCatalogPicker(page, createdName)
 
-    const saved = table.locator(`[data-testid="catalog-row"][data-key="${key}"]`)
-    await saved.click()
-    await editCell(saved, 'name', renamed, page)
+    row = table.locator(`[data-testid="catalog-row"][data-key="${key}"]`)
+    await row.click()
+    await command(page, 'Rename catalog')
+    await expect(editor).toBeVisible()
+    await editor.fill(renamed)
+    await page.keyboard.press('Enter')
     await saveDraft(page, table)
-    await expect(saved).toContainText(renamed)
+    await expect(row).toContainText(renamed)
     await expectInCatalogPicker(page, renamed)
 
-    await saved.click({ button: 'right' })
+    await row.click({ button: 'right' })
     await page.getByRole('menuitem', { name: 'Delete catalog' }).click()
     await expect(page.getByTestId('unsaved-changes')).toHaveCount(0, { timeout: 60_000 })
     await expect.poll(async () => {
       const catalogs = (await (await page.request.get('/v1/catalogs')).json()) as Array<{ key?: string }>
-      return !catalogs.some((row) => row.key === key)
+      return !catalogs.some((entry) => entry.key === key)
     }).toBe(true)
     await page.getByTestId('catalog-selector').click()
     await expect(page.getByTestId('catalog-selector-menu').getByRole('menuitem', { name: renamed })).toHaveCount(0)
