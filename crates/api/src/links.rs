@@ -284,7 +284,7 @@ pub async fn patch_link(
     let base = require_if_match(&headers)?;
     let id = ObjectId::from_uuid(id);
     let cached = state.models.get(&state.store).await?;
-    let stored = load_object(&state, id).await?;
+    let stored = load_object(&state, id, false).await?;
     let patch = patch_from_wire(&cached.model, &cached.defs, &body.values, &BTreeMap::new())?;
     let report = cached.model.validate_patch(&stored.object, &patch);
     if !report.errors.is_empty() {
@@ -377,7 +377,7 @@ pub async fn delete_link(
     }
     let id = ObjectId::from_uuid(id);
     if query.dry_run {
-        let _stored = load_object(&state, id).await?;
+        let _stored = load_object(&state, id, false).await?;
         let report = ConsequenceReport {
             objects: 1,
             links: 1,

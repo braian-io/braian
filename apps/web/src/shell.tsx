@@ -9,7 +9,8 @@ import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight, File, Folder, FolderOpen, Plus } from 'lucide-react'
 import { StatusBar, useOnline } from './status-bar'
 import { isConnected, type LiveState } from './status-message'
-import { TrashDialog } from './trash-dialog'
+import { TrashTable } from './trash-table'
+import { openTrashTableEvent, requestOpenTrashTable } from './trash-runs'
 import { DeleteObjectsHost } from './delete-objects-dialog'
 import { requestDeleteObjects } from './delete-objects'
 import { UserMenu } from './user-menu'
@@ -18,7 +19,7 @@ import { api, freeObject, jsonRecord, keepaliveJsonPut, operationId, recordTitle
 import { AssortmentList, SelectionHost } from './assortments'
 import { humanizeLive, liveOperation, objectIdFromLive } from './activity'
 import { isListPreview, loadObjectDetail, objectQueryStaleTime } from './object-list-preview'
-import { markObjectGone, objectFetchQueryOptions } from './object-gone'
+import { clearObjectGone, markObjectGone, objectFetchQueryOptions } from './object-gone'
 import { useObjectLand } from './use-object-land'
 import { ImportScreen } from './import/view'
 import { dropImportFiles, onImportLive, openImport, resumeImport, setImportDrag } from './import/controller'
@@ -175,6 +176,9 @@ type Session = {
   activity: string[]
   setGroup: (value: string | null) => void
   setObjectId: (value: string | null) => void
+  objectAllowDeleted: boolean
+  setObjectAllowDeleted: (value: boolean) => void
+  openTrashObject: (id: string) => void
   setProposalId: (value: string | null) => void
   listType: string | null
   workspaceType?: string
@@ -237,6 +241,7 @@ export function Shell() {
   const [workspaceId, setWorkspaceId] = useState<string | null>(null)
   const [group, setGroup] = useState<string | null>(null)
   const [objectId, setObjectId] = useState<string | null>(null)
+  const [objectAllowDeleted, setObjectAllowDeleted] = useState(false)
   const [listType, setListType] = useState<string | null>(null)
   const [proposalId, setProposalId] = useState<string | null>(null)
   const [logText, setLogText] = useState('')
@@ -291,7 +296,6 @@ export function Shell() {
   const [tabMenu, setTabMenu] = useState<{ x: number; y: number; id: string } | null>(null)
   const tabMenuTriggerRef = useRef<HTMLButtonElement | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string } | null>(null)
-  const [trashOpen, setTrashOpen] = useState(false)
   const [deleteError, setDeleteError] = useState('')
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [doc, setDoc] = useState<LayoutDoc | null>(null)
@@ -315,6 +319,7 @@ export function Shell() {
   const openStructureViewRef = useRef<(structureKey: string, placement?: { zone: 'center' | 'right'; target?: string }) => void>(() => {})
   const openAgentRunRef = useRef<(run: { id: string; title: string; view_id?: string | null; tab_open?: boolean; messages?: AgentMessage[] }) => void>(() => {})
   const openAgentsTableRef = useRef<() => void>(() => {})
+  const openTrashTableRef = useRef<() => void>(() => {})
   const showAgentSessionRef = useRef<(run: AgentRunSummary) => void>(() => {})
   const backToMineRef = useRef<() => void>(() => {})
   const mineDocRef = useRef<LayoutDoc | null>(null)
@@ -831,6 +836,7 @@ export function Shell() {
       if (run?.id) openAgentRunRef.current(run)
     }
     const onTable = () => openAgentsTableRef.current()
+    const onTrash = () => openTrashTableRef.current()
     const onShow = (event: Event) => {
       const run = (event as CustomEvent<AgentRunSummary>).detail
       if (run?.id) showAgentSessionRef.current(run)
@@ -838,11 +844,13 @@ export function Shell() {
     const onBack = () => backToMineRef.current()
     window.addEventListener(openAgentEvent, onRun)
     window.addEventListener(openAgentsTableEvent, onTable)
+    window.addEventListener(openTrashTableEvent, onTrash)
     window.addEventListener(showAgentSessionEvent, onShow)
     window.addEventListener(backToMySessionEvent, onBack)
     return () => {
       window.removeEventListener(openAgentEvent, onRun)
       window.removeEventListener(openAgentsTableEvent, onTable)
+      window.removeEventListener(openTrashTableEvent, onTrash)
       window.removeEventListener(showAgentSessionEvent, onShow)
       window.removeEventListener(backToMySessionEvent, onBack)
     }
@@ -1541,13 +1549,23 @@ export function Shell() {
   const session: Session = {
     group,
     objectId,
+    objectAllowDeleted,
     proposalId,
     language: 'en',
     activity: [],
     listType,
     workspaceType: typeKeyFromShare(workspace.data?.share_token),
     setGroup,
-    setObjectId,
+    setObjectId: (value) => {
+      if (!value) setObjectAllowDeleted(false)
+      setObjectId(value)
+    },
+    setObjectAllowDeleted,
+    openTrashObject: (id) => {
+      clearObjectGone(queryClient, id)
+      setObjectAllowDeleted(true)
+      setObjectId(id)
+    },
     setListType,
     setProposalId,
     push,
@@ -2037,6 +2055,64 @@ export function Shell() {
     })().catch((reason: unknown) => reportWriteError(reason))
   }
 
+  openTrashTableRef.current = () => {
+    void (async () => {
+      const surfaceNow = workspaceRef.current
+      const docNow = docRef.current
+      if (!surfaceNow || !docNow) return
+      let views: View[] = viewRows(surfaceNow.views)
+      let found = views.find((view) => view.type === 'trash')
+      if (!found) {
+        const id = crypto.randomUUID()
+        found = {
+          id,
+          type: 'trash',
+          title: copy.trash,
+          pane: 'center',
+          position: views.length,
+          state: {},
+        }
+        await api.post('/v1/views', {
+          body: {
+            id,
+            workspace_id: surfaceNow.id,
+            type: found.type,
+            title: found.title,
+            pane: 'center',
+            position: views.length,
+            state: {},
+          },
+        })
+        views = [...views, found]
+        const nextSurface = {
+          ...surfaceNow,
+          views: views.map((view) => ({
+            ...view,
+            pane: view.pane ?? 'center',
+            position: view.position ?? 0,
+            state: freeObject(view.state),
+          })),
+        }
+        workspaceRef.current = nextSurface
+        queryClient.setQueryData(['workspace', surfaceNow.id], nextSurface)
+      }
+      const current = docRef.current
+      if (!current || !found) return
+      const open = layoutViews(current.layout).includes(found.id)
+      const result = applyLayoutCommand(
+        current,
+        'ui.open_view',
+        open ? { id: found.id } : { id: found.id, zone: 'center' },
+        {
+          views: views.map((view) => ({ id: view.id, title: view.title, type: view.type })),
+          canonical: canonicalRef.current,
+          place: placeOverride.current,
+        },
+      )
+      if (result.handled && result.doc !== current) commitDoc(result.doc)
+    })().catch((reason: unknown) => reportWriteError(reason))
+  }
+
   openStructureViewRef.current = (structureKey: string, placement: { zone: 'center' | 'right'; target?: string } = { zone: 'center' }) => {
     const surfaceNow = workspaceRef.current
     const docNow = docRef.current
@@ -2299,7 +2375,7 @@ export function Shell() {
           connection={isConnected(online, liveState) ? 'online' : 'offline'}
           theme={theme}
           onToggleTheme={() => { void runCommand('theme:toggle') }}
-          onOpenTrash={() => setTrashOpen(true)}
+          onOpenTrash={() => requestOpenTrashTable()}
           onSignOut={() => { void runCommand('session:sign-out') }}
         />
       </header>
@@ -2529,7 +2605,6 @@ export function Shell() {
           </DialogContent>
         </Dialog>
       ) : null}
-      <TrashDialog open={trashOpen} onClose={() => setTrashOpen(false)} />
       <DeleteObjectsHost />
       <ImportScreen />
       {help ? <HelpDialog onClose={() => setHelp(false)} placeholder={commandPlaceholder(typeCatalog)} /> : null}
@@ -2608,6 +2683,7 @@ function ViewBody({ view, session, workspace }: { view: View; session: Session; 
     return <AgentView runId={String(view.state.run_id ?? '')} title={prompt || view.title} push={session.push} />
   }
   if (view.type === 'agents') return <AgentsTable />
+  if (view.type === 'trash') return <TrashTable onOpenObject={(id) => session.openTrashObject(id)} />
   if (view.type === 'proposal') return <ProposalView session={session} />
   if (view.type === 'proposal_list') return <ProposalListView session={session} />
   if (view.type === 'import_mappings') return <ImportMappingsView />

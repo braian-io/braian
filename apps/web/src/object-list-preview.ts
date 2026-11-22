@@ -79,10 +79,14 @@ export async function loadObjectDetail(
   queryClient: QueryClient,
   id: string,
   signal?: AbortSignal,
+  allowDeleted = false,
 ): Promise<Json> {
   try {
     return reconcileObjectWrite(id, await api.get('/v1/objects/{id}', {
-      params: { path: { id } },
+      params: {
+        path: { id },
+        query: allowDeleted ? { allow_deleted: 'true' } : undefined,
+      },
       signal,
     }))
   } catch (reason) {

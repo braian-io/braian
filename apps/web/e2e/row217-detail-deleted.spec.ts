@@ -130,11 +130,12 @@ test.describe('row 217 detail when object deleted', () => {
 
       await page.getByTestId('user-menu').click()
       await page.getByTestId('user-menu-trash').click()
-      const trash = page.getByTestId('trash-dialog')
+      const trash = page.getByTestId('trash-table-chrome')
       await expect(trash).toBeVisible()
-      const item = trash.locator('li').filter({ hasText: number }).first()
+      const item = trash.locator('[data-testid="trash-row"]').filter({ hasText: number }).first()
       await expect(item).toBeVisible()
-      await item.getByRole('button', { name: 'Restore' }).click()
+      await item.click({ button: 'right' })
+      await page.getByTestId('context-menu').getByRole('menuitem', { name: 'Restore' }).click()
       await expect(item).toHaveCount(0)
 
       await expect(page.getByTestId('detail-deleted')).toHaveCount(0)

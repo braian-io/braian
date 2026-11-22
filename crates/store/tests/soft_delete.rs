@@ -484,3 +484,29 @@ async fn catalog_key_can_be_reused_while_the_old_row_is_in_trash() {
         renewed
     );
 }
+
+#[tokio::test]
+async fn purge_removes_a_soft_deleted_object_permanently() {
+    let (db, who, _defs, object) = setup().await;
+    db.store()
+        .write_batch(
+            &who,
+            vec![ObjectOp::Delete {
+                id: object.id,
+                base_version: None,
+            }],
+        )
+        .await
+        .unwrap();
+    assert!(db.store().get_object(object.id).await.unwrap().is_some());
+    db.store()
+        .purge_trash("object", object.id.as_uuid())
+        .await
+        .unwrap();
+    assert!(db.store().get_object(object.id).await.unwrap().is_none());
+    let trash = db.store().list_trash(None).await.unwrap();
+    assert!(
+        !trash.iter().any(|row| row.id == object.id.as_uuid()),
+        "{trash:?}"
+    );
+}

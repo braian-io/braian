@@ -43,6 +43,7 @@ export const KNOWN_VIEW_TYPES = new Set([
   'merge_profiles',
   'ownership_rules',
   'merge_runs',
+  'trash',
 ])
 
 export function isKnownViewType(type: string) {

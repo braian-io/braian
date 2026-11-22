@@ -75,6 +75,7 @@ use utoipa::OpenApi;
         crate::objects::object_changes,
         crate::trash::list_trash,
         crate::trash::undelete,
+        crate::trash::purge,
         crate::column_prefs::get_column_prefs,
         crate::column_prefs::put_column_prefs,
         crate::column_prefs::delete_column_prefs,
