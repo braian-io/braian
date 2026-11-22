@@ -128,6 +128,7 @@ const specs = [
   'e2e/save-confirm.spec.ts',
   'e2e/attribute-table-bool-columns.spec.ts',
   'e2e/switch-catalog-view.spec.ts',
+  'e2e/row252-catalogs-table.spec.ts',
   'e2e/z-catalogs.spec.ts',
   'e2e/readable-urls.spec.ts',
   'e2e/row129-allowed-trees.spec.ts',

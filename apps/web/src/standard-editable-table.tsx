@@ -33,6 +33,8 @@ export type StandardColumnType = 'text' | 'number' | 'boolean' | 'date' | 'datet
 export type StandardColumn<T> = {
   id: string
   header: string
+  /** Header cell title (column tooltip); defaults to header. */
+  headerTitle?: string
   width?: number | string
   type?: StandardColumnType
   editable?: boolean
@@ -774,7 +776,7 @@ export function StandardEditableTable<T extends { id: string }>({
               className={column.truncate ? 'standard-grid-cell column-head truncate' : 'standard-grid-cell column-head'}
               role="columnheader"
               data-column={column.id}
-              title={column.header}
+              title={column.headerTitle ?? column.header}
               style={column.width ? { width: column.width, flex: 'none', minWidth: column.width } : undefined}
             >
               {column.header}
