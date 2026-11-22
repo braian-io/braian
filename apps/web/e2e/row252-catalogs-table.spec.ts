@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
 
 async function login(page: Page) {
@@ -46,6 +46,14 @@ async function saveDraft(page: Page, table: ReturnType<Page['getByTestId']>) {
   await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
 }
 
+async function editCell(table: Locator, row: Locator, columnId: 'key' | 'name', value: string) {
+  await row.locator(`[data-column="${columnId}"]`).dblclick()
+  const editor = table.getByTestId('standard-cell-editor')
+  await expect(editor).toBeVisible()
+  await editor.fill(value)
+  await page.keyboard.press('Enter')
+}
+
 async function deleteCatalog(page: Page, key: string) {
   await page.request.post('/v1/model/draft/steps', {
     data: { steps: [{ op: 'delete_catalog', key }] },
@@ -64,20 +72,15 @@ test('catalogs table creates, renames and deletes a source catalog', async ({ pa
   const table = await openCatalogsTable(page)
 
   try {
-    await table.click({ position: { x: 40, y: 80 } })
-    await command(page, 'New source catalog')
-    let editor = table.getByTestId('standard-cell-editor')
-    await expect(editor).toBeVisible({ timeout: 15_000 })
-    await editor.fill(key)
-    await page.keyboard.press('Enter')
+    await table.getByTestId('table-add-row').click()
+    const draftRow = table.locator('[data-row-id^="catalog-new-"]').last()
+    await expect(draftRow).toBeVisible()
+    await editCell(table, draftRow, 'key', key)
     let row = table.locator(`[data-testid="catalog-row"][data-key="${key}"]`)
     await expect(row).toBeVisible()
     await row.click()
     await command(page, 'Rename catalog')
-    editor = table.getByTestId('standard-cell-editor')
-    await expect(editor).toBeVisible({ timeout: 15_000 })
-    await editor.fill(createdName)
-    await page.keyboard.press('Enter')
+    await editCell(table, row, 'name', createdName)
 
     await saveDraft(page, table)
     await expect.poll(async () => {
@@ -89,10 +92,7 @@ test('catalogs table creates, renames and deletes a source catalog', async ({ pa
     row = table.locator(`[data-testid="catalog-row"][data-key="${key}"]`)
     await row.click()
     await command(page, 'Rename catalog')
-    editor = table.getByTestId('standard-cell-editor')
-    await expect(editor).toBeVisible({ timeout: 15_000 })
-    await editor.fill(renamed)
-    await page.keyboard.press('Enter')
+    await editCell(table, row, 'name', renamed)
     await saveDraft(page, table)
     await expect(row).toContainText(renamed)
     await expectInCatalogPicker(page, renamed)

@@ -100,13 +100,13 @@ export function CatalogsTable() {
       const draft: CatalogTableRow = { id, key: '', name: '', kind: 'source', editable: true }
       setDraftRows((current) => ({ ...current, [id]: draft }))
       setActiveRowId(id)
-      setEditRequest({ rowId: id, columnId: 'key' })
+      queueMicrotask(() => setEditRequest({ rowId: id, columnId: 'key' }))
       return
     }
     if (!row) return
     if (action === 'rename') {
       setActiveRowId(row.id)
-      setEditRequest({ rowId: row.id, columnId: 'name' })
+      queueMicrotask(() => setEditRequest({ rowId: row.id, columnId: 'name' }))
       return
     }
     if (action === 'delete') {
