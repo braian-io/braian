@@ -3090,12 +3090,20 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   const { settled: objectFetchSettled } = useObjectLand(session.objectId)
   const allowDeleted = session.objectAllowDeleted === true
   const objectGoneState = !allowDeleted && objectQueryGone(queryClient, session.objectId)
-  const previewCached = queryClient.getQueryData<Json>(['object', session.objectId])
+  const objectQueryKey = allowDeleted
+    ? (['object', session.objectId, 'deleted'] as const)
+    : (['object', session.objectId] as const)
+  const previewCached = queryClient.getQueryData<Json>(objectQueryKey)
+    ?? (!allowDeleted ? undefined : queryClient.getQueryData<Json>(['object', session.objectId]))
   const object = useQuery<Json, Error>({
-    queryKey: ['object', session.objectId, allowDeleted ? 'deleted' : 'live'],
+    queryKey: objectQueryKey,
     queryFn: ({ signal }) => loadObjectDetail(queryClient, session.objectId ?? '', signal, allowDeleted),
     enabled: Boolean(session.objectId) && !objectGoneState && objectFetchSettled,
-    placeholderData: () => queryClient.getQueryData<Json>(['object', session.objectId, allowDeleted ? 'deleted' : 'live']),
+    placeholderData: () => {
+      const cached = queryClient.getQueryData<Json>(objectQueryKey)
+      if (cached) return cached
+      return allowDeleted ? queryClient.getQueryData<Json>(['object', session.objectId]) : undefined
+    },
     ...objectFetchQueryOptions(),
     staleTime: objectQueryStaleTime(previewCached),
   })
@@ -3119,12 +3127,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       }
       return response.json() as Promise<{ owners?: Record<string, string>; origin?: Json | null }>
     },
-    enabled:
-      Boolean(session.objectId)
-      && !objectGoneState
-      && objectFetchSettled
-      && !object.isError
-      && !objectPreviewLoading,
+    enabled: Boolean(session.objectId) && !objectGoneState && objectFetchSettled && objectDetailReady,
     ...objectFetchQueryOptions(),
   })
   const defs = useQuery({ queryKey: ['definitions'], queryFn: () => api.get('/v1/definitions') })
@@ -3205,12 +3208,11 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       </div>
     )
   }
-  if (objectGone(object.error) || objectGoneState) {
+  if ((!allowDeleted && objectGone(object.error)) || objectGoneState) {
     return <StateNote tone="empty" title={copy.objectDeleted} detail={copy.objectDeletedHint} testId="detail-deleted" />
   }
   const refetchDetail = () => {
-    const objectKey = allowDeleted ? 'deleted' : 'live'
-    void queryClient.invalidateQueries({ queryKey: ['object', session.objectId, objectKey] })
+    void queryClient.invalidateQueries({ queryKey: objectQueryKey })
     void queryClient.invalidateQueries({ queryKey: ['object-origin', session.objectId] })
     void queryClient.invalidateQueries({ queryKey: ['proposals', 'detail', session.objectId] })
   }

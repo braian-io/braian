@@ -427,9 +427,7 @@ impl Store {
     pub async fn purge_trash(&self, kind: &str, id: Uuid) -> Result<(), Error> {
         match kind {
             "object" => self.purge_deleted_object(id).await,
-            "workspace" => {
-                purge_row(self, "workspaces", id, "That workspace was not found.").await
-            }
+            "workspace" => purge_row(self, "workspaces", id, "That workspace was not found.").await,
             "view" => purge_row(self, "views", id, "That view was not found.").await,
             "assortment" => {
                 purge_row(self, "assortments", id, "That selection was not found.").await
@@ -606,7 +604,9 @@ async fn purge_row(store: &Store, table: &str, id: Uuid, missing: &str) -> Resul
         return Err(Error::UnknownEntity(missing.into()));
     };
     if row.get::<_, Option<DateTime<Utc>>>(0).is_none() {
-        return Err(Error::RestoreBlocked("This row is not in the trash.".into()));
+        return Err(Error::RestoreBlocked(
+            "This row is not in the trash.".into(),
+        ));
     }
     let removed = client
         .execute(&format!("DELETE FROM {table} WHERE id = $1"), &[&id])

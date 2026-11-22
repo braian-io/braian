@@ -273,7 +273,7 @@ describe('failed Detail load', () => {
 
   function failingClient() {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    client.setQueryData(['object', 'obj-1', 'live'], {
+    client.setQueryData(['object', 'obj-1'], {
       id: 'obj-1',
       key: 'ART-1',
       type: 'article',
