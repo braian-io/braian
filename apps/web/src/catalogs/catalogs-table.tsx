@@ -133,7 +133,10 @@ export function CatalogsTable() {
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify(action === 'infer' ? { headers: [] } : {}),
         })
-        if (!response.ok) throw new ApiError(response.status, await response.text() || response.statusText)
+        if (!response.ok) {
+          const text = await response.text()
+          throw new ApiError(response.status, text || response.statusText, null)
+        }
         void queryClient.invalidateQueries({ queryKey: ['catalogs'] })
       } catch (reason: unknown) {
         const detail = reason instanceof ApiError ? reason.message : ''
