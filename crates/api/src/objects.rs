@@ -236,7 +236,8 @@ pub async fn create_object(
     tag = "objects",
     params(
         ("id" = Uuid, Path, description = "Object id"),
-        ("include" = Option<String>, Query, description = "Pass `inapplicable` to include values that no longer apply")
+        ("include" = Option<String>, Query, description = "Pass `inapplicable` to include values that no longer apply"),
+        ("allow_deleted" = Option<bool>, Query, description = "When true, returns a soft-deleted object for Trash detail")
     ),
     responses(
         (status = 200, description = "Object", body = ObjectResponse),

@@ -85,7 +85,7 @@ export async function loadObjectDetail(
     return reconcileObjectWrite(id, await api.get('/v1/objects/{id}', {
       params: {
         path: { id },
-        query: allowDeleted ? { allow_deleted: 'true' } : undefined,
+        query: allowDeleted ? { allow_deleted: true } : undefined,
       },
       signal,
     }))

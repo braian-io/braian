@@ -3583,6 +3583,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "allow_deleted",
+            "in": "query",
+            "description": "When true, returns a soft-deleted object for Trash detail",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -5699,6 +5708,55 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TrashList"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/trash/{kind}/{id}/purge": {
+      "post": {
+        "tags": [
+          "platform"
+        ],
+        "operationId": "purge",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "description": "object, workspace, view, assortment, import_mapping, catalog, merge_profile, or merge_link",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Item id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Permanently deleted"
+          },
+          "404": {
+            "description": "Not in the trash",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -12458,6 +12516,12 @@
             "type": "string"
           },
           "label": {
+            "type": "string"
+          },
+          "number": {
+            "type": "string"
+          },
+          "type_key": {
             "type": "string"
           }
         }

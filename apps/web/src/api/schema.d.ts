@@ -1448,6 +1448,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/trash/{kind}/{id}/purge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["purge"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/trash/{kind}/{id}/undelete": {
         parameters: {
             query?: never;
@@ -3164,6 +3180,8 @@ export interface components {
             id: string;
             kind: string;
             label: string;
+            number?: string;
+            type_key?: string;
         };
         TrashList: {
             items: components["schemas"]["TrashItem"][];
@@ -5823,6 +5841,8 @@ export interface operations {
             query?: {
                 /** @description Pass `inapplicable` to include values that no longer apply */
                 include?: string;
+                /** @description When true, returns a soft-deleted object for Trash detail */
+                allow_deleted?: boolean;
             };
             header?: never;
             path: {
@@ -7224,6 +7244,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TrashList"];
+                };
+            };
+        };
+    };
+    purge: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description object, workspace, view, assortment, import_mapping, catalog, merge_profile, or merge_link */
+                kind: string;
+                /** @description Item id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Permanently deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not in the trash */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
                 };
             };
         };

@@ -156,7 +156,7 @@ export function TrashTable({ onOpenObject }: TrashTableProps) {
           setFilter(value)
           setActiveRowId(null)
         }}
-        rowFilterText={(row) => `${row.name} ${row.number} ${row.typeKey} ${row.kind} ${row.id}`,
+        rowFilterText={(row) => `${row.name} ${row.number} ${row.typeKey} ${row.kind} ${row.id}`}
         activeRowId={activeRowId}
         onActivateRow={(row) => {
           setActiveRowId(row.id)

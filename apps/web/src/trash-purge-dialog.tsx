@@ -23,13 +23,13 @@ export function TrashPurgeDialog({
         <DialogDescription>
           {copy.trashPurgeConfirm.replace('{name}', name)}
         </DialogDescription>
-        <motionButtons busy={busy} onClose={onClose} onConfirm={onConfirm} />
+        <PurgeActions busy={busy} onClose={onClose} onConfirm={onConfirm} />
       </DialogContent>
     </Dialog>
   )
 }
 
-function motionButtons({
+function PurgeActions({
   busy,
   onClose,
   onConfirm,
