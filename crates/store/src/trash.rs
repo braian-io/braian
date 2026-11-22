@@ -428,15 +428,15 @@ impl Store {
         match kind {
             "object" => self.purge_deleted_object(id).await,
             "workspace" => {
-                purge_row(&self, "workspaces", id, "That workspace was not found.").await
+                purge_row(self, "workspaces", id, "That workspace was not found.").await
             }
-            "view" => purge_row(&self, "views", id, "That view was not found.").await,
+            "view" => purge_row(self, "views", id, "That view was not found.").await,
             "assortment" => {
-                purge_row(&self, "assortments", id, "That selection was not found.").await
+                purge_row(self, "assortments", id, "That selection was not found.").await
             }
             "import_mapping" => {
                 purge_row(
-                    &self,
+                    self,
                     "import_mappings",
                     id,
                     "That import mapping was not found.",
@@ -446,7 +446,7 @@ impl Store {
             "catalog" => self.purge_deleted_catalog(id).await,
             "merge_profile" => {
                 purge_row(
-                    &self,
+                    self,
                     "merge_profiles",
                     id,
                     "That merge profile was not found.",
@@ -454,7 +454,7 @@ impl Store {
                 .await
             }
             "merge_link" => {
-                purge_row(&self, "merge_links", id, "That merge link was not found.").await
+                purge_row(self, "merge_links", id, "That merge link was not found.").await
             }
             _ => Err(Error::UnknownEntity(format!("unknown trash kind {kind}"))),
         }
@@ -606,9 +606,7 @@ async fn purge_row(store: &Store, table: &str, id: Uuid, missing: &str) -> Resul
         return Err(Error::UnknownEntity(missing.into()));
     };
     if row.get::<_, Option<DateTime<Utc>>>(0).is_none() {
-        return Err(Error::RestoreBlocked(format!(
-            "This row is not in the trash."
-        )));
+        return Err(Error::RestoreBlocked("This row is not in the trash.".into()));
     }
     let removed = client
         .execute(&format!("DELETE FROM {table} WHERE id = $1"), &[&id])

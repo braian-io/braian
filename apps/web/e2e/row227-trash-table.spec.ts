@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
+import { mainTable } from './ui'
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -24,7 +25,7 @@ test('trash table restore and purge', async ({ page }) => {
   const number = `R227-${stamp}`
   await login(page)
   await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
-  await expect(page.getByTestId('object-table-chrome').first()).toBeVisible()
+  await expect(mainTable(page)).toBeVisible()
   const created = await page.request.post('/v1/objects', {
     data: {
       type: 'product',

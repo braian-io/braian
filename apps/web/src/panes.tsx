@@ -3099,6 +3099,12 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
     ...objectFetchQueryOptions(),
     staleTime: objectQueryStaleTime(previewCached),
   })
+  const objectPreviewLoading = Boolean(
+    object.data && isListPreview(object.data) && (object.isFetching || object.isPending),
+  )
+  const objectDetailReady = Boolean(
+    session.objectId && object.data && !isListPreview(object.data),
+  )
   const provenance = useQuery({
     queryKey: ['object-origin', session.objectId],
     queryFn: async ({ signal }) => {
@@ -3113,7 +3119,12 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       }
       return response.json() as Promise<{ owners?: Record<string, string>; origin?: Json | null }>
     },
-    enabled: Boolean(session.objectId) && !objectGoneState && objectFetchSettled,
+    enabled:
+      Boolean(session.objectId)
+      && !objectGoneState
+      && objectFetchSettled
+      && !object.isError
+      && !objectPreviewLoading,
     ...objectFetchQueryOptions(),
   })
   const defs = useQuery({ queryKey: ['definitions'], queryFn: () => api.get('/v1/definitions') })
@@ -3150,8 +3161,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
     setError('')
     setShowMoreFields(false)
   }, [session.objectId])
-  const provenanceLoadPending =
-    provenance.isError || (provenance.isFetching && provenance.isFetched)
+  const provenanceLoadPending = provenance.isError
   const objectDetailPending =
     object.isError
     || (
@@ -3217,7 +3227,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       {detailRetrying ? copy.loading : copy.agentRetry}
     </Button>
   )
-  if (provenanceLoadPending && objectFetchSettled) {
+  if (provenanceLoadPending && objectFetchSettled && !objectPreviewLoading) {
     return (
       <StateNote
         tone="error"
