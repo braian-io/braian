@@ -46,7 +46,7 @@ async function saveDraft(page: Page, table: ReturnType<Page['getByTestId']>) {
   await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
 }
 
-async function editCell(table: Locator, row: Locator, columnId: 'key' | 'name', value: string) {
+async function editCell(page: Page, table: Locator, row: Locator, columnId: 'key' | 'name', value: string) {
   await row.locator(`[data-column="${columnId}"]`).dblclick()
   const editor = table.getByTestId('standard-cell-editor')
   await expect(editor).toBeVisible()
@@ -75,12 +75,12 @@ test('catalogs table creates, renames and deletes a source catalog', async ({ pa
     await table.getByTestId('table-add-row').click()
     const draftRow = table.locator('[data-row-id^="catalog-new-"]').last()
     await expect(draftRow).toBeVisible()
-    await editCell(table, draftRow, 'key', key)
+    await editCell(page, table, draftRow, 'key', key)
     let row = table.locator(`[data-testid="catalog-row"][data-key="${key}"]`)
     await expect(row).toBeVisible()
     await row.click()
     await command(page, 'Rename catalog')
-    await editCell(table, row, 'name', createdName)
+    await editCell(page, table, row, 'name', createdName)
 
     await saveDraft(page, table)
     await expect.poll(async () => {
@@ -92,7 +92,7 @@ test('catalogs table creates, renames and deletes a source catalog', async ({ pa
     row = table.locator(`[data-testid="catalog-row"][data-key="${key}"]`)
     await row.click()
     await command(page, 'Rename catalog')
-    await editCell(table, row, 'name', renamed)
+    await editCell(page, table, row, 'name', renamed)
     await saveDraft(page, table)
     await expect(row).toContainText(renamed)
     await expectInCatalogPicker(page, renamed)
