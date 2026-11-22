@@ -1334,7 +1334,11 @@ impl Store {
 
     /// Applies one side-table write outside a proposal row. Used when a person
     /// saves a model draft that includes catalog steps.
-    pub async fn apply_proposal_write(&self, actor: &Actor, write: ProposalWrite) -> Result<(), Error> {
+    pub async fn apply_proposal_write(
+        &self,
+        actor: &Actor,
+        write: ProposalWrite,
+    ) -> Result<(), Error> {
         let mut client = self.checkout().await?;
         let tx = client.transaction().await?;
         self.ensure_actor(&tx, actor).await?;
