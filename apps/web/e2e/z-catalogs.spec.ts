@@ -249,7 +249,7 @@ test('sources workspace, merge profile and a locked brand', async ({ page }) => 
   const catalogsTable = page.getByTestId('catalogs-table-chrome')
   await expect(catalogsTable).toBeVisible()
   await expect(catalogsTable.locator('[data-testid="catalog-row"][data-key="sap"]')).toContainText('SAP ERP')
-  await expect(catalogsTable.locator('[data-testid="catalog-row"]')).toContainText('Supplier Nordic')
+  await expect(catalogsTable.locator('[data-testid="catalog-row"][data-key="supplier-nordic"]')).toContainText('Supplier Nordic')
   await page.locator('.pane-tab-list').getByRole('button', { name: 'Merge profiles', exact: true }).click()
   await expect(page.getByTestId('merge-profiles-view')).toContainText('SAP brand')
   await expect(page.getByTestId('ownership-view')).toBeVisible()

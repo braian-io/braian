@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
 
 async function login(page: Page) {
@@ -16,6 +16,22 @@ async function openCatalogsTable(page: Page) {
   const table = page.getByTestId('catalogs-table-chrome')
   await expect(table).toBeVisible()
   return table
+}
+
+async function editCell(row: Locator, column: string, value: string, page: Page) {
+  await row.locator(`[data-column="${column}"]`).dblclick()
+  const editor = row.getByTestId('standard-cell-editor')
+  await expect(editor).toBeVisible()
+  await editor.fill(value)
+  await page.keyboard.press('Enter')
+}
+
+async function expectInCatalogPicker(page: Page, label: string) {
+  const selector = page.getByTestId('catalog-selector')
+  await selector.click()
+  await expect(page.getByTestId('catalog-selector-menu').getByRole('menuitem', { name: label })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('catalog-selector-menu')).toHaveCount(0)
 }
 
 async function saveDraft(page: Page, table: ReturnType<Page['getByTestId']>) {
@@ -54,28 +70,22 @@ test('catalogs table creates, renames and deletes a source catalog', async ({ pa
   try {
     await table.getByTestId('table-add-row').click()
     const draftRow = table.locator('[data-testid="catalog-row"]').last()
-    await draftRow.locator('[data-column="key"]').dblclick()
-    await page.getByTestId('standard-cell-editor').fill(key)
-    await page.keyboard.press('Enter')
-    await draftRow.locator('[data-column="name"]').dblclick()
-    await page.getByTestId('standard-cell-editor').fill(`E2E ${suffix}`)
-    await page.keyboard.press('Enter')
+    await editCell(draftRow, 'key', key, page)
+    await editCell(draftRow, 'name', `E2E ${suffix}`, page)
 
     await saveDraft(page, table)
     await expect.poll(async () => {
       const catalogs = (await (await page.request.get('/v1/catalogs')).json()) as Array<{ key?: string }>
       return catalogs.some((row) => row.key === key)
     }).toBe(true)
-    await expect(page.getByTestId('catalog-selector')).toContainText(`E2E ${suffix}`)
+    await expectInCatalogPicker(page, `E2E ${suffix}`)
 
     const saved = table.locator(`[data-testid="catalog-row"][data-key="${key}"]`)
     await saved.click()
-    await saved.locator('[data-column="name"]').dblclick()
-    await page.getByTestId('standard-cell-editor').fill(renamed)
-    await page.keyboard.press('Enter')
+    await editCell(saved, 'name', renamed, page)
     await saveDraft(page, table)
     await expect(saved).toContainText(renamed)
-    await expect(page.getByTestId('catalog-selector')).toContainText(renamed)
+    await expectInCatalogPicker(page, renamed)
 
     await saved.click({ button: 'right' })
     await page.getByRole('menuitem', { name: 'Delete catalog' }).click()
@@ -84,7 +94,9 @@ test('catalogs table creates, renames and deletes a source catalog', async ({ pa
       const catalogs = (await (await page.request.get('/v1/catalogs')).json()) as Array<{ key?: string }>
       return !catalogs.some((row) => row.key === key)
     }).toBe(true)
-    await expect(page.getByTestId('catalog-selector')).not.toContainText(renamed)
+    await page.getByTestId('catalog-selector').click()
+    await expect(page.getByTestId('catalog-selector-menu').getByRole('menuitem', { name: renamed })).toHaveCount(0)
+    await page.keyboard.press('Escape')
   } finally {
     await deleteCatalog(page, key).catch(() => undefined)
   }
