@@ -9,6 +9,7 @@ export type ModelTableDraftHandle = {
 
 type LeaveRequest = {
   action: () => void
+  handle: ModelTableDraftHandle
 }
 
 let active: ModelTableDraftHandle | null = null
@@ -25,7 +26,7 @@ export function registerModelTableDraft(handle: ModelTableDraftHandle | null) {
 }
 
 export function modelTableDraftDirty(): boolean {
-  return Boolean(active?.dirty())
+  return Boolean(active?.dirty() || leave)
 }
 
 export function tryModelTableLeave(action: () => void) {
@@ -33,7 +34,7 @@ export function tryModelTableLeave(action: () => void) {
     action()
     return
   }
-  leave = { action }
+  leave = { action, handle: active }
   notify()
 }
 
@@ -54,19 +55,19 @@ export function cancelModelTableLeave() {
 }
 
 export function confirmModelTableLeaveDiscard() {
-  if (!leave || !active) return
-  active.discard()
-  const action = leave.action
+  if (!leave) return
+  const { handle, action } = leave
+  handle.discard()
   leave = null
   notify()
   action()
 }
 
 export async function confirmModelTableLeaveReview() {
-  if (!leave || !active) return
-  const action = leave.action
-  await Promise.resolve(active.review())
-  if (active?.dirty()) return
+  if (!leave) return
+  const { handle, action } = leave
+  await Promise.resolve(handle.review())
+  if (handle.dirty()) return
   leave = null
   notify()
   action()
