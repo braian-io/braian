@@ -61,14 +61,12 @@ test.describe('type attributes draft persist (row 421)', () => {
     await expect(reloaded.getByTestId('review-and-save')).toBeVisible()
     const staged = page.waitForResponse((response) =>
       response.url().includes('/v1/model/draft/steps') && response.request().method() === 'POST')
-    await reloaded.getByTestId('review-and-save').click()
-    expect((await staged).ok()).toBeTruthy()
-    const dialog = page.getByTestId('review-dialog')
-    await expect(dialog).toBeVisible()
     const saved = page.waitForResponse((response) =>
       response.url().includes('/v1/model/draft/save') && response.request().method() === 'POST')
-    await dialog.getByTestId('confirm-review').click()
+    await reloaded.getByTestId('review-and-save').click()
+    expect((await staged).ok()).toBeTruthy()
     expect((await saved).ok()).toBeTruthy()
+    await expect(page.getByTestId('review-dialog')).toHaveCount(0)
     const body = (await (await page.request.get('/v1/definitions')).json()) as {
       attributes?: Array<{ key?: string }>
     }
