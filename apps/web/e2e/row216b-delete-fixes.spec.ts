@@ -165,7 +165,10 @@ test.describe('row 216b delete fixes', () => {
       await page.getByTestId('user-menu-trash').click()
       const trash = page.getByTestId('trash-table-chrome')
       await expect(trash).toBeVisible()
-      await expect(trash.locator('[data-testid="trash-row"]').first()).toBeVisible()
+      const trashRow = trash.locator('[data-testid="trash-row"]').first()
+      await expect(trashRow).toBeVisible()
+      await trashRow.click({ button: 'right' })
+      await expect(page.getByTestId('context-menu').getByRole('menuitem', { name: 'Restore' })).toBeVisible()
       await page.keyboard.press('Escape')
     } finally {
       await page.request.delete(`/v1/objects/${product.id}`).catch(() => undefined)

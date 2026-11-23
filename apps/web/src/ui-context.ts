@@ -45,6 +45,8 @@ const enriched = new Map<string, SelectedObject>()
 /** Selected tree node in one view, used as a live peer source (Notion 103 PR 2). */
 export type TreeNodeSelection = { structureId: string; structureKey: string; groupKey: string }
 const treeNodes = new Map<string, TreeNodeSelection>()
+export type TrashActiveRow = { kind: string; id: string; name: string }
+let trashActive: TrashActiveRow | null = null
 export const EMPTY_SELECTION: SelectedObject[] = []
 const selectionListeners = new Set<() => void>()
 let selectionVersion = 0
@@ -87,6 +89,7 @@ export function resetUiContext() {
   selections.clear()
   enriched.clear()
   treeNodes.clear()
+  trashActive = null
   bumpSelection()
 }
 
@@ -246,4 +249,14 @@ export function readUiContext(): UiContextSnapshot {
     columnPrefsOverride,
     language: frame.language || 'en',
   }
+}
+
+/** Active row in the Trash table for Ctrl+K command targets. */
+export function publishTrashActive(row: TrashActiveRow | null) {
+  trashActive = row
+  bumpSelection()
+}
+
+export function readTrashActive(): TrashActiveRow | null {
+  return trashActive
 }
