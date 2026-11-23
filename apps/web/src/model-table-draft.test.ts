@@ -32,21 +32,7 @@ describe('model table draft guard', () => {
     expect(modelTableLeaveRequest()).toBeNull()
   })
 
-  it('discards via the captured handle when the table unmounts before confirm', () => {
-    const discard = vi.fn()
-    registerModelTableDraft({
-      dirty: () => true,
-      discard,
-      review: async () => undefined,
-    })
-    tryChooseModelSelection({ kind: 'type', typeKey: 'article' })
-    registerModelTableDraft(null)
-    confirmModelTableLeaveDiscard()
-    expect(discard).toHaveBeenCalled()
-    expect(getModelSelection()).toEqual({ kind: 'type', typeKey: 'article' })
-  })
-
-  it('keeps a pending leave request when the table unmounts', () => {
+  it('drops a pending leave request when the table unmounts', () => {
     registerModelTableDraft({
       dirty: () => true,
       discard: () => undefined,
@@ -55,7 +41,7 @@ describe('model table draft guard', () => {
     tryChooseModelSelection({ kind: 'type', typeKey: 'article' })
     expect(modelTableLeaveRequest()).toBeTruthy()
     registerModelTableDraft(null)
-    expect(modelTableLeaveRequest()).toBeTruthy()
+    expect(modelTableLeaveRequest()).toBeNull()
   })
 
   it('blocks selection and discard clears the draft before navigating', () => {

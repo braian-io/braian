@@ -416,30 +416,31 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
     return { op: 'reorder_type_attributes', type_key: selection.typeKey, attributes }
   }
 
-  const tableDirtyRef = useRef(false)
+  const draftRowsRef = useRef(draftRows)
+  const pendingDetachRef = useRef(pendingDetach)
+  const pendingDeleteRef = useRef(pendingDelete)
+  draftRowsRef.current = draftRows
+  pendingDetachRef.current = pendingDetach
+  pendingDeleteRef.current = pendingDelete
 
-  const computeTableDirty = () => (
-    pendingDetach.size > 0
-    || pendingDelete.size > 0
-    || Object.keys(draftRows).length > 0
+  const tableDirty = () => (
+    pendingDetachRef.current.size > 0
+    || pendingDeleteRef.current.size > 0
+    || Object.keys(draftRowsRef.current).length > 0
   )
 
-  useEffect(() => {
-    tableDirtyRef.current = computeTableDirty()
-  }, [draftRows, pendingDetach, pendingDelete])
-
   const discardTableDraft = () => {
+    draftRowsRef.current = {}
+    pendingDetachRef.current = new Set()
+    pendingDeleteRef.current = new Set()
     setDraftRows({})
     setPendingDetach(new Set())
     setPendingDelete(new Set())
     setMessage('')
-    tableDirtyRef.current = false
     if (draftScope?.userId && draftScope.workspaceId && selectionKey) {
       clearStoredModelTableDraft(draftScope.userId, draftScope.workspaceId, selectionKey)
     }
   }
-
-  const tableDirty = () => tableDirtyRef.current
 
   const saveRef = useRef<() => Promise<void>>(async () => {})
   const save = async () => {
@@ -491,7 +492,7 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
 
   useEffect(() => {
     if (!draftScope?.userId || !draftScope.workspaceId || !selectionKey) return
-    if (!computeTableDirty()) {
+    if (!tableDirty()) {
       clearStoredModelTableDraft(draftScope.userId, draftScope.workspaceId, selectionKey)
       return
     }
@@ -690,7 +691,7 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
           setActiveRowId(row.id)
           if (row.key) setModelFocus({ kind: 'attribute', key: row.key })
         }}
-        reviewVisible={computeTableDirty()}
+        reviewVisible={tableDirty()}
         onReviewAndSave={save}
       />
       <CreateDialog

@@ -1,4 +1,4 @@
-import { applyLayoutCommand, views as layoutViewIds, type LayoutDoc } from './layout'
+import { applyLayoutCommand, type LayoutDoc, type Node } from './layout'
 import { modelTableDraftDirty } from './model-table-draft'
 
 type DockView = {
@@ -23,20 +23,34 @@ export function isTypeAttributesDockView(view: DockView): boolean {
   return viewTitle(view) === 'attributes' || viewTitle(view) === 'type attributes'
 }
 
+/** Views the dock actually mounts. Focus alone does not unmount a pane. */
+export function shownLayoutViewIds(doc: LayoutDoc): string[] {
+  if (doc.zoom) return [doc.zoom]
+  const shown: string[] = []
+  const walk = (node: Node) => {
+    if (node.type === 'tabs') {
+      const id = node.views[node.active]
+      if (id) shown.push(id)
+      return
+    }
+    for (const child of node.children) walk(child)
+  }
+  walk(doc.layout)
+  return shown
+}
+
 export function layoutLeavesTypeAttributes(
   dockViews: DockView[],
   before: LayoutDoc,
   after: LayoutDoc,
 ): boolean {
   if (!modelTableDraftDirty()) return false
-  const focus = before.focus
-  if (!focus) return false
-  const focused = dockViews.find((view) => view.id === focus)
-  if (!focused || !isTypeAttributesDockView(focused)) return false
-  const afterOpen = layoutViewIds(after.layout)
-  if (!afterOpen.includes(focus)) return true
-  if (after.focus !== focus) return true
-  return false
+  const attributeViews = new Set(dockViews.filter(isTypeAttributesDockView).map((view) => view.id))
+  if (attributeViews.size === 0) return false
+  const beforeShown = shownLayoutViewIds(before).filter((id) => attributeViews.has(id))
+  if (beforeShown.length === 0) return false
+  const afterShown = new Set(shownLayoutViewIds(after))
+  return beforeShown.some((id) => !afterShown.has(id))
 }
 
 export function layoutCommandLeavesTypeAttributes(

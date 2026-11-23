@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { tabGroup } from './layout'
+import { splitPair, tabGroup } from './layout'
 import { isTypeAttributesDockView, layoutLeavesTypeAttributes } from './model-table-draft-nav'
 import { registerModelTableDraft } from './model-table-draft'
 
@@ -11,7 +11,23 @@ describe('model table layout guard', () => {
     expect(isTypeAttributesDockView({ id: 'v2', type: 'data_model', state: { mode: 'tree' }, title: 'Structures' })).toBe(false)
   })
 
-  it('requires a guard when focus leaves the Type attributes tab', () => {
+  it('ignores a focus change that keeps the Type attributes table mounted', () => {
+    registerModelTableDraft({
+      dirty: () => true,
+      discard: () => undefined,
+      review: async () => undefined,
+    })
+    const views = [
+      { id: 'attrs', type: 'data_model', state: { mode: 'classes' }, title: 'Type attributes' },
+      { id: 'types', type: 'object_types', title: 'Object types' },
+    ]
+    const layout = splitPair('horizontal', 0.5, tabGroup(['types']), tabGroup(['attrs']))
+    const before = { id: 'ws', title: 'Data model', layout, focus: 'attrs' }
+    const after = { ...before, focus: 'types' }
+    expect(layoutLeavesTypeAttributes(views, before, after)).toBe(false)
+  })
+
+  it('requires a guard when the Type attributes tab unmounts', () => {
     registerModelTableDraft({
       dirty: () => true,
       discard: () => undefined,

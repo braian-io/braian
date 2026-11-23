@@ -10,28 +10,25 @@ async function login(page: Page) {
   await expect(page.getByTestId('workspace')).toBeVisible()
 }
 
-async function dismissLeaveDialog(page: Page) {
-  const dialog = page.getByTestId('model-table-leave-dialog')
-  if (await dialog.count()) await page.keyboard.press('Escape')
-}
-
 async function openTypeAttributes(page: Page, typeKey: string) {
   await page.locator('nav.tabs').getByRole('button', { name: /^Data model/ }).click()
+  await expect(page.getByTestId('model-table-leave-dialog')).toHaveCount(0)
   const table = page.getByTestId('attribute-table')
-  if (await table.isVisible()) {
+  const typeRow = page.getByTestId('object-types-table').locator(`[data-row-id="${typeKey}"]`)
+  if (await table.isVisible() && await typeRow.evaluate((row) => row.classList.contains('on')).catch(() => false)) {
     return table
   }
   const objectTypes = page.locator('.pane-tab', { hasText: 'Object types' }).first()
   await expect(objectTypes).toBeVisible({ timeout: 30_000 })
-  await dismissLeaveDialog(page)
   await objectTypes.click()
-  const typeRow = page.getByTestId('object-types-table').locator(`[data-row-id="${typeKey}"]`)
+  await expect(page.getByTestId('model-table-leave-dialog')).toHaveCount(0)
   await expect(async () => {
     await typeRow.click({ timeout: 2_000 })
   }).toPass({ timeout: 30_000 })
-  await dismissLeaveDialog(page)
+  await expect(page.getByTestId('model-table-leave-dialog')).toHaveCount(0)
   await page.locator('.pane-tab', { hasText: 'Type attributes' }).first().click()
   await expect(table).toBeVisible()
+  await expect(typeRow).toHaveClass(/on/)
   return table
 }
 
@@ -58,19 +55,23 @@ test.describe('type attributes draft persist (row 421)', () => {
     await expect(table.getByTestId('review-and-save')).toBeVisible()
     await page.reload()
     await expect(page.getByTestId('workspace')).toBeVisible()
-    await page.locator('nav.tabs').getByRole('button', { name: /^Data model/ }).click()
-    await dismissLeaveDialog(page)
-    await page.locator('.pane-tab', { hasText: 'Type attributes' }).first().click()
-    const reloaded = page.getByTestId('attribute-table')
-    await expect(reloaded).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByTestId('model-table-leave-dialog')).toHaveCount(0)
+    const reloaded = await openTypeAttributes(page, 'product')
     await expect(reloaded.locator(`[data-key="${key}"]`)).toHaveAttribute('data-draft', 'true')
     await expect(reloaded.getByTestId('review-and-save')).toBeVisible()
     const staged = page.waitForResponse((response) =>
       response.url().includes('/v1/model/draft/steps') && response.request().method() === 'POST')
     await reloaded.getByTestId('review-and-save').click()
     expect((await staged).ok()).toBeTruthy()
-    const saved = await page.request.get('/v1/definitions')
-    const body = (await saved.json()) as { attributes?: Array<{ key?: string }> }
+    const dialog = page.getByTestId('review-dialog')
+    await expect(dialog).toBeVisible()
+    const saved = page.waitForResponse((response) =>
+      response.url().includes('/v1/model/draft/save') && response.request().method() === 'POST')
+    await dialog.getByTestId('confirm-review').click()
+    expect((await saved).ok()).toBeTruthy()
+    const body = (await (await page.request.get('/v1/definitions')).json()) as {
+      attributes?: Array<{ key?: string }>
+    }
     expect(body.attributes?.some((item) => item.key === key)).toBe(true)
   })
 
@@ -85,7 +86,6 @@ test.describe('type attributes draft persist (row 421)', () => {
     await expect(dialog).toBeVisible()
     await page.keyboard.press('Escape')
     await expect(dialog).toHaveCount(0)
-    await page.locator('nav.tabs').getByRole('button', { name: /^Data model/ }).click()
     await expect(table.getByTestId('review-and-save')).toBeVisible()
     await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
     await expect(dialog).toBeVisible()
