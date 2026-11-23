@@ -71,17 +71,17 @@ test.describe('type attributes local draft (row 120)', () => {
     const table = await openTypeAttributes(page, 'product')
     const before = await readDefinitions(page)
     const productAttrs = [...(before.types?.find((item) => item.key === 'product')?.attributes ?? [])]
-    const weightSearchable = before.attributes?.find((item) => item.key === 'weight')?.index?.searchable
+    const descriptionSearchable = before.attributes?.find((item) => item.key === 'description')?.index?.searchable
 
     await table.getByTestId('table-add-row').click()
     const create = page.getByTestId('create-dialog')
     await expect(create).toBeVisible()
-    await create.getByTestId('new-name').fill(`Row120 ${key}`)
+    await create.getByTestId('new-name').fill(key)
     await create.getByTestId('create-object').click()
     await expect(create).toHaveCount(0)
     await expect(table.locator(`[data-key="${key}"]`)).toBeVisible()
 
-    await table.locator('[data-key="weight"]').getByRole('checkbox', { name: 'Searchable' }).click()
+    await table.locator('[data-key="description"]').getByRole('checkbox', { name: 'Searchable' }).click()
     await table.locator('[data-key="description"]').getByTestId('attr-menu-description').click()
     await page.getByRole('menuitem', { name: 'Remove from this type' }).click()
     await expect(table.getByTestId('review-and-save')).toBeVisible()
@@ -89,7 +89,7 @@ test.describe('type attributes local draft (row 120)', () => {
     const mid = await readDefinitions(page)
     expect(mid.attributes?.some((item) => item.key === key)).toBe(false)
     expect(mid.types?.find((item) => item.key === 'product')?.attributes).toEqual(productAttrs)
-    expect(mid.attributes?.find((item) => item.key === 'weight')?.index?.searchable).toBe(weightSearchable)
+    expect(mid.attributes?.find((item) => item.key === 'description')?.index?.searchable).toBe(descriptionSearchable)
 
     const staged = page.waitForResponse((response) =>
       response.url().includes('/v1/model/draft/steps') && response.request().method() === 'POST')
@@ -98,11 +98,12 @@ test.describe('type attributes local draft (row 120)', () => {
     expect(Array.isArray(body.steps)).toBeTruthy()
     expect(body.steps?.length).toBeGreaterThanOrEqual(3)
 
-    await page.getByTestId('review-save').click()
     const dialog = page.getByTestId('review-dialog')
-    if (await dialog.count()) {
-      await dialog.getByTestId('confirm-review').click()
-      await expect(dialog).toHaveCount(0)
-    }
+    await expect(dialog).toBeVisible()
+    const saved = page.waitForResponse((response) =>
+      response.url().includes('/v1/model/draft/save') && response.request().method() === 'POST')
+    await dialog.getByTestId('confirm-review').click()
+    expect((await saved).ok()).toBeTruthy()
+    await expect(dialog).toHaveCount(0)
   })
 })

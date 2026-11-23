@@ -7,7 +7,7 @@ import { copy } from './i18n'
 import { DataModel } from './data-model'
 import { ModelDraftHost } from './model-draft-ui'
 import { requestAttributeAction } from './attribute-actions'
-import { chooseModelSelection } from './model-selection'
+import { chooseModelSelection, registerModelDefinitions } from './model-selection'
 
 const mock = vi.hoisted(() => {
   const methods = { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() }
@@ -158,6 +158,14 @@ describe('type attributes table', () => {
   })
 
   afterEach(() => cleanup())
+
+  it('choosing a type after an empty selection still renders the table', async () => {
+    registerModelDefinitions({ types: [], structures: [] })
+    render(<Host />)
+    expect(await screen.findByText(copy.pickModel)).toBeTruthy()
+    chooseModelSelection({ kind: 'type', typeKey: 'recipe' })
+    await screen.findByTestId('attribute-table')
+  })
 
   it('shows standard attributes first with a locked key and no section header', async () => {
     chooseModelSelection({ kind: 'type', typeKey: 'recipe' })

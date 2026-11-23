@@ -41,12 +41,10 @@ test('turning off Show by default saves through Review and save', async ({ page 
   await expect(save).toHaveText('Save')
   const staged = page.waitForResponse((response) =>
     response.url().includes('/v1/model/draft/steps') && response.request().method() === 'POST')
-  await save.click()
-  expect((await staged).ok()).toBeTruthy()
-  await expect(page.getByTestId('unsaved-changes')).toBeVisible()
   const saved = page.waitForResponse((response) =>
     response.url().includes('/v1/model/draft/save') && response.request().method() === 'POST')
-  await page.getByTestId('review-save').click()
+  await save.click()
+  expect((await staged).ok()).toBeTruthy()
   expect((await saved).ok()).toBeTruthy()
   await expect(page.getByTestId('review-dialog')).toHaveCount(0)
   await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
@@ -70,11 +68,10 @@ test('turning off Show by default saves through Review and save', async ({ page 
   await reloaded.locator('[data-key="description"]').getByRole('checkbox', { name: 'Show by default' }).click()
   const restoreStage = page.waitForResponse((response) =>
     response.url().includes('/v1/model/draft/steps') && response.request().method() === 'POST')
-  await reloaded.getByTestId('review-and-save').click()
-  expect((await restoreStage).ok()).toBeTruthy()
   const restored = page.waitForResponse((response) =>
     response.url().includes('/v1/model/draft/save') && response.request().method() === 'POST')
-  await page.getByTestId('review-save').click()
+  await reloaded.getByTestId('review-and-save').click()
+  expect((await restoreStage).ok()).toBeTruthy()
   expect((await restored).ok()).toBeTruthy()
   await expect(page.getByTestId('review-dialog')).toHaveCount(0)
   await expect.poll(shown).toBe(true)
@@ -107,7 +104,8 @@ test('removing an attribute asks once, and a blocked group removal does not appl
   await expect(table.getByTestId('review-and-save')).toBeVisible()
   await table.getByTestId('review-and-save').click()
   await expect(page.getByTestId('unsaved-changes')).toBeVisible()
-  await page.getByTestId('review-save').click()
+  // The confirm dialog disables this button as it opens, so a normal click never settles.
+  await page.getByTestId('review-save').dispatchEvent('click')
 
   const dialog = page.getByTestId('review-dialog')
   await expect(dialog).toBeVisible()

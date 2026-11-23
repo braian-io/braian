@@ -225,14 +225,6 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
   runRef.current = run
   useEffect(() => onAttributeAction((action) => runRef.current(action)), [])
 
-  if (!selection) {
-    return (
-      <div data-testid="data-model">
-        <StateNote tone="empty" title={copy.pickModel} />
-      </div>
-    )
-  }
-
   const patch = (row: AttributeTableRow, change: Partial<AttributeTableRow>) => {
     setDraftRows((current) => ({ ...current, [row.id]: { ...row, ...change } }))
   }
@@ -263,6 +255,7 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
   )
 
   const attachStep = (attribute: string) => {
+    if (!selection) return { op: 'attach_attribute', attribute }
     if (selection.kind === 'type') return { op: 'attach_attribute', attribute, type_key: selection.typeKey }
     return { op: 'attach_attribute', attribute, structure: selection.structure, group: selection.group }
   }
@@ -344,7 +337,7 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
   }
 
   const buildReorderStep = () => {
-    if (selection.kind !== 'type') return null
+    if (!selection || selection.kind !== 'type') return null
     const order = (draftRows as Record<string, unknown>)[ROW_ORDER_KEY]
     if (!Array.isArray(order)) return null
     const byId = new Map<string, AttributeTableRow>()
@@ -403,7 +396,7 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
       }
       for (const id of pendingDetach) {
         const row = byId.get(id)
-        if (!row) continue
+        if (!row || !selection) continue
         if (selection.kind === 'type') {
           steps.push({ op: 'detach_attribute', attribute: row.key, type_key: selection.typeKey })
         } else {
@@ -437,6 +430,14 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
     })
     return () => registerModelTableDraft(null)
   }, [draftRows, pendingDetach, pendingDelete])
+
+  if (!selection) {
+    return (
+      <div data-testid="data-model">
+        <StateNote tone="empty" title={copy.pickModel} />
+      </div>
+    )
+  }
 
   const columns: Array<StandardColumn<AttributeTableRow>> = [
     {
