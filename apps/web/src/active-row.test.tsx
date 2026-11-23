@@ -303,7 +303,7 @@ describe('active row', () => {
     fireEvent.pointerMove(rows()[0]!)
     expect(detail()).toBe('id-4')
     expect(rows()[0]?.getAttribute('aria-selected')).toBe('false')
-    expect(scrollToIndex).toHaveBeenLastCalledWith(4, { align: 'end' })
+    expect(scrollToIndex).toHaveBeenLastCalledWith(4, { align: 'auto' })
   })
 
   it('keeps the selected row after focus moves and selects with Enter', async () => {

@@ -79,4 +79,54 @@ describe('object-table-row-scroll', () => {
 
     grid.remove()
   })
+
+  it('does not scroll when the active row is already fully inside the body viewport', () => {
+    const grid = document.createElement('div')
+    grid.className = 'grid'
+    grid.scrollTop = 40
+    const head = document.createElement('div')
+    head.className = 'head'
+    const row = document.createElement('div')
+    row.id = 'object-row-visible'
+    row.setAttribute('data-testid', 'object-row')
+    row.className = 'active'
+    grid.append(head, row)
+    grid.setAttribute('aria-activedescendant', row.id)
+    document.body.append(grid)
+
+    grid.getBoundingClientRect = () => domRect(0, 200)
+    head.getBoundingClientRect = () => domRect(0, 28)
+    row.getBoundingClientRect = () => domRect(150, 28)
+
+    scrollObjectTableActiveRow(grid, 'down')
+    expect(grid.scrollTop).toBe(40)
+    scrollObjectTableActiveRow(grid, 'up')
+    expect(grid.scrollTop).toBe(40)
+
+    grid.remove()
+  })
+
+  it('scrolls down only the pixels past the viewport bottom', () => {
+    const grid = document.createElement('div')
+    grid.className = 'grid'
+    grid.scrollTop = 100
+    const head = document.createElement('div')
+    head.className = 'head'
+    const row = document.createElement('div')
+    row.id = 'object-row-edge'
+    row.setAttribute('data-testid', 'object-row')
+    row.className = 'active'
+    grid.append(head, row)
+    grid.setAttribute('aria-activedescendant', row.id)
+    document.body.append(grid)
+
+    grid.getBoundingClientRect = () => domRect(0, 200)
+    head.getBoundingClientRect = () => domRect(0, 28)
+    row.getBoundingClientRect = () => domRect(173, 28)
+
+    scrollObjectTableActiveRow(grid, 'down')
+    expect(grid.scrollTop).toBe(101)
+
+    grid.remove()
+  })
 })

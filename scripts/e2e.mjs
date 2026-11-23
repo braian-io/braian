@@ -287,7 +287,7 @@ const measuredSeconds = {
   'e2e/agent-chat-dock.spec.ts': 80,
   'e2e/row281-agent-dock-reload.spec.ts': 300,
   'e2e/row282-hold-arrow-no-reload.spec.ts': 35,
-  'e2e/row283-object-table-arrow-scroll.spec.ts': 28,
+  'e2e/row283-object-table-arrow-scroll.spec.ts': 30,
   'e2e/agent-chat-pane.spec.ts': 20,
   'e2e/agent-chat-keyboard.spec.ts': 60,
   'e2e/open-type-view-ready.spec.ts': 4,

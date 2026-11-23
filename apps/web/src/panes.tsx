@@ -742,7 +742,9 @@ export function ObjectTable({
     getScrollElement: () => parent.current,
     estimateSize: () => 28,
     overscan: 16,
-    scrollPaddingStart: 28,
+    // The sticky header is in normal flow ahead of the virtual rows, so item
+    // offsets already start below it. Padding here would hide an extra row
+    // and make ArrowUp jump past the top edge.
   })
   const visible = virtualizer.getVirtualItems()
   const start = visible[0]?.index ?? 0
@@ -1114,8 +1116,8 @@ export function ObjectTable({
     const direction = activeScrollDir.current
     activeScrollDir.current = 'nearest'
     if (!groupBy) {
-      const align = direction === 'up' ? 'start' : direction === 'down' ? 'end' : 'auto'
-      virtualizerRef.current.scrollToIndex(active, { align })
+      // Nearest/minimal virtualizer scroll; edge-aware nudge stays in scrollObjectTableActiveRow.
+      virtualizerRef.current.scrollToIndex(active, { align: 'auto' })
     }
     scrollObjectTableActiveRow(grid, direction)
     const frame = requestAnimationFrame(() => {
