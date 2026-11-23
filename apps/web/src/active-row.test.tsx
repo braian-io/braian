@@ -127,6 +127,7 @@ function TreeHarness() {
       openTypeView: () => undefined,
       openStructureView: () => undefined,
       workspaceId: null,
+      userId: '',
     }),
     [group],
   )

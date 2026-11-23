@@ -47,7 +47,7 @@ export function ModelTableLeaveDialog() {
               void confirmModelTableLeaveReview()
                 .finally(() => {
                   setBusy(false)
-                  setOpen(modelTableLeaveRequest() == null)
+                  setOpen(modelTableLeaveRequest() != null)
                 })
             }}
           >

@@ -6,6 +6,8 @@ import { Button } from './components/ui/button'
 import { Kbd } from './components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './components/ui/tooltip'
 import { viewDisplayTitle } from './demo-labels'
+import { layoutCommandLeavesTypeAttributes, layoutLeavesTypeAttributes } from './model-table-draft-nav'
+import { tryModelTableLeave } from './model-table-draft'
 import { looksLikeRawViewId } from './model-workspace-migrate'
 import { copy } from './i18n'
 import { openSharedContextMenu, prefersNativeContextMenu } from './shared-context-menu'
@@ -89,12 +91,26 @@ export function WorkspaceDock({
   // View chrome menus open through the shared command registry.
 
   const commit = (next: LayoutDoc) => {
-    docRef.current = next
-    changeRef.current(next)
+    const apply = () => {
+      docRef.current = next
+      changeRef.current(next)
+    }
+    if (layoutLeavesTypeAttributes(viewsRef.current, docRef.current, next)) {
+      tryModelTableLeave(apply)
+      return
+    }
+    apply()
   }
   const run = (name: string, args: Record<string, unknown> = {}) => {
-    const result = applyLayoutCommand(docRef.current, name, args, { views: asRefs(viewsRef.current) })
-    if (result.handled) commit(result.doc)
+    const execute = () => {
+      const result = applyLayoutCommand(docRef.current, name, args, { views: asRefs(viewsRef.current) })
+      if (result.handled) commit(result.doc)
+    }
+    if (layoutCommandLeavesTypeAttributes(viewsRef.current, docRef.current, name, args)) {
+      tryModelTableLeave(execute)
+      return
+    }
+    execute()
   }
 
   useEffect(() => {

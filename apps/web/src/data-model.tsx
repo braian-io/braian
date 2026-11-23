@@ -19,7 +19,15 @@ import { StructureSection } from './structure-tree'
 import { StateNote } from './states'
 import { onDraftChange, requestReview, setModelFocus, stageModel, stageModelSteps } from './model-stage'
 import { getModelSelection, getPreviewType, setPreviewType, subscribeModelSelection } from './model-selection'
+import {
+  clearStoredModelTableDraft,
+  readStoredModelTableDraft,
+  validateStoredModelTableDraft,
+  writeStoredModelTableDraft,
+  type StoredAttributeTableRow,
+} from './model-table-draft-persist'
 import { registerModelTableDraft, tryChooseModelSelection } from './model-table-draft'
+import { toast } from 'sonner'
 import { CreateDialog, requireText } from './create-dialog'
 import { onAttributeAction, type AttributeAction } from './attribute-actions'
 import { writeErrorMessage } from './write-error'
@@ -49,7 +57,12 @@ async function propose(name: string, args: Json) {
   return stageModel(name, args)
 }
 
-export function DataModel({ view }: { view: View }) {
+export type ModelTableDraftScope = {
+  userId: string
+  workspaceId: string
+}
+
+export function DataModel({ view, draftScope }: { view: View; draftScope?: ModelTableDraftScope }) {
   const queryClient = useQueryClient()
   const stored = useQuery({ queryKey: ['definitions'], queryFn: () => api.get('/v1/definitions') })
   const draft = useQuery({ queryKey: ['model-draft'], queryFn: () => api.get('/v1/model/draft') })
@@ -63,7 +76,9 @@ export function DataModel({ view }: { view: View }) {
   const defs = preview ?? stored.data
   // Preview (card) removed. Structures stay as a tree (not ModelNav type/list chrome).
   // Object/link/value list/unit tables cover those entities. Type attributes use mode=classes.
-  if (mode === 'classes' || mode === 'attributes') return <AttributesTable defs={defs} />
+  if (mode === 'classes' || mode === 'attributes') {
+    return <AttributesTable defs={defs} draftScope={draftScope} />
+  }
   if (mode === 'impact') return <ImpactNote />
   if (mode === 'card' || mode === 'editor') return <StateNote tone="empty" title={copy.pickModel} />
   return <StructuresPane defs={defs} />
@@ -168,7 +183,7 @@ function AttributeMenu({
   )
 }
 
-function AttributesTable({ defs }: { defs: Json | undefined }) {
+function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftScope?: ModelTableDraftScope }) {
   const queryClient = useQueryClient()
   const { selection } = useModelSelection()
   const [filter, setFilter] = useState('')
@@ -181,21 +196,45 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
   const [createKind, setCreateKind] = useState('text')
   const [pendingKey, setPendingKey] = useState<string | null>(null)
   const [activeRowId, setActiveRowId] = useState<string | null>(null)
+  const restoredDraftToken = useRef('')
   const selectionKey = selection ? (selection.kind === 'type' ? selection.typeKey : `${selection.structure}/${selection.group}`) : ''
   const keyAttribute = keyAttributeOf(defs, selection)
   const families = ((defs?.unit_families as Json[]) ?? []).map((item) => String(item.key ?? '')).filter(Boolean)
   const lists = ((defs?.value_lists as Json[]) ?? []).map((item) => String(item.key ?? '')).filter(Boolean)
 
   useEffect(() => {
-    setDraftRows({})
-    setPendingDetach(new Set())
-    setPendingDelete(new Set())
     setFilter('')
     setMessage('')
     setCreateOpen(false)
     setPendingKey(null)
     setActiveRowId(null)
   }, [selectionKey])
+
+  useEffect(() => {
+    if (!selectionKey || !selection) {
+      setDraftRows({})
+      setPendingDetach(new Set())
+      setPendingDelete(new Set())
+      restoredDraftToken.current = ''
+      return
+    }
+    if (!draftScope?.userId || !draftScope.workspaceId || !defs) return
+    const token = `${draftScope.userId}:${draftScope.workspaceId}:${selectionKey}`
+    if (restoredDraftToken.current === token) return
+    restoredDraftToken.current = token
+    const stored = readStoredModelTableDraft(draftScope.userId, draftScope.workspaceId, selectionKey)
+    if (!stored) {
+      setDraftRows({})
+      setPendingDetach(new Set())
+      setPendingDelete(new Set())
+      return
+    }
+    const restored = validateStoredModelTableDraft(stored, defs, selection)
+    setDraftRows(restored.draftRows)
+    setPendingDetach(new Set(restored.pendingDetach))
+    setPendingDelete(new Set(restored.pendingDelete))
+    if (restored.trimmed) toast.message(copy.modelTableDraftRestoreTrimmed)
+  }, [selectionKey, draftScope?.userId, draftScope?.workspaceId, selection, defs])
 
   const rows = useMemo(() => {
     const source = attributeRows(defs, selection, uiLanguage).map((row) => detailRow(defs, row))
@@ -377,18 +416,31 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
     return { op: 'reorder_type_attributes', type_key: selection.typeKey, attributes }
   }
 
+  const draftRowsRef = useRef(draftRows)
+  const pendingDetachRef = useRef(pendingDetach)
+  const pendingDeleteRef = useRef(pendingDelete)
+  draftRowsRef.current = draftRows
+  pendingDetachRef.current = pendingDetach
+  pendingDeleteRef.current = pendingDelete
+
+  const tableDirty = () => (
+    pendingDetachRef.current.size > 0
+    || pendingDeleteRef.current.size > 0
+    || Object.keys(draftRowsRef.current).length > 0
+  )
+
   const discardTableDraft = () => {
+    draftRowsRef.current = {}
+    pendingDetachRef.current = new Set()
+    pendingDeleteRef.current = new Set()
     setDraftRows({})
     setPendingDetach(new Set())
     setPendingDelete(new Set())
     setMessage('')
+    if (draftScope?.userId && draftScope.workspaceId && selectionKey) {
+      clearStoredModelTableDraft(draftScope.userId, draftScope.workspaceId, selectionKey)
+    }
   }
-
-  const tableDirty = () => (
-    pendingDetach.size > 0
-    || pendingDelete.size > 0
-    || Object.keys(draftRows).length > 0
-  )
 
   const saveRef = useRef<() => Promise<void>>(async () => {})
   const save = async () => {
@@ -437,6 +489,20 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
     })
     return () => registerModelTableDraft(null)
   }, [draftRows, pendingDetach, pendingDelete])
+
+  useEffect(() => {
+    if (!draftScope?.userId || !draftScope.workspaceId || !selectionKey) return
+    if (!tableDirty()) {
+      clearStoredModelTableDraft(draftScope.userId, draftScope.workspaceId, selectionKey)
+      return
+    }
+    writeStoredModelTableDraft(draftScope.userId, draftScope.workspaceId, selectionKey, {
+      v: 1,
+      draftRows: draftRows as Record<string, StoredAttributeTableRow | unknown>,
+      pendingDetach: [...pendingDetach],
+      pendingDelete: [...pendingDelete],
+    })
+  }, [draftRows, pendingDetach, pendingDelete, draftScope?.userId, draftScope?.workspaceId, selectionKey])
 
   if (!selection) {
     return (

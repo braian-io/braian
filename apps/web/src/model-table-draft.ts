@@ -27,6 +27,19 @@ export function registerModelTableDraft(handle: ModelTableDraftHandle | null) {
   notify()
 }
 
+export function modelTableDraftDirty(): boolean {
+  return Boolean(active?.dirty())
+}
+
+export function tryModelTableLeave(action: () => void) {
+  if (!active?.dirty()) {
+    action()
+    return
+  }
+  leave = { action }
+  notify()
+}
+
 export function subscribeModelTableDraft(listen: () => void) {
   listeners.add(listen)
   return () => {
@@ -63,10 +76,5 @@ export async function confirmModelTableLeaveReview() {
 }
 
 export function tryChooseModelSelection(next: ModelSelection) {
-  if (!active?.dirty()) {
-    chooseModelSelection(next)
-    return
-  }
-  leave = { action: () => chooseModelSelection(next) }
-  notify()
+  tryModelTableLeave(() => chooseModelSelection(next))
 }
