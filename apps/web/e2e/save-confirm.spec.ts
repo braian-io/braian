@@ -26,7 +26,7 @@ async function openProductAttributes(page: Page) {
   return table
 }
 
-test('turning off Show by default saves through Review and save', async ({ page }) => {
+test('turning off Show by default saves with one Save and no confirm', async ({ page }) => {
   test.setTimeout(180_000)
   await login(page)
   const table = await openProductAttributes(page)
@@ -103,12 +103,9 @@ test('removing an attribute asks once, and a blocked group removal does not appl
   await page.getByRole('menuitem', { name: 'Remove from this type' }).click()
   await expect(table.getByTestId('review-and-save')).toBeVisible()
   await table.getByTestId('review-and-save').click()
-  await expect(page.getByTestId('unsaved-changes')).toBeVisible()
-  // The confirm dialog disables this button as it opens, so a normal click never settles.
-  await page.getByTestId('review-save').dispatchEvent('click')
-
   const dialog = page.getByTestId('review-dialog')
   await expect(dialog).toBeVisible()
+  await expect(page.getByTestId('unsaved-changes')).toBeVisible()
   await expect(dialog.locator('input')).toHaveCount(0)
   const remove = dialog.getByTestId('confirm-review')
   await expect(remove).toHaveText('Delete')

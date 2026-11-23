@@ -28,7 +28,7 @@ async function openTypeAttributes(page: Page, typeKey: string) {
 
 type Definitions = {
   types?: Array<{ key?: string; attributes?: string[] }>
-  attributes?: Array<{ key?: string; index?: { searchable?: boolean } }>
+  attributes?: Array<{ id?: string; key?: string; index?: { searchable?: boolean } }>
 }
 
 async function readDefinitions(page: Page) {
@@ -71,7 +71,7 @@ test.describe('type attributes local draft (row 120)', () => {
     const table = await openTypeAttributes(page, 'product')
     const before = await readDefinitions(page)
     const productAttrs = [...(before.types?.find((item) => item.key === 'product')?.attributes ?? [])]
-    const descriptionSearchable = before.attributes?.find((item) => item.key === 'description')?.index?.searchable
+    const brandSearchable = before.attributes?.find((item) => item.key === 'brand')?.index?.searchable
 
     await table.getByTestId('table-add-row').click()
     const create = page.getByTestId('create-dialog')
@@ -81,7 +81,9 @@ test.describe('type attributes local draft (row 120)', () => {
     await expect(create).toHaveCount(0)
     await expect(table.locator(`[data-key="${key}"]`)).toBeVisible()
 
-    await table.locator('[data-key="description"]').getByRole('checkbox', { name: 'Searchable' }).click()
+    const brandCheckbox = table.locator('[data-key="brand"]').getByRole('checkbox', { name: 'Searchable' })
+    await expect(brandCheckbox).toBeVisible()
+    await brandCheckbox.click()
     await table.locator('[data-key="description"]').getByTestId('attr-menu-description').click()
     await page.getByRole('menuitem', { name: 'Remove from this type' }).click()
     await expect(table.getByTestId('review-and-save')).toBeVisible()
@@ -89,7 +91,7 @@ test.describe('type attributes local draft (row 120)', () => {
     const mid = await readDefinitions(page)
     expect(mid.attributes?.some((item) => item.key === key)).toBe(false)
     expect(mid.types?.find((item) => item.key === 'product')?.attributes).toEqual(productAttrs)
-    expect(mid.attributes?.find((item) => item.key === 'description')?.index?.searchable).toBe(descriptionSearchable)
+    expect(mid.attributes?.find((item) => item.key === 'brand')?.index?.searchable).toBe(brandSearchable)
 
     const staged = page.waitForResponse((response) =>
       response.url().includes('/v1/model/draft/steps') && response.request().method() === 'POST')
@@ -105,5 +107,26 @@ test.describe('type attributes local draft (row 120)', () => {
     await dialog.getByTestId('confirm-review').click()
     expect((await saved).ok()).toBeTruthy()
     await expect(dialog).toHaveCount(0)
+
+    await expect.poll(async () => {
+      const body = await readDefinitions(page)
+      return body.attributes?.find((item) => item.key === 'brand')?.index?.searchable
+    }).not.toBe(brandSearchable)
+    const after = await readDefinitions(page)
+    expect(after.attributes?.some((item) => item.key === key)).toBe(true)
+    const productType = after.types?.find((item) => item.key === 'product')
+    const descriptionId = after.attributes?.find((item) => item.key === 'description')?.id
+    expect(descriptionId && productType?.attributes?.includes(descriptionId)).toBe(false)
+
+    const restoreSteps: Array<Record<string, unknown>> = [
+      { op: 'attach_attribute', attribute: 'description', type_key: 'product' },
+    ]
+    if (brandSearchable !== undefined) {
+      restoreSteps.push({ op: 'update_attribute', key: 'brand', searchable: brandSearchable })
+    }
+    const restoreStage = await page.request.post('/v1/model/draft/steps', { data: { steps: restoreSteps } })
+    expect(restoreStage.ok(), await restoreStage.text()).toBeTruthy()
+    const restoreSave = await page.request.post('/v1/model/draft/save', { data: {} })
+    expect(restoreSave.ok(), await restoreSave.text()).toBeTruthy()
   })
 })
