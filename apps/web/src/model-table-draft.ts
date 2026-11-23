@@ -20,6 +20,9 @@ function notify() {
 }
 
 export function registerModelTableDraft(handle: ModelTableDraftHandle | null) {
+  if (handle === null && leave) {
+    leave = null
+  }
   active = handle
   notify()
 }
