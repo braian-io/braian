@@ -87,11 +87,17 @@ async function moveUntilActiveRowAtTopEdge(grid: Locator, page: Page) {
     const state = await activeRowViewportState(grid)
     expect(state, 'active row should exist while seeking top edge').not.toBeNull()
     const gap = state!.rowTop - state!.viewportTop
-    if (Math.abs(gap) <= 3) return state!
+    if (Math.abs(gap) <= 3 && state!.scrollTop > 0) return state!
+    if (Math.abs(gap) <= 3 && state!.scrollTop === 0) {
+      await page.keyboard.press('ArrowDown')
+      await page.keyboard.press('ArrowDown')
+      await expectActiveRowInView(grid, `nudge down off list start step ${step + 1}`)
+      continue
+    }
     await page.keyboard.press('ArrowUp')
     await expectActiveRowInView(grid, `seek top edge step ${step + 1}`)
   }
-  throw new Error('active row never reached top viewport edge')
+  throw new Error('active row never reached top viewport edge with scroll room')
 }
 
 test('Products table: each ArrowDown keeps the active row inside the scroll viewport', async ({ page }) => {
@@ -153,7 +159,7 @@ test('Products table: ArrowUp past the top edge scrolls ~one row and stays top-a
   test.setTimeout(180_000)
   const { grid } = await openProducts(page)
 
-  for (let step = 0; step < 30; step += 1) {
+  for (let step = 0; step < 45; step += 1) {
     await page.keyboard.press('ArrowDown')
     await expectActiveRowInView(grid, `down to top-edge test step ${step + 1}`)
   }
@@ -161,11 +167,15 @@ test('Products table: ArrowUp past the top edge scrolls ~one row and stays top-a
   const before = await moveUntilActiveRowAtTopEdge(grid, page)
   const rowHeight = before.rowBottom - before.rowTop
   const bodyHeight = before.viewportBottom - before.viewportTop
+  const activeBefore = await grid.getAttribute('aria-activedescendant')
+  expect(before.scrollTop, 'top-edge ArrowUp needs rows scrolled above the viewport').toBeGreaterThan(0)
 
   await page.keyboard.press('ArrowUp')
   await expectActiveRowInView(grid, 'ArrowUp past top edge')
   const after = await activeRowViewportState(grid)
   expect(after, 'active row after top-edge ArrowUp').not.toBeNull()
+  const activeAfter = await grid.getAttribute('aria-activedescendant')
+  expect(activeAfter, 'ArrowUp should move off the prior active row').not.toBe(activeBefore)
 
   const scrollDelta = before.scrollTop - after!.scrollTop
   expect(scrollDelta).toBeGreaterThan(0)
