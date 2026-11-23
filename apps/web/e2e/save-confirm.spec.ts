@@ -10,16 +10,8 @@ async function login(page: Page) {
   await expect(page.getByTestId('workspace')).toBeVisible()
 }
 
-async function dismissModelTableLeave(page: Page) {
-  const dialog = page.getByTestId('model-table-leave-dialog')
-  if (await dialog.isVisible().catch(() => false)) {
-    await dialog.getByTestId('model-table-leave-discard').click()
-    await expect(dialog).toHaveCount(0)
-  }
-}
-
 async function openProductAttributes(page: Page) {
-  await dismissModelTableLeave(page)
+  await expect(page.getByTestId('model-table-leave-dialog')).toHaveCount(0)
   await page.locator('nav.tabs').getByRole('button', { name: /^Data model/ }).click()
   const objectTypes = page.locator('.pane-tab', { hasText: 'Object types' }).first()
   await expect(objectTypes).toBeVisible({ timeout: 30_000 })
@@ -34,7 +26,7 @@ async function openProductAttributes(page: Page) {
   return table
 }
 
-test('turning off Show by default saves directly', async ({ page }) => {
+test('turning off Show by default saves through Review and save', async ({ page }) => {
   test.setTimeout(180_000)
   await login(page)
   const table = await openProductAttributes(page)
@@ -47,14 +39,16 @@ test('turning off Show by default saves directly', async ({ page }) => {
 
   const save = table.getByTestId('review-and-save')
   await expect(save).toHaveText('Save')
+  const staged = page.waitForResponse((response) =>
+    response.url().includes('/v1/model/draft/steps') && response.request().method() === 'POST')
   await save.click()
+  expect((await staged).ok()).toBeTruthy()
   await expect(page.getByTestId('unsaved-changes')).toBeVisible()
+  const saved = page.waitForResponse((response) =>
+    response.url().includes('/v1/model/draft/save') && response.request().method() === 'POST')
   await page.getByTestId('review-save').click()
-  const confirm = page.getByTestId('review-dialog')
-  if (await confirm.isVisible().catch(() => false)) {
-    await confirm.getByTestId('confirm-review').click()
-    await expect(confirm).toHaveCount(0)
-  }
+  expect((await saved).ok()).toBeTruthy()
+  await expect(page.getByTestId('review-dialog')).toHaveCount(0)
   await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
 
   // Absent means shown. The API omits show_by_default when it is true.
@@ -74,18 +68,15 @@ test('turning off Show by default saves directly', async ({ page }) => {
   await expect(reloaded.locator('[data-key="description"]').getByRole('checkbox', { name: 'Show by default' })).not.toBeChecked()
 
   await reloaded.locator('[data-key="description"]').getByRole('checkbox', { name: 'Show by default' }).click()
-  const staged = page.waitForResponse((response) =>
+  const restoreStage = page.waitForResponse((response) =>
     response.url().includes('/v1/model/draft/steps') && response.request().method() === 'POST')
   await reloaded.getByTestId('review-and-save').click()
-  expect((await staged).ok()).toBeTruthy()
+  expect((await restoreStage).ok()).toBeTruthy()
   const restored = page.waitForResponse((response) =>
     response.url().includes('/v1/model/draft/save') && response.request().method() === 'POST')
   await page.getByTestId('review-save').click()
-  const confirm = page.getByTestId('review-dialog')
-  if (await confirm.isVisible().catch(() => false)) {
-    await confirm.getByTestId('confirm-review').click()
-  }
   expect((await restored).ok()).toBeTruthy()
+  await expect(page.getByTestId('review-dialog')).toHaveCount(0)
   await expect.poll(shown).toBe(true)
   await page.reload()
   const again = await openProductAttributes(page)
