@@ -10,17 +10,27 @@ async function login(page: Page) {
   await expect(page.getByTestId('workspace')).toBeVisible()
 }
 
+async function dismissLeaveDialog(page: Page) {
+  const dialog = page.getByTestId('model-table-leave-dialog')
+  if (await dialog.count()) await page.keyboard.press('Escape')
+}
+
 async function openTypeAttributes(page: Page, typeKey: string) {
   await page.locator('nav.tabs').getByRole('button', { name: /^Data model/ }).click()
+  const table = page.getByTestId('attribute-table')
+  if (await table.isVisible()) {
+    return table
+  }
   const objectTypes = page.locator('.pane-tab', { hasText: 'Object types' }).first()
   await expect(objectTypes).toBeVisible({ timeout: 30_000 })
+  await dismissLeaveDialog(page)
   await objectTypes.click()
   const typeRow = page.getByTestId('object-types-table').locator(`[data-row-id="${typeKey}"]`)
   await expect(async () => {
     await typeRow.click({ timeout: 2_000 })
   }).toPass({ timeout: 30_000 })
+  await dismissLeaveDialog(page)
   await page.locator('.pane-tab', { hasText: 'Type attributes' }).first().click()
-  const table = page.getByTestId('attribute-table')
   await expect(table).toBeVisible()
   return table
 }
@@ -34,7 +44,7 @@ test.describe('type attributes draft persist (row 421)', () => {
     }
   })
 
-  test('reload keeps a create draft until Save applies it', async ({ page }) => {
+  test('create attribute, reload, draft row remains and Save applies it', async ({ page }) => {
     test.setTimeout(180_000)
     const key = `row421_${Date.now().toString().slice(-6)}`
     await login(page)
@@ -47,7 +57,12 @@ test.describe('type attributes draft persist (row 421)', () => {
     await expect(table.locator(`[data-key="${key}"]`)).toHaveAttribute('data-draft', 'true')
     await expect(table.getByTestId('review-and-save')).toBeVisible()
     await page.reload()
-    const reloaded = await openTypeAttributes(page, 'product')
+    await expect(page.getByTestId('workspace')).toBeVisible()
+    await page.locator('nav.tabs').getByRole('button', { name: /^Data model/ }).click()
+    await dismissLeaveDialog(page)
+    await page.locator('.pane-tab', { hasText: 'Type attributes' }).first().click()
+    const reloaded = page.getByTestId('attribute-table')
+    await expect(reloaded).toBeVisible({ timeout: 30_000 })
     await expect(reloaded.locator(`[data-key="${key}"]`)).toHaveAttribute('data-draft', 'true')
     await expect(reloaded.getByTestId('review-and-save')).toBeVisible()
     const staged = page.waitForResponse((response) =>
@@ -65,7 +80,6 @@ test.describe('type attributes draft persist (row 421)', () => {
     const table = await openTypeAttributes(page, 'product')
     await table.locator('[data-key="description"]').getByRole('checkbox', { name: 'Searchable' }).click()
     await expect(table.getByTestId('review-and-save')).toBeVisible()
-
     await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
     const dialog = page.getByTestId('model-table-leave-dialog')
     await expect(dialog).toBeVisible()
@@ -73,7 +87,6 @@ test.describe('type attributes draft persist (row 421)', () => {
     await expect(dialog).toHaveCount(0)
     await page.locator('nav.tabs').getByRole('button', { name: /^Data model/ }).click()
     await expect(table.getByTestId('review-and-save')).toBeVisible()
-
     await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
     await expect(dialog).toBeVisible()
     await dialog.getByTestId('model-table-leave-discard').click()
@@ -81,38 +94,19 @@ test.describe('type attributes draft persist (row 421)', () => {
     await expect(page.locator('nav.tabs .tab.active', { hasText: /^Products/ })).toBeVisible()
   })
 
-  test('registers beforeunload only while the draft is dirty', async ({ page }) => {
+  test('beforeunload prompt is active only while the draft is dirty', async ({ page }) => {
     test.setTimeout(120_000)
-    await page.addInitScript(() => {
-      let count = 0
-      const target = window as Window & { __beforeunloadAdds?: number }
-      const add = window.addEventListener.bind(window)
-      const remove = window.removeEventListener.bind(window)
-      window.addEventListener = ((
-        type: string,
-        listener: EventListenerOrEventListenerObject,
-        options?: boolean | AddEventListenerOptions,
-      ) => {
-        if (type === 'beforeunload') count += 1
-        target.__beforeunloadAdds = count
-        return add(type, listener, options)
-      }) as typeof window.addEventListener
-      window.removeEventListener = ((
-        type: string,
-        listener: EventListenerOrEventListenerObject,
-        options?: boolean | EventListenerOptions,
-      ) => {
-        if (type === 'beforeunload') count = Math.max(0, count - 1)
-        target.__beforeunloadAdds = count
-        return remove(type, listener, options)
-      }) as typeof window.removeEventListener
-    })
     await login(page)
     const table = await openTypeAttributes(page, 'product')
-    await expect.poll(async () => page.evaluate(() => (window as Window & { __beforeunloadAdds?: number }).__beforeunloadAdds ?? 0)).toBe(0)
+    const warns = () => page.evaluate(() => {
+      const event = new Event('beforeunload', { cancelable: true })
+      window.dispatchEvent(event)
+      return event.defaultPrevented
+    })
+    expect(await warns()).toBe(false)
     await table.locator('[data-key="brand"]').getByRole('checkbox', { name: 'Searchable' }).click()
-    await expect.poll(async () => page.evaluate(() => (window as Window & { __beforeunloadAdds?: number }).__beforeunloadAdds ?? 0)).toBeGreaterThan(0)
+    await expect.poll(warns).toBe(true)
     await table.locator('[data-key="brand"]').getByRole('checkbox', { name: 'Searchable' }).click()
-    await expect.poll(async () => page.evaluate(() => (window as Window & { __beforeunloadAdds?: number }).__beforeunloadAdds ?? 0)).toBe(0)
+    await expect.poll(warns).toBe(false)
   })
 })

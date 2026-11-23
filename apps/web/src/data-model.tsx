@@ -416,21 +416,30 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
     return { op: 'reorder_type_attributes', type_key: selection.typeKey, attributes }
   }
 
+  const tableDirtyRef = useRef(false)
+
+  const computeTableDirty = () => (
+    pendingDetach.size > 0
+    || pendingDelete.size > 0
+    || Object.keys(draftRows).length > 0
+  )
+
+  useEffect(() => {
+    tableDirtyRef.current = computeTableDirty()
+  }, [draftRows, pendingDetach, pendingDelete])
+
   const discardTableDraft = () => {
     setDraftRows({})
     setPendingDetach(new Set())
     setPendingDelete(new Set())
     setMessage('')
+    tableDirtyRef.current = false
     if (draftScope?.userId && draftScope.workspaceId && selectionKey) {
       clearStoredModelTableDraft(draftScope.userId, draftScope.workspaceId, selectionKey)
     }
   }
 
-  const tableDirty = () => (
-    pendingDetach.size > 0
-    || pendingDelete.size > 0
-    || Object.keys(draftRows).length > 0
-  )
+  const tableDirty = () => tableDirtyRef.current
 
   const saveRef = useRef<() => Promise<void>>(async () => {})
   const save = async () => {
@@ -482,7 +491,7 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
 
   useEffect(() => {
     if (!draftScope?.userId || !draftScope.workspaceId || !selectionKey) return
-    if (!tableDirty()) {
+    if (!computeTableDirty()) {
       clearStoredModelTableDraft(draftScope.userId, draftScope.workspaceId, selectionKey)
       return
     }
@@ -681,7 +690,7 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
           setActiveRowId(row.id)
           if (row.key) setModelFocus({ kind: 'attribute', key: row.key })
         }}
-        reviewVisible={tableDirty()}
+        reviewVisible={computeTableDirty()}
         onReviewAndSave={save}
       />
       <CreateDialog
