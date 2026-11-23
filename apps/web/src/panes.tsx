@@ -741,7 +741,9 @@ export function ObjectTable({
     getScrollElement: () => parent.current,
     estimateSize: () => 28,
     overscan: 16,
-    scrollPaddingStart: 28,
+    // The sticky header is in normal flow ahead of the virtual rows, so item
+    // offsets already start below it. Padding here would hide an extra row
+    // and make ArrowUp jump past the top edge.
   })
   const visible = virtualizer.getVirtualItems()
   const start = visible[0]?.index ?? 0

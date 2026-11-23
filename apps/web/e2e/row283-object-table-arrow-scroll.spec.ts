@@ -82,37 +82,22 @@ async function moveUntilActiveRowAtBottomEdge(grid: Locator, page: Page) {
   throw new Error('active row never reached bottom viewport edge')
 }
 
-async function seatActiveRowOnTopEdgeWithScroll(grid: Locator, page: Page) {
-  for (let step = 0; step < 24; step += 1) {
+async function moveUntilActiveRowAtTopEdge(grid: Locator, page: Page) {
+  // The first bottom edge is only a few pixels into the list. Walk further
+  // so a later ArrowUp still has a full row of content above the header.
+  await moveUntilActiveRowAtBottomEdge(grid, page)
+  for (let step = 0; step < 16; step += 1) {
     await page.keyboard.press('ArrowDown')
-    await expectActiveRowInView(grid, `seat mid-list step ${step + 1}`)
+    await expectActiveRowInView(grid, `deepen scroll step ${step + 1}`)
   }
-  const sample = await activeRowViewportState(grid)
-  expect(sample, 'active row should exist after stepping into list').not.toBeNull()
-  const rowHeight = sample!.rowBottom - sample!.rowTop
-
-  await grid.evaluate((gridEl, bump) => {
-    gridEl.scrollTop += bump
-  }, rowHeight * 3)
-
-  await expect
-    .poll(async () => (await activeRowViewportState(grid))?.inView ?? false, {
-      message: 'active row stays visible after scroll bump',
-      timeout: 15_000,
-    })
-    .toBe(true)
-
-  for (let step = 0; step < 40; step += 1) {
+  for (let step = 0; step < 80; step += 1) {
     const state = await activeRowViewportState(grid)
-    expect(state, 'active row should exist while aligning to top edge').not.toBeNull()
+    expect(state, 'active row should exist while seeking top edge').not.toBeNull()
     const gap = state!.rowTop - state!.viewportTop
-    if (Math.abs(gap) <= 6 && state!.scrollTop > 0) return state!
-    if (gap > 6) {
-      await page.keyboard.press('ArrowUp')
-    } else {
-      await page.keyboard.press('ArrowDown')
-    }
-    await expectActiveRowInView(grid, `align top edge step ${step + 1}`)
+    const rowHeight = state!.rowBottom - state!.rowTop
+    if (Math.abs(gap) <= 3 && state!.scrollTop > rowHeight) return state!
+    await page.keyboard.press('ArrowUp')
+    await expectActiveRowInView(grid, `seek top edge step ${step + 1}`)
   }
   throw new Error('active row never reached top viewport edge with scroll headroom')
 }
@@ -179,7 +164,7 @@ test('Products table: ArrowUp past the top edge scrolls ~one row and stays top-a
   await page.keyboard.press('ArrowDown')
   await expectActiveRowInView(grid, 'first ArrowDown before top-edge test')
 
-  const before = await seatActiveRowOnTopEdgeWithScroll(grid, page)
+  const before = await moveUntilActiveRowAtTopEdge(grid, page)
   const rowHeight = before.rowBottom - before.rowTop
   const bodyHeight = before.viewportBottom - before.viewportTop
   const activeBefore = await grid.getAttribute('aria-activedescendant')
