@@ -15,6 +15,7 @@ async function login(page: Page) {
 
 async function openProducts(page: Page) {
   await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
+  await page.locator('.pane-tab[data-view-type="object_table"]', { hasText: 'Products' }).first().click()
   await expect(mainTable(page)).toBeVisible()
 }
 

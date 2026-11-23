@@ -499,7 +499,7 @@ export function Shell() {
   const opened = useQuery<Json, Error>({
     queryKey: ['object', objectId],
     queryFn: ({ signal }) => loadObjectDetail(queryClient, objectId ?? '', signal),
-    enabled: Boolean(objectId) && objectFetchSettled,
+    enabled: Boolean(objectId) && objectFetchSettled && !objectAllowDeleted,
     placeholderData: () => queryClient.getQueryData<Json>(['object', objectId]),
     ...objectFetchQueryOptions(),
     staleTime: objectQueryStaleTime(openedPreview),
@@ -1557,16 +1557,14 @@ export function Shell() {
     workspaceType: typeKeyFromShare(workspace.data?.share_token),
     setGroup,
     setObjectId: (value) => {
-      if (!value) setObjectAllowDeleted(false)
+      setObjectAllowDeleted(false)
       setObjectId(value)
     },
     setObjectAllowDeleted,
     openTrashObject: (id) => {
       clearObjectGone(queryClient, id)
-      queryClient.removeQueries({ queryKey: ['object', id, 'deleted'] })
       setObjectAllowDeleted(true)
       setObjectId(id)
-      applyRef.current('ui.open_view', { title: 'Detail', zone: 'center' })
     },
     setListType,
     setProposalId,
@@ -2058,6 +2056,7 @@ export function Shell() {
   }
 
   openTrashTableRef.current = () => {
+    void queryClient.invalidateQueries({ queryKey: ['trash'] })
     void (async () => {
       const surfaceNow = workspaceRef.current
       const docNow = docRef.current
@@ -2101,10 +2100,12 @@ export function Shell() {
       const current = docRef.current
       if (!current || !found) return
       const open = layoutViews(current.layout).includes(found.id)
+      // Tab onto the object table so Detail stays mounted for Restore.
+      const anchor = views.find((view) => view.type === 'object_table')
       const result = applyLayoutCommand(
         current,
         'ui.open_view',
-        open ? { id: found.id } : { id: found.id, zone: 'center' },
+        open ? { id: found.id } : { id: found.id, target: anchor?.id, zone: 'center' },
         {
           views: views.map((view) => ({ id: view.id, title: view.title, type: view.type })),
           canonical: canonicalRef.current,

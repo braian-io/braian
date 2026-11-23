@@ -160,7 +160,20 @@ export function TrashTable({ onOpenObject }: TrashTableProps) {
         activeRowId={activeRowId}
         onActivateRow={(row) => {
           setActiveRowId(row.id)
-          if (row.kind === 'object') onOpenObject?.(row.id)
+          if (row.kind !== 'object') return
+          // Show the trash label before the allow_deleted read returns.
+          queryClient.setQueryData(['object', row.id, 'deleted'], {
+            id: row.id,
+            key: row.number || row.name,
+            type: row.typeKey,
+            version: 0,
+            values: {
+              number: row.number || row.name,
+              name: { en: row.name },
+            },
+            links: [],
+          })
+          onOpenObject?.(row.id)
         }}
         getRowTestId={() => 'trash-row'}
         getRowKeyAttr={(row) => row.id}

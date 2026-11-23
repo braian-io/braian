@@ -3093,25 +3093,23 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   const objectQueryKey = allowDeleted
     ? (['object', session.objectId, 'deleted'] as const)
     : (['object', session.objectId] as const)
-  const previewCached = queryClient.getQueryData<Json>(objectQueryKey)
-    ?? (!allowDeleted ? undefined : queryClient.getQueryData<Json>(['object', session.objectId]))
+  const previewCached = allowDeleted
+    ? queryClient.getQueryData<Json>(objectQueryKey)
+    : queryClient.getQueryData<Json>(['object', session.objectId])
   const object = useQuery<Json, Error>({
     queryKey: objectQueryKey,
     queryFn: ({ signal }) => loadObjectDetail(queryClient, session.objectId ?? '', signal, allowDeleted),
     enabled: Boolean(session.objectId) && !objectGoneState && objectFetchSettled,
-    placeholderData: () => {
-      const cached = queryClient.getQueryData<Json>(objectQueryKey)
-      if (cached) return cached
-      return allowDeleted ? queryClient.getQueryData<Json>(['object', session.objectId]) : undefined
-    },
+    placeholderData: () => allowDeleted
+      ? queryClient.getQueryData<Json>(objectQueryKey)
+      : queryClient.getQueryData<Json>(['object', session.objectId]),
     ...objectFetchQueryOptions(),
     staleTime: objectQueryStaleTime(previewCached),
   })
-  const objectPreviewLoading = Boolean(
-    object.data && isListPreview(object.data) && (object.isFetching || object.isPending),
-  )
   const provenance = useQuery({
-    queryKey: ['object-origin', session.objectId],
+    queryKey: allowDeleted
+      ? ['object-origin', session.objectId, 'deleted']
+      : ['object-origin', session.objectId],
     queryFn: async ({ signal }) => {
       const allowQuery = allowDeleted ? '&allow_deleted=true' : ''
       const response = await fetch(`/v1/objects/${session.objectId}?include=owners,origin${allowQuery}`, {
@@ -3124,14 +3122,14 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       }
       return response.json() as Promise<{ owners?: Record<string, string>; origin?: Json | null }>
     },
-    enabled: Boolean(session.objectId) && !objectGoneState && objectFetchSettled && !object.isError,
+    enabled: Boolean(session.objectId) && !objectGoneState && objectFetchSettled,
     ...objectFetchQueryOptions(),
   })
   const defs = useQuery({ queryKey: ['definitions'], queryFn: () => api.get('/v1/definitions') })
   const suggestions = useQuery({
     queryKey: ['proposals', 'detail', session.objectId],
     queryFn: () => api.get('/v1/proposals', { params: { query: { status: 'open', limit: 200 } } }),
-    enabled: Boolean(session.objectId) && !objectGoneState && objectFetchSettled && !allowDeleted,
+    enabled: Boolean(session.objectId) && !objectGoneState && objectFetchSettled,
   })
   const drafts = useSyncExternalStore(subscribeObjectDrafts, getObjectDraftSnapshot, getObjectDraftSnapshot)
   const draftSaving = useObjectDraftSaving()
@@ -3161,21 +3159,12 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
     setError('')
     setShowMoreFields(false)
   }, [session.objectId])
-  const provenanceLoadPending = provenance.isError
-  const objectDetailPending =
-    object.isError
-    || (
-      object.isFetching
-      && object.isFetched
-      && Boolean(object.data && isListPreview(object.data))
-    )
   const detailLoadFailed = Boolean(
     session.objectId
     && objectFetchSettled
-    && !allowDeleted
     && (
-      provenanceLoadPending
-      || (objectDetailPending && (!object.data || isListPreview(object.data)))
+      provenance.isError
+      || (object.isError && (!object.data || isListPreview(object.data)))
     ),
   )
   useEffect(() => {
@@ -3205,7 +3194,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       </div>
     )
   }
-  if ((!allowDeleted && objectGone(object.error)) || objectGoneState) {
+  if (!allowDeleted && (objectGone(object.error) || objectGoneState)) {
     return <StateNote tone="empty" title={copy.objectDeleted} detail={copy.objectDeletedHint} testId="detail-deleted" />
   }
   const refetchDetail = () => {
@@ -3226,7 +3215,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       {detailRetrying ? copy.loading : copy.agentRetry}
     </Button>
   )
-  if (provenanceLoadPending && objectFetchSettled && !objectPreviewLoading) {
+  if (provenance.isError && objectFetchSettled) {
     return (
       <StateNote
         tone="error"
@@ -3237,7 +3226,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       />
     )
   }
-  if (objectDetailPending && objectFetchSettled && (!object.data || isListPreview(object.data))) {
+  if (object.isError && objectFetchSettled && (!object.data || isListPreview(object.data))) {
     return (
       <StateNote
         tone="error"
