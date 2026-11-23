@@ -8,6 +8,7 @@ type RowInView = {
   viewportBottom: number
   rowTop: number
   rowBottom: number
+  scrollTop: number
 }
 
 async function login(page: Page) {
@@ -45,6 +46,7 @@ async function activeRowViewportState(grid: Locator): Promise<RowInView | null> 
       viewportBottom,
       rowTop: rowRect.top,
       rowBottom: rowRect.bottom,
+      scrollTop: gridEl.scrollTop,
     }
   })
 }
@@ -66,6 +68,30 @@ async function expectActiveRowInView(grid: Locator, label: string): Promise<void
 async function pressArrowDownAndAssert(grid: Locator, page: Page, step: number) {
   await page.keyboard.press('ArrowDown')
   await expectActiveRowInView(grid, `ArrowDown step ${step}`)
+}
+
+async function moveUntilActiveRowAtBottomEdge(grid: Locator, page: Page) {
+  for (let step = 0; step < 80; step += 1) {
+    const state = await activeRowViewportState(grid)
+    expect(state, 'active row should exist while seeking bottom edge').not.toBeNull()
+    const gap = state!.viewportBottom - state!.rowBottom
+    if (Math.abs(gap) <= 3) return state!
+    await page.keyboard.press('ArrowDown')
+    await expectActiveRowInView(grid, `seek bottom edge step ${step + 1}`)
+  }
+  throw new Error('active row never reached bottom viewport edge')
+}
+
+async function moveUntilActiveRowAtTopEdge(grid: Locator, page: Page) {
+  for (let step = 0; step < 80; step += 1) {
+    const state = await activeRowViewportState(grid)
+    expect(state, 'active row should exist while seeking top edge').not.toBeNull()
+    const gap = state!.rowTop - state!.viewportTop
+    if (Math.abs(gap) <= 3) return state!
+    await page.keyboard.press('ArrowUp')
+    await expectActiveRowInView(grid, `seek top edge step ${step + 1}`)
+  }
+  throw new Error('active row never reached top viewport edge')
 }
 
 test('Products table: each ArrowDown keeps the active row inside the scroll viewport', async ({ page }) => {
@@ -98,4 +124,52 @@ test('Products table: ArrowUp after scrolling keeps the active row inside the vi
     await page.keyboard.press('ArrowUp')
     await expectActiveRowInView(grid, `up step ${step}`)
   }
+})
+
+test('Products table: ArrowDown past the bottom edge scrolls ~one row and stays bottom-aligned', async ({ page }) => {
+  test.setTimeout(180_000)
+  const { grid } = await openProducts(page)
+
+  await page.keyboard.press('ArrowDown')
+  await expectActiveRowInView(grid, 'first ArrowDown')
+
+  const before = await moveUntilActiveRowAtBottomEdge(grid, page)
+  const rowHeight = before.rowBottom - before.rowTop
+  const bodyHeight = before.viewportBottom - before.viewportTop
+
+  await page.keyboard.press('ArrowDown')
+  await expectActiveRowInView(grid, 'ArrowDown past bottom edge')
+  const after = await activeRowViewportState(grid)
+  expect(after, 'active row after bottom-edge ArrowDown').not.toBeNull()
+
+  const scrollDelta = after!.scrollTop - before.scrollTop
+  expect(scrollDelta).toBeGreaterThan(0)
+  expect(scrollDelta).toBeLessThanOrEqual(rowHeight + 6)
+  expect(Math.abs(after!.viewportBottom - after!.rowBottom)).toBeLessThan(6)
+  expect(after!.rowTop - after!.viewportTop).toBeGreaterThan(bodyHeight * 0.35)
+})
+
+test('Products table: ArrowUp past the top edge scrolls ~one row and stays top-aligned', async ({ page }) => {
+  test.setTimeout(180_000)
+  const { grid } = await openProducts(page)
+
+  for (let step = 0; step < 30; step += 1) {
+    await page.keyboard.press('ArrowDown')
+    await expectActiveRowInView(grid, `down to top-edge test step ${step + 1}`)
+  }
+
+  const before = await moveUntilActiveRowAtTopEdge(grid, page)
+  const rowHeight = before.rowBottom - before.rowTop
+  const bodyHeight = before.viewportBottom - before.viewportTop
+
+  await page.keyboard.press('ArrowUp')
+  await expectActiveRowInView(grid, 'ArrowUp past top edge')
+  const after = await activeRowViewportState(grid)
+  expect(after, 'active row after top-edge ArrowUp').not.toBeNull()
+
+  const scrollDelta = before.scrollTop - after!.scrollTop
+  expect(scrollDelta).toBeGreaterThan(0)
+  expect(scrollDelta).toBeLessThanOrEqual(rowHeight + 6)
+  expect(Math.abs(after!.rowTop - after!.viewportTop)).toBeLessThan(6)
+  expect(after!.viewportBottom - after!.rowBottom).toBeGreaterThan(bodyHeight * 0.35)
 })

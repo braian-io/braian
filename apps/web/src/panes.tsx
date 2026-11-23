@@ -1113,8 +1113,8 @@ export function ObjectTable({
     const direction = activeScrollDir.current
     activeScrollDir.current = 'nearest'
     if (!groupBy) {
-      const align = direction === 'up' ? 'start' : direction === 'down' ? 'end' : 'auto'
-      virtualizerRef.current.scrollToIndex(active, { align })
+      // Nearest/minimal virtualizer scroll; edge-aware nudge stays in scrollObjectTableActiveRow.
+      virtualizerRef.current.scrollToIndex(active, { align: 'auto' })
     }
     scrollObjectTableActiveRow(grid, direction)
     const frame = requestAnimationFrame(() => {
