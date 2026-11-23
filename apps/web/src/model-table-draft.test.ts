@@ -32,7 +32,7 @@ describe('model table draft guard', () => {
     expect(modelTableLeaveRequest()).toBeNull()
   })
 
-  it('drops a pending leave request when the table unmounts', () => {
+  it('keeps a pending leave request when the table unmounts', () => {
     registerModelTableDraft({
       dirty: () => true,
       discard: () => undefined,
@@ -41,7 +41,7 @@ describe('model table draft guard', () => {
     tryChooseModelSelection({ kind: 'type', typeKey: 'article' })
     expect(modelTableLeaveRequest()).toBeTruthy()
     registerModelTableDraft(null)
-    expect(modelTableLeaveRequest()).toBeNull()
+    expect(modelTableLeaveRequest()).toBeTruthy()
   })
 
   it('blocks selection and discard clears the draft before navigating', () => {

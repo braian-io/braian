@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { objectKeyFromValues } from './url-public'
 import { urlObjectTypeKey, useReadableUrl } from './use-readable-url'
@@ -50,7 +50,10 @@ import { agentDockShare, applyLayoutCommand, focusView, migrateLayout, views as 
 import { cloneObjectTableView, objectTableTemplateForType, objectTableViewForType } from './open-type-view'
 import { ConsequenceHost } from './consequence'
 import { ModelDraftHost } from './model-draft-ui'
+import { ModelTableBeforeUnload } from './model-table-beforeunload'
+import { layoutCommandLeavesTypeAttributes, layoutLeavesTypeAttributes } from './model-table-draft-nav'
 import { ModelTableLeaveDialog } from './model-table-leave-dialog'
+import { tryModelTableLeave } from './model-table-draft'
 import { stageModel } from './model-stage'
 import { AttributeDefinitions } from './attribute-definitions'
 import { ModelTableView } from './model-tables'
@@ -189,6 +192,7 @@ type Session = {
   openTypeView: (typeId: string) => void
   openStructureView: (structureKey: string, placement?: { zone: 'center' | 'right'; target?: string }) => void
   workspaceId: string | null
+  userId: string
 }
 
 function readStore<T>(key: string, fallback: T): T {
@@ -444,6 +448,11 @@ export function Shell() {
   workspaceIdRef.current = workspaceId
   workspacesRef.current = workspaces.data?.workspaces ?? []
 
+  const requestWorkspaceChange = useCallback((id: string) => {
+    if (!id || id === workspaceIdRef.current) return
+    tryModelTableLeave(() => setWorkspaceId(id))
+  }, [])
+
   const orderedWorkspaces = useMemo(
     () => orderWorkspaces(workspaces.data?.workspaces ?? [], typeNames(defs.data)),
     [workspaces.data, defs.data],
@@ -561,7 +570,7 @@ export function Shell() {
     navigate: (next) => {
       void navigate({ to: '/', search: next.search, replace: next.replace })
     },
-    applyWorkspace: (id) => setWorkspaceId(id),
+    applyWorkspace: (id) => requestWorkspaceChange(id),
     applyCatalog: (id) => {
       window.dispatchEvent(new CustomEvent('braian-set-catalog', {
         detail: { scope: 'workspace', catalogId: id },
@@ -1205,7 +1214,7 @@ export function Shell() {
     },
     openWorkspaceAt: (index) => {
       const id = orderWorkspaces(workspaces.data?.workspaces ?? [], typeNames(defs.data))[index]?.id
-      if (id) setWorkspaceId(id)
+      if (id) requestWorkspaceChange(id)
     },
     focusPane: (direction) => applyRef.current('focus', { direction }),
     moveView: (direction) => {
@@ -1570,10 +1579,11 @@ export function Shell() {
     setListType,
     setProposalId,
     push,
-    openWorkspace: setWorkspaceId,
+    openWorkspace: requestWorkspaceChange,
     openTypeView: (typeId) => openTypeViewRef.current(typeId),
     openStructureView: (structureKey, placement) => openStructureViewRef.current(structureKey, placement),
     workspaceId,
+    userId,
   }
 
   useProposalFocus(
@@ -1715,7 +1725,7 @@ export function Shell() {
     setDoc(mine)
   }
 
-  const commitDoc = (next: LayoutDoc) => {
+  const applyLayoutDoc = (next: LayoutDoc) => {
     if (!workspaceId || !user.user_id) return
     const prevOpen = openLayoutViewsRef.current
     const nextOpen = layoutViews(next.layout)
@@ -1740,6 +1750,20 @@ export function Shell() {
     openLayoutViewsRef.current = nextOpen
     for (const treeId of addedTrees) void autoLinkStructureTreeRef.current(treeId)
   }
+  const commitDoc = (next: LayoutDoc) => {
+    const current = docRef.current
+    const dockViews = viewRows(workspaceRef.current?.views ?? []).map((view) => ({
+      id: view.id,
+      type: view.type,
+      title: view.title,
+      state: view.state as Record<string, unknown> | undefined,
+    }))
+    if (current && layoutLeavesTypeAttributes(dockViews, current, next)) {
+      tryModelTableLeave(() => applyLayoutDoc(next))
+      return
+    }
+    applyLayoutDoc(next)
+  }
   applyRef.current = (name, args) => {
     const current = docRef.current
     if (!current || !workspace.data) return
@@ -1755,32 +1779,45 @@ export function Shell() {
         delete nextArgs.id
       }
     }
-    const place = name === 'open_view' || name === 'ui.open_view' || name === 'ui.place' ? placeOverride.current : undefined
-    if (name === 'close_view') {
-      const closing = typeof args.view === 'string' ? args.view : typeof args.id === 'string' ? args.id : current.focus
-      const closingView = viewRows(workspace.data.views).find((view) => view.id === closing)
-      const runId = closingView?.type === 'agent' ? String(closingView.state.run_id ?? '') : ''
-      if (runId) void patchAgentRun(runId, { tab_open: false }).catch((reason: unknown) => reportWriteError(reason))
-    }
-    const result = applyLayoutCommand(current, name, nextArgs, {
-      views: viewRows(workspace.data.views).map((view) => ({ id: view.id, title: view.title, type: view.type })),
-      canonical: canonicalRef.current,
-      place,
-    })
-    if (result.handled && result.doc !== current) commitDoc(result.doc)
-    const focus = result.doc.focus
-    if (focus) {
-      requestAnimationFrame(() => {
-        const active = document.activeElement
-        // A layout commit while the palette or a field is focused must not
-        // take the caret. Ctrl+J is delivered to the focused node.
-        if (
-          active instanceof HTMLElement
-          && active.closest('[data-testid="command-palette"], input, textarea, select')
-        ) return
-        document.querySelector<HTMLElement>(`[data-pane="${CSS.escape(focus)}"]`)?.focus()
+    const dockViews = viewRows(workspace.data.views).map((view) => ({
+      id: view.id,
+      type: view.type,
+      title: view.title,
+      state: view.state as Record<string, unknown> | undefined,
+    }))
+    const runLayout = () => {
+      const place = name === 'open_view' || name === 'ui.open_view' || name === 'ui.place' ? placeOverride.current : undefined
+      if (name === 'close_view') {
+        const closing = typeof args.view === 'string' ? args.view : typeof args.id === 'string' ? args.id : current.focus
+        const closingView = viewRows(workspace.data.views).find((view) => view.id === closing)
+        const runId = closingView?.type === 'agent' ? String(closingView.state.run_id ?? '') : ''
+        if (runId) void patchAgentRun(runId, { tab_open: false }).catch((reason: unknown) => reportWriteError(reason))
+      }
+      const result = applyLayoutCommand(current, name, nextArgs, {
+        views: viewRows(workspace.data.views).map((view) => ({ id: view.id, title: view.title, type: view.type })),
+        canonical: canonicalRef.current,
+        place,
       })
+      if (result.handled && result.doc !== current) commitDoc(result.doc)
+      const focus = result.doc.focus
+      if (focus) {
+        requestAnimationFrame(() => {
+          const active = document.activeElement
+          // A layout commit while the palette or a field is focused must not
+          // take the caret. Ctrl+J is delivered to the focused node.
+          if (
+            active instanceof HTMLElement
+            && active.closest('[data-testid="command-palette"], input, textarea, select')
+          ) return
+          document.querySelector<HTMLElement>(`[data-pane="${CSS.escape(focus)}"]`)?.focus()
+        })
+      }
     }
+    if (layoutCommandLeavesTypeAttributes(dockViews, current, name, nextArgs)) {
+      tryModelTableLeave(runLayout)
+      return
+    }
+    runLayout()
   }
   const typeCatalog = typeNames(defs.data)
   const openTypeKey = String(opened.data?.type ?? '')
@@ -2331,7 +2368,7 @@ export function Shell() {
             <button
               key={item.id}
               className={item.id === workspaceId ? 'tab active' : 'tab'}
-              onClick={() => setWorkspaceId(item.id)}
+              onClick={() => requestWorkspaceChange(item.id)}
               onContextMenu={(event) => {
                 if (prefersNativeContextMenu(event.target)) return
                 event.preventDefault()
@@ -2457,6 +2494,7 @@ export function Shell() {
         <StatusBar online={online} live={liveState} locked={Boolean(workspace.data?.locked)} inert={agentControlled} />
       </div>
       <ModelDraftHost />
+      <ModelTableBeforeUnload />
       <ModelTableLeaveDialog />
       <ConsequenceHost session={session} />
       <SharedContextMenuHost feedbackEnabled={feedbackEnabled} />
@@ -2681,7 +2719,14 @@ function ViewBody({ view, session, workspace }: { view: View; session: Session; 
   if (view.type === 'object_types' || view.type === 'link_types' || view.type === 'value_lists' || view.type === 'value_list_values' || view.type === 'units') {
     return <ModelTableView view={view} />
   }
-  if (view.type === 'data_model') return <DataModel view={view} />
+  if (view.type === 'data_model') {
+    return (
+      <DataModel
+        view={view}
+        draftScope={{ userId: session.userId, workspaceId: session.workspaceId ?? '' }}
+      />
+    )
+  }
   if (view.type === 'attribute_definitions') return <AttributeDefinitions />
   if (view.type === 'agent') {
     const prompt = String(view.state?.prompt ?? '').trim()

@@ -265,6 +265,7 @@ export const copy = {
   unsavedChanges: 'unsaved changes',
   unsavedTableTitle: 'Unsaved changes',
   unsavedTableDescription: 'This table has edits that are not saved yet.',
+  modelTableDraftRestoreTrimmed: 'Some unsaved table edits were dropped because the model changed.',
   openDraftInTable: 'Open in the table',
   reviewAndSave: 'Save',
   reviewDraft: 'Review draft',
