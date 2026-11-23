@@ -531,8 +531,10 @@ test('Type attributes create dialog', async ({ page }) => {
     table,
     selected: table.locator(`[data-key="${key}"]`),
   })
-  await expect(table.locator(`[data-key="${key}"]`)).toHaveClass(/draft/)
-  await expect(table.locator(`[data-key="${key}"]`)).toHaveAttribute('data-draft', 'true')
+  const created = table.locator(`[data-key="${key}"]`)
+  await expect(created).toHaveClass(/draft/)
+  await expect(created).toHaveAttribute('data-draft', 'true')
+  await expect(created).toHaveClass(/\bon\b/)
 })
 
 test('Structures create dialog', async ({ page }) => {

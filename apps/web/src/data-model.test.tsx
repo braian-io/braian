@@ -196,13 +196,17 @@ describe('type attributes table', () => {
 
   it('creates an attribute from the dialog and attaches it on save', async () => {
     chooseModelSelection({ kind: 'type', typeKey: 'recipe' })
-    render(<Host />)
+    const { container } = render(<Host />)
     await screen.findByTestId('attribute-table')
     fireEvent.click(screen.getByTestId('table-add-row'))
     const dialog = await screen.findByRole('dialog', { name: copy.newAttribute })
     fireEvent.change(within(dialog).getByRole('textbox', { name: copy.name }), { target: { value: 'Extra' } })
     fireEvent.click(within(dialog).getByTestId('create-object'))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    const created = row(container, 'extra')
+    expect(created.className).toMatch(/\bon\b/)
+    expect(created.className).toMatch(/\bdraft\b/)
+    expect(created.getAttribute('data-draft')).toBe('true')
     expect(stageModel).not.toHaveBeenCalled()
     expect(stageModelSteps).not.toHaveBeenCalled()
     await expect(screen.findByTestId(`attr-label-extra`)).resolves.toBeTruthy()

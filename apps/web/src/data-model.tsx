@@ -207,12 +207,19 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
 
   useEffect(() => {
     if (!pendingKey) return
+    const draft = draftRows[pendingKey]
+    if (draft) {
+      setActiveRowId(draft.id)
+      setModelFocus({ kind: 'attribute', key: draft.key })
+      setPendingKey(null)
+      return
+    }
     const row = rows.find((item) => item.key === pendingKey)
     if (!row) return
     setActiveRowId(row.id)
     setModelFocus({ kind: 'attribute', key: row.key })
     setPendingKey(null)
-  }, [rows, pendingKey])
+  }, [rows, pendingKey, draftRows])
 
   const run = (action: AttributeAction) => {
     if (action !== 'new') return
@@ -666,7 +673,9 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
             valueList: '',
           }
           setDraftRows((current) => ({ ...current, [key]: row }))
-          setPendingKey(key)
+          setActiveRowId(key)
+          setModelFocus({ kind: 'attribute', key })
+          setPendingKey(null)
           setCreateOpen(false)
         }}
       />
