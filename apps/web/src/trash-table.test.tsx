@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { runCommand } from './command-registry'
 import { objectQueryGone, markObjectGone } from './object-gone'
 import { TrashTable } from './trash-table'
 
@@ -44,9 +45,14 @@ describe('TrashTable', () => {
         deleted_at: '2026-11-01T00:00:00Z',
       }],
     })
+    post.mockResolvedValue(undefined)
     mount()
     expect(await screen.findByText('Season')).toBeTruthy()
     expect(screen.getByTestId('trash-table-chrome')).toBeTruthy()
+    runCommand('trash:restore')
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/v1/trash/{kind}/{id}/undelete', {
+      params: { path: { kind: 'workspace', id: 'ws-1' } },
+    }))
   })
 
   it('clears a gone object pin when an object is restored', async () => {
@@ -66,5 +72,7 @@ describe('TrashTable', () => {
     mount(client)
     expect(await screen.findByText('Bread')).toBeTruthy()
     expect(objectQueryGone(client, 'obj-trash')).toBe(true)
+    runCommand('trash:restore')
+    await waitFor(() => expect(objectQueryGone(client, 'obj-trash')).toBe(false))
   })
 })
