@@ -87,17 +87,11 @@ async function moveUntilActiveRowAtTopEdge(grid: Locator, page: Page) {
     const state = await activeRowViewportState(grid)
     expect(state, 'active row should exist while seeking top edge').not.toBeNull()
     const gap = state!.rowTop - state!.viewportTop
-    if (Math.abs(gap) <= 3 && state!.scrollTop > 0) return state!
-    if (Math.abs(gap) <= 3 && state!.scrollTop === 0) {
-      await page.keyboard.press('ArrowDown')
-      await page.keyboard.press('ArrowDown')
-      await expectActiveRowInView(grid, `nudge down off list start step ${step + 1}`)
-      continue
-    }
+    if (Math.abs(gap) <= 3) return state!
     await page.keyboard.press('ArrowUp')
     await expectActiveRowInView(grid, `seek top edge step ${step + 1}`)
   }
-  throw new Error('active row never reached top viewport edge with scroll room')
+  throw new Error('active row never reached top viewport edge')
 }
 
 test('Products table: each ArrowDown keeps the active row inside the scroll viewport', async ({ page }) => {
@@ -159,12 +153,27 @@ test('Products table: ArrowUp past the top edge scrolls ~one row and stays top-a
   test.setTimeout(180_000)
   const { grid } = await openProducts(page)
 
-  for (let step = 0; step < 45; step += 1) {
+  for (let step = 0; step < 40; step += 1) {
     await page.keyboard.press('ArrowDown')
     await expectActiveRowInView(grid, `down to top-edge test step ${step + 1}`)
   }
+  for (let step = 0; step < 12; step += 1) {
+    await page.keyboard.press('ArrowUp')
+    await expectActiveRowInView(grid, `back up before top-edge test step ${step + 1}`)
+  }
 
-  const before = await moveUntilActiveRowAtTopEdge(grid, page)
+  let before = await moveUntilActiveRowAtTopEdge(grid, page)
+  if (before.scrollTop === 0) {
+    for (let step = 0; step < 18; step += 1) {
+      await page.keyboard.press('ArrowDown')
+      await expectActiveRowInView(grid, `re-open scroll room step ${step + 1}`)
+    }
+    for (let step = 0; step < 8; step += 1) {
+      await page.keyboard.press('ArrowUp')
+      await expectActiveRowInView(grid, `re-seat below top step ${step + 1}`)
+    }
+    before = await moveUntilActiveRowAtTopEdge(grid, page)
+  }
   const rowHeight = before.rowBottom - before.rowTop
   const bodyHeight = before.viewportBottom - before.viewportTop
   const activeBefore = await grid.getAttribute('aria-activedescendant')
