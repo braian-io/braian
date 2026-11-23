@@ -263,6 +263,8 @@ export const copy = {
   objectDeleted: 'This object was deleted.',
   objectDeletedHint: 'Restore it from Trash to see it here again.',
   unsavedChanges: 'unsaved changes',
+  unsavedTableTitle: 'Unsaved changes',
+  unsavedTableDescription: 'This table has edits that are not saved yet.',
   openDraftInTable: 'Open in the table',
   reviewAndSave: 'Save',
   reviewDraft: 'Review draft',

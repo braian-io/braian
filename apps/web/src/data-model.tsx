@@ -18,7 +18,8 @@ import { structureCaption } from './graph-scene'
 import { StructureSection } from './structure-tree'
 import { StateNote } from './states'
 import { onDraftChange, requestReview, setModelFocus, stageModel, stageModelSteps } from './model-stage'
-import { chooseModelSelection, getModelSelection, getPreviewType, setPreviewType, subscribeModelSelection } from './model-selection'
+import { getModelSelection, getPreviewType, setPreviewType, subscribeModelSelection } from './model-selection'
+import { registerModelTableDraft, tryChooseModelSelection } from './model-table-draft'
 import { CreateDialog, requireText } from './create-dialog'
 import { onAttributeAction, type AttributeAction } from './attribute-actions'
 import { writeErrorMessage } from './write-error'
@@ -41,7 +42,7 @@ function useModelSelection() {
   useEffect(() => subscribeModelSelection(() => {
     setValue({ selection: getModelSelection(), previewType: getPreviewType() })
   }), [])
-  return { ...value, choose: chooseModelSelection, setPreviewType }
+  return { ...value, choose: tryChooseModelSelection, setPreviewType }
 }
 
 async function propose(name: string, args: Json) {
@@ -172,6 +173,8 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
   const { selection } = useModelSelection()
   const [filter, setFilter] = useState('')
   const [draftRows, setDraftRows] = useState<Record<string, AttributeTableRow>>({})
+  const [pendingDetach, setPendingDetach] = useState<Set<string>>(() => new Set())
+  const [pendingDelete, setPendingDelete] = useState<Set<string>>(() => new Set())
   const [message, setMessage] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
   const [createName, setCreateName] = useState('')
@@ -185,6 +188,8 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
 
   useEffect(() => {
     setDraftRows({})
+    setPendingDetach(new Set())
+    setPendingDelete(new Set())
     setFilter('')
     setMessage('')
     setCreateOpen(false)
@@ -194,20 +199,27 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
 
   const rows = useMemo(() => {
     const source = attributeRows(defs, selection, uiLanguage).map((row) => detailRow(defs, row))
-    if (selection?.kind === 'type') {
-      return [...source.filter((row) => row.standard), ...source.filter((row) => !row.standard)]
-    }
-    return source
-  }, [defs, selection])
+    const ordered = selection?.kind === 'type'
+      ? [...source.filter((row) => row.standard), ...source.filter((row) => !row.standard)]
+      : source
+    return ordered.filter((row) => !pendingDetach.has(row.id) && !pendingDelete.has(row.id))
+  }, [defs, selection, pendingDetach, pendingDelete])
 
   useEffect(() => {
     if (!pendingKey) return
+    const draft = draftRows[pendingKey]
+    if (draft) {
+      setActiveRowId(draft.id)
+      setModelFocus({ kind: 'attribute', key: draft.key })
+      setPendingKey(null)
+      return
+    }
     const row = rows.find((item) => item.key === pendingKey)
     if (!row) return
     setActiveRowId(row.id)
     setModelFocus({ kind: 'attribute', key: row.key })
     setPendingKey(null)
-  }, [rows, pendingKey])
+  }, [rows, pendingKey, draftRows])
 
   const run = (action: AttributeAction) => {
     if (action !== 'new') return
@@ -220,21 +232,16 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
   runRef.current = run
   useEffect(() => onAttributeAction((action) => runRef.current(action)), [])
 
-  if (!selection) {
-    return (
-      <div data-testid="data-model">
-        <StateNote tone="empty" title={copy.pickModel} />
-      </div>
-    )
-  }
-
   const patch = (row: AttributeTableRow, change: Partial<AttributeTableRow>) => {
     setDraftRows((current) => ({ ...current, [row.id]: { ...row, ...change } }))
   }
 
-  const stageRemove = async (row: AttributeTableRow, deleteDefinition: boolean) => {
-    const original = rows.find((item) => item.id === row.id)
-    if (!original) {
+  const stageRemove = (row: AttributeTableRow, deleteDefinition: boolean) => {
+    const persisted = ((defs?.attributes as Json[]) ?? []).some(
+      (item) => String(item.id ?? '') === row.id || String(item.key ?? '') === row.key,
+    )
+    const attached = rows.some((item) => item.id === row.id)
+    if (!persisted) {
       setDraftRows((current) => {
         const next = { ...current }
         delete next[row.id]
@@ -242,42 +249,39 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
       })
       return
     }
-    setMessage('')
-    try {
-      if (deleteDefinition) {
-        await stageModelSteps([{ op: 'delete_attribute', key: original.key }])
-      } else if (selection.kind === 'type') {
-        await stageModelSteps([{ op: 'detach_attribute', attribute: original.key, type_key: selection.typeKey }])
-      } else {
-        await stageModelSteps([{ op: 'detach_attribute', attribute: original.key, structure: selection.structure, group: selection.group }])
-      }
-      setDraftRows((current) => {
-        const next = { ...current }
-        delete next[row.id]
-        return next
-      })
-    } catch (reason) {
-      setMessage(errorText(reason))
+    if (deleteDefinition) {
+      setPendingDelete((current) => new Set(current).add(row.id))
+    } else if (attached) {
+      setPendingDetach((current) => new Set(current).add(row.id))
     }
   }
 
-  const attachArgs = (attribute: string) => selection.kind === 'type'
-    ? { attribute, type: selection.typeKey }
-    : { attribute, structure: selection.structure, group: selection.group }
+  const allAttributeRows = useMemo(
+    () => attributeRows(defs, selection, uiLanguage).map((row) => detailRow(defs, row)),
+    [defs, selection],
+  )
 
-  const createRow = async (row: AttributeTableRow) => {
+  const attachStep = (attribute: string) => {
+    if (!selection) return { op: 'attach_attribute', attribute }
+    if (selection.kind === 'type') return { op: 'attach_attribute', attribute, type_key: selection.typeKey }
+    return { op: 'attach_attribute', attribute, structure: selection.structure, group: selection.group }
+  }
+
+  const buildCreateSteps = (row: AttributeTableRow) => {
     const label = row.label.trim()
     const key = row.key.trim() || attributeKey(label)
-    if (!label || !key) return
+    if (!label || !key) return [] as Array<{ op: string } & Record<string, unknown>>
     const unit = row.kind === 'number' || row.kind === 'range' ? row.unit : ''
     if (attributeConflict(defs, key, row.kind, unit)) throw new Error(copy.conflictAttribute)
     const exists = ((defs?.attributes as Json[]) ?? []).some((item) => String(item.key) === key)
+    const steps: Array<{ op: string } & Record<string, unknown>> = []
     if (!exists) {
-      await stageModel('model.create_attribute', {
+      steps.push({
+        op: 'create_attribute',
         key,
         label,
         kind: row.kind,
-        unit: unit || null,
+        ...(unit ? { unit } : {}),
         multiple: row.multiple,
         languages: row.kind === 'text' ? row.languages : false,
         required: row.required,
@@ -290,15 +294,17 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
         ...(row.kind === 'value_list' && row.valueList ? { value_list: row.valueList } : {}),
       })
     }
-    await stageModel('model.attach_attribute', attachArgs(key))
+    steps.push(attachStep(key))
+    return steps
   }
 
-  const updateRow = async (original: AttributeTableRow, row: AttributeTableRow) => {
+  const buildUpdateSteps = (original: AttributeTableRow, row: AttributeTableRow) => {
+    const steps: Array<{ op: string } & Record<string, unknown>> = []
     const patch: Json = {}
     const nextKey = row.key.trim()
     const canRenameKey = !original.standard && original.id !== keyAttribute
     if (canRenameKey && nextKey && nextKey !== original.key) {
-      await stageModel('model.rename_attribute_key', { key: original.key, new_key: nextKey })
+      steps.push({ op: 'rename_attribute_key', key: original.key, new_key: nextKey })
     }
     const key = canRenameKey && nextKey ? nextKey : original.key
     const label = row.label.trim()
@@ -333,13 +339,14 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
       if (row.valueList) patch.value_list = row.valueList
       else if (original.valueList) patch.clear_value_list = true
     }
-    if (Object.keys(patch).length > 0) await stageModel('model.update_attribute', { key, ...patch })
+    if (Object.keys(patch).length > 0) steps.push({ op: 'update_attribute', key, ...patch })
+    return steps
   }
 
-  const reorderRows = async () => {
-    if (selection.kind !== 'type') return
+  const buildReorderStep = () => {
+    if (!selection || selection.kind !== 'type') return null
     const order = (draftRows as Record<string, unknown>)[ROW_ORDER_KEY]
-    if (!Array.isArray(order)) return
+    if (!Array.isArray(order)) return null
     const byId = new Map<string, AttributeTableRow>()
     for (const row of rows) byId.set(row.id, draftRows[row.id] ?? row)
     for (const [id, row] of Object.entries(draftRows)) if (!byId.has(id)) byId.set(id, row)
@@ -363,29 +370,80 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
       desired.push(row)
     }
     const attributes = desired.map((row) => row.key.trim() || attributeKey(row.label)).filter(Boolean)
-    if (attributes.length === 0) return
+    if (attributes.length === 0) return null
     const current = rows.filter((row) => !row.inherited).map((row) => row.key)
     const existing = attributes.filter((key) => current.includes(key))
-    if (existing.join('\u0000') === current.join('\u0000')) return
-    await stageModel('model.reorder_type_attributes', { type_key: selection.typeKey, attributes })
+    if (existing.join('\u0000') === current.join('\u0000')) return null
+    return { op: 'reorder_type_attributes', type_key: selection.typeKey, attributes }
   }
 
+  const discardTableDraft = () => {
+    setDraftRows({})
+    setPendingDetach(new Set())
+    setPendingDelete(new Set())
+    setMessage('')
+  }
+
+  const tableDirty = () => (
+    pendingDetach.size > 0
+    || pendingDelete.size > 0
+    || Object.keys(draftRows).length > 0
+  )
+
+  const saveRef = useRef<() => Promise<void>>(async () => {})
   const save = async () => {
     setMessage('')
     try {
-      const existing = new Map(rows.map((row) => [row.id, row]))
-      for (const row of Object.values(draftRows)) {
-        const original = existing.get(row.id)
-        if (original) await updateRow(original, row)
-        else await createRow(row)
+      const steps: Array<{ op: string } & Record<string, unknown>> = []
+      const existing = new Map(allAttributeRows.map((row) => [row.id, row]))
+      const byId = new Map(allAttributeRows.map((row) => [row.id, row]))
+      for (const id of pendingDelete) {
+        const row = byId.get(id)
+        if (row) steps.push({ op: 'delete_attribute', key: row.key })
       }
-      await reorderRows()
-      setDraftRows({})
+      for (const id of pendingDetach) {
+        const row = byId.get(id)
+        if (!row || !selection) continue
+        if (selection.kind === 'type') {
+          steps.push({ op: 'detach_attribute', attribute: row.key, type_key: selection.typeKey })
+        } else {
+          steps.push({ op: 'detach_attribute', attribute: row.key, structure: selection.structure, group: selection.group })
+        }
+      }
+      for (const row of Object.values(draftRows)) {
+        if ((row as { id?: string }).id === ROW_ORDER_KEY) continue
+        const original = existing.get(row.id)
+        if (original) steps.push(...buildUpdateSteps(original, row))
+        else steps.push(...buildCreateSteps(row))
+      }
+      const reorder = buildReorderStep()
+      if (reorder) steps.push(reorder)
+      if (steps.length === 0) return
+      await stageModelSteps(steps)
+      discardTableDraft()
       await queryClient.invalidateQueries({ queryKey: ['model-draft'] })
       requestReview()
     } catch (reason) {
       setMessage(errorText(reason))
     }
+  }
+  saveRef.current = save
+
+  useEffect(() => {
+    registerModelTableDraft({
+      dirty: tableDirty,
+      discard: discardTableDraft,
+      review: () => saveRef.current(),
+    })
+    return () => registerModelTableDraft(null)
+  }, [draftRows, pendingDetach, pendingDelete])
+
+  if (!selection) {
+    return (
+      <div data-testid="data-model">
+        <StateNote tone="empty" title={copy.pickModel} />
+      </div>
+    )
   }
 
   const columns: Array<StandardColumn<AttributeTableRow>> = [
@@ -567,6 +625,7 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
           setActiveRowId(row.id)
           if (row.key) setModelFocus({ kind: 'attribute', key: row.key })
         }}
+        reviewVisible={tableDirty()}
         onReviewAndSave={save}
       />
       <CreateDialog
@@ -592,7 +651,9 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
           const label = requireText(createName)
           const key = attributeKey(label)
           if (!key) throw new Error(copy.validation)
-          await createRow({
+          const unit = ''
+          if (attributeConflict(defs, key, createKind, unit)) throw new Error(copy.conflictAttribute)
+          const row: AttributeTableRow = {
             id: key,
             key,
             label,
@@ -610,9 +671,12 @@ function AttributesTable({ defs }: { defs: Json | undefined }) {
             min: '',
             max: '',
             valueList: '',
-          })
-          setPendingKey(key)
-          void queryClient.invalidateQueries({ queryKey: ['model-draft'] })
+          }
+          setDraftRows((current) => ({ ...current, [key]: row }))
+          setActiveRowId(key)
+          setModelFocus({ kind: 'attribute', key })
+          setPendingKey(null)
+          setCreateOpen(false)
         }}
       />
       {message ? <p className="error">{message}</p> : null}

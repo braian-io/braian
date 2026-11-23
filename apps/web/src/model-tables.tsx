@@ -6,7 +6,8 @@ import { copy, uiLanguage } from './i18n'
 import { attributeKey, objectTypes } from './model-view'
 import { onDraftChange, setModelFocus, stageModel } from './model-stage'
 import { StandardEditableTable, type StandardColumn } from './standard-editable-table'
-import { chooseModelSelection, getModelSelection, subscribeModelSelection } from './model-selection'
+import { getModelSelection, subscribeModelSelection } from './model-selection'
+import { tryChooseModelSelection } from './model-table-draft'
 import { clearPendingModelType, OPEN_MODEL_TYPE, peekPendingModelType } from './model-type-open'
 import { StateNote } from './states'
 
@@ -169,7 +170,7 @@ export function ObjectTypesTable() {
       onActivateRow={(row) => {
         setActiveRowId(row.id)
         if (!row.key) return
-        chooseModelSelection({ kind: 'type', typeKey: row.key })
+        tryChooseModelSelection({ kind: 'type', typeKey: row.key })
         setModelFocus({ kind: 'type', key: row.key })
       }}
       onReviewAndSave={async () => {

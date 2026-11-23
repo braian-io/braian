@@ -211,6 +211,60 @@ async function exercise(page: Page, options: {
   await expect(options.selected).toBeVisible({ timeout: 30_000 })
 }
 
+/** Type attributes stage creates in the table draft; nothing posts until Review and save. */
+async function exerciseLocalModelCreate(page: Page, options: {
+  opener: Locator
+  dialogTestId: string
+  title: string
+  shot: string
+  firstField: string
+  success: Record<string, string>
+  selected: Locator
+  table: Locator
+}) {
+  const { opener } = options
+  const dialog = page.getByTestId(options.dialogTestId)
+  await shootThemes(page, opener, dialog, options.shot)
+  await expect(opener).toBeVisible()
+  await opener.click()
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByRole('heading', { name: options.title })).toBeVisible()
+  const first = dialog.getByTestId(options.firstField)
+  await expect(first).toBeFocused()
+  await expectFocusBorder(first)
+  await trap(page, dialog)
+  await first.click()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  await expect(opener).toBeFocused()
+
+  await opener.click()
+  await expect(dialog).toBeVisible()
+  await dialog.getByTestId('new-name').fill('Brand')
+  await dialog.getByTestId('new-type').click()
+  await page.getByRole('option', { name: 'Number' }).click()
+  await dialog.getByTestId('create-object').click()
+  await expect(dialog.getByRole('alert')).toContainText('already exists')
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  await expect(opener).toBeFocused()
+
+  await opener.click()
+  await expect(dialog).toBeVisible()
+  await fill(dialog, options.success)
+  await dialog.getByTestId('create-cancel').click()
+  await expect(dialog).toHaveCount(0)
+  await expect(opener).toBeFocused()
+
+  await opener.click()
+  await expect(dialog).toBeVisible()
+  await fill(dialog, options.success)
+  await page.keyboard.press('Enter')
+  await expect(dialog).toHaveCount(0)
+  await expect(options.table.getByTestId('review-and-save')).toBeVisible()
+  await expect(options.selected).toBeVisible({ timeout: 30_000 })
+}
+
 test('Products create dialog', async ({ page }) => {
   test.setTimeout(120_000)
   await login(page)
@@ -467,18 +521,20 @@ test('Type attributes create dialog', async ({ page }) => {
   await expect(table).toBeVisible()
   const suffix = Date.now().toString().slice(-6)
   const key = `extra_${suffix}`
-  await exercise(page, {
+  await exerciseLocalModelCreate(page, {
     opener: table.getByTestId('table-add-row'),
     dialogTestId: 'create-dialog',
     title: 'New attribute',
     shot: 'new-type-attribute',
     firstField: 'new-name',
-    failure: { 'new-name': 'Duplicate field' },
     success: { 'new-name': `Extra ${suffix}` },
-    route: '**/v1/model/draft/steps',
+    table,
     selected: table.locator(`[data-key="${key}"]`),
   })
-  await expect(table.locator(`[data-key="${key}"]`)).toHaveClass(/\bon\b/)
+  const created = table.locator(`[data-key="${key}"]`)
+  await expect(created).toHaveClass(/draft/)
+  await expect(created).toHaveAttribute('data-draft', 'true')
+  await expect(created).toHaveClass(/\bon\b/)
 })
 
 test('Structures create dialog', async ({ page }) => {
