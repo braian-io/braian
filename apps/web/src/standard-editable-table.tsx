@@ -67,6 +67,8 @@ export type StandardEditableTableProps<T extends { id: string }> = {
   newRowLabel?: string
   /** Persist all drafts (same as Ctrl+S). */
   onReviewAndSave?: () => void | Promise<void>
+  /** When set, controls the Save button instead of local draft rows alone. */
+  reviewVisible?: boolean
   /** Called when a row is activated (click / Enter on non-edit). */
   onActivateRow?: (row: T) => void
   /**
@@ -221,6 +223,7 @@ export function StandardEditableTable<T extends { id: string }>({
   onNewRow,
   newRowLabel = copy.newRow,
   onReviewAndSave,
+  reviewVisible: reviewVisibleProp,
   onActivateRow,
   activeRowId: activeRowIdProp,
   filterValue,
@@ -252,6 +255,7 @@ export function StandardEditableTable<T extends { id: string }>({
   const gridRef = useRef<HTMLDivElement | null>(null)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
   const dirty = Object.keys(draftRows).length > 0
+  const reviewVisible = reviewVisibleProp ?? dirty
   const controlled = activeRowIdProp !== undefined
   const activeRowId = controlled ? activeRowIdProp : internalActiveRowId
   const canReorder = Boolean(reorderable && onDraftRowsChange)
@@ -492,7 +496,7 @@ export function StandardEditableTable<T extends { id: string }>({
     if (!editable || !onReviewAndSave) return
     const onKey = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's') return
-      if (!dirty) return
+      if (!reviewVisible) return
       event.preventDefault()
       void Promise.resolve(onReviewAndSave()).catch((reason: unknown) => {
         reportWriteError(reason)
@@ -500,7 +504,7 @@ export function StandardEditableTable<T extends { id: string }>({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [editable, dirty, onReviewAndSave])
+  }, [editable, reviewVisible, onReviewAndSave])
 
   const resolveContext = (row: T | null): MenuContext | null => {
     if (!menuContext) return null
@@ -756,7 +760,7 @@ export function StandardEditableTable<T extends { id: string }>({
       filterValue={filterValue}
       onFilterChange={onFilterChange}
       filterOnKeyDown={filterOnKeyDown}
-      reviewVisible={editable && dirty}
+      reviewVisible={editable && reviewVisible}
       onReview={onReview}
     >
       {belowBar}

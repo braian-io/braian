@@ -178,15 +178,15 @@ describe('type attributes table', () => {
     fireEvent.click(within(row(container, ownText.id)).getByLabelText('Move row down'))
     fireEvent.click(within(row(container, ownBoolean.id)).getByRole('checkbox', { name: copy.searchable }))
     fireEvent.click(screen.getByTestId('review-and-save'))
-    await waitFor(() => expect(stageModel).toHaveBeenCalledWith('model.reorder_type_attributes', {
-      type_key: 'recipe',
-      attributes: ['name', 'own_a', 'own_b'],
-    }))
-    expect(stageModel).toHaveBeenCalledWith('model.update_attribute', { key: 'own_a', searchable: true })
+    await waitFor(() => expect(stageModelSteps).toHaveBeenCalledWith([
+      { op: 'update_attribute', key: 'own_a', searchable: true },
+      { op: 'reorder_type_attributes', type_key: 'recipe', attributes: ['name', 'own_a', 'own_b'] },
+    ]))
+    expect(stageModel).not.toHaveBeenCalled()
     expect(requestReview).toHaveBeenCalled()
   })
 
-  it('creates an attribute from the dialog and attaches it', async () => {
+  it('creates an attribute from the dialog and attaches it on save', async () => {
     chooseModelSelection({ kind: 'type', typeKey: 'recipe' })
     render(<Host />)
     await screen.findByTestId('attribute-table')
@@ -194,14 +194,45 @@ describe('type attributes table', () => {
     const dialog = await screen.findByRole('dialog', { name: copy.newAttribute })
     fireEvent.change(within(dialog).getByRole('textbox', { name: copy.name }), { target: { value: 'Extra' } })
     fireEvent.click(within(dialog).getByTestId('create-object'))
-    await waitFor(() => expect(stageModel).toHaveBeenCalledWith('model.create_attribute', expect.objectContaining({
-      key: 'extra',
-      label: 'Extra',
-      kind: 'text',
-      show_by_default: true,
-    })))
-    expect(stageModel).toHaveBeenCalledWith('model.attach_attribute', { attribute: 'extra', type: 'recipe' })
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(stageModel).not.toHaveBeenCalled()
+    expect(stageModelSteps).not.toHaveBeenCalled()
+    await expect(screen.findByTestId(`attr-label-extra`)).resolves.toBeTruthy()
+    fireEvent.click(screen.getByTestId('review-and-save'))
+    await waitFor(() => expect(stageModelSteps).toHaveBeenCalledWith([
+      {
+        op: 'create_attribute',
+        key: 'extra',
+        label: 'Extra',
+        kind: 'text',
+        multiple: false,
+        languages: true,
+        required: false,
+        show_by_default: true,
+        searchable: false,
+        filterable: false,
+        sortable: false,
+      },
+      { op: 'attach_attribute', attribute: 'extra', type_key: 'recipe' },
+    ]))
+    expect(requestReview).toHaveBeenCalled()
+  })
+
+  it('batches detach with checkbox edits on save', async () => {
+    chooseModelSelection({ kind: 'type', typeKey: 'recipe' })
+    const { container } = render(<Host />)
+    await screen.findByTestId('attribute-table')
+    fireEvent.click(within(row(container, ownBoolean.id)).getByRole('checkbox', { name: copy.searchable }))
+    fireEvent.keyDown(within(row(container, ownBoolean.id)).getByTestId('attr-menu-own_a'), { key: 'Enter' })
+    const menu = await screen.findByRole('menu')
+    fireEvent.click(within(menu).getByRole('menuitem', { name: copy.removeFromThisType }))
+    expect(stageModelSteps).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByTestId('review-and-save'))
+    await waitFor(() => expect(stageModelSteps).toHaveBeenCalledWith([
+      { op: 'detach_attribute', attribute: 'own_a', type_key: 'recipe' },
+      { op: 'update_attribute', key: 'own_a', searchable: true },
+    ]))
+    expect(requestReview).toHaveBeenCalled()
   })
 
   it('opens one create dialog and closes it with Escape', async () => {

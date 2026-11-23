@@ -91,6 +91,8 @@ test('removing an attribute asks once, and a blocked group removal does not appl
   await table.getByTestId('quick-filter').fill(key)
   await table.getByTestId(`attr-menu-${key}`).click()
   await page.getByRole('menuitem', { name: 'Remove from this type' }).click()
+  await expect(table.getByTestId('review-and-save')).toBeVisible()
+  await table.getByTestId('review-and-save').click()
   await expect(page.getByTestId('unsaved-changes')).toBeVisible()
   await page.getByTestId('review-save').click()
 

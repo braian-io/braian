@@ -55,7 +55,7 @@ import {
 } from './graph-chrome'
 import { buildModelScene, expandModelType, mergeModelScene } from './graph-model-scene'
 import { curvePoint, edgeLabelMode, placeEdgeLabel, type EdgeLabelBox, type EdgeLabelNode } from './graph-edge-label'
-import { chooseModelSelection } from './model-selection'
+import { tryChooseModelSelection } from './model-table-draft'
 import { openObjectLabel } from './type-labels'
 import { copy, uiLanguage } from './i18n'
 import { linkChoices } from './link-section'
@@ -509,7 +509,7 @@ export function GraphMap({
     setSheet((mode) => (mode === 'dismissed' || mode === 'chip' ? 'compact' : mode))
     if (!modelMode) return
     const node = scene.nodes.find((item) => item.id === id)
-    if (node?.kind === 'type' && node.typeKey) chooseModelSelection({ kind: 'type', typeKey: node.typeKey })
+    if (node?.kind === 'type' && node.typeKey) tryChooseModelSelection({ kind: 'type', typeKey: node.typeKey })
   }
   pinRef.current = setPinTick
 

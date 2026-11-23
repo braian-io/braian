@@ -50,6 +50,7 @@ import { agentDockShare, applyLayoutCommand, focusView, migrateLayout, views as 
 import { cloneObjectTableView, objectTableTemplateForType, objectTableViewForType } from './open-type-view'
 import { ConsequenceHost } from './consequence'
 import { ModelDraftHost } from './model-draft-ui'
+import { ModelTableLeaveDialog } from './model-table-leave-dialog'
 import { stageModel } from './model-stage'
 import { AttributeDefinitions } from './attribute-definitions'
 import { ModelTableView } from './model-tables'
@@ -2456,6 +2457,7 @@ export function Shell() {
         <StatusBar online={online} live={liveState} locked={Boolean(workspace.data?.locked)} inert={agentControlled} />
       </div>
       <ModelDraftHost />
+      <ModelTableLeaveDialog />
       <ConsequenceHost session={session} />
       <SharedContextMenuHost feedbackEnabled={feedbackEnabled} />
       {feedbackEnabled ? (
