@@ -13,6 +13,7 @@ import {
   Link2,
   Ruler,
   ScrollText,
+  Trash2,
   Table2,
   Waypoints,
 } from 'lucide-react'
@@ -63,6 +64,7 @@ export function ViewGlyph({ type }: { type: string }) {
   if (type === 'units') return <Ruler {...props} />
   if (type === 'proposal' || type === 'proposal_list') return <ScrollText {...props} />
   if (type === 'agent' || type === 'agents') return <Bot {...props} />
+  if (type === 'trash') return <Trash2 {...props} />
   if (type === 'batch_log') return <ScrollText {...props} />
   if (type === 'job_history') return <ListChecks {...props} />
   return <AppWindow {...props} />

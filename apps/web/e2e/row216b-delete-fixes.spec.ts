@@ -15,6 +15,7 @@ async function login(page: Page) {
 
 async function openProducts(page: Page) {
   await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
+  await page.locator('.pane-tab[data-view-type="object_table"]', { hasText: 'Products' }).first().click()
   await expect(mainTable(page)).toBeVisible()
 }
 
@@ -89,11 +90,12 @@ async function openGraph(page: Page) {
 async function restoreFromTrash(page: Page, label: string) {
   await page.getByTestId('user-menu').click()
   await page.getByTestId('user-menu-trash').click()
-  const trash = page.getByTestId('trash-dialog')
+  const trash = page.getByTestId('trash-table-chrome')
   await expect(trash).toBeVisible()
-  const item = trash.locator('li').filter({ hasText: label }).filter({ hasNotText: `${label}-` }).first()
+  const item = trash.locator('[data-testid="trash-row"]').filter({ hasText: label }).filter({ hasNotText: `${label}-` }).first()
   await expect(item).toBeVisible()
-  await item.getByRole('button', { name: 'Restore' }).click()
+  await item.click({ button: 'right' })
+  await page.getByTestId('context-menu').getByRole('menuitem', { name: 'Restore' }).click()
   await expect(item).toHaveCount(0)
 }
 
@@ -161,9 +163,9 @@ test.describe('row 216b delete fixes', () => {
 
       await page.getByTestId('user-menu').click()
       await page.getByTestId('user-menu-trash').click()
-      const trash = page.getByTestId('trash-dialog')
+      const trash = page.getByTestId('trash-table-chrome')
       await expect(trash).toBeVisible()
-      await expect(trash.getByRole('button', { name: 'Restore' }).first()).toBeVisible()
+      await expect(trash.locator('[data-testid="trash-row"]').first()).toBeVisible()
       await page.keyboard.press('Escape')
     } finally {
       await page.request.delete(`/v1/objects/${product.id}`).catch(() => undefined)

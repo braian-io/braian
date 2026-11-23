@@ -68,7 +68,7 @@ import { createTablePrefsSaver, type TablePrefsSnapshot } from './table-prefs-sa
 import { readPathFromDoc, summarizePathValues } from './path-cell'
 import { cellPathValues, fetchPathValues } from './path-values'
 import { applyObjectWrite, currentSearchWaitSeq, reconcileObjectWrite } from './object-write'
-import { markObjectGone, objectFetchQueryOptions, objectGone, objectQueryGone } from './object-gone'
+import { clearObjectGone, markObjectGone, objectFetchQueryOptions, objectGone, objectQueryGone } from './object-gone'
 import {
   buildListPreviewFromRow,
   isListPreview,
@@ -166,6 +166,7 @@ import {
 export type PanesSession = {
   group: string | null
   objectId: string | null
+  objectAllowDeleted?: boolean
   proposalId: string | null
   language: string
   listType?: string | null
@@ -3087,20 +3088,31 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   const queryClient = useQueryClient()
   const objectId = session.objectId ?? ''
   const { settled: objectFetchSettled } = useObjectLand(session.objectId)
-  const objectGoneState = objectQueryGone(queryClient, session.objectId)
-  const previewCached = queryClient.getQueryData<Json>(['object', session.objectId])
+  const allowDeleted = session.objectAllowDeleted === true
+  const objectGoneState = !allowDeleted && objectQueryGone(queryClient, session.objectId)
+  const objectQueryKey = allowDeleted
+    ? (['object', session.objectId, 'deleted'] as const)
+    : (['object', session.objectId] as const)
+  const previewCached = allowDeleted
+    ? queryClient.getQueryData<Json>(objectQueryKey)
+    : queryClient.getQueryData<Json>(['object', session.objectId])
   const object = useQuery<Json, Error>({
-    queryKey: ['object', session.objectId],
-    queryFn: ({ signal }) => loadObjectDetail(queryClient, session.objectId ?? '', signal),
+    queryKey: objectQueryKey,
+    queryFn: ({ signal }) => loadObjectDetail(queryClient, session.objectId ?? '', signal, allowDeleted),
     enabled: Boolean(session.objectId) && !objectGoneState && objectFetchSettled,
-    placeholderData: () => queryClient.getQueryData<Json>(['object', session.objectId]),
+    placeholderData: () => allowDeleted
+      ? queryClient.getQueryData<Json>(objectQueryKey)
+      : queryClient.getQueryData<Json>(['object', session.objectId]),
     ...objectFetchQueryOptions(),
     staleTime: objectQueryStaleTime(previewCached),
   })
   const provenance = useQuery({
-    queryKey: ['object-origin', session.objectId],
+    queryKey: allowDeleted
+      ? ['object-origin', session.objectId, 'deleted']
+      : ['object-origin', session.objectId],
     queryFn: async ({ signal }) => {
-      const response = await fetch(`/v1/objects/${session.objectId}?include=owners,origin`, {
+      const allowQuery = allowDeleted ? '&allow_deleted=true' : ''
+      const response = await fetch(`/v1/objects/${session.objectId}?include=owners,origin${allowQuery}`, {
         credentials: 'include',
         signal,
       })
@@ -3182,11 +3194,11 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       </div>
     )
   }
-  if (objectGone(object.error) || objectGoneState) {
+  if (!allowDeleted && (objectGone(object.error) || objectGoneState)) {
     return <StateNote tone="empty" title={copy.objectDeleted} detail={copy.objectDeletedHint} testId="detail-deleted" />
   }
   const refetchDetail = () => {
-    void queryClient.invalidateQueries({ queryKey: ['object', session.objectId] })
+    void queryClient.invalidateQueries({ queryKey: objectQueryKey })
     void queryClient.invalidateQueries({ queryKey: ['object-origin', session.objectId] })
     void queryClient.invalidateQueries({ queryKey: ['proposals', 'detail', session.objectId] })
   }
@@ -3463,7 +3475,23 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
               <strong title={name || number}>{name || number}</strong>
               {number ? <span className="detail-id">{number}</span> : null}
             </div>
-            {inAgentSession ? null : (
+            {allowDeleted ? (
+              <Button
+                type="button"
+                variant="primary"
+                data-testid="trash-detail-restore"
+                onClick={() => {
+                  void api.post('/v1/trash/{kind}/{id}/undelete', {
+                    params: { path: { kind: 'object', id: objectId } },
+                  }).then(() => {
+                    clearObjectGone(queryClient, objectId)
+                    void queryClient.invalidateQueries()
+                  }).catch((reason: unknown) => reportWriteError(reason))
+                }}
+              >
+                {copy.trashRestore}
+              </Button>
+            ) : inAgentSession ? null : (
               <TooltipProvider delayDuration={400} disableHoverableContent>
                 <Tooltip>
                   <TooltipTrigger asChild>

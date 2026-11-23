@@ -190,6 +190,7 @@ fn build_router(state: AppState) -> axum::Router {
         .route("/v1/objects/{id}/changes", get(objects::object_changes))
         .route("/v1/trash", get(trash::list_trash))
         .route("/v1/trash/{kind}/{id}/undelete", post(trash::undelete))
+        .route("/v1/trash/{kind}/{id}/purge", post(trash::purge))
         .merge(model_draft::routes())
         .merge(feedback::routes())
         .merge(platform::routes())

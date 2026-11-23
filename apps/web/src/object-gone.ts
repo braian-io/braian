@@ -29,7 +29,7 @@ const OBJECT_READ_QUERY_KEYS = (id: string): QueryKey[] => [
 export function markObjectGone(queryClient: QueryClient, id: string): void {
   const error = goneReadError()
   for (const queryKey of OBJECT_READ_QUERY_KEYS(id)) {
-    void queryClient.cancelQueries({ queryKey })
+    void queryClient.cancelQueries({ queryKey, exact: true })
     const existing = queryClient.getQueryCache().find({ queryKey, exact: true })
     const query = existing ?? queryClient.getQueryCache().build(queryClient, {
       queryKey,
@@ -46,7 +46,7 @@ export function markObjectGone(queryClient: QueryClient, id: string): void {
 
 export function clearObjectGone(queryClient: QueryClient, id: string): void {
   for (const queryKey of OBJECT_READ_QUERY_KEYS(id)) {
-    queryClient.removeQueries({ queryKey })
+    queryClient.removeQueries({ queryKey, exact: true })
   }
 }
 

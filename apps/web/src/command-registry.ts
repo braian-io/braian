@@ -24,6 +24,7 @@ export type MenuContext =
   | 'tab'
   | 'link'
   | 'import'
+  | 'trash'
 
 export type CommandTarget = {
   objectId?: string
@@ -205,6 +206,23 @@ export const registryCommands: RegistryCommand[] = [
     when: (target) =>
       Boolean(target.objectId)
       || (Array.isArray(target.objects) && target.objects.length > 0),
+  },
+  {
+    id: 'trash:restore',
+    title: copy.trashRestore,
+    contexts: ['trash', 'object-detail'],
+    group: 'object',
+    keywords: ['trash', 'restore', 'undelete'],
+    when: (target) => Boolean(target.trashKind) || target.objectAllowDeleted === true,
+  },
+  {
+    id: 'trash:purge',
+    title: copy.trashPurge,
+    contexts: ['trash', 'object-detail'],
+    group: 'object',
+    keywords: ['trash', 'purge', 'delete', 'permanent'],
+    danger: true,
+    when: (target) => Boolean(target.trashKind) || target.objectAllowDeleted === true,
   },
   {
     id: 'columns:hide',
