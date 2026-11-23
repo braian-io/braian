@@ -79,6 +79,7 @@ import {
   readColumns,
   readSelection,
   readTreeNode,
+  readTrashActive,
   readUiContext,
   subscribeUiSelections,
   uiSelectionVersion,
@@ -485,7 +486,7 @@ export function CommandPalette({
           ]),
       { id: 'attr:new', group: 'model' as const, title: copy.newAttribute, subtitle: copy.attributeDefinitions, keywords: ['attribute', 'create'] },
     ],
-    [workspaces, views, session.group, types, selectedKey, suggestionTotal, feedbackEnabled, theme, moveColumns, moveTarget, defs.data, operationRecords, focusViewId, deleteIds.join(',')],
+    [workspaces, views, session.group, types, selectedKey, suggestionTotal, feedbackEnabled, theme, moveColumns, moveTarget, defs.data, operationRecords, focusViewId, deleteIds.join(','), selectionVersion],
   )
   const hits: PaletteItem[] = objectPaletteRows((found.data?.hits as Json[] | undefined) ?? [], defs.data)
   useEffect(() => {
@@ -1668,6 +1669,7 @@ function buildCatalog(
   focusViewId?: string | null,
 ): PaletteItem[] {
   const focused = focusViewId ? views.find((view) => view.id === focusViewId) : undefined
+  const trashActive = focused?.type === 'trash' ? readTrashActive() : null
   const showSelectSource = !focused || focused.type === 'object_table'
   const items: PaletteItem[] = [
     ...(suggestions > 0
@@ -1712,7 +1714,13 @@ function buildCatalog(
       : []),
     { id: 'model:rename-key', group: 'model', title: copy.renameKey, subtitle: 'Change a key. External integrations that use the old key will stop working', keywords: ['rename', 'key', 'attribute'] },
     { id: 'model:allowed-trees', group: 'model', title: copy.allowedTrees, subtitle: 'Choose the trees a type may use', keywords: ['tree', 'structure', 'type'] },
-    ...registryPaletteRows({ theme, target: { feedbackEnabled } }),
+    ...registryPaletteRows({
+      theme,
+      target: {
+        feedbackEnabled,
+        ...(trashActive ? { trashKind: trashActive.kind, trashLabel: trashActive.name } : {}),
+      },
+    }),
     ...registryLayoutFocusPaletteRows(),
     { id: 'layout:reset_layout', group: 'views', title: 'Reset layout', subtitle: 'Restore the saved workspace layout' },
     { id: 'workspace:delete', group: 'views', title: 'Delete workspace', subtitle: 'Remove the active workspace and its layout', keywords: ['delete', 'remove', 'workspace'] },

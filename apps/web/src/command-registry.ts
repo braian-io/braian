@@ -213,6 +213,7 @@ export const registryCommands: RegistryCommand[] = [
     contexts: ['trash', 'object-detail'],
     group: 'object',
     keywords: ['trash', 'restore', 'undelete'],
+    palette: true,
     when: (target) => Boolean(target.trashKind) || target.objectAllowDeleted === true,
   },
   {
@@ -222,6 +223,7 @@ export const registryCommands: RegistryCommand[] = [
     group: 'object',
     keywords: ['trash', 'purge', 'delete', 'permanent'],
     danger: true,
+    palette: true,
     when: (target) => Boolean(target.trashKind) || target.objectAllowDeleted === true,
   },
   {

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { runCommand } from './command-registry'
 import { objectQueryGone, markObjectGone } from './object-gone'
@@ -49,6 +49,7 @@ describe('TrashTable', () => {
     mount()
     expect(await screen.findByText('Season')).toBeTruthy()
     expect(screen.getByTestId('trash-table-chrome')).toBeTruthy()
+    fireEvent.click(screen.getByText('Season'))
     runCommand('trash:restore')
     await waitFor(() => expect(post).toHaveBeenCalledWith('/v1/trash/{kind}/{id}/undelete', {
       params: { path: { kind: 'workspace', id: 'ws-1' } },
@@ -72,7 +73,26 @@ describe('TrashTable', () => {
     mount(client)
     expect(await screen.findByText('Bread')).toBeTruthy()
     expect(objectQueryGone(client, 'obj-trash')).toBe(true)
+    fireEvent.click(screen.getByText('Bread'))
     runCommand('trash:restore')
     await waitFor(() => expect(objectQueryGone(client, 'obj-trash')).toBe(false))
+  })
+
+  it('does not restore or purge when no row is active', async () => {
+    get.mockResolvedValue({
+      items: [{
+        kind: 'object',
+        id: 'obj-idle',
+        label: 'Idle',
+        number: 'I-1',
+        type_key: 'product',
+        deleted_at: '2026-11-01T00:00:00Z',
+      }],
+    })
+    mount()
+    expect(await screen.findByText('Idle')).toBeTruthy()
+    runCommand('trash:restore')
+    runCommand('trash:purge')
+    expect(post).not.toHaveBeenCalled()
   })
 })

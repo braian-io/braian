@@ -6,6 +6,7 @@ import { formatTimestamp } from './format'
 import { copy } from './i18n'
 import { clearObjectGone } from './object-gone'
 import { registerCommandRunner } from './command-registry'
+import { publishTrashActive } from './ui-context'
 import { StandardEditableTable, type StandardColumn } from './standard-editable-table'
 import { writeErrorMessage } from './write-error'
 import { TrashPurgeDialog } from './trash-purge-dialog'
@@ -91,7 +92,7 @@ export function TrashTable({ onOpenObject }: TrashTableProps) {
   })
 
   const activeRow = () =>
-    rowsRef.current.find((row) => row.id === activeIdRef.current) ?? rowsRef.current[0] ?? null
+    rowsRef.current.find((row) => row.id === activeIdRef.current) ?? null
 
   const runAction = (action: 'restore' | 'purge') => {
     const row = activeRow()
@@ -110,13 +111,19 @@ export function TrashTable({ onOpenObject }: TrashTableProps) {
     return () => stops.forEach((stop) => stop())
   }, [])
 
+  useEffect(() => {
+    const row = activeRowId ? rows.find((item) => item.id === activeRowId) : null
+    publishTrashActive(row ? { kind: row.kind, id: row.id, name: row.name } : null)
+    return () => publishTrashActive(null)
+  }, [activeRowId, rows])
+
   const columns: Array<StandardColumn<TrashRow>> = [
     {
       id: 'number',
       header: copy.trashColumnNumber,
       type: 'readonly',
       read: (row) => row.number || '—',
-      title: (row) => row.number || row.id,
+      title: (row) => row.number || '',
     },
     {
       id: 'name',

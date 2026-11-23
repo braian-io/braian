@@ -352,7 +352,7 @@ const measuredSeconds = {
   'e2e/row216-delete-object.spec.ts': 8,
   'e2e/row216b-delete-fixes.spec.ts': 21,
   'e2e/row217-detail-deleted.spec.ts': 50,
-  'e2e/row227-trash-table.spec.ts': 55,
+  'e2e/row227-trash-table.spec.ts': 10,
   'e2e/row218-sort-reload.spec.ts': 45,
   'e2e/row238-detail-save.spec.ts': 45,
   'e2e/row239-detail-width.spec.ts': 45,
