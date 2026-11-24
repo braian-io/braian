@@ -155,6 +155,8 @@ test('removing a link with values opens a plain confirm with no text input', asy
       expect(response.ok(), await response.text()).toBeTruthy()
       return (await response.json()) as { id: string; key: string }
     }
+    const fromNumber = `LT-${tag}-a`
+    const toNumber = `LT-${tag}-b`
     const from = await createProduct('a')
     const to = await createProduct('b')
     const linked = await page.request.post('/v1/links', {

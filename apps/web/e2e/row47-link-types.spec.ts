@@ -116,7 +116,7 @@ test('link types are editable with blocking cardinality (row 47)', async ({ page
         type: linkKey,
         from_id: product!.id,
         to_id: supplier!.id,
-        values: { [rankKey]: { value: 1 } },
+        values: { [rankKey]: { value: '1' } },
       },
     })
     expect(linked.ok(), await linked.text()).toBeTruthy()
