@@ -447,7 +447,7 @@ test('Link types create dialog', async ({ page }) => {
   await expect(dialog).toBeVisible()
   await fill(dialog, failureFields)
   await linkTypeDialogReady(dialog)
-  await page.keyboard.press('Enter')
+  await dialog.getByTestId('create-object').click()
   const alert = dialog.getByRole('alert')
   await expect(alert).toBeVisible()
   await expect(alert).toContainText('number already exists')
