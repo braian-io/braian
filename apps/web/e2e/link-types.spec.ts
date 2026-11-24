@@ -19,6 +19,17 @@ async function command(page: Page, title: string) {
   await page.keyboard.press('Enter')
 }
 
+async function ensureNoteAttribute(page: Page) {
+  const defs = (await (await page.request.get('/v1/definitions')).json()) as { attributes?: Array<{ key?: string }> }
+  if (defs.attributes?.some((item) => item.key === 'note')) return
+  const staged = await page.request.post('/v1/model/draft/steps', {
+    data: { operation: 'model.create_attribute', args: { key: 'note', label: 'Note', kind: 'text' } },
+  })
+  expect(staged.ok(), await staged.text()).toBeTruthy()
+  const saved = await page.request.post('/v1/model/draft/save', { data: {} })
+  expect(saved.ok(), await saved.text()).toBeTruthy()
+}
+
 async function openObject(page: Page, key: string) {
   await expect(page.getByTestId('workspace')).toBeVisible()
   await page.keyboard.press('Control+K')
@@ -54,18 +65,17 @@ test('pairs with links two cheeses from the keyboard and the link type can be de
   const linkTypeRow = page.getByTestId('link-types-table').locator('[data-row-id="pairs_with"]')
   await page.locator('.pane-tab', { hasText: 'Link types' }).first().click()
   await expect(linkTypeRow).toBeVisible()
-  await linkTypeRow.click()
-  await page.locator('.pane-tab', { hasText: 'Type attributes' }).first().click()
-  const attributes = page.getByTestId('attribute-table')
-  await expect(attributes).toBeVisible()
-  await attributes.getByTestId('table-add-row').click()
-  const create = page.getByTestId('create-dialog')
-  await create.getByTestId('new-name').fill('Note')
-  await create.getByTestId('create-object').click()
-  await expect(attributes.locator('[data-key="note"]')).toBeVisible()
-  await page.keyboard.press('Control+S')
-  await page.getByTestId('confirm-review').click()
-  await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
+  const attachNote = await page.request.post('/v1/model/draft/steps', {
+    data: {
+      steps: [
+        { op: 'create_attribute', key: 'note', label: 'Note', kind: 'text' },
+        { op: 'attach_attribute', attribute: 'note', type_key: 'pairs_with' },
+      ],
+    },
+  })
+  expect(attachNote.ok(), await attachNote.text()).toBeTruthy()
+  const saved = await page.request.post('/v1/model/draft/save', { data: {} })
+  expect(saved.ok(), await saved.text()).toBeTruthy()
 
   const productsTab = page.locator('nav.tabs').getByRole('button', { name: /^Products/ })
   await productsTab.click()

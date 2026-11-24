@@ -177,7 +177,8 @@ async fn draft_view(
     match preview(&defs, &draft.steps) {
         Ok((after, impact)) => {
             if let Err(message) =
-                crate::link_type_validate::validate_for_app(state, &defs, &after, &draft.steps).await
+                crate::link_type_validate::validate_for_app(state, &defs, &after, &draft.steps)
+                    .await
             {
                 body["error"] = json!(message);
             } else {

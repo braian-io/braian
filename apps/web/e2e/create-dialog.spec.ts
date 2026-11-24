@@ -342,7 +342,7 @@ test('From type select stays readable in dark theme', async ({ page }) => {
   const dialog = page.getByTestId('create-dialog')
   await expect(dialog).toBeVisible()
   await expect(dialog.getByRole('heading', { name: 'New link type' })).toBeVisible()
-  const from = dialog.getByTestId('new-type')
+  const from = dialog.getByTestId('link-type-from')
   await expect(from).toBeVisible()
   // Themed Select trigger — not a native <select> that paints white.
   await expect(from).toHaveRole('combobox')
@@ -364,7 +364,7 @@ test('From type select stays readable in dark theme', async ({ page }) => {
   expect(paint.color).toBe(paint.text)
   expect(paint.background).not.toBe('rgb(255, 255, 255)')
   await from.click()
-  const list = page.getByTestId('new-type-list')
+  const list = page.getByTestId('link-type-from-list')
   await expect(list).toBeVisible()
   const listPaint = await list.evaluate((el) => {
     const style = getComputedStyle(el)
