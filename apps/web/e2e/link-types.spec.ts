@@ -165,9 +165,9 @@ test('removing a link with values opens a plain confirm with no text input', asy
     expect(linked.ok(), `create link ${linked.status()} ${await linked.text()}`).toBeTruthy()
 
     await page.reload()
-    await openObject(page, from.key)
+    await openObject(page, fromNumber)
 
-    const linkRow = page.getByTestId('link-row').filter({ hasText: to.key! }).first()
+    const linkRow = page.getByTestId('link-row').filter({ hasText: toNumber }).first()
     await expect(linkRow).toBeVisible()
     await linkRow.click({ button: 'right' })
     await page.getByTestId('context-menu').getByRole('menuitem', { name: 'Remove link' }).click()
