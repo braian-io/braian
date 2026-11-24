@@ -1,4 +1,5 @@
 import { expect, test, type APIResponse, type Locator, type Page } from '@playwright/test'
+import { saveAttributeTableDraft } from './allowed-trees-table-draft'
 import { demoCredentials } from './demo'
 
 type DraftStep = { op?: string; type_key?: string; structures?: string[]; key?: string }
@@ -158,6 +159,7 @@ async function cancelReview(page: Page) {
 }
 
 async function expectSingleReviewThenCancel(page: Page, checkbox: Locator, baseline: string[]) {
+  await saveAttributeTableDraft(page)
   const dialog = page.getByTestId('review-dialog')
   await expect(dialog).toBeVisible({ timeout: 20_000 })
   await expect(page.getByRole('dialog')).toHaveCount(1)
@@ -270,6 +272,7 @@ test('Esc, Cancel and X during the set_structures POST leave no dialog and no un
       await expect.poll(async () => (await draft(page)).count ?? 0, { timeout: 15_000 }).toBe(0)
       await expect(checkbox).not.toBeChecked({ timeout: 5_000 })
       await checkbox.click()
+      await saveAttributeTableDraft(page)
       const loading = page.getByTestId('review-loading')
       await expect(loading).toBeVisible({ timeout: 2_000 })
       if (kind === 'Escape') await page.keyboard.press('Escape')
@@ -317,6 +320,7 @@ test('Save + F5 restores the selected Product row in Object types', async ({ pag
     await openProductAttributes(page)
     const checkbox = page.getByTestId('allowed-trees').locator('label').filter({ hasText: fixture.label }).locator("input[type='checkbox']")
     await checkbox.click()
+    await saveAttributeTableDraft(page)
     const dialog = page.getByTestId('review-dialog')
     await expect(dialog).toBeVisible({ timeout: 20_000 })
     const saved = page.waitForResponse((response) =>

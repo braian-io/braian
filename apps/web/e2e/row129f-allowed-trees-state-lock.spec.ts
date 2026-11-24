@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test, type APIResponse, type Locator, type Page } from '@playwright/test'
+import { saveAttributeTableDraft } from './allowed-trees-table-draft'
 import { demoCredentials } from './demo'
 
 const shots =
@@ -155,6 +156,7 @@ async function cancelReview(page: Page) {
 }
 
 async function expectSingleReviewThenCancel(page: Page, checkbox: Locator, baseline: string[]) {
+  await saveAttributeTableDraft(page)
   const dialog = page.getByTestId('review-dialog')
   await expect(dialog).toBeVisible({ timeout: 20_000 })
   await expect(page.getByRole('dialog')).toHaveCount(1)
@@ -320,6 +322,7 @@ test('focus ring after Esc is a double high-contrast ring', async ({ page }) => 
     await openProductAttributes(page)
     const checkbox = page.getByTestId('allowed-trees').locator('label').filter({ hasText: fixture.label }).locator("input[type='checkbox']")
     await checkbox.click()
+    await saveAttributeTableDraft(page)
     await expect(page.getByTestId('review-dialog')).toBeVisible({ timeout: 20_000 })
     await page.keyboard.press('Escape')
     await expect(page.getByTestId('review-dialog')).toHaveCount(0)

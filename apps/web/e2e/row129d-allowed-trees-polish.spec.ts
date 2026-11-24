@@ -2,6 +2,7 @@ import { expect, test, type APIResponse, type Page } from '@playwright/test'
 import { mkdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { saveAttributeTableDraft } from './allowed-trees-table-draft'
 import { demoCredentials } from './demo'
 
 const shots = process.env.BRAIAN_ROW129D_SHOTS
@@ -155,6 +156,7 @@ test('a rapid double click stages exactly one step and Cancel fully reverts it',
     await expect(checkbox).not.toBeChecked()
 
     await checkbox.dblclick()
+    await saveAttributeTableDraft(page)
     const dialog = page.getByTestId('review-dialog')
     await expect(dialog).toBeVisible({ timeout: 20_000 })
     await expect(dialog.getByTestId('review-step')).toHaveCount(1)
@@ -181,6 +183,7 @@ test('a rapid double click stages exactly one step and Cancel fully reverts it',
       input.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       input.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
+    await saveAttributeTableDraft(page)
     const again = page.getByTestId('review-dialog')
     await expect(again).toBeVisible({ timeout: 20_000 })
     await expect(again.getByTestId('review-step')).toHaveCount(1)
@@ -239,6 +242,7 @@ test('Esc, overlay, X and Cancel revert immediately and a parallel GET cannot fl
       await expect.poll(async () => (await draft(page)).count ?? 0, { timeout: 15_000 }).toBe(0)
       await expect(checkbox).not.toBeChecked({ timeout: 5_000 })
       await checkbox.click()
+      await saveAttributeTableDraft(page)
       const dialog = page.getByTestId('review-dialog')
       await expect(dialog).toBeVisible({ timeout: 20_000 })
       if (kind === 'Escape') await page.keyboard.press('Escape')
@@ -266,6 +270,7 @@ test('Esc, overlay, X and Cancel revert immediately and a parallel GET cannot fl
     // One more cancel, then force a draft refetch while the remove is delayed.
     await expect(checkbox).not.toBeChecked({ timeout: 5_000 })
     await checkbox.click()
+    await saveAttributeTableDraft(page)
     const dialog = page.getByTestId('review-dialog')
     await expect(dialog).toBeVisible({ timeout: 20_000 })
     getDuringRemove = 0
@@ -335,6 +340,7 @@ test('the loading shell is usable at once and blocks the table behind it', async
 
     const checkbox = page.getByTestId('allowed-trees').getByRole('checkbox', { name: fixture.label })
     await checkbox.click()
+    await saveAttributeTableDraft(page)
     const loading = page.getByTestId('review-loading')
     await expect(loading).toBeVisible({ timeout: 1_000 })
     await expect(loading.getByText('Review change')).toBeVisible()
@@ -464,6 +470,7 @@ test('the selected object type survives Save + F5 and still shows its attributes
     await expect(page.locator('.attr-title')).toHaveText('Product')
     const checkbox = page.getByTestId('allowed-trees').getByRole('checkbox', { name: fixture.label })
     await checkbox.click()
+    await saveAttributeTableDraft(page)
     const dialog = page.getByTestId('review-dialog')
     await expect(dialog).toBeVisible({ timeout: 20_000 })
     const saved = page.waitForResponse((response) =>
@@ -482,6 +489,7 @@ test('the selected object type survives Save + F5 and still shows its attributes
 
     // Restore the allowed trees through the same review flow.
     await page.getByTestId('allowed-trees').getByRole('checkbox', { name: fixture.label }).click()
+    await saveAttributeTableDraft(page)
     const restore = page.getByTestId('review-dialog')
     await expect(restore).toBeVisible({ timeout: 20_000 })
     const restoreSaved = page.waitForResponse((response) =>
