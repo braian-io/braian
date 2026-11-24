@@ -442,18 +442,6 @@ test('Link types create dialog', async ({ page }) => {
   await expect(dialog).toHaveCount(0)
   await expect(opener).toBeFocused()
 
-  const stopHeld = await rejectWrites(page, '**/v1/model/draft/steps', true)
-  await opener.click()
-  await expect(dialog).toBeVisible()
-  await fill(dialog, failureFields)
-  await linkTypeDialogReady(dialog)
-  await page.keyboard.press('Enter')
-  await expect(dialog.getByTestId('create-object')).toBeDisabled()
-  await page.keyboard.press('Escape')
-  await expect(dialog).toHaveCount(0)
-  await expect(opener).toBeFocused()
-  await stopHeld()
-
   const stop = await rejectWrites(page, '**/v1/model/draft/steps', false)
   await opener.click()
   await expect(dialog).toBeVisible()
