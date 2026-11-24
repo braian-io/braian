@@ -412,8 +412,8 @@ test('Link types create dialog', async ({ page }) => {
   const key = `bundled_${suffix}`
   const successFields = {
     'new-name': `Bundled ${suffix}`,
-    'link-type-from-label': 'Bundled',
-    'link-type-to-label': 'Bundled',
+    'link-type-from-label': 'Bundled out',
+    'link-type-to-label': 'Bundled in',
   }
   const linkTypeDialogReady = async (dialog: Locator) => {
     await dialog.getByTestId('link-type-from').click()

@@ -37,6 +37,7 @@ async function linkTypeDef(page: Page, key: string) {
 test('link types are editable with blocking cardinality (row 47)', async ({ page }) => {
   test.setTimeout(240_000)
   const linkKey = `row47_${crypto.randomUUID().slice(0, 8)}`
+  const rankKey = `row47_rank_${crypto.randomUUID().slice(0, 6)}`
   await login(page)
   await command(page, 'Data model')
   await page.locator('.pane-tab', { hasText: 'Link types' }).first().click()
@@ -69,9 +70,10 @@ test('link types are editable with blocking cardinality (row 47)', async ({ page
   await expect(attributes).toBeVisible()
   await attributes.getByTestId('table-add-row').click()
   const attrCreate = page.getByTestId('create-dialog')
-  await attrCreate.getByTestId('new-name').fill('Sort order')
+  await attrCreate.getByTestId('new-name').fill(rankKey)
   await attrCreate.getByTestId('create-object').click()
-  await expect(attributes.locator('[data-key="sort_order"]')).toBeVisible()
+  await expect(attrCreate).toHaveCount(0)
+  await expect(attributes.locator(`[data-key="${rankKey}"]`)).toBeVisible()
   await saveModelDraft(page)
 
   const stored = await linkTypeDef(page, linkKey)
@@ -107,7 +109,7 @@ test('link types are editable with blocking cardinality (row 47)', async ({ page
         type: linkKey,
         from_id: product!.id,
         to_id: supplier!.id,
-        values: { sort_order: 1 },
+        values: { [rankKey]: 1 },
       },
     })
     expect(linked.ok(), await linked.text()).toBeTruthy()

@@ -32,7 +32,7 @@ async function ensureNoteAttribute(page: Page) {
   const defs = (await (await page.request.get('/v1/definitions')).json()) as { attributes?: Array<{ key?: string }> }
   if (defs.attributes?.some((item) => item.key === 'note')) return
   const staged = await page.request.post('/v1/model/draft/steps', {
-    data: { operation: 'model.create_attribute', args: { key: 'note', label: 'Note', kind: 'text' } },
+    data: { steps: [{ op: 'create_attribute', key: 'note', label: 'Note', kind: 'text' }] },
   })
   expect(staged.ok(), await staged.text()).toBeTruthy()
   const saved = await page.request.post('/v1/model/draft/save', { data: {} })
