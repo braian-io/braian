@@ -99,6 +99,11 @@ Most type, attribute, link, value-list, and unit edits are collected in a draft.
 model bar shows `N unsaved changes` with `Save` and `Discard draft`. Press `Ctrl+S` to
 open the save review for the draft.
 
+Edits in the type-attributes table are also kept in the browser (per user and workspace)
+until you save or discard them. Only fields you actually changed are restored after a
+reload; if the model changed on the server in the meantime, conflicting fields are
+dropped with a notice instead of overwriting the newer values.
+
 Language tags are stored as given: `sv` and `sv-SE` are different values. Value lists
 have stable option codes with labels per language. A unit belongs to a unit family
 with a base unit and a factor; the stored number keeps the entered unit, and the index

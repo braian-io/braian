@@ -20,10 +20,15 @@ import { StateNote } from './states'
 import { onDraftChange, requestReview, setModelFocus, stageModel, stageModelSteps } from './model-stage'
 import { getModelSelection, getPreviewType, setPreviewType, subscribeModelSelection } from './model-selection'
 import {
+  applyDraftPatchesToRow,
   clearStoredModelTableDraft,
+  PATCHABLE_ATTRIBUTE_FIELDS,
   readStoredModelTableDraft,
+  serializeModelTableDraftForStorage,
   validateStoredModelTableDraft,
   writeStoredModelTableDraft,
+  type AttributeTableDraftPatches,
+  type PatchableAttributeField,
   type StoredAttributeTableRow,
 } from './model-table-draft-persist'
 import { registerModelTableDraft, tryChooseModelSelection } from './model-table-draft'
@@ -188,6 +193,7 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
   const { selection } = useModelSelection()
   const [filter, setFilter] = useState('')
   const [draftRows, setDraftRows] = useState<Record<string, AttributeTableRow>>({})
+  const [draftPatches, setDraftPatches] = useState<AttributeTableDraftPatches>({})
   const [pendingDetach, setPendingDetach] = useState<Set<string>>(() => new Set())
   const [pendingDelete, setPendingDelete] = useState<Set<string>>(() => new Set())
   const [message, setMessage] = useState('')
@@ -213,6 +219,7 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
   useEffect(() => {
     if (!selectionKey || !selection) {
       setDraftRows({})
+      setDraftPatches({})
       setPendingDetach(new Set())
       setPendingDelete(new Set())
       restoredDraftToken.current = ''
@@ -225,15 +232,20 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
     const stored = readStoredModelTableDraft(draftScope.userId, draftScope.workspaceId, selectionKey)
     if (!stored) {
       setDraftRows({})
+      setDraftPatches({})
       setPendingDetach(new Set())
       setPendingDelete(new Set())
       return
     }
     const restored = validateStoredModelTableDraft(stored, defs, selection)
-    setDraftRows(restored.draftRows)
+    setDraftRows(restored.draftRows as Record<string, AttributeTableRow>)
+    setDraftPatches(restored.draftPatches)
     setPendingDetach(new Set(restored.pendingDetach))
     setPendingDelete(new Set(restored.pendingDelete))
     if (restored.trimmed) toast.message(copy.modelTableDraftRestoreTrimmed)
+    for (const dropped of restored.droppedFields) {
+      toast.message(copy.modelTableDraftRestoreFieldDropped(dropped.attributeKey, dropped.field))
+    }
   }, [selectionKey, draftScope?.userId, draftScope?.workspaceId, selection, defs])
 
   const rows = useMemo(() => {
@@ -271,8 +283,73 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
   runRef.current = run
   useEffect(() => onAttributeAction((action) => runRef.current(action)), [])
 
+  const allAttributeRows = useMemo(
+    () => attributeRows(defs, selection, uiLanguage).map((row) => detailRow(defs, row)),
+    [defs, selection],
+  )
+
+  const recordRowPatches = (
+    rowId: string,
+    server: AttributeTableRow,
+    draft: AttributeTableRow,
+    current: AttributeTableDraftPatches,
+  ): AttributeTableDraftPatches[string] | undefined => {
+    const prior = current[rowId] ?? {}
+    const next: AttributeTableDraftPatches[string] = {}
+    let has = false
+    for (const field of PATCHABLE_ATTRIBUTE_FIELDS) {
+      const value = draft[field]
+      const serverBase = server[field]
+      if (value !== serverBase) {
+        next[field] = { base: prior[field]?.base ?? serverBase, value }
+        has = true
+      }
+    }
+    if (draft.key !== server.key) {
+      next.__key = { base: prior.__key?.base ?? server.key, value: draft.key }
+      has = true
+    }
+    return has ? next : undefined
+  }
+
   const patch = (row: AttributeTableRow, change: Partial<AttributeTableRow>) => {
-    setDraftRows((current) => ({ ...current, [row.id]: { ...row, ...change } }))
+    const nextRow = { ...row, ...change }
+    setDraftRows((current) => ({ ...current, [row.id]: nextRow }))
+    const server = allAttributeRows.find((item) => item.id === row.id)
+    if (!server) return
+    setDraftPatches((current) => {
+      const rowPatch = recordRowPatches(row.id, server, nextRow, current)
+      if (!rowPatch) {
+        if (!(row.id in current)) return current
+        const without = { ...current }
+        delete without[row.id]
+        return without
+      }
+      return { ...current, [row.id]: rowPatch }
+    })
+  }
+
+  const applyDraftRowsChange = (next: Record<string, AttributeTableRow>) => {
+    const serverById = new Map(allAttributeRows.map((row) => [row.id, row]))
+    setDraftPatches((current) => {
+      const updated = { ...current }
+      for (const id of Object.keys(updated)) {
+        if (!(id in next) || id === ROW_ORDER_KEY) delete updated[id]
+      }
+      for (const [id, draft] of Object.entries(next)) {
+        if (id === ROW_ORDER_KEY) continue
+        const server = serverById.get(id)
+        if (!server) {
+          delete updated[id]
+          continue
+        }
+        const rowPatch = recordRowPatches(id, server, draft, current)
+        if (rowPatch) updated[id] = rowPatch
+        else delete updated[id]
+      }
+      return updated
+    })
+    setDraftRows(next)
   }
 
   const stageRemove = (row: AttributeTableRow, deleteDefinition: boolean) => {
@@ -286,6 +363,12 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
         delete next[row.id]
         return next
       })
+      setDraftPatches((current) => {
+        if (!(row.id in current)) return current
+        const next = { ...current }
+        delete next[row.id]
+        return next
+      })
       return
     }
     if (deleteDefinition) {
@@ -294,11 +377,6 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
       setPendingDetach((current) => new Set(current).add(row.id))
     }
   }
-
-  const allAttributeRows = useMemo(
-    () => attributeRows(defs, selection, uiLanguage).map((row) => detailRow(defs, row)),
-    [defs, selection],
-  )
 
   const attachStep = (attribute: string) => {
     if (!selection) return { op: 'attach_attribute', attribute }
@@ -417,9 +495,11 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
   }
 
   const draftRowsRef = useRef(draftRows)
+  const draftPatchesRef = useRef(draftPatches)
   const pendingDetachRef = useRef(pendingDetach)
   const pendingDeleteRef = useRef(pendingDelete)
   draftRowsRef.current = draftRows
+  draftPatchesRef.current = draftPatches
   pendingDetachRef.current = pendingDetach
   pendingDeleteRef.current = pendingDelete
 
@@ -431,9 +511,11 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
 
   const discardTableDraft = () => {
     draftRowsRef.current = {}
+    draftPatchesRef.current = {}
     pendingDetachRef.current = new Set()
     pendingDeleteRef.current = new Set()
     setDraftRows({})
+    setDraftPatches({})
     setPendingDetach(new Set())
     setPendingDelete(new Set())
     setMessage('')
@@ -465,8 +547,10 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
       for (const row of Object.values(draftRows)) {
         if ((row as { id?: string }).id === ROW_ORDER_KEY) continue
         const original = existing.get(row.id)
-        if (original) steps.push(...buildUpdateSteps(original, row))
-        else steps.push(...buildCreateSteps(row))
+        if (original) {
+          const effective = applyDraftPatchesToRow(original, draftPatches[row.id])
+          steps.push(...buildUpdateSteps(original, effective))
+        } else steps.push(...buildCreateSteps(row))
       }
       const reorder = buildReorderStep()
       if (reorder) steps.push(reorder)
@@ -496,13 +580,19 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
       clearStoredModelTableDraft(draftScope.userId, draftScope.workspaceId, selectionKey)
       return
     }
-    writeStoredModelTableDraft(draftScope.userId, draftScope.workspaceId, selectionKey, {
-      v: 1,
-      draftRows: draftRows as Record<string, StoredAttributeTableRow | unknown>,
-      pendingDetach: [...pendingDetach],
-      pendingDelete: [...pendingDelete],
-    })
-  }, [draftRows, pendingDetach, pendingDelete, draftScope?.userId, draftScope?.workspaceId, selectionKey])
+    writeStoredModelTableDraft(
+      draftScope.userId,
+      draftScope.workspaceId,
+      selectionKey,
+      serializeModelTableDraftForStorage({
+        draftRows: draftRows as Record<string, StoredAttributeTableRow>,
+        draftPatches,
+        pendingDetach: [...pendingDetach],
+        pendingDelete: [...pendingDelete],
+        defs,
+      }),
+    )
+  }, [draftRows, draftPatches, pendingDetach, pendingDelete, draftScope?.userId, draftScope?.workspaceId, selectionKey, defs])
 
   if (!selection) {
     return (
@@ -666,7 +756,7 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
         columns={columns}
         rows={rows}
         draftRows={draftRows}
-        onDraftRowsChange={setDraftRows}
+        onDraftRowsChange={applyDraftRowsChange}
         onNewRow={() => run('new')}
         newRowLabel={copy.newAttribute}
         filterValue={filter}
