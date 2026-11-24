@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Lock, MoreHorizontal } from 'lucide-react'
-import { ApiError, api, textValue, type Json } from './api'
+import { ApiError, api, jsonRecord, textValue, type Json } from './api'
+import { rowsFromCatalog } from './attribute-rows'
 import { formatCount } from './format'
 import { Button } from './components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './components/ui/dropdown-menu'
@@ -32,6 +33,7 @@ import {
   type StoredAttributeTableRow,
 } from './model-table-draft-persist'
 import { registerModelTableDraft, tryChooseModelSelection } from './model-table-draft'
+import { buildAttributeCreateSteps, buildAttributeUpdateSteps } from './attribute-table-steps'
 import { toast } from 'sonner'
 import { CreateDialog, requireText } from './create-dialog'
 import { onAttributeAction, type AttributeAction } from './attribute-actions'
@@ -105,6 +107,62 @@ type AttributeTableRow = AttributeRow & {
   min: string
   max: string
   valueList: string
+  integer: boolean
+  maxLength: string
+  textForm: string
+  media: boolean
+}
+
+const RULE_COLUMN_IDS = new Set([
+  'multiple',
+  'filterable',
+  'sortable',
+  'min',
+  'max',
+  'integer',
+  'maxLength',
+  'textForm',
+  'media',
+  'valueList',
+])
+
+function ruleColumnApplies(columnId: string, kind: string) {
+  switch (columnId) {
+    case 'min':
+    case 'max':
+    case 'integer':
+      return kind === 'number'
+    case 'maxLength':
+    case 'textForm':
+      return kind === 'text'
+    case 'media':
+      return kind === 'file_ref'
+    case 'valueList':
+      return kind === 'value_list'
+    case 'multiple':
+    case 'filterable':
+    case 'sortable':
+      return true
+    default:
+      return true
+  }
+}
+
+const decimalPattern = /^-?\d+(\.\d+)?$/
+const positiveIntegerPattern = /^[1-9]\d*$/
+
+function validateDecimal(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) return undefined
+  if (!decimalPattern.test(trimmed)) return copy.linkFieldNumber
+  return undefined
+}
+
+function validateMaxLength(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) return undefined
+  if (!positiveIntegerPattern.test(trimmed)) return copy.enterPositiveInteger
+  return undefined
 }
 
 function detailRow(defs: Json | undefined, row: AttributeRow): AttributeTableRow {
@@ -112,6 +170,7 @@ function detailRow(defs: Json | undefined, row: AttributeRow): AttributeTableRow
     (item) => String(item.id ?? '') === row.id || String(item.key ?? '') === row.key,
   )
   const kind = (raw?.kind as Json) ?? {}
+  const kindName = String(kind.type ?? row.kind)
   return {
     ...row,
     standard: standardAttribute(row.id),
@@ -119,6 +178,11 @@ function detailRow(defs: Json | undefined, row: AttributeRow): AttributeTableRow
     min: kind.min === null || kind.min === undefined ? '' : String(kind.min),
     max: kind.max === null || kind.max === undefined ? '' : String(kind.max),
     valueList: String(kind.list ?? ''),
+    integer: kindName === 'number' && Boolean(kind.integer),
+    maxLength:
+      kind.max_length === null || kind.max_length === undefined ? '' : String(kind.max_length),
+    textForm: String(kind.form ?? ''),
+    media: kindName === 'file_ref' && Boolean(kind.media),
   }
 }
 
@@ -128,14 +192,10 @@ function errorText(reason: unknown) {
 
 function AttributeMenu({
   row,
-  lists,
-  onPatch,
   onDetach,
   onDelete,
 }: {
   row: AttributeTableRow
-  lists: string[]
-  onPatch: (patch: Partial<AttributeTableRow>) => void
   onDetach?: () => void
   onDelete?: () => void
 }) {
@@ -145,42 +205,6 @@ function AttributeMenu({
         <MoreHorizontal size={14} aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" onClick={(event) => event.stopPropagation()}>
-        {row.kind === 'number' ? (
-          <div className="attr-menu-field" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
-            <label>
-              {copy.min}
-              <input aria-label={copy.min} value={row.min} onChange={(event) => onPatch({ min: event.target.value })} />
-            </label>
-            <label>
-              {copy.max}
-              <input aria-label={copy.max} value={row.max} onChange={(event) => onPatch({ max: event.target.value })} />
-            </label>
-          </div>
-        ) : null}
-        {row.kind === 'value_list' ? (
-          <div className="attr-menu-field" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
-            <label>
-              {copy.valueList}
-              <select
-                aria-label={copy.valueList}
-                value={row.valueList || 'none'}
-                onChange={(event) => onPatch({ valueList: event.target.value === 'none' ? '' : event.target.value })}
-              >
-                <option value="none">{copy.noValue}</option>
-                {lists.map((list) => <option key={list} value={list}>{list}</option>)}
-              </select>
-            </label>
-          </div>
-        ) : null}
-        <DropdownMenuItem onSelect={(event) => { event.preventDefault(); onPatch({ multiple: !row.multiple }) }}>
-          {copy.multiple}{row.multiple ? ' · on' : ''}
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={(event) => { event.preventDefault(); onPatch({ filterable: !row.filterable }) }}>
-          {copy.filterable}{row.filterable ? ' · on' : ''}
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={(event) => { event.preventDefault(); onPatch({ sortable: !row.sortable }) }}>
-          {copy.sortable}{row.sortable ? ' · on' : ''}
-        </DropdownMenuItem>
         {onDetach ? <DropdownMenuItem onSelect={onDetach}>{copy.removeFromThisType}</DropdownMenuItem> : null}
         {onDelete ? <DropdownMenuItem onSelect={onDelete}>{copy.deleteAttributeEverywhere}</DropdownMenuItem> : null}
       </DropdownMenuContent>
@@ -190,6 +214,18 @@ function AttributeMenu({
 
 function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftScope?: ModelTableDraftScope }) {
   const queryClient = useQueryClient()
+  const listed = useQuery({
+    queryKey: ['attribute-definitions'],
+    queryFn: () => api.post('/v1/operations/{name}', {
+      params: { path: { name: 'model.list_attribute_definitions' } },
+      body: {},
+    }),
+  })
+  const objectCountsById = useMemo(() => {
+    const catalog = jsonRecord(listed.data)
+    if (!catalog) return new Map<string, number>()
+    return new Map(rowsFromCatalog(catalog).map((row) => [row.id, row.objects]))
+  }, [listed.data])
   const { selection } = useModelSelection()
   const [filter, setFilter] = useState('')
   const [draftRows, setDraftRows] = useState<Record<string, AttributeTableRow>>({})
@@ -200,6 +236,7 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
   const [createOpen, setCreateOpen] = useState(false)
   const [createName, setCreateName] = useState('')
   const [createKind, setCreateKind] = useState('text')
+  const [createValueList, setCreateValueList] = useState('')
   const [pendingKey, setPendingKey] = useState<string | null>(null)
   const [activeRowId, setActiveRowId] = useState<string | null>(null)
   const restoredDraftToken = useRef('')
@@ -276,6 +313,7 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
     if (action !== 'new') return
     setCreateName('')
     setCreateKind('text')
+    setCreateValueList('')
     setCreateOpen(true)
   }
 
@@ -384,81 +422,11 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
     return { op: 'attach_attribute', attribute, structure: selection.structure, group: selection.group }
   }
 
-  const buildCreateSteps = (row: AttributeTableRow) => {
-    const label = row.label.trim()
-    const key = row.key.trim() || attributeKey(label)
-    if (!label || !key) return [] as Array<{ op: string } & Record<string, unknown>>
-    const unit = row.kind === 'number' || row.kind === 'range' ? row.unit : ''
-    if (attributeConflict(defs, key, row.kind, unit)) throw new Error(copy.conflictAttribute)
-    const exists = ((defs?.attributes as Json[]) ?? []).some((item) => String(item.key) === key)
-    const steps: Array<{ op: string } & Record<string, unknown>> = []
-    if (!exists) {
-      steps.push({
-        op: 'create_attribute',
-        key,
-        label,
-        kind: row.kind,
-        ...(unit ? { unit } : {}),
-        multiple: row.multiple,
-        languages: row.kind === 'text' ? row.languages : false,
-        required: row.required,
-        show_by_default: row.showByDefault,
-        searchable: row.searchable,
-        filterable: row.filterable,
-        sortable: row.sortable,
-        ...(row.kind === 'number' && row.min.trim() ? { min: row.min.trim() } : {}),
-        ...(row.kind === 'number' && row.max.trim() ? { max: row.max.trim() } : {}),
-        ...(row.kind === 'value_list' && row.valueList ? { value_list: row.valueList } : {}),
-      })
-    }
-    steps.push(attachStep(key))
-    return steps
-  }
+  const buildCreateSteps = (row: AttributeTableRow) =>
+    buildAttributeCreateSteps(defs, row, attachStep(row.key.trim() || attributeKey(row.label)))
 
-  const buildUpdateSteps = (original: AttributeTableRow, row: AttributeTableRow) => {
-    const steps: Array<{ op: string } & Record<string, unknown>> = []
-    const patch: Json = {}
-    const nextKey = row.key.trim()
-    const canRenameKey = !original.standard && original.id !== keyAttribute
-    if (canRenameKey && nextKey && nextKey !== original.key) {
-      steps.push({ op: 'rename_attribute_key', key: original.key, new_key: nextKey })
-    }
-    const key = canRenameKey && nextKey ? nextKey : original.key
-    const label = row.label.trim()
-    if (label && label !== original.label) patch.label = label
-    if (row.kind !== original.kind) {
-      patch.kind = row.kind
-      if (row.kind !== 'number' && row.kind !== 'range') patch.clear_unit = true
-    }
-    const unitKind = row.kind === 'number' || row.kind === 'range'
-    if (unitKind && row.unit !== original.unit) {
-      if (row.unit) patch.unit = row.unit
-      else patch.clear_unit = true
-    }
-    if (row.required !== original.required) patch.required = row.required
-    if (row.showByDefault !== original.showByDefault) patch.show_by_default = row.showByDefault
-    if (row.languages !== original.languages) patch.languages = row.languages
-    if (row.searchable !== original.searchable) patch.searchable = row.searchable
-    if (row.filterable !== original.filterable) patch.filterable = row.filterable
-    if (row.sortable !== original.sortable) patch.sortable = row.sortable
-    if (row.multiple !== original.multiple) patch.multiple = row.multiple
-    if (row.kind === 'number') {
-      if (row.min !== original.min) {
-        if (row.min.trim()) patch.min = row.min.trim()
-        else if (original.min) patch.clear_min = true
-      }
-      if (row.max !== original.max) {
-        if (row.max.trim()) patch.max = row.max.trim()
-        else if (original.max) patch.clear_max = true
-      }
-    }
-    if (row.kind === 'value_list' && row.valueList !== original.valueList) {
-      if (row.valueList) patch.value_list = row.valueList
-      else if (original.valueList) patch.clear_value_list = true
-    }
-    if (Object.keys(patch).length > 0) steps.push({ op: 'update_attribute', key, ...patch })
-    return steps
-  }
+  const buildUpdateSteps = (original: AttributeTableRow, row: AttributeTableRow) =>
+    buildAttributeUpdateSteps(defs, original, row, keyAttribute ?? '')
 
   const buildReorderStep = () => {
     if (!selection || selection.kind !== 'type') return null
@@ -640,9 +608,17 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
       write: (row, value) => ({
         ...row,
         kind: value,
-        ...(value === 'number' || value === 'range' ? {} : { unit: '', min: '', max: '', valueList: '' }),
+        ...(value === 'number' || value === 'range' ? {} : { unit: '' }),
+        ...(value === 'number' ? {} : { min: '', max: '', integer: false }),
+        ...(value === 'text' ? {} : { maxLength: '', textForm: '' }),
+        ...(value === 'file_ref' ? {} : { media: false }),
+        ...(value === 'value_list' ? {} : { valueList: '' }),
       }),
-      display: (row) => kindLabel(row.kind),
+      display: (row) => (
+        <span title={listed.isSuccess && (objectCountsById.get(row.id) ?? 0) > 0 ? copy.attributeTypeLocked : undefined}>
+          {kindLabel(row.kind)}
+        </span>
+      ),
     },
     {
       id: 'unit',
@@ -690,6 +666,126 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
       read: (row) => row.searchable,
       write: (row, value) => ({ ...row, searchable: value === 'true' }),
     },
+    {
+      id: 'multiple',
+      header: copy.multiple,
+      type: 'boolean',
+      editable: true,
+      display: 'checkbox',
+      width: 84,
+      read: (row) => row.multiple,
+      write: (row, value) => ({ ...row, multiple: value === 'true' }),
+    },
+    {
+      id: 'filterable',
+      header: copy.filterable,
+      type: 'boolean',
+      editable: true,
+      display: 'checkbox',
+      width: 84,
+      read: (row) => row.filterable,
+      write: (row, value) => ({ ...row, filterable: value === 'true' }),
+    },
+    {
+      id: 'sortable',
+      header: copy.sortable,
+      type: 'boolean',
+      editable: true,
+      display: 'checkbox',
+      width: 84,
+      read: (row) => row.sortable,
+      write: (row, value) => ({ ...row, sortable: value === 'true' }),
+    },
+    {
+      id: 'min',
+      header: copy.min,
+      type: 'text',
+      editable: true,
+      width: 72,
+      validate: validateDecimal,
+      read: (row) => row.min,
+      write: (row, value) => ({ ...row, min: value.trim() }),
+      hideCell: (row) => !ruleColumnApplies('min', row.kind),
+      display: (row) => <span>{row.min || '—'}</span>,
+    },
+    {
+      id: 'max',
+      header: copy.max,
+      type: 'text',
+      editable: true,
+      width: 72,
+      validate: validateDecimal,
+      read: (row) => row.max,
+      write: (row, value) => ({ ...row, max: value.trim() }),
+      hideCell: (row) => !ruleColumnApplies('max', row.kind),
+      display: (row) => <span>{row.max || '—'}</span>,
+    },
+    {
+      id: 'integer',
+      header: copy.integer,
+      type: 'boolean',
+      editable: true,
+      display: 'checkbox',
+      width: 72,
+      hideCell: (row) => !ruleColumnApplies('integer', row.kind),
+      read: (row) => row.integer,
+      write: (row, value) => ({ ...row, integer: value === 'true' }),
+    },
+    {
+      id: 'maxLength',
+      header: copy.maxLength,
+      type: 'text',
+      editable: true,
+      width: 88,
+      validate: validateMaxLength,
+      read: (row) => row.maxLength,
+      write: (row, value) => ({ ...row, maxLength: value.trim() }),
+      hideCell: (row) => !ruleColumnApplies('maxLength', row.kind),
+      display: (row) => <span>{row.maxLength || '—'}</span>,
+    },
+    {
+      id: 'textForm',
+      header: copy.textForm,
+      type: 'enum',
+      editable: true,
+      enumSelect: true,
+      width: 108,
+      options: [
+        { value: 'short', label: copy.shortText },
+        { value: 'long', label: copy.longText },
+      ],
+      read: (row) => row.textForm || 'short',
+      write: (row, value) => ({ ...row, textForm: value === 'short' ? '' : value }),
+      hideCell: (row) => !ruleColumnApplies('textForm', row.kind),
+      display: (row) => (
+        <span>{!row.textForm || row.textForm === 'short' ? copy.shortText : copy.longText}</span>
+      ),
+    },
+    {
+      id: 'media',
+      header: copy.media,
+      type: 'boolean',
+      editable: true,
+      display: 'checkbox',
+      width: 72,
+      hideCell: (row) => !ruleColumnApplies('media', row.kind),
+      read: (row) => row.media,
+      write: (row, value) => ({ ...row, media: value === 'true' }),
+    },
+    {
+      id: 'valueList',
+      header: copy.valueList,
+      type: 'enum',
+      editable: true,
+      enumSelect: true,
+      truncate: true,
+      width: 120,
+      options: [{ value: 'none', label: copy.noValue }, ...lists.map((list) => ({ value: list, label: list }))],
+      read: (row) => row.valueList || 'none',
+      write: (row, value) => ({ ...row, valueList: value === 'none' ? '' : value }),
+      hideCell: (row) => !ruleColumnApplies('valueList', row.kind),
+      display: (row) => <span>{row.valueList || '—'}</span>,
+    },
   ]
 
   if (selection.kind === 'group') {
@@ -717,8 +813,6 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
       return (
         <AttributeMenu
           row={row}
-          lists={lists}
-          onPatch={(change) => patch(row, change)}
           onDetach={canChange ? () => { void stageRemove(row, false) } : undefined}
           onDelete={canChange ? () => { void stageRemove(row, true) } : undefined}
         />
@@ -772,6 +866,9 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
         canEdit={(row, column) => {
           if (row.inherited) return false
           if (column.id === 'key' && (row.standard || row.id === keyAttribute)) return false
+          if (column.id === 'kind' && listed.isSuccess && (objectCountsById.get(row.id) ?? 0) > 0) return false
+          if (row.standard && RULE_COLUMN_IDS.has(column.id)) return false
+          if (!ruleColumnApplies(column.id, row.kind)) return false
           if (column.id === 'unit' && row.kind !== 'number' && row.kind !== 'range') return false
           if (column.id === 'languages' && row.kind !== 'text') return false
           return true
@@ -797,10 +894,22 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
             testId: 'new-type',
             options: KINDS.map(([value, label]) => ({ value, label })),
           },
+          ...(createKind === 'value_list'
+            ? [{
+              id: 'valueList',
+              label: copy.valueList,
+              value: createValueList,
+              testId: 'new-value-list',
+              options: lists.map((list) => ({ value: list, label: list })),
+            }]
+            : []),
         ]}
         onField={(id, value) => {
           if (id === 'name') setCreateName(value)
-          else setCreateKind(value)
+          else if (id === 'kind') {
+            setCreateKind(value)
+            if (value !== 'value_list') setCreateValueList('')
+          } else setCreateValueList(value)
         }}
         onClose={() => setCreateOpen(false)}
         onSubmit={async () => {
@@ -809,6 +918,7 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
           if (!key) throw new Error(copy.validation)
           const unit = ''
           if (attributeConflict(defs, key, createKind, unit)) throw new Error(copy.conflictAttribute)
+          if (createKind === 'value_list' && !createValueList.trim()) throw new Error(copy.validation)
           const row: AttributeTableRow = {
             id: key,
             key,
@@ -826,7 +936,11 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
             multiple: false,
             min: '',
             max: '',
-            valueList: '',
+            valueList: createKind === 'value_list' ? createValueList.trim() : '',
+            integer: false,
+            maxLength: '',
+            textForm: '',
+            media: false,
           }
           setDraftRows((current) => ({ ...current, [key]: row }))
           setActiveRowId(key)

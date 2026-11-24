@@ -150,6 +150,20 @@ describe('type attributes table', () => {
       if (path === '/v1/model/draft') return Promise.resolve({ count: 0, conflict: false, steps: [] })
       return Promise.resolve({})
     })
+    mock.methods.post.mockReset().mockImplementation((path: string) => {
+      if (path === '/v1/operations/{name}') {
+        return Promise.resolve({
+          attributes: allAttributes.map((item) => ({
+            id: item.id,
+            key: item.key,
+            label: item.labels?.en,
+            kind: (item.kind as { type?: string })?.type,
+            used_in: { objects: item.key === 'name' ? 5 : 0 },
+          })),
+        })
+      }
+      return Promise.resolve({})
+    })
     mock.methods.put.mockReset()
     mock.methods.post.mockReset()
     stageModel.mockClear()
@@ -351,6 +365,20 @@ describe('attribute row menu', () => {
     mock.methods.get.mockReset().mockImplementation((path: string) => {
       if (path === '/v1/definitions') return Promise.resolve({ ...definitions, attributes: allAttributes })
       if (path === '/v1/model/draft') return Promise.resolve({ count: 0, conflict: false, steps: [] })
+      return Promise.resolve({})
+    })
+    mock.methods.post.mockReset().mockImplementation((path: string) => {
+      if (path === '/v1/operations/{name}') {
+        return Promise.resolve({
+          attributes: allAttributes.map((item) => ({
+            id: item.id,
+            key: item.key,
+            label: item.labels?.en,
+            kind: (item.kind as { type?: string })?.type,
+            used_in: { objects: item.key === 'name' ? 5 : 0 },
+          })),
+        })
+      }
       return Promise.resolve({})
     })
   })
