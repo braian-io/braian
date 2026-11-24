@@ -26,6 +26,7 @@ import {
 } from './model-stage'
 import { describeModelSteps } from './model-step-text'
 import { registerModelDefinitions } from './model-selection'
+import { flushModelTableDraftToStaged } from './model-table-draft'
 import { StateNote } from './states'
 
 export type DraftSaveGate = 'idle' | 'direct' | 'confirm' | 'blocked'
@@ -428,6 +429,13 @@ export function ModelDraftHost() {
     setError('')
     let posted = ''
     try {
+      const flushed = await flushModelTableDraftToStaged()
+      if (!flushed) {
+        if (token === reviewToken.current) {
+          setReviewLoading(false)
+        }
+        return
+      }
       do {
         again.current = false
         // A second stage can land while this loop is running. Collect it rather

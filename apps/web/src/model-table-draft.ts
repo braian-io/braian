@@ -5,6 +5,8 @@ export type ModelTableDraftHandle = {
   dirty: () => boolean
   discard: () => void
   review: () => void | Promise<void>
+  /** Stage local table edits into the model draft without opening review. */
+  flushToDraft?: () => void | Promise<void>
 }
 
 type LeaveRequest = {
@@ -73,6 +75,22 @@ export async function confirmModelTableLeaveReview() {
   leave = null
   notify()
   action()
+}
+
+/** Stage an dirty model table into the shared model draft (Ctrl+S path). */
+export async function flushModelTableDraftToStaged(): Promise<boolean> {
+  if (!active?.dirty()) return true
+  const flush = active.flushToDraft
+  if (!flush) {
+    await Promise.resolve(active.review())
+    return !active?.dirty()
+  }
+  try {
+    await Promise.resolve(flush())
+    return !active?.dirty()
+  } catch {
+    return false
+  }
 }
 
 export function tryChooseModelSelection(next: ModelSelection) {

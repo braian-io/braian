@@ -243,6 +243,7 @@ export function ObjectTypesTable() {
 }
 
 export function LinkTypesTable({ draftScope }: { draftScope?: ModelTableDraftScope }) {
+  const queryClient = useQueryClient()
   const { stored, defs } = useModelDefs()
   const [filter, setFilter] = useState('')
   const { activeRowId, setActiveRowId } = useActiveRowId()
@@ -307,7 +308,7 @@ export function LinkTypesTable({ draftScope }: { draftScope?: ModelTableDraftSco
       clearStoredLinkTypesTableDraft(draftScope.userId, draftScope.workspaceId)
     }
   }, [draftScope?.userId, draftScope?.workspaceId])
-  const reviewDraftRows = useCallback(async () => {
+  const flushLinkTypesDraft = useCallback(async () => {
     const steps: Array<{ op: string } & Record<string, unknown>> = []
     for (const row of Object.values(draftRows)) {
       const server = serverRows.find((item) => item.id === row.id)
@@ -319,17 +320,23 @@ export function LinkTypesTable({ draftScope }: { draftScope?: ModelTableDraftSco
     }
     if (steps.length > 0) await stageModelSteps(steps)
     discardDraft()
+    await queryClient.invalidateQueries({ queryKey: ['model-draft'] })
+  }, [discardDraft, draftRows, queryClient, serverRows])
+
+  const reviewDraftRows = useCallback(async () => {
+    await flushLinkTypesDraft()
     await reviewDraft()
-  }, [discardDraft, draftRows, serverRows])
+  }, [flushLinkTypesDraft])
 
   useEffect(() => {
     registerModelTableDraft({
       dirty,
       discard: discardDraft,
       review: reviewDraftRows,
+      flushToDraft: flushLinkTypesDraft,
     })
     return () => registerModelTableDraft(null)
-  }, [dirty, discardDraft, reviewDraftRows])
+  }, [dirty, discardDraft, flushLinkTypesDraft, reviewDraftRows])
 
   useEffect(() => {
     if (!pendingKey) return

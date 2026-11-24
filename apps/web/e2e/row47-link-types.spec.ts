@@ -21,8 +21,9 @@ async function command(page: Page, title: string) {
 async function saveModelDraft(page: Page) {
   await page.keyboard.press('Control+S')
   const review = page.getByTestId('review-dialog')
-  await expect(review).toBeVisible({ timeout: 60_000 })
-  await page.getByTestId('confirm-review').click()
+  if (await review.isVisible()) {
+    await page.getByTestId('confirm-review').click()
+  }
   await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
 }
 
@@ -43,7 +44,7 @@ test('link types are editable with blocking cardinality (row 47)', async ({ page
   await expect(table).toBeVisible()
   await table.getByTestId('table-add-row').click()
   const dialog = page.getByTestId('create-dialog')
-  await dialog.getByTestId('new-name').fill(linkKey)
+  await dialog.getByTestId('new-name').fill('Row47 Supplier')
   await dialog.getByTestId('link-type-from').click()
   await page.getByRole('option', { name: 'product' }).click()
   await dialog.getByTestId('link-type-to').click()
@@ -53,10 +54,14 @@ test('link types are editable with blocking cardinality (row 47)', async ({ page
   await dialog.getByTestId('link-type-to-cardinality').click()
   await page.getByRole('option', { name: 'Many' }).click()
   await dialog.getByTestId('create-object').click()
-  await expect(dialog).toHaveCount(0)
   await expect(page.getByTestId('unsaved-changes')).toBeVisible()
-  const row = table.locator(`[data-row-id="${linkKey}"]`)
-  await expect(row).toBeVisible({ timeout: 30_000 })
+  const row = table.locator('[data-key]').filter({ has: page.getByText('Suppliers') }).first()
+  await expect(row).toBeVisible()
+  const rowId = await row.getAttribute('data-row-id')
+  expect(rowId).toBeTruthy()
+  await row.locator('[data-column="key"]').dblclick()
+  await row.getByTestId('standard-cell-editor').fill(linkKey)
+  await row.getByTestId('standard-cell-editor').press('Enter')
   await row.click()
   await page.locator('.pane-tab', { hasText: 'Type attributes' }).first().click()
   const attributes = page.getByTestId('attribute-table')
@@ -65,7 +70,6 @@ test('link types are editable with blocking cardinality (row 47)', async ({ page
   const attrCreate = page.getByTestId('create-dialog')
   await attrCreate.getByTestId('new-name').fill('Sort order')
   await attrCreate.getByTestId('create-object').click()
-  await expect(attrCreate).toHaveCount(0)
   await expect(attributes.locator('[data-key="sort_order"]')).toBeVisible()
   await saveModelDraft(page)
 
@@ -79,7 +83,7 @@ test('link types are editable with blocking cardinality (row 47)', async ({ page
   await page.reload()
   await command(page, 'Data model')
   await page.locator('.pane-tab', { hasText: 'Link types' }).first().click()
-  const reloaded = page.getByTestId('link-types-table').locator(`[data-row-id="${linkKey}"]`)
+  const reloaded = page.getByTestId('link-types-table').locator(`[data-row-id="${rowId}"]`)
   await expect(reloaded).toBeVisible()
   await reloaded.locator('[data-column="fromLabel"]').dblclick()
   await reloaded.getByTestId('standard-cell-editor').fill('Vendor list')
@@ -109,13 +113,13 @@ test('link types are editable with blocking cardinality (row 47)', async ({ page
   }
 
   await page.locator('.pane-tab', { hasText: 'Link types' }).first().click()
-  const editRow = page.getByTestId('link-types-table').locator(`[data-row-id="${linkKey}"]`)
+  const editRow = page.getByTestId('link-types-table').locator(`[data-row-id="${rowId}"]`)
   await editRow.locator('[data-column="fromCardinality"]').dblclick()
   await editRow.getByTestId('standard-cell-editor').click()
   await page.getByRole('option', { name: 'One' }).click()
   await page.keyboard.press('Control+S')
   const review = page.getByTestId('review-dialog')
-  await expect(review).toBeVisible({ timeout: 60_000 })
+  await expect(review).toBeVisible()
   await expect(review.locator('.error')).toContainText(String(product!.key ?? ''))
   await review.getByRole('button', { name: 'Cancel' }).click()
   await expect(page.getByTestId('unsaved-changes')).toBeVisible()

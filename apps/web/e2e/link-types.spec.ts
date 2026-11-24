@@ -19,17 +19,6 @@ async function command(page: Page, title: string) {
   await page.keyboard.press('Enter')
 }
 
-async function ensureNoteAttribute(page: Page) {
-  const defs = (await (await page.request.get('/v1/definitions')).json()) as { attributes?: Array<{ key?: string }> }
-  if (defs.attributes?.some((item) => item.key === 'note')) return
-  const staged = await page.request.post('/v1/model/draft/steps', {
-    data: { operation: 'model.create_attribute', args: { key: 'note', label: 'Note', kind: 'text' } },
-  })
-  expect(staged.ok(), await staged.text()).toBeTruthy()
-  const saved = await page.request.post('/v1/model/draft/save', { data: {} })
-  expect(saved.ok(), await saved.text()).toBeTruthy()
-}
-
 async function openObject(page: Page, key: string) {
   await expect(page.getByTestId('workspace')).toBeVisible()
   await page.keyboard.press('Control+K')
@@ -65,17 +54,18 @@ test('pairs with links two cheeses from the keyboard and the link type can be de
   const linkTypeRow = page.getByTestId('link-types-table').locator('[data-row-id="pairs_with"]')
   await page.locator('.pane-tab', { hasText: 'Link types' }).first().click()
   await expect(linkTypeRow).toBeVisible()
-  const attachNote = await page.request.post('/v1/model/draft/steps', {
-    data: {
-      steps: [
-        { op: 'create_attribute', key: 'note', label: 'Note', kind: 'text' },
-        { op: 'attach_attribute', attribute: 'note', type_key: 'pairs_with' },
-      ],
-    },
-  })
-  expect(attachNote.ok(), await attachNote.text()).toBeTruthy()
-  const saved = await page.request.post('/v1/model/draft/save', { data: {} })
-  expect(saved.ok(), await saved.text()).toBeTruthy()
+  await linkTypeRow.click()
+  await page.locator('.pane-tab', { hasText: 'Type attributes' }).first().click()
+  const attributes = page.getByTestId('attribute-table')
+  await expect(attributes).toBeVisible()
+  await attributes.getByTestId('table-add-row').click()
+  const create = page.getByTestId('create-dialog')
+  await create.getByTestId('new-name').fill('Note')
+  await create.getByTestId('create-object').click()
+  await expect(attributes.locator('[data-key="note"]')).toBeVisible()
+  await page.keyboard.press('Control+S')
+  await page.getByTestId('confirm-review').click()
+  await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
 
   const productsTab = page.locator('nav.tabs').getByRole('button', { name: /^Products/ })
   await productsTab.click()
@@ -151,7 +141,7 @@ test('removing a link with values opens a plain confirm with no text input', asy
     await openObject(page, from.key!)
 
     const linkRow = page.getByTestId('link-row').filter({ hasText: to.key! }).first()
-    await expect(linkRow).toBeVisible({ timeout: 30_000 })
+    await expect(linkRow).toBeVisible()
     await linkRow.click({ button: 'right' })
     await page.getByTestId('context-menu').getByRole('menuitem', { name: 'Remove link' }).click()
 
@@ -166,7 +156,7 @@ test('removing a link with values opens a plain confirm with no text input', asy
     await expect(dialog).toBeHidden()
     await expect(linkRow).toHaveCount(0)
   } finally {
-    await page.request.delete(`/v1/link-types/${key}`, { timeout: 30_000 }).catch(() => undefined)
+    await page.request.delete(`/v1/link-types/${key}`).catch(() => undefined)
   }
 })
 
@@ -202,24 +192,24 @@ test('removing a link updates the peer list at once and Undo brings the row back
   await expect(productsTab).toHaveClass(/active/)
   const products = mainTable(page, 'Products')
   const articles = paneWithTab(page, 'Articles').getByTestId('object-table').first()
-  await expect(products).toBeVisible({ timeout: 60_000 })
-  await expect(articles).toBeVisible({ timeout: 60_000 })
+  await expect(products).toBeVisible()
+  await expect(articles).toBeVisible()
 
   await products.getByTestId('quick-filter').first().fill(product.key!)
   const productRow = products.locator(`#object-row-${product.id}`)
-  await expect(productRow).toBeVisible({ timeout: 30_000 })
+  await expect(productRow).toBeVisible()
   await productRow.click()
   await expect(productRow).toHaveAttribute('aria-selected', 'true')
   await page.locator('[data-view-type="object_detail"]').first().click()
 
   const removed = linked[0]!
   const removedRow = articles.locator(`#object-row-${removed.peer_id}`)
-  await expect(removedRow).toBeVisible({ timeout: 30_000 })
+  await expect(removedRow).toBeVisible()
 
   const detail = page.getByTestId('object-detail')
   await expect(detail).toBeVisible()
   const linkRow = detail.getByTestId('link-row').filter({ hasText: removed.peer_key }).first()
-  await expect(linkRow).toBeVisible({ timeout: 30_000 })
+  await expect(linkRow).toBeVisible()
   await linkRow.click({ button: 'right' })
   await page.getByTestId('context-menu').getByRole('menuitem', { name: 'Remove link' }).click()
   const confirm = page.getByTestId('link-confirm')
@@ -228,7 +218,7 @@ test('removing a link updates the peer list at once and Undo brings the row back
     await expect(confirm).toBeHidden()
   }
 
-  await expect(removedRow).toHaveCount(0, { timeout: 30_000 })
+  await expect(removedRow).toHaveCount(0)
   await page.getByRole('button', { name: 'Undo' }).click()
-  await expect(removedRow).toBeVisible({ timeout: 30_000 })
+  await expect(removedRow).toBeVisible()
 })

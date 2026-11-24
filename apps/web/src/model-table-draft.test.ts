@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   cancelModelTableLeave,
   confirmModelTableLeaveDiscard,
+  flushModelTableDraftToStaged,
   modelTableLeaveRequest,
   registerModelTableDraft,
   tryChooseModelSelection,
@@ -42,6 +43,25 @@ describe('model table draft guard', () => {
     expect(modelTableLeaveRequest()).toBeTruthy()
     registerModelTableDraft(null)
     expect(modelTableLeaveRequest()).toBeNull()
+  })
+
+  it('flushToDraft stages without calling review', async () => {
+    let dirty = true
+    const flush = vi.fn(async () => {
+      dirty = false
+    })
+    const review = vi.fn(async () => undefined)
+    registerModelTableDraft({
+      dirty: () => dirty,
+      discard: () => {
+        dirty = false
+      },
+      review,
+      flushToDraft: flush,
+    })
+    await expect(flushModelTableDraftToStaged()).resolves.toBe(true)
+    expect(flush).toHaveBeenCalled()
+    expect(review).not.toHaveBeenCalled()
   })
 
   it('blocks selection and discard clears the draft before navigating', () => {
