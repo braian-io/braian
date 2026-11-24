@@ -410,6 +410,11 @@ test('Link types create dialog', async ({ page }) => {
   const table = page.getByTestId('link-types-table')
   const suffix = Date.now().toString().slice(-6)
   const key = `bundled_${suffix}`
+  const failureFields = {
+    'new-name': 'Duplicate link',
+    'link-type-from-label': 'Duplicate out',
+    'link-type-to-label': 'Duplicate in',
+  }
   const successFields = {
     'new-name': `Bundled ${suffix}`,
     'link-type-from-label': 'Bundled out',
@@ -437,12 +442,43 @@ test('Link types create dialog', async ({ page }) => {
   await expect(dialog).toHaveCount(0)
   await expect(opener).toBeFocused()
 
+  const stopHeld = await rejectWrites(page, '**/v1/model/draft/steps', true)
   await opener.click()
   await expect(dialog).toBeVisible()
-  await fill(dialog, { 'new-name': 'Duplicate link' })
+  await fill(dialog, failureFields)
+  await linkTypeDialogReady(dialog)
+  await page.keyboard.press('Enter')
+  await expect(dialog.getByTestId('create-object')).toBeDisabled()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  await expect(opener).toBeFocused()
+  await stopHeld()
+
+  const stop = await rejectWrites(page, '**/v1/model/draft/steps', false)
+  await opener.click()
+  await expect(dialog).toBeVisible()
+  await fill(dialog, failureFields)
+  await linkTypeDialogReady(dialog)
+  await page.keyboard.press('Enter')
+  const alert = dialog.getByRole('alert')
+  await expect(alert).toBeVisible()
+  await expect(alert).toContainText('number already exists')
+  for (const [testId, value] of Object.entries(failureFields)) {
+    await expect(dialog.getByTestId(testId)).toHaveValue(value)
+  }
+  await dialog.getByTestId('new-name').focus()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  await expect(opener).toBeFocused()
+  await stop()
+
+  await opener.click()
+  await expect(dialog).toBeVisible()
+  await fill(dialog, failureFields)
   await linkTypeDialogReady(dialog)
   await dialog.getByTestId('create-cancel').click()
   await expect(dialog).toHaveCount(0)
+  await expect(opener).toBeFocused()
 
   await opener.click()
   await expect(dialog).toBeVisible()
