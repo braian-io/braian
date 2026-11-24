@@ -77,6 +77,8 @@ test('link types are editable with blocking cardinality (row 47)', async ({ page
   await attributes.getByTestId('table-add-row').click()
   const attrCreate = page.getByTestId('create-dialog')
   await attrCreate.getByTestId('new-name').fill(rankKey)
+  await attrCreate.getByTestId('new-type').click()
+  await page.getByRole('option', { name: 'Number' }).click()
   await attrCreate.getByTestId('create-object').click()
   await expect(attrCreate).toHaveCount(0)
   await expect(attributes.locator(`[data-key="${rankKey}"]`)).toBeVisible()
@@ -114,7 +116,7 @@ test('link types are editable with blocking cardinality (row 47)', async ({ page
         type: linkKey,
         from_id: product!.id,
         to_id: supplier!.id,
-        values: { [rankKey]: 1 },
+        values: { [rankKey]: { value: 1 } },
       },
     })
     expect(linked.ok(), await linked.text()).toBeTruthy()
