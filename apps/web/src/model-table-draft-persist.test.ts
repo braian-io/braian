@@ -86,12 +86,76 @@ describe('model table draft persistence', () => {
       defs,
     })
     writeStoredModelTableDraft('user', 'ws', 'product', payload, storage)
-    const read = readStoredModelTableDraft('user', 'ws', 'product', storage)
-    expect(read?.v).toBe(2)
-    expect((read?.draftRows.new_attr as StoredAttributeTableRow).key).toBe('new_attr')
+    expect(readStoredModelTableDraft('user', 'ws', 'product', storage)).toEqual(payload)
     clearStoredModelTableDraft('user', 'ws', 'product', storage)
     expect(readStoredModelTableDraft('user', 'ws', 'product', storage)).toBeNull()
     expect(modelTableDraftStorageKey('u', 'w', 'k')).toBe('braian.model-table-draft.u.w.k')
+  })
+
+  it('reads v1 full-row snapshots and re-serializes them as v2 field patches', () => {
+    const storage = window.localStorage
+    const createRow: StoredAttributeTableRow = {
+      id: 'new_attr',
+      key: 'new_attr',
+      label: 'New',
+      kind: 'text',
+      unit: '',
+      required: false,
+      showByDefault: true,
+      languages: false,
+      searchable: false,
+      filterable: false,
+      sortable: false,
+      inherited: false,
+      standard: false,
+      multiple: false,
+      min: '',
+      max: '',
+      valueList: '',
+    }
+    const v1: StoredModelTableDraft = {
+      v: 1,
+      draftRows: {
+        a1: serverRow({ label: 'Brand edited', searchable: true }),
+        new_attr: createRow,
+      },
+      pendingDetach: [],
+      pendingDelete: [],
+    }
+    writeStoredModelTableDraft('user', 'ws', 'product', v1, storage)
+    expect(readStoredModelTableDraft('user', 'ws', 'product', storage)).toEqual(v1)
+
+    const restored = validateStoredModelTableDraft(v1, defs, selection)
+    expect(restored.draftRows.a1).toMatchObject({ label: 'Brand edited', searchable: true })
+    expect(restored.draftPatches.a1?.searchable).toEqual({ base: false, value: true })
+    expect(restored.draftPatches.a1?.label).toEqual({ base: 'Brand', value: 'Brand edited' })
+    expect(restored.draftRows.new_attr).toEqual(createRow)
+
+    const v2 = serializeModelTableDraftForStorage({
+      draftRows: restored.draftRows,
+      draftPatches: restored.draftPatches,
+      pendingDetach: restored.pendingDetach,
+      pendingDelete: restored.pendingDelete,
+      defs,
+    })
+    expect(v2).toEqual({
+      v: 2,
+      draftRows: {
+        a1: {
+          patch: true,
+          id: 'a1',
+          key: 'brand',
+          changes: {
+            label: { base: 'Brand', value: 'Brand edited' },
+            searchable: { base: false, value: true },
+          },
+        },
+        new_attr: createRow,
+      },
+      pendingDetach: [],
+      pendingDelete: [],
+    })
+    clearStoredModelTableDraft('user', 'ws', 'product', storage)
   })
 
   it('stores changed fields only for persisted attributes', () => {
