@@ -19,6 +19,26 @@ async function command(page: Page, title: string) {
   await page.keyboard.press('Enter')
 }
 
+async function saveModelDraft(page: Page) {
+  await page.keyboard.press('Control+S')
+  const review = page.getByTestId('review-dialog')
+  if (await review.isVisible()) {
+    await page.getByTestId('confirm-review').click()
+  }
+  await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
+}
+
+async function ensureNoteAttribute(page: Page) {
+  const defs = (await (await page.request.get('/v1/definitions')).json()) as { attributes?: Array<{ key?: string }> }
+  if (defs.attributes?.some((item) => item.key === 'note')) return
+  const staged = await page.request.post('/v1/model/draft/steps', {
+    data: { operation: 'model.create_attribute', args: { key: 'note', label: 'Note', kind: 'text' } },
+  })
+  expect(staged.ok(), await staged.text()).toBeTruthy()
+  const saved = await page.request.post('/v1/model/draft/save', { data: {} })
+  expect(saved.ok(), await saved.text()).toBeTruthy()
+}
+
 async function openObject(page: Page, key: string) {
   await expect(page.getByTestId('workspace')).toBeVisible()
   await page.keyboard.press('Control+K')
@@ -63,9 +83,7 @@ test('pairs with links two cheeses from the keyboard and the link type can be de
   await create.getByTestId('new-name').fill('Note')
   await create.getByTestId('create-object').click()
   await expect(attributes.locator('[data-key="note"]')).toBeVisible()
-  await page.keyboard.press('Control+S')
-  await page.getByTestId('confirm-review').click()
-  await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
+  await saveModelDraft(page)
 
   const productsTab = page.locator('nav.tabs').getByRole('button', { name: /^Products/ })
   await productsTab.click()
@@ -105,6 +123,7 @@ test('pairs with links two cheeses from the keyboard and the link type can be de
 test('removing a link with values opens a plain confirm with no text input', async ({ page }) => {
   test.setTimeout(180_000)
   await login(page)
+  await ensureNoteAttribute(page)
   const key = `rated_with_${crypto.randomUUID().slice(0, 8)}`
   const created = await page.request.post('/v1/link-types', {
     data: {

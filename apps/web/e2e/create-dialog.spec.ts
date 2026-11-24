@@ -410,18 +410,49 @@ test('Link types create dialog', async ({ page }) => {
   const table = page.getByTestId('link-types-table')
   const suffix = Date.now().toString().slice(-6)
   const key = `bundled_${suffix}`
-  await exercise(page, {
-    opener: table.getByTestId('table-add-row'),
-    dialogTestId: 'create-dialog',
-    title: 'New link type',
-    shot: 'new-link-type',
-    firstField: 'new-name',
-    failure: { 'new-name': 'Duplicate link' },
-    success: { 'new-name': `Bundled ${suffix}` },
-    route: '**/v1/model/draft/steps',
-    selected: table.locator(`[data-row-id="${key}"]`),
-  })
-  await expect(table.locator(`[data-row-id="${key}"]`)).toHaveClass(/\bon\b/)
+  const successFields = {
+    'new-name': `Bundled ${suffix}`,
+    'link-type-from-label': 'Bundled',
+    'link-type-to-label': 'Bundled',
+  }
+  const linkTypeDialogReady = async (dialog: Locator) => {
+    await dialog.getByTestId('link-type-from').click()
+    await page.getByRole('option', { name: 'product' }).click()
+    await dialog.getByTestId('link-type-to').click()
+    await page.getByRole('option', { name: 'product' }).click()
+  }
+  const opener = table.getByTestId('table-add-row')
+  await expect(opener).toBeVisible()
+  const dialog = page.getByTestId('create-dialog')
+  await shootThemes(page, opener, dialog, 'new-link-type')
+  await opener.click()
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByRole('heading', { name: 'New link type' })).toBeVisible()
+  const first = dialog.getByTestId('new-name')
+  await expect(first).toBeFocused()
+  await expectFocusBorder(first)
+  await trap(page, dialog)
+  await first.click()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  await expect(opener).toBeFocused()
+
+  await opener.click()
+  await expect(dialog).toBeVisible()
+  await fill(dialog, { 'new-name': 'Duplicate link' })
+  await linkTypeDialogReady(dialog)
+  await dialog.getByTestId('create-cancel').click()
+  await expect(dialog).toHaveCount(0)
+
+  await opener.click()
+  await expect(dialog).toBeVisible()
+  await fill(dialog, successFields)
+  await linkTypeDialogReady(dialog)
+  await dialog.getByTestId('create-object').click()
+  await expect(dialog).toHaveCount(0)
+  const selected = table.locator(`[data-row-id="${key}"]`)
+  await expect(selected).toBeVisible()
+  await expect(selected).toHaveClass(/\bon\b/)
 })
 
 test('Value lists create dialog', async ({ page }) => {
