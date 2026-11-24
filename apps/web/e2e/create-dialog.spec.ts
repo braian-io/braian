@@ -342,7 +342,7 @@ test('From type select stays readable in dark theme', async ({ page }) => {
   const dialog = page.getByTestId('create-dialog')
   await expect(dialog).toBeVisible()
   await expect(dialog.getByRole('heading', { name: 'New link type' })).toBeVisible()
-  const from = dialog.getByTestId('new-type')
+  const from = dialog.getByTestId('link-type-from')
   await expect(from).toBeVisible()
   // Themed Select trigger — not a native <select> that paints white.
   await expect(from).toHaveRole('combobox')
@@ -364,7 +364,7 @@ test('From type select stays readable in dark theme', async ({ page }) => {
   expect(paint.color).toBe(paint.text)
   expect(paint.background).not.toBe('rgb(255, 255, 255)')
   await from.click()
-  const list = page.getByTestId('new-type-list')
+  const list = page.getByTestId('link-type-from-list')
   await expect(list).toBeVisible()
   const listPaint = await list.evaluate((el) => {
     const style = getComputedStyle(el)
@@ -410,18 +410,73 @@ test('Link types create dialog', async ({ page }) => {
   const table = page.getByTestId('link-types-table')
   const suffix = Date.now().toString().slice(-6)
   const key = `bundled_${suffix}`
-  await exercise(page, {
-    opener: table.getByTestId('table-add-row'),
-    dialogTestId: 'create-dialog',
-    title: 'New link type',
-    shot: 'new-link-type',
-    firstField: 'new-name',
-    failure: { 'new-name': 'Duplicate link' },
-    success: { 'new-name': `Bundled ${suffix}` },
-    route: '**/v1/model/draft/steps',
-    selected: table.locator(`[data-row-id="${key}"]`),
-  })
-  await expect(table.locator(`[data-row-id="${key}"]`)).toHaveClass(/\bon\b/)
+  const failureFields = {
+    'new-name': 'Duplicate link',
+    'link-type-from-label': 'Duplicate out',
+    'link-type-to-label': 'Duplicate in',
+  }
+  const successFields = {
+    'new-name': `Bundled ${suffix}`,
+    'link-type-from-label': 'Bundled out',
+    'link-type-to-label': 'Bundled in',
+  }
+  const linkTypeDialogReady = async (dialog: Locator) => {
+    await dialog.getByTestId('link-type-from').click()
+    await page.getByRole('option', { name: 'product' }).click()
+    await dialog.getByTestId('link-type-to').click()
+    await page.getByRole('option', { name: 'product' }).click()
+  }
+  const opener = table.getByTestId('table-add-row')
+  await expect(opener).toBeVisible()
+  const dialog = page.getByTestId('create-dialog')
+  await shootThemes(page, opener, dialog, 'new-link-type')
+  await opener.click()
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByRole('heading', { name: 'New link type' })).toBeVisible()
+  const first = dialog.getByTestId('new-name')
+  await expect(first).toBeFocused()
+  await expectFocusBorder(first)
+  await trap(page, dialog)
+  await first.click()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  await expect(opener).toBeFocused()
+
+  const stop = await rejectWrites(page, '**/v1/model/draft/steps', false)
+  await opener.click()
+  await expect(dialog).toBeVisible()
+  await fill(dialog, failureFields)
+  await linkTypeDialogReady(dialog)
+  await dialog.getByTestId('create-object').click()
+  const alert = dialog.getByRole('alert')
+  await expect(alert).toBeVisible()
+  await expect(alert).toContainText('number already exists')
+  for (const [testId, value] of Object.entries(failureFields)) {
+    await expect(dialog.getByTestId(testId)).toHaveValue(value)
+  }
+  await dialog.getByTestId('new-name').focus()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  await expect(opener).toBeFocused()
+  await stop()
+
+  await opener.click()
+  await expect(dialog).toBeVisible()
+  await fill(dialog, failureFields)
+  await linkTypeDialogReady(dialog)
+  await dialog.getByTestId('create-cancel').click()
+  await expect(dialog).toHaveCount(0)
+  await expect(opener).toBeFocused()
+
+  await opener.click()
+  await expect(dialog).toBeVisible()
+  await fill(dialog, successFields)
+  await linkTypeDialogReady(dialog)
+  await dialog.getByTestId('create-object').click()
+  await expect(dialog).toHaveCount(0)
+  const selected = table.locator(`[data-row-id="${key}"]`)
+  await expect(selected).toBeVisible()
+  await expect(selected).toHaveClass(/\bon\b/)
 })
 
 test('Value lists create dialog', async ({ page }) => {

@@ -275,6 +275,128 @@ impl crate::session::Store {
         let client = self.checkout().await?;
         delete_counts(&**client, id).await
     }
+
+    /// Objects that already have more than one link on the `from` side of this type.
+    pub async fn link_type_from_many_violators(
+        &self,
+        link_type: TypeId,
+        limit: i64,
+    ) -> Result<Vec<LinkViolator>, Error> {
+        let client = self.checkout().await?;
+        link_type_endpoint_many_violators(&**client, link_type, true, limit).await
+    }
+
+    /// Objects that already have more than one link on the `to` side of this type.
+    pub async fn link_type_to_many_violators(
+        &self,
+        link_type: TypeId,
+        limit: i64,
+    ) -> Result<Vec<LinkViolator>, Error> {
+        let client = self.checkout().await?;
+        link_type_endpoint_many_violators(&**client, link_type, false, limit).await
+    }
+
+    /// Live links whose source type is not in `allowed`.
+    pub async fn link_type_invalid_from_types(
+        &self,
+        link_type: TypeId,
+        allowed: &[TypeId],
+        limit: i64,
+    ) -> Result<Vec<LinkViolator>, Error> {
+        let client = self.checkout().await?;
+        link_type_invalid_endpoint_types(&**client, link_type, true, allowed, limit).await
+    }
+
+    /// Live links whose target type is not in `allowed`.
+    pub async fn link_type_invalid_to_types(
+        &self,
+        link_type: TypeId,
+        allowed: &[TypeId],
+        limit: i64,
+    ) -> Result<Vec<LinkViolator>, Error> {
+        let client = self.checkout().await?;
+        link_type_invalid_endpoint_types(&**client, link_type, false, allowed, limit).await
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LinkViolator {
+    pub key: String,
+    pub name: String,
+}
+
+async fn link_type_endpoint_many_violators(
+    client: &impl tokio_postgres::GenericClient,
+    link_type: TypeId,
+    from_side: bool,
+    limit: i64,
+) -> Result<Vec<LinkViolator>, Error> {
+    let endpoint = if from_side { "from_id" } else { "to_id" };
+    let rows = client
+        .query(
+            &format!(
+                "SELECT endpoint.key AS object_key, count(*)::bigint AS link_count
+                 FROM links l
+                 JOIN objects link_obj ON link_obj.id = l.object_id AND link_obj.deleted_at IS NULL
+                 JOIN objects endpoint ON endpoint.id = l.{endpoint} AND endpoint.deleted_at IS NULL
+                 WHERE l.deleted_at IS NULL AND l.link_type_id = $1
+                 GROUP BY endpoint.id, endpoint.key
+                 HAVING count(*) > 1
+                 ORDER BY endpoint.key
+                 LIMIT $2"
+            ),
+            &[&link_type.as_uuid(), &limit],
+        )
+        .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            let key: String = row.get("object_key");
+            LinkViolator {
+                name: key.clone(),
+                key,
+            }
+        })
+        .collect())
+}
+
+async fn link_type_invalid_endpoint_types(
+    client: &impl tokio_postgres::GenericClient,
+    link_type: TypeId,
+    from_side: bool,
+    allowed: &[TypeId],
+    limit: i64,
+) -> Result<Vec<LinkViolator>, Error> {
+    if allowed.is_empty() {
+        return Ok(Vec::new());
+    }
+    let endpoint = if from_side { "from_id" } else { "to_id" };
+    let allowed: Vec<Uuid> = allowed.iter().map(|id| id.as_uuid()).collect();
+    let rows = client
+        .query(
+            &format!(
+                "SELECT DISTINCT endpoint.key AS object_key
+                 FROM links l
+                 JOIN objects link_obj ON link_obj.id = l.object_id AND link_obj.deleted_at IS NULL
+                 JOIN objects endpoint ON endpoint.id = l.{endpoint} AND endpoint.deleted_at IS NULL
+                 WHERE l.deleted_at IS NULL AND l.link_type_id = $1
+                   AND NOT (endpoint.type_id = ANY($2))
+                 ORDER BY endpoint.key
+                 LIMIT $3"
+            ),
+            &[&link_type.as_uuid(), &allowed, &limit],
+        )
+        .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            let key: String = row.get("object_key");
+            LinkViolator {
+                name: key.clone(),
+                key,
+            }
+        })
+        .collect())
 }
 
 async fn valued_ids(

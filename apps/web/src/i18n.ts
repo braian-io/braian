@@ -602,6 +602,8 @@ export const copy = {
   linkTo: 'Link to',
   editLink: 'Edit link attributes',
   linkAttribute: 'Attribute',
+  linkForwardLabel: 'Forward label',
+  linkReverseLabel: 'Reverse label',
   toType: 'To type',
   cardinality: 'Cardinality',
   cardinalityOne: 'One',

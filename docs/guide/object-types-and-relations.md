@@ -138,11 +138,18 @@ plus the row that points from one object to another. The link object can have it
 attribute values. Link objects are keyless and are not listed as normal rows.
 
 Create one from the `Link types` table with `New link type`, or from `Ctrl+K` and `New
-link type`. The dialog asks for `Name`, `From type`, and `To type`; new link types
-start as many-to-many. Cardinality and link attributes are part of the model document
-that Braian loads, but the current dialog does not expose them; it creates a
-many-to-many link type without extra link attributes. Link-type administration lives
-in the model workspace's Link types table.
+link type`. The dialog asks for the link type `Name`, one `From type` and one
+`To type`, a forward and reverse label for each direction, and the cardinality
+(`One` or `Many`) on each side. You can change the same fields later in the
+`Link types` table columns. Pick a link type row and edit its link attributes in
+the `Type attributes` pane, the same way as for object types.
+
+Saving runs through the model draft and the usual review flow. Braian blocks changes
+that would break data already in the database: tightening cardinality to `One` when an
+object already has several links of that type on that side, or narrowing the allowed
+from/to types when existing links would no longer be valid. The review dialog shows the
+blocking message and lists up to twenty offending objects (with more counted after
+that); nothing is saved until the conflict is resolved.
 
 ## Add and remove links
 

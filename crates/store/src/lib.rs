@@ -61,6 +61,7 @@ pub use workspace_templates::WorkspaceTemplateRecord;
 pub mod admin {
     pub use crate::session::{PgConn, create_database, drop_database, parse_config};
 }
+pub use links::LinkViolator;
 pub use types::{
     BulkReport, BulkRowError, ChangeRow, LinkView, ObjectAudit, ObjectOp, ObjectProjection,
     PrincipalRecord, StoredObject, WriteReceipt,

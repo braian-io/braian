@@ -21,6 +21,7 @@ mod headers;
 mod http_schema;
 pub mod import;
 mod keys;
+mod link_type_validate;
 mod links;
 pub mod merge;
 mod model_draft;

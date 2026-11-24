@@ -492,43 +492,50 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
     }
   }
 
+  const flushTableDraftRef = useRef<() => Promise<void>>(async () => {})
+  const flushTableDraftToModel = async () => {
+    const steps: Array<{ op: string } & Record<string, unknown>> = []
+    const existing = new Map(allAttributeRows.map((row) => [row.id, row]))
+    const byId = new Map(allAttributeRows.map((row) => [row.id, row]))
+    for (const id of pendingDelete) {
+      const row = byId.get(id)
+      if (row) steps.push({ op: 'delete_attribute', key: row.key })
+    }
+    for (const id of pendingDetach) {
+      const row = byId.get(id)
+      if (!row || !selection) continue
+      if (selection.kind === 'type') {
+        steps.push({ op: 'detach_attribute', attribute: row.key, type_key: selection.typeKey })
+      } else {
+        steps.push({ op: 'detach_attribute', attribute: row.key, structure: selection.structure, group: selection.group })
+      }
+    }
+    for (const row of Object.values(draftRows)) {
+      if ((row as { id?: string }).id === ROW_ORDER_KEY) continue
+      const original = existing.get(row.id)
+      if (original) {
+        const effective = applyDraftPatchesToRow(original, draftPatches[row.id])
+        steps.push(...buildUpdateSteps(original, effective))
+      } else steps.push(...buildCreateSteps(row))
+    }
+    const reorder = buildReorderStep()
+    if (reorder) steps.push(reorder)
+    if (steps.length === 0) return
+    await stageModelSteps(steps)
+    discardTableDraft()
+    await queryClient.invalidateQueries({ queryKey: ['model-draft'] })
+  }
+  flushTableDraftRef.current = flushTableDraftToModel
+
   const saveRef = useRef<() => Promise<void>>(async () => {})
   const save = async () => {
     setMessage('')
     try {
-      const steps: Array<{ op: string } & Record<string, unknown>> = []
-      const existing = new Map(allAttributeRows.map((row) => [row.id, row]))
-      const byId = new Map(allAttributeRows.map((row) => [row.id, row]))
-      for (const id of pendingDelete) {
-        const row = byId.get(id)
-        if (row) steps.push({ op: 'delete_attribute', key: row.key })
-      }
-      for (const id of pendingDetach) {
-        const row = byId.get(id)
-        if (!row || !selection) continue
-        if (selection.kind === 'type') {
-          steps.push({ op: 'detach_attribute', attribute: row.key, type_key: selection.typeKey })
-        } else {
-          steps.push({ op: 'detach_attribute', attribute: row.key, structure: selection.structure, group: selection.group })
-        }
-      }
-      for (const row of Object.values(draftRows)) {
-        if ((row as { id?: string }).id === ROW_ORDER_KEY) continue
-        const original = existing.get(row.id)
-        if (original) {
-          const effective = applyDraftPatchesToRow(original, draftPatches[row.id])
-          steps.push(...buildUpdateSteps(original, effective))
-        } else steps.push(...buildCreateSteps(row))
-      }
-      const reorder = buildReorderStep()
-      if (reorder) steps.push(reorder)
-      if (steps.length === 0) return
-      await stageModelSteps(steps)
-      discardTableDraft()
-      await queryClient.invalidateQueries({ queryKey: ['model-draft'] })
+      await flushTableDraftRef.current()
       requestReview()
     } catch (reason) {
       setMessage(errorText(reason))
+      throw reason
     }
   }
   saveRef.current = save
@@ -538,6 +545,7 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
       dirty: tableDirty,
       discard: discardTableDraft,
       review: () => saveRef.current(),
+      flushToDraft: () => flushTableDraftRef.current(),
     })
     return () => registerModelTableDraft(null)
   }, [draftRows, pendingDetach, pendingDelete])
