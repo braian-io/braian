@@ -11,7 +11,7 @@ describe('attribute reorder steps', () => {
     ]
     const draftRows = {
       [ROW_ORDER_KEY]: ['1', '3', '2'],
-    } as Record<string, typeof rows[number]>
+    } as unknown as Record<string, typeof rows[number]>
     expect(buildAttributeReorderStep({ kind: 'type', typeKey: 'product' }, rows, draftRows)).toEqual({
       op: 'reorder_type_attributes',
       type_key: 'product',
@@ -27,7 +27,7 @@ describe('attribute reorder steps', () => {
     ]
     const draftRows = {
       [ROW_ORDER_KEY]: ['1', '3', '2'],
-    } as Record<string, typeof rows[number]>
+    } as unknown as Record<string, typeof rows[number]>
     expect(buildAttributeReorderStep({ kind: 'group', structure: 'food', group: 'dairy' }, rows, draftRows)).toEqual({
       op: 'reorder_attributes',
       structure: 'food',

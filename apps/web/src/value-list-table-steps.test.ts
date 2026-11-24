@@ -17,7 +17,7 @@ describe('value list table steps', () => {
   it('detects a reorder and builds update_value_list', () => {
     const draftRows = {
       [ROW_ORDER_KEY]: ['colors:green', 'colors:red', 'colors:blue'],
-    } as Record<string, typeof rows[number]>
+    } as unknown as Record<string, typeof rows[number]>
     expect(valueListOptionsOrderChanged(rows, draftRows)).toBe(true)
     const step = buildValueListReorderStep('colors', rows, draftRows)
     expect(step).toEqual({
@@ -34,7 +34,7 @@ describe('value list table steps', () => {
   it('keeps a single reorder step when labels are unchanged', () => {
     const draftRows = {
       [ROW_ORDER_KEY]: ['colors:blue', 'colors:green', 'colors:red'],
-    } as Record<string, typeof rows[number]>
+    } as unknown as Record<string, typeof rows[number]>
     const steps = valueListOptionSteps('colors', rows, draftRows, 'en')
     expect(steps).toEqual([
       {

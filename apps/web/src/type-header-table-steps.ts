@@ -43,17 +43,20 @@ export function typeHeaderPatchDirty(patch: StoredTypeHeaderPatch | undefined): 
   return false
 }
 
-export function recordTypeHeaderField<T extends string | string[]>(
-  base: T,
-  value: T,
-  prior?: StoredFieldChange | { base: string[]; value: string[] },
-): StoredFieldChange | { base: string[]; value: string[] } | undefined {
-  if (Array.isArray(base) && Array.isArray(value)) {
-    if (sameStructures(base, value)) return undefined
-    const kept = prior && 'base' in prior ? prior : undefined
-    return { base: kept?.base ?? base, value }
-  }
+export function recordTypeHeaderStringField(
+  base: string,
+  value: string,
+  prior?: StoredFieldChange,
+): StoredFieldChange | undefined {
   if (base === value) return undefined
-  const change = prior as StoredFieldChange | undefined
-  return { base: change?.base ?? base, value: value as string | boolean }
+  return { base: String(prior?.base ?? base), value }
+}
+
+export function recordTypeHeaderStructuresField(
+  base: string[],
+  value: string[],
+  prior?: { base: string[]; value: string[] },
+): { base: string[]; value: string[] } | undefined {
+  if (sameStructures(base, value)) return undefined
+  return { base: prior?.base ?? base, value }
 }

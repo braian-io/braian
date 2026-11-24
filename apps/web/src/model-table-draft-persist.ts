@@ -333,7 +333,7 @@ function reconcileTypeHeader(
   server: { singular: string; plural: string; typeKey: string; structures: string[] } | null,
   stored: StoredTypeHeaderPatch | undefined,
 ): { patch?: StoredTypeHeaderPatch; trimmed: boolean } {
-  if (!stored) return {}
+  if (!stored) return { trimmed: false }
   if (!server) return { trimmed: true }
   const kept: StoredTypeHeaderPatch = {}
   let trimmed = false

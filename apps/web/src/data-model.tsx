@@ -35,7 +35,12 @@ import {
 } from './model-table-draft-persist'
 import { buildAttributeReorderStep } from './attribute-reorder-steps'
 import { readModelTableDraftForKey, storageKeyForSelection } from './model-table-draft-storage'
-import { buildTypeHeaderSteps, recordTypeHeaderField, typeHeaderPatchDirty } from './type-header-table-steps'
+import {
+  buildTypeHeaderSteps,
+  recordTypeHeaderStringField,
+  recordTypeHeaderStructuresField,
+  typeHeaderPatchDirty,
+} from './type-header-table-steps'
 import { valueListLabel } from './value-list-table-steps'
 import { registerModelTableDraft, tryChooseModelSelection } from './model-table-draft'
 import { buildAttributeCreateSteps, buildAttributeUpdateSteps } from './attribute-table-steps'
@@ -1026,7 +1031,7 @@ function AllowedTrees({
                 if (event.target.checked) next.add(id)
                 else next.delete(id)
                 const value = [...next]
-                const change = recordTypeHeaderField(base, value, patch.structures)
+                const change = recordTypeHeaderStructuresField(base, value, patch.structures)
                 if (!change) {
                   const { structures, ...rest } = patch
                   onPatch(rest)
@@ -1079,7 +1084,7 @@ function TypeNameFields({
           onChange={(event) => {
             onError('')
             const next = event.target.value
-            const change = recordTypeHeaderField(singularBase, next.trim(), patch.singular)
+            const change = recordTypeHeaderStringField(singularBase, next.trim(), patch.singular)
             if (!change) {
               const { singular, ...rest } = patch
               onPatch(rest)
@@ -1097,7 +1102,7 @@ function TypeNameFields({
           onChange={(event) => {
             onError('')
             const next = event.target.value
-            const change = recordTypeHeaderField(pluralBase, next.trim(), patch.plural)
+            const change = recordTypeHeaderStringField(pluralBase, next.trim(), patch.plural)
             if (!change) {
               const { plural, ...rest } = patch
               onPatch(rest)
@@ -1116,7 +1121,7 @@ function TypeNameFields({
           onChange={(event) => {
             onError('')
             const next = event.target.value.trim()
-            const change = recordTypeHeaderField(typeKey, next, patch.typeKey)
+            const change = recordTypeHeaderStringField(typeKey, next, patch.typeKey)
             if (!change) {
               const { typeKey: _drop, ...rest } = patch
               onPatch(rest)
