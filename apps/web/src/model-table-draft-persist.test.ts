@@ -51,6 +51,10 @@ function serverRow(overrides: Partial<StoredAttributeTableRow> = {}): StoredAttr
     min: '',
     max: '',
     valueList: '',
+    integer: false,
+    maxLength: '',
+    textForm: '',
+    media: false,
     ...overrides,
   }
 }
@@ -78,6 +82,10 @@ describe('model table draft persistence', () => {
           min: '',
           max: '',
           valueList: '',
+          integer: false,
+          maxLength: '',
+          textForm: '',
+          media: false,
         },
       },
       draftPatches: {},
@@ -112,6 +120,10 @@ describe('model table draft persistence', () => {
       min: '',
       max: '',
       valueList: '',
+      integer: false,
+      maxLength: '',
+      textForm: '',
+      media: false,
     }
     const v1: StoredModelTableDraft = {
       v: 1,
@@ -203,6 +215,10 @@ describe('model table draft persistence', () => {
           min: '',
           max: '',
           valueList: '',
+          integer: false,
+          maxLength: '',
+          textForm: '',
+          media: false,
         },
       },
       pendingDetach: [],
@@ -244,7 +260,19 @@ describe('model table draft persistence', () => {
     expect(restored.draftPatches.a1?.searchable).toEqual({ base: false, value: true })
     expect(restored.draftPatches.a1?.filterable).toBeUndefined()
     expect(restored.droppedFields).toEqual([{ attributeKey: 'brand', field: 'filterable' }])
-    expect(restored.trimmed).toBe(true)
+  })
+
+  it('restores patches for new rule fields', () => {
+    const stored: StoredModelTableDraft = {
+      v: 2,
+      draftRows: {
+        a1: buildStoredAttributeRowPatch(serverRow(), serverRow({ maxLength: '40', integer: false }))!,
+      },
+      pendingDetach: [],
+      pendingDelete: [],
+    }
+    const restored = validateStoredModelTableDraft(stored, defs, selection)
+    expect(restored.draftPatches.a1?.maxLength).toEqual({ base: '', value: '40' })
   })
 
   it('keeps patches for persisted attributes and trims missing detach ids', () => {

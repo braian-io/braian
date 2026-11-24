@@ -20,6 +20,10 @@ export type StoredAttributeTableRow = {
   min: string
   max: string
   valueList: string
+  integer: boolean
+  maxLength: string
+  textForm: string
+  media: boolean
 }
 
 export type PatchableAttributeField = keyof Omit<
@@ -41,6 +45,10 @@ export const PATCHABLE_ATTRIBUTE_FIELDS: readonly PatchableAttributeField[] = [
   'min',
   'max',
   'valueList',
+  'integer',
+  'maxLength',
+  'textForm',
+  'media',
 ] as const
 
 export type StoredFieldChange = {
@@ -207,6 +215,11 @@ function serverAttributeRow(defs: Json | undefined, id: string, language = 'en')
     min: kind.min === null || kind.min === undefined ? '' : String(kind.min),
     max: kind.max === null || kind.max === undefined ? '' : String(kind.max),
     valueList: String(kind.list ?? ''),
+    integer: String(kind.type ?? '') === 'number' && Boolean(kind.integer),
+    maxLength:
+      kind.max_length === null || kind.max_length === undefined ? '' : String(kind.max_length),
+    textForm: String(kind.form ?? ''),
+    media: String(kind.type ?? '') === 'file_ref' && Boolean(kind.media),
   }
 }
 

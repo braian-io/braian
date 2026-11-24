@@ -83,8 +83,15 @@ The attribute types offered in the UI are:
 - `File`
 
 The table lets you edit the name, key, type, unit, required flag, show-by-default
-flag, languages, and searchable flag. The row menu adds `Multiple`, `Filterable`,
-`Sortable`, `Remove from this type`, and `Delete attribute everywhere…`.
+flag, languages, and searchable flag. Extra columns carry the attribute rules:
+`Multiple`, `Filterable`, and `Sortable`; for numbers `Min`, `Max`, and
+`Integer`; for text `Max length` and `Text form` (short or long); for file
+attributes `Media`; and for value-list attributes the linked `Value list`. Cells
+that do not apply to the row’s type stay blank. Standard attributes keep their
+rule columns read-only. The type column is read-only while the attribute already
+has values on objects (the same usage count as **Used in** on Attribute
+definitions). The row menu keeps `Remove from this type` and
+`Delete attribute everywhere…`.
 
 `Attribute definitions` is the shared attribute library across the model. It lists
 `Name`, `Key`, `Type`, `Unit`, `Value lists`, `Flags`, and `Used in`, and its actions
