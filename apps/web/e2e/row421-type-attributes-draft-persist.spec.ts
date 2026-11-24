@@ -111,11 +111,6 @@ test.describe('type attributes draft persist (row 421)', () => {
       attributes?: Array<{ key?: string }>
     }
     expect(body.attributes?.some((item) => item.key === key)).toBe(true)
-
-    await stageAndSave(page, [
-      { op: 'detach_attribute', attribute: key, type_key: 'product' },
-      { op: 'delete_attribute', key },
-    ])
   })
 
   test('leave dialog Cancel keeps the draft across Escape, Close, and reload', async ({ page }) => {
@@ -147,14 +142,8 @@ test.describe('type attributes draft persist (row 421)', () => {
     await expectDraftDirty(page, reloaded)
 
     await reloaded.locator('[data-key="description"]').getByRole('checkbox', { name: 'Searchable' }).click()
-    const staged = page.waitForResponse((response) =>
-      response.url().includes('/v1/model/draft/steps') && response.request().method() === 'POST')
-    const saved = page.waitForResponse((response) =>
-      response.url().includes('/v1/model/draft/save') && response.request().method() === 'POST')
-    await reloaded.getByTestId('review-and-save').click()
-    expect((await staged).ok()).toBeTruthy()
-    expect((await saved).ok()).toBeTruthy()
-    await expect(page.getByTestId('review-dialog')).toHaveCount(0)
+    await expect(reloaded.getByTestId('review-and-save')).toHaveCount(0)
+    await expect.poll(async () => readDraftStorage(page, 'product')).toBeNull()
   })
 
   test('leave dialog Save applies the edit, navigates, and clears local draft', async ({ page }) => {
@@ -246,11 +235,6 @@ test.describe('type attributes draft persist (row 421)', () => {
     await expect(reloaded.locator(`[data-key="${key}"]`)).not.toHaveAttribute('data-draft', 'true')
     await expect(reloaded.getByTestId('review-and-save')).toHaveCount(0)
     await expect(await readDraftStorage(page, 'product')).toBeNull()
-
-    await stageAndSave(page, [
-      { op: 'detach_attribute', attribute: key, type_key: 'product' },
-      { op: 'delete_attribute', key },
-    ])
   })
 
   test('beforeunload prompt is active only while the draft is dirty', async ({ page }) => {
