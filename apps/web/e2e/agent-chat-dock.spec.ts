@@ -117,7 +117,8 @@ async function expectNoAgentDetailOverlap(page: Page, detailMinWidth: number) {
 
 /** Save/Discard use disabled:pointer-events-none; hit-test only when enabled. */
 async function waitDraftControlsPointerReady(scope: Locator) {
-  await waitDetailReady(scope.page(), scope)
+  const detail = scope.getByTestId('object-detail')
+  await waitDetailReady(scope.page(), detail)
   const bar = scope.getByTestId('object-draft-bar')
   await expect(bar).toBeVisible({ timeout: 30_000 })
   const save = scope.getByTestId('review-and-save').first()
