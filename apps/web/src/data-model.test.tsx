@@ -288,54 +288,37 @@ describe('type attributes table', () => {
     render(<Host />)
     const trees = await screen.findByTestId('allowed-trees')
     fireEvent.click(within(trees).getByRole('checkbox', { name: 'Food' }))
-    await waitFor(() => expect(stageModel).toHaveBeenCalledWith('model.set_structures', {
-      type_key: 'recipe',
-      structures: ['structure-food'],
-    }))
+    await screen.findByTestId('review-and-save')
+    expect(stageModel).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByTestId('review-and-save'))
+    await waitFor(() => expect(stageModelSteps).toHaveBeenCalledWith([
+      { op: 'set_structures', type_key: 'recipe', structures: ['structure-food'] },
+    ]))
     expect(requestReview).toHaveBeenCalledTimes(1)
     expect(mock.methods.put).not.toHaveBeenCalled()
   })
 
-  it('opens the review dialog for an allowed-tree toggle without saving directly', async () => {
+  it('stages allowed trees through the table save path without posting save immediately', async () => {
     chooseModelSelection({ kind: 'type', typeKey: 'recipe' })
-    mock.methods.get.mockImplementation((path: string) => {
-      if (path === '/v1/definitions') return Promise.resolve({ ...definitions, attributes: allAttributes })
-      if (path === '/v1/model/draft') {
-        return Promise.resolve({
-          count: 1,
-          conflict: false,
-          updated_at: '2026-10-27T10:00:00Z',
-          lines: ['Type recipe may use food'],
-          warnings: [],
-          steps: [{ op: 'set_structures', type_key: 'recipe', structures: ['structure-food'] }],
-          consequence: { destructive: false, lines: ['Type recipe may use food'] },
-          definitions,
-        })
-      }
-      return Promise.resolve({})
-    })
     render(<HostWithDraftBar />)
     const trees = await screen.findByTestId('allowed-trees')
     fireEvent.click(within(trees).getByRole('checkbox', { name: 'Food' }))
-    await waitFor(() => expect(stageModel).toHaveBeenCalledWith('model.set_structures', {
-      type_key: 'recipe',
-      structures: ['structure-food'],
-    }))
-    const dialog = await screen.findByTestId('review-dialog')
-    const description = document.getElementById(dialog.getAttribute('aria-describedby') ?? '')
-    expect(description?.textContent).toBe(copy.reviewChange)
-    expect(dialog.textContent).not.toContain('Type recipe may use food')
-    expect(dialog.textContent?.match(/Allowed trees for Recipe: Food/g)).toHaveLength(1)
+    fireEvent.click(await screen.findByTestId('review-and-save'))
+    await waitFor(() => expect(stageModelSteps).toHaveBeenCalledWith([
+      { op: 'set_structures', type_key: 'recipe', structures: ['structure-food'] },
+    ]))
+    await waitFor(() => expect(requestReview).toHaveBeenCalled())
     const saves = mock.methods.post.mock.calls.filter((call) => String(call[0]).includes('/v1/model/draft/save'))
     expect(saves).toEqual([])
   })
 
-  it('shows an error when staging allowed trees fails', async () => {
+  it('shows an error when saving allowed trees from the table fails', async () => {
     chooseModelSelection({ kind: 'type', typeKey: 'recipe' })
-    stageModel.mockRejectedValueOnce(new Error('could not save allowed trees'))
+    stageModelSteps.mockRejectedValueOnce(new Error('could not save allowed trees'))
     render(<Host />)
     const trees = await screen.findByTestId('allowed-trees')
     fireEvent.click(within(trees).getByRole('checkbox', { name: 'Food' }))
+    fireEvent.click(await screen.findByTestId('review-and-save'))
     expect(await screen.findByText('could not save allowed trees')).toBeTruthy()
     expect(requestReview).not.toHaveBeenCalled()
   })
@@ -350,7 +333,7 @@ describe('type attributes table', () => {
     expect(within(inherited).getByTestId('attribute-from').textContent).toContain('Dairy')
     expect(screen.getByRole('columnheader', { name: copy.from })).toBeTruthy()
     expect(screen.getByTestId('table-add-row')).toBeTruthy()
-    expect(screen.queryByLabelText('Move row up')).toBeNull()
+    expect(screen.getAllByLabelText('Move row up').length).toBeGreaterThan(0)
   })
 })
 

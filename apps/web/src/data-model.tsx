@@ -31,7 +31,12 @@ import {
   type AttributeTableDraftPatches,
   type PatchableAttributeField,
   type StoredAttributeTableRow,
+  type StoredTypeHeaderPatch,
 } from './model-table-draft-persist'
+import { buildAttributeReorderStep } from './attribute-reorder-steps'
+import { readModelTableDraftForKey, storageKeyForSelection } from './model-table-draft-storage'
+import { buildTypeHeaderSteps, recordTypeHeaderField, typeHeaderPatchDirty } from './type-header-table-steps'
+import { valueListLabel } from './value-list-table-steps'
 import { registerModelTableDraft, tryChooseModelSelection } from './model-table-draft'
 import { buildAttributeCreateSteps, buildAttributeUpdateSteps } from './attribute-table-steps'
 import { toast } from 'sonner'
@@ -58,10 +63,6 @@ function useModelSelection() {
     setValue({ selection: getModelSelection(), previewType: getPreviewType() })
   }), [])
   return { ...value, choose: tryChooseModelSelection, setPreviewType }
-}
-
-async function propose(name: string, args: Json) {
-  return stageModel(name, args)
 }
 
 export type ModelTableDraftScope = {
@@ -230,6 +231,7 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
   const [filter, setFilter] = useState('')
   const [draftRows, setDraftRows] = useState<Record<string, AttributeTableRow>>({})
   const [draftPatches, setDraftPatches] = useState<AttributeTableDraftPatches>({})
+  const [typeHeaderPatch, setTypeHeaderPatch] = useState<StoredTypeHeaderPatch>({})
   const [pendingDetach, setPendingDetach] = useState<Set<string>>(() => new Set())
   const [pendingDelete, setPendingDelete] = useState<Set<string>>(() => new Set())
   const [message, setMessage] = useState('')
@@ -243,7 +245,15 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
   const selectionKey = selection ? (selection.kind === 'type' ? selection.typeKey : `${selection.structure}/${selection.group}`) : ''
   const keyAttribute = keyAttributeOf(defs, selection)
   const families = ((defs?.unit_families as Json[]) ?? []).map((item) => String(item.key ?? '')).filter(Boolean)
-  const lists = ((defs?.value_lists as Json[]) ?? []).map((item) => String(item.key ?? '')).filter(Boolean)
+  const listOptions = useMemo(
+    () => ((defs?.value_lists as Json[]) ?? [])
+      .map((item) => {
+        const key = String(item.key ?? '')
+        return { value: key, label: valueListLabel(defs, key, uiLanguage) }
+      })
+      .filter((item) => item.value),
+    [defs],
+  )
 
   useEffect(() => {
     setFilter('')
@@ -251,12 +261,14 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
     setCreateOpen(false)
     setPendingKey(null)
     setActiveRowId(null)
+    setTypeHeaderPatch({})
   }, [selectionKey])
 
   useEffect(() => {
     if (!selectionKey || !selection) {
       setDraftRows({})
       setDraftPatches({})
+      setTypeHeaderPatch({})
       setPendingDetach(new Set())
       setPendingDelete(new Set())
       restoredDraftToken.current = ''
@@ -270,6 +282,7 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
     if (!stored) {
       setDraftRows({})
       setDraftPatches({})
+      setTypeHeaderPatch({})
       setPendingDetach(new Set())
       setPendingDelete(new Set())
       return
@@ -277,6 +290,7 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
     const restored = validateStoredModelTableDraft(stored, defs, selection)
     setDraftRows(restored.draftRows as Record<string, AttributeTableRow>)
     setDraftPatches(restored.draftPatches)
+    setTypeHeaderPatch(restored.typeHeader ?? {})
     setPendingDetach(new Set(restored.pendingDetach))
     setPendingDelete(new Set(restored.pendingDelete))
     if (restored.trimmed) toast.message(copy.modelTableDraftRestoreTrimmed)
@@ -428,53 +442,22 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
   const buildUpdateSteps = (original: AttributeTableRow, row: AttributeTableRow) =>
     buildAttributeUpdateSteps(defs, original, row, keyAttribute ?? '')
 
-  const buildReorderStep = () => {
-    if (!selection || selection.kind !== 'type') return null
-    const order = (draftRows as Record<string, unknown>)[ROW_ORDER_KEY]
-    if (!Array.isArray(order)) return null
-    const byId = new Map<string, AttributeTableRow>()
-    for (const row of rows) byId.set(row.id, draftRows[row.id] ?? row)
-    for (const [id, row] of Object.entries(draftRows)) if (!byId.has(id)) byId.set(id, row)
-    const seen = new Set<string>()
-    const desired: AttributeTableRow[] = []
-    for (const id of order) {
-      if (typeof id !== 'string') continue
-      const row = byId.get(id)
-      if (!row || seen.has(row.id)) continue
-      seen.add(row.id)
-      desired.push(row)
-    }
-    for (const row of rows) {
-      if (seen.has(row.id)) continue
-      seen.add(row.id)
-      desired.push(draftRows[row.id] ?? row)
-    }
-    for (const row of Object.values(draftRows)) {
-      if (seen.has(row.id)) continue
-      seen.add(row.id)
-      desired.push(row)
-    }
-    const attributes = desired.map((row) => row.key.trim() || attributeKey(row.label)).filter(Boolean)
-    if (attributes.length === 0) return null
-    const current = rows.filter((row) => !row.inherited).map((row) => row.key)
-    const existing = attributes.filter((key) => current.includes(key))
-    if (existing.join('\u0000') === current.join('\u0000')) return null
-    return { op: 'reorder_type_attributes', type_key: selection.typeKey, attributes }
-  }
-
   const draftRowsRef = useRef(draftRows)
   const draftPatchesRef = useRef(draftPatches)
+  const typeHeaderPatchRef = useRef(typeHeaderPatch)
   const pendingDetachRef = useRef(pendingDetach)
   const pendingDeleteRef = useRef(pendingDelete)
   draftRowsRef.current = draftRows
   draftPatchesRef.current = draftPatches
   pendingDetachRef.current = pendingDetach
   pendingDeleteRef.current = pendingDelete
+  typeHeaderPatchRef.current = typeHeaderPatch
 
   const tableDirty = () => (
     pendingDetachRef.current.size > 0
     || pendingDeleteRef.current.size > 0
     || Object.keys(draftRowsRef.current).length > 0
+    || typeHeaderPatchDirty(typeHeaderPatchRef.current)
   )
 
   const discardTableDraft = () => {
@@ -486,6 +469,7 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
     setDraftPatches({})
     setPendingDetach(new Set())
     setPendingDelete(new Set())
+    setTypeHeaderPatch({})
     setMessage('')
     if (draftScope?.userId && draftScope.workspaceId && selectionKey) {
       clearStoredModelTableDraft(draftScope.userId, draftScope.workspaceId, selectionKey)
@@ -518,7 +502,8 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
         steps.push(...buildUpdateSteps(original, effective))
       } else steps.push(...buildCreateSteps(row))
     }
-    const reorder = buildReorderStep()
+    if (selection?.kind === 'type') steps.push(...buildTypeHeaderSteps(selection.typeKey, typeHeaderPatch, uiLanguage))
+    const reorder = selection ? buildAttributeReorderStep(selection, rows, draftRows) : null
     if (reorder) steps.push(reorder)
     if (steps.length === 0) return
     await stageModelSteps(steps)
@@ -548,7 +533,7 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
       flushToDraft: () => flushTableDraftRef.current(),
     })
     return () => registerModelTableDraft(null)
-  }, [draftRows, pendingDetach, pendingDelete])
+  }, [draftRows, draftPatches, typeHeaderPatch, pendingDetach, pendingDelete, selection])
 
   useEffect(() => {
     if (!draftScope?.userId || !draftScope.workspaceId || !selectionKey) return
@@ -563,12 +548,42 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
       serializeModelTableDraftForStorage({
         draftRows: draftRows as Record<string, StoredAttributeTableRow>,
         draftPatches,
+        typeHeader: typeHeaderPatch,
         pendingDetach: [...pendingDetach],
         pendingDelete: [...pendingDelete],
         defs,
       }),
     )
-  }, [draftRows, draftPatches, pendingDetach, pendingDelete, draftScope?.userId, draftScope?.workspaceId, selectionKey, defs])
+  }, [draftRows, draftPatches, typeHeaderPatch, pendingDetach, pendingDelete, draftScope?.userId, draftScope?.workspaceId, selectionKey, defs])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (!draftScope?.userId || !draftScope.workspaceId || !selection || !selectionKey) return
+    const storageKey = storageKeyForSelection(draftScope.userId, draftScope.workspaceId, selection)
+    if (!storageKey) return
+    const onStorage = (event: StorageEvent) => {
+      if (event.storageArea !== localStorage || event.key !== storageKey || !event.newValue) return
+      if (!tableDirty()) return
+      toast.message(copy.modelTableDraftRemoteChanged, {
+        action: {
+          label: copy.loadRemoteDraft,
+          onClick: () => {
+            const stored = readModelTableDraftForKey(draftScope.userId, draftScope.workspaceId, selectionKey)
+            if (!stored) return
+            const restored = validateStoredModelTableDraft(stored, defs, selection)
+            setDraftRows(restored.draftRows as Record<string, AttributeTableRow>)
+            setDraftPatches(restored.draftPatches)
+            setTypeHeaderPatch(restored.typeHeader ?? {})
+            setPendingDetach(new Set(restored.pendingDetach))
+            setPendingDelete(new Set(restored.pendingDelete))
+            if (restored.trimmed) toast.message(copy.modelTableDraftRestoreTrimmed)
+          },
+        },
+      })
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [draftScope?.userId, draftScope?.workspaceId, selection, selectionKey, defs, draftRows, typeHeaderPatch, pendingDetach, pendingDelete])
 
   if (!selection) {
     return (
@@ -623,7 +638,7 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
         ...(value === 'value_list' ? {} : { valueList: '' }),
       }),
       display: (row) => (
-        <span title={listed.isSuccess && (objectCountsById.get(row.id) ?? 0) > 0 ? copy.attributeTypeLocked : undefined}>
+        <span title={!listed.isSuccess || (objectCountsById.get(row.id) ?? 0) > 0 ? copy.attributeTypeLocked : undefined}>
           {kindLabel(row.kind)}
         </span>
       ),
@@ -788,11 +803,20 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
       enumSelect: true,
       truncate: true,
       width: 120,
-      options: [{ value: 'none', label: copy.noValue }, ...lists.map((list) => ({ value: list, label: list }))],
+      options: [{ value: 'none', label: copy.noValue }, ...listOptions],
       read: (row) => row.valueList || 'none',
       write: (row, value) => ({ ...row, valueList: value === 'none' ? '' : value }),
       hideCell: (row) => !ruleColumnApplies('valueList', row.kind),
-      display: (row) => <span>{row.valueList || '—'}</span>,
+      display: (row) => (
+        <span>
+          {row.valueList ? (
+            <>
+              {valueListLabel(defs, row.valueList, uiLanguage)}
+              <span className="muted"> {row.valueList}</span>
+            </>
+          ) : '—'}
+        </span>
+      ),
     },
   ]
 
@@ -842,14 +866,11 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
           <TypeNameFields
             defs={defs}
             typeKey={selection.typeKey}
+            patch={typeHeaderPatch}
             onError={setMessage}
-            onSave={(patchValue) => {
-              setMessage('')
-              void stageModel('model.update_type', { key: selection.typeKey, language: uiLanguage, ...patchValue })
-                .catch((reason: unknown) => setMessage(errorText(reason)))
-            }}
+            onPatch={setTypeHeaderPatch}
           />
-          <AllowedTrees defs={defs} typeKey={selection.typeKey} onError={setMessage} />
+          <AllowedTrees defs={defs} typeKey={selection.typeKey} patch={typeHeaderPatch} onPatch={setTypeHeaderPatch} onError={setMessage} />
         </>
       ) : null}
       <StandardEditableTable
@@ -870,11 +891,11 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
           fixed: selection.kind === 'type' && row.standard,
           readOnly: row.inherited,
         })}
-        reorderable={selection.kind === 'type'}
+        reorderable={selection.kind === 'type' || selection.kind === 'group'}
         canEdit={(row, column) => {
           if (row.inherited) return false
           if (column.id === 'key' && (row.standard || row.id === keyAttribute)) return false
-          if (column.id === 'kind' && listed.isSuccess && (objectCountsById.get(row.id) ?? 0) > 0) return false
+          if (column.id === 'kind' && (!listed.isSuccess || (objectCountsById.get(row.id) ?? 0) > 0)) return false
           if (row.standard && RULE_COLUMN_IDS.has(column.id)) return false
           if (!ruleColumnApplies(column.id, row.kind)) return false
           if (column.id === 'unit' && row.kind !== 'number' && row.kind !== 'range') return false
@@ -908,7 +929,7 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
               label: copy.valueList,
               value: createValueList,
               testId: 'new-value-list',
-              options: lists.map((list) => ({ value: list, label: list })),
+              options: listOptions,
             }]
             : []),
         ]}
@@ -962,9 +983,22 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
   )
 }
 
-function AllowedTrees({ defs, typeKey, onError }: { defs: Json | undefined; typeKey: string; onError: (message: string) => void }) {
+function AllowedTrees({
+  defs,
+  typeKey,
+  patch,
+  onPatch,
+  onError,
+}: {
+  defs: Json | undefined
+  typeKey: string
+  patch: StoredTypeHeaderPatch
+  onPatch: (next: StoredTypeHeaderPatch) => void
+  onError: (message: string) => void
+}) {
   const raw = ((defs?.types as Json[]) ?? []).find((item) => String(item.key) === typeKey)
-  const selected = new Set(Array.isArray(raw?.structures) ? raw.structures.map((id) => String(id)) : [])
+  const base = Array.isArray(raw?.structures) ? raw.structures.map((id) => String(id)) : []
+  const selected = new Set(patch.structures?.value ?? patch.structures?.base ?? base)
   const structures = ((defs?.structures as Json[]) ?? [])
   const [focus, setFocus] = useState(false)
   useEffect(() => {
@@ -972,15 +1006,6 @@ function AllowedTrees({ defs, typeKey, onError }: { defs: Json | undefined; type
     window.addEventListener('braian-allowed-trees', open)
     return () => window.removeEventListener('braian-allowed-trees', open)
   }, [])
-  const save = async (next: string[]) => {
-    onError('')
-    try {
-      await stageModel('model.set_structures', { type_key: typeKey, structures: next })
-      requestReview()
-    } catch (reason) {
-      onError(errorText(reason))
-    }
-  }
   return (
     <fieldset className="type-names" data-testid="allowed-trees">
       <legend title={copy.allowedTreesHint}>{copy.allowedTrees.replace('…', '')}</legend>
@@ -996,10 +1021,18 @@ function AllowedTrees({ defs, typeKey, onError }: { defs: Json | undefined; type
               autoFocus={focus && index === 0}
               checked={checked}
               onChange={(event) => {
+                onError('')
                 const next = new Set(selected)
                 if (event.target.checked) next.add(id)
                 else next.delete(id)
-                void save([...next])
+                const value = [...next]
+                const change = recordTypeHeaderField(base, value, patch.structures)
+                if (!change) {
+                  const { structures, ...rest } = patch
+                  onPatch(rest)
+                  return
+                }
+                onPatch({ ...patch, structures: change as StoredTypeHeaderPatch['structures'] })
               }}
             />
             {label}
@@ -1019,29 +1052,40 @@ function indefiniteHere(name: string) {
 function TypeNameFields({
   defs,
   typeKey,
+  patch,
   onError,
-  onSave,
+  onPatch,
 }: {
   defs: Json | undefined
   typeKey: string
+  patch: StoredTypeHeaderPatch
   onError: (message: string) => void
-  onSave: (patch: Json) => void
+  onPatch: (next: StoredTypeHeaderPatch) => void
 }) {
   const row = objectTypes(defs, uiLanguage).find((item) => item.key === typeKey)
   const raw = ((defs?.types as Json[]) ?? []).find((item) => String(item.key) === typeKey)
-  const singularValue = textValue(raw?.singular, uiLanguage) || row?.singular || ''
-  const pluralValue = textValue(raw?.plural, uiLanguage) || row?.plural || ''
+  const singularBase = textValue(raw?.singular, uiLanguage) || row?.singular || ''
+  const pluralBase = textValue(raw?.plural, uiLanguage) || row?.plural || ''
+  const singularValue = String(patch.singular?.value ?? singularBase)
+  const pluralValue = String(patch.plural?.value ?? pluralBase)
+  const keyValue = String(patch.typeKey?.value ?? typeKey)
   return (
     <div className="type-names">
       <label>
         {copy.singular}
         <input
           aria-label={copy.singular}
-          defaultValue={singularValue}
-          key={`${typeKey}:singular:${singularValue}`}
-          onBlur={(event) => {
-            const next = event.target.value.trim()
-            if (next !== singularValue) onSave({ singular: next })
+          value={singularValue}
+          onChange={(event) => {
+            onError('')
+            const next = event.target.value
+            const change = recordTypeHeaderField(singularBase, next.trim(), patch.singular)
+            if (!change) {
+              const { singular, ...rest } = patch
+              onPatch(rest)
+              return
+            }
+            onPatch({ ...patch, singular: change as StoredTypeHeaderPatch['singular'] })
           }}
         />
       </label>
@@ -1049,11 +1093,17 @@ function TypeNameFields({
         {copy.plural}
         <input
           aria-label={copy.plural}
-          defaultValue={pluralValue}
-          key={`${typeKey}:plural:${pluralValue}`}
-          onBlur={(event) => {
-            const next = event.target.value.trim()
-            if (next !== pluralValue) onSave({ plural: next })
+          value={pluralValue}
+          onChange={(event) => {
+            onError('')
+            const next = event.target.value
+            const change = recordTypeHeaderField(pluralBase, next.trim(), patch.plural)
+            if (!change) {
+              const { plural, ...rest } = patch
+              onPatch(rest)
+              return
+            }
+            onPatch({ ...patch, plural: change as StoredTypeHeaderPatch['plural'] })
           }}
         />
       </label>
@@ -1062,15 +1112,17 @@ function TypeNameFields({
         <input
           aria-label={copy.key}
           data-testid={`type-key-${typeKey}`}
-          defaultValue={typeKey}
-          key={`${typeKey}:key`}
-          onBlur={(event) => {
+          value={keyValue}
+          onChange={(event) => {
+            onError('')
             const next = event.target.value.trim()
-            if (next && next !== typeKey) {
-              onError('')
-              void propose('model.rename_type_key', { key: typeKey, new_key: next })
-                .catch((reason: unknown) => onError(errorText(reason)))
+            const change = recordTypeHeaderField(typeKey, next, patch.typeKey)
+            if (!change) {
+              const { typeKey: _drop, ...rest } = patch
+              onPatch(rest)
+              return
             }
+            onPatch({ ...patch, typeKey: change as StoredTypeHeaderPatch['typeKey'] })
           }}
         />
       </label>

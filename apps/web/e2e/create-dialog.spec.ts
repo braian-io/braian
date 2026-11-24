@@ -477,6 +477,21 @@ test('Link types create dialog', async ({ page }) => {
   const selected = table.locator(`[data-row-id="${key}"]`)
   await expect(selected).toBeVisible()
   await expect(selected).toHaveClass(/\bon\b/)
+
+  const enterKey = `enter_${suffix}`
+  const enterFields = {
+    'new-name': `Enter ${suffix}`,
+    'link-type-from-label': 'Enter out',
+    'link-type-to-label': 'Enter in',
+  }
+  await opener.click()
+  await expect(dialog).toBeVisible()
+  await fill(dialog, enterFields)
+  await linkTypeDialogReady(dialog)
+  await dialog.getByTestId('link-type-to-label').focus()
+  await page.keyboard.press('Enter')
+  await expect(dialog).toHaveCount(0)
+  await expect(table.locator(`[data-row-id="${enterKey}"]`)).toBeVisible()
 })
 
 test('Value lists create dialog', async ({ page }) => {
