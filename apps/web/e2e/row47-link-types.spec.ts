@@ -18,6 +18,12 @@ async function command(page: Page, title: string) {
   await page.keyboard.press('Enter')
 }
 
+async function openDataModelTab(page: Page, tab: string) {
+  await expect(page.getByTestId('workspace')).toBeVisible()
+  await page.locator('nav.tabs').getByRole('button', { name: /^Data model/ }).click()
+  await page.locator('.pane-tab', { hasText: tab }).first().click()
+}
+
 async function saveModelDraft(page: Page) {
   await page.keyboard.press('Control+S')
   const review = page.getByTestId('review-dialog')
@@ -84,8 +90,7 @@ test('link types are editable with blocking cardinality (row 47)', async ({ page
   })
 
   await page.reload()
-  await command(page, 'Data model')
-  await page.locator('.pane-tab', { hasText: 'Link types' }).first().click()
+  await openDataModelTab(page, 'Link types')
   const reloaded = page.getByTestId('link-types-table').locator(`[data-row-id="${linkKey}"]`)
   await expect(reloaded).toBeVisible()
   await reloaded.locator('[data-column="fromLabel"]').dblclick()

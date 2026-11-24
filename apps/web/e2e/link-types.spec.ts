@@ -143,21 +143,27 @@ test('removing a link with values opens a plain confirm with no text input', asy
   expect(created.status(), `create link type ${created.status()}`).toBe(204)
 
   try {
-    const searched = await page.request.get('/v1/search?q=*&filter=type_key:=product&per_page=2')
-    const hits = ((await searched.json()) as {
-      hits?: Array<{ id?: string; key?: string; document?: { id?: string; key?: string } }>
-    }).hits ?? []
-    const docs = hits.map((hit) => hit.document ?? hit).filter((doc) => doc.id && doc.key)
-    expect(docs.length).toBeGreaterThanOrEqual(2)
-    const from = docs[0]!
-    const to = docs[1]!
+    const tag = crypto.randomUUID().slice(0, 8)
+    const createProduct = async (suffix: string) => {
+      const response = await page.request.post('/v1/objects', {
+        data: {
+          type: 'product',
+          groups: { food: 'bread' },
+          values: { number: `LT-${tag}-${suffix}`, name: { en: `Link ${suffix}` }, status: 'draft' },
+        },
+      })
+      expect(response.ok(), await response.text()).toBeTruthy()
+      return (await response.json()) as { id: string; key: string }
+    }
+    const from = await createProduct('a')
+    const to = await createProduct('b')
     const linked = await page.request.post('/v1/links', {
       data: { type: key, from_id: from.id, to_id: to.id, values: { note: 'aged' } },
     })
-    expect(linked.ok(), `create link ${linked.status()}`).toBeTruthy()
+    expect(linked.ok(), `create link ${linked.status()} ${await linked.text()}`).toBeTruthy()
 
     await page.reload()
-    await openObject(page, from.key!)
+    await openObject(page, from.key)
 
     const linkRow = page.getByTestId('link-row').filter({ hasText: to.key! }).first()
     await expect(linkRow).toBeVisible()
