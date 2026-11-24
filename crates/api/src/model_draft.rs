@@ -176,11 +176,17 @@ async fn draft_view(
     let defs = state.store.definition_set().await.map_err(store_status)?;
     match preview(&defs, &draft.steps) {
         Ok((after, impact)) => {
-            let report = consequence(state, &defs, &draft.steps, &impact).await?;
-            body["lines"] = json!(impact.lines);
-            body["warnings"] = json!(impact.warnings);
-            body["consequence"] = report;
-            body["definitions"] = serde_json::to_value(&after).unwrap_or(Value::Null);
+            if let Err(message) =
+                crate::link_type_validate::validate_for_app(state, &defs, &after, &draft.steps).await
+            {
+                body["error"] = json!(message);
+            } else {
+                let report = consequence(state, &defs, &draft.steps, &impact).await?;
+                body["lines"] = json!(impact.lines);
+                body["warnings"] = json!(impact.warnings);
+                body["consequence"] = report;
+                body["definitions"] = serde_json::to_value(&after).unwrap_or(Value::Null);
+            }
         }
         Err(error) => {
             body["error"] = json!(error.to_string());
@@ -393,6 +399,13 @@ pub(crate) async fn commit_steps(
         }
         let (mut after, impact) = preview(&defs, changes).map_err(model_status)?;
         CompiledModel::compile(&after).map_err(Problem::definitions)?;
+        crate::link_type_validate::reject_blocked_link_type_changes(
+            &state.store,
+            &defs,
+            &after,
+            changes,
+        )
+        .await?;
         let purge = purge_for(&defs, changes);
         let report = consequence(state, &defs, changes, &impact).await?;
         if dry_run {

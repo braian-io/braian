@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, textValue, type Json } from './api'
 import { Button } from './components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
 import { writeErrorMessage } from './write-error'
 import { formatCount, formatTimestamp } from './format'
@@ -713,12 +714,26 @@ function CreateDialog({ kind, onClose }: { kind: DialogKind; onClose: () => void
   const [extra, setExtra] = useState('')
   const [fromType, setFromType] = useState('')
   const [toType, setToType] = useState('')
+  const [fromLabel, setFromLabel] = useState('')
+  const [toLabel, setToLabel] = useState('')
+  const [fromCardinality, setFromCardinality] = useState('many')
+  const [toCardinality, setToCardinality] = useState('many')
   const [error, setError] = useState('')
   const defs = useQuery({ queryKey: ['definitions'], queryFn: () => api.get('/v1/definitions'), enabled: kind === 'link' })
-  const entities = ((defs.data?.types as Json[] | undefined) ?? [])
-    .filter((item) => item.kind !== 'link')
-    .map((item) => String(item.key ?? ''))
-    .filter(Boolean)
+  const entities = useMemo(
+    () => ((defs.data?.types as Json[] | undefined) ?? [])
+      .filter((item) => item.kind !== 'link')
+      .map((item) => String(item.key ?? ''))
+      .filter(Boolean),
+    [defs.data?.types],
+  )
+  const cardinalityOptions = useMemo(
+    () => [
+      { value: 'one', label: copy.cardinalityOne },
+      { value: 'many', label: copy.cardinalityMany },
+    ],
+    [],
+  )
   useEffect(() => {
     if (kind !== 'link') return
     if (!fromType && entities[0]) setFromType(entities[0])
@@ -731,6 +746,8 @@ function CreateDialog({ kind, onClose }: { kind: DialogKind; onClose: () => void
     if (!key) return
     const side = attributeKey(name)
     if (kind === 'link') setModelFocus({ kind: 'type', key })
+    const forward = fromLabel.trim() || name
+    const reverse = toLabel.trim() || name
     const work = kind === 'link'
       ? stageModel('model.create_link_type', {
           key,
@@ -738,12 +755,12 @@ function CreateDialog({ kind, onClose }: { kind: DialogKind; onClose: () => void
           from_types: [fromType],
           to_types: [toType],
           from_key: side,
-          from_label: name,
+          from_label: forward,
           to_key: `${side}_to`,
-          to_label: name,
-          from_cardinality: 'many',
-          to_cardinality: 'many',
-          attributes: extra.split(',').map((item) => attributeKey(item)).filter(Boolean),
+          to_label: reverse,
+          from_cardinality: fromCardinality,
+          to_cardinality: toCardinality,
+          attributes: [],
         })
       : kind === 'type'
       ? stageModel('model.create_type', { key, label: name })
@@ -791,19 +808,55 @@ function CreateDialog({ kind, onClose }: { kind: DialogKind; onClose: () => void
             <>
               <label className="model-field">
                 {copy.fromType}
-                <select data-testid="link-type-from" aria-label={copy.fromType} value={fromType} onChange={(event) => setFromType(event.target.value)}>
-                  {entities.map((key) => <option key={key} value={key}>{key}</option>)}
-                </select>
+                <Select value={fromType || undefined} onValueChange={setFromType}>
+                  <SelectTrigger data-testid="link-type-from" aria-label={copy.fromType}>
+                    <SelectValue placeholder={copy.pick} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {entities.map((key) => <SelectItem key={key} value={key}>{key}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </label>
               <label className="model-field">
                 {copy.toType}
-                <select data-testid="link-type-to" aria-label={copy.toType} value={toType} onChange={(event) => setToType(event.target.value)}>
-                  {entities.map((key) => <option key={key} value={key}>{key}</option>)}
-                </select>
+                <Select value={toType || undefined} onValueChange={setToType}>
+                  <SelectTrigger data-testid="link-type-to" aria-label={copy.toType}>
+                    <SelectValue placeholder={copy.pick} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {entities.map((key) => <SelectItem key={key} value={key}>{key}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </label>
               <label className="model-field">
-                {copy.linkAttribute}
-                <input data-testid="link-type-attribute" aria-label={copy.linkAttribute} value={extra} onChange={(event) => setExtra(event.target.value)} />
+                {copy.linkForwardLabel}
+                <input data-testid="link-type-from-label" aria-label={copy.linkForwardLabel} value={fromLabel} onChange={(event) => setFromLabel(event.target.value)} />
+              </label>
+              <label className="model-field">
+                {copy.linkReverseLabel}
+                <input data-testid="link-type-to-label" aria-label={copy.linkReverseLabel} value={toLabel} onChange={(event) => setToLabel(event.target.value)} />
+              </label>
+              <label className="model-field">
+                {`${copy.fromType} ${copy.cardinality}`}
+                <Select value={fromCardinality} onValueChange={setFromCardinality}>
+                  <SelectTrigger data-testid="link-type-from-cardinality" aria-label={`${copy.fromType} ${copy.cardinality}`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {cardinalityOptions.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </label>
+              <label className="model-field">
+                {`${copy.toType} ${copy.cardinality}`}
+                <Select value={toCardinality} onValueChange={setToCardinality}>
+                  <SelectTrigger data-testid="link-type-to-cardinality" aria-label={`${copy.toType} ${copy.cardinality}`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {cardinalityOptions.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </label>
             </>
           ) : null}

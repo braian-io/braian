@@ -2717,7 +2717,7 @@ function ViewBody({ view, session, workspace }: { view: View; session: Session; 
   if (view.type === 'history') return <HistoryView session={session} />
   if (view.type === 'class_attributes') return <ClassAttributes session={session} />
   if (view.type === 'object_types' || view.type === 'link_types' || view.type === 'value_lists' || view.type === 'value_list_values' || view.type === 'units') {
-    return <ModelTableView view={view} />
+    return <ModelTableView view={view} draftScope={{ userId: session.userId, workspaceId: session.workspaceId ?? '' }} />
   }
   if (view.type === 'data_model') {
     return (

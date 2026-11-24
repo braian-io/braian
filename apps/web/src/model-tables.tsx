@@ -1,10 +1,22 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, textValue, type Json } from './api'
 import { CreateDialog, requireText } from './create-dialog'
 import { copy, uiLanguage } from './i18n'
 import { attributeKey, objectTypes } from './model-view'
-import { onDraftChange, setModelFocus, stageModel } from './model-stage'
+import { onDraftChange, setModelFocus, stageModel, stageModelSteps } from './model-stage'
+import { buildLinkTypeCreateSteps, buildLinkTypeUpdateSteps } from './link-type-table-steps'
+import {
+  clearStoredLinkTypesTableDraft,
+  readStoredLinkTypesTableDraft,
+  restoreLinkTypesTableDraft,
+  serializeLinkTypeDraftRow,
+  writeStoredLinkTypesTableDraft,
+} from './link-type-table-draft-persist'
+import { entityTypeKeys, linkTypeRows, type LinkTypeRow } from './link-type-view'
+import { registerModelTableDraft } from './model-table-draft'
+import type { ModelTableDraftScope } from './data-model'
+import { typeNames } from './type-labels'
 import { StandardEditableTable, type StandardColumn } from './standard-editable-table'
 import { getModelSelection, subscribeModelSelection } from './model-selection'
 import { tryChooseModelSelection } from './model-table-draft'
@@ -230,61 +242,106 @@ export function ObjectTypesTable() {
   )
 }
 
-export function LinkTypesTable() {
+export function LinkTypesTable({ draftScope }: { draftScope?: ModelTableDraftScope }) {
   const { stored, defs } = useModelDefs()
   const [filter, setFilter] = useState('')
   const { activeRowId, setActiveRowId } = useActiveRowId()
-  const [draftRows, setDraftRows] = useState<Record<string, TypeRow>>({})
+  const serverRows = useMemo(() => linkTypeRows(defs, uiLanguage), [defs])
+  const [draftRows, setDraftRows] = useState<Record<string, LinkTypeRow>>({})
   const [createOpen, setCreateOpen] = useState(false)
   const [linkName, setLinkName] = useState('')
   const [fromType, setFromType] = useState('')
   const [toType, setToType] = useState('')
+  const [fromCardinality, setFromCardinality] = useState('many')
+  const [toCardinality, setToCardinality] = useState('many')
+  const [fromLabel, setFromLabel] = useState('')
+  const [toLabel, setToLabel] = useState('')
   const [pendingKey, setPendingKey] = useState<string | null>(null)
-  const entities = useMemo(
-    () => ((defs?.types as Json[]) ?? [])
-      .filter((item) => item.kind !== 'link')
-      .map((item) => String(item.key ?? ''))
-      .filter(Boolean),
+  const entityKeys = useMemo(() => entityTypeKeys(defs), [defs])
+  const entityChoices = useMemo(
+    () => typeNames(defs, uiLanguage)
+      .filter((item) => item.kind === 'entity')
+      .map((item) => ({ value: item.key, label: item.singular || item.key })),
     [defs],
   )
-  const rows = useMemo(() => {
-    const raw = ((defs?.types as Json[]) ?? []).filter((item) => item.kind === 'link')
-    return objectTypes({ ...defs, types: raw }, uiLanguage).map((item) => ({
-      id: item.key,
-      key: item.key,
-      label: item.label,
-      singular: item.singular,
-      plural: item.plural || item.label,
-      kind: 'link',
-    }))
-  }, [defs])
+  const cardinalityOptions = useMemo(
+    () => [
+      { value: 'one', label: copy.cardinalityOne },
+      { value: 'many', label: copy.cardinalityMany },
+    ],
+    [],
+  )
+
+  useEffect(() => {
+    if (!draftScope?.userId || !draftScope.workspaceId) return
+    const storedDraft = readStoredLinkTypesTableDraft(draftScope.userId, draftScope.workspaceId)
+    if (!storedDraft) return
+    const { draftRows: restored } = restoreLinkTypesTableDraft(storedDraft, serverRows)
+    if (Object.keys(restored).length > 0) setDraftRows(restored)
+  }, [draftScope?.userId, draftScope?.workspaceId, serverRows])
+
+  useEffect(() => {
+    if (!draftScope?.userId || !draftScope.workspaceId) return
+    if (Object.keys(draftRows).length === 0) {
+      clearStoredLinkTypesTableDraft(draftScope.userId, draftScope.workspaceId)
+      return
+    }
+    const payload = {
+      v: 1 as const,
+      draftRows: Object.fromEntries(
+        Object.entries(draftRows).flatMap(([id, row]) => {
+          const server = serverRows.find((item) => item.id === id)
+          if (!server) return []
+          const stored = serializeLinkTypeDraftRow(server, row)
+          return stored ? [[id, stored]] : []
+        }),
+      ),
+    }
+    writeStoredLinkTypesTableDraft(draftScope.userId, draftScope.workspaceId, payload)
+  }, [draftRows, draftScope?.userId, draftScope?.workspaceId, serverRows])
+
+  const dirty = useCallback(() => Object.keys(draftRows).length > 0, [draftRows])
+  const discardDraft = useCallback(() => {
+    setDraftRows({})
+    if (draftScope?.userId && draftScope.workspaceId) {
+      clearStoredLinkTypesTableDraft(draftScope.userId, draftScope.workspaceId)
+    }
+  }, [draftScope?.userId, draftScope?.workspaceId])
+  const reviewDraftRows = useCallback(async () => {
+    const steps: Array<{ op: string } & Record<string, unknown>> = []
+    for (const row of Object.values(draftRows)) {
+      const server = serverRows.find((item) => item.id === row.id)
+      if (!server) {
+        steps.push(...buildLinkTypeCreateSteps(row))
+        continue
+      }
+      steps.push(...buildLinkTypeUpdateSteps(server, row))
+    }
+    if (steps.length > 0) await stageModelSteps(steps)
+    discardDraft()
+    await reviewDraft()
+  }, [discardDraft, draftRows, serverRows])
+
+  useEffect(() => {
+    registerModelTableDraft({
+      dirty,
+      discard: discardDraft,
+      review: reviewDraftRows,
+    })
+    return () => registerModelTableDraft(null)
+  }, [dirty, discardDraft, reviewDraftRows])
 
   useEffect(() => {
     if (!pendingKey) return
-    const row = rows.find((item) => item.id === pendingKey || item.key === pendingKey)
+    const row = serverRows.find((item) => item.id === pendingKey || item.key === pendingKey)
     if (!row) return
     setActiveRowId(row.id)
     setModelFocus({ kind: 'type', key: row.key })
+    tryChooseModelSelection({ kind: 'type', typeKey: row.key })
     setPendingKey(null)
-  }, [rows, pendingKey])
+  }, [serverRows, pendingKey])
 
-  const columns: Array<StandardColumn<TypeRow>> = [
-    {
-      id: 'singular',
-      header: copy.singular,
-      editable: true,
-      truncate: true,
-      read: (row) => row.singular,
-      write: (row, value) => ({ ...row, singular: value, label: value || row.label }),
-    },
-    {
-      id: 'plural',
-      header: copy.plural,
-      editable: true,
-      truncate: true,
-      read: (row) => row.plural,
-      write: (row, value) => ({ ...row, plural: value }),
-    },
+  const columns: Array<StandardColumn<LinkTypeRow>> = [
     {
       id: 'key',
       header: copy.key,
@@ -292,6 +349,63 @@ export function LinkTypesTable() {
       truncate: true,
       read: (row) => row.key,
       write: (row, value) => ({ ...row, key: value }),
+      validate: (value) => (attributeKey(value) ? undefined : copy.validation),
+    },
+    {
+      id: 'fromType',
+      header: copy.fromType,
+      type: 'enum',
+      enumSelect: true,
+      editable: true,
+      options: entityChoices,
+      read: (row) => row.fromType,
+      write: (row, value) => ({ ...row, fromType: value }),
+    },
+    {
+      id: 'toType',
+      header: copy.toType,
+      type: 'enum',
+      enumSelect: true,
+      editable: true,
+      options: entityChoices,
+      read: (row) => row.toType,
+      write: (row, value) => ({ ...row, toType: value }),
+    },
+    {
+      id: 'fromLabel',
+      header: copy.linkForwardLabel,
+      editable: true,
+      truncate: true,
+      read: (row) => row.fromLabel,
+      write: (row, value) => ({ ...row, fromLabel: value }),
+    },
+    {
+      id: 'toLabel',
+      header: copy.linkReverseLabel,
+      editable: true,
+      truncate: true,
+      read: (row) => row.toLabel,
+      write: (row, value) => ({ ...row, toLabel: value }),
+    },
+    {
+      id: 'fromCardinality',
+      header: `${copy.fromType} ${copy.cardinality}`,
+      type: 'enum',
+      enumSelect: true,
+      editable: true,
+      options: cardinalityOptions,
+      read: (row) => row.fromCardinality,
+      write: (row, value) => ({ ...row, fromCardinality: value === 'one' ? 'one' : 'many' }),
+    },
+    {
+      id: 'toCardinality',
+      header: `${copy.toType} ${copy.cardinality}`,
+      type: 'enum',
+      enumSelect: true,
+      editable: true,
+      options: cardinalityOptions,
+      read: (row) => row.toCardinality,
+      write: (row, value) => ({ ...row, toCardinality: value === 'one' ? 'one' : 'many' }),
     },
   ]
 
@@ -303,13 +417,18 @@ export function LinkTypesTable() {
     <StandardEditableTable
       testId="link-types-table"
       columns={columns}
-      rows={rows}
+      rows={serverRows}
       draftRows={draftRows}
       onDraftRowsChange={setDraftRows}
+      reviewVisible={dirty()}
       onNewRow={() => {
         setLinkName('')
-        setFromType(entities[0] ?? '')
-        setToType(entities[0] ?? '')
+        setFromLabel('')
+        setToLabel('')
+        setFromType(entityKeys[0] ?? '')
+        setToType(entityKeys[0] ?? '')
+        setFromCardinality('many')
+        setToCardinality('many')
         setCreateOpen(true)
       }}
       newRowLabel={copy.newLinkType}
@@ -319,35 +438,16 @@ export function LinkTypesTable() {
         setActiveRowId(null)
       }}
       activeRowId={activeRowId}
+      getRowKeyAttr={(row) => row.key}
       menuContext={(row) => (row?.key ? 'model-link' : 'model')}
       getMenuTarget={(row) => ({ typeKey: row?.key || undefined })}
       onActivateRow={(row) => {
         setActiveRowId(row.id)
         if (!row.key) return
+        tryChooseModelSelection({ kind: 'type', typeKey: row.key })
         setModelFocus({ kind: 'type', key: row.key })
       }}
-      onReviewAndSave={async () => {
-        for (const row of Object.values(draftRows)) {
-          const existing = rows.some((item) => item.id === row.id)
-          if (!existing) {
-            await stageModel('model.create_link_type', {
-              key: row.key || row.singular.toLowerCase().replace(/\s+/g, '_'),
-              singular: row.singular,
-              plural: row.plural || row.singular,
-              language: uiLanguage,
-            })
-          } else {
-            await stageModel('model.update_type', {
-              key: row.id,
-              singular: row.singular,
-              plural: row.plural,
-              language: uiLanguage,
-            })
-          }
-        }
-        setDraftRows({})
-        await reviewDraft()
-      }}
+      onReviewAndSave={reviewDraftRows}
     />
     <CreateDialog
       open={createOpen}
@@ -355,36 +455,40 @@ export function LinkTypesTable() {
       description={copy.createNameHint}
       fields={[
         { id: 'name', label: copy.name, value: linkName, testId: 'new-name', autoFocus: true },
-        { id: 'from', label: copy.fromType, value: fromType, testId: 'new-type', options: entities.map((key) => ({ value: key, label: key })) },
-        { id: 'to', label: copy.toType, value: toType, testId: 'new-to-type', options: entities.map((key) => ({ value: key, label: key })) },
+        { id: 'from', label: copy.fromType, value: fromType, testId: 'link-type-from', options: entityChoices },
+        { id: 'to', label: copy.toType, value: toType, testId: 'link-type-to', options: entityChoices },
+        { id: 'fromLabel', label: copy.linkForwardLabel, value: fromLabel, testId: 'link-type-from-label' },
+        { id: 'toLabel', label: copy.linkReverseLabel, value: toLabel, testId: 'link-type-to-label' },
+        { id: 'fromCardinality', label: `${copy.fromType} ${copy.cardinality}`, value: fromCardinality, testId: 'link-type-from-cardinality', options: cardinalityOptions },
+        { id: 'toCardinality', label: `${copy.toType} ${copy.cardinality}`, value: toCardinality, testId: 'link-type-to-cardinality', options: cardinalityOptions },
       ]}
       onField={(id, value) => {
         if (id === 'name') setLinkName(value)
         else if (id === 'from') setFromType(value)
-        else setToType(value)
+        else if (id === 'to') setToType(value)
+        else if (id === 'fromLabel') setFromLabel(value)
+        else if (id === 'toLabel') setToLabel(value)
+        else if (id === 'fromCardinality') setFromCardinality(value)
+        else setToCardinality(value)
       }}
       onClose={() => setCreateOpen(false)}
       onSubmit={async () => {
         const name = requireText(linkName)
         const key = attributeKey(name)
         if (!key || !fromType || !toType) throw new Error(copy.validation)
-        const side = attributeKey(name)
-        await stageModel('model.create_link_type', {
+        const row: LinkTypeRow = {
+          id: key,
           key,
-          label: name,
-          singular: name,
-          plural: name,
-          language: uiLanguage,
-          from_types: [fromType],
-          to_types: [toType],
-          from_key: side,
-          from_label: name,
-          to_key: `${side}_to`,
-          to_label: name,
-          from_cardinality: 'many',
-          to_cardinality: 'many',
-          attributes: [],
-        })
+          fromType,
+          toType,
+          fromLabel: fromLabel.trim() || name,
+          toLabel: toLabel.trim() || name,
+          fromCardinality: fromCardinality === 'one' ? 'one' : 'many',
+          toCardinality: toCardinality === 'one' ? 'one' : 'many',
+        }
+        const steps = buildLinkTypeCreateSteps(row)
+        if (steps.length === 0) throw new Error(copy.validation)
+        await stageModelSteps(steps)
         setPendingKey(key)
       }}
     />
@@ -811,9 +915,9 @@ export function UnitsTable() {
 }
 
 /** Thin wrapper kept for shell routing. */
-export function ModelTableView({ view }: { view: { type: string; state: Json } }) {
+export function ModelTableView({ view, draftScope }: { view: { type: string; state: Json }; draftScope?: ModelTableDraftScope }) {
   if (view.type === 'object_types') return <ObjectTypesTable />
-  if (view.type === 'link_types') return <LinkTypesTable />
+  if (view.type === 'link_types') return <LinkTypesTable draftScope={draftScope} />
   if (view.type === 'value_lists') return <ValueListsTable />
   if (view.type === 'value_list_values') return <ValueListValuesTable listKey={String(view.state.list_key ?? '')} />
   if (view.type === 'units') return <UnitsTable />
