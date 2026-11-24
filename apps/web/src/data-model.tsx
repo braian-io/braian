@@ -615,7 +615,7 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
         ...(value === 'value_list' ? {} : { valueList: '' }),
       }),
       display: (row) => (
-        <span title={(objectCountsById.get(row.id) ?? 0) > 0 ? copy.attributeTypeLocked : undefined}>
+        <span title={listed.isSuccess && (objectCountsById.get(row.id) ?? 0) > 0 ? copy.attributeTypeLocked : undefined}>
           {kindLabel(row.kind)}
         </span>
       ),
@@ -866,7 +866,7 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
         canEdit={(row, column) => {
           if (row.inherited) return false
           if (column.id === 'key' && (row.standard || row.id === keyAttribute)) return false
-          if (column.id === 'kind' && (objectCountsById.get(row.id) ?? 0) > 0) return false
+          if (column.id === 'kind' && listed.isSuccess && (objectCountsById.get(row.id) ?? 0) > 0) return false
           if (row.standard && RULE_COLUMN_IDS.has(column.id)) return false
           if (!ruleColumnApplies(column.id, row.kind)) return false
           if (column.id === 'unit' && row.kind !== 'number' && row.kind !== 'range') return false

@@ -106,7 +106,7 @@ test('type attribute rule columns stage, save, and restore (row 47)', async ({ p
   await create.getByTestId('new-type').click()
   await page.getByRole('option', { name: 'Value list' }).click()
   await create.getByTestId('new-value-list').click()
-  await page.getByRole('option', { name: 'ROW47 Colors' }).click()
+  await page.getByRole('option', { name: 'row47_colors' }).click()
   await create.getByTestId('create-object').click()
   const colorRow = attributes.locator('[data-key="row47_color"]')
   await colorRow.getByRole('checkbox', { name: 'Multiple' }).click()
