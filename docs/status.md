@@ -10,6 +10,8 @@
 - **Load:** `drop_database` set `statement_timeout = 3s` on a plain `DROP DATABASE`. A large
   `braian_demo` catalog after demo-2 can exceed that under CI I/O; demo-2 also ignored drop
   failures. Drop now uses `WITH (FORCE)` (same as `scripts/e2e.mjs`) and propagates errors.
+- **Bevis:** demo-2 light 100k × 10 → 10/10; `agent-chat-dock` 1920-test × 20 isolerade e2e → 20/20
+  (head `1e94878`, cloud-agent-miljö).
 
 # Status 2026-11-14
 
