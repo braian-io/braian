@@ -28,7 +28,7 @@ describe('link type draft persistence', () => {
       v: 1 as const,
       draftRows: {
         product_suppliers: {
-          patch: true,
+          patch: true as const,
           id: 'product_suppliers',
           key: 'product_suppliers',
           changes: { fromCardinality: { base: 'many', value: 'one' } },

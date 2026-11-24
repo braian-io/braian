@@ -120,7 +120,7 @@ test('link types are editable with blocking cardinality (row 47)', async ({ page
   await page.keyboard.press('Control+S')
   const review = page.getByTestId('review-dialog')
   await expect(review).toBeVisible()
-  await expect(review.locator('.error')).toContainText(product!.key)
+  await expect(review.locator('.error')).toContainText(String(product!.key ?? ''))
   await review.getByRole('button', { name: 'Cancel' }).click()
   await expect(page.getByTestId('unsaved-changes')).toBeVisible()
   const after = await linkTypeDef(page, linkKey)

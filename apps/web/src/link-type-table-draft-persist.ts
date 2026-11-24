@@ -92,7 +92,13 @@ export function applyLinkTypePatches(server: LinkTypeRow, changes: LinkTypeTable
   const next = { ...server }
   for (const field of PATCHABLE_LINK_TYPE_FIELDS) {
     const change = changes[field]
-    if (change && typeof change.value === 'string') next[field] = change.value as LinkTypeRow[typeof field]
+    if (change && typeof change.value === 'string') {
+      if (field === 'fromCardinality' || field === 'toCardinality') {
+        next[field] = change.value === 'one' ? 'one' : 'many'
+      } else {
+        next[field] = change.value as LinkTypeRow[typeof field]
+      }
+    }
   }
   const keyChange = changes.__key
   if (keyChange?.value) next.key = keyChange.value

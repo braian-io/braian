@@ -65,6 +65,6 @@ export function buildLinkTypeUpdateSteps(original: LinkTypeRow, row: LinkTypeRow
   if (row.key.trim() && row.key.trim() !== original.key) {
     steps.push({ op: 'rename_type_key', key: original.key, new_key: row.key.trim() })
   }
-  if (dirty) steps.push(patch)
+  if (dirty) steps.push(patch as { op: string } & Record<string, unknown>)
   return steps
 }
