@@ -102,7 +102,15 @@ open the save review for the draft.
 Edits in the type-attributes table are also kept in the browser (per user and workspace)
 until you save or discard them. Only fields you actually changed are restored after a
 reload; if the model changed on the server in the meantime, conflicting fields are
-dropped with a notice instead of overwriting the newer values.
+dropped with a notice instead of overwriting the newer values. A trimmed local draft
+(such as a create row whose key now exists on the server) shows a short toast when it
+is restored.
+
+In that table, `Save` stages the pending attribute edits the same way as elsewhere in
+the model workspace and opens the review flow when one is needed. While the table draft
+is dirty, closing or reloading the browser tab triggers the browser's unsaved-changes
+warning. Switching to another type or workspace opens a dialog with `Save`, `Discard`,
+and `Cancel`; `Escape` or the close control dismiss the dialog and keep the draft.
 
 Language tags are stored as given: `sv` and `sv-SE` are different values. Value lists
 have stable option codes with labels per language. A unit belongs to a unit family
