@@ -158,6 +158,11 @@ describe('review dialog', () => {
     expect(draftSaveGate({
       count: 1,
       conflict: false,
+      steps: [{ op: 'reorder_attributes', structure: 'food', group: 'yoghurt', attributes: ['b', 'a'] }],
+    })).toBe('confirm')
+    expect(draftSaveGate({
+      count: 1,
+      conflict: false,
       steps: [
         { op: 'create_attribute', key: 'row47' },
         { op: 'attach_attribute', attribute: 'row47', structure: 'food', group: 'yoghurt' },
@@ -170,7 +175,7 @@ describe('review dialog', () => {
     expect(draftHasForcedReview({
       count: 1,
       steps: [{ op: 'rename_type_key', key: 'product', new_key: 'product_row47_saved' }],
-    })).toBe(true)
+    })).toBe(false)
   })
 
   it('describes an allowed-tree change with display names and a Review change title', async () => {

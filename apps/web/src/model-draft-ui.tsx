@@ -41,7 +41,7 @@ function asRecord(value: unknown): Json | undefined {
 function forcesReview(step: unknown): boolean {
   const record = asRecord(step)
   const op = record?.op
-  if (op === 'set_structures' || op === 'update_value_list' || op === 'reorder_attributes' || op === 'rename_type_key') {
+  if (op === 'set_structures' || op === 'update_value_list' || op === 'reorder_attributes') {
     return true
   }
   // A group attach is a model change. A type attach stays a direct save.
