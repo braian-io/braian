@@ -4,7 +4,7 @@
 //! also get the value in the family's base unit, as a float used only for
 //! sorting and range filters. The exact decimal stays in Postgres.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use braian_model::{AttributeKind, DefinitionSet, Object};
 use braian_rules::CompiledModel;
@@ -167,6 +167,69 @@ impl Typesense {
         )
         .await
         .map(|_| ())
+    }
+
+    /// Adds filter and sort columns that the live collection does not have yet.
+    ///
+    /// A field that is not in the schema is still stored and returned on a hit,
+    /// but Typesense will not filter it. A number added after the collection
+    /// was created would show its base value and still miss `:>`.
+    pub async fn sync_fields(&self, collection: &str, defs: &DefinitionSet) -> Result<(), Error> {
+        let missing = self.missing_fields(collection, defs).await?;
+        if missing.is_empty() {
+            return Ok(());
+        }
+        if let Err(error) = self
+            .send(
+                reqwest::Method::PATCH,
+                &format!("/collections/{collection}"),
+                Some(json!({ "fields": missing })),
+            )
+            .await
+        {
+            // Another lane may have added the same columns between the read and the patch.
+            if self.missing_fields(collection, defs).await?.is_empty() {
+                return Ok(());
+            }
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    async fn missing_fields(
+        &self,
+        collection: &str,
+        defs: &DefinitionSet,
+    ) -> Result<Vec<Value>, Error> {
+        let response = self
+            .client
+            .get(format!("{}/collections/{collection}", self.base))
+            .header("X-TYPESENSE-API-KEY", &self.api_key)
+            .send()
+            .await
+            .map_err(|error| Error::Typesense(error.to_string()))?;
+        let status = response.status();
+        let body: Value = response
+            .json()
+            .await
+            .map_err(|error| Error::Typesense(error.to_string()))?;
+        if !status.is_success() {
+            return Err(Error::Typesense(format!(
+                "collection {collection} {status}: {body}"
+            )));
+        }
+        let present = body
+            .get("fields")
+            .and_then(Value::as_array)
+            .map(|fields| {
+                fields
+                    .iter()
+                    .filter_map(|field| field.get("name").and_then(Value::as_str))
+                    .map(str::to_owned)
+                    .collect::<HashSet<_>>()
+            })
+            .unwrap_or_default();
+        Ok(missing_schema_fields(&present, &schema_fields(defs)))
     }
 
     pub async fn delete_document(&self, id: &str) -> Result<(), Error> {
@@ -678,6 +741,20 @@ fn stores_own_field(attribute: &braian_model::Attribute) -> bool {
     attribute.index.filterable || attribute.index.sortable
 }
 
+/// Columns in `desired` whose names are not already on the collection.
+fn missing_schema_fields(present: &HashSet<String>, desired: &[Value]) -> Vec<Value> {
+    desired
+        .iter()
+        .filter(|field| {
+            field
+                .get("name")
+                .and_then(Value::as_str)
+                .is_some_and(|name| !present.contains(name))
+        })
+        .cloned()
+        .collect()
+}
+
 fn schema_fields(defs: &DefinitionSet) -> Vec<Value> {
     let mut fields = vec![
         // Typesense 30 does not sort a string unless sort is set. Number paths sort on key.
@@ -1113,6 +1190,8 @@ fn scalar_number(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::*;
     use serde_json::json;
 
@@ -1340,6 +1419,108 @@ mod tests {
         assert_eq!(doc[&format!("{field}__min")], json!(500.0));
         assert_eq!(doc[&format!("{field}__max")], json!(1000.0));
         assert_eq!(doc[&format!("{field}__unit")], "kg");
+    }
+
+    /// 100 °C and 212 °F are the same base value. A collection created before
+    /// the attribute existed does not have the column, so the sync has to add
+    /// a float field or `:>` cannot match the stored number.
+    #[test]
+    fn celsius_and_fahrenheit_share_a_base_float_the_live_schema_must_gain() {
+        let defs: DefinitionSet = serde_json::from_value(json!({
+            "model_revision": 1,
+            "languages": ["en"],
+            "unit_families": [{
+                "id": "018f0000-0000-7000-8000-000000000012",
+                "key": "temperature",
+                "base_unit": "celsius",
+                "units": [
+                    { "code": "celsius", "factor": "1", "offset": "0" },
+                    {
+                        "code": "fahrenheit",
+                        "factor": "0.555555555555555555555555556",
+                        "offset": "-17.777777777777777777777777778"
+                    }
+                ]
+            }],
+            "attributes": [{
+                "id": "018f0000-0000-7000-8000-000000000100",
+                "key": "number",
+                "labels": { "en": "Number" },
+                "language_dependent": false,
+                "multiple": false,
+                "kind": { "type": "text" },
+                "index": { "searchable": true, "filterable": true, "sortable": true }
+            }, {
+                "id": "018f0000-0000-7000-8000-00000000011d",
+                "key": "reading",
+                "labels": { "en": "Reading" },
+                "language_dependent": false,
+                "multiple": false,
+                "kind": {
+                    "type": "number",
+                    "unit_family": "018f0000-0000-7000-8000-000000000012"
+                },
+                "index": { "searchable": false, "filterable": true, "sortable": true }
+            }],
+            "types": [{
+                "id": "018f0000-0000-7000-8000-000000000201",
+                "key": "article",
+                "labels": { "en": "Article" },
+                "key_attribute": "018f0000-0000-7000-8000-000000000100",
+                "attributes": [
+                    "018f0000-0000-7000-8000-000000000100",
+                    "018f0000-0000-7000-8000-00000000011d"
+                ]
+            }],
+            "structures": []
+        }))
+        .expect("defs");
+        let model = CompiledModel::compile(&defs).expect("compile");
+        let reading = model.attribute_by_key("reading").expect("reading");
+        let field = braian_model::attribute_index_field(reading.id, None);
+        let celsius = doc_with(
+            &model,
+            &defs,
+            reading.id,
+            json!({"value": "100", "unit": "celsius"}),
+        );
+        let fahrenheit = doc_with(
+            &model,
+            &defs,
+            reading.id,
+            json!({"value": "212", "unit": "fahrenheit"}),
+        );
+        let celsius_base = celsius[&field].as_f64().expect("celsius base");
+        let fahrenheit_base = fahrenheit[&field].as_f64().expect("fahrenheit base");
+        assert!((celsius_base - 100.0).abs() < 0.001, "{celsius_base}");
+        assert!((fahrenheit_base - 100.0).abs() < 0.001, "{fahrenheit_base}");
+        assert!((celsius_base - fahrenheit_base).abs() < 0.001);
+
+        let present: HashSet<String> = ["key", "type_key", "seq", "version", "deleted", "groups"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        let missing = missing_schema_fields(&present, &schema_fields(&defs));
+        let value_field = missing
+            .iter()
+            .find(|item| item["name"] == field)
+            .expect("base value column");
+        assert_eq!(value_field["type"], "float");
+        assert_eq!(value_field["facet"], true);
+        assert_eq!(value_field["optional"], true);
+        let unit_field = missing
+            .iter()
+            .find(|item| item["name"] == format!("{field}__unit"))
+            .expect("entered unit column");
+        assert_eq!(unit_field["type"], "string");
+        assert_eq!(unit_field["facet"], true);
+        let mut patched = present;
+        for field in &missing {
+            if let Some(name) = field["name"].as_str() {
+                patched.insert(name.to_owned());
+            }
+        }
+        assert!(missing_schema_fields(&patched, &schema_fields(&defs)).is_empty());
     }
 
     fn doc_with(
