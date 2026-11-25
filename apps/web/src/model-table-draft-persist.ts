@@ -8,6 +8,7 @@ export type StoredAttributeTableRow = {
   label: string
   kind: string
   unit: string
+  defaultUnit: string
   required: boolean
   showByDefault: boolean
   languages: boolean
@@ -35,6 +36,7 @@ export const PATCHABLE_ATTRIBUTE_FIELDS: readonly PatchableAttributeField[] = [
   'label',
   'kind',
   'unit',
+  'defaultUnit',
   'required',
   'showByDefault',
   'languages',
@@ -203,6 +205,7 @@ function serverAttributeRow(defs: Json | undefined, id: string, language = 'en')
     label,
     kind: String(kind.type ?? 'text'),
     unit: family ? String(family.key ?? '') : '',
+    defaultUnit: String(kind.default_unit ?? ''),
     required: Boolean(raw.required),
     showByDefault: raw.show_by_default !== false,
     languages: Boolean(raw.language_dependent),

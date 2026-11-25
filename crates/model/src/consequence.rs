@@ -706,10 +706,18 @@ pub fn apply_destructive(defs: &mut DefinitionSet, change: &ModelChange) -> Resu
 
 fn clear_family(kind: &mut AttributeKind, family: crate::id::UnitFamilyId) {
     match kind {
-        AttributeKind::Number { unit_family, .. } | AttributeKind::Range { unit_family }
-            if *unit_family == Some(family) =>
-        {
+        AttributeKind::Number {
+            unit_family,
+            default_unit,
+            ..
+        }
+        | AttributeKind::Range {
+            unit_family,
+            default_unit,
+            ..
+        } if *unit_family == Some(family) => {
             *unit_family = None;
+            *default_unit = None;
         }
         _ => {}
     }
@@ -779,6 +787,7 @@ mod tests {
         let mut weight_attr = text_attr(12, "weight", "Weight");
         weight_attr.kind = AttributeKind::Number {
             unit_family: Some(UnitFamilyId::from_uuid(mass)),
+            default_unit: None,
             min: None,
             max: None,
             integer: false,
@@ -797,14 +806,8 @@ mod tests {
                 dimension: None,
                 base_unit: "kg".into(),
                 units: vec![
-                    Unit {
-                        code: "kg".into(),
-                        factor: "1".parse().expect("factor"),
-                    },
-                    Unit {
-                        code: "g".into(),
-                        factor: "0.001".parse().expect("factor"),
-                    },
+                    Unit::with_factor("kg", "1".parse().expect("factor")),
+                    Unit::with_factor("g", "0.001".parse().expect("factor")),
                 ],
             }],
             value_lists: vec![SharedValueList {

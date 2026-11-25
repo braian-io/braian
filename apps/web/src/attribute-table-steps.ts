@@ -33,6 +33,7 @@ export function buildAttributeCreateSteps(
       label,
       kind: row.kind,
       ...(unit ? { unit } : {}),
+      ...(row.defaultUnit ? { default_unit: row.defaultUnit } : {}),
       multiple: row.multiple,
       languages: row.kind === 'text' ? row.languages : false,
       required: row.required,
@@ -78,6 +79,10 @@ export function buildAttributeUpdateSteps(
   if (unitKind && row.unit !== original.unit) {
     if (row.unit) patch.unit = row.unit
     else patch.clear_unit = true
+  }
+  if (unitKind && row.defaultUnit !== original.defaultUnit) {
+    if (row.defaultUnit) patch.default_unit = row.defaultUnit
+    else patch.clear_default_unit = true
   }
   if (row.required !== original.required) patch.required = row.required
   if (row.showByDefault !== original.showByDefault) patch.show_by_default = row.showByDefault

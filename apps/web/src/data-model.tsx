@@ -616,7 +616,7 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
       write: (row, value) => ({
         ...row,
         kind: value,
-        ...(value === 'number' || value === 'range' ? {} : { unit: '' }),
+        ...(value === 'number' || value === 'range' ? {} : { unit: '', defaultUnit: '' }),
         ...(value === 'number' ? {} : { min: '', max: '', integer: false }),
         ...(value === 'text' ? {} : { maxLength: '', textForm: '' }),
         ...(value === 'file_ref' ? {} : { media: false }),
@@ -630,13 +630,37 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
     },
     {
       id: 'unit',
-      header: copy.unit,
+      header: copy.unitFamilies,
       type: 'enum',
       editable: true,
       options: [{ value: 'none', label: copy.noUnit }, ...families.map((family) => ({ value: family, label: family }))],
       read: (row) => row.unit || 'none',
-      write: (row, value) => ({ ...row, unit: value === 'none' ? '' : value }),
+      write: (row, value) => ({
+        ...row,
+        unit: value === 'none' ? '' : value,
+        defaultUnit: value === 'none' ? '' : row.defaultUnit,
+      }),
+      hideCell: (row) => row.kind === 'value_list',
       display: (row) => row.unit || '—',
+    },
+    {
+      id: 'defaultUnit',
+      header: copy.defaultUnit,
+      type: 'enum',
+      editable: true,
+      options: [
+        { value: '', label: '—' },
+        ...((defs?.unit_families as Json[]) ?? []).flatMap((family) =>
+          ((family.units as Json[]) ?? []).map((unit) => ({
+            value: String(unit.code ?? ''),
+            label: `${String(family.key ?? '')} · ${String(unit.symbol ?? unit.code ?? '')}`,
+          })),
+        ),
+      ],
+      read: (row) => row.defaultUnit,
+      write: (row, value) => ({ ...row, defaultUnit: value }),
+      hideCell: (row) => row.kind !== 'number' && row.kind !== 'range',
+      display: (row) => row.defaultUnit || '—',
     },
     {
       id: 'required',
@@ -933,6 +957,7 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
             label,
             kind: createKind,
             unit: '',
+            defaultUnit: '',
             required: false,
             showByDefault: true,
             languages: createKind === 'text',

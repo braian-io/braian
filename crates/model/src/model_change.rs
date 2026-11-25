@@ -489,12 +489,18 @@ pub struct NamedOption {
     pub label: String,
 }
 
-/// One unit in a family. `factor` is a decimal string. The base unit is 1.
+/// One unit in a family. `factor` is a decimal string. The base unit is 1 with offset 0.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UnitSpec {
     pub code: String,
     #[serde(default = "factor_one")]
     pub factor: String,
+    #[serde(default)]
+    pub offset: String,
+    #[serde(default)]
+    pub symbol: String,
+    #[serde(default)]
+    pub label: String,
 }
 
 fn factor_one() -> String {
@@ -526,6 +532,10 @@ pub struct AttributeBounds {
     pub clear_value_list: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unit_family: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_unit: Option<String>,
+    #[serde(default, skip_serializing_if = "is_false_flag")]
+    pub clear_default_unit: bool,
 }
 
 fn is_false_flag(value: &bool) -> bool {
@@ -620,6 +630,41 @@ pub fn change_needs_reindex(change: &ModelChange) -> bool {
             | ModelChange::RenameGroupKey { .. }
             | ModelChange::SetStructures { .. }
     )
+}
+
+/// Whether applying these steps would leave search index floats stale.
+pub fn draft_needs_reindex(before: &DefinitionSet, changes: &[ModelChange]) -> bool {
+    if changes.iter().any(change_needs_reindex) {
+        return true;
+    }
+    let Ok((after, _)) = preview(before, changes) else {
+        return false;
+    };
+    unit_conversion_index_stale(before, &after)
+}
+
+fn unit_conversion_index_stale(before: &DefinitionSet, after: &DefinitionSet) -> bool {
+    for next in &after.unit_families {
+        let Some(old) = before.unit_families.iter().find(|family| family.id == next.id) else {
+            continue;
+        };
+        if old.base_unit != next.base_unit {
+            return true;
+        }
+        for unit in &next.units {
+            let Some(prev) = old
+                .units
+                .iter()
+                .find(|item| item.code == unit.code)
+            else {
+                continue;
+            };
+            if prev.factor != unit.factor || prev.offset != unit.offset {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// Applies every step. Later steps see earlier ones. Idempotent creates stay put.
@@ -2634,7 +2679,7 @@ fn create_unit_family(
             .filter(|text| !text.is_empty())
             .map(str::to_owned),
         base_unit: base_unit.to_owned(),
-        units: unit_specs(base_unit, units)?,
+        units: unit_specs(defs, base_unit, units)?,
     });
     Ok(())
 }
@@ -2648,6 +2693,18 @@ fn update_unit_family(
     units: Option<&[UnitSpec]>,
 ) -> Result<(), ApplyError> {
     let id = crate::refs::unit_family_id(defs, key)?;
+    let built_units = units.map(|unit_rows| {
+        let family = defs
+            .unit_families
+            .iter()
+            .find(|item| item.id == id)
+            .ok_or_else(|| format!("unknown unit family {key}"))?;
+        let base = base_unit
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+            .unwrap_or(family.base_unit.as_str());
+        unit_specs(defs, base, unit_rows)
+    }).transpose()?;
     let family = defs
         .unit_families
         .iter_mut()
@@ -2662,9 +2719,8 @@ fn update_unit_family(
     if let Some(base_unit) = base_unit.map(str::trim).filter(|text| !text.is_empty()) {
         family.base_unit = base_unit.to_owned();
     }
-    if let Some(units) = units {
-        let base = family.base_unit.clone();
-        family.units = unit_specs(&base, units)?;
+    if let Some(units) = built_units {
+        family.units = units;
     }
     if !family
         .units
@@ -2676,6 +2732,9 @@ fn update_unit_family(
             Unit {
                 code: family.base_unit.clone(),
                 factor: Decimal::ONE,
+                offset: Decimal::ZERO,
+                symbol: family.base_unit.clone(),
+                labels: BTreeMap::new(),
             },
         );
     }
@@ -2888,9 +2947,17 @@ fn upsert_posted_family(defs: &mut DefinitionSet, posted: &UnitFamily) -> Result
         .map(|unit| UnitSpec {
             code: unit.code.clone(),
             factor: unit.factor.to_string(),
+            offset: unit.offset.to_string(),
+            symbol: unit.symbol.clone(),
+            label: unit
+                .labels
+                .values()
+                .next()
+                .cloned()
+                .unwrap_or_default(),
         })
         .collect::<Vec<_>>();
-    unit_specs(posted.base_unit.trim(), &specs)?;
+    unit_specs(defs, posted.base_unit.trim(), &specs)?;
     crate::edit::upsert_unit_family(defs, posted.clone());
     Ok(())
 }
@@ -2963,7 +3030,11 @@ fn named_options(
     Ok(out)
 }
 
-fn unit_specs(base_unit: &str, units: &[UnitSpec]) -> Result<Vec<Unit>, String> {
+fn unit_specs(
+    defs: &DefinitionSet,
+    base_unit: &str,
+    units: &[UnitSpec],
+) -> Result<Vec<Unit>, String> {
     let mut out = Vec::new();
     let mut seen = BTreeSet::new();
     for spec in units {
@@ -2974,10 +3045,7 @@ fn unit_specs(base_unit: &str, units: &[UnitSpec]) -> Result<Vec<Unit>, String> 
         if !seen.insert(code.to_owned()) {
             return Err(format!("unit {code} is repeated"));
         }
-        out.push(Unit {
-            code: code.to_owned(),
-            factor: parse_decimal(&spec.factor)?,
-        });
+        out.push(unit_from_spec(defs, code, spec)?);
     }
     if !seen.contains(base_unit) {
         out.insert(
@@ -2985,16 +3053,61 @@ fn unit_specs(base_unit: &str, units: &[UnitSpec]) -> Result<Vec<Unit>, String> 
             Unit {
                 code: base_unit.to_owned(),
                 factor: Decimal::ONE,
+                offset: Decimal::ZERO,
+                symbol: base_unit.to_owned(),
+                labels: label_map(defs, base_unit),
             },
         );
     }
     Ok(out)
 }
 
+fn unit_from_spec(
+    defs: &DefinitionSet,
+    code: &str,
+    spec: &UnitSpec,
+) -> Result<Unit, String> {
+  let factor = parse_decimal(&spec.factor)?;
+  let offset = if spec.offset.trim().is_empty() {
+    Decimal::ZERO
+  } else {
+    parse_decimal(&spec.offset)?
+  };
+  let symbol = if spec.symbol.trim().is_empty() {
+    code.to_owned()
+  } else {
+    spec.symbol.trim().to_owned()
+  };
+  let labels = if spec.label.trim().is_empty() {
+    BTreeMap::new()
+  } else {
+    label_map(defs, spec.label.trim())
+  };
+  Ok(Unit {
+    code: code.to_owned(),
+    factor,
+    offset,
+    symbol,
+    labels,
+  })
+}
+
 fn set_unit_family(kind: &mut AttributeKind, family: Option<UnitFamilyId>) -> Result<(), String> {
     match kind {
-        AttributeKind::Number { unit_family, .. } | AttributeKind::Range { unit_family } => {
+        AttributeKind::Number {
+            unit_family,
+            default_unit,
+            ..
+        }
+        | AttributeKind::Range {
+            unit_family,
+            default_unit,
+            ..
+        } => {
             *unit_family = family;
+            if family.is_none() {
+                *default_unit = None;
+            }
             Ok(())
         }
         _ if family.is_none() => Ok(()),
@@ -3072,6 +3185,25 @@ fn apply_bounds(
             *list = Some(token.clone());
         }
     }
+    if bounds.clear_default_unit || bounds.default_unit.is_some() {
+        match kind {
+            AttributeKind::Number { default_unit, .. }
+            | AttributeKind::Range { default_unit, .. } => {
+                if bounds.clear_default_unit {
+                    *default_unit = None;
+                }
+                if let Some(code) = bounds
+                    .default_unit
+                    .as_ref()
+                    .map(|text| text.trim())
+                    .filter(|text| !text.is_empty())
+                {
+                    *default_unit = Some(code.to_owned());
+                }
+            }
+            _ => return Err("default unit applies to a number or range".into()),
+        }
+    }
     Ok(())
 }
 
@@ -3089,6 +3221,7 @@ fn attribute_kind(kind: &str, unit_family: Option<UnitFamilyId>) -> Result<Attri
         }),
         "number" => Ok(AttributeKind::Number {
             unit_family,
+            default_unit: None,
             min: None,
             max: None,
             integer: false,
@@ -3099,7 +3232,10 @@ fn attribute_kind(kind: &str, unit_family: Option<UnitFamilyId>) -> Result<Attri
             options: vec![],
             list: None,
         }),
-        "range" => Ok(AttributeKind::Range { unit_family }),
+        "range" => Ok(AttributeKind::Range {
+            unit_family,
+            default_unit: None,
+        }),
         "file" | "file_ref" => Ok(AttributeKind::FileRef { media: false }),
         "object" | "object_ref" => Err("object references are link types".into()),
         other => Err(format!("unknown attribute type {other}")),
@@ -3254,10 +3390,7 @@ mod tests {
                 key: "mass".into(),
                 dimension: Some("mass".into()),
                 base_unit: "kg".into(),
-                units: vec![crate::definition::Unit {
-                    code: "kg".into(),
-                    factor: rust_decimal::Decimal::ONE,
-                }],
+                units: vec![crate::definition::Unit::with_factor("kg", rust_decimal::Decimal::ONE)],
             }],
             value_lists: vec![],
             attributes: vec![
@@ -3271,6 +3404,7 @@ mod tests {
                     show_by_default: true,
                     kind: AttributeKind::Number {
                         unit_family: Some(family),
+                        default_unit: None,
                         min: None,
                         max: None,
                         integer: false,
@@ -3479,6 +3613,9 @@ mod tests {
                 units: vec![UnitSpec {
                     code: "pc".into(),
                     factor: "1".into(),
+                    offset: String::new(),
+                    symbol: String::new(),
+                    label: String::new(),
                 }],
             },
             ModelChange::CreateType {
@@ -3722,6 +3859,7 @@ mod tests {
             .clone();
         name.kind = AttributeKind::Number {
             unit_family: None,
+            default_unit: None,
             min: None,
             max: None,
             integer: false,

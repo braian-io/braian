@@ -661,6 +661,20 @@ fn registry() -> &'static [Operation] {
             params: &[],
         },
         Operation {
+            name: "model.add_unit",
+            title: "Add unit",
+            permission: Role::Editor,
+            needs_approval: true,
+            params: &[],
+        },
+        Operation {
+            name: "model.update_unit",
+            title: "Update unit",
+            permission: Role::Editor,
+            needs_approval: true,
+            params: &[],
+        },
+        Operation {
             name: "model.update_structure",
             title: "Rename structure",
             permission: Role::Editor,

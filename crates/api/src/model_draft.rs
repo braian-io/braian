@@ -12,7 +12,8 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use braian_model::{
     DefinitionSet, ModelChange, ModelDraft, SharedValueList, change_removed_definitions,
-    groups_removed_by_structure_upserts, preview, purge_for, restored_definitions, undo_purge,
+    draft_needs_reindex, groups_removed_by_structure_upserts, preview, purge_for,
+    restored_definitions, undo_purge,
 };
 use braian_rules::CompiledModel;
 use braian_store::{Actor, BatchKind, Error, PrincipalKind};
@@ -455,6 +456,9 @@ pub(crate) async fn commit_steps(
                     }
                 }
                 state.models.invalidate().await;
+                if draft_needs_reindex(&defs, changes) {
+                    state.store.request_reindex().await.map_err(store_status)?;
+                }
                 let source = state
                     .store
                     .definition_batch_source(after.model_revision)

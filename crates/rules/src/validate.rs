@@ -238,7 +238,7 @@ impl CompiledModel {
             ));
         };
         let unit_family = match &attribute.kind {
-            AttributeKind::Number { unit_family, .. } | AttributeKind::Range { unit_family } => {
+            AttributeKind::Number { unit_family, .. } | AttributeKind::Range { unit_family, .. } => {
                 *unit_family
             }
             _ => {
@@ -374,6 +374,7 @@ impl CompiledModel {
                 min,
                 max,
                 integer,
+                ..
             } => {
                 let parsed = match parse_number(value) {
                     Ok(parsed) => parsed,
@@ -473,7 +474,7 @@ impl CompiledModel {
                     ));
                 }
             }
-            AttributeKind::Range { unit_family } => {
+            AttributeKind::Range { unit_family, .. } => {
                 let (min_value, max_value) = match parse_range(value) {
                     Ok(parsed) => parsed,
                     Err(code) => {
@@ -584,7 +585,7 @@ impl CompiledModel {
                 format!("attribute {} requires a unit", attribute.key),
             ));
         };
-        let Some(factor) = self.unit_factor(family, unit) else {
+        let Some((factor, offset)) = self.unit_affine(family, unit) else {
             return Err(failure(
                 Some(attribute.id),
                 language.cloned(),
@@ -593,7 +594,19 @@ impl CompiledModel {
                 format!("unit {unit} is not allowed on attribute {}", attribute.key),
             ));
         };
-        value.value.checked_mul(factor).ok_or_else(|| {
+        let scaled = value.value.checked_mul(factor).ok_or_else(|| {
+            failure(
+                Some(attribute.id),
+                language.cloned(),
+                index,
+                ErrorCode::InvalidDecimal,
+                format!(
+                    "attribute {} overflowed when converting units",
+                    attribute.key
+                ),
+            )
+        })?;
+        scaled.checked_add(offset).ok_or_else(|| {
             failure(
                 Some(attribute.id),
                 language.cloned(),

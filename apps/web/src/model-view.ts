@@ -11,6 +11,7 @@ export type AttributeRow = {
   label: string
   kind: string
   unit: string
+  defaultUnit: string
   required: boolean
   showByDefault: boolean
   languages: boolean
@@ -46,6 +47,7 @@ type PoolAttribute = {
   label: string
   kind: string
   unit: string
+  defaultUnit: string
   required: boolean
   showByDefault: boolean
   languages: boolean
@@ -272,6 +274,7 @@ function poolOf(defs: Json | undefined, language: string) {
       label: labelOf(item.labels, language, String(item.key ?? '')),
       kind: String(kind.type ?? 'text'),
       unit: family ? String(family.key ?? '') : '',
+      defaultUnit: String(kind.default_unit ?? ''),
       required: Boolean(item.required),
       showByDefault: item.show_by_default !== false,
       languages: Boolean(item.language_dependent),

@@ -752,7 +752,7 @@ fn part_fields(attribute: &braian_model::Attribute) -> Vec<(&'static str, PartKi
         AttributeKind::Number { unit_family, .. } if unit_family.is_some() => {
             vec![("unit", PartKind::Unit)]
         }
-        AttributeKind::Range { unit_family } => {
+        AttributeKind::Range { unit_family, .. } => {
             let mut parts = vec![("min", PartKind::Min), ("max", PartKind::Max)];
             if unit_family.is_some() {
                 parts.push(("unit", PartKind::Unit));

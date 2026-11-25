@@ -166,17 +166,25 @@ fn attribute(
             },
             AttributeKind::Number {
                 unit_family,
+                default_unit,
                 min,
                 max,
                 integer,
+                ..
             } => AttributeKindConfig::Number {
                 unit_family: optional_key(units, *unit_family, "unit family")?,
+                default_unit: default_unit.clone(),
                 min: min.as_ref().map(ToString::to_string),
                 max: max.as_ref().map(ToString::to_string),
                 integer: *integer,
             },
-            AttributeKind::Range { unit_family } => AttributeKindConfig::Range {
+            AttributeKind::Range {
+                unit_family,
+                default_unit,
+                ..
+            } => AttributeKindConfig::Range {
                 unit_family: optional_key(units, *unit_family, "unit family")?,
+                default_unit: default_unit.clone(),
             },
             AttributeKind::ValueList { options, list } => AttributeKindConfig::ValueList {
                 options: options.iter().map(option).collect(),
@@ -335,6 +343,9 @@ fn unit_family(family: &UnitFamily) -> UnitFamilyDocument {
             .map(|unit| UnitConfig {
                 code: unit.code.clone(),
                 factor: unit.factor.to_string(),
+                offset: unit.offset.to_string(),
+                symbol: unit.symbol.clone(),
+                labels: labels(&unit.labels),
             })
             .collect(),
     }
