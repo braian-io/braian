@@ -23,6 +23,15 @@ async function waitIndexed(page: Page, seq: number) {
   expect(response.ok(), await response.text()).toBeTruthy()
 }
 
+async function searchFound(page: Page, filter: string, seq: number) {
+  const response = await page.request.get(
+    `/v1/search?q=*&filter=${encodeURIComponent(filter)}&per_page=1&wait_seq=${seq}`,
+  )
+  if (!response.ok()) return -1
+  const body = (await response.json()) as { found?: number }
+  return body.found ?? 0
+}
+
 async function stageOperation(page: Page, operation: string, args: Record<string, unknown>) {
   const staged = await page.request.post('/v1/model/draft/steps', { data: { operation, args } })
   expect(staged.ok(), await staged.text()).toBeTruthy()
@@ -110,18 +119,16 @@ test('row307 temperature family filters match across celsius and fahrenheit', as
   const writeSeq = Math.max(seqA, seqB)
   await waitIndexed(page, writeSeq)
 
+  const baseFilter = (sku: string) => `type_key:=product&&key:=${sku}`
+
   await expect.poll(async () => {
-    const response = await page.request.get(
-      `/v1/search?q=*&filter=type_key:=product&&${field}:>90&per_page=50&wait_seq=${writeSeq}`,
-    )
-    if (!response.ok()) return 0
-    const body = (await response.json()) as { found?: number; hits?: Array<{ document?: { key?: string } }> }
-    const keys = (body.hits ?? []).map((hit) => hit.document?.key).filter(Boolean)
-    return keys.includes(skuA) && keys.includes(skuB) ? 2 : 0
-  }, { timeout: 90_000 }).toBe(2)
+    const a = await searchFound(page, `${baseFilter(skuA)}&&${field}:>90`, writeSeq)
+    const b = await searchFound(page, `${baseFilter(skuB)}&&${field}:>90`, writeSeq)
+    return a === 1 && b === 1 ? 1 : 0
+  }, { timeout: 90_000 }).toBe(1)
 
   const docA = await page.request.get(
-    `/v1/search?q=*&filter=type_key:=product&&key:=${skuA}&per_page=1&wait_seq=${writeSeq}`,
+    `/v1/search?q=*&filter=${encodeURIComponent(baseFilter(skuA))}&per_page=1&wait_seq=${writeSeq}`,
   )
   expect(docA.ok(), await docA.text()).toBeTruthy()
   const hitA = ((await docA.json()) as { hits?: Array<{ document?: Record<string, unknown> }> }).hits?.[0]
@@ -130,13 +137,16 @@ test('row307 temperature family filters match across celsius and fahrenheit', as
   expect(hitA?.[field] as number).toBeGreaterThan(95)
   expect(hitA?.[field] as number).toBeLessThan(105)
 
-  await expect.poll(async () => {
-    const response = await page.request.get(
-      `/v1/search?q=*&filter=type_key:=product&&${field}:>110&per_page=50&wait_seq=${writeSeq}`,
-    )
-    if (!response.ok()) return false
-    const body = (await response.json()) as { hits?: Array<{ document?: { key?: string } }> }
-    const keys = (body.hits ?? []).map((hit) => hit.document?.key).filter(Boolean)
-    return !keys.includes(skuA) && !keys.includes(skuB)
-  }, { timeout: 90_000 }).toBe(true)
+  const docB = await page.request.get(
+    `/v1/search?q=*&filter=${encodeURIComponent(baseFilter(skuB))}&per_page=1&wait_seq=${writeSeq}`,
+  )
+  expect(docB.ok(), await docB.text()).toBeTruthy()
+  const hitB = ((await docB.json()) as { hits?: Array<{ document?: Record<string, unknown> }> }).hits?.[0]
+    ?.document
+  expect(typeof hitB?.[field]).toBe('number')
+  expect(hitB?.[field] as number).toBeGreaterThan(95)
+  expect(hitB?.[field] as number).toBeLessThan(105)
+
+  expect(await searchFound(page, `${baseFilter(skuA)}&&${field}:>110`, writeSeq)).toBe(0)
+  expect(await searchFound(page, `${baseFilter(skuB)}&&${field}:>110`, writeSeq)).toBe(0)
 })
