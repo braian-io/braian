@@ -751,6 +751,7 @@ export function StandardEditableTable<T extends { id: string }>({
                     inputRef.current = node
                   }}
                   data-testid={cellTestId ?? 'standard-cell-editor'}
+                  aria-label={column.header}
                   type={column.type === 'number' ? 'number' : column.type === 'date' ? 'date' : column.type === 'datetime' ? 'datetime-local' : 'text'}
                   value={editValue}
                   onChange={(event) => {
