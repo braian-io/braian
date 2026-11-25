@@ -12613,8 +12613,7 @@
             "type": "string",
             "description": "Short display text such as `°C`. Defaults to the code when unset."
           }
-        },
-        "additionalProperties": false
+        }
       },
       "UnitFamily": {
         "type": "object",
