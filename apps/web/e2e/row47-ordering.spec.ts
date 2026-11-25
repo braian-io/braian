@@ -45,7 +45,6 @@ async function createOwnAttribute(
   const create = page.getByTestId('create-dialog')
   await expect(create).toBeVisible()
   await create.getByTestId('new-name').fill(key)
-  await create.getByTestId('new-key').fill(key)
   await create.getByTestId('create-object').click()
   await expect(create).toHaveCount(0)
   await expect(table.locator(`[data-key="${key}"]`)).toBeVisible()

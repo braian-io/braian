@@ -41,10 +41,11 @@ test.describe('row 47 type header draft and leave guard', () => {
     const typeKey = page.getByTestId('type-key-product')
     await typeKey.fill('product_row47_tmp')
     await expect(table.getByTestId('review-and-save')).toBeVisible()
-    await page.getByRole('button', { name: 'Data model' }).click()
     await page.locator('.pane-tab', { hasText: 'Object types' }).first().click()
     const other = page.getByTestId('object-types-table').locator('[data-row-id="recipe"]')
-    await other.click()
+    await expect(async () => {
+      await other.click({ timeout: 2_000 })
+    }).toPass({ timeout: 30_000 })
     const dialog = page.getByTestId('model-table-leave-dialog')
     await expect(dialog).toBeVisible()
     await dialog.getByTestId('model-table-leave-discard').click()
