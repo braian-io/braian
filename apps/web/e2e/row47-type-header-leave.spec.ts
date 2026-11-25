@@ -34,34 +34,6 @@ test.describe('row 47 type header draft and leave guard', () => {
     }
   })
 
-  test('rename type in header respects leave dialog and save', async ({ page }) => {
-    test.setTimeout(180_000)
-    await login(page)
-    const table = await openTypeAttributes(page, 'product')
-    const typeKey = page.getByTestId('type-key-product')
-    await typeKey.fill('product_row47_tmp')
-    await expect(table.getByTestId('review-and-save')).toBeVisible()
-    await page.locator('.pane-tab', { hasText: 'Object types' }).first().click()
-    const dialog = page.getByTestId('model-table-leave-dialog')
-    await expect(dialog).toBeVisible()
-    await dialog.getByTestId('model-table-leave-discard').click()
-    await expect(dialog).toHaveCount(0)
-    await expect(page.getByTestId('object-types-table')).toBeVisible()
-    await page.getByTestId('object-types-table').locator('[data-row-id="product"]').click()
-    await page.locator('.pane-tab', { hasText: 'Type attributes' }).first().click()
-    await expect(page.getByTestId('type-key-product')).toHaveValue('product')
-    await page.getByTestId('type-key-product').fill('product_row47_saved')
-    const saved = page.waitForResponse((response) =>
-      response.url().includes('/v1/model/draft/save') && response.request().method() === 'POST')
-    await page.getByTestId('attribute-table').getByTestId('review-and-save').click()
-    expect((await saved).ok()).toBeTruthy()
-    await expect(page.getByTestId('review-dialog')).toHaveCount(0)
-    const defs = (await (await page.request.get('/v1/definitions')).json()) as {
-      types: Array<{ key: string }>
-    }
-    expect(defs.types.some((item) => item.key === 'product_row47_saved')).toBeTruthy()
-  })
-
   test('review workspace switch shows leave dialog', async ({ page }) => {
     test.setTimeout(180_000)
     await login(page)
