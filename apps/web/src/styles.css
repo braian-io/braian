@@ -1095,6 +1095,7 @@ select.link-type-line { width: 100%; font-weight: 600; }
   border-radius: var(--r-lg);
   box-shadow: var(--inset);
 }
+.model-reload-bar { color: var(--text-2); }
 
 .standard-table-bar {
   display: flex;

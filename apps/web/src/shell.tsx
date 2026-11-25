@@ -94,7 +94,9 @@ import {
 } from './active-workspace'
 import { healAgentDockLayout } from './agent-layout-migrate'
 import { decideAgentToggle } from './agent-chat-toggle'
-import { healDataModelWorkspace, isKnownViewType, layoutHasMissingViews, migrateLegacyModelViews } from './model-workspace-migrate'
+import { healDataModelWorkspace, isDataModelWorkspace, isKnownViewType, layoutHasMissingViews, migrateLegacyModelViews } from './model-workspace-migrate'
+import { ModelRevisionReloadBanner, emitModelLiveEvent } from './model-reload-banner'
+import { isModelLiveEvent, modelRevisionFromDefinitions } from './model-revision-watch'
 import { persistWorkspaceMigration } from './workspace-migration-persist'
 import { commandPlaceholder, displayViewTitle, migrateSavedWorkspace, singularOf, typeNames, typeOfView } from './type-labels'
 import {
@@ -796,6 +798,7 @@ export function Shell() {
     source.onopen = () => setLiveState('open')
     source.onmessage = (event) => {
       setLiveState('message')
+      if (isModelLiveEvent(event.data)) emitModelLiveEvent(event.data)
       const id = objectIdFromLive(event.data)
       if (id) flashObject(id)
       onImportLive(event.data)
@@ -2502,6 +2505,16 @@ export function Shell() {
         <pre className="activity" data-testid="activity-log" data-live={liveState}>{logText}</pre>
         <StatusBar online={online} live={liveState} locked={Boolean(workspace.data?.locked)} inert={agentControlled} />
       </div>
+      <ModelRevisionReloadBanner
+        enabled={Boolean(
+          workspace.data
+          && (
+            isDataModelWorkspace(workspace.data, viewRows(workspace.data.views))
+            || viewRows(workspace.data.views).some((view) => view.type === 'class_attributes')
+          ),
+        )}
+        loadedRevision={modelRevisionFromDefinitions(defs.data as Json | undefined)}
+      />
       <ModelDraftHost />
       <ModelTableBeforeUnload />
       <ModelTableLeaveDialog />

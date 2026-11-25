@@ -30,6 +30,7 @@ import { describeModelSteps } from './model-step-text'
 import { registerModelDefinitions } from './model-selection'
 import { flushModelTableDraftToStaged } from './model-table-draft'
 import { StateNote } from './states'
+import { beginOwnModelSave, endOwnModelSave } from './model-revision-watch'
 
 export type DraftSaveGate = 'idle' | 'direct' | 'confirm' | 'blocked'
 
@@ -488,7 +489,14 @@ export function ModelDraftHost() {
         if (gate !== 'direct' || !body) continue
         const change = JSON.stringify(body.steps ?? body.updated_at ?? body.count)
         if (change === posted) break
-        await api.post('/v1/model/draft/save', { body: draftSaveBody(body) })
+        beginOwnModelSave()
+        try {
+          const saved = await api.post('/v1/model/draft/save', { body: draftSaveBody(body) }) as Json
+          endOwnModelSave(typeof saved.model_revision === 'number' ? saved.model_revision : undefined)
+        } catch (reason) {
+          endOwnModelSave(undefined)
+          throw reason
+        }
         posted = change
         setReview(false)
         setReviewCreated([])
@@ -647,13 +655,17 @@ function ReviewDialog({
     saving.current = true
     setBusy(true)
     setError('')
+    beginOwnModelSave()
     void api.post('/v1/model/draft/save', { body: draftSaveBody(body) })
-      .then(() => {
+      .then((saved) => {
+        const revision = typeof (saved as Json).model_revision === 'number' ? (saved as Json).model_revision as number : undefined
+        endOwnModelSave(revision)
         const steps = (body.steps as Json[] | undefined) ?? []
         if (steps.some((step) => step.op === 'delete_type')) invalidateWorkspaces()
         onSaved()
       })
       .catch((reason: unknown) => {
+        endOwnModelSave(undefined)
         const message = writeErrorMessage(reason)
         if (message) setError(message)
       })

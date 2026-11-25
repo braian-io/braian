@@ -272,6 +272,7 @@ export const copy = {
   modelTableDraftRestoreFieldDropped(attributeKey: string, field: string) {
     return `Dropped unsaved change to ${attributeKey} (${field}) because the model changed.`
   },
+  modelChangedReload: 'Model changed – reload',
   modelTableDraftRemoteChanged: 'This table draft was changed in another tab.',
   loadRemoteDraft: 'Load it',
   openDraftInTable: 'Open in the table',
@@ -508,6 +509,7 @@ export const copy = {
   own: 'Own',
   confirm: 'Confirm',
   cancel: 'Cancel',
+  dismiss: 'Dismiss',
   modelDiff: 'Model diff',
   noJob: 'No job reads these fields.',
   addAttribute: 'Add attribute',

@@ -45,6 +45,7 @@ import { valueListLabel } from './value-list-table-steps'
 import { registerModelTableDraft, tryChooseModelSelection } from './model-table-draft'
 import { buildAttributeCreateSteps, buildAttributeUpdateSteps } from './attribute-table-steps'
 import { toast } from 'sonner'
+import { MODEL_RELOADED_EVENT } from './model-reload-banner'
 import { CreateDialog, requireText } from './create-dialog'
 import { onAttributeAction, type AttributeAction } from './attribute-actions'
 import { writeErrorMessage } from './write-error'
@@ -606,6 +607,45 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
     window.addEventListener('storage', onStorage)
     return () => window.removeEventListener('storage', onStorage)
   }, [draftScope?.userId, draftScope?.workspaceId, selection, selectionKey, defs, draftRows, typeHeaderPatch, pendingDetach, pendingDelete])
+
+  useEffect(() => {
+  const reconcileAfterReload = () => {
+    if (!selection || !draftScope?.userId || !draftScope.workspaceId) return
+    const freshDefs = queryClient.getQueryData<Json>(['definitions'])
+    if (!freshDefs) return
+    if (!tableDirty()) return
+    const snapshot = serializeModelTableDraftForStorage({
+      draftRows: draftRows as Record<string, StoredAttributeTableRow>,
+      draftPatches,
+      typeHeader: typeHeaderPatch,
+      pendingDetach: [...pendingDetach],
+      pendingDelete: [...pendingDelete],
+      defs: freshDefs,
+    })
+    const restored = validateStoredModelTableDraft(snapshot, freshDefs, selection)
+    setDraftRows(restored.draftRows as Record<string, AttributeTableRow>)
+    setDraftPatches(restored.draftPatches)
+    setTypeHeaderPatch(restored.typeHeader ?? {})
+    setPendingDetach(new Set(restored.pendingDetach))
+    setPendingDelete(new Set(restored.pendingDelete))
+    if (restored.trimmed) toast.message(copy.modelTableDraftRestoreTrimmed)
+    for (const dropped of restored.droppedFields) {
+      toast.message(copy.modelTableDraftRestoreFieldDropped(dropped.attributeKey, dropped.field))
+    }
+  }
+    window.addEventListener(MODEL_RELOADED_EVENT, reconcileAfterReload)
+    return () => window.removeEventListener(MODEL_RELOADED_EVENT, reconcileAfterReload)
+  }, [
+    draftScope?.userId,
+    draftScope?.workspaceId,
+    selection,
+    draftRows,
+    draftPatches,
+    typeHeaderPatch,
+    pendingDetach,
+    pendingDelete,
+    queryClient,
+  ])
 
   if (!selection) {
     return (
