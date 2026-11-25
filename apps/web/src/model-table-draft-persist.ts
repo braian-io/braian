@@ -6,6 +6,7 @@ export type StoredAttributeTableRow = {
   id: string
   key: string
   label: string
+  description: string
   kind: string
   unit: string
   defaultUnit: string
@@ -34,6 +35,7 @@ export type PatchableAttributeField = keyof Omit<
 
 export const PATCHABLE_ATTRIBUTE_FIELDS: readonly PatchableAttributeField[] = [
   'label',
+  'description',
   'kind',
   'unit',
   'defaultUnit',
@@ -217,6 +219,7 @@ function serverAttributeRow(defs: Json | undefined, id: string, language = 'en')
     id: String(raw.id ?? id),
     key: String(raw.key ?? ''),
     label,
+    description: typeof raw.description === 'string' ? raw.description : '',
     kind: String(kind.type ?? 'text'),
     unit: family ? String(family.key ?? '') : '',
     defaultUnit: String(kind.default_unit ?? ''),

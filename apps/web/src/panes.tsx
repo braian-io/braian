@@ -3389,6 +3389,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
     const attribute = attributes.find((item) => item.key === key)
     const kind = (attribute?.kind as Json) ?? {}
     const fieldLabel = textValue((attribute?.labels as Json) ?? key, uiLanguage) || key
+    const fieldDescription = typeof attribute?.description === 'string' ? attribute.description.trim() : ''
     const owner = owners[key]
     const localKeyCells = localCells.filter((cell) => cell.attribute === key)
     const proposalKeyCells = proposalCells.filter((cell) => cell.attribute === key)
@@ -3399,7 +3400,14 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
         : 'control'
     return (
       <div key={key} className={owner ? 'field locked' : 'field'} data-testid={owner ? 'locked-field' : undefined}>
-        <label>{fieldLabel}{owner ? ` · ${copy.ownedBy} ${owner}` : ''}</label>
+        <div className="field-label-line">
+          <label>{fieldLabel}{owner ? ` · ${copy.ownedBy} ${owner}` : ''}</label>
+          {fieldDescription ? (
+            <span className="detail-field-help" data-testid={`detail-field-desc-${key}`} title={fieldDescription}>
+              {fieldDescription}
+            </span>
+          ) : null}
+        </div>
         <div className={controlClass} data-testid={`detail-field-control-${key}`}>
           {!fieldKnownInPreview(key) ? (
             <span className="detail-field-skeleton" data-testid="detail-field-skeleton" data-field={key} aria-busy="true" />

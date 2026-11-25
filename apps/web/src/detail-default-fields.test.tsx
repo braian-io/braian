@@ -93,6 +93,21 @@ describe('Detail default fields', () => {
     expect(screen.getByText('Show fewer fields')).toBeTruthy()
   })
 
+  it('shows attribute description as help next to the field label', async () => {
+    const withHelp = {
+      ...defs,
+      attributes: (defs.attributes as Json[]).map((item) => (
+        item.key === 'visible' ? { ...item, description: 'Short product summary' } : item
+      )),
+    }
+    mock.use((path: string) => (path === '/v1/definitions' ? Promise.resolve(withHelp) : detailApi(path)))
+    render(<Host />)
+
+    const help = await screen.findByTestId('detail-field-desc-visible')
+    expect(help.textContent).toContain('Short product summary')
+    expect(help.getAttribute('title')).toBe('Short product summary')
+  })
+
   it('has no Show more control when every field is shown by default', async () => {
     const shown = {
       ...defs,

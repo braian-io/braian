@@ -1980,6 +1980,8 @@ export interface components {
          *     unit for that key is rejected when the attribute is added.
          */
         Attribute: {
+            /** @description Optional help text for editors. Not copied into the search index. */
+            description?: string | null;
             id: components["schemas"]["AttributeId"];
             index: components["schemas"]["IndexFlags"];
             key: string;
