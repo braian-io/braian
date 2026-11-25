@@ -149,6 +149,9 @@ pub struct Attribute {
     pub key: String,
     #[cfg_attr(feature = "openapi", schema(value_type = BTreeMap<String, String>))]
     pub labels: BTreeMap<LanguageTag, String>,
+    /// Optional help text for editors. Not copied into the search index.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     pub language_dependent: bool,
     pub multiple: bool,
     /// The value must be present when the attribute applies. Absent means optional.

@@ -25,6 +25,7 @@ export type AttributeDefinitionRow = {
   id: string
   key: string
   label: string
+  description: string
   kind: string
   unitFamily: string
   valueList: string
@@ -55,6 +56,7 @@ export function rowsFromDefinitions(defs: Json, catalog: Json | undefined): Attr
       id,
       key,
       label: labelOf(attribute.labels, key),
+      description: typeof attribute.description === 'string' ? attribute.description : '',
       kind: kind.name,
       unitFamily: familyLabel(defs, kind.unitFamily),
       valueList: listLabel(defs, kind.list),
@@ -77,6 +79,7 @@ function rowFromCatalog(row: Json): AttributeDefinitionRow {
     id,
     key,
     label: String(row.label ?? key),
+    description: typeof row.description === 'string' ? row.description : '',
     kind: String(row.kind ?? ''),
     unitFamily: placeLabel(row.unit_family),
     valueList: placeLabel(row.value_list),

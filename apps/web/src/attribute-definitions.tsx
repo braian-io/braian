@@ -173,6 +173,17 @@ export function AttributeDefinitions() {
       display: (row) => row.key || '—',
     },
     {
+      id: 'description',
+      header: copy.description,
+      type: 'text',
+      editable: true,
+      truncate: true,
+      read: (row) => row.description,
+      write: (row, value) => ({ ...row, description: value }),
+      cellTestId: (row) => (row.key ? `attr-desc-${row.key}` : `attr-desc-${row.id}`),
+      display: (row) => <span title={row.description || undefined}>{row.description || '—'}</span>,
+    },
+    {
       id: 'kind',
       header: copy.attributeType,
       type: 'enum',
@@ -293,7 +304,12 @@ export function AttributeDefinitions() {
             if (isNew) {
               const key = row.key.trim() || attributeKey(row.label)
               if (!key || !row.label.trim()) continue
-              const created = await stage('model.create_attribute', { key, label: row.label.trim(), kind: row.kind })
+              const created = await stage('model.create_attribute', {
+                key,
+                label: row.label.trim(),
+                kind: row.kind,
+                ...(row.description.trim() ? { description: row.description.trim() } : {}),
+              })
               if (!created) return
               continue
             }
@@ -306,6 +322,15 @@ export function AttributeDefinitions() {
             if (!row.standard && row.key.trim() && row.key !== original.key) {
               const renamed = await stage('model.rename_attribute_key', { key: original.key, new_key: row.key.trim() })
               if (!renamed) return
+            }
+            const desc = row.description.trim()
+            const prev = original.description.trim()
+            if (desc !== prev) {
+              const updated = await stage('model.update_attribute', {
+                key: original.key,
+                ...(desc ? { description: desc } : { clear_description: true }),
+              })
+              if (!updated) return
             }
           }
           setDraftRows({})

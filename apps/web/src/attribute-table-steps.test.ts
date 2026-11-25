@@ -8,6 +8,7 @@ function row(overrides: Partial<AttributeStepRow> = {}): AttributeStepRow {
     id: 'attr-1',
     key: 'attr_1',
     label: 'Attr',
+    description: '',
     kind: 'text',
     unit: '',
     defaultUnit: '',
@@ -98,6 +99,23 @@ describe('attribute table steps', () => {
     const original = row({ kind: 'text' })
     const next = row({ kind: 'text', min: '1', max: '2', integer: true })
     expect(buildAttributeUpdateSteps(defs, original, next, '')).toEqual([])
+  })
+
+  it('emits description on create and clear on update', () => {
+    expect(
+      buildAttributeCreateSteps(
+        defs,
+        row({ description: 'Helps editors' }),
+        { op: 'attach_attribute', attribute: 'attr_1' },
+      )[0],
+    ).toMatchObject({ description: 'Helps editors' })
+    const original = row({ description: 'Old help' })
+    expect(buildAttributeUpdateSteps(defs, original, row({ description: 'New help' }), '')).toEqual([
+      { op: 'update_attribute', key: 'attr_1', description: 'New help' },
+    ])
+    expect(buildAttributeUpdateSteps(defs, original, row({ description: '' }), '')).toEqual([
+      { op: 'update_attribute', key: 'attr_1', clear_description: true },
+    ])
   })
 
   it('clears max length and value list when emptied', () => {

@@ -9,6 +9,7 @@ export type AttributeRow = {
   id: string
   key: string
   label: string
+  description: string
   kind: string
   unit: string
   defaultUnit: string
@@ -45,6 +46,7 @@ type PoolAttribute = {
   id: string
   key: string
   label: string
+  description: string
   kind: string
   unit: string
   defaultUnit: string
@@ -272,6 +274,7 @@ function poolOf(defs: Json | undefined, language: string) {
       id: String(item.id ?? ''),
       key: String(item.key ?? ''),
       label: labelOf(item.labels, language, String(item.key ?? '')),
+      description: typeof item.description === 'string' ? item.description : '',
       kind: String(kind.type ?? 'text'),
       unit: family ? String(family.key ?? '') : '',
       defaultUnit: String(kind.default_unit ?? ''),

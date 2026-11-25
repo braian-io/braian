@@ -1382,6 +1382,7 @@ fn attribute_from_config(
         id,
         key: config.key.clone(),
         labels: language_labels(&config.labels)?,
+        description: None,
         language_dependent: config.language_dependent,
         multiple: config.multiple,
         required: config.required,
