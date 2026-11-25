@@ -70,6 +70,7 @@ describe('model table draft persistence', () => {
           id: 'new_attr',
           key: 'new_attr',
           label: 'New',
+          description: '',
           kind: 'text',
           unit: '',
           defaultUnit: '',
