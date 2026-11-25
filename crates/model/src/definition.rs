@@ -64,9 +64,8 @@ impl UnitFamily {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-#[serde(deny_unknown_fields)]
 pub struct Unit {
     pub code: String,
     /// Multiplier into the base unit. Serialized as a decimal string.
@@ -82,6 +81,44 @@ pub struct Unit {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[cfg_attr(feature = "openapi", schema(value_type = BTreeMap<String, String>))]
     pub labels: BTreeMap<LanguageTag, String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UnitWire {
+    code: String,
+    factor: Decimal,
+    #[serde(default)]
+    offset: Decimal,
+    #[serde(default)]
+    symbol: String,
+    #[serde(default)]
+    labels: BTreeMap<LanguageTag, String>,
+}
+
+impl From<UnitWire> for Unit {
+    fn from(wire: UnitWire) -> Self {
+        Self {
+            code: wire.code.clone(),
+            factor: wire.factor,
+            offset: wire.offset,
+            symbol: if wire.symbol.is_empty() {
+                wire.code
+            } else {
+                wire.symbol
+            },
+            labels: wire.labels,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Unit {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Ok(UnitWire::deserialize(deserializer)?.into())
+    }
 }
 
 impl Unit {

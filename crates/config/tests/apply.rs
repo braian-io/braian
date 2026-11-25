@@ -63,6 +63,9 @@ fn apply_builds_steps_for_new_attributes_lists_and_units() {
             units: vec![braian_config::UnitConfig {
                 code: "s".into(),
                 factor: "1".into(),
+                offset: String::new(),
+                symbol: String::new(),
+                labels: Default::default(),
             }],
         },
     ));
