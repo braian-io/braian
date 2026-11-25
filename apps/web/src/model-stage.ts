@@ -253,6 +253,19 @@ export async function stageModel(name: string, args: Json = {}) {
 /** Raw steps collected in the draft. Deletes use this because the operation cannot. */
 export async function stageModelSteps(steps: Array<{ op: string } & Record<string, unknown>>) {
   const draft = await api.post('/v1/model/draft/steps', { body: { steps } })
+  for (const step of steps) {
+    if (step.op !== 'set_structures') continue
+    const args: Json = {
+      type_key: step.type_key,
+      structures: step.structures,
+    }
+    const record = rememberStructures(draft, 'model.set_structures', args)
+    if (!record) continue
+    stagedStructures = [...stagedStructures.filter((item) => item.typeKey !== record.typeKey), record]
+    const token = nextStructuresToken++
+    structuresLock = { token, typeKey: record.typeKey }
+    emitStructuresLock()
+  }
   emitDraft()
   return draft
 }

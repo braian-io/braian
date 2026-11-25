@@ -63,6 +63,7 @@ export function pruneModelTableDraftStorage(
   defs: Json | undefined,
   storage: Storage = localStorage,
 ): string[] {
+  if (!defs) return []
   const removed: string[] = []
   const types = typeKeys(defs)
   const groups = groupSelectionKeys(defs)

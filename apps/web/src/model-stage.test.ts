@@ -7,6 +7,7 @@ import {
   lockedStructuresType,
   releaseStructuresLock,
   stageModel,
+  stageModelSteps,
   structuresStageInFlight,
   takeStagedStructures,
 } from './model-stage'
@@ -120,6 +121,19 @@ describe('model set_structures staging', () => {
     expect(mock.post).toHaveBeenLastCalledWith('/v1/model/draft/steps', { body: { remove: 0 } })
     expect(lockedStructuresType()).toBeNull()
     expect(takeStagedStructures()).toEqual([])
+  })
+
+  it('records set_structures from batched stageModelSteps for review cancel', async () => {
+    mock.post.mockResolvedValueOnce({
+      count: 1,
+      steps: [{ op: 'set_structures', type_key: 'product', structures: ['structure-food'] }],
+    })
+    await stageModelSteps([{ op: 'set_structures', type_key: 'product', structures: ['structure-food'] }])
+    expect(takeStagedStructures()).toEqual([
+      { index: 0, typeKey: 'product', structures: ['structure-food'] },
+    ])
+    expect(lockedStructuresType()).toBe('product')
+    releaseStructuresLock()
   })
 
   it('unlocks when the stage request fails', async () => {

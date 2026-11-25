@@ -456,7 +456,7 @@ export function Shell() {
 
   useEffect(() => {
     const userId = me.data?.user_id
-    if (!userId || typeof localStorage === 'undefined') return
+    if (!userId || typeof localStorage === 'undefined' || !defs.data) return
     const workspaceIds = new Set((workspaces.data?.workspaces ?? []).map((item) => item.id))
     pruneModelTableDraftStorage(userId, workspaceIds, defs.data)
   }, [me.data?.user_id, workspaces.data, defs.data])

@@ -18,6 +18,12 @@ describe('model table draft storage cleanup', () => {
     })
   })
 
+  it('does not prune when definitions are not loaded yet', () => {
+    writeStoredModelTableDraft('user', 'keep', 'product', { v: 2, draftRows: {}, pendingDetach: [], pendingDelete: [] })
+    expect(pruneModelTableDraftStorage('user', new Set(['keep']), undefined)).toEqual([])
+    expect(localStorage.getItem('braian.model-table-draft.user.keep.product')).not.toBeNull()
+  })
+
   it('drops drafts for removed workspaces and types on prune', () => {
     writeStoredModelTableDraft('user', 'gone', 'product', { v: 2, draftRows: {}, pendingDetach: [], pendingDelete: [] })
     writeStoredModelTableDraft('user', 'keep', 'missing', { v: 2, draftRows: {}, pendingDetach: [], pendingDelete: [] })

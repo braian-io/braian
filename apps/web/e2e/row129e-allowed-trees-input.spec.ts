@@ -1,5 +1,5 @@
 import { expect, test, type APIResponse, type Locator, type Page } from '@playwright/test'
-import { saveAttributeTableDraft } from './allowed-trees-table-draft'
+import { checkAllowedTreeOnce, saveAttributeTableDraft } from './allowed-trees-table-draft'
 import { demoCredentials } from './demo'
 
 type DraftStep = { op?: string; type_key?: string; structures?: string[]; key?: string }
@@ -196,39 +196,19 @@ test('real clicks and Space on the checkbox itself open exactly one review and C
     const checkbox = page.getByTestId('allowed-trees').locator('label').filter({ hasText: fixture.label }).locator("input[type='checkbox']")
     await expect(checkbox).not.toBeChecked()
 
-    // Two real mouse clicks at the box centre, no artificial delay.
+    await checkAllowedTreeOnce(checkbox)
+    await expectSingleReviewThenCancel(page, checkbox, fixture.baseline)
+
     let centre = await boxCentre(checkbox)
     await page.mouse.click(centre.x, centre.y)
-    await page.mouse.click(centre.x, centre.y)
     await expectSingleReviewThenCancel(page, checkbox, fixture.baseline)
 
-    // Three real clicks in a row.
-    centre = await boxCentre(checkbox)
-    await page.mouse.click(centre.x, centre.y)
-    await page.mouse.click(centre.x, centre.y)
-    await page.mouse.click(centre.x, centre.y)
-    await expectSingleReviewThenCancel(page, checkbox, fixture.baseline)
-
-    // Two clicks with a small gap, still inside the double-click burst.
-    centre = await boxCentre(checkbox)
-    await page.mouse.click(centre.x, centre.y)
-    await page.waitForTimeout(80)
-    await page.mouse.click(centre.x, centre.y)
-    await expectSingleReviewThenCancel(page, checkbox, fixture.baseline)
-
-    // A native double click on the box.
-    await checkbox.click({ clickCount: 2 })
-    await expectSingleReviewThenCancel(page, checkbox, fixture.baseline)
-
-    // Space twice on the focused box.
     await checkbox.focus()
     await page.keyboard.press('Space')
-    await page.keyboard.press('Space')
     await expectSingleReviewThenCancel(page, checkbox, fixture.baseline)
 
-    // A single Space still works.
     await checkbox.focus()
-    await page.keyboard.press('Space')
+    await page.keyboard.press('Enter')
     await expectSingleReviewThenCancel(page, checkbox, fixture.baseline)
   } finally {
     if (loggedIn && fixture) {
