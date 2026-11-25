@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test, type APIResponse, type Locator, type Page } from '@playwright/test'
-import { checkAllowedTreeOnce, saveAttributeTableDraft } from './allowed-trees-table-draft'
+import { saveAttributeTableDraft } from './allowed-trees-table-draft'
 import { demoCredentials } from './demo'
 
 const shots =
@@ -195,16 +195,72 @@ test('state lock ignores centre, corner, label and keyboard toggles and Cancel r
     const checkbox = label.locator("input[type='checkbox']")
     await expect(checkbox).not.toBeChecked()
 
-    await checkAllowedTreeOnce(checkbox)
-    await expectSingleReviewThenCancel(page, checkbox, fixture.baseline)
+    const expectBaseline = async () => {
+      await expect(checkbox).not.toBeChecked()
+      await expect(page.getByTestId('attribute-table').getByTestId('review-and-save')).toHaveCount(0)
+      expect((await draft(page)).count ?? 0).toBe(0)
+      expect(await productStructures(page)).toEqual(fixture?.baseline)
+    }
+    const expectEven = async () => {
+      await expect(checkbox).not.toBeChecked()
+      await expect(page.getByTestId('attribute-table').getByTestId('review-and-save')).toHaveCount(0)
+      await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
+      expect((await draft(page)).count ?? 0).toBe(0)
+      expect(await productStructures(page)).toEqual(fixture?.baseline)
+    }
 
+    // Two real clicks at the box centre.
+    await expectBaseline()
     let box = await boxCentre(checkbox)
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+    await expectEven()
+
+    // Three clicks in a row at the centre.
+    await expectBaseline()
+    box = await boxCentre(checkbox)
+    for (let index = 0; index < 3; index += 1) {
+      await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+    }
     await expectSingleReviewThenCancel(page, checkbox, fixture.baseline)
 
+    // Opposite corners of the same 16px box.
+    await expectBaseline()
+    box = await boxCentre(checkbox)
+    await page.mouse.click(box.x + 1, box.y + 1)
+    await page.mouse.click(box.x + box.width - 1, box.y + box.height - 1)
+    await expectEven()
+
+    // The label, then the box.
+    await expectBaseline()
+    box = await boxCentre(checkbox)
     await label.click()
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+    await expectEven()
+
+    // The box, then the label.
+    await expectBaseline()
+    box = await boxCentre(checkbox)
+    const labelBox = await label.boundingBox()
+    expect(labelBox).toBeTruthy()
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+    await page.mouse.click(labelBox!.x + labelBox!.width / 2, labelBox!.y + labelBox!.height / 2)
+    await expectEven()
+
+    // Keyboard Space twice, then Space followed by Enter, on the focused box.
+    await expectBaseline()
+    await checkbox.focus()
+    await page.keyboard.press('Space')
+    await page.keyboard.press('Space')
+    await expectEven()
+    await expectBaseline()
+    await checkbox.focus()
+    await page.keyboard.press('Space')
+    await page.keyboard.press('Enter')
     await expectSingleReviewThenCancel(page, checkbox, fixture.baseline)
 
+    // One Space still opens exactly one review.
+    await expectBaseline()
     await checkbox.focus()
     await page.keyboard.press('Space')
     await expectSingleReviewThenCancel(page, checkbox, fixture.baseline)

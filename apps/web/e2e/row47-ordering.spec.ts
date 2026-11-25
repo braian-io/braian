@@ -80,7 +80,12 @@ test.describe('row 47 ordering', () => {
     test.setTimeout(180_000)
     await login(page)
     await openDataModel(page)
-    const tree = page.getByTestId('data-model').first()
+    const structures = page.locator('.pane-tab').filter({ hasText: 'Structures' }).first()
+    await expect(structures).toBeVisible({ timeout: 30_000 })
+    await structures.click()
+    const food = page.getByTestId('structure-food')
+    await expect(food).toBeVisible({ timeout: 30_000 })
+    const tree = food
     await expect(tree.getByTestId('group-dairy')).toBeVisible({ timeout: 30_000 })
     await tree.getByTestId('group-dairy').locator('.twist').click()
     await tree.getByTestId('group-yoghurt').locator('.model-node').click()

@@ -154,7 +154,16 @@ test('a rapid double click stages exactly one step and Cancel fully reverts it',
     const tree = page.getByTestId('allowed-trees')
     const checkbox = tree.getByRole('checkbox', { name: fixture.label })
     await expect(checkbox).not.toBeChecked()
+    expect((await draft(page)).count ?? 0).toBe(0)
 
+    await checkbox.dblclick()
+    await expect(checkbox).not.toBeChecked()
+    await expect(page.getByTestId('attribute-table').getByTestId('review-and-save')).toHaveCount(0)
+    await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
+    expect((await draft(page)).count ?? 0).toBe(0)
+    expect(await productStructures(page)).toEqual(fixture.baseline)
+
+    await expect(checkbox).not.toBeChecked()
     await checkbox.click()
     await saveAttributeTableDraft(page)
     const dialog = page.getByTestId('review-dialog')
@@ -178,7 +187,20 @@ test('a rapid double click stages exactly one step and Cancel fully reverts it',
     expect(await productStructures(page)).toEqual(fixture.baseline)
     await page.screenshot({ path: `${shots}/row129d-02-double-click-reverted.png` })
 
+    await expect(checkbox).not.toBeChecked()
+    expect((await draft(page)).count ?? 0).toBe(0)
     // Two synchronous click events, the hardest case for the in-flight guard.
+    await checkbox.evaluate((input) => {
+      input.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      input.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await expect(checkbox).not.toBeChecked()
+    await expect(page.getByTestId('attribute-table').getByTestId('review-and-save')).toHaveCount(0)
+    await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
+    expect((await draft(page)).count ?? 0).toBe(0)
+    expect(await productStructures(page)).toEqual(fixture.baseline)
+
+    await expect(checkbox).not.toBeChecked()
     await checkbox.evaluate((input) => {
       input.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })

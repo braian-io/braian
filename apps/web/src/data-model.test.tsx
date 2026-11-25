@@ -291,9 +291,11 @@ describe('type attributes table', () => {
     await screen.findByTestId('review-and-save')
     expect(stageModel).not.toHaveBeenCalled()
     fireEvent.click(screen.getByTestId('review-and-save'))
-    await waitFor(() => expect(stageModelSteps).toHaveBeenCalledWith([
-      { op: 'set_structures', type_key: 'recipe', structures: ['structure-food'] },
-    ]))
+    await waitFor(() => expect(stageModel).toHaveBeenCalledWith('model.set_structures', {
+      type_key: 'recipe',
+      structures: ['structure-food'],
+    }))
+    expect(stageModelSteps).not.toHaveBeenCalled()
     expect(requestReview).toHaveBeenCalledTimes(1)
     expect(mock.methods.put).not.toHaveBeenCalled()
   })
@@ -304,9 +306,11 @@ describe('type attributes table', () => {
     const trees = await screen.findByTestId('allowed-trees')
     fireEvent.click(within(trees).getByRole('checkbox', { name: 'Food' }))
     fireEvent.click(await screen.findByTestId('review-and-save'))
-    await waitFor(() => expect(stageModelSteps).toHaveBeenCalledWith([
-      { op: 'set_structures', type_key: 'recipe', structures: ['structure-food'] },
-    ]))
+    await waitFor(() => expect(stageModel).toHaveBeenCalledWith('model.set_structures', {
+      type_key: 'recipe',
+      structures: ['structure-food'],
+    }))
+    expect(stageModelSteps).not.toHaveBeenCalled()
     await waitFor(() => expect(requestReview).toHaveBeenCalled())
     const saves = mock.methods.post.mock.calls.filter((call) => String(call[0]).includes('/v1/model/draft/save'))
     expect(saves).toEqual([])
@@ -314,7 +318,7 @@ describe('type attributes table', () => {
 
   it('shows an error when saving allowed trees from the table fails', async () => {
     chooseModelSelection({ kind: 'type', typeKey: 'recipe' })
-    stageModelSteps.mockRejectedValueOnce(new Error('could not save allowed trees'))
+    stageModel.mockRejectedValueOnce(new Error('could not save allowed trees'))
     render(<Host />)
     const trees = await screen.findByTestId('allowed-trees')
     fireEvent.click(within(trees).getByRole('checkbox', { name: 'Food' }))

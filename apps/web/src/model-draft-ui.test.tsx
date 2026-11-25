@@ -142,6 +142,15 @@ describe('review dialog', () => {
     expect(draftHasForcedReview(draft)).toBe(false)
     expect(draftSaveGate(destructive)).toBe('confirm')
     expect(draftHasForcedReview(destructive)).toBe(false)
+    expect(draftHasForcedReview({
+      count: 1,
+      steps: [{ op: 'update_value_list', key: 'status', options: [] }],
+    })).toBe(true)
+    expect(draftSaveGate({
+      count: 1,
+      conflict: false,
+      steps: [{ op: 'update_value_list', key: 'status', options: [] }],
+    })).toBe('confirm')
   })
 
   it('describes an allowed-tree change with display names and a Review change title', async () => {

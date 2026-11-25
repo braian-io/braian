@@ -18,7 +18,7 @@ import {
 import { structureCaption } from './graph-scene'
 import { StructureSection } from './structure-tree'
 import { StateNote } from './states'
-import { onDraftChange, requestReview, setModelFocus, stageModel, stageModelSteps } from './model-stage'
+import { noteAllowedTreesFocus, onDraftChange, requestReview, setModelFocus, stageModel, stageModelSteps } from './model-stage'
 import { getModelSelection, getPreviewType, setPreviewType, subscribeModelSelection } from './model-selection'
 import {
   applyDraftPatchesToRow,
@@ -254,7 +254,8 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
     () => ((defs?.value_lists as Json[]) ?? [])
       .map((item) => {
         const key = String(item.key ?? '')
-        return { value: key, label: valueListLabel(defs, key, uiLanguage) }
+        const name = valueListLabel(defs, key, uiLanguage)
+        return { value: key, label: name === key ? key : `${name} ${key}` }
       })
       .filter((item) => item.value),
     [defs],
@@ -511,7 +512,15 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
     const reorder = selection ? buildAttributeReorderStep(selection, rows, draftRows) : null
     if (reorder) steps.push(reorder)
     if (steps.length === 0) return
-    await stageModelSteps(steps)
+    const structures = steps.filter((step) => step.op === 'set_structures')
+    const rest = steps.filter((step) => step.op !== 'set_structures')
+    if (rest.length > 0) await stageModelSteps(rest)
+    for (const step of structures) {
+      await stageModel('model.set_structures', {
+        type_key: step.type_key,
+        structures: step.structures,
+      })
+    }
     discardTableDraft()
     await queryClient.invalidateQueries({ queryKey: ['model-draft'] })
   }
@@ -1025,7 +1034,9 @@ function AllowedTrees({
               type="checkbox"
               autoFocus={focus && index === 0}
               checked={checked}
+              onFocus={(event) => noteAllowedTreesFocus(event.currentTarget)}
               onChange={(event) => {
+                noteAllowedTreesFocus(event.currentTarget)
                 onError('')
                 const next = new Set(selected)
                 if (event.target.checked) next.add(id)

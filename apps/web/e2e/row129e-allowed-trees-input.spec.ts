@@ -1,5 +1,5 @@
 import { expect, test, type APIResponse, type Locator, type Page } from '@playwright/test'
-import { checkAllowedTreeOnce, saveAttributeTableDraft } from './allowed-trees-table-draft'
+import { saveAttributeTableDraft } from './allowed-trees-table-draft'
 import { demoCredentials } from './demo'
 
 type DraftStep = { op?: string; type_key?: string; structures?: string[]; key?: string }
@@ -196,19 +196,66 @@ test('real clicks and Space on the checkbox itself open exactly one review and C
     const checkbox = page.getByTestId('allowed-trees').locator('label').filter({ hasText: fixture.label }).locator("input[type='checkbox']")
     await expect(checkbox).not.toBeChecked()
 
-    await checkAllowedTreeOnce(checkbox)
-    await expectSingleReviewThenCancel(page, checkbox, fixture.baseline)
+    const expectBaseline = async () => {
+      await expect(checkbox).not.toBeChecked()
+      await expect(page.getByTestId('attribute-table').getByTestId('review-and-save')).toHaveCount(0)
+      expect((await draft(page)).count ?? 0).toBe(0)
+      expect(await productStructures(page)).toEqual(fixture?.baseline)
+    }
+    const expectEven = async () => {
+      await expect(checkbox).not.toBeChecked()
+      await expect(page.getByTestId('attribute-table').getByTestId('review-and-save')).toHaveCount(0)
+      await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
+      expect((await draft(page)).count ?? 0).toBe(0)
+      expect(await productStructures(page)).toEqual(fixture?.baseline)
+    }
 
+    // Two real mouse clicks at the box centre, no artificial delay.
+    await expectBaseline()
     let centre = await boxCentre(checkbox)
+    await page.mouse.click(centre.x, centre.y)
+    await page.mouse.click(centre.x, centre.y)
+    await expectEven()
+
+    // Three real clicks in a row.
+    await expectBaseline()
+    centre = await boxCentre(checkbox)
+    await page.mouse.click(centre.x, centre.y)
+    await page.mouse.click(centre.x, centre.y)
     await page.mouse.click(centre.x, centre.y)
     await expectSingleReviewThenCancel(page, checkbox, fixture.baseline)
 
+    // Two clicks with a small gap, still inside the double-click burst.
+    await expectBaseline()
+    centre = await boxCentre(checkbox)
+    await page.mouse.click(centre.x, centre.y)
+    await page.waitForTimeout(80)
+    await page.mouse.click(centre.x, centre.y)
+    await expectEven()
+
+    // A native double click on the box.
+    await expectBaseline()
+    await checkbox.click({ clickCount: 2 })
+    await expectEven()
+
+    // Space twice on the focused box.
+    await expectBaseline()
     await checkbox.focus()
     await page.keyboard.press('Space')
+    await page.keyboard.press('Space')
+    await expectEven()
+
+    // Space followed by Enter.
+    await expectBaseline()
+    await checkbox.focus()
+    await page.keyboard.press('Space')
+    await page.keyboard.press('Enter')
     await expectSingleReviewThenCancel(page, checkbox, fixture.baseline)
 
+    // A single Space still works.
+    await expectBaseline()
     await checkbox.focus()
-    await page.keyboard.press('Enter')
+    await page.keyboard.press('Space')
     await expectSingleReviewThenCancel(page, checkbox, fixture.baseline)
   } finally {
     if (loggedIn && fixture) {

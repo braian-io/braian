@@ -9,6 +9,7 @@ import { formatCount, formatTimestamp } from './format'
 import { copy, uiLanguage } from './i18n'
 import { attributeKey } from './model-view'
 import {
+  allowedTreesFocusTarget,
   onDraftChange,
   onStructuresLockChange,
   cancelStructuresStage,
@@ -41,7 +42,10 @@ export function draftHasForcedReview(body: Json | null | undefined): boolean {
   if (!body) return false
   const steps = body.steps
   if (!Array.isArray(steps)) return false
-  return steps.some((step) => asRecord(step)?.op === 'set_structures')
+  return steps.some((step) => {
+    const op = asRecord(step)?.op
+    return op === 'set_structures' || op === 'update_value_list'
+  })
 }
 
 /** Preview error, `consequence.destructive`, and the allowed-tree operation. */
@@ -235,6 +239,13 @@ export function ModelDraftHost() {
   const patching = useRef(false)
   const pendingReverts = useRef(new Map<number, PendingRevert>())
   const rememberOpener = () => {
+    // Allowed-trees edits are decided from the table Save button. Return focus
+    // to the checkbox the user toggled, which is where they were working.
+    const checkbox = allowedTreesFocusTarget()
+    if (checkbox && (lockedStructuresType() || structuresStageInFlight())) {
+      opener.current = checkbox
+      return
+    }
     // The loading shell opens on the same click. Keep the real opener (the
     // checkbox) when it was captured before that dialog mounted.
     if (opener.current) return
