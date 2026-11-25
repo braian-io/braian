@@ -1355,6 +1355,17 @@ fn unit_family_from_config(
                 Ok(Unit {
                     code: unit.code.clone(),
                     factor: parse_decimal(&unit.factor)?,
+                    offset: if unit.offset.is_empty() {
+                        rust_decimal::Decimal::ZERO
+                    } else {
+                        parse_decimal(&unit.offset)?
+                    },
+                    symbol: if unit.symbol.is_empty() {
+                        unit.code.clone()
+                    } else {
+                        unit.symbol.clone()
+                    },
+                    labels: language_labels(&unit.labels)?,
                 })
             })
             .collect::<Result<_, ConfigError>>()?,
@@ -1400,6 +1411,7 @@ fn attribute_kind(
         },
         AttributeKindConfig::Number {
             unit_family,
+            default_unit,
             min,
             max,
             integer,
@@ -1408,15 +1420,20 @@ fn attribute_kind(
                 .as_ref()
                 .map(|key| unit_id(key, unit_ids, current))
                 .transpose()?,
+            default_unit: default_unit.clone(),
             min: min.as_ref().map(|value| parse_decimal(value)).transpose()?,
             max: max.as_ref().map(|value| parse_decimal(value)).transpose()?,
             integer: *integer,
         },
-        AttributeKindConfig::Range { unit_family } => AttributeKind::Range {
+        AttributeKindConfig::Range {
+            unit_family,
+            default_unit,
+        } => AttributeKind::Range {
             unit_family: unit_family
                 .as_ref()
                 .map(|key| unit_id(key, unit_ids, current))
                 .transpose()?,
+            default_unit: default_unit.clone(),
         },
         AttributeKindConfig::ValueList { options, list } => AttributeKind::ValueList {
             options: options

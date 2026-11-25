@@ -224,10 +224,7 @@ fn unit_family(ids: &mut Ids, key: &str, base: &str, units: &[(&str, Decimal)]) 
         base_unit: base.to_owned(),
         units: units
             .iter()
-            .map(|(code, factor)| Unit {
-                code: (*code).to_owned(),
-                factor: *factor,
-            })
+            .map(|(code, factor)| Unit::with_factor(*code, *factor))
             .collect(),
     }
 }
@@ -247,6 +244,7 @@ fn kind_for(index: usize, mass: UnitFamilyId, length: UnitFamilyId) -> Attribute
             let family = if generation % 4 == 2 { length } else { mass };
             AttributeKind::Number {
                 unit_family: generation.is_multiple_of(2).then_some(family),
+                default_unit: None,
                 min: Some(Decimal::ZERO),
                 max: Some(Decimal::from(1000)),
                 integer: false,

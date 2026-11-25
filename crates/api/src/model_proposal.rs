@@ -3,7 +3,7 @@
 use axum::http::StatusCode;
 use braian_model::{
     ApplyError, ChangeImpact, DefinitionSet, ModelChange, StructureErrorCode, apply_all,
-    change_needs_reindex, deletes_data, interpret, preview,
+    deletes_data, draft_needs_reindex, interpret, preview,
 };
 use braian_rules::CompiledModel;
 use braian_store::{Error, ProposalRow, ProposalWrite};
@@ -193,6 +193,7 @@ pub async fn apply_row(
             Err(error) => return Err(store_status(error)),
         };
         let current = defs.model_revision;
+        let before = defs.clone();
         let purge = braian_model::purge_for(&defs, std::slice::from_ref(&change));
         apply_all(&mut defs, std::slice::from_ref(&change)).map_err(model_status)?;
         defs.model_revision = current + 1;
@@ -214,7 +215,7 @@ pub async fn apply_row(
         {
             Ok(Some(receipt)) => {
                 state.models.invalidate().await;
-                if change_needs_reindex(&change) {
+                if draft_needs_reindex(&before, std::slice::from_ref(&change)) {
                     state.store.request_reindex().await.map_err(store_status)?;
                 }
                 state.emit(json!({
@@ -735,13 +736,13 @@ pub(crate) fn changes_from(
         }]),
         "model.attach_attribute" => Ok(vec![ModelChange::AttachAttribute {
             attribute: required_str(args, "attribute")?,
-            type_key: optional_str(args, "type"),
+            type_key: optional_str(args, "type").or_else(|| optional_str(args, "type_key")),
             structure: optional_str(args, "structure"),
             group: optional_str(args, "group"),
         }]),
         "model.detach_attribute" => Ok(vec![ModelChange::DetachAttribute {
             attribute: required_str(args, "attribute")?,
-            type_key: optional_str(args, "type"),
+            type_key: optional_str(args, "type").or_else(|| optional_str(args, "type_key")),
             structure: optional_str(args, "structure"),
             group: optional_str(args, "group"),
         }]),
@@ -947,6 +948,49 @@ pub(crate) fn changes_from(
                 None
             },
         }]),
+        "model.add_unit" => Ok(vec![update_family_units(
+            defs,
+            &required_str(args, "unit_family")?,
+            None,
+            |specs| {
+                specs.push(braian_model::UnitSpec {
+                    code: required_str(args, "code")?,
+                    factor: optional_str(args, "factor").unwrap_or_else(|| "1".into()),
+                    offset: optional_str(args, "offset").unwrap_or_default(),
+                    symbol: optional_str(args, "symbol").unwrap_or_default(),
+                    label: optional_str(args, "label").unwrap_or_default(),
+                });
+                Ok(())
+            },
+        )?]),
+        "model.update_unit" => Ok(vec![update_family_units(
+            defs,
+            &required_str(args, "unit_family")?,
+            optional_str(args, "base_unit"),
+            |specs| {
+                let unit = required_str(args, "unit")?;
+                let row = specs
+                    .iter_mut()
+                    .find(|item| item.code == unit)
+                    .ok_or_else(|| bad(format!("unknown unit {unit}")))?;
+                if let Some(factor) = optional_str(args, "factor") {
+                    row.factor = factor;
+                }
+                if let Some(offset) = optional_str(args, "offset") {
+                    row.offset = offset;
+                }
+                if let Some(symbol) = optional_str(args, "symbol") {
+                    row.symbol = symbol;
+                }
+                if let Some(label) = optional_str(args, "label") {
+                    row.label = label;
+                }
+                if let Some(code) = optional_str(args, "new_code") {
+                    row.code = code;
+                }
+                Ok(())
+            },
+        )?]),
         "model.update_structure" => Ok(vec![ModelChange::RenameStructure {
             structure: required_str(args, "structure")?,
             label: required_str(args, "label")?,
@@ -1026,6 +1070,11 @@ fn bounds_from(args: &Value) -> braian_model::AttributeBounds {
             .and_then(Value::as_bool)
             .unwrap_or(false),
         unit_family: optional_str(args, "unit_family"),
+        default_unit: optional_str(args, "default_unit"),
+        clear_default_unit: args
+            .get("clear_default_unit")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
     }
 }
 
@@ -1072,6 +1121,46 @@ fn named_options(args: &Value, key: &str) -> Vec<braian_model::NamedOption> {
         .unwrap_or_default()
 }
 
+fn update_family_units(
+    defs: &DefinitionSet,
+    family_key: &str,
+    base_unit: Option<String>,
+    edit: impl FnOnce(&mut Vec<braian_model::UnitSpec>) -> Result<(), Problem>,
+) -> Result<ModelChange, Problem> {
+    let id = braian_model::refs::unit_family_id(defs, family_key)
+        .map_err(|error| Problem::new(StatusCode::BAD_REQUEST, "model", error))?;
+    let family = defs
+        .unit_families
+        .iter()
+        .find(|item| item.id == id)
+        .ok_or_else(|| {
+            Problem::new(
+                StatusCode::NOT_FOUND,
+                "model",
+                format!("unknown unit family {family_key}"),
+            )
+        })?;
+    let mut specs = family
+        .units
+        .iter()
+        .map(|unit| braian_model::UnitSpec {
+            code: unit.code.clone(),
+            factor: unit.factor.to_string(),
+            offset: unit.offset.to_string(),
+            symbol: unit.symbol.clone(),
+            label: unit.labels.values().next().cloned().unwrap_or_default(),
+        })
+        .collect::<Vec<_>>();
+    edit(&mut specs)?;
+    Ok(ModelChange::UpdateUnitFamily {
+        key: family.key.clone(),
+        dimension: None,
+        clear_dimension: false,
+        base_unit,
+        units: Some(specs),
+    })
+}
+
 fn unit_specs(args: &Value) -> Vec<braian_model::UnitSpec> {
     args.get("units")
         .and_then(Value::as_array)
@@ -1086,6 +1175,21 @@ fn unit_specs(args: &Value) -> Vec<braian_model::UnitSpec> {
                             .get("factor")
                             .and_then(Value::as_str)
                             .unwrap_or("1")
+                            .to_owned(),
+                        offset: item
+                            .get("offset")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_owned(),
+                        symbol: item
+                            .get("symbol")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_owned(),
+                        label: item
+                            .get("label")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
                             .to_owned(),
                     })
                 })

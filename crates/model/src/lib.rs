@@ -46,7 +46,7 @@ pub use link::{RefConversion, RefLinkPlan, convert_object_refs, explain_link};
 pub use model_change::{
     ApplyError, AttributeBounds, Catalog, CatalogKind, ChangeImpact, MergeProfile,
     MergeProfileMode, ModelChange, NamedOption, OwnershipRule, UnitSpec, WorkspaceTemplate,
-    apply_all, change_needs_reindex, deletes_data, diff as model_diff,
+    apply_all, change_needs_reindex, deletes_data, diff as model_diff, draft_needs_reindex,
     groups_removed_by_structure_upserts, interpret, preview,
 };
 pub use object::Object;

@@ -1352,7 +1352,13 @@ async fn ensure_alias(
         search.create_collection(&name, defs).await?;
         search.upsert_alias(&name).await?;
         store.set_indexer_collection(&name).await?;
+        return Ok(());
     }
+    // Search reads the alias. Patch that collection, which is the one new
+    // documents are imported into. A model change can add a filterable number
+    // after the collection already exists.
+    let target = search.alias_target().await?.unwrap_or(collection);
+    search.sync_fields(&target, defs).await?;
     Ok(())
 }
 

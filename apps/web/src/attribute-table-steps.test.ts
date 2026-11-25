@@ -10,6 +10,7 @@ function row(overrides: Partial<AttributeStepRow> = {}): AttributeStepRow {
     label: 'Attr',
     kind: 'text',
     unit: '',
+    defaultUnit: '',
     required: false,
     showByDefault: true,
     languages: true,

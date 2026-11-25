@@ -35,7 +35,18 @@ type TypeRow = {
 
 type ListRow = { id: string; key: string; label: string; optionCount: number }
 type OptionRow = { id: string; code: string; label: string; listKey: string }
-type UnitRow = { id: string; family: string; code: string; factor: string }
+type UnitRow = {
+  id: string
+  family: string
+  familyKey: string
+  baseUnit: string
+  code: string
+  factor: string
+  offset: string
+  symbol: string
+  label: string
+  isBase: boolean
+}
 
 export function valueListOptions(defs: Json | undefined, listKey: string): OptionRow[] {
   const list = ((defs?.value_lists as Json[] | undefined) ?? []).find((item) => String(item.key) === listKey)
@@ -752,17 +763,36 @@ export function UnitsTable() {
     const out: UnitRow[] = []
     for (const family of (defs?.unit_families as Json[] | undefined) ?? []) {
       const familyKey = String(family.key ?? '')
+      const baseUnit = String(family.base_unit ?? '')
+      const familyLabel = familyKey
       for (const unit of (family.units as Json[] | undefined) ?? []) {
         const code = String(unit.code ?? '')
         out.push({
           id: `${familyKey}:${code}`,
-          family: familyKey,
+          family: familyLabel,
+          familyKey,
+          baseUnit,
           code,
           factor: String(unit.factor ?? '1'),
+          offset: String(unit.offset ?? '0'),
+          symbol: String(unit.symbol ?? code),
+          label: textValue(unit.labels as Json, uiLanguage) || code,
+          isBase: code === baseUnit,
         })
       }
       if (((family.units as Json[] | undefined) ?? []).length === 0) {
-        out.push({ id: `${familyKey}:`, family: familyKey, code: '', factor: '' })
+        out.push({
+          id: `${familyKey}:`,
+          family: familyLabel,
+          familyKey,
+          baseUnit,
+          code: '',
+          factor: '',
+          offset: '',
+          symbol: '',
+          label: '',
+          isBase: false,
+        })
       }
     }
     return out
@@ -780,24 +810,55 @@ export function UnitsTable() {
     {
       id: 'family',
       header: copy.unitFamilies,
-      editable: true,
+      editable: false,
       read: (row) => row.family,
       write: (row, value) => ({ ...row, family: value }),
     },
     {
       id: 'code',
-      header: copy.unit,
+      header: copy.key,
       editable: true,
       read: (row) => row.code,
       write: (row, value) => ({ ...row, code: value }),
     },
     {
+      id: 'label',
+      header: copy.name,
+      editable: true,
+      read: (row) => row.label,
+      write: (row, value) => ({ ...row, label: value }),
+    },
+    {
+      id: 'symbol',
+      header: copy.symbol,
+      editable: true,
+      read: (row) => row.symbol,
+      write: (row, value) => ({ ...row, symbol: value }),
+    },
+    {
       id: 'factor',
-      header: copy.number,
+      header: copy.factor,
       type: 'number',
       editable: true,
       read: (row) => row.factor,
       write: (row, value) => ({ ...row, factor: value }),
+      display: (row) => (row.isBase ? '1' : row.factor),
+    },
+    {
+      id: 'offset',
+      header: copy.offset,
+      type: 'number',
+      editable: true,
+      read: (row) => row.offset,
+      write: (row, value) => ({ ...row, offset: value }),
+      display: (row) => (row.isBase ? '0' : row.offset),
+    },
+    {
+      id: 'isBase',
+      header: copy.baseUnit,
+      type: 'readonly',
+      editable: false,
+      read: (row) => (row.isBase ? copy.baseUnit : ''),
     },
   ]
 
@@ -840,24 +901,40 @@ export function UnitsTable() {
           const existing = rows.some((item) => item.id === row.id)
           if (!existing) {
             const hasFamily = ((defs?.unit_families as Json[]) ?? []).some((item) => String(item.key) === row.family)
-            if (!hasFamily && row.family) {
+            if (!hasFamily && row.familyKey) {
               await stageModel('model.create_unit_family', {
-                key: row.family,
-                base_unit: row.code || row.family,
-                units: row.code ? [{ code: row.code, factor: row.factor || '1' }] : [],
+                key: row.familyKey,
+                base_unit: row.code || row.familyKey,
+                units: row.code
+                  ? [{
+                      code: row.code,
+                      factor: row.factor || '1',
+                      offset: row.offset || '0',
+                      symbol: row.symbol || row.code,
+                      label: row.label,
+                    }]
+                  : [],
               })
             } else if (row.code) {
               await stageModel('model.add_unit', {
-                unit_family: row.family,
+                unit_family: row.familyKey,
                 code: row.code,
                 factor: row.factor || '1',
+                offset: row.offset || '0',
+                symbol: row.symbol || row.code,
+                label: row.label,
               })
             }
           } else if (row.code) {
+            const unit = row.id.split(':').pop()
             await stageModel('model.update_unit', {
-              unit_family: row.family,
-              unit: row.id.split(':').pop(),
+              unit_family: row.familyKey,
+              unit,
               factor: row.factor,
+              offset: row.offset,
+              symbol: row.symbol,
+              label: row.label,
+              ...(row.code !== unit ? { new_code: row.code } : {}),
             })
           }
         }

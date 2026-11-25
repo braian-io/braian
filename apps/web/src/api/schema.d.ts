@@ -2006,6 +2006,8 @@ export interface components {
             /** @enum {string} */
             type: "text";
         } | {
+            /** @description Default unit code inside the family when a value is still empty. */
+            default_unit?: string | null;
             /** @description When true the entered value must be a whole number. Storage stays decimal. */
             integer?: boolean;
             max?: string | null;
@@ -2014,6 +2016,7 @@ export interface components {
             type: "number";
             unit_family?: null | components["schemas"]["UnitFamilyId"];
         } | {
+            default_unit?: string | null;
             /** @enum {string} */
             type: "range";
             unit_family?: null | components["schemas"]["UnitFamilyId"];
@@ -3205,13 +3208,21 @@ export interface components {
             code: string;
             /** @description Multiplier into the base unit. Serialized as a decimal string. */
             factor: string;
+            labels?: {
+                [key: string]: string;
+            };
+            /** @description Additive term in the base unit after scaling. Serialized as a decimal string. */
+            offset?: string;
+            /** @description Short display text such as `°C`. Defaults to the code when unset. */
+            symbol?: string;
         };
         /**
-         * @description Units that convert to one base unit by multiplication.
+         * @description Units that convert to one base unit by an affine map: `base = value * factor + offset`.
          *
-         *     `factor` turns an entered value into the base unit: 5000 g with factor
-         *     0.001 is 5 kg. The base unit itself has factor 1. Filters and sorting use
-         *     the base-unit value; the entered value and unit are what gets stored.
+         *     `offset` is in the base unit and defaults to 0, so older families that only
+         *     stored `factor` still convert by multiplication. The named base unit has
+         *     factor 1 and offset 0. Filters and sorting use the base-unit value; the
+         *     entered value and unit are what gets stored.
          */
         UnitFamily: {
             base_unit: string;

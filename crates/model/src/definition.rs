@@ -38,11 +38,12 @@ pub struct SharedValueList {
     pub options: Vec<ValueOption>,
 }
 
-/// Units that convert to one base unit by multiplication.
+/// Units that convert to one base unit by an affine map: `base = value * factor + offset`.
 ///
-/// `factor` turns an entered value into the base unit: 5000 g with factor
-/// 0.001 is 5 kg. The base unit itself has factor 1. Filters and sorting use
-/// the base-unit value; the entered value and unit are what gets stored.
+/// `offset` is in the base unit and defaults to 0, so older families that only
+/// stored `factor` still convert by multiplication. The named base unit has
+/// factor 1 and offset 0. Filters and sorting use the base-unit value; the
+/// entered value and unit are what gets stored.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(deny_unknown_fields)]
@@ -63,14 +64,75 @@ impl UnitFamily {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-#[serde(deny_unknown_fields)]
 pub struct Unit {
     pub code: String,
     /// Multiplier into the base unit. Serialized as a decimal string.
     #[cfg_attr(feature = "openapi", schema(value_type = String))]
     pub factor: Decimal,
+    /// Additive term in the base unit after scaling. Serialized as a decimal string.
+    #[serde(default, skip_serializing_if = "Decimal::is_zero")]
+    #[cfg_attr(feature = "openapi", schema(value_type = String))]
+    pub offset: Decimal,
+    /// Short display text such as `°C`. Defaults to the code when unset.
+    #[serde(default, skip_serializing_if = "str::is_empty")]
+    pub symbol: String,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[cfg_attr(feature = "openapi", schema(value_type = BTreeMap<String, String>))]
+    pub labels: BTreeMap<LanguageTag, String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UnitWire {
+    code: String,
+    factor: Decimal,
+    #[serde(default)]
+    offset: Decimal,
+    #[serde(default)]
+    symbol: String,
+    #[serde(default)]
+    labels: BTreeMap<LanguageTag, String>,
+}
+
+impl From<UnitWire> for Unit {
+    fn from(wire: UnitWire) -> Self {
+        Self {
+            code: wire.code.clone(),
+            factor: wire.factor,
+            offset: wire.offset,
+            symbol: if wire.symbol.is_empty() {
+                wire.code
+            } else {
+                wire.symbol
+            },
+            labels: wire.labels,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Unit {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Ok(UnitWire::deserialize(deserializer)?.into())
+    }
+}
+
+impl Unit {
+    /// Builds a unit with zero offset and the code as symbol.
+    pub fn with_factor(code: impl Into<String>, factor: Decimal) -> Self {
+        let code = code.into();
+        Self {
+            symbol: code.clone(),
+            code,
+            factor,
+            offset: Decimal::ZERO,
+            labels: BTreeMap::new(),
+        }
+    }
 }
 
 /// One attribute in the global pool, identified by `key`.
@@ -125,6 +187,9 @@ pub enum AttributeKind {
     Number {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         unit_family: Option<UnitFamilyId>,
+        /// Default unit code inside the family when a value is still empty.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        default_unit: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "openapi", schema(value_type = Option<String>))]
         min: Option<Decimal>,
@@ -139,6 +204,8 @@ pub enum AttributeKind {
     Range {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         unit_family: Option<UnitFamilyId>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        default_unit: Option<String>,
     },
     /// Options are inline, or `list` names a [`SharedValueList`] key.
     ValueList {
@@ -181,7 +248,16 @@ impl TextForm {
 impl AttributeKind {
     pub fn unit_family_id(&self) -> Option<UnitFamilyId> {
         match self {
-            Self::Number { unit_family, .. } | Self::Range { unit_family } => *unit_family,
+            Self::Number { unit_family, .. } | Self::Range { unit_family, .. } => *unit_family,
+            _ => None,
+        }
+    }
+
+    pub fn default_unit(&self) -> Option<&str> {
+        match self {
+            Self::Number { default_unit, .. } | Self::Range { default_unit, .. } => {
+                default_unit.as_deref()
+            }
             _ => None,
         }
     }

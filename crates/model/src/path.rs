@@ -138,7 +138,7 @@ pub fn extra_parts(kind: &AttributeKind) -> Vec<PathPart> {
             }
             parts
         }
-        AttributeKind::Range { unit_family } => {
+        AttributeKind::Range { unit_family, .. } => {
             let mut parts = vec![PathPart::Min, PathPart::Max];
             if unit_family.is_some() {
                 parts.push(PathPart::Unit);

@@ -8146,6 +8146,13 @@
               "type"
             ],
             "properties": {
+              "default_unit": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Default unit code inside the family when a value is still empty."
+              },
               "integer": {
                 "type": "boolean",
                 "description": "When true the entered value must be a whole number. Storage stays decimal."
@@ -8187,6 +8194,12 @@
               "type"
             ],
             "properties": {
+              "default_unit": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "type": {
                 "type": "string",
                 "enum": [
@@ -12582,13 +12595,29 @@
           "factor": {
             "type": "string",
             "description": "Multiplier into the base unit. Serialized as a decimal string."
+          },
+          "labels": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "offset": {
+            "type": "string",
+            "description": "Additive term in the base unit after scaling. Serialized as a decimal string."
+          },
+          "symbol": {
+            "type": "string",
+            "description": "Short display text such as `°C`. Defaults to the code when unset."
           }
-        },
-        "additionalProperties": false
+        }
       },
       "UnitFamily": {
         "type": "object",
-        "description": "Units that convert to one base unit by multiplication.\n\n`factor` turns an entered value into the base unit: 5000 g with factor\n0.001 is 5 kg. The base unit itself has factor 1. Filters and sorting use\nthe base-unit value; the entered value and unit are what gets stored.",
+        "description": "Units that convert to one base unit by an affine map: `base = value * factor + offset`.\n\n`offset` is in the base unit and defaults to 0, so older families that only\nstored `factor` still convert by multiplication. The named base unit has\nfactor 1 and offset 0. Filters and sorting use the base-unit value; the\nentered value and unit are what gets stored.",
         "required": [
           "id",
           "key",

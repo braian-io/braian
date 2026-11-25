@@ -355,6 +355,7 @@ export function StandardEditableTable<T extends { id: string }>({
   const rowReadOnly = (row: T) => Boolean(rowFlags?.(row)?.readOnly)
 
   const columnEditable = (row: T, column: StandardColumn<T>) => {
+    if (column.hideCell?.(row)) return false
     if (rowReadOnly(row)) return false
     if (!editable || column.editable === false || column.type === 'readonly' || !column.write) return false
     if (canEdit && !canEdit(row, column)) return false
