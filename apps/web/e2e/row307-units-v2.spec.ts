@@ -72,9 +72,11 @@ test('row307 temperature family filters match across celsius and fahrenheit', as
   const createdA = await page.request.post('/v1/objects', {
     data: {
       type: 'product',
-      key: skuA,
+      groups: { food: 'bread' },
       values: {
+        number: skuA,
         name: { en: `Row307 A ${stamp}` },
+        status: 'draft',
         [attributeKey]: { value: '100', unit: 'celsius' },
       },
     },
@@ -84,9 +86,11 @@ test('row307 temperature family filters match across celsius and fahrenheit', as
   const createdB = await page.request.post('/v1/objects', {
     data: {
       type: 'product',
-      key: skuB,
+      groups: { food: 'bread' },
       values: {
+        number: skuB,
         name: { en: `Row307 B ${stamp}` },
+        status: 'draft',
         [attributeKey]: { value: '212', unit: 'fahrenheit' },
       },
     },
