@@ -297,6 +297,7 @@ test('allowed trees open the review dialog before saving', async ({ page }) => {
 
   // Put the type back through the same Review path so no draft is left behind.
   await reloaded.click()
+  await saveAttributeTableDraft(page)
   const restore = page.getByTestId('review-dialog')
   await expect(restore).toBeVisible({ timeout: 10_000 })
   const restoreSave = page.waitForResponse((response) =>

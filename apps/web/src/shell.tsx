@@ -456,7 +456,9 @@ export function Shell() {
 
   useEffect(() => {
     const userId = me.data?.user_id
-    if (!userId || typeof localStorage === 'undefined' || !defs.data) return
+    // An empty workspace set means "not loaded yet", not "this user has none".
+    // Pruning then deletes every valid table draft (row 421).
+    if (!userId || typeof localStorage === 'undefined' || !defs.data || !workspaces.data) return
     const workspaceIds = new Set((workspaces.data?.workspaces ?? []).map((item) => item.id))
     pruneModelTableDraftStorage(userId, workspaceIds, defs.data)
   }, [me.data?.user_id, workspaces.data, defs.data])

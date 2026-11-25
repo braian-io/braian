@@ -18,7 +18,7 @@ import {
 import { structureCaption } from './graph-scene'
 import { StructureSection } from './structure-tree'
 import { StateNote } from './states'
-import { noteAllowedTreesFocus, onDraftChange, requestReview, setModelFocus, stageModel, stageModelSteps } from './model-stage'
+import { noteAllowedTreesFocus, onDraftChange, requestReview, setModelFocus, stageModel, stageModelSteps, StructuresCancelled } from './model-stage'
 import { getModelSelection, getPreviewType, setPreviewType, subscribeModelSelection } from './model-selection'
 import {
   applyDraftPatchesToRow,
@@ -481,6 +481,13 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
       clearStoredModelTableDraft(draftScope.userId, draftScope.workspaceId, selectionKey)
     }
   }
+  const discardTableDraftRef = useRef(discardTableDraft)
+  discardTableDraftRef.current = discardTableDraft
+  useEffect(() => {
+    const onDiscard = () => discardTableDraftRef.current()
+    window.addEventListener('braian-model-table-draft-discard', onDiscard)
+    return () => window.removeEventListener('braian-model-table-draft-discard', onDiscard)
+  }, [])
 
   const flushTableDraftRef = useRef<() => Promise<void>>(async () => {})
   const flushTableDraftToModel = async () => {
@@ -533,6 +540,7 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
       await flushTableDraftRef.current()
       requestReview()
     } catch (reason) {
+      if (reason instanceof StructuresCancelled) return
       setMessage(errorText(reason))
       throw reason
     }

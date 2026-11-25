@@ -8,6 +8,7 @@ import { DataModel } from './data-model'
 import { ModelDraftHost } from './model-draft-ui'
 import { requestAttributeAction } from './attribute-actions'
 import { chooseModelSelection, registerModelDefinitions } from './model-selection'
+import { StructuresCancelled } from './model-stage'
 
 const mock = vi.hoisted(() => {
   const methods = { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() }
@@ -325,6 +326,30 @@ describe('type attributes table', () => {
     fireEvent.click(await screen.findByTestId('review-and-save'))
     expect(await screen.findByText('could not save allowed trees')).toBeTruthy()
     expect(requestReview).not.toHaveBeenCalled()
+  })
+
+  it('drops the allowed-trees patch when cancel arrives during the save POST', async () => {
+    chooseModelSelection({ kind: 'type', typeKey: 'recipe' })
+    let rejectStage: (reason: unknown) => void = () => {}
+    stageModel.mockImplementationOnce(() => new Promise((_, reject) => {
+      rejectStage = reject
+    }))
+    render(<Host />)
+    const trees = await screen.findByTestId('allowed-trees')
+    const checkbox = within(trees).getByRole('checkbox', { name: 'Food' }) as HTMLInputElement
+    fireEvent.click(checkbox)
+    fireEvent.click(await screen.findByTestId('review-and-save'))
+    await waitFor(() => expect(stageModel).toHaveBeenCalled())
+    expect(checkbox.checked).toBe(true)
+    window.dispatchEvent(new Event('braian-model-table-draft-discard'))
+    await waitFor(() => {
+      const current = within(trees).getByRole('checkbox', { name: 'Food' }) as HTMLInputElement
+      expect(current.checked).toBe(false)
+    })
+    rejectStage(new StructuresCancelled())
+    await waitFor(() => expect(requestReview).not.toHaveBeenCalled())
+    expect(screen.queryByText('could not save allowed trees')).toBeNull()
+    expect(screen.queryByTestId('review-and-save')).toBeNull()
   })
 
   it('dims inherited rows and shows the From column for a group', async () => {

@@ -305,3 +305,9 @@ export function requestReview() {
 export function requestDiscardDraft() {
   window.dispatchEvent(new Event('braian-discard-draft'))
 }
+
+/** Drop the attribute-table draft while a structures save is still posting. */
+export function discardModelTableDraft() {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new Event('braian-model-table-draft-discard'))
+}

@@ -14,6 +14,7 @@ import {
   onStructuresLockChange,
   cancelStructuresStage,
   clearStagedStructures,
+  discardModelTableDraft,
   lockedStructuresType,
   releaseStructuresLock,
   removeDraftSteps,
@@ -401,6 +402,9 @@ export function ModelDraftHost() {
     setReviewLoading(false)
     setError('')
     const staging = cancelStructuresStage()
+    // Flush discards the table draft only after the POST returns. Cancel during
+    // that POST has to drop the local patch now, or the checkbox stays checked.
+    if (staging) discardModelTableDraft()
     if (saving.current) {
       // A save loop is already running and holds the staged record. Revert it
       // now so the checkbox and the count respond to Cancel immediately.
