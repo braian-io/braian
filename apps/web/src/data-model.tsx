@@ -632,7 +632,7 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
       id: 'unit',
       header: copy.unitFamilies,
       truncate: true,
-      width: 108,
+      width: 120,
       type: 'enum',
       editable: true,
       options: [{ value: 'none', label: copy.noUnit }, ...families.map((family) => ({ value: family, label: family }))],
@@ -649,7 +649,7 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
       id: 'defaultUnit',
       header: copy.defaultUnit,
       truncate: true,
-      width: 108,
+      width: 120,
       type: 'enum',
       editable: true,
       options: [
