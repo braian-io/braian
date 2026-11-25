@@ -478,9 +478,8 @@ fn check(defs: &DefinitionSet, errors: &mut Vec<DefinitionError>) {
             )));
         }
         let unit_family = match &attribute.kind {
-            AttributeKind::Number { unit_family, .. } | AttributeKind::Range { unit_family, .. } => {
-                *unit_family
-            }
+            AttributeKind::Number { unit_family, .. }
+            | AttributeKind::Range { unit_family, .. } => *unit_family,
             _ => None,
         };
         if let Some(family) = unit_family
@@ -502,11 +501,7 @@ fn check(defs: &DefinitionSet, errors: &mut Vec<DefinitionError>) {
             let Some(family) = defs.unit_families.iter().find(|item| item.id == family_id) else {
                 continue;
             };
-            if !family
-                .units
-                .iter()
-                .any(|unit| unit.code == default_unit)
-            {
+            if !family.units.iter().any(|unit| unit.code == default_unit) {
                 errors.push(error(format!(
                     "attribute {} default unit {default_unit} is not in family {}",
                     attribute.key, family.key

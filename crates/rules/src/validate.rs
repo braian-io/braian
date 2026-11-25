@@ -238,9 +238,8 @@ impl CompiledModel {
             ));
         };
         let unit_family = match &attribute.kind {
-            AttributeKind::Number { unit_family, .. } | AttributeKind::Range { unit_family, .. } => {
-                *unit_family
-            }
+            AttributeKind::Number { unit_family, .. }
+            | AttributeKind::Range { unit_family, .. } => *unit_family,
             _ => {
                 return Err(failure(
                     Some(attribute_id),

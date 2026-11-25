@@ -133,7 +133,7 @@ test('Tab from Kind focuses Required and Shift+Tab returns to the editor', async
   await expect(row.getByTestId('standard-cell-editor')).toBeFocused()
 })
 
-test('Tab from Unit on a number attribute focuses Required and skips disabled Languages', async ({ page }) => {
+test('Tab from unit family on a number attribute focuses Required and skips disabled Languages', async ({ page }) => {
   test.setTimeout(120_000)
   await login(page)
   const table = await openTypeAttributes(page, 'article')
@@ -141,6 +141,8 @@ test('Tab from Unit on a number attribute focuses Required and skips disabled La
   const row = table.locator('[data-key="net_weight"]')
   await row.locator('[data-column="unit"]').dblclick()
   await expect(row.getByTestId('standard-cell-editor')).toBeFocused()
+  await page.keyboard.press('Tab')
+  await expect(row.locator('[data-column="defaultUnit"]').getByTestId('standard-cell-editor')).toBeFocused()
   await page.keyboard.press('Tab')
   const required = row.getByRole('checkbox', { name: 'Required' })
   await expect(required).toBeFocused()

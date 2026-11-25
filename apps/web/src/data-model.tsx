@@ -640,7 +640,7 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
         unit: value === 'none' ? '' : value,
         defaultUnit: value === 'none' ? '' : row.defaultUnit,
       }),
-      hideCell: (row) => row.kind === 'value_list',
+      hideCell: (row) => row.kind !== 'number' && row.kind !== 'range',
       display: (row) => row.unit || '—',
     },
     {

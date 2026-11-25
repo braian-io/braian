@@ -736,13 +736,13 @@ pub(crate) fn changes_from(
         }]),
         "model.attach_attribute" => Ok(vec![ModelChange::AttachAttribute {
             attribute: required_str(args, "attribute")?,
-            type_key: optional_str(args, "type"),
+            type_key: optional_str(args, "type").or_else(|| optional_str(args, "type_key")),
             structure: optional_str(args, "structure"),
             group: optional_str(args, "group"),
         }]),
         "model.detach_attribute" => Ok(vec![ModelChange::DetachAttribute {
             attribute: required_str(args, "attribute")?,
-            type_key: optional_str(args, "type"),
+            type_key: optional_str(args, "type").or_else(|| optional_str(args, "type_key")),
             structure: optional_str(args, "structure"),
             group: optional_str(args, "group"),
         }]),
@@ -1148,12 +1148,7 @@ fn update_family_units(
             factor: unit.factor.to_string(),
             offset: unit.offset.to_string(),
             symbol: unit.symbol.clone(),
-            label: unit
-                .labels
-                .values()
-                .next()
-                .cloned()
-                .unwrap_or_default(),
+            label: unit.labels.values().next().cloned().unwrap_or_default(),
         })
         .collect::<Vec<_>>();
     edit(&mut specs)?;

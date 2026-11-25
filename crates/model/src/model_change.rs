@@ -645,18 +645,18 @@ pub fn draft_needs_reindex(before: &DefinitionSet, changes: &[ModelChange]) -> b
 
 fn unit_conversion_index_stale(before: &DefinitionSet, after: &DefinitionSet) -> bool {
     for next in &after.unit_families {
-        let Some(old) = before.unit_families.iter().find(|family| family.id == next.id) else {
+        let Some(old) = before
+            .unit_families
+            .iter()
+            .find(|family| family.id == next.id)
+        else {
             continue;
         };
         if old.base_unit != next.base_unit {
             return true;
         }
         for unit in &next.units {
-            let Some(prev) = old
-                .units
-                .iter()
-                .find(|item| item.code == unit.code)
-            else {
+            let Some(prev) = old.units.iter().find(|item| item.code == unit.code) else {
                 continue;
             };
             if prev.factor != unit.factor || prev.offset != unit.offset {
@@ -2693,18 +2693,20 @@ fn update_unit_family(
     units: Option<&[UnitSpec]>,
 ) -> Result<(), ApplyError> {
     let id = crate::refs::unit_family_id(defs, key)?;
-    let built_units = units.map(|unit_rows| {
-        let family = defs
-            .unit_families
-            .iter()
-            .find(|item| item.id == id)
-            .ok_or_else(|| format!("unknown unit family {key}"))?;
-        let base = base_unit
-            .map(str::trim)
-            .filter(|text| !text.is_empty())
-            .unwrap_or(family.base_unit.as_str());
-        unit_specs(defs, base, unit_rows)
-    }).transpose()?;
+    let built_units = units
+        .map(|unit_rows| {
+            let family = defs
+                .unit_families
+                .iter()
+                .find(|item| item.id == id)
+                .ok_or_else(|| format!("unknown unit family {key}"))?;
+            let base = base_unit
+                .map(str::trim)
+                .filter(|text| !text.is_empty())
+                .unwrap_or(family.base_unit.as_str());
+            unit_specs(defs, base, unit_rows)
+        })
+        .transpose()?;
     let family = defs
         .unit_families
         .iter_mut()
@@ -2949,12 +2951,7 @@ fn upsert_posted_family(defs: &mut DefinitionSet, posted: &UnitFamily) -> Result
             factor: unit.factor.to_string(),
             offset: unit.offset.to_string(),
             symbol: unit.symbol.clone(),
-            label: unit
-                .labels
-                .values()
-                .next()
-                .cloned()
-                .unwrap_or_default(),
+            label: unit.labels.values().next().cloned().unwrap_or_default(),
         })
         .collect::<Vec<_>>();
     unit_specs(defs, posted.base_unit.trim(), &specs)?;
@@ -3062,34 +3059,30 @@ fn unit_specs(
     Ok(out)
 }
 
-fn unit_from_spec(
-    defs: &DefinitionSet,
-    code: &str,
-    spec: &UnitSpec,
-) -> Result<Unit, String> {
-  let factor = parse_decimal(&spec.factor)?;
-  let offset = if spec.offset.trim().is_empty() {
-    Decimal::ZERO
-  } else {
-    parse_decimal(&spec.offset)?
-  };
-  let symbol = if spec.symbol.trim().is_empty() {
-    code.to_owned()
-  } else {
-    spec.symbol.trim().to_owned()
-  };
-  let labels = if spec.label.trim().is_empty() {
-    BTreeMap::new()
-  } else {
-    label_map(defs, spec.label.trim())
-  };
-  Ok(Unit {
-    code: code.to_owned(),
-    factor,
-    offset,
-    symbol,
-    labels,
-  })
+fn unit_from_spec(defs: &DefinitionSet, code: &str, spec: &UnitSpec) -> Result<Unit, String> {
+    let factor = parse_decimal(&spec.factor)?;
+    let offset = if spec.offset.trim().is_empty() {
+        Decimal::ZERO
+    } else {
+        parse_decimal(&spec.offset)?
+    };
+    let symbol = if spec.symbol.trim().is_empty() {
+        code.to_owned()
+    } else {
+        spec.symbol.trim().to_owned()
+    };
+    let labels = if spec.label.trim().is_empty() {
+        BTreeMap::new()
+    } else {
+        label_map(defs, spec.label.trim())
+    };
+    Ok(Unit {
+        code: code.to_owned(),
+        factor,
+        offset,
+        symbol,
+        labels,
+    })
 }
 
 fn set_unit_family(kind: &mut AttributeKind, family: Option<UnitFamilyId>) -> Result<(), String> {
@@ -3390,7 +3383,10 @@ mod tests {
                 key: "mass".into(),
                 dimension: Some("mass".into()),
                 base_unit: "kg".into(),
-                units: vec![crate::definition::Unit::with_factor("kg", rust_decimal::Decimal::ONE)],
+                units: vec![crate::definition::Unit::with_factor(
+                    "kg",
+                    rust_decimal::Decimal::ONE,
+                )],
             }],
             value_lists: vec![],
             attributes: vec![
