@@ -269,6 +269,8 @@ export const copy = {
   modelTableDraftRestoreFieldDropped(attributeKey: string, field: string) {
     return `Dropped unsaved change to ${attributeKey} (${field}) because the model changed.`
   },
+  modelTableDraftRemoteChanged: 'This table draft was changed in another tab.',
+  loadRemoteDraft: 'Load it',
   openDraftInTable: 'Open in the table',
   reviewAndSave: 'Save',
   reviewDraft: 'Review draft',

@@ -54,6 +54,7 @@ import { ModelTableBeforeUnload } from './model-table-beforeunload'
 import { layoutCommandLeavesTypeAttributes, layoutLeavesTypeAttributes } from './model-table-draft-nav'
 import { ModelTableLeaveDialog } from './model-table-leave-dialog'
 import { tryModelTableLeave } from './model-table-draft'
+import { clearModelTableDraftsForWorkspace, pruneModelTableDraftStorage } from './model-table-draft-storage'
 import { stageModel } from './model-stage'
 import { AttributeDefinitions } from './attribute-definitions'
 import { ModelTableView } from './model-tables'
@@ -452,6 +453,15 @@ export function Shell() {
     if (!id || id === workspaceIdRef.current) return
     tryModelTableLeave(() => setWorkspaceId(id))
   }, [])
+
+  useEffect(() => {
+    const userId = me.data?.user_id
+    // An empty workspace set means "not loaded yet", not "this user has none".
+    // Pruning then deletes every valid table draft (row 421).
+    if (!userId || typeof localStorage === 'undefined' || !defs.data || !workspaces.data) return
+    const workspaceIds = new Set((workspaces.data?.workspaces ?? []).map((item) => item.id))
+    pruneModelTableDraftStorage(userId, workspaceIds, defs.data)
+  }, [me.data?.user_id, workspaces.data, defs.data])
 
   const orderedWorkspaces = useMemo(
     () => orderWorkspaces(workspaces.data?.workspaces ?? [], typeNames(defs.data)),
@@ -994,11 +1004,11 @@ export function Shell() {
       if (!proposalId) return
       setProposalId(proposalId)
       const review = orderedWorkspaces.find((workspace) => workspace.share_token === 'braian-review')
-      if (review) setWorkspaceId(review.id)
+      if (review) requestWorkspaceChange(review.id)
     }
     window.addEventListener('braian-open-proposal', onOpen)
     return () => window.removeEventListener('braian-open-proposal', onOpen)
-  }, [orderedWorkspaces])
+  }, [orderedWorkspaces, requestWorkspaceChange])
 
   useEffect(() => {
     if (workspace.data && workspace.data.id === workspaceId) {
@@ -1400,7 +1410,7 @@ export function Shell() {
           }))
         }
       }
-      if (event.name === 'ui.open_workspace' && typeof event.args.id === 'string') setWorkspaceId(event.args.id)
+      if (event.name === 'ui.open_workspace' && typeof event.args.id === 'string') requestWorkspaceChange(event.args.id)
       if (event.name === 'ui.open_changes') applyRef.current('ui.open_view', { title: 'Changes', zone: 'center' })
       if (event.name === 'ui.open_template' && typeof event.args.id === 'string') {
         void openWorkspaceAfterRefetch(
@@ -1595,7 +1605,7 @@ export function Shell() {
   const openConfigReview = (id: string) => {
     const review = orderedWorkspaces.find((workspace) => workspace.share_token === 'braian-review')
     setProposalId(id)
-    if (review) setWorkspaceId(review.id)
+    if (review) requestWorkspaceChange(review.id)
     setConfigFiles(null)
   }
 
@@ -1626,11 +1636,10 @@ export function Shell() {
     setDeleteError('')
     try {
       await api.delete('/v1/workspaces/{id}', { params: { path: { id } } })
+      if (userId) clearModelTableDraftsForWorkspace(userId, id)
       await queryClient.invalidateQueries({ queryKey: ['workspaces'] })
       queryClient.removeQueries({ queryKey: ['workspace', id] })
-      if (workspaceId === id) {
-        if (neighbor) setWorkspaceId(neighbor)
-      }
+      if (workspaceId === id && neighbor) requestWorkspaceChange(neighbor)
       push(copy.deleteWorkspace)
       setDeleteConfirm(null)
       setTabMenu(null)

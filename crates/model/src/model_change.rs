@@ -1280,6 +1280,24 @@ fn apply_one(defs: &mut DefinitionSet, change: &ModelChange) -> Result<(), Apply
                 .map(|key| attribute_id(defs, key))
                 .collect::<Result<Vec<_>, _>>()?;
             let structure = structure_mut(defs, structure)?;
+            // The attribute table reorders the group's own list. A class of the
+            // same key still uses the class list.
+            let is_group = structure
+                .groups
+                .iter()
+                .any(|group| eq_key(&group.key, class_key));
+            if is_group {
+                let group = group_mut(structure, class_key)?;
+                if ids.len() != group.attributes.len()
+                    || ids.iter().any(|id| !group.attributes.contains(id))
+                {
+                    return Err(
+                        format!("reorder of {} must list the same attributes", group.key).into(),
+                    );
+                }
+                group.attributes = ids;
+                return Ok(());
+            }
             let class = class_mut(structure, class_key)?;
             if ids.len() != class.attributes.len()
                 || ids.iter().any(|id| !class.attributes.contains(id))
@@ -3335,6 +3353,27 @@ mod tests {
                 }],
             }],
         }
+    }
+
+    #[test]
+    fn reorder_attributes_reorders_the_group_list() {
+        let mut defs = base();
+        let weight = defs.attributes[0].id;
+        let status = defs.attributes[1].id;
+        defs.structures[0].groups[0].attributes = vec![weight, status];
+        apply_all(
+            &mut defs,
+            &[ModelChange::ReorderAttributes {
+                structure: "assortment".into(),
+                class_key: "camp".into(),
+                attributes: vec!["status".into(), "weight".into()],
+            }],
+        )
+        .expect("reorder group");
+        assert_eq!(
+            defs.structures[0].groups[0].attributes,
+            vec![status, weight]
+        );
     }
 
     #[test]

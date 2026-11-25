@@ -22,6 +22,7 @@ import { getModelSelection, subscribeModelSelection } from './model-selection'
 import { tryChooseModelSelection } from './model-table-draft'
 import { clearPendingModelType, OPEN_MODEL_TYPE, peekPendingModelType } from './model-type-open'
 import { StateNote } from './states'
+import { valueListOptionSteps } from './value-list-table-steps'
 
 type TypeRow = {
   id: string
@@ -180,7 +181,6 @@ export function ObjectTypesTable() {
       menuContext={(row) => (row?.key ? 'model-type' : 'model')}
       getMenuTarget={(row) => ({ typeKey: row?.key || undefined })}
       onActivateRow={(row) => {
-        setActiveRowId(row.id)
         if (!row.key) return
         tryChooseModelSelection({ kind: 'type', typeKey: row.key })
         setModelFocus({ kind: 'type', key: row.key })
@@ -702,26 +702,10 @@ export function ValueListValuesTable({ listKey }: { listKey: string }) {
         listKey: row?.listKey || listKey,
         optionCode: row?.code || undefined,
       })}
+      reorderable
       onReviewAndSave={async () => {
-        for (const row of Object.values(draftRows)) {
-          const existing = rows.some((item) => item.id === row.id)
-          if (!existing) {
-            await stageModel('model.add_value_option', {
-              value_list: listKey,
-              option: row.code || row.label.toLowerCase().replace(/\s+/g, '_'),
-              label: row.label,
-              language: uiLanguage,
-            })
-          } else {
-            await stageModel('model.update_value_option', {
-              value_list: listKey,
-              option: row.id.split(':').pop(),
-              label: row.label,
-              language: uiLanguage,
-              ...(row.code !== row.id.split(':').pop() ? { new_code: row.code } : {}),
-            })
-          }
-        }
+        const steps = valueListOptionSteps(listKey, rows, draftRows, uiLanguage)
+        if (steps.length > 0) await stageModelSteps(steps)
         setDraftRows({})
         await reviewDraft()
       }}

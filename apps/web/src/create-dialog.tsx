@@ -143,6 +143,15 @@ export function CreateDialog({
             event.preventDefault()
             submit()
           }}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter' || event.defaultPrevented || saving) return
+            const target = event.target
+            if (!(target instanceof HTMLElement)) return
+            if (target.tagName === 'TEXTAREA' && !event.ctrlKey && !event.metaKey) return
+            if (target.getAttribute('role') === 'combobox' && target.getAttribute('aria-expanded') === 'true') return
+            event.preventDefault()
+            submit()
+          }}
         >
           <div className="create-head">
             <DialogTitle>{title}</DialogTitle>

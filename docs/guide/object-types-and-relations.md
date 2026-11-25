@@ -83,7 +83,16 @@ The attribute types offered in the UI are:
 - `File`
 
 The table lets you edit the name, key, type, unit, required flag, show-by-default
-flag, languages, and searchable flag. Extra columns carry the attribute rules:
+flag, languages, and searchable flag. Drag a row or use Alt+ArrowUp/Down (and the
+move controls) to change attribute order; the new order is staged until you save.
+Group attributes use the same reordering. Value-list options in **List values** use
+the same pattern and stage an `update_value_list` step with the ordered options.
+
+The type name, key and **Allowed trees** checkboxes in the Type attributes header
+follow the same local table draft as the attribute rows, so they are discarded,
+restored and saved together and covered by the leave dialog.
+
+Extra columns carry the attribute rules:
 `Multiple`, `Filterable`, and `Sortable`; for numbers `Min`, `Max`, and
 `Integer`; for text `Max length` and `Text form` (short or long); for file
 attributes `Media`; and for value-list attributes the linked `Value list`. Cells
@@ -118,6 +127,11 @@ the model workspace and opens the review flow when one is needed. While the tabl
 is dirty, closing or reloading the browser tab triggers the browser's unsaved-changes
 warning. Switching to another type or workspace opens a dialog with `Save`, `Discard`,
 and `Cancel`; `Escape` or the close control dismiss the dialog and keep the draft.
+The same guard applies when you open the Review workspace, switch workspace from an
+agent command, or land on a neighbour workspace after deleting the current one.
+If another browser tab writes the same draft key while this tab still has unsaved
+edits, a non-blocking notice offers to load that copy instead of overwriting
+silently.
 
 Language tags are stored as given: `sv` and `sv-SE` are different values. Value lists
 have stable option codes with labels per language. A unit belongs to a unit family

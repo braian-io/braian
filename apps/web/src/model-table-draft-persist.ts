@@ -76,11 +76,24 @@ export type StoredModelTableDraftV1 = {
   pendingDelete: string[]
 }
 
+export type StoredStructuresChange = {
+  base: string[]
+  value: string[]
+}
+
+export type StoredTypeHeaderPatch = {
+  singular?: StoredFieldChange
+  plural?: StoredFieldChange
+  typeKey?: StoredFieldChange
+  structures?: StoredStructuresChange
+}
+
 export type StoredModelTableDraftV2 = {
   v: 2
   draftRows: Record<string, StoredAttributeTableRow | StoredAttributeRowPatch | unknown>
   pendingDetach: string[]
   pendingDelete: string[]
+  typeHeader?: StoredTypeHeaderPatch
 }
 
 export type StoredModelTableDraft = StoredModelTableDraftV1 | StoredModelTableDraftV2
@@ -90,6 +103,7 @@ export type DroppedDraftField = { attributeKey: string; field: string }
 export type RestoredModelTableDraft = {
   draftRows: Record<string, StoredAttributeTableRow>
   draftPatches: AttributeTableDraftPatches
+  typeHeader?: StoredTypeHeaderPatch
   pendingDetach: string[]
   pendingDelete: string[]
   trimmed: boolean
@@ -311,9 +325,57 @@ function reconcilePatch(
   }
 }
 
+function structuresKey(values: string[]) {
+  return [...values].sort().join('\u0000')
+}
+
+function reconcileTypeHeader(
+  server: { singular: string; plural: string; typeKey: string; structures: string[] } | null,
+  stored: StoredTypeHeaderPatch | undefined,
+): { patch?: StoredTypeHeaderPatch; trimmed: boolean } {
+  if (!stored) return { trimmed: false }
+  if (!server) return { trimmed: true }
+  const kept: StoredTypeHeaderPatch = {}
+  let trimmed = false
+  if (stored.singular) {
+    if (String(stored.singular.base) !== server.singular) trimmed = true
+    else if (stored.singular.value !== stored.singular.base) kept.singular = stored.singular
+  }
+  if (stored.plural) {
+    if (String(stored.plural.base) !== server.plural) trimmed = true
+    else if (stored.plural.value !== stored.plural.base) kept.plural = stored.plural
+  }
+  if (stored.typeKey) {
+    if (String(stored.typeKey.base) !== server.typeKey) trimmed = true
+    else if (stored.typeKey.value !== stored.typeKey.base) kept.typeKey = stored.typeKey
+  }
+  if (stored.structures) {
+    if (structuresKey(stored.structures.base) !== structuresKey(server.structures)) trimmed = true
+    else if (structuresKey(stored.structures.value) !== structuresKey(stored.structures.base)) kept.structures = stored.structures
+  }
+  if (Object.keys(kept).length === 0) return { trimmed }
+  return { patch: kept, trimmed }
+}
+
+function serverTypeHeader(defs: Json | undefined, typeKey: string, language = 'en') {
+  const raw = ((defs?.types as Json[]) ?? []).find((item) => String(item.key) === typeKey)
+  if (!raw) return null
+  const singularLabels = raw.singular as Record<string, string> | string | undefined
+  const pluralLabels = raw.plural as Record<string, string> | string | undefined
+  const singular = typeof singularLabels === 'string'
+    ? singularLabels
+    : String(singularLabels?.[language] ?? singularLabels?.en ?? '')
+  const plural = typeof pluralLabels === 'string'
+    ? pluralLabels
+    : String(pluralLabels?.[language] ?? pluralLabels?.en ?? '')
+  const structures = Array.isArray(raw.structures) ? raw.structures.map((id) => String(id)) : []
+  return { singular, plural, typeKey, structures }
+}
+
 export function serializeModelTableDraftForStorage(input: {
   draftRows: Record<string, StoredAttributeTableRow>
   draftPatches: AttributeTableDraftPatches
+  typeHeader?: StoredTypeHeaderPatch
   pendingDetach: string[]
   pendingDelete: string[]
   defs: Json | undefined
@@ -362,6 +424,7 @@ export function serializeModelTableDraftForStorage(input: {
     draftRows: serialized,
     pendingDetach: input.pendingDetach,
     pendingDelete: input.pendingDelete,
+    ...(input.typeHeader && Object.keys(input.typeHeader).length > 0 ? { typeHeader: input.typeHeader } : {}),
   }
 }
 
@@ -373,6 +436,7 @@ export function validateStoredModelTableDraft(
   const empty: RestoredModelTableDraft = {
     draftRows: {},
     draftPatches: {},
+    typeHeader: undefined,
     pendingDetach: [],
     pendingDelete: [],
     trimmed: false,
@@ -468,15 +532,25 @@ export function validateStoredModelTableDraft(
     else trimmed = true
   }
 
-  if (Object.keys(draftRows).length === 0 && pendingDetach.length === 0 && pendingDelete.length === 0) {
+  let typeHeader: StoredTypeHeaderPatch | undefined
+  if (selection?.kind === 'type' && stored.v === 2 && stored.typeHeader) {
+    const serverHeader = serverTypeHeader(defs, selection.typeKey)
+    const reconciled = reconcileTypeHeader(serverHeader, stored.typeHeader)
+    trimmed = trimmed || reconciled.trimmed
+    typeHeader = reconciled.patch
+  }
+
+  const headerDirty = typeHeader && Object.keys(typeHeader).length > 0
+
+  if (Object.keys(draftRows).length === 0 && pendingDetach.length === 0 && pendingDelete.length === 0 && !headerDirty) {
     return {
       ...empty,
-      trimmed: trimmed || stored.pendingDetach.length > 0 || stored.pendingDelete.length > 0 || Object.keys(stored.draftRows).length > 0,
+      trimmed: trimmed || stored.pendingDetach.length > 0 || stored.pendingDelete.length > 0 || Object.keys(stored.draftRows).length > 0 || Boolean(stored.v === 2 && stored.typeHeader),
       droppedFields,
     }
   }
 
-  return { draftRows, draftPatches, pendingDetach, pendingDelete, trimmed, droppedFields }
+  return { draftRows, draftPatches, typeHeader, pendingDetach, pendingDelete, trimmed, droppedFields }
 }
 
 export function applyDraftPatchesToRow<T extends StoredAttributeTableRow>(
