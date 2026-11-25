@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
-import { mainTable } from './ui'
+import { mainTable, waitDetailReady } from './ui'
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -53,6 +53,8 @@ async function editBrandDescription(row: Locator, value: string) {
 }
 
 async function openProductDetail(page: Page) {
+  await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
+  await expect(mainTable(page)).toBeVisible()
   const filter = mainTable(page).getByTestId('quick-filter').first()
   if ((await filter.inputValue()) !== '') await filter.fill('')
   const row = mainTable(page).getByTestId('object-row').first()
@@ -60,7 +62,7 @@ async function openProductDetail(page: Page) {
   await row.click()
   const detailTab = page.locator('[data-view-type="object_detail"]').first()
   if (await detailTab.isVisible()) await detailTab.click()
-  await expect(page.getByTestId('object-detail')).toBeVisible()
+  await waitDetailReady(page)
 }
 
 test.describe('attribute description (row 308)', () => {
