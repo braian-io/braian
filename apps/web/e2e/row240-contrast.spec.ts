@@ -135,7 +135,7 @@ test('row 240 keeps actions, selected chips and muted labels readable', async ({
   await expectReadable(remove, 'light Delete at rest')
   await attach(testInfo, remove, 'row240-light-delete')
   await expectReadableOnHover(remove, 'light Delete on hover')
-  const label = detail.locator('.field > label').first()
+  const label = detail.locator('.field-label-line > label').first()
   await expect(label).toBeVisible()
   await expectReadable(label, 'light field label')
   await attach(testInfo, detail.locator('.field-card').first(), 'row240-light-field-label')
