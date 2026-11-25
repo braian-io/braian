@@ -38,15 +38,22 @@ function asRecord(value: unknown): Json | undefined {
   return value as Json
 }
 
-/** Allowed trees are reviewed even when the change is not destructive. */
+function forcesReview(step: unknown): boolean {
+  const record = asRecord(step)
+  const op = record?.op
+  if (op === 'set_structures' || op === 'update_value_list' || op === 'reorder_attributes' || op === 'rename_type_key') {
+    return true
+  }
+  // A group attach is a model change. A type attach stays a direct save.
+  return op === 'attach_attribute' && Boolean(record?.structure) && Boolean(record?.group)
+}
+
+/** Model changes that are reviewed even when they are not destructive. */
 export function draftHasForcedReview(body: Json | null | undefined): boolean {
   if (!body) return false
   const steps = body.steps
   if (!Array.isArray(steps)) return false
-  return steps.some((step) => {
-    const op = asRecord(step)?.op
-    return op === 'set_structures' || op === 'update_value_list'
-  })
+  return steps.some(forcesReview)
 }
 
 /** Preview error, `consequence.destructive`, and the allowed-tree operation. */
@@ -73,7 +80,9 @@ function confirmLead(body: Json): string {
   const lines = (body.lines as string[] | undefined) ?? (consequence?.lines as string[] | undefined) ?? []
   // A forced allowed-tree review has nothing to delete; allowedTreesSentence
   // names the changed trees. Never fall back to the server's raw-key line.
-  if (draftHasForcedReview(body) && consequence?.destructive !== true) {
+  const steps = Array.isArray(body.steps) ? body.steps : []
+  const structures = steps.some((step) => asRecord(step)?.op === 'set_structures')
+  if (structures && consequence?.destructive !== true) {
     return copy.allowedTrees.replace('…', '')
   }
   const sentence = String(consequence?.sentence ?? '')
