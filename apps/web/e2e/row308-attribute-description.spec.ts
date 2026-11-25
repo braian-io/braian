@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
 import { mainTable } from './ui'
 
@@ -42,6 +42,16 @@ async function stageAndSave(page: Page, steps: Array<Record<string, unknown>>) {
   expect(saved.ok(), await saved.text()).toBeTruthy()
 }
 
+async function editBrandDescription(row: Locator, value: string) {
+  const descCell = row.locator('[data-column="description"]')
+  await descCell.scrollIntoViewIfNeeded()
+  await descCell.dblclick()
+  const editor = row.getByTestId('attr-desc-brand')
+  await expect(editor).toBeVisible()
+  await editor.fill(value)
+  await editor.press('Enter')
+}
+
 async function openProductDetail(page: Page) {
   const filter = mainTable(page).getByTestId('quick-filter').first()
   if ((await filter.inputValue()) !== '') await filter.fill('')
@@ -65,10 +75,7 @@ test.describe('attribute description (row 308)', () => {
     const table = await openProductAttributes(page)
     await table.getByTestId('quick-filter').fill('brand')
     const row = table.locator('[data-key="brand"]')
-    const descCell = row.locator('[data-column="description"]')
-    await descCell.dblclick()
-    await row.getByTestId('standard-cell-editor').fill(helpText)
-    await row.getByTestId('standard-cell-editor').press('Enter')
+    await editBrandDescription(row, helpText)
 
     const staged = page.waitForResponse((response) =>
       response.url().includes('/v1/model/draft/steps') && response.request().method() === 'POST')
@@ -92,9 +99,7 @@ test.describe('attribute description (row 308)', () => {
     const clearedTable = await openProductAttributes(page)
     await clearedTable.getByTestId('quick-filter').fill('brand')
     const clearedRow = clearedTable.locator('[data-key="brand"]')
-    await clearedRow.locator('[data-column="description"]').dblclick()
-    await clearedRow.getByTestId('standard-cell-editor').fill('')
-    await clearedRow.getByTestId('standard-cell-editor').press('Enter')
+    await editBrandDescription(clearedRow, '')
     const clearStage = page.waitForResponse((response) =>
       response.url().includes('/v1/model/draft/steps') && response.request().method() === 'POST')
     const clearSave = page.waitForResponse((response) =>
