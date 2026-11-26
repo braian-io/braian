@@ -124,19 +124,24 @@ and the empty import screen offers `Choose file`.
 
 An import has three steps, shown as `1 Map`, `2 Check`, and `3 Save`:
 
-- **Map.** Choose the `Type` and how rows are matched with `Matched by`. The checkbox
-  `Empty cells remove the stored value (otherwise they are left unchanged)` controls
-  empty cells. Each file column is mapped to a field or to `Don't import`. `Save
-  mapping as…` stores the mapping for files with the same columns, and `Next` moves on.
+- **Map.** Choose the `Type` and how rows are matched with `Matched by`. `Saved mapping`
+  shows the name of the mapping that was applied, or `None` for a manual mapping.
+  Picking another saved mapping, or `None`, applies that choice to the columns.
+  The checkbox `Empty cells remove the stored value (otherwise they are left unchanged)`
+  controls empty cells. Each file column is mapped to a field or to `Don't import`.
+  `Save mapping as…` opens a dialog and stores the mapping for files with the same
+  columns. The step then reads `Saved as {name}.` `Next` moves on.
 - **Check.** Review the draft with the filters `All`, `New`, `Changed`, `Errors`,
   `Unchanged`, and `Excluded`. You can leave out invalid cells instead of skipping the
   row, include a row that was left out, download failing rows with `Download failing
-  rows (.xlsx)`, go `Back to mapping`, or approve with `Approve N rows`.
+  rows (.xlsx)`, go `Back to mapping`, or save with `Save N rows`.
 - **Save.** Braian reports the result as `Imported {created} · Updated {updated} ·
   Skipped {skipped}`.
 
-Imports use saved mappings, available in the `Import mappings` view with the columns
-`Name`, `Object type`, `Columns`, and `Delete`. A running import can be reopened from
+Saved mappings are opened with `Ctrl+K` and `Import mappings`. The table shows `Name`,
+`Source`, `Object type`, `Created by`, and `Updated`. Rename the name in the cell; it
+saves when you leave the cell. Delete asks you to confirm. Only the person who saved
+a mapping, or an admin, can rename or delete it. A running import can be reopened from
 its `?import=` URL.
 
 Braian accepts `.xlsx`, `.xls`, `.csv`, `.tsv`, and `.txt` files. The error text for a

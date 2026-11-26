@@ -3254,8 +3254,27 @@ fn apply_bounds(
 }
 
 fn parse_decimal(text: &str) -> Result<Decimal, String> {
-    text.trim()
-        .parse::<Decimal>()
+    let text = text.trim();
+    if let Some((left, right)) = text.split_once('/') {
+        if left.contains('/') || right.contains('/') {
+            return Err(format!("invalid number {text}"));
+        }
+        let numerator = left
+            .trim()
+            .parse::<Decimal>()
+            .map_err(|_| format!("invalid number {text}"))?;
+        let denominator = right
+            .trim()
+            .parse::<Decimal>()
+            .map_err(|_| format!("invalid number {text}"))?;
+        if denominator.is_zero() {
+            return Err(format!("invalid number {text}"));
+        }
+        return numerator
+            .checked_div(denominator)
+            .ok_or_else(|| format!("invalid number {text}"));
+    }
+    text.parse::<Decimal>()
         .map_err(|_| format!("invalid number {text}"))
 }
 
@@ -4322,5 +4341,124 @@ mod tests {
         });
         let loaded: Attribute = serde_json::from_value(legacy).expect("legacy attribute");
         assert_eq!(loaded.description, None);
+    }
+
+    #[test]
+    fn fractional_factor_and_offset_match_affine_celsius() {
+        let mut defs = base();
+        apply_all(
+            &mut defs,
+            &[ModelChange::CreateUnitFamily {
+                key: "temperature".into(),
+                dimension: Some("temperature".into()),
+                base_unit: "C".into(),
+                units: vec![
+                    UnitSpec {
+                        code: "C".into(),
+                        factor: "1".into(),
+                        offset: "0".into(),
+                        symbol: "°C".into(),
+                        label: "Celsius".into(),
+                    },
+                    UnitSpec {
+                        code: "F".into(),
+                        factor: "5/9".into(),
+                        offset: "-160/9".into(),
+                        symbol: "°F".into(),
+                        label: "Fahrenheit".into(),
+                    },
+                ],
+            }],
+        )
+        .expect("temperature");
+        let family = defs
+            .unit_families
+            .iter()
+            .find(|item| item.key == "temperature")
+            .expect("family");
+        let fahrenheit = family
+            .units
+            .iter()
+            .find(|unit| unit.code == "F")
+            .expect("F");
+        assert_eq!(fahrenheit.factor, Decimal::from(5) / Decimal::from(9));
+        assert_eq!(fahrenheit.offset, Decimal::from(-160) / Decimal::from(9));
+        let boiling = Decimal::from(212) * fahrenheit.factor + fahrenheit.offset;
+        assert_eq!(boiling.trunc_with_scale(12), Decimal::from(100));
+        let freezing = Decimal::from(32) * fahrenheit.factor + fahrenheit.offset;
+        assert_eq!(freezing.trunc_with_scale(12), Decimal::ZERO);
+    }
+
+    #[test]
+    fn factor_offset_and_base_changes_need_reindex() {
+        let defs = base();
+        let symbol_only = ModelChange::UpdateUnitFamily {
+            key: "mass".into(),
+            dimension: None,
+            clear_dimension: false,
+            base_unit: None,
+            units: Some(vec![UnitSpec {
+                code: "kg".into(),
+                factor: "1".into(),
+                offset: "0".into(),
+                symbol: "kg".into(),
+                label: "Kilogram".into(),
+            }]),
+        };
+        assert!(!draft_needs_reindex(&defs, &[symbol_only]));
+
+        let offset = ModelChange::UpdateUnitFamily {
+            key: "mass".into(),
+            dimension: None,
+            clear_dimension: false,
+            base_unit: None,
+            units: Some(vec![UnitSpec {
+                code: "kg".into(),
+                factor: "1".into(),
+                offset: "1".into(),
+                symbol: String::new(),
+                label: String::new(),
+            }]),
+        };
+        assert!(draft_needs_reindex(&defs, &[offset]));
+
+        let factor = ModelChange::UpdateUnitFamily {
+            key: "mass".into(),
+            dimension: None,
+            clear_dimension: false,
+            base_unit: None,
+            units: Some(vec![UnitSpec {
+                code: "kg".into(),
+                factor: "2".into(),
+                offset: "0".into(),
+                symbol: String::new(),
+                label: String::new(),
+            }]),
+        };
+        assert!(draft_needs_reindex(&defs, &[factor]));
+
+        let base_unit = ModelChange::UpdateUnitFamily {
+            key: "mass".into(),
+            dimension: None,
+            clear_dimension: false,
+            base_unit: Some("g".into()),
+            units: Some(vec![
+                UnitSpec {
+                    code: "kg".into(),
+                    factor: "1000".into(),
+                    offset: "0".into(),
+                    symbol: String::new(),
+                    label: String::new(),
+                },
+                UnitSpec {
+                    code: "g".into(),
+                    factor: "1".into(),
+                    offset: "0".into(),
+                    symbol: String::new(),
+                    label: String::new(),
+                },
+            ]),
+        };
+        assert!(draft_needs_reindex(&defs, &[base_unit]));
     }
 }

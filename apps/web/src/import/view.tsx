@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { useQueries, useQuery } from '@tanstack/react-query'
+import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { api, jsonRecord } from '../api'
-import { publishInlineNotice } from '../inline-notice'
+import { CreateDialog, requireText } from '../create-dialog'
 import { writeErrorMessage } from '../write-error'
 import { Button } from '../components/ui/button'
 import { Dialog, DialogContent, DialogTitle } from '../components/ui/dialog'
@@ -23,6 +23,7 @@ import {
   discardImport,
   saveImport,
   setImportEmptyClears,
+  applySavedImportMapping,
   saveImportMapping,
   selectColumn,
   setImportFilter,
@@ -139,6 +140,7 @@ export function ImportScreen() {
       }
       if (event.key === 'Escape') {
         if (document.querySelector('[data-import-menu-open="true"]')) return
+        if (document.querySelector('[data-testid="import-save-mapping-dialog"]')) return
         event.preventDefault()
         if (current.confirm) dismissConfirm()
         else requestCloseImport()
@@ -302,11 +304,34 @@ function Steps({ phase }: { phase: ReturnType<typeof getImportSnapshot>['phase']
   )
 }
 
+type SavedMappingRow = {
+  id: string
+  name: string
+  header_signature?: string
+}
+
+function headerSignature(headers: Array<{ name: string }>) {
+  return headers.map((header) => header.name).filter((name) => name.length > 0).sort().join('\n')
+}
+
 function Mapping() {
   const [footerNotice, setFooterNotice] = useState('')
   const [footerError, setFooterError] = useState(false)
   const snap = useSyncExternalStore(subscribeImport, getImportSnapshot, getImportSnapshot)
+  const queryClient = useQueryClient()
   const session = snap.session!
+  const [saveOpen, setSaveOpen] = useState(false)
+  const [saveName, setSaveName] = useState('')
+  const [savedNote, setSavedNote] = useState('')
+  const signature = headerSignature(session.headers ?? [])
+  const savedList = useQuery({
+    queryKey: ['import-mappings'],
+    queryFn: () => api.get('/v1/import-mappings'),
+    enabled: session.id !== 'fixture',
+  })
+  const savedRows = ((savedList.data?.mappings ?? []) as SavedMappingRow[]).filter(
+    (row) => !row.header_signature || row.header_signature === signature,
+  )
   const targets = session.targets ?? []
   const choices = dedupedTargets(targets.filter((target) => target.id !== 'action'))
   const labelOf = (id: string) => targetForStored(targets, id)?.label ?? id
@@ -319,6 +344,10 @@ function Mapping() {
   const suggested = session.proposal?.type?.value
   const typeConfidence = showTypeConfidence(snap.typeKey, suggested, session.proposal?.type?.confidence)
   const [menu, setMenu] = useState<number | null>(null)
+  const selectedId = snap.savedMappingId ?? ''
+  const known = savedRows.some((row) => row.id === selectedId)
+  const selectedName = savedRows.find((row) => row.id === selectedId)?.name
+    ?? (selectedId && session.proposal?.ai?.startsWith('saved: ') ? session.proposal.ai.slice('saved: '.length) : '')
   const waiting = session.status === 'mapping' && (!session.proposal || session.proposal.ai === 'pending')
   if (waiting) {
     return (
@@ -349,6 +378,25 @@ function Mapping() {
           ) : null}
         </label>
         <label>
+          {copy.importSavedMapping}
+          <select
+            value={selectedId}
+            data-testid="import-saved-mapping"
+            onChange={(event) => {
+              const value = event.target.value
+              if (value === selectedId) return
+              setSavedNote('')
+              void applySavedImportMapping(value || null)
+            }}
+          >
+            <option value="">{copy.importNone}</option>
+            {selectedId && !known ? <option value={selectedId}>{selectedName || selectedId}</option> : null}
+            {savedRows.map((row) => (
+              <option key={row.id} value={row.id}>{row.name}</option>
+            ))}
+          </select>
+        </label>
+        <label>
           {copy.importMatchedBy}
           <select value={snap.idColumn} onChange={(event) => setImportIdColumn(event.target.value)} data-testid="import-id-column">
             <option value="none">{copy.importNone}</option>
@@ -358,6 +406,10 @@ function Mapping() {
           </select>
         </label>
       </div>
+      <p className="import-note" data-testid="import-saved-mapping-status">
+        {selectedName ? copy.importUsingMapping.replace('{name}', selectedName) : copy.importManualMapping}
+      </p>
+      {snap.error ? <p className="error" role="alert" data-testid="import-mapping-error">{snap.error}</p> : null}
       <label className="import-empty-clears">
         <input type="checkbox" data-testid="import-empty-clears" checked={snap.emptyClears} onChange={(event) => setImportEmptyClears(event.target.checked)} />
         {' '}{copy.importEmptyClears}
@@ -448,29 +500,37 @@ function Mapping() {
             {footerNotice}
           </p>
         ) : null}
-        <Button
-          type="button"
-          variant="default"
-          data-testid="import-save-mapping"
-          disabled={mappedLines(snap.columns).length === 0 || !snap.typeKey}
-          onClick={() => {
-            const name = window.prompt(copy.importSaveMappingAs, session.file_name.replace(/\.[^.]+$/, ''))
-            if (!name?.trim()) return
-            void saveImportMapping(name.trim())
-              .then(() => {
-                setFooterError(false)
-                setFooterNotice(copy.importMappingSaved)
-                window.setTimeout(() => setFooterNotice(''), 5000)
-              })
-              .catch((error: unknown) => {
-                const message = writeErrorMessage(error) ?? copy.saveFailed
-                setFooterError(true)
-                setFooterNotice(message)
-              })
+        <div className="import-actions-start">
+          <Button
+            type="button"
+            variant="default"
+            data-testid="import-save-mapping"
+            disabled={mappedLines(snap.columns).length === 0 || !snap.typeKey}
+            onClick={() => {
+              setSaveName(session.file_name.replace(/\.[^.]+$/, ''))
+              setSaveOpen(true)
+            }}
+          >
+            {copy.importSaveMappingAs}
+          </Button>
+          {savedNote ? <p className="import-note" role="status" data-testid="import-mapping-saved">{savedNote}</p> : null}
+        </div>
+        <CreateDialog
+          open={saveOpen}
+          title={copy.importSaveMapping}
+          description={copy.importSaveMappingHint}
+          fields={[{ id: 'name', label: copy.name, value: saveName, testId: 'import-save-mapping-name', autoFocus: true }]}
+          dialogTestId="import-save-mapping-dialog"
+          submitTestId="import-save-mapping-submit"
+          onField={(_id, value) => setSaveName(value)}
+          onClose={() => setSaveOpen(false)}
+          onSubmit={async () => {
+            const saved = await saveImportMapping(requireText(saveName))
+            if (!saved) throw new Error(copy.saveFailed)
+            setSavedNote(copy.importMappingSavedAs.replace('{name}', saved.name))
+            await queryClient.invalidateQueries({ queryKey: ['import-mappings'] })
           }}
-        >
-          {copy.importSaveMappingAs}
-        </Button>
+        />
         <Button
           type="button"
           variant="primary"

@@ -1,5 +1,6 @@
 import { ApiError, api, jsonRecord, type Schemas } from '../api'
-import { reportWriteError } from '../write-error'
+import { acceptProposal } from '../object-draft-save'
+import { reportWriteError, writeErrorMessage } from '../write-error'
 import {
   acceptsFile,
   firstDroppedFile,
@@ -46,6 +47,7 @@ export type ImportSession = {
   targets: ImportTarget[]
   proposal: {
     ai?: string
+    saved_mapping?: string
     type?: { value?: string | null; confidence?: number }
     id_column?: { value?: string | null; confidence?: number }
     columns?: ColumnLine[]
@@ -78,6 +80,8 @@ export type ImportSnapshot = {
   typeKey: string
   idColumn: string
   emptyClears: boolean
+  /** Saved mapping applied to the column map. Null is a manual mapping. */
+  savedMappingId: string | null
   /** Shown inside a workspace pane instead of the full-screen dialog. */
   embedded: boolean
 }
@@ -103,6 +107,7 @@ const initial: ImportSnapshot = {
   typeKey: '',
   idColumn: 'none',
   emptyClears: false,
+  savedMappingId: null,
   embedded: false,
 }
 
@@ -110,6 +115,8 @@ let state: ImportSnapshot = initial
 const listeners = new Set<() => void>()
 let poll: ReturnType<typeof setInterval> | undefined
 let generation = 0
+/** Drops a refresh that started before a save or apply finished. */
+let savedTicket = 0
 
 function emit() {
   for (const listener of listeners) listener()
@@ -226,17 +233,63 @@ export function setImportType(typeKey: string) {
 }
 
 export function setImportIdColumn(idColumn: string) {
-  patch({ idColumn })
+  patch({ idColumn, savedMappingId: null, dirty: true })
 }
 
 export async function saveImportMapping(name: string) {
+  const mine = ++savedTicket
   const session = await persistMapping()
-  if (!session) return
-  await api.post('/v1/import-mappings', { body: { session_id: session.id, name } })
+  if (!session) return null
+  const saved = await api.post('/v1/import-mappings', { body: { session_id: session.id, name } })
+  if (mine !== savedTicket) return { id: saved.id, name: saved.name }
+  const current = state.session
+  patch({
+    savedMappingId: saved.id,
+    error: '',
+    ...(current
+      ? {
+          session: {
+            ...current,
+            proposal: {
+              ...current.proposal,
+              ai: `saved: ${saved.name}`,
+              saved_mapping: saved.id,
+            },
+          },
+        }
+      : {}),
+  })
+  return { id: saved.id, name: saved.name }
+}
+
+export async function applySavedImportMapping(mappingId: string | null) {
+  const session = state.session
+  if (!session || session.id === 'fixture') {
+    patch({ savedMappingId: mappingId, error: '' })
+    return
+  }
+  const mine = ++savedTicket
+  const previous = state.savedMappingId
+  patch({ savedMappingId: mappingId, error: '' })
+  try {
+    const next = await api.post('/v1/imports/{id}/saved-mapping', {
+      params: { path: { id: session.id } },
+      body: { mapping_id: mappingId },
+    })
+    if (mine !== savedTicket) return
+    patch({ dirty: false })
+    adopt(sessionFromApi(next))
+  } catch (error) {
+    if (mine !== savedTicket) return
+    patch({
+      savedMappingId: previous,
+      error: writeErrorMessage(error) || 'The mapping could not be applied.',
+    })
+  }
 }
 
 export function setImportEmptyClears(emptyClears: boolean) {
-  patch({ emptyClears })
+  patch({ emptyClears, savedMappingId: null, dirty: true })
 }
 
 export function assignImportTarget(col: number, target: string) {
@@ -251,6 +304,7 @@ export function assignImportTarget(col: number, target: string) {
     dirty: true,
     selected: col,
     notice,
+    savedMappingId: null,
   })
 }
 
@@ -336,10 +390,7 @@ export async function saveImport(excluded: number[] = []) {
   const draftId = session.draft_id
   if (!draftId) throw new Error('The draft is not ready yet.')
   const failed = Number(session.counters.failed ?? 0)
-  const body = (await api.post('/v1/proposals/{id}/accept', {
-    params: { path: { id: draftId } },
-    body: { skip_failed: failed > 0, exclude_rows: excluded },
-  })) as { job_id?: string }
+  const body = await acceptProposal(draftId, { skip_failed: failed > 0, exclude_rows: excluded }) as { job_id?: string }
   patch({ phase: 'saving', session: { ...session, job_id: body.job_id ?? null, status: 'saving' } })
 }
 /** Works through an import draft inside a workspace pane (no dialog). */
@@ -453,6 +504,7 @@ function proposalFrom(value: unknown): ImportSession['proposal'] {
   const idColumn = jsonRecord(record.id_column)
   return {
     ...(typeof record.ai === 'string' ? { ai: record.ai } : {}),
+    ...(typeof record.saved_mapping === 'string' ? { saved_mapping: record.saved_mapping } : {}),
     ...(type
       ? {
           type: {
@@ -518,12 +570,16 @@ function adopt(session: ImportSession) {
   const idColumn = state.dirty && state.session?.id === session.id
     ? state.idColumn
     : session.proposal?.id_column?.value || (session.mapping?.id_column == null ? 'none' : `col:${session.mapping.id_column}`)
+  const savedMappingId = state.dirty && state.session?.id === session.id
+    ? state.savedMappingId
+    : session.proposal?.saved_mapping ?? null
   patch({
     open: !state.embedded,
     session,
     columns,
     typeKey: typeKey || '',
     idColumn: idColumn || 'none',
+    savedMappingId,
     phase: phaseOf(session.status),
     fileName: session.file_name,
     error: session.error ?? (session.status === 'failed' ? 'We could not read this file.' : state.error),
@@ -538,8 +594,9 @@ function adopt(session: ImportSession) {
 
 async function refresh(id: string) {
   const ticket = generation
+  const saved = savedTicket
   const session = await api.get('/v1/imports/{id}', { params: { path: { id: id } } })
-  if (ticket !== generation) return
+  if (ticket !== generation || saved !== savedTicket) return
   adopt(sessionFromApi(session))
 }
 
@@ -708,6 +765,7 @@ export function showImportFixture(kind: 'map' | 'diff') {
     columns,
     typeKey: 'article',
     idColumn: 'col:0',
+    savedMappingId: null,
     dirty: false,
     error: '',
     notice: '',

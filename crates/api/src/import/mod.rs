@@ -44,6 +44,10 @@ pub fn routes() -> axum::Router<AppState> {
         .route("/v1/imports/{id}", get(show).delete(remove))
         .route("/v1/imports/{id}/sheet", axum::routing::post(sheet))
         .route("/v1/imports/{id}/remap", axum::routing::post(remap))
+        .route(
+            "/v1/imports/{id}/saved-mapping",
+            axum::routing::post(apply_saved),
+        )
         .route("/v1/imports/{id}/mapping", axum::routing::put(put_mapping))
         .route("/v1/imports/{id}/approve", axum::routing::post(approve))
         .route("/v1/imports/{id}/rows", get(rows))
@@ -326,6 +330,82 @@ async fn remap(
         &cached.defs,
     );
     Ok(Json(with_draft(&state, &session, body_json).await))
+}
+
+fn chosen_type(session: &braian_store::ImportSession) -> Option<String> {
+    session
+        .mapping
+        .as_ref()
+        .and_then(|mapping| mapping.get("type"))
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .or_else(|| {
+            session
+                .proposal
+                .as_ref()
+                .and_then(|proposal| proposal.pointer("/type/value"))
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })
+}
+
+async fn apply_saved(
+    State(state): State<AppState>,
+    Auth(identity): Auth,
+    Path(id): Path<Uuid>,
+    Json(body): Json<ApplySavedBody>,
+) -> Result<Json<Value>, Problem> {
+    require(&identity, Role::Editor)?;
+    let session = load(&state, &identity, id).await?;
+    ensure_revision(&state, &session).await?;
+    if let Some(mapping_id) = body.mapping_id {
+        let saved = state
+            .store
+            .import_mapping(mapping_id)
+            .await
+            .map_err(store_status)?
+            .ok_or_else(|| {
+                Problem::new(
+                    StatusCode::NOT_FOUND,
+                    "not_found",
+                    "That mapping does not exist.",
+                )
+            })?;
+        if saved.header_signature != saved::signature(&session.headers) {
+            return Err(Problem::new(
+                StatusCode::CONFLICT,
+                "headers_differ",
+                "That mapping is for a file with different columns.",
+            ));
+        }
+        let reuse = saved::reuse_of(&saved, &session.headers);
+        session::remap(
+            &state,
+            &session,
+            &reuse.type_key,
+            reuse.id_column,
+            &reuse.lines,
+        )
+        .await
+        .map_err(|detail| Problem::new(StatusCode::BAD_REQUEST, "import", detail))?;
+        saved::stamp_proposal(&state, id, Some((saved.id, saved.name.as_str()))).await?;
+    } else {
+        let type_key = chosen_type(&session).ok_or_else(|| {
+            Problem::new(
+                StatusCode::BAD_REQUEST,
+                "invalid_mapping",
+                "Choose an object type.",
+            )
+        })?;
+        session::remap(&state, &session, &type_key, None, &[])
+            .await
+            .map_err(|detail| Problem::new(StatusCode::BAD_REQUEST, "import", detail))?;
+        saved::stamp_proposal(&state, id, None).await?;
+    }
+    if let Ok(Some(current)) = state.store.import_session(id).await {
+        emit_import(&state, &current);
+    }
+    show(State(state), Auth(identity), Path(id)).await
 }
 
 async fn put_mapping(
@@ -1347,6 +1427,13 @@ fn failed_workbook(
 #[derive(Deserialize, ToSchema)]
 pub(crate) struct SheetBody {
     sheet_index: usize,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub(crate) struct ApplySavedBody {
+    /// Saved mapping to apply. Null maps the columns again without one.
+    #[serde(default)]
+    pub mapping_id: Option<Uuid>,
 }
 
 #[derive(Deserialize, ToSchema)]

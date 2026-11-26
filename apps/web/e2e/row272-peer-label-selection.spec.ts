@@ -119,12 +119,11 @@ test.describe('peer-linked label selections (Notion row 272)', () => {
     }
   })
 
-  test('group chip on explicit All shows error and leaves Cheese off when view save fails', async ({ page }) => {
+  test('group chip on explicit All posts a view save, shows the error, and stays on All', async ({ page }) => {
     test.setTimeout(180_000)
     await login(page)
 
     const workspaceId = crypto.randomUUID()
-    const treeId = crypto.randomUUID()
     const productsId = crypto.randomUUID()
     const layout = { type: 'tabs', views: [productsId], active: 0 }
     const created = await page.request.post('/v1/workspaces', {
@@ -137,10 +136,10 @@ test.describe('peer-linked label selections (Notion row 272)', () => {
       },
     })
     expect(created.ok()).toBeTruthy()
-    for (const view of [
-      { id: treeId, type: 'structure_tree', title: 'Food', pane: 'left', position: 0, state: { expanded: ['dairy'] } },
-      {
+    const response = await page.request.post('/v1/views', {
+      data: {
         id: productsId,
+        workspace_id: workspaceId,
         type: 'object_table',
         title: 'Products',
         pane: 'center',
@@ -153,47 +152,57 @@ test.describe('peer-linked label selections (Notion row 272)', () => {
           source: { kind: 'all' },
         },
       },
-    ]) {
-      const response = await page.request.post('/v1/views', { data: { ...view, workspace_id: workspaceId } })
-      expect(response.ok()).toBeTruthy()
-    }
+    })
+    expect(response.ok()).toBeTruthy()
 
-    let failViewSave = false
     try {
       await page.reload()
       await page.locator('nav.tabs').getByRole('button', { name: /Row272b/ }).click()
       const products = pane(page, productsId)
-      await products.getByTestId('object-table').first().click({ position: { x: 24, y: 24 } })
-      await products.hover()
-      await products.getByTestId('view-menu').click()
-      await page.getByTestId('context-menu').getByRole('menuitem', { name: 'Select source' }).click()
-      await page.getByTestId('command-palette').locator('.hit').filter({ hasText: 'All Products' }).first().click()
+      await expect(products.getByTestId('object-row').first()).toBeVisible({ timeout: 60_000 })
       await expect(products.getByTestId('view-source-label')).toHaveText('All Products')
+      const before = await products.getByTestId('object-row').count()
+      expect(before).toBeGreaterThan(0)
+      const beforeSource = await page.request.get(`/v1/workspaces/${workspaceId}`)
+      expect(beforeSource.ok()).toBeTruthy()
+      const beforeBody = (await beforeSource.json()) as {
+        views: Array<{ id: string; state?: { source?: { kind?: string } } }>
+      }
+      expect(beforeBody.views.find((view) => view.id === productsId)?.state?.source).toEqual({ kind: 'all' })
 
-      await page.keyboard.press('Control+k')
-      await page.getByTestId('command-palette').getByTestId('palette-input').fill('Open view')
-      await page.keyboard.press('Enter')
-      await page.getByTestId('command-palette').getByTestId('palette-input').fill('Food')
-      await page.getByRole('option', { name: /^Food/ }).first().click()
-      await expect(pane(page, treeId).getByTestId('structure-tree')).toBeVisible({ timeout: 60_000 })
-      await expect(products.getByTestId('view-source-label')).toContainText('Food', { timeout: 30_000 })
-
+      const posts: Array<{ id?: string; state?: { source?: { kind?: string } } }> = []
       await page.route('**/v1/views', async (route) => {
-        if (failViewSave && route.request().method() === 'POST') {
-          failViewSave = false
-          await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ message: 'save failed' }) })
-          return
+        if (route.request().method() === 'POST') {
+          const body = route.request().postDataJSON() as { id?: string; state?: { source?: { kind?: string } } }
+          // The group chip leaves explicit All. Fail that write; let other view saves through.
+          if (body.id === productsId && body.state?.source?.kind !== 'all') {
+            posts.push(body)
+            await route.fulfill({
+              status: 500,
+              contentType: 'application/json',
+              body: JSON.stringify({ message: 'save failed' }),
+            })
+            return
+          }
         }
         await route.continue()
       })
 
       const cheese = products.getByTestId('assortment').filter({ hasText: 'Cheese' })
-      failViewSave = true
       await cheese.click()
       await expect(page.getByTestId('filter-setup-error')).toContainText('save failed', { timeout: 30_000 })
       await expect(page.locator('[data-sonner-toast]')).toHaveCount(0)
+      expect(posts).toHaveLength(1)
+      expect(posts[0]?.state?.source).toBeUndefined()
       await expect(cheese).not.toHaveClass(/\bon\b/)
-      await expect(products.getByTestId('view-source-label')).toContainText('Food')
+      await expect(products.getByTestId('view-source-label')).toHaveText('All Products')
+      expect(await products.getByTestId('object-row').count()).toBe(before)
+      const after = await page.request.get(`/v1/workspaces/${workspaceId}`)
+      expect(after.ok()).toBeTruthy()
+      const afterBody = (await after.json()) as {
+        views: Array<{ id: string; state?: { source?: { kind?: string } } }>
+      }
+      expect(afterBody.views.find((view) => view.id === productsId)?.state?.source).toEqual({ kind: 'all' })
     } finally {
       await page.request.delete(`/v1/workspaces/${workspaceId}`)
     }

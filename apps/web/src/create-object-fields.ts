@@ -13,6 +13,7 @@ export type CreateObjectField = {
   /** Base unit for number/range fields, so the server gets a valid value. */
   unit: string
   multiline: boolean
+  fieldDescription: string
 }
 
 export type CreateObjectFieldGroups = {
@@ -51,6 +52,7 @@ export function createObjectFields(defs: Json | undefined, typeKey: string, lang
       testId: testIdFor(row.key),
       unit: row.kind === 'number' || row.kind === 'range' ? baseUnit(defs, String(((raw?.kind as Json | undefined) ?? {}).unit_family ?? '')) : '',
       multiline: row.kind === 'text' && String(((raw?.kind as Json | undefined) ?? {}).form ?? '') === 'long',
+      fieldDescription: row.description.trim(),
     })
   }
 
@@ -111,6 +113,7 @@ function fallbackField(key: 'number' | 'name'): CreateObjectField {
     testId: testIdFor(key),
     unit: '',
     multiline: false,
+    fieldDescription: '',
   }
 }
 
