@@ -30,8 +30,8 @@ async function openTypeAttributes(page: Page, typeKey: string) {
   return table
 }
 
-async function stageAndSaveUi(page: Page, steps: Array<Record<string, unknown>>) {
-  const staged = await page.request.post('/v1/model/draft/steps', { data: { steps } })
+async function stageAndSaveUi(page: Page, operation: string, args: Record<string, unknown>) {
+  const staged = await page.request.post('/v1/model/draft/steps', { data: { operation, args } })
   expect(staged.ok(), await staged.text()).toBeTruthy()
   await expect(page.getByTestId('unsaved-changes')).toBeVisible({ timeout: 30_000 })
   const saved = page.waitForResponse(
@@ -65,12 +65,7 @@ test.describe('model reload banner (row 309)', () => {
       await expect(tableB.getByTestId('review-and-save')).toBeVisible()
 
       await openDataModel(pageA)
-      await stageAndSaveUi(pageA, [{
-        op: 'update_type',
-        type_key: 'product',
-        language: 'en',
-        plural,
-      }])
+      await stageAndSaveUi(pageA, 'model.update_type', { key: 'product', language: 'en', plural })
 
       await expect(pageB.getByTestId('model-reload-banner')).toBeVisible({ timeout: 30_000 })
       await expect(pageB.getByText('Model changed – reload')).toBeVisible()
@@ -95,9 +90,7 @@ test.describe('model reload banner (row 309)', () => {
         await login(page)
         await page.request.delete('/v1/model/draft').catch(() => {})
         await page.request.post('/v1/model/draft/steps', {
-          data: {
-            steps: [{ op: 'update_type', type_key: 'product', language: 'en', plural: 'Products' }],
-          },
+          data: { operation: 'model.update_type', args: { key: 'product', language: 'en', plural: 'Products' } },
         }).catch(() => {})
         await page.request.post('/v1/model/draft/save', { data: {} }).catch(() => {})
         await cleanup.close()
