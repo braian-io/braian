@@ -86,7 +86,12 @@ pub fn routes() -> axum::Router<AppState> {
                 .delete(delete_assortment),
         )
         .route("/v1/assortments/{id}/usage", get(assortment_usage))
-        .route("/v1/assortments/{id}/members", get(assortment_members))
+        .route(
+            "/v1/assortments/{id}/members",
+            get(assortment_members)
+                .post(add_assortment_members)
+                .delete(remove_assortment_members),
+        )
         .route("/v1/job-types", get(list_job_types).post(register_job_type))
         .route("/v1/job-types/{key}/runs", get(job_runs))
         .route("/v1/jobs/{id}", get(job_run))
@@ -3800,8 +3805,8 @@ fn assortment_usage_json(usage: braian_store::AssortmentUsage) -> Value {
 }
 
 /// Members of a dynamic selection are re-evaluated on every read through the
-/// same filter parse and search path a view uses. A manual selection has no
-/// members yet: hand-picked members come with the selection UI.
+/// same filter parse and search path a view uses. A manual selection returns
+/// the objects added by hand, in add order, without calling search.
 async fn assortment_members(
     State(state): State<AppState>,
     Auth(identity): Auth,
@@ -3815,22 +3820,29 @@ async fn assortment_members(
             "selection not found",
         ));
     };
-    let (filter, q) = if row.get("kind").and_then(Value::as_str) == Some("dynamic") {
-        let query = row.get("query");
-        let filter = query
-            .and_then(|query| query.get("filter"))
-            .and_then(Value::as_str)
-            .unwrap_or("");
-        let q = query
-            .and_then(|query| query.get("q"))
-            .and_then(Value::as_str)
-            .unwrap_or("");
-        (filter, q)
-    } else {
-        return Ok(Json(json!({ "members": [], "found": 0 })));
-    };
+    if row.get("kind").and_then(Value::as_str) != Some("dynamic") {
+        let member_ids = state
+            .store
+            .assortment_member_ids(id)
+            .await
+            .map_err(store_status)?;
+        return Ok(Json(json!({
+            "members": [],
+            "found": member_ids.len(),
+            "member_ids": member_ids,
+        })));
+    }
+    let query = row.get("query");
+    let filter = query
+        .and_then(|query| query.get("filter"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let q = query
+        .and_then(|query| query.get("q"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
     if filter.is_empty() && q.is_empty() {
-        return Ok(Json(json!({ "members": [], "found": 0 })));
+        return Ok(Json(json!({ "members": [], "found": 0, "member_ids": [] })));
     }
     let (filter_by, _, _) =
         search_fields(&state, filter.to_owned(), String::new(), String::new()).await?;
@@ -3845,7 +3857,174 @@ async fn assortment_members(
         50,
     )
     .await?;
-    Ok(Json(json!({ "members": page.hits, "found": page.found })))
+    Ok(Json(
+        json!({ "members": page.hits, "found": page.found, "member_ids": [] }),
+    ))
+}
+
+#[derive(Deserialize, ToSchema)]
+pub(crate) struct AssortmentMembersBody {
+    object_ids: Vec<Uuid>,
+}
+
+fn only_manual_members() -> Problem {
+    Problem::new(
+        StatusCode::BAD_REQUEST,
+        "assortment",
+        "only a manual selection can add or remove objects",
+    )
+}
+
+fn choose_objects() -> Problem {
+    Problem::new(
+        StatusCode::BAD_REQUEST,
+        "assortment",
+        "choose at least one object",
+    )
+}
+
+/// `{ "hand": true }` marks a manual selection whose objects were chosen one by one.
+fn is_hand_only(query: &Value) -> bool {
+    let Some(object) = query.as_object() else {
+        return false;
+    };
+    object.get("hand").and_then(Value::as_bool) == Some(true)
+        && object.get("group").is_none()
+        && object.get("labels").is_none()
+        && object.get("filter").is_none()
+}
+
+fn selection_type_id(row: &Value) -> Result<Uuid, Problem> {
+    row.get("type_id")
+        .and_then(Value::as_str)
+        .and_then(|value| Uuid::parse_str(value).ok())
+        .ok_or_else(|| {
+            Problem::new(
+                StatusCode::BAD_REQUEST,
+                "assortment",
+                "a selection needs a type",
+            )
+        })
+}
+
+async fn load_manual_selection(state: &AppState, id: Uuid) -> Result<Value, Problem> {
+    let Some(row) = state.store.assortment(id).await.map_err(store_status)? else {
+        return Err(Problem::new(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            "selection not found",
+        ));
+    };
+    if row.get("kind").and_then(Value::as_str) != Some("manual") {
+        return Err(only_manual_members());
+    }
+    Ok(row)
+}
+
+/// Keeps the first occurrence of each id and rejects anything that is missing,
+/// deleted, or a different type than the selection.
+async fn live_member_ids(
+    state: &AppState,
+    type_id: Uuid,
+    object_ids: &[Uuid],
+) -> Result<Vec<Uuid>, Problem> {
+    if object_ids.is_empty() {
+        return Err(choose_objects());
+    }
+    let mut unique = Vec::with_capacity(object_ids.len());
+    for id in object_ids {
+        if !unique.contains(id) {
+            unique.push(*id);
+        }
+    }
+    let wanted: Vec<ObjectId> = unique.iter().copied().map(ObjectId::from_uuid).collect();
+    let stored = state
+        .store
+        .get_objects(&wanted)
+        .await
+        .map_err(store_status)?;
+    if stored.len() != unique.len() {
+        return Err(Problem::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "assortment",
+            "object not found",
+        ));
+    }
+    for object in &stored {
+        if object.deleted_at.is_some() {
+            return Err(Problem::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "assortment",
+                "object not found",
+            ));
+        }
+        if object.object.type_id.as_uuid() != type_id {
+            return Err(Problem::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "assortment",
+                "an object must belong to the selection's type",
+            ));
+        }
+    }
+    Ok(unique)
+}
+
+async fn member_ids_json(state: &AppState, id: Uuid) -> Result<Json<Value>, Problem> {
+    let member_ids = state
+        .store
+        .assortment_member_ids(id)
+        .await
+        .map_err(store_status)?;
+    Ok(Json(json!({
+        "member_ids": member_ids,
+        "found": member_ids.len(),
+    })))
+}
+
+async fn add_assortment_members(
+    State(state): State<AppState>,
+    Auth(identity): Auth,
+    Path(id): Path<Uuid>,
+    Json(body): Json<AssortmentMembersBody>,
+) -> Result<Json<Value>, Problem> {
+    require(&identity, Role::Editor)?;
+    crate::auth::require_commit(&identity)?;
+    let row = load_manual_selection(&state, id).await?;
+    let type_id = selection_type_id(&row)?;
+    let object_ids = live_member_ids(&state, type_id, &body.object_ids).await?;
+    state
+        .store
+        .add_assortment_members(id, &object_ids)
+        .await
+        .map_err(store_status)?;
+    let query = row.get("query").cloned().unwrap_or_else(|| json!({}));
+    if !is_hand_only(&query) {
+        state
+            .store
+            .update_assortment_query(id, &json!({ "hand": true }))
+            .await
+            .map_err(store_status)?;
+    }
+    member_ids_json(&state, id).await
+}
+
+async fn remove_assortment_members(
+    State(state): State<AppState>,
+    Auth(identity): Auth,
+    Path(id): Path<Uuid>,
+    Json(body): Json<AssortmentMembersBody>,
+) -> Result<Json<Value>, Problem> {
+    require(&identity, Role::Editor)?;
+    crate::auth::require_commit(&identity)?;
+    let row = load_manual_selection(&state, id).await?;
+    let type_id = selection_type_id(&row)?;
+    let object_ids = live_member_ids(&state, type_id, &body.object_ids).await?;
+    state
+        .store
+        .remove_assortment_members(id, &object_ids)
+        .await
+        .map_err(store_status)?;
+    member_ids_json(&state, id).await
 }
 
 async fn propose_assortment(

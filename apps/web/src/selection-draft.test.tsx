@@ -243,8 +243,7 @@ describe('selection drafts', () => {
     fireEvent.click(screen.getByTestId('new-selection-button'))
     const detail = await screen.findByTestId('selection-detail')
     expect(screen.queryByTestId('object-draft-bar')).toBeNull()
-    expect(within(detail).getByTestId('selection-hint').textContent).toContain('group and label filters')
-    expect(within(detail).getByTestId('selection-hint').textContent).not.toMatch(/filled by hand|add\/remove/i)
+    expect(within(detail).getByTestId('selection-hint').textContent).toContain('Add to selection')
 
     fireEvent.change(screen.getByTestId('assortment-name'), { target: { value: 'A' } })
     expect(within(detail).getByTestId('object-draft-bar').textContent).toContain('1 unsaved change')
@@ -252,6 +251,7 @@ describe('selection drafts', () => {
 
     fireEvent.change(screen.getByTestId('selection-kind'), { target: { value: 'dynamic' } })
     expect(within(detail).getByTestId('selection-hint').textContent).toContain('follows a filter query')
+    expect(within(detail).getByTestId('selection-hint').textContent).not.toMatch(/filled by hand/i)
     expect(within(detail).getByTestId('object-draft-bar').textContent).toContain('2 unsaved changes')
   })
 

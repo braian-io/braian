@@ -197,6 +197,26 @@ export const registryCommands: RegistryCommand[] = [
     when: (target) => Boolean(target.objectId),
   },
   {
+    id: 'selection:add-objects',
+    title: copy.addToSelection,
+    contexts: ['row', 'cell'],
+    group: 'object',
+    keywords: ['selection', 'add', 'manual'],
+    palette: false,
+    when: (target) =>
+      Boolean(target.objectId)
+      || (Array.isArray(target.objects) && target.objects.length > 0),
+  },
+  {
+    id: 'selection:remove-objects',
+    title: copy.removeFromSelection,
+    contexts: ['row', 'cell'],
+    group: 'object',
+    keywords: ['selection', 'remove', 'manual'],
+    palette: false,
+    when: (target) => Boolean(target.manualSelectionId),
+  },
+  {
     id: 'object:delete',
     title: copy.deleteMenu,
     contexts: ['row', 'cell', 'object-detail'],

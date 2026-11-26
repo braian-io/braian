@@ -110,8 +110,7 @@ test('the unsaved counter waits for an edit and stays inside a narrow pane', asy
   const draft = page.getByTestId('selection-detail')
   await expect(draft).toBeVisible()
   await expect(draft.getByTestId('object-draft-bar')).toHaveCount(0)
-  await expect(draft.getByTestId('selection-hint')).not.toContainText(/filled by hand/i)
-  await expect(draft.getByTestId('selection-hint')).toContainText('group and label filters')
+  await expect(draft.getByTestId('selection-hint')).toContainText('Add to selection')
 
   await page.getByTestId('assortment-name').fill('A')
   const label = draft.getByTestId('object-draft-bar').locator('span').first()
@@ -160,7 +159,7 @@ test('deleting a manual selection does not say Loading on confirm', async ({ pag
   await page.getByTestId('new-selection-button').click()
   const draft = page.getByTestId('selection-detail')
   await expect(draft).toBeVisible()
-  await expect(draft.getByTestId('selection-hint')).toContainText('group and label filters')
+  await expect(draft.getByTestId('selection-hint')).toContainText('Add to selection')
   await page.getByTestId('assortment-name').fill(name)
   await draft.getByTestId('review-and-save').click()
   await expect(draft).toHaveCount(0)

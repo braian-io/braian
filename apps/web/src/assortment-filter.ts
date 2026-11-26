@@ -3,6 +3,28 @@ import type { Json } from './api'
 /** A manual selection with no members must match nothing, not every object. */
 export const EMPTY_MANUAL_FILTER = 'id:=__braian_empty_manual__'
 
+/** Typesense filter for objects added to a manual selection by hand. */
+export function memberIdFilter(ids: string[]): string {
+  if (ids.length === 0) return EMPTY_MANUAL_FILTER
+  const list = ids.map((id) => `\`${id}\``).join(',')
+  return `id:=[${list}]`
+}
+
+export function memberIdsOf(item: { member_ids?: unknown } | null | undefined): string[] {
+  const raw = item?.member_ids
+  if (!Array.isArray(raw)) return []
+  const ids: string[] = []
+  for (const id of raw) {
+    if (typeof id === 'string' && id && !ids.includes(id)) ids.push(id)
+  }
+  return ids
+}
+
+/** True after objects have been added or removed by hand. */
+export function isHandPickedQuery(query: unknown): boolean {
+  return Boolean(query && typeof query === 'object' && (query as { hand?: unknown }).hand === true)
+}
+
 /** True when a stored query has neither a dynamic filter nor manual members. */
 export function isEmptyManualQuery(query: unknown): boolean {
   if (!query || typeof query !== 'object') return false

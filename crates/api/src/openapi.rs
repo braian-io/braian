@@ -163,6 +163,8 @@ use utoipa::OpenApi;
         crate::http_schema::AssortmentUsageJobType,
         crate::http_schema::AssortmentUsageWebhook,
         crate::http_schema::AssortmentMembers,
+        crate::http_schema::AssortmentMemberIds,
+        crate::platform::AssortmentMembersBody,
         crate::http_schema::JobTypeRow,
         crate::http_schema::JobTypeList,
         crate::http_schema::JobRun,
