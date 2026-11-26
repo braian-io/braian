@@ -25,9 +25,11 @@ async function openProductDetail(page: Page) {
   await expect(mainTable(page)).toBeVisible()
   const filter = mainTable(page).getByTestId('quick-filter').first()
   if ((await filter.inputValue()) !== '') await filter.fill('')
-  const row = mainTable(page).getByTestId('object-row').first()
-  await expect(row).toBeVisible()
-  await row.click()
+  const row = mainTable(page).getByTestId('object-row').filter({ hasText: 'Cheddar' }).first()
+  const fallback = mainTable(page).getByTestId('object-row').first()
+  await expect(row.or(fallback)).toBeVisible()
+  if ((await row.count()) > 0) await row.click()
+  else await fallback.click()
   const detailTab = page.locator('[data-view-type="object_detail"]').first()
   if (await detailTab.isVisible()) await detailTab.click()
   await waitDetailReady(page)
@@ -58,6 +60,10 @@ test.describe('detail field description tooltip and language tag alignment', () 
       await openProductDetail(page)
 
       const detail = page.getByTestId('object-detail')
+      const more = detail.getByTestId('detail-show-more-fields')
+      if (await more.isVisible()) {
+        if ((await more.getAttribute('aria-expanded')) !== 'true') await more.click()
+      }
       const ingredientsField = detail.locator('.field').filter({
         has: detail.locator('label', { hasText: /^Ingredients\b/ }),
       }).first()
