@@ -79,6 +79,9 @@ pub struct Proposal {
     pub type_choice: ChoiceProposal,
     pub id_column: ChoiceProposal,
     pub columns: Vec<ColumnProposal>,
+    /// Saved mapping that produced these columns, when one was applied.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub saved_mapping: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -909,6 +912,7 @@ pub async fn propose<D: Decider>(
             type_choice,
             id_column: id_choice,
             columns,
+            saved_mapping: None,
         },
         Value::Array(usage),
     )

@@ -858,6 +858,15 @@ pub struct SavedMappingView {
     pub headers: JsonValue,
     pub columns: JsonValue,
     pub empty_clears: bool,
+    pub id_header: Option<String>,
+    pub header_signature: String,
+    /// Display name of the person who saved the mapping.
+    pub created_by: String,
+    pub created_by_id: Uuid,
+    pub created_at: String,
+    pub updated_at: String,
+    /// True when this caller may rename or delete the mapping.
+    pub can_edit: bool,
 }
 
 #[derive(Serialize, ToSchema)]
