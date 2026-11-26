@@ -16,6 +16,10 @@ async function openProducts(page: Page) {
   await expect(mainTable(page)).toBeVisible()
 }
 
+function rowByName(page: Page, name: RegExp | string) {
+  return mainTable(page).getByTestId('object-row').filter({ hasText: name }).first()
+}
+
 test.describe('no success toasts', () => {
   test('saving a product field shows inline feedback, not a toast', async ({ page }) => {
     test.setTimeout(120_000)
@@ -23,25 +27,47 @@ test.describe('no success toasts', () => {
     await openProducts(page)
     const original = 'Mature cheddar'
     const edited = `No toast save ${Date.now().toString().slice(-5)}`
-    const row = mainTable(page).getByTestId('object-row').filter({ hasText: original }).first()
+    const row = rowByName(page, original)
     await expect(row).toBeVisible({ timeout: 60_000 })
-    const nameCell = row.locator('[data-column="name"]').first()
-    await nameCell.dblclick()
-    const editor = page.getByTestId('cell-editor-name')
-    await expect(editor).toBeVisible()
-    await editor.fill(edited)
-    await editor.press('Enter')
-    await expect(page.getByTestId('cell-editor-name')).toHaveCount(0)
-    await mainTable(page).getByTestId('review-and-save').click()
-    await expect(page.getByTestId('activity-log')).toContainText('Saved', { timeout: 30_000 })
-    await expect(nameCell).toContainText(edited, { timeout: 30_000 })
-    await expect(page.locator('[data-sonner-toast]')).toHaveCount(0)
+    const rowId = await row.getAttribute('id')
+    expect(rowId).toMatch(/^object-row-/)
+    const stableRow = page.locator(`[id="${rowId}"]`)
+    const nameCell = stableRow.locator('[data-column="name"]').first()
 
-    await nameCell.dblclick()
-    await page.getByTestId('cell-editor-name').fill(original)
-    await page.getByTestId('cell-editor-name').press('Enter')
-    await mainTable(page).getByTestId('review-and-save').click()
-    await expect(nameCell).toContainText(original, { timeout: 30_000 })
+    try {
+      await nameCell.dblclick()
+      const editor = page.getByTestId('cell-editor-name')
+      await expect(editor).toBeVisible()
+      await editor.fill(edited)
+      await editor.press('Enter')
+      await expect(page.getByTestId('cell-editor-name')).toHaveCount(0)
+      await mainTable(page).getByTestId('review-and-save').click()
+      await expect(page.getByTestId('activity-log')).toContainText('Saved', { timeout: 30_000 })
+      await expect
+        .poll(async () => (await rowByName(page, edited).locator('[data-column="name"]').textContent())?.trim() ?? '', {
+          timeout: 30_000,
+        })
+        .toBe(edited)
+      await expect(page.locator('[data-sonner-toast]')).toHaveCount(0)
+    } finally {
+      const current = rowByName(page, new RegExp(`${original}|${edited}`))
+      if (await current.count()) {
+        const shown = (await current.locator('[data-column="name"]').textContent())?.trim() ?? ''
+        if (shown !== original) {
+          await current.locator('[data-column="name"]').first().dblclick()
+          const editor = page.getByTestId('cell-editor-name')
+          await expect(editor).toBeVisible()
+          await editor.fill(original)
+          await editor.press('Enter')
+          await mainTable(page).getByTestId('review-and-save').click()
+          await expect
+            .poll(async () => (await rowByName(page, original).locator('[data-column="name"]').textContent())?.trim() ?? '', {
+              timeout: 30_000,
+            })
+            .toBe(original)
+        }
+      }
+    }
   })
 
   test('creating an object closes the dialog without a success toast', async ({ page }) => {
@@ -50,7 +76,7 @@ test.describe('no success toasts', () => {
     await openProducts(page)
     const number = `NT-${Date.now().toString().slice(-7)}`
     await mainTable(page).getByTestId('table-add-row').click()
-    const dialog = page.getByTestId('create-dialog')
+    const dialog = page.getByTestId('new-object')
     await expect(dialog).toBeVisible()
     await dialog.getByTestId('new-number').fill(number)
     await dialog.getByTestId('new-name').fill(number)
@@ -77,19 +103,19 @@ test.describe('no success toasts', () => {
     expect(created.ok()).toBeTruthy()
     const { id } = (await created.json()) as { id: string }
     try {
-    await openProducts(page)
-    await mainTable(page).getByTestId('quick-filter').first().fill(number)
-    const row = page.locator(`#object-row-${id}`)
-    await expect(row).toBeVisible({ timeout: 60_000 })
-    await row.click({ button: 'right' })
-    const menu = page.getByTestId('context-menu')
-    await menu.getByRole('menuitem', { name: /^Delete/ }).click()
-    const dialog = page.getByTestId('delete-object-dialog')
-    await expect(dialog).toBeVisible()
-    await dialog.getByTestId('confirm-delete-object').click()
-    await expect(dialog).toBeHidden({ timeout: 30_000 })
-    await expect(row).toHaveCount(0)
-    await expect(page.locator('[data-sonner-toast]')).toHaveCount(0)
+      await openProducts(page)
+      await mainTable(page).getByTestId('quick-filter').first().fill(number)
+      const row = page.locator(`#object-row-${id}`)
+      await expect(row).toBeVisible({ timeout: 60_000 })
+      await row.click({ button: 'right' })
+      const menu = page.getByTestId('context-menu')
+      await menu.getByRole('menuitem', { name: /^Delete/ }).click()
+      const dialog = page.getByTestId('delete-object-dialog')
+      await expect(dialog).toBeVisible()
+      await dialog.getByTestId('confirm-delete-object').click()
+      await expect(dialog).toBeHidden({ timeout: 30_000 })
+      await expect(row).toHaveCount(0)
+      await expect(page.locator('[data-sonner-toast]')).toHaveCount(0)
     } finally {
       await page.request.delete(`/v1/objects/${id}`).catch(() => undefined)
     }
