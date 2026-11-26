@@ -1313,7 +1313,7 @@ export function ObjectTable({
         column: column || undefined,
         columnHeader: column ? columnHeader(column) : undefined,
         hiddenColumns,
-        typeKey: session.listType ?? undefined,
+        typeKey: typeKey || row.type || session.listType || undefined,
         manualSelectionId: activeManualSelectionId || undefined,
         viewId: view.id,
         columnPrefsOverride: hasColumnOverride,
