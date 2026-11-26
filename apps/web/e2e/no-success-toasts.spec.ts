@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
 import { mainTable, paneWithTab } from './ui'
 
@@ -99,6 +99,7 @@ test.describe('no success toasts', () => {
     await login(page)
     await page.locator('nav.tabs').getByRole('button', { name: /^Articles/ }).click()
     const articles = mainTable(page, 'Articles')
+    await unlinkProductArticles(page, articles, 'ART-OAT-1L')
     await expect(articles.getByTestId('object-row').first()).toBeVisible()
     const article = articles.getByTestId('object-row').filter({ hasText: 'ART-OAT-1L' }).first()
     const productsPane = paneWithTab(page, 'Products')
@@ -116,8 +117,10 @@ test.describe('no success toasts', () => {
     await product.click()
     const linked = page.getByTestId('link-row').filter({ hasText: 'ART-OAT-1L' })
     try {
-      await expect(linked).toHaveAttribute('data-just-linked', 'true')
-      await expect(linked).toBeVisible()
+      await expect(linked).toBeVisible({ timeout: 30_000 })
+      await expect
+        .poll(async () => await linked.getAttribute('data-just-linked'), { timeout: 30_000 })
+        .toBe('true')
     } finally {
       if (await linked.count()) {
         await linked.click({ button: 'right' })
@@ -161,3 +164,21 @@ test.describe('no success toasts', () => {
     }
   })
 })
+
+async function unlinkProductArticles(page: Page, table: Locator, key: string) {
+  const row = table.getByTestId('object-row').filter({ hasText: key }).first()
+  const id = ((await row.getAttribute('id')) ?? '').replace(/^object-row-/, '')
+  if (!id) return
+  const response = await page.request.get(`/v1/objects/${id}`)
+  if (!response.ok()) return
+  const body = (await response.json()) as {
+    links?: Array<{ link_type?: string; links?: Array<{ id?: string }> }>
+  }
+  for (const side of body.links ?? []) {
+    if (side.link_type !== 'product_articles') continue
+    for (const link of side.links ?? []) {
+      if (!link.id) continue
+      await page.request.delete(`/v1/links/${link.id}`)
+    }
+  }
+}

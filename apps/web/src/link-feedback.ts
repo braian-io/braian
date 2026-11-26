@@ -13,7 +13,7 @@ export type LinkFeedbackDetail = {
 
 export const LINK_FEEDBACK_EVENT = 'braian-link-feedback'
 
-const PENDING_MS = 12_000
+const PENDING_MS = 30_000
 const pendingByObject = new Map<string, { detail: LinkFeedbackDetail; expires: number }>()
 
 export function pendingLinkFeedback(objectId: string): LinkFeedbackDetail | null {

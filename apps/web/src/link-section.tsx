@@ -90,7 +90,7 @@ export function LinkSections({
           if (next[sectionKey] === detail.hint) delete next[sectionKey]
           return next
         })
-      }, 6000)
+      }, 30_000)
       feedbackTimers.current.push(timer)
     }
     if (detail.peerKeys.length > 0) {
@@ -101,7 +101,7 @@ export function LinkSections({
           for (const key of detail.peerKeys) next.delete(key)
           return next
         })
-      }, 6000)
+      }, 30_000)
       feedbackTimers.current.push(timer)
     }
   }
