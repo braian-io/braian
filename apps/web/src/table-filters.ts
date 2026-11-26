@@ -3,8 +3,11 @@ import {
   EMPTY_MANUAL_FILTER,
   groupKeyOf,
   isEmptyManualQuery,
+  isHandPickedQuery,
   labelCodes,
   labelSearchFilter,
+  memberIdFilter,
+  memberIdsOf,
   selectionFilterText,
 } from './assortment-filter'
 
@@ -37,6 +40,11 @@ export type AssortmentChipContext = {
 /** Whether a saved selection chip should show as active for the table's real row filter. */
 export function assortmentChipActive(item: Json, ctx: AssortmentChipContext): boolean {
   const query = (item.query as Json) ?? {}
+  const members = memberIdsOf(item)
+  if (members.length > 0 || isHandPickedQuery(query)) {
+    return ctx.activeSelectionId === String(item.id ?? '')
+      && ctx.activeSelectionFilter === memberIdFilter(members)
+  }
   const dynamicFilter = selectionFilterText(query)
   if (dynamicFilter) return dynamicFilter === ctx.activeSelectionFilter || dynamicFilter === ctx.activeFilter
   if (!dynamicFilter && isEmptyManualQuery(query)) return ctx.activeSelectionFilter === EMPTY_MANUAL_FILTER
@@ -113,6 +121,20 @@ export function planSelectionApply(input: {
     return input.locked ? { action: 'clear' } : { action: 'clear', globalGroup: null }
   }
   const parts = selectionParts(input.item, input.ctx.defs)
+  const handPicked = memberIdsOf(input.item).length > 0 || isHandPickedQuery(parts.query)
+  if (handPicked) {
+    return {
+      action: 'apply',
+      patch: {
+        filter: '',
+        selectionFilter: parts.selectionFilter,
+        labelFilter: '',
+        selectionId: parts.selectionId,
+        localGroup: null,
+        ...(input.locked ? {} : { globalGroup: null }),
+      },
+    }
+  }
   const groupOnly = isGroupOnlyManualSelection(parts.query)
   if (groupOnly && input.mode === 'peer') return { action: 'ignore' }
   if (groupOnly && input.mode === 'explicit-all') {
@@ -157,6 +179,16 @@ export function planSelectionApply(input: {
 
 function selectionParts(item: Json, defs?: Json) {
   const query = (item.query as Json) ?? {}
+  const members = memberIdsOf(item)
+  if (members.length > 0 || isHandPickedQuery(query)) {
+    return {
+      query,
+      selectionId: String(item.id ?? ''),
+      selectionFilter: memberIdFilter(members),
+      labelFilter: '',
+      group: null as string | null,
+    }
+  }
   const dynamicFilter = selectionFilterText(query)
   const emptyManual = !dynamicFilter && isEmptyManualQuery(query)
   const rawGroup = (query as { group?: unknown }).group

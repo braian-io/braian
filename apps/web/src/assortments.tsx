@@ -8,7 +8,10 @@ import {
   currentSelectionLabels,
   DELETE_SELECTION_EVENT,
   EDIT_SELECTION_EVENT,
+  isHandPickedQuery,
   labelCodes,
+  memberIdFilter,
+  memberIdsOf,
   NEW_SELECTION_EVENT,
   requestDeleteSelection,
   requestEditSelection,
@@ -38,6 +41,15 @@ import { registerCommandRunner } from './command-registry'
 import { ObjectDraftBar } from './object-draft-bar'
 import { typeNames } from './type-labels'
 import { writeErrorMessage } from './write-error'
+import { RemoveSelectionConfirm, SelectionPicker, selectionDropHandlers, type AddSelectionRequest } from './selection-picker'
+import {
+  memberErrorSnapshot,
+  needsRemoveConfirm,
+  objectIdsFromTarget,
+  saveSelectionMembers,
+  setMemberError,
+  subscribeMemberError,
+} from './selection-members'
 
 type SelectionSession = {
   group: string | null
@@ -164,7 +176,7 @@ function SelectionDraftDetail({
       <p className="hint">
         {editing
           ? 'Change the name and filter. The kind and object type stay locked.'
-          : 'Name a saved selection and choose whether it follows a filter or stores the group and label filters active at creation. There is no separate add/remove-object picker yet.'}
+          : copy.newSelectionHint}
       </p>
       <form
         className="form"
@@ -251,7 +263,7 @@ function SelectionDraftDetail({
             <small>{copy.filterQueryHint}</small>
           </label>
         ) : (
-          <p className="hint">{copy.manualSelection}</p>
+          <p className="hint">{copy.manualSelectionHint}</p>
         )}
         {error ? <p className="error" data-testid="selection-error">{error}</p> : null}
         <ObjectDraftBar
@@ -363,6 +375,23 @@ function showSelectionView() {
 
 export function SelectionHost({ session }: { session: SelectionSession }) {
   const workspaceType = session.workspaceType || session.listType || ''
+  const queryClient = useQueryClient()
+  const [addRequest, setAddRequest] = useState<AddSelectionRequest | null>(null)
+  const [pendingRemove, setPendingRemove] = useState<{ selectionId: string; ids: string[] } | null>(null)
+  const [removeError, setRemoveError] = useState('')
+  const [removing, setRemoving] = useState(false)
+  const removeMembers = (selectionId: string, ids: string[]) => {
+    setRemoving(true)
+    setRemoveError('')
+    void saveSelectionMembers(queryClient, selectionId, ids, 'remove')
+      .then(() => setPendingRemove(null))
+      .catch((reason: unknown) => {
+        const message = writeErrorMessage(reason) ?? copy.validation
+        setRemoveError(message)
+        setMemberError(selectionId, message)
+      })
+      .finally(() => setRemoving(false))
+  }
   useEffect(() => {
     const onNew = (event: Event) => {
       const request = ((event as CustomEvent<NewSelectionRequest>).detail ?? {}) as NewSelectionRequest
@@ -392,12 +421,44 @@ export function SelectionHost({ session }: { session: SelectionSession }) {
       const item = target.selection
       if (item && typeof item === 'object' && !Array.isArray(item)) requestDeleteSelection(item as Json)
     })
+    const offAdd = registerCommandRunner('selection:add-objects', (target) => {
+      const objectIds = objectIdsFromTarget(target)
+      if (objectIds.length === 0) return
+      setAddRequest({ objectIds, typeKey: String(target.typeKey ?? workspaceType) })
+    })
+    const offRemove = registerCommandRunner('selection:remove-objects', (target) => {
+      const selectionId = String(target.manualSelectionId ?? '')
+      const ids = objectIdsFromTarget(target)
+      if (!selectionId || ids.length === 0) return
+      if (needsRemoveConfirm(ids.length)) {
+        setRemoveError('')
+        setPendingRemove({ selectionId, ids })
+        return
+      }
+      removeMembers(selectionId, ids)
+    })
     return () => {
       offEdit()
       offDelete()
+      offAdd()
+      offRemove()
     }
-  }, [])
-  return <DeleteSelectionDialog session={session} />
+  }, [queryClient, workspaceType])
+  return (
+    <>
+      <DeleteSelectionDialog session={session} />
+      {addRequest ? <SelectionPicker request={addRequest} onClose={() => setAddRequest(null)} /> : null}
+      {pendingRemove ? (
+        <RemoveSelectionConfirm
+          count={pendingRemove.ids.length}
+          pending={removing}
+          error={removeError}
+          onCancel={() => setPendingRemove(null)}
+          onConfirm={() => removeMembers(pendingRemove.selectionId, pendingRemove.ids)}
+        />
+      ) : null}
+    </>
+  )
 }
 
 export function AssortmentList({ session }: { session: SelectionSession }) {
@@ -415,9 +476,19 @@ export function AssortmentList({ session }: { session: SelectionSession }) {
   const open = items.find((item) => String(item.id) === openId)
   const query = (open?.query as Json) ?? {}
   const dynamicFilter = open ? selectionFilterText(query) : ''
+  const openMembers = open ? memberIdsOf(open) : []
   const filter = open
-    ? dynamicFilter || assortmentSearchFilter(query, String(open.type ?? typeKey), defs.data)
+    ? dynamicFilter || ((openMembers.length > 0 || isHandPickedQuery(query))
+      ? memberIdFilter(openMembers)
+      : assortmentSearchFilter(query, String(open.type ?? typeKey), defs.data))
     : ''
+  const memberError = useSyncExternalStore(subscribeMemberError, memberErrorSnapshot, memberErrorSnapshot)
+  const queryClient = useQueryClient()
+  const addDropped = (selectionId: string, ids: string[]) => {
+    void saveSelectionMembers(queryClient, selectionId, ids, 'add').catch((reason: unknown) => {
+      setMemberError(selectionId, writeErrorMessage(reason) ?? copy.validation)
+    })
+  }
   const matches = useQuery({
     queryKey: ['assortment-matches', openId, filter],
     queryFn: () => api.get('/v1/search', { params: { query: searchQuery(new URLSearchParams({ filter, per_page: '20' })) } }),
@@ -448,6 +519,9 @@ export function AssortmentList({ session }: { session: SelectionSession }) {
         onSaved={(item) => setOpenId(String(item.id ?? ''))}
       />
       {items.length === 0 ? <p className="hint">{copy.noAssortments}</p> : null}
+      {memberError.message && items.some((item) => String(item.id) === memberError.selectionId) ? (
+        <p className="error" data-testid="selection-member-error" role="alert">{memberError.message}</p>
+      ) : null}
       <div className="assortment-picks" tabIndex={0}>
         {items.map((item) => {
           const id = String(item.id)
@@ -457,6 +531,8 @@ export function AssortmentList({ session }: { session: SelectionSession }) {
               key={id}
               className="assortment-row"
               data-testid="assortment-row"
+              data-member-count={memberIdsOf(item).length}
+              {...selectionDropHandlers(selectionKind(item.kind) === 'manual', id, (ids) => addDropped(id, ids))}
               onContextMenu={(event) => {
                 if (prefersNativeContextMenu(event.target)) return
                 event.preventDefault()

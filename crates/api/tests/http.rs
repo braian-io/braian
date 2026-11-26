@@ -3445,6 +3445,249 @@ async fn a_dynamic_selection_validates_and_stores_its_filter() {
 }
 
 #[tokio::test]
+async fn manual_selection_members_reject_a_dynamic_selection_and_the_wrong_type() {
+    let (db, app) = app().await;
+    let headers = [("content-type", "application/json")];
+    let (status, _, first) = call(
+        &app,
+        "POST",
+        "/v1/objects",
+        Some(HUMAN),
+        &headers,
+        Some(
+            r#"{"type":"item","groups":{"assortment":"root"},"values":{"sku":"MEM-1","name":{"sv":"Ett","en-GB":"One"}}}"#,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{first}");
+    let first_id = first["id"].as_str().unwrap();
+    let (status, _, second) = call(
+        &app,
+        "POST",
+        "/v1/objects",
+        Some(HUMAN),
+        &headers,
+        Some(
+            r#"{"type":"item","groups":{"assortment":"root"},"values":{"sku":"MEM-2","name":{"sv":"Två","en-GB":"Two"}}}"#,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{second}");
+    let second_id = second["id"].as_str().unwrap();
+
+    let (status, _, widget) = call(
+        &app,
+        "POST",
+        "/v1/types",
+        Some(HUMAN),
+        &headers,
+        Some(
+            r#"{
+                "key": "widget_member",
+                "labels": {},
+                "key_attribute": "018f0000-0000-7000-8000-000000000100",
+                "attributes": ["018f0000-0000-7000-8000-000000000100"]
+            }"#,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{widget}");
+    let (status, _, other) = call(
+        &app,
+        "POST",
+        "/v1/objects",
+        Some(HUMAN),
+        &headers,
+        Some(
+            r#"{"type":"widget_member","values":{"number":"WID-1","name":{"sv":"Sak","en-GB":"Thing"}}}"#,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{other}");
+    let other_id = other["id"].as_str().unwrap();
+    let cookie = selection_cookie(&db, &app, "hand-members@braian.local").await;
+    let headers = [
+        ("cookie", cookie.as_str()),
+        ("content-type", "application/json"),
+    ];
+
+    let (status, _, saved) = call(
+        &app,
+        "POST",
+        "/v1/assortments",
+        None,
+        &headers,
+        Some(r#"{"name":"Hand picked","type":"item","kind":"manual","query":{}}"#),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{saved}");
+    assert_eq!(saved["kind"], "manual", "{saved}");
+    let id = saved["id"].as_str().unwrap();
+
+    let (status, _, dynamic) = call(
+        &app,
+        "POST",
+        "/v1/assortments",
+        None,
+        &headers,
+        Some(r#"{"name":"Rule","type":"item","kind":"dynamic","query":"type_key:=item"}"#),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{dynamic}");
+    let dynamic_id = dynamic["id"].as_str().unwrap();
+
+    let (status, _, empty) = call(
+        &app,
+        "POST",
+        &format!("/v1/assortments/{id}/members"),
+        None,
+        &headers,
+        Some(r#"{"object_ids":[]}"#),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{empty}");
+    assert_eq!(empty["detail"], "choose at least one object", "{empty}");
+
+    let (status, _, missing) = call(
+        &app,
+        "POST",
+        &format!("/v1/assortments/{}/members", Uuid::now_v7()),
+        None,
+        &headers,
+        Some(&format!(r#"{{"object_ids":["{first_id}"]}}"#)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{missing}");
+
+    let (status, _, rule) = call(
+        &app,
+        "POST",
+        &format!("/v1/assortments/{dynamic_id}/members"),
+        None,
+        &headers,
+        Some(&format!(r#"{{"object_ids":["{first_id}"]}}"#)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{rule}");
+    assert_eq!(
+        rule["detail"], "only a manual selection can add or remove objects",
+        "{rule}"
+    );
+
+    let (status, _, wrong) = call(
+        &app,
+        "POST",
+        &format!("/v1/assortments/{id}/members"),
+        None,
+        &headers,
+        Some(&format!(r#"{{"object_ids":["{other_id}"]}}"#)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{wrong}");
+    assert_eq!(
+        wrong["detail"], "an object must belong to the selection's type",
+        "{wrong}"
+    );
+
+    let (status, _, unknown) = call(
+        &app,
+        "POST",
+        &format!("/v1/assortments/{id}/members"),
+        None,
+        &headers,
+        Some(&format!(r#"{{"object_ids":["{}"]}}"#, Uuid::now_v7())),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{unknown}");
+    assert_eq!(unknown["detail"], "object not found", "{unknown}");
+
+    let (status, _, agent) = call(
+        &app,
+        "POST",
+        &format!("/v1/assortments/{id}/members"),
+        Some(AGENT),
+        &headers,
+        Some(&format!(r#"{{"object_ids":["{first_id}"]}}"#)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{agent}");
+    assert_eq!(agent["code"], "needs_approval", "{agent}");
+
+    let (status, _, added) = call(
+        &app,
+        "POST",
+        &format!("/v1/assortments/{id}/members"),
+        None,
+        &headers,
+        Some(&format!(
+            r#"{{"object_ids":["{first_id}","{second_id}","{first_id}"]}}"#
+        )),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{added}");
+    assert_eq!(added["found"], 2, "{added}");
+    assert_eq!(added["member_ids"].as_array().unwrap().len(), 2, "{added}");
+
+    let (status, _, again) = call(
+        &app,
+        "POST",
+        &format!("/v1/assortments/{id}/members"),
+        None,
+        &headers,
+        Some(&format!(r#"{{"object_ids":["{first_id}"]}}"#)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{again}");
+    assert_eq!(again["found"], 2, "{again}");
+
+    let (status, _, stored) = call(
+        &app,
+        "GET",
+        &format!("/v1/assortments/{id}"),
+        None,
+        &headers,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{stored}");
+    assert_eq!(stored["query"]["hand"], true, "{stored}");
+    assert!(stored["query"].get("group").is_none(), "{stored}");
+    assert_eq!(
+        stored["member_ids"].as_array().unwrap().len(),
+        2,
+        "{stored}"
+    );
+
+    let (status, _, removed) = call(
+        &app,
+        "DELETE",
+        &format!("/v1/assortments/{id}/members"),
+        None,
+        &headers,
+        Some(&format!(r#"{{"object_ids":["{second_id}"]}}"#)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{removed}");
+    assert_eq!(removed["found"], 1, "{removed}");
+    assert_eq!(removed["member_ids"][0], first_id, "{removed}");
+
+    let (status, _, rule_remove) = call(
+        &app,
+        "DELETE",
+        &format!("/v1/assortments/{dynamic_id}/members"),
+        None,
+        &headers,
+        Some(&format!(r#"{{"object_ids":["{first_id}"]}}"#)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{rule_remove}");
+    assert_eq!(
+        rule_remove["detail"], "only a manual selection can add or remove objects",
+        "{rule_remove}"
+    );
+}
+
+#[tokio::test]
 async fn updating_a_selection_locks_kind_and_type() {
     let (db, app) = app().await;
     let cookie = selection_cookie(&db, &app, "update@braian.local").await;
