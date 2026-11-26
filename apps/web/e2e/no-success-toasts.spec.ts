@@ -116,7 +116,7 @@ test.describe('no success toasts', () => {
     await product.click()
     const linked = page.getByTestId('link-row').filter({ hasText: 'ART-OAT-1L' })
     try {
-      await expect(page.getByTestId('link-section-feedback')).toContainText('Linked')
+      await expect(linked).toHaveAttribute('data-just-linked', 'true')
       await expect(linked).toBeVisible()
     } finally {
       if (await linked.count()) {

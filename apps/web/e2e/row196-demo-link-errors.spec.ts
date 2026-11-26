@@ -156,7 +156,7 @@ test.describe('demo 196 link field errors and replace', () => {
       await products.getByTestId('quick-filter').first().fill(productA)
       products = await allProducts(page, productA)
       await row(products, productA).click()
-      await expect(page.getByTestId('link-section-feedback')).toContainText('Linked 1 article')
+      await expect(page.getByTestId('object-detail').getByTestId('link-section-feedback').first()).toContainText('Linked 1 article')
       const linked = page.getByTestId('link-row').filter({ hasText: secondArticleNumber })
       await expect(linked).toBeVisible()
       expect(await productPeers(page, secondArticle.id)).toEqual([a.id])
