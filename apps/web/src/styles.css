@@ -665,6 +665,8 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
 .catalog-field { display: flex; flex-direction: column; gap: var(--space-1); }
 .catalog-field > label { color: var(--text-2); font-size: var(--text-md); font-weight: 500; }
 .catalog-field-help { margin: 0; color: var(--muted); font-size: var(--text-sm); line-height: 1.4; }
+.field-label-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1); }
+.detail-field-help { color: var(--muted); font-size: var(--text-sm); line-height: 1.35; font-weight: 400; max-width: 36rem; }
 .catalog-check { display: inline-flex; align-items: center; gap: var(--space-1_5); color: var(--text-2); font-size: var(--text-md); }
 .catalog-list-actions { display: inline-flex; align-items: center; gap: var(--space-0_5); margin-left: var(--space-1); vertical-align: middle; }
 .catalog-form-actions { display: flex; align-items: center; gap: var(--space-1_5); flex-wrap: wrap; }
@@ -1507,13 +1509,15 @@ button.filter-chip:hover:not(.on) {
   box-shadow: var(--inset);
 }
 .field { display: grid; grid-template-columns: 120px minmax(0, 1fr); column-gap: var(--space-2_5); align-items: start; }
-.field > label { color: var(--muted); font-size: var(--text-md); text-align: left; padding-top: var(--space-1_5); }
+.field > label,
+.field-label-line > label { color: var(--muted); font-size: var(--text-md); text-align: left; padding-top: var(--space-1_5); }
 /* Field labels sit above their values when the measured Detail form is too narrow for both. */
 .detail-form[data-narrow='true'] .field {
   grid-template-columns: minmax(0, 1fr);
   row-gap: var(--space-1);
 }
-.detail-form[data-narrow='true'] .field > label { padding-top: 0; }
+.detail-form[data-narrow='true'] .field > label,
+.detail-form[data-narrow='true'] .field-label-line > label { padding-top: 0; }
 .control { min-width: 0; border-radius: var(--r-md); }
 .control input:not([type='checkbox']), .control select, .control textarea, .control .select-trigger { width: 100%; }
 .field-card input,
@@ -3520,6 +3524,8 @@ button.primary[aria-disabled='true'] {
   min-width: 180px;
 }
 [data-testid='attribute-table'] .standard-grid-cell[data-column='key'] { min-width: 120px; }
+[data-testid='attribute-table'] .standard-grid-cell[data-column='description'],
+[data-testid='attribute-definitions-chrome'] .standard-grid-cell[data-column='description'] { min-width: 140px; }
 [data-testid='attribute-table'] .standard-grid-cell[data-column='kind'] { min-width: 96px; }
 [data-testid='attribute-table'] .standard-grid-cell[data-column='unit'] { min-width: 88px; }
 [data-testid='attribute-table'] .standard-grid-cell[data-column='from'] { min-width: 140px; }

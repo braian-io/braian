@@ -698,6 +698,7 @@ pub(crate) fn changes_from(
                 .and_then(Value::as_str)
                 .unwrap_or("")
                 .to_owned(),
+            description: optional_str(args, "description"),
             kind: args
                 .get("kind")
                 .and_then(Value::as_str)
@@ -757,6 +758,11 @@ pub(crate) fn changes_from(
         "model.update_attribute" => Ok(vec![ModelChange::UpdateAttribute {
             key: required_str(args, "key")?,
             label: optional_str(args, "label"),
+            description: optional_str(args, "description"),
+            clear_description: args
+                .get("clear_description")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
             kind: optional_str(args, "kind"),
             unit: optional_str(args, "unit"),
             clear_unit: args

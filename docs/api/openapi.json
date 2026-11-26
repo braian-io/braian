@@ -8068,6 +8068,13 @@
           "index"
         ],
         "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional help text for editors. Not copied into the search index."
+          },
           "id": {
             "$ref": "#/components/schemas/AttributeId"
           },

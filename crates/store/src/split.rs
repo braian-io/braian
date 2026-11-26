@@ -839,6 +839,7 @@ mod tests {
                 id: braian_model::AttributeId::from_uuid(uuid::Uuid::from_u128(index + 1)),
                 key: format!("0{index:04}"),
                 labels: Default::default(),
+                description: None,
                 language_dependent: false,
                 multiple: false,
                 required: false,

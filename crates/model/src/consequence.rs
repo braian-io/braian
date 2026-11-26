@@ -754,6 +754,7 @@ mod tests {
             id: AttributeId::from_uuid(id(n)),
             key: key.to_owned(),
             labels: label(name),
+            description: None,
             language_dependent: false,
             multiple: false,
             required: false,
@@ -956,6 +957,7 @@ mod tests {
             ModelChange::CreateAttribute {
                 key: "note".into(),
                 label: "Note".into(),
+                description: None,
                 kind: "text".into(),
                 unit: None,
                 multiple: false,
@@ -970,6 +972,8 @@ mod tests {
             ModelChange::UpdateAttribute {
                 key: "name".into(),
                 label: Some("Title".into()),
+                description: None,
+                clear_description: false,
                 kind: None,
                 unit: None,
                 clear_unit: false,

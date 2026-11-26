@@ -75,7 +75,9 @@ describe('Detail width layout (row 239)', () => {
     expect(css).toMatch(
       /\.detail-form\[data-narrow='true'\] \.field\s*\{[^}]*row-gap:\s*var\(--space-1\)/,
     )
-    expect(css).toMatch(/\.detail-form\[data-narrow='true'\] \.field > label\s*\{[^}]*padding-top:\s*0/)
+    expect(css).toMatch(
+      /\.detail-form\[data-narrow='true'\] \.field-label-line > label\s*\{[^}]*padding-top:\s*0/,
+    )
     expect(css).not.toMatch(/@container detail-pane/)
   })
 

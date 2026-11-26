@@ -55,6 +55,8 @@ pub enum ModelChange {
         key: String,
         #[serde(default)]
         label: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        description: Option<String>,
         kind: String,
         #[serde(default)]
         unit: Option<String>,
@@ -116,6 +118,10 @@ pub enum ModelChange {
         key: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         label: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        description: Option<String>,
+        #[serde(default, skip_serializing_if = "is_false_flag")]
+        clear_description: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         kind: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1236,6 +1242,7 @@ fn apply_one(defs: &mut DefinitionSet, change: &ModelChange) -> Result<(), Apply
         ModelChange::CreateAttribute {
             key,
             label,
+            description,
             kind,
             unit,
             multiple,
@@ -1251,6 +1258,7 @@ fn apply_one(defs: &mut DefinitionSet, change: &ModelChange) -> Result<(), Apply
             AttributeDraft {
                 key,
                 label,
+                description: description.as_deref(),
                 kind,
                 unit: unit.as_deref(),
                 multiple: *multiple,
@@ -1514,6 +1522,8 @@ fn apply_one(defs: &mut DefinitionSet, change: &ModelChange) -> Result<(), Apply
         ModelChange::UpdateAttribute {
             key,
             label,
+            description,
+            clear_description,
             kind,
             unit,
             clear_unit,
@@ -1530,6 +1540,8 @@ fn apply_one(defs: &mut DefinitionSet, change: &ModelChange) -> Result<(), Apply
             AttributeUpdate {
                 key,
                 label,
+                description,
+                clear_description: *clear_description,
                 kind,
                 unit,
                 clear_unit: *clear_unit,
@@ -1558,6 +1570,7 @@ fn add_attribute_command(rest: &str, defs: &DefinitionSet) -> Option<Vec<ModelCh
         steps.push(ModelChange::CreateAttribute {
             key: key.clone(),
             label: key.clone(),
+            description: None,
             kind: if unit.is_some() { "number" } else { "text" }.into(),
             unit,
             multiple: false,
@@ -2148,6 +2161,8 @@ fn update_type(
 struct AttributeUpdate<'a> {
     key: &'a str,
     label: &'a Option<String>,
+    description: &'a Option<String>,
+    clear_description: bool,
     kind: &'a Option<String>,
     unit: &'a Option<String>,
     clear_unit: bool,
@@ -2165,6 +2180,8 @@ fn update_attribute(defs: &mut DefinitionSet, patch: AttributeUpdate<'_>) -> Res
     let AttributeUpdate {
         key,
         label,
+        description,
+        clear_description,
         kind,
         unit,
         clear_unit,
@@ -2238,6 +2255,16 @@ fn update_attribute(defs: &mut DefinitionSet, patch: AttributeUpdate<'_>) -> Res
     if let (Some(label), Some(tag)) = (label, label_tag) {
         attribute.labels.insert(tag, label.clone());
     }
+    if clear_description {
+        attribute.description = None;
+    } else if let Some(text) = description {
+        let trimmed = text.trim();
+        attribute.description = if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_owned())
+        };
+    }
     attribute.kind = next_kind;
     if let Some(value) = multiple {
         attribute.multiple = value;
@@ -2266,6 +2293,7 @@ fn update_attribute(defs: &mut DefinitionSet, patch: AttributeUpdate<'_>) -> Res
 struct AttributeDraft<'a> {
     key: &'a str,
     label: &'a str,
+    description: Option<&'a str>,
     kind: &'a str,
     unit: Option<&'a str>,
     multiple: bool,
@@ -2282,6 +2310,7 @@ fn create_attribute(defs: &mut DefinitionSet, draft: AttributeDraft<'_>) -> Resu
     let AttributeDraft {
         key,
         label,
+        description,
         kind,
         unit,
         multiple,
@@ -2307,10 +2336,15 @@ fn create_attribute(defs: &mut DefinitionSet, draft: AttributeDraft<'_>) -> Resu
         }
         return Ok(());
     }
+    let description = description
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .map(str::to_owned);
     defs.attributes.push(Attribute {
         id: AttributeId::from_uuid(stable_uuid(&format!("attribute:{key}"))),
         key: key.to_owned(),
         labels: label_map(defs, if label.is_empty() { key } else { label }),
+        description,
         language_dependent: languages,
         multiple,
         required,
@@ -2602,6 +2636,7 @@ fn ensure_text_attributes(defs: &mut DefinitionSet, keys: &[String]) -> Result<(
             AttributeDraft {
                 key,
                 label: key,
+                description: None,
                 kind: "text",
                 unit: None,
                 multiple: false,
@@ -3412,6 +3447,7 @@ mod tests {
                     id: weight,
                     key: "weight".into(),
                     labels: BTreeMap::new(),
+                    description: None,
                     language_dependent: false,
                     multiple: false,
                     required: false,
@@ -3429,6 +3465,7 @@ mod tests {
                     id: status,
                     key: "status".into(),
                     labels: BTreeMap::new(),
+                    description: None,
                     language_dependent: false,
                     multiple: false,
                     required: false,
@@ -3663,6 +3700,7 @@ mod tests {
             ModelChange::CreateAttribute {
                 key: "servings".into(),
                 label: "Servings".into(),
+                description: None,
                 kind: "number".into(),
                 unit: Some("pc".into()),
                 multiple: false,
@@ -3727,6 +3765,7 @@ mod tests {
         ModelChange::CreateAttribute {
             key: key.into(),
             label: key.into(),
+            description: None,
             kind: kind.into(),
             unit: unit.map(str::to_owned),
             multiple: false,
@@ -4154,5 +4193,134 @@ mod tests {
             }],
         );
         assert!(deleted.is_empty());
+    }
+
+    #[test]
+    fn attribute_description_set_clear_and_old_revision_load() {
+        let mut defs = base();
+        let weight_key = defs.attributes[0].key.clone();
+        apply_all(
+            &mut defs,
+            &[ModelChange::CreateAttribute {
+                key: "note".into(),
+                label: "Note".into(),
+                description: Some("Helps editors".into()),
+                kind: "text".into(),
+                unit: None,
+                multiple: false,
+                languages: false,
+                required: false,
+                show_by_default: true,
+                searchable: false,
+                filterable: false,
+                sortable: false,
+                bounds: AttributeBounds::default(),
+            }],
+        )
+        .expect("create");
+        let note = defs
+            .attributes
+            .iter()
+            .find(|item| item.key == "note")
+            .expect("note");
+        assert_eq!(note.description.as_deref(), Some("Helps editors"));
+
+        apply_all(
+            &mut defs,
+            &[ModelChange::UpdateAttribute {
+                key: "note".into(),
+                label: None,
+                description: Some("Updated help".into()),
+                clear_description: false,
+                kind: None,
+                unit: None,
+                clear_unit: false,
+                languages: None,
+                required: None,
+                show_by_default: None,
+                searchable: None,
+                filterable: None,
+                sortable: None,
+                multiple: None,
+                bounds: AttributeBounds::default(),
+            }],
+        )
+        .expect("update");
+        let note = defs
+            .attributes
+            .iter()
+            .find(|item| item.key == "note")
+            .expect("note");
+        assert_eq!(note.description.as_deref(), Some("Updated help"));
+
+        apply_all(
+            &mut defs,
+            &[ModelChange::UpdateAttribute {
+                key: "note".into(),
+                label: None,
+                description: None,
+                clear_description: true,
+                kind: None,
+                unit: None,
+                clear_unit: false,
+                languages: None,
+                required: None,
+                show_by_default: None,
+                searchable: None,
+                filterable: None,
+                sortable: None,
+                multiple: None,
+                bounds: AttributeBounds::default(),
+            }],
+        )
+        .expect("clear");
+        let note = defs
+            .attributes
+            .iter()
+            .find(|item| item.key == "note")
+            .expect("note");
+        assert_eq!(note.description, None);
+
+        apply_all(
+            &mut defs,
+            &[ModelChange::UpdateAttribute {
+                key: weight_key,
+                label: None,
+                description: Some("".into()),
+                clear_description: false,
+                kind: None,
+                unit: None,
+                clear_unit: false,
+                languages: None,
+                required: None,
+                show_by_default: None,
+                searchable: None,
+                filterable: None,
+                sortable: None,
+                multiple: None,
+                bounds: AttributeBounds::default(),
+            }],
+        )
+        .expect("empty clears");
+        let weight = defs
+            .attributes
+            .iter()
+            .find(|item| item.key == "weight")
+            .expect("weight");
+        assert_eq!(weight.description, None);
+
+        let legacy = serde_json::json!({
+            "id": "018f0000-0000-7000-8000-000000000099",
+            "key": "legacy",
+            "labels": { "en": "Legacy" },
+            "language_dependent": false,
+            "multiple": false,
+            "required": false,
+            "show_by_default": true,
+            "kind": { "type": "text" },
+            "index": { "searchable": false, "filterable": false, "sortable": false }
+        });
+        let loaded: Attribute = serde_json::from_value(legacy).expect("legacy attribute");
+        assert_eq!(loaded.description, None);
     }
 }

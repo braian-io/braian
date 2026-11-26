@@ -190,6 +190,7 @@ function detailRow(defs: Json | undefined, row: AttributeRow): AttributeTableRow
       kind.max_length === null || kind.max_length === undefined ? '' : String(kind.max_length),
     textForm: String(kind.form ?? ''),
     media: kindName === 'file_ref' && Boolean(kind.media),
+    description: typeof raw?.description === 'string' ? raw.description : row.description,
   }
 }
 
@@ -684,6 +685,17 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
       },
     },
     {
+      id: 'description',
+      header: copy.description,
+      type: 'text',
+      editable: true,
+      truncate: true,
+      read: (row) => row.description,
+      write: (row, value) => ({ ...row, description: value }),
+      cellTestId: (row) => `attr-desc-${row.key || row.id}`,
+      display: (row) => <span title={row.description || undefined}>{row.description || '—'}</span>,
+    },
+    {
       id: 'kind',
       header: copy.attributeType,
       type: 'enum',
@@ -1042,6 +1054,7 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
             id: key,
             key,
             label,
+            description: '',
             kind: createKind,
             unit: '',
             defaultUnit: '',

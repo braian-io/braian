@@ -41,6 +41,7 @@ export function buildAttributeCreateSteps(
       searchable: row.searchable,
       filterable: row.filterable,
       sortable: row.sortable,
+      ...(row.description.trim() ? { description: row.description.trim() } : {}),
       ...(row.kind === 'number' && row.min.trim() ? { min: row.min.trim() } : {}),
       ...(row.kind === 'number' && row.max.trim() ? { max: row.max.trim() } : {}),
       ...(row.kind === 'number' && row.integer ? { integer: true } : {}),
@@ -71,6 +72,10 @@ export function buildAttributeUpdateSteps(
   const key = canRenameKey && nextKey ? nextKey : original.key
   const label = row.label.trim()
   if (label && label !== original.label) patch.label = label
+  if (row.description !== original.description) {
+    if (row.description.trim()) patch.description = row.description.trim()
+    else if (original.description.trim()) patch.clear_description = true
+  }
   if (row.kind !== original.kind) {
     patch.kind = row.kind
     if (row.kind !== 'number' && row.kind !== 'range') patch.clear_unit = true
