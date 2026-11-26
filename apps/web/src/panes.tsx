@@ -91,13 +91,17 @@ import {
   draftBaseVersion,
   draftEditorSeed,
   editBaseVersion,
+  getDetailDraftOwner,
   getObjectDraftSnapshot,
   objectDraftCells,
   overlayValues,
   paintObjectCell,
+  proposalCellsForTableBar,
   reviewCapabilities,
   roleCanWrite,
+  setDetailDraftOwner,
   stageObjectCell,
+  subscribeDetailDraftOwner,
   subscribeObjectDrafts,
 } from './object-draft'
 import { CellDiff, ObjectDraftBar, UnmappedDraftLinks } from './object-draft-bar'
@@ -1062,6 +1066,8 @@ export function ObjectTable({
       setSort(String(args.sort))
     }
     if (event.name === 'ui.select' && args.id) {
+      const target = String(args.view ?? '')
+      if (target && target !== view.id) return
       const id = String(args.id)
       session.setObjectId(id)
       setSelected([id])
@@ -2207,23 +2213,28 @@ export function ObjectTable({
   }
   const visibleRows = groupBy ? groupedRows : [...byIndex.values()]
   const visibleIds = new Set(visibleRows.map((row) => row.id))
+  const detailOwner = useSyncExternalStore(subscribeDetailDraftOwner, getDetailDraftOwner, getDetailDraftOwner)
   // A Detail edit stays on the Detail bar. This table only saves cells staged here.
   const tableObjectIds = [...new Set(
     drafts.cells.filter((cell) => cell.surface == null || cell.surface === 'table').map((cell) => cell.objectId),
   )].filter((id) => visibleIds.has(id))
-  const draftElsewhere = new Set(
-    drafts.cells.filter((cell) => cell.surface === 'detail').map((cell) => cell.objectId),
-  )
+  const visibleProposalUpdates = [...openProposals.byObject.entries()]
+    .filter(([objectId]) => visibleIds.has(objectId))
+    .flatMap(([, cells]) => cells)
+    .filter((cell) => cell.op === 'update')
+  // A proposal for the object open in Detail uses that pane's bar, not a second one here.
+  const tableProposals = proposalCellsForTableBar(visibleProposalUpdates, detailOwner)
+  const draftElsewhere = new Set([
+    ...drafts.cells.filter((cell) => cell.surface === 'detail').map((cell) => cell.objectId),
+    ...tableProposals.elsewhere,
+  ])
   const tableVersions: Record<string, number> = {}
   const tableMeta: Record<string, { key: string; type: string }> = {}
   for (const row of visibleRows) {
     tableVersions[row.id] = Number(row.version ?? 0)
     tableMeta[row.id] = { key: row.key, type: row.type }
   }
-  const visibleProposalCells = [...openProposals.byObject.entries()]
-    .filter(([objectId]) => visibleIds.has(objectId))
-    .flatMap(([, cells]) => cells)
-    .filter((cell) => cell.op === 'update')
+  const visibleProposalCells = tableProposals.bar
   const proposalObjectIds = [...new Set(visibleProposalCells.map((cell) => cell.objectId))]
   const tableReview = reviewCapabilities({
     principal: me.data?.kind === 'agent' ? 'agent' : 'human',
@@ -3163,6 +3174,15 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
     if (detailLoadFailed && session.objectId) clearObjectNavReplace(session.objectId)
   }, [detailLoadFailed, session.objectId])
   useEffect(() => {
+    const id = session.objectId
+    if (!id) {
+      setDetailDraftOwner(null)
+      return
+    }
+    setDetailDraftOwner(id)
+    return () => setDetailDraftOwner(null)
+  }, [session.objectId])
+  useEffect(() => {
     if (!session.objectId || !object.data) return
     const stored = (object.data.values as Json) ?? {}
     const language = session.language || 'en'
@@ -3476,6 +3496,22 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
               <strong title={name || number}>{name || number}</strong>
               {number ? <span className="detail-id">{number}</span> : null}
             </div>
+            <Button
+              type="button"
+              variant="ghost"
+              data-testid="open-draft-in-table"
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('braian-open-draft', {
+                  detail: {
+                    objectId: session.objectId,
+                    typeKey: String(object.data?.type ?? ''),
+                    viewType: 'object_table',
+                  },
+                }))
+              }}
+            >
+              {copy.openDraftInTable}
+            </Button>
             {allowDeleted ? (
               <Button
                 type="button"
@@ -4467,6 +4503,24 @@ function SuggestionCard({
         {' '}
         <MetaChip tone={statusTone(String(row.status))}>{String(row.status)}</MetaChip>
         {row.conflict ? ` · ${copy.conflict}` : ''}
+        {!model && row.object_id ? (
+          <Button
+            type="button"
+            variant="ghost"
+            data-testid="open-draft-in-table"
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent('braian-open-draft', {
+                detail: {
+                  objectId: String(row.object_id),
+                  typeKey: String(row.type_key ?? ''),
+                  viewType: 'object_table',
+                },
+              }))
+            }}
+          >
+            {copy.openDraftInTable}
+          </Button>
+        ) : null}
       </h3>
       {lines.map((line) => {
         const id = `${String(row.id)}:${line.id}`

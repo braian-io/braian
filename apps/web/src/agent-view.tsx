@@ -150,6 +150,7 @@ function chatLines(data: AgentRunDetail): Array<{ key: string; kind: string; nod
                 variant="ghost"
                 className="agent-result-link"
                 data-testid="agent-result-link"
+                aria-label={`${copy.openDraftInTable}: ${objectLabel}`}
                 onClick={() => openDraft(proposal)}
               >
                 {objectLabel}
