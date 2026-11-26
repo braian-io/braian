@@ -84,7 +84,8 @@ test.describe('model reload banner (row 309)', () => {
       const product = defs.types?.find((item) => item.key === 'product')
       expect(product?.plural?.en).toBe(plural)
 
-      const tableAfter = await openTypeAttributes(pageB, 'product')
+      const tableAfter = pageB.getByTestId('attribute-table')
+      await expect(tableAfter).toBeVisible({ timeout: 30_000 })
       await expect(tableAfter.getByTestId('review-and-save')).toBeVisible()
       const searchableAfter = tableAfter.locator('[data-key="description"]').getByRole('checkbox', { name: 'Searchable' })
       await expect(searchableAfter).toBeChecked({ checked: !before })
