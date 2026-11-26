@@ -2,6 +2,15 @@ import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
 import { mainTable, paneWithTab } from './ui'
 
+async function closeTrashTab(page: Page) {
+  const trashTab = page.locator('.pane-tab').filter({ hasText: /^Trash/ }).first()
+  if (await trashTab.count()) {
+    await trashTab.hover()
+    await trashTab.getByRole('button', { name: 'Close tab' }).click()
+    await expect(page.getByTestId('trash-table-chrome')).toHaveCount(0)
+  }
+}
+
 async function login(page: Page) {
   const demo = demoCredentials()
   await page.goto('/')
@@ -265,6 +274,7 @@ test('removing a link updates the peer list at once and Trash restore brings the
     const side = body.links?.find((item) => item.link_type === 'product_articles')
     return side?.links?.some((link) => link.peer_key === removed.peer_key) ?? false
   }).toBe(true)
+  await closeTrashTab(page)
   const productsTabAfter = page.locator('nav.tabs').getByRole('button', { name: /^Products/ })
   await productsTabAfter.click()
   await expect(productsTabAfter).toHaveClass(/active/)
