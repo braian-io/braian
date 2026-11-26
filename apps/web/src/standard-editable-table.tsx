@@ -695,6 +695,7 @@ export function StandardEditableTable<T extends { id: string }>({
         'standard-grid-cell',
         column.truncate ? 'truncate' : '',
         boolCell ? 'standard-grid-cell-bool' : '',
+        isEditing ? 'standard-grid-cell-editing' : '',
       ]
         .filter(Boolean)
         .join(' ')
