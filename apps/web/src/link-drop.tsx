@@ -7,7 +7,7 @@ import { LinkCreateDialog, type LinkEndpoint } from './link-create-dialog'
 import { dispatchLinkDrop, type LinkDropDetail } from './link-drag'
 import { LinkObjectPicker } from './link-object-picker'
 import { type LinkSubmitResult, type LinkWrite, submitLinks } from './link-write'
-import { linkSectionObjectId, publishLinkFeedback } from './link-feedback'
+import { linkSectionObjectId, publishLinkFeedback, publishLinkFeedbackToEndpoints, type LinkFeedbackDetail } from './link-feedback'
 import { reportWriteError } from './write-error'
 
 export { dispatchLinkDrop }
@@ -62,14 +62,14 @@ export function LinkDropHost() {
       ...detail.targets.map((item) => item.key || item.name || '').filter(Boolean),
       detail.source.key || detail.source.name || '',
     ].filter((key, index, all) => key && all.indexOf(key) === index)
-    publishLinkFeedback({
-      sectionObjectId,
+    const feedback: Omit<LinkFeedbackDetail, 'sectionObjectId'> = {
       linkType: linkType ?? first.body.type,
       direction: detail.preferred?.direction,
       peerKeys,
       hint: message,
       tableObjectIds,
-    })
+    }
+    publishLinkFeedbackToEndpoints(detail, feedback)
   }
   if (picking && !drop) {
     const exclude = picking.map((item) => item.id)
@@ -112,12 +112,10 @@ export function LinkDropHost() {
       }}
       onReplaced={(request) => {
         refresh()
-        const sectionObjectId = linkSectionObjectId(drop, { from_id: request.fromId, to_id: request.toId })
         const peerKeys = drop.targets
           .map((item) => item.key || item.name || item.id)
           .concat(drop.source.key || drop.source.name || drop.source.id)
-        publishLinkFeedback({
-          sectionObjectId,
+        publishLinkFeedbackToEndpoints(drop, {
           linkType: request.type,
           direction: drop.preferred?.direction,
           peerKeys,

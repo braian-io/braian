@@ -33,6 +33,22 @@ export function publishLinkFeedback(detail: LinkFeedbackDetail) {
   for (const id of detail.tableObjectIds ?? []) flashObject(id)
 }
 
+type LinkDropEndpoints = {
+  source: { id: string }
+  targets: Array<{ id: string }>
+}
+
+/** Both ends of a table-row drop can show the link list that changed. */
+export function publishLinkFeedbackToEndpoints(
+  drop: LinkDropEndpoints,
+  detail: Omit<LinkFeedbackDetail, 'sectionObjectId'>,
+) {
+  const ids = new Set([drop.source.id, ...drop.targets.map((item) => item.id)])
+  for (const sectionObjectId of ids) {
+    publishLinkFeedback({ ...detail, sectionObjectId })
+  }
+}
+
 /** Object whose detail link list should show row highlight and section hint. */
 export function linkSectionObjectId(
   drop: { source: { id: string }; targets: Array<{ id: string }>; preferred?: { linkType: string; direction: 'out' | 'in' } },
