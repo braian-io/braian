@@ -767,7 +767,7 @@
         "tags": [
           "platform"
         ],
-        "summary": "Add objects to a manual selection. A dynamic selection is rejected.",
+        "summary": "Add objects to a manual selection. A dynamic selection is rejected. An agent or import files a proposal and changes nothing.",
         "operationId": "add_assortment_members",
         "parameters": [
           {
@@ -802,6 +802,16 @@
               }
             }
           },
+          "202": {
+            "description": "Filed as a suggestion. An agent or import does not change the selection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Suggestion"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Missing or unknown token",
             "content": {
@@ -823,7 +833,7 @@
         "tags": [
           "platform"
         ],
-        "summary": "Remove objects from a manual selection. A dynamic selection is rejected.",
+        "summary": "Remove objects from a manual selection. A dynamic selection is rejected. An agent or import files a proposal and changes nothing.",
         "operationId": "remove_assortment_members",
         "parameters": [
           {
@@ -854,6 +864,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AssortmentMemberIds"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Filed as a suggestion. An agent or import does not change the selection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Suggestion"
                 }
               }
             }
