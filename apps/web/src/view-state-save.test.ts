@@ -97,6 +97,50 @@ describe('saveVersionedViewKeys', () => {
     expect(refetch).toHaveBeenCalledOnce()
   })
 
+  it('serializes two saves of one view so each single retry still lands its keys', async () => {
+    let version = 't1'
+    const stored: ViewState = {}
+    const conflict = Object.assign(new Error('conflict'), { status: 409 })
+    const isConflict = (error: unknown) => error instanceof Error && (error as { status?: number }).status === 409
+    const post = vi.fn(async (patch: ViewState, expected: string | null | undefined) => {
+      if (expected !== version) throw conflict
+      Object.assign(stored, patch)
+      version = `t${Number(version.slice(1)) + 1}`
+      return { updated_at: version }
+    })
+    const refetch = vi.fn(async () => ({ state: { ...stored }, updated_at: version }))
+    const table = { table: { sort: 'a_number:asc' } }
+    const source = { source: { kind: 'peer', viewId: 'products' } }
+    await Promise.all([
+      saveVersionedViewKeys({
+        viewId: 'articles',
+        baseUpdatedAt: 't0',
+        pending: table,
+        latestPending: () => table,
+        post,
+        refetch,
+        isConflict,
+      }),
+      saveVersionedViewKeys({
+        viewId: 'articles',
+        baseUpdatedAt: 't0',
+        pending: source,
+        latestPending: () => source,
+        post,
+        refetch,
+        isConflict,
+      }),
+    ])
+    expect(stored.table).toEqual({ sort: 'a_number:asc' })
+    expect(stored.source).toEqual({ kind: 'peer', viewId: 'products' })
+    const posts = new Map<string, number>()
+    for (const call of post.mock.calls) {
+      const key = JSON.stringify(call[0])
+      posts.set(key, (posts.get(key) ?? 0) + 1)
+    }
+    for (const count of posts.values()) expect(count).toBeLessThanOrEqual(2)
+  })
+
   it('sends the keys that changed and rebases them onto the server after a conflict', async () => {
     const next = { ...base, catalogOverride: { catalogId: 'sap' } }
     const post = vi

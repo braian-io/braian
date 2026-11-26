@@ -407,6 +407,7 @@ export function ObjectTable({
         })
       if (body.expected_updated_at === undefined) return post(viewStateRecord(body.state), undefined)
       return saveVersionedViewKeys({
+        viewId: body.id,
         baseUpdatedAt: body.expected_updated_at,
         pending: viewStateRecord(body.state),
         latestPending: () => viewStateRecord(tablePrefsBody(latestTableSave.current).state),

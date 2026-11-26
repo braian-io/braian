@@ -49,10 +49,22 @@ Use full size when the pane is too small to read the scene.
 - Right-click on empty canvas never shows the browser menu. It opens the graph menu
   with **Fit** and **Re-layout**, the same actions as the toolbar.
 - Zoom, pan and node drag belong to the user. Opening the graph, including after a
-  reload (F5), fits the scene so nodes and their captions stay inside the stage.
-  Entering and leaving **Open full size** also refits while the camera is still
-  untouched. After you have zoomed, panned or dragged a node, the camera stays where
-  you put it until you use **Fit** or **Re-layout**.
+  real reload (F5), fits the scene so every visible node and every shown caption
+  stays inside the visible graph frame. Entering and leaving **Open full size** also
+  fits while the camera is still untouched.   Both paths wait for the same complete
+  measured free frame: the pane and canvas size staying unchanged for a couple of
+  animation frames, the measured inspector box when the bottom or side card is open,
+  and the measured label boxes, including captions such as Food and long names on
+  long names on the focus object and on direct link peers, including room reserved
+  for peers while their names resolve, that may arrive a moment after the first paint.
+  The frame excludes pane chrome, so a narrow pane (around 230 px) with the bottom
+  inspector card open fits above the card instead of clipping the scene. After you
+  have zoomed, panned or dragged a node, the camera belongs to you. A viewport
+  change, such as a pane resize or entering or leaving full size, keeps the same
+  zoom and remaps the world point at the old frame centre to the new frame centre,
+  so the view is not parked in a corner and clipped. Once the initial load has
+  settled, adding a link, expanding a group or letting a late caption arrive never
+  refits the camera on its own.
 
 Labels are drawn when the graph is settled. A small graph labels every edge; a larger
 or zoomed-out one labels the selected, hovered or focused node's edges at rest. Edge

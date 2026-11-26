@@ -29,7 +29,11 @@ import {
   nodeMark,
   nodeRadius,
   parseTypedId,
+  placedObjectNamesPending,
+  placedSceneNodes,
   searchDocuments,
+  NAMED_CAPTION_PRIORITY,
+  visibleCaptionIds,
   visibleLabelIds,
   type KnownObject,
   type LabelBox,
@@ -38,8 +42,13 @@ import {
   type SceneNode,
 } from './graph-scene'
 import {
+  chromeMeasureReady,
+  chromeSheetBoxSettled,
+  createPaneSettleGate,
+  createFitScheduler,
   detailPlacement,
-  fitCamera,
+  type CaptionExtent,
+  fitCameraWithLabels,
   graphDensity,
   inspectorChrome,
   legendLayout,
@@ -47,14 +56,19 @@ import {
   placeNodeLabel,
   propertiesOpen,
   readGraphFrame,
+  remapCamera,
+  requestSystemFit,
   sheetAfterGesture,
   type Box,
   type DetailPlacement,
+  type FitScheduler,
   type GraphDensity,
+  type GraphFrame,
   type SheetMode,
+  type SystemFitEvent,
 } from './graph-chrome'
 import { buildModelScene, expandModelType, mergeModelScene } from './graph-model-scene'
-import { curvePoint, edgeLabelMode, placeEdgeLabel, type EdgeLabelBox, type EdgeLabelNode } from './graph-edge-label'
+import { curvePoint, edgeLabelMode, placeEdgeLabelWithFallback, type EdgeLabelBox, type EdgeLabelNode } from './graph-edge-label'
 import { tryChooseModelSelection } from './model-table-draft'
 import { openObjectLabel } from './type-labels'
 import { copy, uiLanguage } from './i18n'
@@ -66,8 +80,26 @@ import { requestOpenModelType } from './model-type-open'
 
 type SimNode = SimulationNodeDatum & SceneNode & { degree: number }
 type SimLink = SimulationLinkDatum<SimNode> & { id: string; label: string }
-type Marker = { x: number; y: number; r: number; label: Rect }
+type Marker = {
+  x: number
+  y: number
+  r: number
+  label: Rect
+  /** The same label rectangle in canvas-local coordinates, for the DOM mirror. */
+  localLabel: Rect
+  shown: boolean
+}
 const NO_GRAPH: Json = {}
+
+// How long the Event D observer waits (after a rAF) before accepting an
+// unchanged inspector box as the settled sheet. Long enough that a late name
+// or caption reflow cannot slip between two otherwise identical layouts, but
+// far shorter than post-settle content growth (add-link, expand), which must
+// never refit an untouched camera.
+const SHEET_QUIET_MS = 160
+// createFitScheduler applies on the next frame and again at 120ms and 320ms.
+// The camera is idle only after that last pass.
+const CAMERA_IDLE_AFTER_MS = 360
 
 /**
  * Object, model-type, attribute value and structure nodes can open their own
@@ -255,6 +287,106 @@ export function staysPinnedAfterPointerUp(wasPinned: boolean, dragged: boolean, 
   return !modelMode && dragged
 }
 
+/**
+ * Decide whether a scene change may idle-refit the camera. During the initial
+ * load (settled=false) nodes and captions that arrive a moment after the first
+ * paint may fit again. Once the initial load has settled the id baseline is
+ * frozen: add-link / expand growth, inspector content and late captions are
+ * all content then, and only events B, C and D may move the camera.
+ */
+export function idleRefitPlan(input: {
+  settled: boolean
+  baselineIds: string | null
+  ids: string
+  captions: string
+  previousCaptions: string
+  moved: boolean
+}): { fit: boolean; baselineIds: string | null } {
+  const changed = input.previousCaptions !== input.captions
+  if (input.moved) return { fit: false, baselineIds: input.baselineIds }
+  if (input.settled) {
+    const baseline = input.baselineIds ?? input.ids
+    return { fit: false, baselineIds: baseline }
+  }
+  return { fit: changed, baselineIds: input.baselineIds }
+}
+
+/** Identify the caption text that the last draw measured into real label boxes. */
+function captionSignature(nodes: Array<{ caption: string }>): string {
+  return nodes.map((node) => node.caption).join('\u0000')
+}
+
+/** Reserve fit room for link peers that are not in the sim until their names resolve. */
+export function pendingPeerFitExtents(
+  scene: Scene,
+  focusKey: string,
+  simNodes: SimNode[],
+  captionWidth: (node: SceneNode) => number,
+): CaptionExtent[] {
+  const placed = new Map(
+    simNodes
+      .filter((node) => node.x != null && node.y != null)
+      .map((node) => [node.id, node]),
+  )
+  const anchor = placed.get(focusKey)
+  if (!anchor || anchor.x == null || anchor.y == null) return []
+  const peers: SceneNode[] = []
+  for (const edge of scene.edges) {
+    if (edge.source !== focusKey && edge.target !== focusKey) continue
+    const peerId = edge.source === focusKey ? edge.target : edge.source
+    if (placed.has(peerId)) continue
+    const node = scene.nodes.find((item) => item.id === peerId)
+    if (node?.kind === 'object' && node.rawCaption) peers.push(node)
+  }
+  return peers.map((node, index) => {
+    const angle = (index / Math.max(1, peers.length)) * Math.PI * 2
+    const degree = 2
+    const dist = 72 + nodeRadius(node.kind, degree) + nodeRadius(anchor.kind, anchor.degree ?? 0)
+    return {
+      x: anchor.x! + Math.cos(angle) * dist,
+      y: anchor.y! + Math.sin(angle) * dist,
+      radius: nodeRadius(node.kind, degree),
+      captionWidth: captionWidth(node),
+    }
+  })
+}
+
+/** Web fonts must not swap a caption after its box was measured for a fit. */
+function fontsReady(): boolean {
+  const fonts = typeof document !== 'undefined' ? document.fonts : undefined
+  return !fonts || fonts.status !== 'loading'
+}
+
+/**
+ * A narrow bottom inspector card is open or about to become a sheet. After a
+ * real F5 the placement can still be `hidden` while the selected object
+ * resolves, so `placement === 'sheet'` alone would treat that frame as complete.
+ */
+function bottomCardOpenAt(
+  density: GraphDensity,
+  selected: string,
+  sheet: SheetMode,
+  placement: DetailPlacement,
+): boolean {
+  return (
+    density === 'narrow' &&
+    Boolean(selected) &&
+    sheet !== 'dismissed' &&
+    sheet !== 'chip' &&
+    placement !== 'side'
+  )
+}
+
+/** A narrow open bottom card needs its measured box before the first untouched fit. */
+function deferInitialFitForSheet(
+  density: GraphDensity,
+  selected: string,
+  sheet: SheetMode,
+  placement: DetailPlacement,
+): boolean {
+  return density === 'narrow' && (placement === 'sheet' || bottomCardOpenAt(density, selected, sheet, placement))
+}
+
 /** `graph:add-link:<key>:<direction>`; the direction is what the picker must use. */
 export function graphLinkRequest(id: string, target: CommandTarget): LinkAddRequest {
   const value = id.slice('graph:add-link:'.length)
@@ -422,14 +554,13 @@ export function GraphMap({
     return capScene(merged)
   }, [modelMode, graph, values, activeDefs, known, extras, modelInput?.stats])
   const scene = model.scene
-  const placed = useMemo(() => {
-    const nodes = scene.nodes.filter((node) => !(node.kind === 'object' && node.rawCaption))
-    const ids = new Set(nodes.map((node) => node.id))
-    return {
-      nodes,
-      edges: scene.edges.filter((edge) => ids.has(edge.source) && ids.has(edge.target)),
-    }
-  }, [scene])
+  const sceneRef = useRef(scene)
+  sceneRef.current = scene
+  const focusKeyRef = useRef(focusKey)
+  focusKeyRef.current = focusKey
+  const placed = useMemo(() => placedSceneNodes(scene, focusKey), [scene, focusKey])
+  const placedRef = useRef(placed)
+  placedRef.current = placed
   const pendingNames = useMemo(
     () =>
       modelMode
@@ -448,6 +579,24 @@ export function GraphMap({
   const movedRef = useRef(false)
   const idleIdsRef = useRef<string | null>(null)
   const idleCaptionsRef = useRef('')
+  // The initial load may refit repeatedly while nodes, captions and chrome
+  // arrive. It settles only after the simulation has ended, no object name is
+  // still pending, the chrome has been measured and the scene stayed quiet.
+  const initialSettledRef = useRef(false)
+  const initialEndedRef = useRef(false)
+  const chromeMeasuredRef = useRef(false)
+  // False while an open bottom sheet is still settling; the first-fit baseline
+  // must not freeze on a mid-transition height (Event D flips this to true).
+  const sheetStableRef = useRef(false)
+  const cameraIdleTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const markCameraBusyRef = useRef<() => void>(() => {})
+  const placementRef = useRef<DetailPlacement>('hidden')
+  const sheetRef = useRef<SheetMode>('compact')
+  const pendingNamesRef = useRef('')
+  const currentIdsRef = useRef('')
+  // The caption signature whose real label boxes the last draw measured.
+  const labelsDrawnRef = useRef('')
+  pendingNamesRef.current = pendingNames
 
   useEffect(() => {
     const ids = pendingNames.split(',').filter(Boolean)
@@ -487,23 +636,37 @@ export function GraphMap({
   const inspectorRef = useRef<HTMLElement>(null)
   const legendRef = useRef<HTMLDivElement>(null)
   const densityRef = useRef<GraphDensity>('wide')
+  const settledPaneWidthRef = useRef(0)
   const simRef = useRef<Simulation<SimNode, SimLink> | null>(null)
   const drawRef = useRef<(shouldPublish: boolean) => void>(() => {})
   const apiRef = useRef<{
     fit: () => void
+    remap: () => void
     relayout: () => void
     refocus: () => void
     markerOf: (id: string) => { x: number; y: number; r: number } | undefined
-  }>({ fit: () => {}, relayout: () => {}, refocus: () => {}, markerOf: () => undefined })
+  }>({ fit: () => {}, remap: () => {}, relayout: () => {}, refocus: () => {}, markerOf: () => undefined })
   const hiddenRef = useRef(hidden)
   const selectedRef = useRef(selected)
   const focusedRef = useRef(focused)
   const expandRef = useRef<(node: SceneNode) => void>(() => {})
   const selectRef = useRef<(id: string) => void>(() => {})
   const pinRef = useRef(setPinTick)
+  // Every system fit goes through this one scheduler. It carries the event that
+  // asked for the fit so it can re-check the free frame when the timers run.
+  const runSystemFitRef = useRef<(event: SystemFitEvent) => void>(() => {})
+  const requestSystemFitRef = useRef<(event: SystemFitEvent) => void>(() => {})
+  const fitSchedulerRef = useRef<FitScheduler | null>(null)
+  const paneSettleRef = useRef(createPaneSettleGate())
+  // System fits (F5, Close full size, resize, first sheet) share one measured
+  // frame. A later timer for the same frame must not apply a second camera.
+  if (fitSchedulerRef.current === null) {
+    fitSchedulerRef.current = createFitScheduler((event) => runSystemFitRef.current(event))
+  }
   hiddenRef.current = hidden
   selectedRef.current = selected
   focusedRef.current = focused
+  sheetRef.current = sheet
   selectRef.current = (id: string) => {
     setSelected(id)
     setSheet((mode) => (mode === 'dismissed' || mode === 'chip' ? 'compact' : mode))
@@ -513,8 +676,23 @@ export function GraphMap({
   }
   pinRef.current = setPinTick
 
+  // Once the user grows the graph (expand or add-link), stop treating later
+  // scene changes as part of the initial load. Freeze the pre-growth ids so the
+  // new arrivals never idle-refit, even if the initial timer has not fired.
+  const freezeIdleForUser = () => {
+    if (initialSettledRef.current) return
+    if (idleIdsRef.current == null) idleIdsRef.current = currentIdsRef.current
+    initialSettledRef.current = true
+  }
+
+  const openAddLink = (request: LinkAddRequest) => {
+    freezeIdleForUser()
+    setAdd(request)
+  }
+
   const expand = async (node: SceneNode) => {
     if (!node || expandedRef.current.has(node.id) || inflightRef.current.has(node.id)) return
+    freezeIdleForUser()
     if (node.kind === 'value') {
       expandedRef.current.add(node.id)
       return
@@ -609,6 +787,35 @@ export function GraphMap({
     const paletteRef: { current: Palette | null } = { current: null }
     const markerSerial = { current: '' }
     let alive = true
+    let lastFrame: GraphFrame | null = null
+    let settleTimer: ReturnType<typeof setTimeout> | undefined
+    let settleHoldTimer: ReturnType<typeof setTimeout> | undefined
+    const releaseSettledHold = () => {
+      if (settleHoldTimer !== undefined) {
+        clearTimeout(settleHoldTimer)
+        settleHoldTimer = undefined
+      }
+      canvas.dataset.settled = 'true'
+      canvas.dataset.settling = 'false'
+    }
+    const holdSettledUntilFit = () => {
+      canvas.dataset.settled = 'false'
+      canvas.dataset.settling = 'true'
+      if (settleHoldTimer !== undefined) clearTimeout(settleHoldTimer)
+      let attempts = 0
+      const schedule = () => {
+        if (!alive || canvas.dataset.settling !== 'true') return
+        requestSystemFitRef.current('sheet')
+        fitSchedulerRef.current?.request('sheet')
+        attempts += 1
+        if (attempts >= 150) {
+          releaseSettledHold()
+          return
+        }
+        settleHoldTimer = setTimeout(schedule, attempts === 1 ? 0 : 400)
+      }
+      schedule()
+    }
 
     const sim = forceSimulation<SimNode, SimLink>([])
       .force(
@@ -668,6 +875,86 @@ export function GraphMap({
         transform.x = width / 2
         transform.y = height / 2
       }
+    }
+
+    const currentFrame = () => {
+      const stage = { width: canvas.clientWidth, height: canvas.clientHeight }
+      return readGraphFrame(
+        stage,
+        measureChromeBoxes(canvas, [inspectorRef.current, legendRef.current]),
+        densityRef.current,
+      )
+    }
+
+    const bottomCardOpen = () =>
+      bottomCardOpenAt(densityRef.current, selectedRef.current, sheetRef.current, placementRef.current)
+
+    // A bottom sheet is expected when the placement is a sheet or the card is
+    // open while the placement is still resolving (F5). Only then must the
+    // sheet have settled before the chrome counts as ready.
+    const sheetExpected = () => placementRef.current === 'sheet' || bottomCardOpen()
+
+    // A `sheet` placement without a measured, settled inspector box is not
+    // settled chrome: the open bottom sheet still has to shrink the free frame.
+    const sideCardOpen = () =>
+      densityRef.current === 'wide' &&
+      Boolean(selectedRef.current) &&
+      propertiesOpen(densityRef.current, sheetRef.current)
+    const chromeReady = () =>
+      chromeMeasuredRef.current &&
+      (!sheetExpected() || sheetStableRef.current) &&
+      paneSettleRef.current.settled &&
+      chromeMeasureReady(
+        placementRef.current,
+        measureChromeBox(canvas, inspectorRef.current),
+        bottomCardOpen(),
+        sideCardOpen(),
+      )
+
+    const labelsReady = () =>
+      fontsReady() && labelsDrawnRef.current === captionSignature(sim.nodes())
+    const simMatchesPlaced = () => {
+      const simIds = new Set(sim.nodes().map((node) => node.id))
+      const layout = placedRef.current.nodes
+      return layout.length === sim.nodes().length && layout.every((node) => simIds.has(node.id))
+    }
+    const objectNamesReady = () => !placedObjectNamesPending(placedRef.current.nodes)
+
+    const initialLoadReady = () =>
+      initialEndedRef.current &&
+      pendingNamesRef.current === '' &&
+      objectNamesReady() &&
+      simMatchesPlaced() &&
+      chromeReady()
+
+    const initialLoadSettled = () => initialLoadReady() && labelsReady()
+
+    // Freeze the idle-refit baseline only after the first load has genuinely
+    // settled. Until then Food and other late nodes/captions may still fit.
+    const scheduleInitialSettle = () => {
+      if (initialSettledRef.current || movedRef.current) return
+      if (!initialLoadSettled()) return
+      if (settleTimer !== undefined) clearTimeout(settleTimer)
+      settleTimer = setTimeout(() => {
+        settleTimer = undefined
+        if (movedRef.current || !initialLoadSettled()) return
+        initialSettledRef.current = true
+        if (idleIdsRef.current == null) idleIdsRef.current = currentIdsRef.current
+      }, 500)
+    }
+
+    const remap = () => {
+      resize()
+      const next = currentFrame()
+      if (lastFrame && movedRef.current) {
+        const camera = remapCamera({ camera: transform, from: lastFrame, to: next })
+        transform.k = camera.k
+        transform.x = camera.x
+        transform.y = camera.y
+      }
+      lastFrame = next
+      draw(true)
+      markCameraBusyRef.current()
     }
 
     const screenOf = (x: number, y: number) => ({
@@ -735,8 +1022,9 @@ export function GraphMap({
       return highlight
     }
 
-    const publish = () => {
+    const publish = (shown: Set<string>) => {
       const rect = canvas.getBoundingClientRect()
+      const graphRoot = canvas.closest('.graph-wrap') ?? document
       const next: Record<string, Marker> = {}
       const highlight = highlightedIds()
       const current = selectedRef.current
@@ -775,9 +1063,18 @@ export function GraphMap({
           y: Math.round(rect.top + point.y),
           r: radius,
           label,
+          localLabel: {
+            left: label.left - rect.left,
+            top: label.top - rect.top,
+            right: label.right - rect.left,
+            bottom: label.bottom - rect.top,
+          },
+          shown: shown.has(node.id),
         }
         next[node.id] = marker
-        const button = document.querySelector<HTMLElement>(`[data-node-id="${CSS.escape(node.id)}"]`)
+        const button = graphRoot.querySelector<HTMLElement>(
+          `[data-testid="graph-nodes"] [data-node-id="${CSS.escape(node.id)}"]`,
+        )
         if (button) {
           button.setAttribute('data-x', String(marker.x))
           button.setAttribute('data-y', String(marker.y))
@@ -869,18 +1166,33 @@ export function GraphMap({
         return {
           id: node.id,
           priority: labelPriority(node.kind, active),
+          kind: node.kind,
           left: centerX - textWidth / 2 - 4,
           right: centerX + textWidth / 2 + 4,
           top: placement.top,
           bottom: placement.bottom,
         }
       })
-      const labels = visibleLabelIds(captionBoxes, transform.k)
-      // A caption wider than the pane cannot be clamped: hide it rather than
-      // paint a plate outside the frame.
-      for (const box of captionBoxes) {
-        if (box.right - box.left > canvas.clientWidth - 2) labels.delete(box.id)
+      const protectCaptionIds = new Set<string>()
+      if (densityRef.current === 'narrow') {
+        if (current) protectCaptionIds.add(current)
+        for (const { node } of placedNodes) {
+          if (node.kind === 'structure' || node.kind === 'group') protectCaptionIds.add(node.id)
+        }
       }
+      const protectCaptions = protectCaptionIds.size > 0 ? protectCaptionIds : undefined
+      // The fit reserved room for every caption it measured, so a hair-width
+      // pane does not drop a name it clamped inside the frame.
+      const labelPaneWidth = settledPaneWidthRef.current > 0 ? settledPaneWidthRef.current : canvas.clientWidth
+      const labels = protectCaptions
+        ? visibleCaptionIds(captionBoxes, transform.k, {
+            paneWidth: labelPaneWidth,
+            protectCaptionIds: protectCaptions,
+          })
+        : visibleLabelIds(captionBoxes, transform.k)
+      // These are the real measured extents for the current captions. A system
+      // fit may only reserve their room after this signature is current.
+      labelsDrawnRef.current = captionSignature(nodes)
       const graphRoot = canvas.closest('.graph-wrap') ?? document
       const drawnEdges = new Set<string>()
       const edgeRects: Record<string, Rect> = {}
@@ -998,24 +1310,30 @@ export function GraphMap({
           const widthText = context.measureText(link.label).width
           const boxW = widthText + 12
           const boxH = 16
-          const mid = placeEdgeLabel(
-            geometry.from,
-            geometry.control,
-            geometry.to,
-            { width: boxW, height: boxH },
-            labelNodes,
-            placedEdgeLabels,
-            // A selected or hovered label is never dropped to spare a caption:
-            // it wins the space and the caption beneath it is hidden below.
-            // The wider search is only for that label, so a crowded cluster
-            // still names every edge of the node that is selected or hovered.
-            activeEndpoint ? [] : captionObstacles,
-            activeEndpoint ? 16 : 3,
-          )
-          const box: EdgeLabelBox = { x: mid.x - boxW / 2, y: mid.y - boxH / 2, width: boxW, height: boxH }
-          // Hide the lower-priority label instead of stacking it on a neighbour.
-          if (placedEdgeLabels.some((other) => boxOverlap(box, other) > 0)) return
-          if (labelNodes.some((node) => discOverlap(box, node) > 0)) return
+          // Prefer a slot clear of shown names. An active label searches wider
+          // (the same reach main uses) and still paints when every slot is
+          // taken, instead of disappearing to spare Food or Product.
+          const namedCaptionObstacles: EdgeLabelBox[] = captionBoxes
+            .filter(
+              (box) =>
+                labels.has(box.id) &&
+                (box.priority >= NAMED_CAPTION_PRIORITY || box.kind === 'structure' || box.kind === 'group'),
+            )
+            .map((box) => ({ x: box.left, y: box.top, width: box.right - box.left, height: box.bottom - box.top }))
+          const placement = placeEdgeLabelWithFallback({
+            from: geometry.from,
+            control: geometry.control,
+            to: geometry.to,
+            size: { width: boxW, height: boxH },
+            nodes: labelNodes,
+            placed: placedEdgeLabels,
+            preferred: activeEndpoint ? namedCaptionObstacles : captionObstacles,
+            fallback: activeEndpoint ? [] : captionObstacles,
+            active: activeEndpoint,
+          })
+          if (placement.dropped) return
+          const mid = placement.point
+          const box = placement.box
           if (typeKey) placedLabelTypes.add(typeKey)
           placedEdgeLabels.push(box)
           drawnEdges.add(link.id)
@@ -1040,13 +1358,32 @@ export function GraphMap({
         })
       // Edge labels win the space they need; a caption that would sit under one
       // is hidden instead of stacking on top of it.
-      const shownCaptionIds = new Set(labels)
-      for (const box of captionBoxes) {
-        if (!shownCaptionIds.has(box.id)) continue
-        const captionBox = { x: box.left, y: box.top, width: box.right - box.left, height: box.bottom - box.top }
-        if (placedEdgeLabels.some((other) => boxOverlap(captionBox, other) > 0)) shownCaptionIds.delete(box.id)
+      const edgeLabelBoxes = placedEdgeLabels.map((box) => ({
+        left: box.x,
+        top: box.y,
+        right: box.x + box.width,
+        bottom: box.y + box.height,
+      }))
+      const shownCaptionIds = protectCaptions
+        ? visibleCaptionIds(captionBoxes, transform.k, {
+            paneWidth: width,
+            edgeLabels: edgeLabelBoxes,
+            protectCaptionIds: protectCaptions,
+          })
+        : new Set(labels)
+      // A relation label that could not step clear owns the pixels. Hide the
+      // caption under it, including a protected Food/group name, so the two
+      // never stack. When a clear slot existed the caption stays.
+      for (const cap of captionBoxes) {
+        if (!shownCaptionIds.has(cap.id)) continue
+        const captionBox = {
+          x: cap.left,
+          y: cap.top,
+          width: cap.right - cap.left,
+          height: cap.bottom - cap.top,
+        }
+        if (placedEdgeLabels.some((other) => boxOverlap(captionBox, other) > 0)) shownCaptionIds.delete(cap.id)
       }
-
       for (const { node, point, radius } of placedNodes) {
         const emphasized = !hover || highlight.has(node.id)
         const fill = colors.fill[node.kind]
@@ -1093,10 +1430,15 @@ export function GraphMap({
       }
 
       if (shouldPublish) {
-        for (const { node } of placedNodes) {
-          graphRoot
-            .querySelector<HTMLElement>(`[data-node-id="${CSS.escape(node.id)}"]`)
-            ?.setAttribute('data-label-shown', shownCaptionIds.has(node.id) ? 'true' : 'false')
+        const placedIds = new Set(placedNodes.map(({ node }) => node.id))
+        // Clear stale `true` flags too: a node that leaves the placed set (or
+        // was hidden) must not keep advertising an old caption box.
+        for (const button of graphRoot.querySelectorAll<HTMLElement>('[data-testid="graph-nodes"] [data-node-id]')) {
+          const id = button.getAttribute('data-node-id') ?? ''
+          button.setAttribute(
+            'data-label-shown',
+            placedIds.has(id) && shownCaptionIds.has(id) ? 'true' : 'false',
+          )
         }
         publishEdgeRects(edgeRects)
         const edgeSerial = [...drawnEdges].sort().join('|')
@@ -1104,35 +1446,81 @@ export function GraphMap({
           shownEdgesRef.current = edgeSerial
           if (alive) setShownEdges(drawnEdges)
         }
-        publish()
+        publish(shownCaptionIds)
       }
     }
 
     const fit = () => {
       resize()
-      const nodes = sim.nodes().filter((node) => !isLegendHidden(hiddenRef.current, node) && node.x != null && node.y != null)
+      const simById = new Map(
+        sim
+          .nodes()
+          .filter((node) => node.x != null && node.y != null)
+          .map((node) => [node.id, node]),
+      )
+      const layoutNodes = placedRef.current.nodes.filter((node) => !isLegendHidden(hiddenRef.current, node))
       const width = canvas.clientWidth
       const height = canvas.clientHeight
-      if (!nodes.length || width < 20 || height < 20) return false
-      let minX = Infinity
-      let minY = Infinity
-      let maxX = -Infinity
-      let maxY = -Infinity
-      for (const node of nodes) {
-        const radius = nodeRadius(node.kind, node.degree ?? 0)
-        const half = Math.min(150, Math.max(radius + 12, node.caption.length * 3.6 + 12))
-        minX = Math.min(minX, node.x! - half)
-        maxX = Math.max(maxX, node.x! + half)
-        minY = Math.min(minY, node.y! - radius - 8)
-        maxY = Math.max(maxY, node.y! + radius + 32)
+      if (!layoutNodes.length || width < 20 || height < 20) return false
+      context.save()
+      context.font = '12px "Inter Variable", Inter, sans-serif'
+      const captionWidthForScene = (node: SceneNode) => {
+        if (node.objectId) {
+          const name = knownRef.current[node.objectId]?.name
+          if (name) return context.measureText(name).width
+        }
+        return context.measureText(node.caption).width
       }
-      const stage = { width, height }
-      const frame = readGraphFrame(stage, measureChromeBoxes(canvas, [inspectorRef.current, legendRef.current]), densityRef.current)
-      const camera = fitCamera({ frame, bounds: { minX, minY, maxX, maxY } })
+      const extents = layoutNodes
+        .map((sceneNode) => {
+          const simNode = simById.get(sceneNode.id)
+          if (!simNode || simNode.x == null || simNode.y == null) return null
+          return {
+            x: simNode.x,
+            y: simNode.y,
+            radius: nodeRadius(sceneNode.kind, simNode.degree ?? 0),
+            captionWidth: captionWidthForScene(sceneNode),
+          }
+        })
+        .filter((item): item is NonNullable<typeof item> => item != null)
+      context.restore()
+      const frame = currentFrame()
+      // Do not claim the chrome is measured while the open bottom sheet has no
+      // box yet; that taller frame must not freeze the initial-load baseline.
+      if (
+        chromeMeasureReady(
+          placementRef.current,
+          measureChromeBox(canvas, inspectorRef.current),
+          bottomCardOpen(),
+          densityRef.current === 'wide' && Boolean(selectedRef.current) && propertiesOpen(densityRef.current, sheetRef.current),
+        )
+      ) {
+        chromeMeasuredRef.current = true
+      }
+      // A narrow pane with long article captions can need less than the old
+      // 0.35 floor to keep the measured labels inside the frame.
+      const narrowSheet = deferInitialFitForSheet(
+        densityRef.current,
+        selectedRef.current,
+        sheetRef.current,
+        placementRef.current,
+      )
+      const camera = fitCameraWithLabels({
+        frame,
+        nodes: extents,
+        // Wide panes keep the 0.35 floor so relation labels still clear the
+        // discs. A narrow sheet may go lower so a long caption fits the frame.
+        minScale: narrowSheet ? 0.08 : 0.35,
+      })
+      if (!camera) return false
       transform.k = camera.k
       transform.x = camera.x
       transform.y = camera.y
+      lastFrame = frame
       draw(true)
+      markCameraBusyRef.current()
+      if (!initialSettledRef.current && initialLoadSettled()) releaseSettledHold()
+      scheduleInitialSettle()
       return true
     }
 
@@ -1157,6 +1545,7 @@ export function GraphMap({
 
     apiRef.current = {
       fit,
+      remap,
       relayout,
       refocus: () => {
         movedRef.current = false
@@ -1180,12 +1569,30 @@ export function GraphMap({
       if (alive) draw(false)
     })
     sim.on('end', () => {
-      canvas.dataset.settling = 'false'
+      const waitForFit =
+        deferInitialFitForSheet(densityRef.current, selectedRef.current, sheetRef.current, placementRef.current) &&
+        !initialSettledRef.current
+      if (waitForFit) holdSettledUntilFit()
+      else {
+        canvas.dataset.settling = 'false'
+        canvas.dataset.settled = 'true'
+      }
       if (!alive || sim.nodes().length === 0) return
       sim.alphaTarget(0)
-      canvas.dataset.settled = 'true'
-      if (fitAfterRef.current && fit()) fitAfterRef.current = false
-      else draw(true)
+      initialEndedRef.current = true
+      draw(true)
+      if (fitAfterRef.current) {
+        // Event A: first complete measurement of this load. requestSystemFit
+        // waits for resolved names and a complete free frame; the sheet box or
+        // a late caption may request the next attempt.
+        fitAfterRef.current = false
+        if (deferInitialFitForSheet(densityRef.current, selectedRef.current, sheetRef.current, placementRef.current)) {
+          if (placementRef.current === 'sheet') requestSystemFitRef.current('sheet')
+        } else {
+          requestSystemFitRef.current(initialSettledRef.current ? 'resize' : 'initial')
+        }
+      }
+      scheduleInitialSettle()
       sim.stop()
     })
 
@@ -1275,8 +1682,10 @@ export function GraphMap({
         // not a click: it keeps the camera and the label set as they were.
         if (travel <= 3) focusNodeButton(dragNode.id, canvas)
         sim.alphaTarget(0)
+        if (dragged) sim.stop()
         if (!modelMode) pinRef.current((tick) => tick + 1)
         draw(true)
+        if (dragged) canvas.dataset.settling = 'false'
       }
       mode = 'none'
       dragNode = undefined
@@ -1351,7 +1760,7 @@ export function GraphMap({
         defsRef.current,
         anchor.x,
         anchor.y,
-        (request) => setAdd(request),
+        openAddLink,
         avoid,
         stage,
         obstacles,
@@ -1400,12 +1809,21 @@ export function GraphMap({
     canvas.addEventListener('wheel', onWheel, { passive: false })
     canvas.addEventListener('dblclick', onDouble)
     canvas.addEventListener('contextmenu', onContextMenu)
-    // A resize (inspector growth, fullscreen toggle, pane split) refits while
-    // the camera is still untouched. Once the user has zoomed or panned, the
-    // camera belongs to them: only repaint at the current transform.
+    // Event C: a *real* pane/canvas resize. The observer's first delivery is
+    // the size we already have; the system fit is gated on the settled pane and
+    // the open sheet box, so a mid-transition size cannot be fitted as final.
+    // Once the user has zoomed or panned, the camera belongs to them: remap the
+    // same world view into the new free frame instead of reusing old pixels.
+    let observedWidth = canvas.clientWidth
+    let observedHeight = canvas.clientHeight
     const observer = new ResizeObserver(() => {
-      if (!movedRef.current && canvas.dataset.dragging !== 'true') {
-        if (fit()) return
+      const width = canvas.clientWidth
+      const height = canvas.clientHeight
+      const changed = width !== observedWidth || height !== observedHeight
+      observedWidth = width
+      observedHeight = height
+      if (changed && canvas.dataset.dragging !== 'true') {
+        requestSystemFitRef.current('resize')
       }
       // Publish the new client rects too: the a11y nodes and menu anchors must
       // follow the resized canvas.
@@ -1421,6 +1839,9 @@ export function GraphMap({
 
     return () => {
       alive = false
+      if (settleTimer !== undefined) clearTimeout(settleTimer)
+      if (settleHoldTimer !== undefined) clearTimeout(settleHoldTimer)
+      if (cameraIdleTimerRef.current !== undefined) clearTimeout(cameraIdleTimerRef.current)
       sim.on('tick', null)
       sim.on('end', null)
       sim.stop()
@@ -1447,7 +1868,19 @@ export function GraphMap({
     if (!sim || !canvas) return
     const reuse = layoutFocus.current === focusId
     layoutFocus.current = focusId
-    if (!reuse) apiRef.current.refocus()
+    if (!reuse) {
+      // A new focus object starts a new load: allow idle refits again until its
+      // own nodes, captions and chrome have settled.
+      apiRef.current.refocus()
+      initialSettledRef.current = false
+      initialEndedRef.current = false
+      chromeMeasuredRef.current = false
+      idleIdsRef.current = null
+      idleCaptionsRef.current = ''
+      paneSettleRef.current.cancel()
+      const stage = stageRef.current
+      if (stage) paneSettleRef.current.observe(stage.clientWidth, stage.clientHeight)
+    }
     const tally = new Map<string, number>()
     for (const edge of placed.edges) {
       tally.set(edge.source, (tally.get(edge.source) ?? 0) + 1)
@@ -1515,11 +1948,8 @@ export function GraphMap({
           node.vx = 0
           node.vy = 0
         }
+        fitAfterRef.current = false
         drawRef.current(true)
-        if (fitAfterRef.current) {
-          fitAfterRef.current = false
-          apiRef.current.fit()
-        }
       } else {
         // A link or name changed without adding nodes: redraw, never re-layout.
         for (const node of next) {
@@ -1527,6 +1957,9 @@ export function GraphMap({
           node.vy = 0
         }
         drawRef.current(true)
+        if (!movedRef.current && captionsChanged && !initialSettledRef.current) {
+          requestSystemFitRef.current('initial')
+        }
       }
     } else drawRef.current(true)
   }, [placed, focusId])
@@ -1538,8 +1971,10 @@ export function GraphMap({
   useLayoutEffect(() => {
     const stage = stageRef.current
     if (!stage) return
+    const gate = paneSettleRef.current
     const apply = (width: number, height: number) => {
       const next = { width: Math.floor(width), height: Math.floor(height) }
+      gate.observe(width, height)
       setPane((prev) => (prev && prev.width === next.width && prev.height === next.height ? prev : next))
     }
     apply(stage.clientWidth, stage.clientHeight)
@@ -1548,23 +1983,11 @@ export function GraphMap({
       apply(rect?.width ?? stage.clientWidth, rect?.height ?? stage.clientHeight)
     })
     observer.observe(stage)
-    return () => observer.disconnect()
-  }, [])
-
-  useEffect(() => {
-    // Full size re-lays out the whole chrome. Refit after that pass, once the
-    // pane and its measured chrome have their new size, and only while the
-    // camera is still the system's rather than the user's.
-    const fitIfIdle = () => {
-      if (!movedRef.current) apiRef.current.fit()
-    }
-    const frame = requestAnimationFrame(fitIfIdle)
-    const timer = setTimeout(fitIfIdle, 120)
     return () => {
-      cancelAnimationFrame(frame)
-      clearTimeout(timer)
+      observer.disconnect()
+      gate.cancel()
     }
-  }, [full])
+  }, [])
 
   useEffect(() => {
     if (!full) return
@@ -1575,10 +1998,10 @@ export function GraphMap({
   }, [full])
 
   useEffect(() => {
-    // Captions that resolve after the first paint (a reload, F5) change no node
-    // ids, so they get an idle refit. Freeze the id set from the first
-    // observation: once the graph grows (add-link, expand group) this effect
-    // must never fit again, even as the new node's caption arrives later.
+    // Nodes and captions that resolve after the first paint (a reload, F5)
+    // still get an idle refit while the initial load settles. After that the
+    // id baseline is frozen so add-link / expand growth never idle-fits, even
+    // when the new node's caption arrives later.
     const ids = scene.nodes
       .map((node) => node.id)
       .sort()
@@ -1588,30 +2011,369 @@ export function GraphMap({
       .join('|')
     const previousCaptions = idleCaptionsRef.current
     idleCaptionsRef.current = captions
-    if (idleIdsRef.current == null) idleIdsRef.current = ids
-    if (ids !== idleIdsRef.current || previousCaptions === captions) return
-    if (!movedRef.current) apiRef.current.fit()
+    currentIdsRef.current = ids
+    const plan = idleRefitPlan({
+      settled: initialSettledRef.current,
+      baselineIds: idleIdsRef.current,
+      ids,
+      captions,
+      previousCaptions,
+      moved: movedRef.current,
+    })
+    idleIdsRef.current = plan.baselineIds
+    if (plan.fit) {
+      requestSystemFitRef.current(
+        deferInitialFitForSheet(densityRef.current, selectedRef.current, sheetRef.current, placementRef.current)
+          ? 'sheet'
+          : 'initial',
+      )
+    }
   }, [scene])
 
   const selectedNode = scene.nodes.find((node) => node.id === selected) ?? null
   const density: GraphDensity = pane == null ? 'wide' : graphDensity(pane.width)
   densityRef.current = density
+  settledPaneWidthRef.current = pane?.width ?? 0
   const placement = detailPlacement(density, sheet, Boolean(selectedNode))
+  placementRef.current = placement
   const showProperties = propertiesOpen(density, sheet)
   const chrome = inspectorChrome(placement, pane?.height ?? 0)
+
+  const chromeKeyRef = useRef('')
+  const previousPaneRef = useRef<{ width: number; height: number } | null>(null)
+  const lastFullRef = useRef(full)
+  const fullRef = useRef(full)
+  fullRef.current = full
+  const paneRef = useRef(pane)
+  paneRef.current = pane
+
+  // The only place a system fit is decided. Every path below requests an
+  // explicit event; this re-reads the live pane, sheet, full-size and user
+  // camera state when the scheduled pass runs, so a mid-transition size or a
+  // sheet-less frame simply no-ops and waits for the next event.
+  runSystemFitRef.current = (event) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const narrowUntouched =
+      deferInitialFitForSheet(
+        densityRef.current,
+        selectedRef.current,
+        sheetRef.current,
+        placementRef.current,
+      ) && !movedRef.current
+    if (event === 'fullscreen' && narrowUntouched && fullRef.current) {
+      apiRef.current.remap()
+      return
+    }
+    const currentPane = paneRef.current
+    const paneReady = Boolean(
+      currentPane &&
+        Math.abs(canvas.clientWidth - currentPane.width) <= 1 &&
+        Math.abs(canvas.clientHeight - currentPane.height) <= 1,
+    )
+    const sim = simRef.current
+    const sheetExpected =
+      placementRef.current === 'sheet' ||
+      bottomCardOpenAt(densityRef.current, selectedRef.current, sheetRef.current, placementRef.current)
+    const sideOpen =
+      densityRef.current === 'wide' &&
+      Boolean(selectedRef.current) &&
+      propertiesOpen(densityRef.current, sheetRef.current)
+    const layoutReady = () => {
+      const layout = placedRef.current.nodes
+      const simNodes = sim?.nodes() ?? []
+      const simIds = new Set(simNodes.map((node) => node.id))
+      return layout.length === simNodes.length && layout.every((node) => simIds.has(node.id))
+    }
+    const action = requestSystemFit({
+      event,
+      placement: placementRef.current,
+      inspector: measureChromeBox(canvas, inspectorRef.current),
+      bottomCardOpen: bottomCardOpenAt(
+        densityRef.current,
+        selectedRef.current,
+        sheetRef.current,
+        placementRef.current,
+      ),
+      sideCardOpen: sideOpen,
+      labelsReady: sim ? fontsReady() && labelsDrawnRef.current === captionSignature(sim.nodes()) : false,
+      sheetStable: !sheetExpected || sheetStableRef.current,
+      paneSettled: paneSettleRef.current.settled,
+      paneReady,
+      moved: movedRef.current,
+      baselineFrozen: initialSettledRef.current,
+      loadEnded: initialEndedRef.current,
+      namesPending:
+        pendingNamesRef.current !== '' ||
+        placedObjectNamesPending(placedRef.current.nodes) ||
+        !layoutReady(),
+    })
+    if (action === 'none') return
+    if (action === 'remap') {
+      apiRef.current.remap()
+      return
+    }
+    apiRef.current.fit()
+  }
+  // A fit or remap restarts this. It clears only after the scheduler's last
+  // pass, and stays set while an open bottom sheet has not settled, so a
+  // later measured frame cannot land after the flag has gone idle.
+  markCameraBusyRef.current = () => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    canvas.dataset.cameraBusy = 'true'
+    if (cameraIdleTimerRef.current !== undefined) clearTimeout(cameraIdleTimerRef.current)
+    cameraIdleTimerRef.current = setTimeout(() => {
+      cameraIdleTimerRef.current = undefined
+      const node = canvasRef.current
+      if (!node) return
+      const sheetExpected = placementRef.current === 'sheet'
+      if (sheetExpected && !sheetStableRef.current) return
+      node.dataset.cameraBusy = 'false'
+    }, CAMERA_IDLE_AFTER_MS)
+  }
+  requestSystemFitRef.current = (event) => {
+    markCameraBusyRef.current()
+    // The settled bottom-sheet box and narrow full-size toggle must fit on the
+    // same turn; the debounced scheduler can be too late for Playwright.
+    const narrowSheet = deferInitialFitForSheet(
+      densityRef.current,
+      selectedRef.current,
+      sheetRef.current,
+      placementRef.current,
+    )
+    if (event === 'sheet' || (event === 'fullscreen' && narrowSheet)) {
+      runSystemFitRef.current(event)
+      fitSchedulerRef.current?.request(event)
+      return
+    }
+    fitSchedulerRef.current?.request(event)
+  }
+  useEffect(() => () => fitSchedulerRef.current?.cancel(), [])
+
+  useEffect(() => {
+    if (movedRef.current || initialSettledRef.current) return
+    if (!deferInitialFitForSheet(densityRef.current, selectedRef.current, sheetRef.current, placementRef.current)) return
+    requestSystemFitRef.current('sheet')
+  }, [known])
+
+  const focusCaption = scene.nodes.find((node) => node.id === focusId)?.caption ?? ''
+  useEffect(() => {
+    if (movedRef.current || initialSettledRef.current || !focusCaption) return
+    if (!deferInitialFitForSheet(densityRef.current, selectedRef.current, sheetRef.current, placementRef.current)) return
+    requestSystemFitRef.current('sheet')
+  }, [focusCaption])
+
+  useEffect(() => {
+    // A caption measured before its web font finished loading is not a final
+    // label box. Retry the first-load fit once the font set is ready, unless
+    // the user already owns the camera or the load has settled.
+    const fonts = typeof document !== 'undefined' ? document.fonts : undefined
+    if (!fonts) return
+    let cancelled = false
+    void fonts.ready.then(() => {
+      if (cancelled || movedRef.current) return
+      if (deferInitialFitForSheet(densityRef.current, selectedRef.current, sheetRef.current, placementRef.current)) {
+        requestSystemFitRef.current('sheet')
+        return
+      }
+      if (!initialSettledRef.current) requestSystemFitRef.current('initial')
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    // The first pane measurement is event A's frame; every later size is a real
+    // pane resize (event C). The system fit re-checks that the canvas still
+    // matches the pane, so a resize during Close full size cannot fit a
+    // leftover full-size canvas as if it were final.
+    const previous = previousPaneRef.current
+    previousPaneRef.current = pane ? { width: pane.width, height: pane.height } : null
+    if (!pane) return
+    if (previous && previous.width === pane.width && previous.height === pane.height) return
+    if (!previous) {
+      if (
+        !deferInitialFitForSheet(densityRef.current, selectedRef.current, sheetRef.current, placementRef.current)
+      ) {
+        requestSystemFitRef.current('initial')
+      }
+      return
+    }
+    requestSystemFitRef.current('resize')
+  }, [pane])
+
+  useEffect(() => {
+    // Event B: fullscreen open or close. The pane effect (C) and the first-sheet
+    // observer (D) may supply the complete frame after this; requesting B on
+    // mount would be a phantom toggle, so skip it.
+    if (lastFullRef.current === full) return
+    const closing = lastFullRef.current && !full
+    lastFullRef.current = full
+    const narrowSheet = deferInitialFitForSheet(
+      densityRef.current,
+      selectedRef.current,
+      sheetRef.current,
+      placementRef.current,
+    )
+    // Markers published on the first fullscreen frame are not the settled
+    // camera: the scheduler's later pass measures the side card. Hold the
+    // settled flag until that pass has run so a menu reads one position.
+    const canvas = canvasRef.current
+    if (canvas && !movedRef.current) {
+      canvas.dataset.settled = 'false'
+      canvas.dataset.settling = 'true'
+    }
+    const releaseSettled = window.setTimeout(() => {
+      const node = canvasRef.current
+      if (!node || node.dataset.settling !== 'true') return
+      node.dataset.settled = 'true'
+      node.dataset.settling = 'false'
+    }, CAMERA_IDLE_AFTER_MS)
+    if (closing && narrowSheet && !movedRef.current) {
+      sheetStableRef.current = false
+      chromeMeasuredRef.current = false
+      markCameraBusyRef.current()
+      const finish = () => {
+        if (movedRef.current) return
+        if (!paneSettleRef.current.settled) {
+          requestAnimationFrame(finish)
+          return
+        }
+        requestSystemFitRef.current('resize')
+        requestSystemFitRef.current('sheet')
+      }
+      requestAnimationFrame(finish)
+      return () => window.clearTimeout(releaseSettled)
+    }
+    requestSystemFitRef.current('fullscreen')
+    return () => window.clearTimeout(releaseSettled)
+  }, [full])
+
+  useEffect(() => {
+    // Event D: a bottom sheet is an overlay, so it appears without resizing the
+    // canvas. The observer may only catch the first *settled* box for this
+    // placement/pane key; after that, inspector growth (add-link, expand, a
+    // late name) is content and must never refit an untouched camera. A side
+    // card is never observed.
+    const key = `${placement}:${pane?.width ?? 0}x${pane?.height ?? 0}`
+    const previous = chromeKeyRef.current
+    const changed = previous !== key
+    chromeKeyRef.current = key
+
+    let observer: ResizeObserver | undefined
+    let quietFrame: number | null = null
+    let quietTimer: ReturnType<typeof setTimeout> | undefined
+    const clearQuiet = () => {
+      if (quietFrame !== null) {
+        cancelAnimationFrame(quietFrame)
+        quietFrame = null
+      }
+      if (quietTimer !== undefined) {
+        clearTimeout(quietTimer)
+        quietTimer = undefined
+      }
+    }
+
+    if (placement === 'sheet') {
+      // A fresh sheet key starts unmeasured: do not gate a later fit on a
+      // previous stable box, and wait for this sheet to settle. The `sheet`
+      // request below is scheduled async, so it reads the reset flag.
+      sheetStableRef.current = false
+      markCameraBusyRef.current()
+      // The first box is only the settled sheet once the load's names and
+      // captions are ready: a late name reflow can pass through a short quiet
+      // window between two otherwise identical layouts. Only then may the box
+      // hold still for the longer quiet window and freeze the free frame.
+      const namesReady = () => {
+        const simNodes = simRef.current?.nodes() ?? []
+        const layout = placedRef.current.nodes
+        const simIds = new Set(simNodes.map((node) => node.id))
+        const layoutReady =
+          layout.length === simNodes.length && layout.every((node) => simIds.has(node.id))
+        return (
+          pendingNamesRef.current === '' &&
+          !sceneRef.current.nodes.some((node) => node.kind === 'object' && node.rawCaption) &&
+          layoutReady &&
+          fontsReady() &&
+          labelsDrawnRef.current === captionSignature(simNodes)
+        )
+      }
+      let candidate: Box | null = null
+      const arm = () => {
+        quietTimer = setTimeout(() => {
+          quietTimer = undefined
+          const next = canvasRef.current
+          if (!next || sheetStableRef.current) return
+          if (!namesReady()) {
+            // Names are still resolving or the current captions have not been
+            // measured: the card can still grow. Re-check rather than accept a
+            // box that is about to reflow. A later resize cancels this timer.
+            arm()
+            return
+          }
+          const now = measureChromeBox(next, inspectorRef.current)
+          if (chromeSheetBoxSettled({ previous: candidate, current: now, quiet: true, namesReady: true })) {
+            sheetStableRef.current = true
+            requestSystemFitRef.current('sheet')
+            observer?.disconnect()
+          }
+        }, SHEET_QUIET_MS)
+      }
+      observer = new ResizeObserver(() => {
+        const canvas = canvasRef.current
+        if (!canvas || sheetStableRef.current) return
+        const box = measureChromeBox(canvas, inspectorRef.current)
+        if (!box) return
+        candidate = box
+        clearQuiet()
+        // Wait a frame or two: if the box is unchanged when the quiet window
+        // ends it is the settled sheet, not a mid-transition height.
+        quietFrame = requestAnimationFrame(() => {
+          quietFrame = null
+          arm()
+        })
+      })
+      for (const element of [inspectorRef.current, legendRef.current]) {
+        if (element) observer.observe(element)
+      }
+    } else if (
+      bottomCardOpenAt(densityRef.current, selectedRef.current, sheetRef.current, placement)
+    ) {
+      sheetStableRef.current = false
+    } else {
+      sheetStableRef.current = true
+    }
+
+    if (changed && pane && placement !== 'hidden') {
+      if (placement === 'sheet') requestSystemFitRef.current('sheet')
+      else if (previous !== '') requestSystemFitRef.current('resize')
+    }
+    return () => {
+      clearQuiet()
+      observer?.disconnect()
+    }
+  }, [placement, pane])
   const pinned = Boolean(
     pinTick >= 0 && simRef.current?.nodes().some((node) => node.id === selected && node.fx != null && node.fy != null),
   )
   useLayoutEffect(() => {
-    // Selecting a node grows the inspector. Refit while the camera is still
-    // the system's so the published node marker stays on the canvas, not under
-    // the panel (a drag that starts under the panel never pins).
+    // Selecting a node grows the inspector. Ask for the same measured-frame fit
+    // as F5 and Close full size; the gate waits until that frame is complete
+    // instead of fitting the pre-sheet box.
     if (movedRef.current) return
     const inspector = inspectorRef.current
     if (!inspector) return
     const box = inspector.getBoundingClientRect()
     if (box.width < 2 || box.height < 2) return
-    apiRef.current.fit()
+    if (
+      deferInitialFitForSheet(densityRef.current, selectedRef.current, sheetRef.current, placementRef.current)
+    ) {
+      requestSystemFitRef.current('sheet')
+      return
+    }
+    requestSystemFitRef.current(initialSettledRef.current ? 'resize' : 'initial')
   }, [selected, showProperties, pinned, placement, chrome.maxHeightPx])
   const shown = placed.nodes.filter((node) => !isLegendHidden(hidden, node))
   const shownFocus = focused || menuFocusRef.current
@@ -1682,7 +2444,7 @@ export function GraphMap({
       defsRef.current,
       anchor.x,
       anchor.y,
-      (request) => setAdd(request),
+      openAddLink,
       avoid,
       stage,
       obstacles,
@@ -1789,11 +2551,26 @@ export function GraphMap({
               ref={canvasRef}
               className="graph"
               data-testid="graph"
+              data-camera-busy="true"
               role="img"
               aria-label={copy.graph}
               tabIndex={0}
               onKeyDown={onKey}
             />
+            <div className="graph-labels" data-testid="graph-labels" aria-hidden="true">
+              {Object.entries(markers).map(([id, marker]) =>
+                marker.shown && marker.localLabel ? (
+                  <span
+                    key={id}
+                    className="graph-label"
+                    data-graph-label={id}
+                    style={{ left: marker.localLabel.left + 4, top: marker.localLabel.top }}
+                  >
+                    {scene.nodes.find((node) => node.id === id)?.caption ?? ''}
+                  </span>
+                ) : null,
+              )}
+            </div>
             {focusedNode && focusRing ? (
               <span
                 className="graph-focus-ring"
@@ -2135,6 +2912,10 @@ function GraphInspector({
   )
 }
 
+function measureChromeBox(canvas: HTMLCanvasElement, element: HTMLElement | null): Box | null {
+  return measureChromeBoxes(canvas, [element])[0] ?? null
+}
+
 function measureChromeBoxes(canvas: HTMLCanvasElement, elements: Array<HTMLElement | null>): Box[] {
   const origin = canvas.getBoundingClientRect()
   const boxes: Box[] = []
@@ -2280,13 +3061,6 @@ async function resolveNames(ids: string[], base: Record<string, KnownObject>) {
   }
 }
 
-function bendOf(id: string, len: number) {
-  let hash = 0
-  for (let index = 0; index < id.length; index += 1) hash = (hash * 33 + id.charCodeAt(index)) >>> 0
-  const sign = hash % 2 === 0 ? 1 : -1
-  return sign * Math.min(72, Math.max(18, len * 0.18))
-}
-
 function boxOverlap(a: EdgeLabelBox, b: EdgeLabelBox) {
   const width = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)
   const height = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y)
@@ -2301,6 +3075,13 @@ function discOverlap(box: EdgeLabelBox, node: EdgeLabelNode) {
   const distanceSq = dx * dx + dy * dy
   if (distanceSq >= node.radius * node.radius) return 0
   return node.radius - Math.sqrt(distanceSq)
+}
+
+function bendOf(id: string, len: number) {
+  let hash = 0
+  for (let index = 0; index < id.length; index += 1) hash = (hash * 33 + id.charCodeAt(index)) >>> 0
+  const sign = hash % 2 === 0 ? 1 : -1
+  return sign * Math.min(72, Math.max(18, len * 0.18))
 }
 
 function curveTangent(
