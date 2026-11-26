@@ -711,13 +711,15 @@ impl Store {
             }
             Some(row) => {
                 let stored: DateTime<Utc> = row.get(1);
-                let matches = match expected_updated_at.as_deref() {
-                    None => false,
-                    Some(raw) => tx
-                        .query_one("SELECT $1::timestamptz = $2::timestamptz", &[&raw, &stored])
-                        .await?
-                        .get(0),
-                };
+                // Compare in process. Casting the parameter to timestamptz makes
+                // Postgres expect a binary timestamp, and the text the client sent
+                // then fails to serialize.
+                let matches = expected_updated_at
+                    .as_deref()
+                    .and_then(|raw| DateTime::parse_from_rfc3339(raw).ok())
+                    .is_some_and(|stamp| {
+                        stamp.with_timezone(&Utc).timestamp_micros() == stored.timestamp_micros()
+                    });
                 if !matches {
                     WorkspaceStateWrite::Stale
                 } else {

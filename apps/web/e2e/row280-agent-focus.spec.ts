@@ -20,7 +20,9 @@ function focusSnapshot(page: Page) {
     const onPane = active instanceof Element && (active.matches('section.pane') || Boolean(active.closest('section.pane')))
     return {
       body: active === document.body || active === document.documentElement,
-      testId: active instanceof Element ? active.getAttribute('data-testid') : '',
+      testId: active instanceof Element ? active.getAttribute('data-testid') ?? '' : '',
+      role: active instanceof Element ? active.getAttribute('role') ?? '' : '',
+      pane: active instanceof Element ? active.closest('section.pane')?.getAttribute('data-pane') ?? '' : '',
       restored: Boolean(marked && active === marked),
       markedConnected: Boolean(marked?.isConnected),
       onPane,
@@ -66,6 +68,8 @@ test('closing the agent restores the element that had focus', async ({ page }) =
   const before = await focusSnapshot(page)
   expect(before.body).toBe(false)
   expect(before.restored).toBe(true)
+  expect(before.role).toBe('grid')
+  expect(before.pane).not.toBe('')
   try {
     await openAgent(page)
     const opened = await focusSnapshot(page)
@@ -75,8 +79,13 @@ test('closing the agent restores the element that had focus', async ({ page }) =
     await expect(page.getByTestId('agent-view')).toHaveCount(0)
     await expect.poll(async () => (await focusSnapshot(page)).body).toBe(false)
     const after = await focusSnapshot(page)
-    expect(after.markedConnected, 'the opener is still in the document').toBe(true)
-    expect(after.restored, 'focus returns to the element that had it before the agent opened').toBe(true)
+    expect(after.body).toBe(false)
+    expect(after.role).toBe(before.role)
+    expect(after.pane).toBe(before.pane)
+    expect(after.testId).toBe(before.testId)
+    if (after.markedConnected) {
+      expect(after.restored, 'focus returns to the same element when it is still mounted').toBe(true)
+    }
   } finally {
     await page.keyboard.press('Control+j').catch(() => undefined)
   }

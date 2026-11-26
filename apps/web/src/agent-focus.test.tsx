@@ -129,6 +129,25 @@ describe('restoreAgentFocus', () => {
     expect(document.activeElement?.closest('section.pane')).not.toBeNull()
   })
 
+  it('focuses the replacement control when the dock reparents the pane', () => {
+    const { grid, ask } = mountDock()
+    grid.focus()
+    captureAgentOpener()
+    ask.focus()
+    const pane = document.querySelector('section.pane[data-pane="products"]') as HTMLElement
+    grid.remove()
+    const next = document.createElement('div')
+    next.className = 'grid'
+    next.tabIndex = 0
+    next.setAttribute('role', 'grid')
+    next.setAttribute('data-testid', 'object-table')
+    pane.append(next)
+    const target = restoreAgentFocus({ leftPaneId: null, preferredPaneId: 'products' })
+    expect(target).toBe(next)
+    expect(document.activeElement).toBe(next)
+    expect(document.activeElement).not.toBe(document.body)
+  })
+
   it('focuses the remaining pane after the agent pane itself is gone', () => {
     const { grid, ask } = mountDock()
     grid.focus()

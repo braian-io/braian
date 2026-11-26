@@ -5,17 +5,29 @@ export type AgentFocusRequest = {
   preferredPaneId: string | null
 }
 
+type Hint = {
+  id: string
+  testId: string
+  role: string
+  paneId: string
+}
+
 type Memory = {
   element: HTMLElement | null
   paneId: string | null
+  /** Enough to find the control again after the dock reparents its pane. */
+  hint: Hint
 }
 
-const memory: Memory = { element: null, paneId: null }
+const emptyHint: Hint = { id: '', testId: '', role: '', paneId: '' }
+
+const memory: Memory = { element: null, paneId: null, hint: { ...emptyHint } }
 let release = false
 
 export function resetAgentFocusForTests() {
   memory.element = null
   memory.paneId = null
+  memory.hint = { ...emptyHint }
   release = false
 }
 
@@ -34,6 +46,12 @@ export function captureAgentOpener() {
     : false
   memory.element = active
   memory.paneId = !agentPane && paneId ? paneId : dockFocus && dockFocus !== paneId ? dockFocus : paneId
+  memory.hint = {
+    id: active.id,
+    testId: active.getAttribute('data-testid') ?? '',
+    role: active.getAttribute('role') ?? '',
+    paneId: paneId ?? '',
+  }
 }
 
 export function markAgentFocusRelease() {
@@ -74,11 +92,38 @@ function paneElement(id: string | null): HTMLElement | null {
   return node instanceof HTMLElement && node.isConnected ? node : null
 }
 
+function outsideAgent(node: HTMLElement) {
+  return !node.closest('[data-testid="agent-view"], [data-testid="command-palette"]')
+}
+
+/** The dock moves a pane into a split when the agent opens, which replaces the node. */
+function replacementElement(): HTMLElement | null {
+  const hint = memory.hint
+  const pane = paneElement(hint.paneId)
+  const scope = pane ?? document
+  const pick = (selector: string) => {
+    const node = scope.querySelector(selector)
+    return node instanceof HTMLElement && node.isConnected && outsideAgent(node) ? node : null
+  }
+  if (hint.id) {
+    const node = document.getElementById(hint.id)
+    if (node instanceof HTMLElement && node.isConnected && outsideAgent(node)) return node
+  }
+  if (hint.testId) {
+    const found = pick(`[data-testid="${cssEscape(hint.testId)}"]`)
+    if (found) return found
+  }
+  if (hint.role) {
+    const found = pick(`[role="${cssEscape(hint.role)}"]`)
+    if (found) return found
+  }
+  return null
+}
+
 function previousElement(): HTMLElement | null {
   const node = memory.element
-  if (!node?.isConnected) return null
-  if (node.closest('[data-testid="agent-view"]')) return null
-  return node
+  if (node?.isConnected && outsideAgent(node)) return node
+  return replacementElement()
 }
 
 /** Move focus back. Returns the element that received it, or null when nothing focusable remains. */
