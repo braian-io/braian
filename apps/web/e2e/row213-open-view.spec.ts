@@ -3,12 +3,11 @@ import { mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { demoCredentials } from './demo'
+import { productsTablePanes, resetProductsLayout } from './ui'
 
 // Keep screenshots inside the checkout so CI runners can write them.
 const shots = join(dirname(fileURLToPath(import.meta.url)), '..', 'test-results', 'row213-shots')
 mkdirSync(shots, { recursive: true })
-
-const PRODUCTS_TOKEN = 'braian-type-product'
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -17,28 +16,6 @@ async function login(page: Page) {
   await page.getByTestId('password').fill(demo.password)
   await page.getByRole('button', { name: 'Sign in' }).click()
   await expect(page.getByTestId('dock')).toBeVisible({ timeout: 60_000 })
-  await expect(
-    page.locator('.pane-tab[data-view-type="object_table"]').filter({ hasText: 'Products' }).first(),
-  ).toBeVisible({ timeout: 60_000 })
-}
-
-async function resetProductsLayout(page: Page) {
-  await page.evaluate(() => sessionStorage.setItem('braian.layout.suppressFlush', '1'))
-  const listed = await page.request.get('/v1/workspaces')
-  expect(listed.ok()).toBeTruthy()
-  const body = (await listed.json()) as { workspaces: Array<{ id: string; share_token?: string | null }> }
-  const row = body.workspaces.find((item) => item.share_token === PRODUCTS_TOKEN)
-  if (!row) throw new Error('missing canonical Products workspace')
-  const me = await page.request.get('/v1/me')
-  const userId = ((await me.json()) as { user_id?: string }).user_id
-  if (userId) {
-    await page.evaluate((key) => localStorage.removeItem(key), `braian.layout.${userId}.default.${row.id}`)
-  }
-  const deleted = await page.request.delete(`/v1/workspaces/${row.id}/state?environment=default`)
-  expect(deleted.ok() || deleted.status() === 204).toBeTruthy()
-  await page.reload()
-  await expect(page.getByTestId('dock')).toBeVisible({ timeout: 60_000 })
-  await page.evaluate(() => sessionStorage.removeItem('braian.layout.suppressFlush'))
 }
 
 async function openPalette(page: Page) {
@@ -58,12 +35,6 @@ async function openOpenViewSublist(page: Page) {
   return palette
 }
 
-function productPanes(page: Page): Locator {
-  return page.locator('section.pane').filter({
-    has: page.locator('.pane-tab[data-view-type="object_table"]', { hasText: 'Products' }),
-  })
-}
-
 function treePane(page: Page): Locator {
   return page.locator('section.pane').filter({
     has: page.locator('.pane-tab[data-view-type="structure_tree"]'),
@@ -74,7 +45,7 @@ test('Open view focuses an open view in place and Add view stays in the palette'
   test.setTimeout(120_000)
   await login(page)
   await resetProductsLayout(page)
-
+  try {
   // Put the tree in focus first: a move would steal this pane.
   await expect(treePane(page).getByTestId('structure-tree')).toBeVisible()
   const treeBefore = await treePane(page).getAttribute('data-views')
@@ -83,7 +54,7 @@ test('Open view focuses an open view in place and Add view stays in the palette'
   await expect(page.getByTestId('graph')).toBeVisible()
   await treePane(page).locator('.pane-tab[data-view-type="structure_tree"]').first().click()
   await expect(treePane(page).getByTestId('structure-tree')).toBeVisible()
-  await expect(productPanes(page)).toHaveCount(1)
+  await expect(productsTablePanes(page)).toHaveCount(1)
 
   const palette = await openOpenViewSublist(page)
   await palette.getByTestId('palette-input').fill('Products')
@@ -98,9 +69,9 @@ test('Open view focuses an open view in place and Add view stays in the palette'
   await expect(treePane(page)).toHaveAttribute('data-views', treeBefore ?? '')
   await expect(treePane(page)).toHaveAttribute('data-pane', treePaneId ?? '')
   await expect(page.getByTestId('graph')).toBeVisible()
-  await expect(productPanes(page)).toHaveCount(1)
-  await expect(productPanes(page).getByTestId('object-table')).toBeVisible()
-  await expect(productPanes(page).getByTestId('object-row').first()).toBeVisible()
+  await expect(productsTablePanes(page)).toHaveCount(1)
+  await expect(productsTablePanes(page).getByTestId('object-table')).toBeVisible()
+  await expect(productsTablePanes(page).getByTestId('object-row').first()).toBeVisible()
   await page.screenshot({ path: `${shots}/row213-02-open-view-in-place.png` })
 
   // Add view is a root command, found by typing its name, and opens a submenu.
@@ -114,16 +85,19 @@ test('Open view focuses an open view in place and Add view stays in the palette'
   await expect(addPalette.getByRole('option', { name: /^Products view/ })).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(addPalette).toHaveCount(0)
+  } finally {
+    await resetProductsLayout(page)
+  }
 })
 
 test('Add view → Products view opens a second table and keeps the tree', async ({ page }) => {
   test.setTimeout(120_000)
   await login(page)
   await resetProductsLayout(page)
-
+  try {
   await expect(treePane(page).getByTestId('structure-tree')).toBeVisible()
   const treeBefore = await treePane(page).getAttribute('data-views')
-  await productPanes(page).getByTestId('object-row').first().click()
+  await productsTablePanes(page).getByTestId('object-row').first().click()
 
   const palette = await openPalette(page)
   await palette.getByTestId('palette-input').fill('Add view')
@@ -136,7 +110,7 @@ test('Add view → Products view opens a second table and keeps the tree', async
   await typeRow.click()
   await expect(palette).toHaveCount(0)
 
-  const panes = productPanes(page)
+  const panes = productsTablePanes(page)
   await expect(panes).toHaveCount(2, { timeout: 30_000 })
   for (let index = 0; index < 2; index += 1) {
     await expect(panes.nth(index).getByTestId('object-row').first()).toBeVisible()
@@ -169,16 +143,19 @@ test('Add view → Products view opens a second table and keeps the tree', async
   const duplicateTab = right.locator('.pane-tab[data-view-type="object_table"]').first()
   await duplicateTab.hover()
   await duplicateTab.getByRole('button', { name: 'Close tab' }).click()
-  await expect(productPanes(page)).toHaveCount(1)
-  await expect(productPanes(page).getByTestId('object-row').first()).toBeVisible()
+  await expect(productsTablePanes(page)).toHaveCount(1)
+  await expect(productsTablePanes(page).getByTestId('object-row').first()).toBeVisible()
   await expect(treePane(page).getByTestId('structure-tree')).toBeVisible()
+  } finally {
+    await resetProductsLayout(page)
+  }
 })
 
 test('Open view does not list old agent runs, and closing its tab keeps the run', async ({ page }) => {
   test.setTimeout(120_000)
   await login(page)
   await resetProductsLayout(page)
-
+  try {
   const title = `agent note ${Date.now().toString().slice(-6)}`
   const palette = await openPalette(page)
   await palette.getByTestId('palette-input').fill(title)
@@ -217,6 +194,9 @@ test('Open view does not list old agent runs, and closing its tab keeps the run'
   const after = (await (await page.request.get('/v1/agent/runs')).json()) as { runs: Array<{ id: string; title: string }> }
   expect(after.runs.some((item) => item.id === run.id)).toBeTruthy()
   await page.screenshot({ path: `${shots}/row213-07-agent-tab-closed-run-kept.png` })
+  } finally {
+    await resetProductsLayout(page)
+  }
 })
 
 async function dragOver(page: Page, source: Locator, target: Locator) {

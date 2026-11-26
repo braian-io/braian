@@ -21,6 +21,18 @@ async function command(page: Page, title: string) {
   await expect(palette).toBeHidden()
 }
 
+async function modelCreateCommand(page: Page, title: string) {
+  await command(page, title)
+  const dialog = page.getByTestId('model-dialog')
+  await expect(dialog).toBeVisible({ timeout: 30_000 })
+  return dialog
+}
+
+async function saveModelDialog(page: Page) {
+  await page.getByTestId('model-dialog-save').click()
+  await expect(page.getByTestId('model-dialog')).toHaveCount(0, { timeout: 30_000 })
+}
+
 async function openTypeAttributes(page: Page, typeKey: string) {
   await page.locator('nav.tabs').getByRole('button', { name: /^Data model/ }).click()
   const objectTypes = page.locator('.pane-tab', { hasText: 'Object types' }).first()
@@ -62,17 +74,16 @@ test('type attribute rule columns stage, save, and restore (row 47)', async ({ p
   test.setTimeout(180_000)
   await login(page)
   await command(page, 'Data model')
+  await expect(page.getByTestId('data-model').first()).toBeVisible({ timeout: 60_000 })
 
-  await command(page, 'New value list')
+  await modelCreateCommand(page, 'New value list')
   await page.getByTestId('model-dialog-name').fill('ROW47 Colors')
   await page.getByTestId('model-dialog-options').fill('Red, Blue')
-  await page.getByTestId('model-dialog-save').click()
-  await expect(page.getByTestId('model-dialog')).toHaveCount(0)
+  await saveModelDialog(page)
 
-  await command(page, 'New type')
+  await modelCreateCommand(page, 'New type')
   await page.getByTestId('model-dialog-name').fill('ROW47 Demo')
-  await page.getByTestId('model-dialog-save').click()
-  await expect(page.getByTestId('model-dialog')).toHaveCount(0)
+  await saveModelDialog(page)
 
   const attributes = await openTypeAttributes(page, 'row47_demo')
 

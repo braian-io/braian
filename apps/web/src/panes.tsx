@@ -4618,6 +4618,18 @@ const MODEL_OP_LABELS: Record<string, string> = {
   upsert_merge_profile: 'Merge profile',
   delete_merge_profile: 'Merge profile',
   set_ownership_rules: 'Ownership',
+  add_members: 'Add to selection',
+  remove_members: 'Remove from selection',
+}
+
+function membershipSummary(row: Json): string {
+  const patch = row.patch
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return ''
+  const record = patch as Json
+  const op = String(record.op ?? '')
+  if (op !== 'add_members' && op !== 'remove_members') return ''
+  const summary = typeof record.summary === 'string' ? record.summary.trim() : ''
+  return summary || String(row.object_key ?? '')
 }
 
 function modelOpLabel(op: string) {
@@ -4638,6 +4650,7 @@ function SuggestionCard({
   onToggle: (lineId: string) => void
 }) {
   const model = row.type_key === 'model' || row.type_key === 'assortment'
+  const membership = membershipSummary(row)
   const lines = model ? [] : suggestionLines(current, row.patch, defs)
   const pending = row.status === 'pending'
   return (
@@ -4666,6 +4679,7 @@ function SuggestionCard({
           </Button>
         ) : null}
       </h3>
+      {membership ? <p data-testid="membership-summary">{membership}</p> : null}
       {lines.map((line) => {
         const id = `${String(row.id)}:${line.id}`
         const rejected = dropped.has(id)
