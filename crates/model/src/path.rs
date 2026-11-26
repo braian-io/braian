@@ -515,6 +515,23 @@ pub fn path_index_field(path: &AttributePath, defs: &DefinitionSet) -> Result<St
     })
 }
 
+/// A filter Typesense can run is comparisons joined by `&&`.
+///
+/// Free text such as `cheddar` has no field operator. Saving it used to succeed
+/// and then fail later as `Could not parse the filter query`.
+pub fn explain_filter_syntax(filter: &str) -> Result<(), String> {
+    for part in filter.split("&&") {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        if split_clause(part).is_none() {
+            return Err("Could not parse the filter query.".into());
+        }
+    }
+    Ok(())
+}
+
 /// Rewrite a filter so each attribute address becomes a Typesense field.
 ///
 /// `net_weight.unit = g` and `net_weight.unit:=g` both become the unit field.
@@ -1133,6 +1150,16 @@ mod tests {
             path_label(&sort, &defs, "en"),
             "Articles › link › Sort order"
         );
+    }
+
+    #[test]
+    fn free_text_is_not_a_filter_query() {
+        let err = explain_filter_syntax("cheddar").unwrap_err();
+        assert!(err.contains("Could not parse the filter query"), "{err}");
+        assert!(explain_filter_syntax("type_key:=product && cheddar").is_err());
+        assert!(explain_filter_syntax("type_key:=product && groups:=food:cheese").is_ok());
+        assert!(explain_filter_syntax("groups:=assortment:root").is_ok());
+        assert!(explain_filter_syntax("").is_ok());
     }
 
     #[test]

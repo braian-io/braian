@@ -1094,14 +1094,20 @@ select.link-type-line { width: 100%; font-weight: 600; }
 .status-bar-action:hover { color: var(--text); }
 .draft-bar {
   display: flex;
-  gap: var(--space-3);
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
   align-items: center;
-  margin: 0 var(--space-1_5) var(--space-1_5);
+  margin: 0 0 var(--space-1_5);
   padding: var(--space-1_5) var(--space-2_5);
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   background: var(--panel);
   border-radius: var(--r-lg);
   box-shadow: var(--inset);
 }
+.draft-bar > span:first-child { flex: 1 1 8rem; min-width: 0; }
+.draft-bar .btn { flex: none; }
 .model-reload-bar { color: var(--text-2); }
 
 .standard-table-bar {

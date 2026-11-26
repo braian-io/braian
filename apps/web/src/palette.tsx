@@ -1000,8 +1000,10 @@ export function CommandPalette({
       return
     }
     if (id === 'selection:save-filter') {
-      const filter = readUiContext().filterExpression
-      if (!filter) {
+      const snapshot = readUiContext()
+      const filter = snapshot.filterExpression
+      const q = snapshot.q.trim()
+      if (!filter && !q) {
         session.push(copy.saveFilterNeeds)
         onClose()
         return
@@ -1010,6 +1012,7 @@ export function CommandPalette({
       requestNewSelection({
         kind: 'dynamic',
         query: dynamicSelectionFilter(filter, type),
+        q,
         type,
       })
       onClose()

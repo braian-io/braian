@@ -52,4 +52,22 @@ describe('ObjectDraftBar pending state', () => {
     expect((save as HTMLButtonElement).disabled).toBe(false)
     expect((screen.getByTestId('discard-draft') as HTMLButtonElement).disabled).toBe(false)
   })
+
+  it('says one unsaved change and many unsaved changes', () => {
+    const { rerender } = bar()
+    expect(screen.getByTestId('object-draft-bar').textContent).toContain('1 unsaved change')
+    expect(screen.getByTestId('object-draft-bar').textContent).not.toContain('1 unsaved changes')
+    rerender(
+      <ObjectDraftBar
+        count={2}
+        canSave
+        canDiscard
+        saveReason=""
+        discardReason=""
+        onSave={vi.fn()}
+        onDiscard={vi.fn()}
+      />,
+    )
+    expect(screen.getByTestId('object-draft-bar').textContent).toContain('2 unsaved changes')
+  })
 })
