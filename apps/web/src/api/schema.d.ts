@@ -617,6 +617,23 @@ export interface paths {
         patch: operations["import_row_edit"];
         trace?: never;
     };
+    "/v1/imports/{id}/saved-mapping": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply a saved mapping, or clear it */
+        post: operations["import_apply_saved_mapping"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/imports/{id}/sheet": {
         parameters: {
             query?: never;
@@ -1930,6 +1947,13 @@ export interface components {
             name: components["schemas"]["JsonValue"];
             result: components["schemas"]["JsonValue"];
         };
+        ApplySavedBody: {
+            /**
+             * Format: uuid
+             * @description Saved mapping to apply. Null maps the columns again without one.
+             */
+            mapping_id?: string | null;
+        };
         AsOfView: {
             deleted: boolean;
             /** Format: int64 */
@@ -3079,13 +3103,23 @@ export interface components {
             name: string;
         };
         SavedMappingView: {
+            /** @description True when this caller may rename or delete the mapping. */
+            can_edit: boolean;
             columns: components["schemas"]["JsonValue"];
+            created_at: string;
+            /** @description Display name of the person who saved the mapping. */
+            created_by: string;
+            /** Format: uuid */
+            created_by_id: string;
             empty_clears: boolean;
+            header_signature: string;
             headers: components["schemas"]["JsonValue"];
             /** Format: uuid */
             id: string;
+            id_header?: string | null;
             name: string;
             type: string;
+            updated_at: string;
         };
         SearchGroup: {
             /** Format: int32 */
@@ -5010,6 +5044,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ImportRowEdited"];
+                };
+            };
+            /** @description Missing or unknown token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    import_apply_saved_mapping: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Import id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplySavedBody"];
+            };
+        };
+        responses: {
+            /** @description Session after the saved mapping was applied */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportSessionView"];
                 };
             };
             /** @description Missing or unknown token */

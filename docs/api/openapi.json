@@ -2348,6 +2348,64 @@
         ]
       }
     },
+    "/v1/imports/{id}/saved-mapping": {
+      "post": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Apply a saved mapping, or clear it",
+        "operationId": "import_apply_saved_mapping",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Import id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplySavedBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Session after the saved mapping was applied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportSessionView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or unknown token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/v1/imports/{id}/sheet": {
       "post": {
         "tags": [
@@ -7886,6 +7944,19 @@
           }
         }
       },
+      "ApplySavedBody": {
+        "type": "object",
+        "properties": {
+          "mapping_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Saved mapping to apply. Null maps the columns again without one."
+          }
+        }
+      },
       "AsOfView": {
         "type": "object",
         "required": [
@@ -12174,14 +12245,38 @@
           "type",
           "headers",
           "columns",
-          "empty_clears"
+          "empty_clears",
+          "header_signature",
+          "created_by",
+          "created_by_id",
+          "created_at",
+          "updated_at",
+          "can_edit"
         ],
         "properties": {
+          "can_edit": {
+            "type": "boolean",
+            "description": "True when this caller may rename or delete the mapping."
+          },
           "columns": {
             "$ref": "#/components/schemas/JsonValue"
           },
+          "created_at": {
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string",
+            "description": "Display name of the person who saved the mapping."
+          },
+          "created_by_id": {
+            "type": "string",
+            "format": "uuid"
+          },
           "empty_clears": {
             "type": "boolean"
+          },
+          "header_signature": {
+            "type": "string"
           },
           "headers": {
             "$ref": "#/components/schemas/JsonValue"
@@ -12190,10 +12285,19 @@
             "type": "string",
             "format": "uuid"
           },
+          "id_header": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "name": {
             "type": "string"
           },
           "type": {
+            "type": "string"
+          },
+          "updated_at": {
             "type": "string"
           }
         }

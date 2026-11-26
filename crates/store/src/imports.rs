@@ -1,5 +1,6 @@
 //! Import sessions and the disposable diff rows.
 
+use chrono::{DateTime, Utc};
 use serde_json::Value;
 use tokio_postgres::binary_copy::BinaryCopyInWriter;
 use tokio_postgres::types::{ToSql, Type};
@@ -823,7 +824,12 @@ pub struct SavedMapping {
     pub headers: Value,
     pub mapping: Value,
     pub created_by: Uuid,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
+
+const SAVED_MAPPING_COLUMNS: &str =
+    "id, name, type_key, header_signature, headers, mapping, created_by, created_at, updated_at";
 
 impl Store {
     /// Cell edits made in the Check step.
@@ -945,12 +951,28 @@ impl Store {
         let client = self.pool().get().await?;
         let rows = client
             .query(
-                "SELECT id, name, type_key, header_signature, headers, mapping, created_by
-                 FROM import_mappings WHERE deleted_at IS NULL ORDER BY name",
+                &format!(
+                    "SELECT {SAVED_MAPPING_COLUMNS}
+                     FROM import_mappings WHERE deleted_at IS NULL ORDER BY name"
+                ),
                 &[],
             )
             .await?;
         Ok(rows.iter().map(saved_mapping).collect())
+    }
+
+    pub async fn import_mapping(&self, id: Uuid) -> Result<Option<SavedMapping>, Error> {
+        let client = self.pool().get().await?;
+        let row = client
+            .query_opt(
+                &format!(
+                    "SELECT {SAVED_MAPPING_COLUMNS}
+                     FROM import_mappings WHERE id = $1 AND deleted_at IS NULL"
+                ),
+                &[&id],
+            )
+            .await?;
+        Ok(row.as_ref().map(saved_mapping))
     }
 
     pub async fn mappings_for_signature(
@@ -960,10 +982,12 @@ impl Store {
         let client = self.pool().get().await?;
         let rows = client
             .query(
-                "SELECT id, name, type_key, header_signature, headers, mapping, created_by
-                 FROM import_mappings
-                 WHERE header_signature = $1 AND deleted_at IS NULL
-                 ORDER BY updated_at DESC",
+                &format!(
+                    "SELECT {SAVED_MAPPING_COLUMNS}
+                     FROM import_mappings
+                     WHERE header_signature = $1 AND deleted_at IS NULL
+                     ORDER BY updated_at DESC"
+                ),
                 &[&signature],
             )
             .await?;
@@ -1024,5 +1048,7 @@ fn saved_mapping(row: &tokio_postgres::Row) -> SavedMapping {
         headers: row.get(4),
         mapping: row.get(5),
         created_by: row.get(6),
+        created_at: row.get(7),
+        updated_at: row.get(8),
     }
 }
