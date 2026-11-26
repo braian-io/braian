@@ -5832,16 +5832,38 @@ fn update_row(object: &Value, key: &str, name: &str) -> Value {
 
 async fn create_source_catalog(app: &axum::Router, key: &str) -> Value {
     let body = json!({ "key": key, "name": "Other source", "kind": "source", "editable": true });
-    let (status, _, catalog) = call(
+    let (status, _, proposed) = call(
         app,
         "POST",
         "/v1/catalogs",
-        Some(HUMAN),
+        Some(AGENT),
         &[("content-type", "application/json")],
         Some(&body.to_string()),
     )
     .await;
-    assert_eq!(status, StatusCode::CREATED, "{catalog}");
+    assert_eq!(status, StatusCode::ACCEPTED, "{proposed}");
+    assert_eq!(proposed["applied"], false, "{proposed}");
+    let id = proposed["proposal_id"].as_str().expect("proposal id");
+    let (status, _, accepted) = call(
+        app,
+        "POST",
+        &format!("/v1/proposals/{id}/accept"),
+        Some(HUMAN),
+        &[("content-type", "application/json")],
+        Some("{}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{accepted}");
+    let (status, _, catalog) = call(
+        app,
+        "GET",
+        &format!("/v1/catalogs/{key}"),
+        Some(HUMAN),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{catalog}");
     catalog
 }
 

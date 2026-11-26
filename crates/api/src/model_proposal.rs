@@ -36,7 +36,22 @@ pub async fn propose_with_defs(
     defs: &DefinitionSet,
 ) -> Result<Value, Problem> {
     let changes = changes_from(name, args, defs)?;
+    file_model_proposal(state, identity, changes, defs, None, args).await
+}
+
+/// One model proposal. Nothing is written until the proposal is accepted.
+pub(crate) async fn file_model_proposal(
+    state: &AppState,
+    identity: &Identity,
+    changes: Vec<ModelChange>,
+    defs: &DefinitionSet,
+    title: Option<&str>,
+    args: &Value,
+) -> Result<Value, Problem> {
     for change in &changes {
+        if let ModelChange::UpsertCatalog { catalog } = change {
+            reject_catalog_key_change(state, catalog).await?;
+        }
         crate::structures::guard_model_change(state, &identity.actor, change, false).await?;
     }
     if changes.is_empty() {
@@ -51,7 +66,10 @@ pub async fn propose_with_defs(
     }
     let (after, impact) = preview(defs, &changes).map_err(model_status)?;
     CompiledModel::compile(&after).map_err(Problem::definitions)?;
-    let title = title_for(args, &impact.lines);
+    let title = title
+        .map(str::to_owned)
+        .filter(|text| !text.is_empty())
+        .unwrap_or_else(|| title_for(args, &impact.lines));
     let source = match identity.kind {
         braian_store::PrincipalKind::Agent => "agent",
         braian_store::PrincipalKind::Integration => "import",
@@ -328,6 +346,51 @@ fn ownership_references_profile(key: &str, attributes: &[String]) -> Problem {
     )
 }
 
+/// The catalog this step updates, looked up by the new key or `renamed_from`.
+async fn stored_catalog(
+    state: &AppState,
+    catalog: &braian_model::Catalog,
+) -> Result<Option<braian_store::CatalogRecord>, Problem> {
+    match state
+        .store
+        .catalog_by_key(&catalog.key)
+        .await
+        .map_err(store_status)?
+    {
+        Some(found) => Ok(Some(found)),
+        None => match catalog.renamed_from.as_deref() {
+            Some(old) => state.store.catalog_by_key(old).await.map_err(store_status),
+            None => Ok(None),
+        },
+    }
+}
+
+/// A catalog key is assigned when the catalog is created. After that the key
+/// stays, including on the master catalog.
+pub(crate) async fn reject_catalog_key_change(
+    state: &AppState,
+    catalog: &braian_model::Catalog,
+) -> Result<(), Problem> {
+    let Some(found) = stored_catalog(state, catalog).await? else {
+        return Ok(());
+    };
+    if found.key == catalog.key {
+        return Ok(());
+    }
+    if found.kind == braian_store::CatalogKind::Master {
+        return Err(Problem::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "catalog_key_locked",
+            "The master catalog key cannot be changed.",
+        ));
+    }
+    Err(Problem::new(
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "catalog_key_locked",
+        "Catalog key cannot be changed after creation.",
+    ))
+}
+
 /// Catalogs, merge profiles and ownership live outside the definition set.
 /// Their keys resolve to ids just before the row commits.
 pub(crate) async fn reference_write(
@@ -337,22 +400,8 @@ pub(crate) async fn reference_write(
 ) -> Result<Option<ProposalWrite>, Problem> {
     match change {
         ModelChange::UpsertCatalog { catalog } => {
-            let existing = match state
-                .store
-                .catalog_by_key(&catalog.key)
-                .await
-                .map_err(store_status)?
-            {
-                Some(found) => Some(found),
-                None => match catalog.renamed_from.as_deref() {
-                    Some(old) => state
-                        .store
-                        .catalog_by_key(old)
-                        .await
-                        .map_err(store_status)?,
-                    None => None,
-                },
-            };
+            reject_catalog_key_change(state, catalog).await?;
+            let existing = stored_catalog(state, catalog).await?;
             let kind = match catalog.kind {
                 braian_model::CatalogKind::Master => "master",
                 braian_model::CatalogKind::Source => "source",
