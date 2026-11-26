@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
-import { mainTable } from './ui'
+import { mainTable, paneWithTab } from './ui'
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -101,8 +101,10 @@ test.describe('no success toasts', () => {
     const articles = mainTable(page, 'Articles')
     await expect(articles.getByTestId('object-row').first()).toBeVisible()
     const article = articles.getByTestId('object-row').filter({ hasText: 'ART-OAT-1L' }).first()
-    await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
-    const products = mainTable(page)
+    const productsPane = paneWithTab(page, 'Products')
+    const show = productsPane.getByTestId('peer-show-all')
+    if (await show.isVisible()) await show.click()
+    const products = mainTable(page, 'Products')
     await expect(products.getByTestId('object-row').first()).toBeVisible()
     const product = products.getByTestId('object-row').filter({ hasText: 'PROD-COFFEE' }).first()
     await article.dragTo(product)

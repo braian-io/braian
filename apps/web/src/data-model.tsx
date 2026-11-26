@@ -45,6 +45,7 @@ import { valueListLabel } from './value-list-table-steps'
 import { registerModelTableDraft, tryChooseModelSelection } from './model-table-draft'
 import { buildAttributeCreateSteps, buildAttributeUpdateSteps } from './attribute-table-steps'
 import { MODEL_RELOADED_EVENT } from './model-reload-banner'
+import { stashModelPaneNotice, takeModelPaneNotice } from './model-pane-notice'
 import { CreateDialog, requireText } from './create-dialog'
 import { onAttributeAction, type AttributeAction } from './attribute-actions'
 import { writeErrorMessage } from './write-error'
@@ -249,6 +250,7 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
   const [pendingKey, setPendingKey] = useState<string | null>(null)
   const [activeRowId, setActiveRowId] = useState<string | null>(null)
   const restoredDraftToken = useRef('')
+  const previousSelectionKey = useRef('')
   const selectionKey = selection ? (selection.kind === 'type' ? selection.typeKey : `${selection.structure}/${selection.group}`) : ''
   const keyAttribute = keyAttributeOf(defs, selection)
   const families = ((defs?.unit_families as Json[]) ?? []).map((item) => String(item.key ?? '')).filter(Boolean)
@@ -264,13 +266,34 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
   )
 
   useEffect(() => {
+    if (previousSelectionKey.current && previousSelectionKey.current !== selectionKey) {
+      setPaneNotice(null)
+    }
+    previousSelectionKey.current = selectionKey
     setFilter('')
     setMessage('')
-    setPaneNotice(null)
     setCreateOpen(false)
     setPendingKey(null)
     setActiveRowId(null)
     setTypeHeaderPatch({})
+  }, [selectionKey])
+
+  const applyDraftRestoreNotices = (restored: ReturnType<typeof validateStoredModelTableDraft>) => {
+    const lines: string[] = []
+    if (restored.trimmed) lines.push(copy.modelTableDraftRestoreTrimmed)
+    for (const dropped of restored.droppedFields) {
+      lines.push(copy.modelTableDraftRestoreFieldDropped(dropped.attributeKey, dropped.field))
+    }
+    if (lines.length > 0) {
+      const text = lines.join(' ')
+      stashModelPaneNotice(text)
+      setPaneNotice({ text })
+    }
+  }
+
+  useEffect(() => {
+    const text = takeModelPaneNotice()
+    if (text) setPaneNotice({ text })
   }, [selectionKey])
 
   useEffect(() => {
@@ -302,12 +325,7 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
     setTypeHeaderPatch(restored.typeHeader ?? {})
     setPendingDetach(new Set(restored.pendingDetach))
     setPendingDelete(new Set(restored.pendingDelete))
-    if (restored.trimmed) setPaneNotice({ text: copy.modelTableDraftRestoreTrimmed })
-    for (const dropped of restored.droppedFields) {
-      setPaneNotice({
-        text: copy.modelTableDraftRestoreFieldDropped(dropped.attributeKey, dropped.field),
-      })
-    }
+    applyDraftRestoreNotices(restored)
   }, [selectionKey, draftScope?.userId, draftScope?.workspaceId, selection, defs])
 
   const rows = useMemo(() => {
@@ -634,12 +652,7 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
       setTypeHeaderPatch(restored.typeHeader ?? {})
       setPendingDetach(new Set(restored.pendingDetach))
       setPendingDelete(new Set(restored.pendingDelete))
-      if (restored.trimmed) setPaneNotice({ text: copy.modelTableDraftRestoreTrimmed })
-      for (const dropped of restored.droppedFields) {
-        setPaneNotice({
-          text: copy.modelTableDraftRestoreFieldDropped(dropped.attributeKey, dropped.field),
-        })
-      }
+      applyDraftRestoreNotices(restored)
     }
     window.addEventListener(MODEL_RELOADED_EVENT, reconcileAfterReload)
     return () => window.removeEventListener(MODEL_RELOADED_EVENT, reconcileAfterReload)
