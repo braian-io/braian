@@ -135,7 +135,9 @@ test.describe('demo 196 link field errors and replace', () => {
       await expect(dialog).toBeHidden()
       await expect(page.locator('[data-testid="inline-action-notice"]')).toHaveCount(0)
       await articleRow.click()
-      await expect(page.getByTestId('link-section-feedback')).toContainText('Replaced the existing link')
+      await expect(
+        page.getByRole('region', { name: 'Product' }).getByTestId('link-section-feedback'),
+      ).toContainText('Replaced the existing link')
       expect(await productPeers(page, article.id)).toEqual([b.id])
 
       // K3: a first link with a numeric Sort order still saves and can be removed from the row.

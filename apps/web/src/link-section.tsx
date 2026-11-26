@@ -83,7 +83,7 @@ export function LinkSections({
     if (detail.sectionObjectId !== objectId) return
     if (detail.hint) {
       const sectionKey = detail.linkType && detail.direction ? `${detail.linkType}:${detail.direction}` : 'default'
-      setSectionHints((current) => ({ ...current, [sectionKey]: detail.hint! }))
+      setSectionHints((current) => ({ ...current, [sectionKey]: detail.hint!, default: detail.hint! }))
       const timer = window.setTimeout(() => {
         setSectionHints((current) => {
           const next = { ...current }
