@@ -5,7 +5,8 @@ import { Button } from './components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
 import { writeErrorMessage } from './write-error'
-import { formatCount, formatTimestamp } from './format'
+import { formatTimestamp } from './format'
+import { unsavedChangeLabel } from './object-draft-bar'
 import { copy, uiLanguage } from './i18n'
 import { attributeKey } from './model-view'
 import {
@@ -561,7 +562,7 @@ export function ModelDraftHost() {
     <>
       {count > 0 ? (
         <div className="draft-bar" data-testid="unsaved-changes" role="status">
-          <span>{formatCount(count)} {copy.unsavedChanges}</span>
+          <span>{unsavedChangeLabel(count)}</span>
           {draft.data?.updated_at ? <time dateTime={String(draft.data.updated_at)}>{formatTimestamp(draft.data.updated_at)}</time> : null}
           {conflict ? <span>{copy.draftConflict} {draft.data?.updated_at ? formatTimestamp(draft.data.updated_at) : ''}</span> : null}
           {conflict ? (

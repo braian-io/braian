@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { useMemo, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AssortmentList, SelectionHost } from './assortments'
+import { discardSelectionDraft } from './selection-draft'
 import {
   requestDeleteSelection,
   requestEditSelection,
@@ -77,6 +78,12 @@ beforeEach(() => {
       }
       if (url.pathname === '/v1/assortments' && method === 'POST') {
         const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+        if (body.query === 'cheddar') {
+          return Response.json(
+            { code: 'invalid_query', detail: 'Could not parse the filter query.' },
+            { status: 422 },
+          )
+        }
         writes.push({ method, path: url.pathname, body })
         const created: Doc = {
           id: `new-${docs.length + 1}`,
@@ -107,6 +114,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  discardSelectionDraft()
   cleanup()
   vi.unstubAllGlobals()
 })
@@ -214,17 +222,64 @@ describe('selection drafts', () => {
     act(() => requestNewSelection({
       kind: 'dynamic',
       query: 'type_key:=product && groups:=food:cheese',
+      q: 'oat',
       type: 'product',
     }))
     await screen.findByTestId('selection-detail')
     expect((screen.getByTestId('selection-kind') as HTMLSelectElement).value).toBe('dynamic')
     expect((screen.getByTestId('selection-query') as HTMLInputElement).value).toBe('type_key:=product && groups:=food:cheese')
+    expect((screen.getByTestId('selection-search') as HTMLInputElement).value).toBe('oat')
+    expect(screen.queryByTestId('object-draft-bar')).toBeNull()
     expect(writes).toHaveLength(0)
 
-    fireEvent.click(screen.getByTestId('discard-draft'))
+    fireEvent.keyDown(window, { key: 'Escape' })
     await waitFor(() => expect(screen.queryByTestId('selection-detail')).toBeNull())
     expect(writes).toHaveLength(0)
     expect(docs).toHaveLength(0)
+  })
+
+  it('hides the draft bar until a real edit and pluralises the count', async () => {
+    render(<Harness />)
+    fireEvent.click(screen.getByTestId('new-selection-button'))
+    const detail = await screen.findByTestId('selection-detail')
+    expect(screen.queryByTestId('object-draft-bar')).toBeNull()
+    expect(within(detail).getByTestId('selection-hint').textContent).toContain('Add to selection')
+
+    fireEvent.change(screen.getByTestId('assortment-name'), { target: { value: 'A' } })
+    expect(within(detail).getByTestId('object-draft-bar').textContent).toContain('1 unsaved change')
+    expect(within(detail).getByTestId('object-draft-bar').textContent).not.toContain('1 unsaved changes')
+
+    fireEvent.change(screen.getByTestId('selection-kind'), { target: { value: 'dynamic' } })
+    expect(within(detail).getByTestId('selection-hint').textContent).toContain('follows a filter query')
+    expect(within(detail).getByTestId('selection-hint').textContent).not.toMatch(/filled by hand/i)
+    expect(within(detail).getByTestId('object-draft-bar').textContent).toContain('2 unsaved changes')
+  })
+
+  it('shows an inline name error when Save has an empty name', async () => {
+    render(<Harness />)
+    fireEvent.click(screen.getByTestId('new-selection-button'))
+    const detail = await screen.findByTestId('selection-detail')
+    fireEvent.change(screen.getByTestId('selection-kind'), { target: { value: 'dynamic' } })
+    fireEvent.click(within(detail).getByTestId('review-and-save'))
+    expect(within(detail).getByTestId('selection-name-error').textContent).toContain('Enter a name.')
+    expect(writes).toHaveLength(0)
+    expect(docs).toHaveLength(0)
+  })
+
+  it('shows the server filter error on the query field', async () => {
+    render(<Harness />)
+    fireEvent.click(screen.getByTestId('new-selection-button'))
+    const detail = await screen.findByTestId('selection-detail')
+    fireEvent.change(screen.getByTestId('assortment-name'), { target: { value: 'Cheddar text' } })
+    fireEvent.change(screen.getByTestId('selection-kind'), { target: { value: 'dynamic' } })
+    fireEvent.change(screen.getByTestId('selection-query'), { target: { value: 'cheddar' } })
+    fireEvent.click(within(detail).getByTestId('review-and-save'))
+    await waitFor(() => {
+      expect(within(detail).getByTestId('selection-query-error').textContent).toContain('Could not parse the filter query')
+    })
+    expect(writes).toHaveLength(0)
+    expect(docs).toHaveLength(0)
+    expect(screen.getByTestId('selection-detail')).toBeTruthy()
   })
 
   it('previews an empty manual selection as zero matches, not every object', async () => {
