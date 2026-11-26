@@ -24,7 +24,7 @@ export const hero = {
     { value: '64 ms', label: 'save to searchable, p50' },
     { value: '20 ms', label: 'save to every open session, p50' },
   ],
-  caption: 'Demo workspace',
+  caption: 'Illustration: workspace',
 } as const
 
 export const workspaces = {
@@ -58,16 +58,20 @@ export const model = {
   points: [
     {
       title: 'Types from scratch',
-      body: 'Entity types and link types. Each type names its key attribute and the attributes it uses. There is no built-in article or product type.',
+      body: 'The Data model workspace edits structures, object types, link types, value lists and units. Each type names its key attribute and the attributes it uses. The engine ships no built-in article or product type; the demo’s Product and Article types are seed data you can edit or remove.',
     },
     {
       title: 'Attributes carry the rules',
-      body: 'Type, length, value lists, units and languages live on the shared attribute. A group only decides where the attribute applies. Values are never inherited or copied.',
-      code: 'type · length · value list · unit',
+      body: 'An attribute is shared. Its rules are the value type, length, languages, value list, unit, multiple values, and min and max on a number. The types you add are text, number, boolean, date, value list, range and file. A reference attribute stores another object and is edited on the object. A group only decides where the attribute applies. Values are never inherited or copied.',
+      code: 'type · value list · unit · min/max',
+    },
+    {
+      title: 'Units convert, including temperature',
+      body: 'A unit family converts to its base unit with a factor and an offset. Length and mass use a factor. Temperature uses the offset too, so Celsius, Fahrenheit and Kelvin filter and sort on one scale. The stored number keeps the unit you entered.',
     },
     {
       title: 'Relations are typed objects',
-      body: 'A link type has two directions with their own labels and cardinality. Create links from Detail, by drag, or from the graph; a link row can carry its own values.',
+      body: 'A link type has two directions with their own labels and cardinality. Create a link from Detail, by dragging a row onto another table, or from the graph. A link row can carry its own values, including a numeric sort order.',
     },
     {
       title: 'Definitions are versioned',
@@ -83,7 +87,7 @@ export const sources = {
   points: [
     {
       title: 'Select source',
-      body: 'From the view menu or Ctrl+K › Data source. The list is filtered by the view’s bound type, not by the source it happens to use today.',
+      body: 'From the view menu’s Select source or Ctrl+K › Data source. The list is filtered by the view’s bound type, not by the source it happens to use today.',
       code: 'Ctrl+K › Data source',
     },
     {
@@ -98,6 +102,10 @@ export const sources = {
       title: 'No silent blank',
       body: 'An empty source says so and offers Show all. A choice that would close a follow chain is shown disabled as a cycle.',
     },
+    {
+      title: 'Saved selections',
+      body: 'A selection is a saved filter, shown as a chip, not a live table source. A dynamic selection follows a filter query. A manual one is filled by choosing rows or dragging them onto the selection. Nothing is written until Save.',
+    },
   ],
 } as const
 
@@ -108,11 +116,11 @@ export const graph = {
   points: [
     {
       title: 'Around the selection',
-      body: 'The graph opens on the selected object and draws its groups, attribute values and directly linked peers, with labelled edges.',
+      body: 'The graph opens on the selected object and draws its groups, attribute values and directly linked peers, with labelled edges. Object references are not drawn as value nodes.',
     },
     {
       title: 'Expand on demand',
-      body: 'Enter or the node menu expands a peer one more hop. A group node reveals its members; in the model graph, a type reveals the structures it may use.',
+      body: 'Enter, a double-click or the node menu expands a peer one more hop. A group node reveals its members. In the model graph, a type reveals the structures it may use.',
     },
     {
       title: 'Model graph',
@@ -120,31 +128,31 @@ export const graph = {
     },
     {
       title: 'Built to stay readable',
-      body: 'Force layout, Fit and Re-layout, pinned nodes, and labels that avoid stacking. The scene stops at 400 nodes with a visible hint.',
+      body: 'Force layout, Fit and Re-layout. Drag a node to pin it. Unpin on the inspector, or Re-layout, releases the pin; a click does not. Edge labels do not overlap: a label without a free spot is hidden. The scene stops at 400 nodes with a visible hint.',
     },
   ],
 } as const
 
 export const agent = {
-  eyebrow: 'Ctrl+K',
+  eyebrow: 'Agent',
   title: 'An agent that does the work, you approve',
   lede: 'The agent proposes. A person saves.',
   points: [
     {
       title: 'Works where you are',
-      body: 'It opens views, filters, selects rows and places panes in your workspace. You see each step as it happens. There is no separate chat window.',
+      body: 'Ctrl+J opens a docked Agent pane. The agent opens views, filters, selects rows and places panes in your workspace. With the command palette open, Ctrl+J sends the current query to the agent. Follow-ups stay in the same session.',
     },
     {
       title: 'Acts as you, except delete',
-      body: 'It runs with your permissions and calls the same operations as the screen. It cannot delete objects or links, accept its own proposals, or run a merge. A person does those.',
+      body: 'It runs with your permissions and calls the same operations as the screen. It cannot delete objects or links, accept or discard its own proposals, run a merge, or wipe a catalog. A person does those.',
     },
     {
       title: 'Suggests, never saves',
-      body: 'Agent edits arrive as suggested changes you review as a diff and save. Human cell edits are drafts too. A delete is the exception: once you confirm, it is written immediately.',
+      body: 'An object proposal opens as a draft with one Save bar: in Detail when that object is open, otherwise in the table. Discard throws it away. A multi-row proposal in Review uses Save all. A delete is the exception: once you confirm, it is written immediately.',
     },
     {
       title: 'A person behind every change',
-      body: 'History records who saved each change and which agent suggested it. A rollback is a new suggestion, never a rewrite of the past.',
+      body: 'History names the person who saved each change and marks changes that came via the agent. A rollback is a new suggestion, never a rewrite of the past.',
     },
   ],
 } as const
@@ -169,16 +177,16 @@ export const agentSession = {
 
 export const deleteFlows = {
   eyebrow: 'Delete and restore',
-  title: 'Delete is deliberate. Restore puts it back.',
-  lede: 'Four ways in, one confirmation, and a Trash that also returns cascade-deleted links.',
+  title: 'Delete is deliberate. Trash keeps the way back.',
+  lede: 'Four ways in, one confirmation, and Trash can restore or purge.',
   points: [
     {
       title: 'Four entry points',
       body: 'Delete from the row or cell menu, the Detail header, Ctrl+K, or the Delete key on selected rows. All four open the same dialog.',
     },
     {
-      title: 'Counts first',
-      body: 'The dialog asks the server for a dry run and shows how many objects and links will disappear. Cancel has focus; Escape writes nothing.',
+      title: 'Dry run first',
+      body: 'The dialog asks the server for a dry run and shows how many objects and links will be removed. Links removed with the selection count as links. Cancel has focus; Escape writes nothing.',
       code: '?dry_run=1',
     },
     {
@@ -186,8 +194,8 @@ export const deleteFlows = {
       body: 'A human delete is immediate after confirmation. It does not wait for Save. Multi-select deletes after one confirm and stops at the first error.',
     },
     {
-      title: 'Trash restores the cascade',
-      body: 'Restore brings back the object and the links that were removed in the same event. Links deleted separately stay deleted.',
+      title: 'Trash, restore, purge',
+      body: 'Deleted objects appear in Trash. Restore brings the object back together with the links removed in that same deletion. Delete permanently purges an item, and that cannot be undone.',
     },
     {
       title: 'Agents cannot delete',
@@ -225,7 +233,7 @@ export const architecture = {
   principles: [
     {
       title: 'One operation registry',
-      body: 'The UI, Ctrl+K, the agent, the REST API and MCP call the same named operations with the same permission checks. The agent is the same person with a narrower surface: it cannot delete objects or links or save its own proposals.',
+      body: 'The UI, Ctrl+K, the agent, the REST API and MCP call the same named operations with the same permission checks. Saved views are written with POST /v1/views. The agent is the same person with a narrower surface: it cannot delete objects or links or save its own proposals.',
       code: 'patch_object · mass_edit · ui.filter',
     },
     {
@@ -240,7 +248,7 @@ export const architecture = {
     },
     {
       title: 'Transformation is code',
-      body: 'Imports and exports are programs you own and version, not mappings locked inside an import tool. The API validates every write either way.',
+      body: 'Imports and exports are programs you own and version. The built-in import keeps its saved column mappings in the Import mappings view, and the API validates every write either way.',
       code: 'type · length · value list · unit',
     },
     {
@@ -250,7 +258,7 @@ export const architecture = {
     },
     {
       title: 'Fast by default',
-      body: 'A PATCH answers in 17.5 ms at p50. The same validation rules compile to WebAssembly, so the browser checks a field before it is sent.',
+      body: 'A PATCH answers in 17.5 ms at p50. The API checks type, length, value lists, units, and min and max on every write, and the same rules crate compiles to WebAssembly.',
       code: 'crates/rules → wasm32',
     },
   ],

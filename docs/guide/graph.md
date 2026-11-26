@@ -68,5 +68,5 @@ may use. The model graph does not edit anything.
 
 ## Related
 
-- [Object types and relations](/docs/object-types-and-relations)
-- [Workspaces and panels](/docs/workspaces-and-panels)
+- [Object types and relations](/docs/object-types-and-relations/)
+- [Workspaces and panels](/docs/workspaces-and-panels/)

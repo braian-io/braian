@@ -136,7 +136,7 @@ const desktop: Layout = {
   height: 700,
   boxes: [
     { id: 'ui', x: 150, y: 72, w: 128, h: 58, title: 'UI', order: 0, seed: 11 },
-    { id: 'agent', x: 300, y: 58, w: 190, h: 84, title: 'Agent', sub: 'Ctrl+K · suggestions', order: 1, seed: 17 },
+    { id: 'agent', x: 300, y: 58, w: 190, h: 84, title: 'Agent', sub: 'proposes, you save', order: 1, seed: 17 },
     { id: 'api', x: 512, y: 72, w: 116, h: 58, title: 'API', order: 2, seed: 23 },
     { id: 'mcp', x: 648, y: 72, w: 168, h: 58, title: 'MCP clients', order: 3, seed: 29 },
     { id: 'op', x: 150, y: 176, w: 666, h: 54, title: 'Operation registry', sub: 'one shared layer', order: 8, seed: 31 },
@@ -321,7 +321,7 @@ const mobile: Layout = {
   height: 540,
   boxes: [
     { id: 'ui', x: 48, y: 36, w: 86, h: 48, title: 'UI', order: 0, seed: 11 },
-    { id: 'agent', x: 146, y: 28, w: 112, h: 64, title: 'Agent', sub: 'Ctrl+K', order: 1, seed: 17 },
+    { id: 'agent', x: 146, y: 28, w: 112, h: 64, title: 'Agent', sub: 'proposals', order: 1, seed: 17 },
     { id: 'api', x: 270, y: 36, w: 70, h: 48, title: 'API', order: 2, seed: 23 },
     { id: 'mcp', x: 352, y: 36, w: 72, h: 48, title: 'MCP', order: 3, seed: 29 },
     { id: 'op', x: 48, y: 116, w: 376, h: 48, title: 'Operation registry', sub: 'one shared layer', order: 8, seed: 31 },

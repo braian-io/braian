@@ -1539,6 +1539,11 @@ button.filter-chip:hover:not(.on) {
   background: color-mix(in srgb, var(--danger) 18%, transparent);
   color: var(--danger);
 }
+/* Light --danger on the 18% wash dips below 4.5:1; the filled danger hover fill is darker. */
+:root[data-theme='light'] .icon-btn.icon-danger:hover,
+:root[data-theme='light'] .icon-btn.icon-danger:focus-visible {
+  color: var(--danger-button-hover);
+}
 .detail-title { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; flex-wrap: wrap; }
 .detail-title strong { font-size: var(--text-2xl); font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
 .detail-id { flex: none; color: var(--muted); font-size: var(--text-md); font-variant-numeric: tabular-nums; }
