@@ -3097,6 +3097,12 @@ export interface components {
         StateBody: {
             document: components["schemas"]["FreeObject"];
             environment?: string | null;
+            /**
+             * @description RFC3339 `updated_at` this edit was based on.
+             *     JSON `null` means the client saw no saved layout.
+             *     Omit the field for a last-write-wins save.
+             */
+            expected_updated_at?: string | null;
         };
         StatsResponse: {
             by_type: components["schemas"]["TypeCount"][];
@@ -8304,6 +8310,15 @@ export interface operations {
             };
             /** @description Missing or unknown token */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The layout changed since expected_updated_at */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

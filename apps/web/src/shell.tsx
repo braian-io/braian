@@ -15,7 +15,7 @@ import { DeleteObjectsHost } from './delete-objects-dialog'
 import { requestDeleteObjects } from './delete-objects'
 import { UserMenu } from './user-menu'
 import { CatalogSelector } from './catalog-selector'
-import { api, freeObject, jsonRecord, keepaliveJsonPut, operationId, recordTitle, textValue, type Json } from './api'
+import { ApiError, api, freeObject, jsonRecord, keepaliveJsonPut, operationId, recordTitle, textValue, type Json } from './api'
 import { AssortmentList, SelectionHost } from './assortments'
 import { humanizeLive, liveOperation, objectIdFromLive } from './activity'
 import { isListPreview, loadObjectDetail, objectQueryStaleTime } from './object-list-preview'
@@ -94,6 +94,9 @@ import {
 } from './active-workspace'
 import { healAgentDockLayout } from './agent-layout-migrate'
 import { decideAgentToggle } from './agent-chat-toggle'
+import { captureAgentOpener, consumeAgentFocusRelease, restoreAgentFocus, type AgentFocusRequest } from './agent-focus'
+import { finishLayoutSave, noteLayoutEdit, saveVersionedLayout } from './layout-save'
+import { acknowledgeWriteError } from './write-status'
 import { healDataModelWorkspace, isDataModelWorkspace, isKnownViewType, layoutHasMissingViews, migrateLegacyModelViews } from './model-workspace-migrate'
 import { ModelRevisionReloadBanner, emitModelLiveEvent } from './model-reload-banner'
 import { isModelLiveEvent, modelRevisionFromDefinitions } from './model-revision-watch'
@@ -319,6 +322,13 @@ export function Shell() {
   // for the personal PUT and leaves this false, so the debounce cannot POST shared.
   const sharedLayoutDirtyRef = useRef(false)
   const saveGen = useRef(0)
+  const layoutSaveGate = useRef({ inflight: false, trailing: false })
+  const layoutBaseUpdatedAt = useRef<string | null>(null)
+  const layoutBaseDoc = useRef<LayoutDoc | null>(null)
+  const layoutVersioned = useRef(false)
+  const layoutBaseReady = useRef(false)
+  const [layoutSaveKick, setLayoutSaveKick] = useState(0)
+  const agentFocusRestoreRef = useRef<AgentFocusRequest | null>(null)
   const canonicalRef = useRef<LayoutDoc['layout'] | undefined>(undefined)
   const placeOverride = useRef<Place | undefined>(undefined)
   const loadedFor = useRef('')
@@ -612,6 +622,7 @@ export function Shell() {
         setTheme(themeRef.current === 'dark' ? 'light' : 'dark')
       }),
       registerCommandRunner('agent:open', () => {
+        captureAgentOpener()
         setFieldsEditColumnId(null)
         setPaletteStartAddView(false)
         setPaletteSourceTargetViewId(null)
@@ -1030,6 +1041,11 @@ export function Shell() {
     canonicalRef.current = canonical.layout
     sharedLayoutDirtyRef.current = false
     dirtyRef.current = false
+    layoutSaveGate.current = { inflight: false, trailing: false }
+    layoutBaseUpdatedAt.current = null
+    layoutBaseDoc.current = null
+    layoutVersioned.current = false
+    layoutBaseReady.current = false
     const local = readLayoutStore(key)
     const listed = viewRows(current.views)
     // Paint local or the shared layout first. A dangling or incomplete model
@@ -1099,10 +1115,18 @@ export function Shell() {
         // newer local edit that the next load writes back over the server.
         const sameAsServer = Boolean(serverDoc && JSON.stringify(next) === JSON.stringify(serverDoc))
         if (!serverHasPersonal || sameAsServer || diverged) writeLayoutStore(key, next)
+        layoutBaseUpdatedAt.current = server.updated_at ?? null
+        layoutBaseDoc.current = serverDoc
+        layoutVersioned.current = true
+        layoutBaseReady.current = true
+        if (dirtyRef.current) setLayoutSaveKick((value) => value + 1)
       })
       .catch((reason: unknown) => {
         // A missing personal layout is a 200 with a null document. Anything else
         // leaves the local copy on screen, and the user still needs the reason.
+        layoutVersioned.current = false
+        layoutBaseReady.current = true
+        if (dirtyRef.current) setLayoutSaveKick((value) => value + 1)
         reportWriteError(reason)
       })
     return () => {
@@ -1111,8 +1135,20 @@ export function Shell() {
   }, [workspaceId, userId, workspace.data?.id])
 
   useEffect(() => {
+    const request = agentFocusRestoreRef.current
+    if (!request) return
+    agentFocusRestoreRef.current = null
+    restoreAgentFocus(request)
+  }, [doc])
+
+  useEffect(() => {
     if (layoutFlushHeld()) return
     if (!doc || !dirtyRef.current || !workspaceId || !userId) return
+    if (!layoutBaseReady.current) return
+    if (layoutSaveGate.current.inflight) {
+      layoutSaveGate.current = noteLayoutEdit(layoutSaveGate.current)
+      return
+    }
     const gen = saveGen.current
     const timer = window.setTimeout(() => {
       // Checked at fire time. The flag is set without a re-render, so the
@@ -1121,44 +1157,96 @@ export function Shell() {
       const current = docRef.current
       const ws = workspaceRef.current
       if (!current || !ws || ws.id !== workspaceId || saveGen.current !== gen) return
-      void api.put('/v1/workspaces/{id}/state', {
-        params: { path: { id: workspaceId } },
-        body: { environment: LAYOUT_ENVIRONMENT, document: stampedLayout(current) },
-      }).then(() => {
-        if (saveGen.current === gen) dirtyRef.current = false
-      }).catch((reason: unknown) => {
-        reportWriteError(reason)
-      })
-      // Healed and other automatic layouts stay on the personal PUT above.
-      // Shared POST is only an explicit layout edit on an unlocked private workspace.
-      if (sharedLayoutDirtyRef.current && !editsArePersonal(ws)) {
-        void api.post('/v1/workspaces', { body: {
-            id: ws.id,
-            name: ws.name,
-            locked: ws.locked,
-            share_token: ws.share_token,
-            layout: current.layout,
-          } }).then(() => {
-          if (saveGen.current !== gen) return
-          sharedLayoutDirtyRef.current = false
-          canonicalRef.current = current.layout
-        }).catch((reason: unknown) => {
-          reportWriteError(reason)
+      if (layoutSaveGate.current.inflight) {
+        layoutSaveGate.current = noteLayoutEdit(layoutSaveGate.current)
+        return
+      }
+      layoutSaveGate.current = { inflight: true, trailing: false }
+      const versioned = layoutVersioned.current
+      const putLayout = (document: LayoutDoc, expectedUpdatedAt: string | null) => {
+        const body: {
+          environment: string
+          document: { [key: string]: unknown }
+          expected_updated_at?: string | null
+        } = {
+          environment: LAYOUT_ENVIRONMENT,
+          document: stampedLayout(document),
+        }
+        if (versioned) body.expected_updated_at = expectedUpdatedAt
+        return api.put('/v1/workspaces/{id}/state', {
+          params: { path: { id: workspaceId } },
+          body,
         })
       }
+      const persist = versioned
+        ? saveVersionedLayout({
+            baseUpdatedAt: layoutBaseUpdatedAt.current,
+            baseDocument: layoutBaseDoc.current,
+            localDocument: current,
+            latest: () => docRef.current ?? current,
+            put: putLayout,
+            refetch: async () => {
+              const fresh = await api.get('/v1/workspaces/{id}/state', {
+                params: { path: { id: workspaceId }, query: { environment: LAYOUT_ENVIRONMENT } },
+              })
+              return {
+                document: fresh.document ? migrateDoc(fresh.document) : null,
+                updated_at: fresh.updated_at ?? null,
+              }
+            },
+            isConflict: (error) => error instanceof ApiError && error.status === 409,
+            onConflict: () => acknowledgeWriteError(409),
+          })
+        : putLayout(current, null).then((saved) => ({ document: current, updated_at: saved.updated_at }))
+      void persist.then((saved) => {
+        layoutBaseUpdatedAt.current = saved.updated_at
+        layoutBaseDoc.current = saved.document
+        layoutVersioned.current = true
+        if (saveGen.current === gen) dirtyRef.current = false
+        else layoutSaveGate.current = noteLayoutEdit({ ...layoutSaveGate.current, inflight: true })
+        // Healed and other automatic layouts stay on the personal PUT above.
+        // Shared POST is only an explicit layout edit on an unlocked private workspace.
+        if (sharedLayoutDirtyRef.current && !editsArePersonal(ws) && saveGen.current === gen) {
+          void api.post('/v1/workspaces', { body: {
+              id: ws.id,
+              name: ws.name,
+              locked: ws.locked,
+              share_token: ws.share_token,
+              layout: saved.document.layout,
+            } }).then(() => {
+            if (saveGen.current !== gen) return
+            sharedLayoutDirtyRef.current = false
+            canonicalRef.current = saved.document.layout
+          }).catch((reason: unknown) => {
+            reportWriteError(reason)
+          })
+        }
+      }).catch((reason: unknown) => {
+        reportWriteError(reason)
+      }).finally(() => {
+        const finished = finishLayoutSave(layoutSaveGate.current)
+        layoutSaveGate.current = finished.gate
+        if (finished.again && dirtyRef.current) setLayoutSaveKick((value) => value + 1)
+      })
     }, 700)
     return () => window.clearTimeout(timer)
-  }, [doc, workspaceId, userId])
+  }, [doc, workspaceId, userId, layoutSaveKick])
 
   useEffect(() => {
     const flush = () => {
       if (layoutSaveBlocked()) return
       const current = docRef.current
       if (!dirtyRef.current || !current || !workspaceId) return
-      keepaliveJsonPut(`/v1/workspaces/${workspaceId}/state`, {
+      const body: {
+        environment: string
+        document: { [key: string]: unknown }
+        expected_updated_at?: string | null
+      } = {
         environment: LAYOUT_ENVIRONMENT,
         document: stampedLayout(current),
-      })
+      }
+      if (layoutVersioned.current) body.expected_updated_at = layoutBaseUpdatedAt.current
+      keepaliveJsonPut(`/v1/workspaces/${workspaceId}/state`, body)
     }
     const onHide = () => {
       if (document.visibilityState === 'hidden') flush()
@@ -1196,6 +1284,7 @@ export function Shell() {
       // Fields mode is still the palette, and Ctrl+K there returns to the root list.
       const open = document.querySelector('[data-testid="command-palette"]')
       if (open && open.getAttribute('data-fields-mode') !== 'true') return
+      captureAgentOpener()
       // Remount at list root (clears Fields › / stack left from Select fields ›) and
       // focus synchronously so the first typed character is not dropped.
       flushSync(() => {
@@ -1500,10 +1589,40 @@ export function Shell() {
         sharedLayoutDirtyRef.current = false
         setDoc(next)
         loadedFor.current = `${userId}:${current.id}`
-        await api.put('/v1/workspaces/{id}/state', {
-          params: { path: { id: current.id } },
-          body: { environment: LAYOUT_ENVIRONMENT, document: stampedLayout(next) },
-        })
+        const saved = layoutVersioned.current
+          ? await saveVersionedLayout({
+              baseUpdatedAt: layoutBaseUpdatedAt.current,
+              baseDocument: layoutBaseDoc.current,
+              localDocument: next,
+              latest: () => (docRef.current?.id === next.id ? docRef.current : next),
+              put: (document, expectedUpdatedAt) => api.put('/v1/workspaces/{id}/state', {
+                params: { path: { id: current.id } },
+                body: {
+                  environment: LAYOUT_ENVIRONMENT,
+                  document: stampedLayout(document),
+                  expected_updated_at: expectedUpdatedAt,
+                },
+              }),
+              refetch: async () => {
+                const fresh = await api.get('/v1/workspaces/{id}/state', {
+                  params: { path: { id: current.id }, query: { environment: LAYOUT_ENVIRONMENT } },
+                })
+                return {
+                  document: fresh.document ? migrateDoc(fresh.document) : null,
+                  updated_at: fresh.updated_at ?? null,
+                }
+              },
+              isConflict: (error) => error instanceof ApiError && error.status === 409,
+              onConflict: () => acknowledgeWriteError(409),
+            })
+          : await api.put('/v1/workspaces/{id}/state', {
+              params: { path: { id: current.id } },
+              body: { environment: LAYOUT_ENVIRONMENT, document: stampedLayout(next) },
+            }).then((row) => ({ document: next, updated_at: row.updated_at }))
+        layoutBaseUpdatedAt.current = saved.updated_at
+        layoutBaseDoc.current = saved.document
+        layoutVersioned.current = true
+        layoutBaseReady.current = true
       },
       freeObject,
     })
@@ -1777,6 +1896,7 @@ export function Shell() {
     applyLayoutDoc(next)
   }
   applyRef.current = (name, args) => {
+    const releasingAgent = name === 'focus' && args.direction === 'left' && consumeAgentFocusRelease()
     const current = docRef.current
     if (!current || !workspace.data) return
     let nextArgs = args
@@ -1799,10 +1919,12 @@ export function Shell() {
     }))
     const runLayout = () => {
       const place = name === 'open_view' || name === 'ui.open_view' || name === 'ui.place' ? placeOverride.current : undefined
-      if (name === 'close_view') {
-        const closing = typeof args.view === 'string' ? args.view : typeof args.id === 'string' ? args.id : current.focus
-        const closingView = viewRows(workspace.data.views).find((view) => view.id === closing)
-        const runId = closingView?.type === 'agent' ? String(closingView.state.run_id ?? '') : ''
+      const closing = name === 'close_view'
+        ? (typeof args.view === 'string' ? args.view : typeof args.id === 'string' ? args.id : current.focus)
+        : null
+      const closingView = closing ? viewRows(workspace.data?.views).find((view) => view.id === closing) : undefined
+      if (closingView?.type === 'agent') {
+        const runId = String(closingView.state.run_id ?? '')
         if (runId) void patchAgentRun(runId, { tab_open: false }).catch((reason: unknown) => reportWriteError(reason))
       }
       const result = applyLayoutCommand(current, name, nextArgs, {
@@ -1812,7 +1934,13 @@ export function Shell() {
       })
       if (result.handled && result.doc !== current) commitDoc(result.doc)
       const focus = result.doc.focus
-      if (focus) {
+      const closingAgent = closingView?.type === 'agent'
+      if (releasingAgent || closingAgent) {
+        const leftPaneId = releasingAgent && result.doc.focus !== current.focus ? (result.doc.focus ?? null) : null
+        const request = { leftPaneId, preferredPaneId: focus && focus !== closing ? focus : null }
+        if (result.handled && result.doc !== current) agentFocusRestoreRef.current = request
+        else requestAnimationFrame(() => restoreAgentFocus(request))
+      } else if (focus) {
         requestAnimationFrame(() => {
           const active = document.activeElement
           // A layout commit while the palette or a field is focused must not

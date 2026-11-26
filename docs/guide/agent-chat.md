@@ -59,7 +59,13 @@ the pane with **Ctrl+J** and restored when you open it again.
 
 While the follow-up input is focused, **Esc** blurs the field and moves keyboard
 focus to the **pane on the left** (for example Products or Detail). Your draft
-text stays in the input. **Esc** does not close the agent pane.
+text stays in the input. **Esc** does not close the agent pane. If there is no
+pane on the left, focus returns to the element that had it before the agent
+opened, then to the last focused pane, then to any open pane. It does not stay
+on the page background.
+
+Closing the pane with **Ctrl+J** returns focus the same way: first to that
+earlier element, then to the last focused pane, then to any open pane.
 
 Use **Ctrl+J** when you want to hide the whole agent column.
 

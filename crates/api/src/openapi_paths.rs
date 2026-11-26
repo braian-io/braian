@@ -200,16 +200,17 @@ fn operations() -> Vec<(HttpMethod, &'static str, Operation)> {
             "200",
             "Personal layout, or a null document when none is saved",
         ),
-        call(
+        finish(
             HttpMethod::Put,
             "/v1/workspaces/{id}/state",
             "put_workspace_state",
             "Save the personal workspace layout",
             vec![path_uuid("id", "Workspace id")],
             Some("StateBody"),
-            Some("WorkspaceStateSaved"),
-            "200",
-            "Saved layout",
+            vec![
+                json("200", "Saved layout", "WorkspaceStateSaved"),
+                problem("409", "The layout changed since expected_updated_at"),
+            ],
             true,
         ),
         query::<crate::platform::StateQuery>(

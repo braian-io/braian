@@ -19,8 +19,9 @@ use braian_model::{AttributeId, AttributeKind, DefinitionSet, Object, ObjectId, 
 use braian_search::SearchQuery;
 use braian_store::{
     Actor, BatchKind, HistoryEntry, ObjectOp, ObjectProjection, ProposalLock, ProposalRow,
-    ProposalWrite, Store, WriteReceipt,
+    ProposalWrite, Store, WorkspaceStateWrite, WriteReceipt,
 };
+use chrono::{DateTime, Utc};
 use futures::stream;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
@@ -2992,11 +2993,35 @@ async fn put_workspace_state(
         ));
     }
     let environment = layout_environment(body.environment.as_deref());
-    let updated = state
+    let expected = match body.expected_updated_at {
+        None => None,
+        Some(None) => Some(None),
+        Some(Some(raw)) => {
+            if DateTime::parse_from_rfc3339(&raw)
+                .map(|stamp| stamp.with_timezone(&Utc))
+                .is_err()
+            {
+                return Err(Problem::new(
+                    StatusCode::BAD_REQUEST,
+                    "expected_updated_at",
+                    "expected_updated_at must be an RFC3339 timestamp",
+                ));
+            }
+            Some(Some(raw))
+        }
+    };
+    let written = state
         .store
-        .put_workspace_state(owner, &environment, id, &body.document)
+        .put_workspace_state(owner, &environment, id, &body.document, expected)
         .await
         .map_err(store_status)?;
+    let WorkspaceStateWrite::Saved(updated) = written else {
+        return Err(Problem::new(
+            StatusCode::CONFLICT,
+            "stale_layout",
+            "the layout changed since expected_updated_at",
+        ));
+    };
     Ok(Json(json!({
         "environment": environment,
         "updated_at": updated.to_rfc3339(),
@@ -7454,6 +7479,12 @@ pub(crate) struct StateBody {
     environment: Option<String>,
     #[schema(value_type = crate::http_schema::FreeObject)]
     document: Value,
+    /// RFC3339 `updated_at` this edit was based on.
+    /// JSON `null` means the client saw no saved layout.
+    /// Omit the field for a last-write-wins save.
+    #[serde(default)]
+    #[schema(value_type = Option<String>)]
+    expected_updated_at: Option<Option<String>>,
 }
 
 #[derive(Deserialize, ToSchema)]
