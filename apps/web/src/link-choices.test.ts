@@ -191,7 +191,7 @@ describe('link field values', () => {
     const fields = allowedLinks(defs, 'product', 'article')[0]?.fields ?? []
     expect(linkFieldErrors(fields, { sort_order: 'test' })).toEqual({ sort_order: 'Enter a number.' })
     expect(linkFieldErrors(fields, { sort_order: '  ' })).toEqual({})
-    expect(linkFieldErrors(fields, { sort_order: ' 4.5 ' })).toEqual({})
+    expect(linkFieldErrors(fields, { sort_order: ' 4.5 ' })).toEqual({ sort_order: 'Enter a number.' })
   })
 
   it('names the constrained type when asking to replace', () => {

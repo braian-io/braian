@@ -185,11 +185,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Members of a dynamic selection, re-evaluated through the search path. */
+        /** Members of a selection. Dynamic selections are re-evaluated through search. Manual selections return the objects added by hand. */
         get: operations["assortment_members"];
         put?: never;
-        post?: never;
-        delete?: never;
+        /** Add objects to a manual selection. A dynamic selection is rejected. */
+        post: operations["add_assortment_members"];
+        /** Remove objects from a manual selection. A dynamic selection is rejected. */
+        delete: operations["remove_assortment_members"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1685,7 +1687,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Create or update a view, including table state */
+        /** Create or update a view. State merges per top-level key. */
         post: operations["save_view"];
         delete?: never;
         options?: never;
@@ -1976,15 +1978,26 @@ export interface components {
         AssortmentList: {
             assortments: components["schemas"]["AssortmentRow"][];
         };
+        AssortmentMemberIds: {
+            /** Format: int32 */
+            found: number;
+            member_ids: string[];
+        };
         AssortmentMembers: {
             /** Format: int32 */
             found: number;
+            member_ids: string[];
             members: components["schemas"]["SearchHit"][];
+        };
+        AssortmentMembersBody: {
+            object_ids: string[];
         };
         AssortmentRow: {
             /** Format: uuid */
             id: string;
             kind: string;
+            /** @description Objects added by hand. Empty when the selection still uses a group or label filter. */
+            member_ids: string[];
             name: string;
             query: components["schemas"]["FreeObject"];
             type?: string | null;
@@ -2674,6 +2687,9 @@ export interface components {
             peer_id: string;
             peer_key: string;
             peer_type: string;
+            sort_order?: string | null;
+            /** Format: int64 */
+            version: number;
         };
         /** @description The name shown on one side of a link, and the key used later in an attribute path. */
         LinkLabel: {
@@ -3121,6 +3137,13 @@ export interface components {
             type: string;
             updated_at: string;
         };
+        /** @description `POST /v1/views` receipt. `updated_at` is the clock the next write must send back. */
+        SavedView: {
+            /** Format: uuid */
+            id: string;
+            /** @description RFC3339 time of this save. Send it back as `expected_updated_at`. */
+            updated_at: string;
+        };
         SearchGroup: {
             /** Format: int32 */
             found: number;
@@ -3161,6 +3184,12 @@ export interface components {
         StateBody: {
             document: components["schemas"]["FreeObject"];
             environment?: string | null;
+            /**
+             * @description RFC3339 `updated_at` this edit was based on.
+             *     JSON `null` means the client saw no saved layout.
+             *     Omit the field for a last-write-wins save.
+             */
+            expected_updated_at?: string | null;
         };
         StatsResponse: {
             by_type: components["schemas"]["TypeCount"][];
@@ -3344,6 +3373,12 @@ export interface components {
             };
         };
         ViewBody: {
+            /**
+             * @description RFC3339 `updated_at` this edit was based on.
+             *     JSON `null` means the client saw no saved view.
+             *     Omit the field to merge per key without a version check.
+             */
+            expected_updated_at?: string | null;
             /** Format: uuid */
             id?: string | null;
             pane?: string | null;
@@ -3429,6 +3464,8 @@ export interface components {
             state: components["schemas"]["FreeObject"];
             title: string;
             type: string;
+            /** @description RFC3339 time of the last saved view state. */
+            updated_at: string;
         };
     };
     responses: never;
@@ -3943,6 +3980,78 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssortmentMembers"];
+                };
+            };
+            /** @description Missing or unknown token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    add_assortment_members: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Selection id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssortmentMembersBody"];
+            };
+        };
+        responses: {
+            /** @description Objects now in the selection */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssortmentMemberIds"];
+                };
+            };
+            /** @description Missing or unknown token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    remove_assortment_members: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Selection id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssortmentMembersBody"];
+            };
+        };
+        responses: {
+            /** @description Objects still in the selection */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssortmentMemberIds"];
                 };
             };
             /** @description Missing or unknown token */
@@ -8023,17 +8132,26 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Saved view id */
+            /** @description Saved view id and updated_at */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["IdBody"];
+                    "application/json": components["schemas"]["SavedView"];
                 };
             };
             /** @description Missing or unknown token */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The view changed since expected_updated_at */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8437,6 +8555,15 @@ export interface operations {
             };
             /** @description Missing or unknown token */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The layout changed since expected_updated_at */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

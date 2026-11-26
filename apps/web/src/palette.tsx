@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState, useSyncExternalStore, type KeyboardEvent 
 import { useQuery } from '@tanstack/react-query'
 import { Check } from 'lucide-react'
 import { MetaChip, type ChipTone } from './chips'
-import { toast } from 'sonner'
 import { announce, takeShortcutTip } from './shortcut-tip'
 import { ApiError, api, operationId, textValue, type Json } from './api'
 import { reportWriteError } from './write-error'
@@ -60,6 +59,7 @@ import {
   switchCatalogSubmenuRows,
 } from './palette-switch-catalog'
 import { useCatalogsQuery } from './catalog-list'
+import { catalogDeleteAvailable, catalogSelection, subscribeCatalogSelection } from './catalog-selection'
 import { MASTER_CATALOG_ID } from './catalog-ref'
 import { publishProposal } from './proposal-bus'
 import { modelFocus, openModelDialog, requestDiscardDraft, requestReview, stageModel } from './model-stage'
@@ -283,6 +283,7 @@ export function CommandPalette({
   const selectedKey = String(selectedObject.data?.type ?? '')
   // Live selections in other views become peer sources (Notion 103 PR 2).
   const selectionVersion = useSyncExternalStore(subscribeUiSelections, uiSelectionVersion, uiSelectionVersion)
+  const catalogPick = useSyncExternalStore(subscribeCatalogSelection, catalogSelection, catalogSelection)
   // Delete follows the focused table's marked rows, else the object open in Detail.
   const deleteIds = (() => {
     const marked = focusViewId ? readSelection(focusViewId).map((row) => row.id) : []
@@ -463,7 +464,9 @@ export function CommandPalette({
       { id: 'model:new-tree', group: 'model' as const, title: copy.newTree, subtitle: copy.dataModel, keywords: ['create', 'structure', 'tree'] },
       { id: 'catalog:new', group: 'model' as const, title: copy.newCatalog, subtitle: copy.catalogs, keywords: ['catalog', 'source', 'create'] },
       { id: 'catalog:rename', group: 'model' as const, title: copy.renameCatalog, subtitle: copy.catalogs, keywords: ['catalog', 'rename', 'name'] },
-      { id: 'catalog:delete', group: 'model' as const, title: copy.deleteCatalog, subtitle: copy.catalogs, keywords: ['catalog', 'delete', 'remove', 'source'] },
+      ...(catalogDeleteAvailable(catalogPick)
+        ? [{ id: 'catalog:delete', group: 'model' as const, title: copy.deleteCatalog, subtitle: copy.catalogs, keywords: ['catalog', 'delete', 'remove', 'source'] }]
+        : []),
       { id: 'model:review', group: 'model' as const, title: copy.reviewAndSave, subtitle: copy.dataModel, keywords: ['draft', 'save'], kbd: 'Ctrl+S' },
       { id: 'model:discard', group: 'model' as const, title: copy.discardDraft, subtitle: copy.dataModel, keywords: ['draft'] },
       { id: 'model:undo', group: 'model' as const, title: copy.undoModel, subtitle: copy.dataModel, keywords: ['undo'] },
@@ -487,7 +490,7 @@ export function CommandPalette({
           ]),
       { id: 'attr:new', group: 'model' as const, title: copy.newAttribute, subtitle: copy.attributeDefinitions, keywords: ['attribute', 'create'] },
     ],
-    [workspaces, views, session.group, types, selectedKey, suggestionTotal, feedbackEnabled, theme, moveColumns, moveTarget, defs.data, operationRecords, focusViewId, deleteIds.join(','), selectionVersion],
+    [workspaces, views, session.group, types, selectedKey, suggestionTotal, feedbackEnabled, theme, moveColumns, moveTarget, defs.data, operationRecords, focusViewId, deleteIds.join(','), selectionVersion, catalogPick],
   )
   const hits: PaletteItem[] = objectPaletteRows((found.data?.hits as Json[] | undefined) ?? [], defs.data)
   useEffect(() => {
@@ -627,7 +630,7 @@ export function CommandPalette({
 
   const blockUntilWorkspace = (commandId: string) => {
     if (workspaceReady || !needsWorkspace(commandId)) return false
-    toast.message(copy.workspaceOpeningWhenReady)
+    announce(copy.workspaceOpeningWhenReady)
     return true
   }
 
@@ -996,8 +999,10 @@ export function CommandPalette({
       return
     }
     if (id === 'selection:save-filter') {
-      const filter = readUiContext().filterExpression
-      if (!filter) {
+      const snapshot = readUiContext()
+      const filter = snapshot.filterExpression
+      const q = snapshot.q.trim()
+      if (!filter && !q) {
         session.push(copy.saveFilterNeeds)
         onClose()
         return
@@ -1006,6 +1011,7 @@ export function CommandPalette({
       requestNewSelection({
         kind: 'dynamic',
         query: dynamicSelectionFilter(filter, type),
+        q,
         type,
       })
       onClose()
@@ -1139,7 +1145,6 @@ export function CommandPalette({
     if (item.shortcut) {
       const tip = takeShortcutTip(item.sourceId ?? item.id, item.shortcut, item.subtitle || item.title)
       if (tip) {
-        toast(tip)
         announce(tip)
       }
     }
@@ -1379,6 +1384,21 @@ export function CommandPalette({
     if (event.key === 'Tab' || (event.key === 'Enter' && mode === 'list' && active == null)) {
       event.preventDefault()
       event.stopPropagation()
+    }
+    // Typing highlights a row in a layout effect. Enter can arrive first.
+    // Run the same row that highlight would, instead of leaving the palette open.
+    if (event.key === 'Enter' && mode === 'list' && active == null && query.trim() && stack.length === 0) {
+      const pick = resolveActiveAfterQuery(rows, query)
+      const item = pick == null ? undefined : rows[pick]
+      if (item && !item.disabled) {
+        event.preventDefault()
+        event.stopPropagation()
+        if (parseOpenStructureChoice(item.sourceId ?? item.id)) {
+          openStructurePlacementRef.current = event.ctrlKey || event.metaKey ? 'right' : 'center'
+        }
+        run(item)
+      }
+      return
     }
     if (effect.type === 'caret' || effect.type === 'none') return
     event.preventDefault()

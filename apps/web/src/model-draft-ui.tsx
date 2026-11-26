@@ -5,7 +5,8 @@ import { Button } from './components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
 import { writeErrorMessage } from './write-error'
-import { formatCount, formatTimestamp } from './format'
+import { formatTimestamp } from './format'
+import { unsavedChangeLabel } from './object-draft-bar'
 import { copy, uiLanguage } from './i18n'
 import { attributeKey } from './model-view'
 import {
@@ -563,7 +564,7 @@ export function ModelDraftHost() {
     <>
       {count > 0 ? (
         <div className="draft-bar" data-testid="unsaved-changes" role="status">
-          <span>{formatCount(count)} {copy.unsavedChanges}</span>
+          <span>{unsavedChangeLabel(count)}</span>
           {draft.data?.updated_at ? <time dateTime={String(draft.data.updated_at)}>{formatTimestamp(draft.data.updated_at)}</time> : null}
           {conflict ? <span>{copy.draftConflict} {draft.data?.updated_at ? formatTimestamp(draft.data.updated_at) : ''}</span> : null}
           {conflict ? (
@@ -787,10 +788,13 @@ function CreateDialog({ kind, onClose }: { kind: DialogKind; onClose: () => void
     if (!toType && entities[0]) setToType(entities[0])
   }, [kind, fromType, toType, entities])
   const title = kind === 'link' ? copy.newLinkType : kind === 'type' ? copy.newType : kind === 'list' ? copy.newValueList : kind === 'family' ? copy.newUnitFamily : copy.newTree
+  const saving = useRef(false)
   const submit = () => {
+    if (saving.current) return
     const name = label.trim()
     const key = attributeKey(name)
     if (!key) return
+    saving.current = true
     const side = attributeKey(name)
     if (kind === 'link') setModelFocus({ kind: 'type', key })
     const forward = fromLabel.trim() || name
@@ -831,6 +835,8 @@ function CreateDialog({ kind, onClose }: { kind: DialogKind; onClose: () => void
     void work.then(() => onClose()).catch((reason: unknown) => {
       const message = writeErrorMessage(reason)
       if (message) setError(message)
+    }).finally(() => {
+      saving.current = false
     })
   }
   return (

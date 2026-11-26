@@ -203,7 +203,7 @@ export function WorkspaceDock({
         .join('|')}
     >
       {open.length === 0 ? (
-        <section className="pane" data-pane="empty">
+        <section className="pane" data-pane="empty" tabIndex={-1}>
           <div className="pane-tabs" />
           <div className="pane-body">{copy.empty}</div>
         </section>

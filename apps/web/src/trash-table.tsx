@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { toast } from 'sonner'
 import { api } from './api'
 import { formatTimestamp } from './format'
 import { copy } from './i18n'
@@ -34,6 +33,8 @@ export function TrashTable({ onOpenObject }: TrashTableProps) {
   const [filter, setFilter] = useState('')
   const [activeRowId, setActiveRowId] = useState<string | null>(null)
   const [purgeTarget, setPurgeTarget] = useState<TrashRow | null>(null)
+  const [notice, setNotice] = useState('')
+  const [noticeError, setNoticeError] = useState(false)
   const rowsRef = useRef<TrashRow[]>([])
   const activeIdRef = useRef<string | null>(null)
 
@@ -65,16 +66,22 @@ export function TrashTable({ onOpenObject }: TrashTableProps) {
     void queryClient.invalidateQueries({ queryKey: ['search'] })
   }
 
+  const flash = (message: string, error = false) => {
+    setNoticeError(error)
+    setNotice(message)
+    window.setTimeout(() => setNotice(''), 5000)
+  }
+
   const restore = useMutation({
     mutationFn: (row: TrashRow) => api.post('/v1/trash/{kind}/{id}/undelete', {
       params: { path: { kind: row.kind, id: row.id } },
     }),
     onSuccess: (_data, row) => {
       if (row.kind === 'object') clearObjectGone(queryClient, row.id)
-      toast(copy.trashRestored)
+      flash(copy.trashRestored)
       invalidate()
     },
-    onError: (error) => toast(writeErrorMessage(error) ?? copy.trashRestoreFailed),
+    onError: (error) => flash(writeErrorMessage(error) ?? copy.trashRestoreFailed, true),
   })
 
   const purge = useMutation({
@@ -83,12 +90,12 @@ export function TrashTable({ onOpenObject }: TrashTableProps) {
     }),
     onSuccess: (_data, row) => {
       if (row.kind === 'object') clearObjectGone(queryClient, row.id)
-      toast(copy.trashPurged)
+      flash(copy.trashPurged)
       setPurgeTarget(null)
       setActiveRowId((current) => (current === row.id ? null : current))
       invalidate()
     },
-    onError: (error) => toast(writeErrorMessage(error) ?? copy.trashPurgeFailed),
+    onError: (error) => flash(writeErrorMessage(error) ?? copy.trashPurgeFailed, true),
   })
 
   const activeRow = () =>
@@ -151,6 +158,15 @@ export function TrashTable({ onOpenObject }: TrashTableProps) {
 
   return (
     <div data-testid="trash-table">
+      {notice ? (
+        <p
+          className={noticeError ? 'error' : 'inline-hint'}
+          role="status"
+          data-testid="trash-inline-notice"
+        >
+          {notice}
+        </p>
+      ) : null}
       <StandardEditableTable
         testId="trash-table-chrome"
         columns={columns}

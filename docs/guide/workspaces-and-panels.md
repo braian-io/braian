@@ -149,9 +149,17 @@ The picker lists:
   offers the class-list fields so existing models keep them.
 
 A group or class attribute can be added as a column even when not every row has a
-value. In the picker, those fields show the group name as a source hint, and
-typing the group name finds them. Linked fields are listed one hop away and stay
+value. In the picker, each field keeps its type label, and group-sourced fields
+also show the full group path (for example `Food › Beverages › Coffee & tea`) as
+muted secondary text. Typing any segment of that path, such as `beverages` or
+`snacks`, finds the field. Linked fields are listed one hop away and stay
 read-only.
+
+The same catalog appears on every object type that is allowed to use the
+structure. On **Articles**, `Select fields` therefore lists food-tree group
+attributes such as Fat content and Caffeine even though a row may not carry a
+value for them yet. The picker only chooses which columns may appear; values are
+never inherited from the group tree.
 
 A measured number field can be added as the combined column, as separate value and
 unit columns, or as all three. The separate columns are labelled `Name (value)` and
@@ -220,7 +228,9 @@ cannot be deleted.
   commands cannot replace the search text. Clear it with the search box, or press
   `Clear search` in the empty state when the query matches nothing. The empty state
   names the query. Press `/` to focus the quick filter.
-- An object selection is not part of the saved view state.
+- An object selection is not part of the saved view state. The address still
+  names the open object. After a reload, Detail and History show that object
+  again without picking the row in the table.
 
 The layout is saved automatically per workspace and per user. Local changes are
 painted immediately, and the workspace document is saved shortly after you stop
@@ -236,7 +246,8 @@ the change stream; there is no manual refresh.
 An object table and a Detail view share the unsaved cells, so an edit made in one
 view is visible in the other. The Save/Discard bar appears only in the pane where
 the edit was made. The other pane may mark the row, and it does not show a second
-Save.
+Save. A proposal is a draft too (Pending, then Discard or Save). Its bar is in
+Detail while Detail is open on that object, and in the table otherwise.
 
 A Save that fails on the server or in transport is shown as an error. It is not a
 field-validation error, so the draft stays valid and Save is still available: fix the

@@ -350,9 +350,24 @@ export function openAgentInDockShell(layout: Node, view: string, share: number):
   return replaceAt(layout, slot.path, nextSplit)
 }
 
-function placeAgentEdgeView(doc: LayoutDoc, view: string, share: number): LayoutDoc {
+function placeAgentEdgeView(
+  doc: LayoutDoc,
+  view: string,
+  share: number,
+  catalog: ReadonlyArray<{ id: string; type: string }> = [],
+): LayoutDoc {
   const reused = openAgentInDockShell(doc.layout, view, share)
   if (reused) return { ...doc, layout: activate(reused, view), focus: view }
+  // A second run joins the agent pane that is already open. A new edge pane
+  // would mount two Reply fields at once.
+  const open = views(doc.layout)
+  const host = catalog.find((row) => row.type === 'agent' && row.id !== view && open.includes(row.id))?.id
+  if (host) {
+    const layout = open.includes(view)
+      ? moveView(doc.layout, view, host, 'center')
+      : insert(doc.layout, host, view, 'center')
+    return { ...doc, layout: activate(layout, view), focus: view }
+  }
   return placeView(doc, view, { zone: 'right', dock: 'edge', share })
 }
 
@@ -556,7 +571,7 @@ export function applyLayoutCommand(
   if (name === 'ui.open_view' && args.zone == null && args.place == null && !ctx.place) {
     if (agentView) {
       const share = agentDockShare(doc.layout, 0.3, catalogTypes(catalog))
-      return { doc: placeAgentEdgeView(doc, view, share), handled: true }
+      return { doc: placeAgentEdgeView(doc, view, share, catalog), handled: true }
     }
     return { doc: ensureInLayout(doc, view, typeof args.target === 'string' ? args.target : undefined), handled: true }
   }
@@ -573,7 +588,7 @@ export function applyLayoutCommand(
     place.dock = 'edge'
     place.share = place.share ?? agentDockShare(doc.layout, 0.3, catalogTypes(catalog))
     return {
-      doc: placeAgentEdgeView(doc, view, place.share ?? agentDockShare(doc.layout, 0.3, catalogTypes(catalog))),
+      doc: placeAgentEdgeView(doc, view, place.share ?? agentDockShare(doc.layout, 0.3, catalogTypes(catalog)), catalog),
       handled: true,
     }
   }

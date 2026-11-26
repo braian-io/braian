@@ -721,7 +721,7 @@
         "tags": [
           "platform"
         ],
-        "summary": "Members of a dynamic selection, re-evaluated through the search path.",
+        "summary": "Members of a selection. Dynamic selections are re-evaluated through search. Manual selections return the objects added by hand.",
         "operationId": "assortment_members",
         "parameters": [
           {
@@ -742,6 +742,118 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AssortmentMembers"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or unknown token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Add objects to a manual selection. A dynamic selection is rejected.",
+        "operationId": "add_assortment_members",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Selection id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssortmentMembersBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Objects now in the selection",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssortmentMemberIds"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or unknown token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Remove objects from a manual selection. A dynamic selection is rejected.",
+        "operationId": "remove_assortment_members",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Selection id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssortmentMembersBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Objects still in the selection",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssortmentMemberIds"
                 }
               }
             }
@@ -6738,7 +6850,7 @@
         "tags": [
           "platform"
         ],
-        "summary": "Create or update a view, including table state",
+        "summary": "Create or update a view. State merges per top-level key.",
         "operationId": "save_view",
         "requestBody": {
           "content": {
@@ -6752,17 +6864,27 @@
         },
         "responses": {
           "200": {
-            "description": "Saved view id",
+            "description": "Saved view id and updated_at",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/IdBody"
+                  "$ref": "#/components/schemas/SavedView"
                 }
               }
             }
           },
           "401": {
             "description": "Missing or unknown token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The view changed since expected_updated_at",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7341,6 +7463,16 @@
           },
           "401": {
             "description": "Missing or unknown token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The layout changed since expected_updated_at",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8037,10 +8169,10 @@
           }
         }
       },
-      "AssortmentMembers": {
+      "AssortmentMemberIds": {
         "type": "object",
         "required": [
-          "members",
+          "member_ids",
           "found"
         ],
         "properties": {
@@ -8049,10 +8181,54 @@
             "format": "int32",
             "minimum": 0
           },
+          "member_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      },
+      "AssortmentMembers": {
+        "type": "object",
+        "required": [
+          "members",
+          "found",
+          "member_ids"
+        ],
+        "properties": {
+          "found": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "member_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
           "members": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/SearchHit"
+            }
+          }
+        }
+      },
+      "AssortmentMembersBody": {
+        "type": "object",
+        "required": [
+          "object_ids"
+        ],
+        "properties": {
+          "object_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
             }
           }
         }
@@ -8064,7 +8240,8 @@
           "name",
           "type_id",
           "kind",
-          "query"
+          "query",
+          "member_ids"
         ],
         "properties": {
           "id": {
@@ -8073,6 +8250,14 @@
           },
           "kind": {
             "type": "string"
+          },
+          "member_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Objects added by hand. Empty when the selection still uses a group or label filter."
           },
           "name": {
             "type": "string"
@@ -10651,7 +10836,8 @@
           "peer_id",
           "peer_key",
           "peer_type",
-          "has_values"
+          "has_values",
+          "version"
         ],
         "properties": {
           "has_values": {
@@ -10670,6 +10856,17 @@
           },
           "peer_type": {
             "type": "string"
+          },
+          "sort_order": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
           }
         }
       },
@@ -12302,6 +12499,24 @@
           }
         }
       },
+      "SavedView": {
+        "type": "object",
+        "description": "`POST /v1/views` receipt. `updated_at` is the clock the next write must send back.",
+        "required": [
+          "id",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "updated_at": {
+            "type": "string",
+            "description": "RFC3339 time of this save. Send it back as `expected_updated_at`."
+          }
+        }
+      },
       "SearchGroup": {
         "type": "object",
         "required": [
@@ -12457,6 +12672,13 @@
               "string",
               "null"
             ]
+          },
+          "expected_updated_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "RFC3339 `updated_at` this edit was based on.\nJSON `null` means the client saw no saved layout.\nOmit the field for a last-write-wins save."
           }
         }
       },
@@ -12996,6 +13218,13 @@
           "title"
         ],
         "properties": {
+          "expected_updated_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "RFC3339 `updated_at` this edit was based on.\nJSON `null` means the client saw no saved view.\nOmit the field to merge per key without a version check."
+          },
           "id": {
             "type": [
               "string",
@@ -13022,7 +13251,8 @@
                 "type": "null"
               },
               {
-                "$ref": "#/components/schemas/FreeObject"
+                "$ref": "#/components/schemas/FreeObject",
+                "description": "Top-level keys replace those keys in the stored view.\nA JSON null removes that key. Keys left out stay as stored."
               }
             ]
           },
@@ -13327,7 +13557,8 @@
           "title",
           "pane",
           "position",
-          "state"
+          "state",
+          "updated_at"
         ],
         "properties": {
           "id": {
@@ -13349,6 +13580,10 @@
           },
           "type": {
             "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "description": "RFC3339 time of the last saved view state."
           }
         }
       }

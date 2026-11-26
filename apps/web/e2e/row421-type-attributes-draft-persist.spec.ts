@@ -203,9 +203,8 @@ test.describe('type attributes draft persist (row 421)', () => {
     await page.reload()
     await expect(page.getByTestId('workspace')).toBeVisible()
     const reloaded = await openTypeAttributes(page, 'product')
-    await expect(page.locator('[data-sonner-toast]').filter({
-      hasText: 'Some unsaved table edits were dropped because the model changed.',
-    })).toHaveCount(0)
+    await expect(page.getByTestId('model-pane-notice')).toHaveCount(0)
+    await expect(page.locator('[data-sonner-toast]')).toHaveCount(0)
     await expect(reloaded.locator(`[data-key="${key}"]`)).toHaveCount(1)
     await expect(reloaded.locator(`[data-key="${key}"]`)).not.toHaveAttribute('data-draft', 'true')
     await expect(reloaded.getByTestId('review-and-save')).toHaveCount(0)

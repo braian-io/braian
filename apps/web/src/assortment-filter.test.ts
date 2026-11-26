@@ -69,6 +69,10 @@ describe('dynamic selections', () => {
 
   it('keeps a dynamic query as a string and a manual query as an object', () => {
     expect(selectionQueryValue('dynamic', ' type_key:=product ', {})).toBe('type_key:=product')
+    expect(selectionQueryValue('dynamic', 'type_key:=product', {}, ' oat ')).toEqual({
+      filter: 'type_key:=product',
+      q: 'oat',
+    })
     expect(selectionQueryValue('manual', 'ignored', { group: 'food:cheese' })).toEqual({
       group: 'food:cheese',
     })
@@ -80,6 +84,7 @@ describe('dynamic selections', () => {
     expect(isEmptyManualQuery({ group: 'food:cheese' })).toBe(false)
     expect(isEmptyManualQuery({ labels: 'organic_eu' })).toBe(false)
     expect(isEmptyManualQuery({ filter: 'groups:=food:cheese' })).toBe(false)
+    expect(isEmptyManualQuery({ q: 'oat' })).toBe(false)
     expect(assortmentSearchFilter({}, 'product')).toBe(
       'type_key:=product && id:=__braian_empty_manual__',
     )

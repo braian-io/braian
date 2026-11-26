@@ -174,8 +174,11 @@ test.describe('peer-linked label selections (Notion row 272)', () => {
       await page.route('**/v1/views', async (route) => {
         if (route.request().method() === 'POST') {
           const body = route.request().postDataJSON() as { id?: string; state?: { source?: { kind?: string } } }
-          // The group chip leaves explicit All. Fail that write; let other view saves through.
-          if (body.id === productsId && body.state?.source?.kind !== 'all') {
+          // The group chip clears explicit All by sending source: null.
+          // A table save omits source, so it is not this write.
+          const source = body.state?.source
+          const touchesSource = !!body.state && Object.prototype.hasOwnProperty.call(body.state, 'source')
+          if (body.id === productsId && touchesSource && source?.kind !== 'all') {
             posts.push(body)
             await route.fulfill({
               status: 500,
@@ -190,9 +193,10 @@ test.describe('peer-linked label selections (Notion row 272)', () => {
 
       const cheese = products.getByTestId('assortment').filter({ hasText: 'Cheese' })
       await cheese.click()
-      await expect(page.locator('[data-sonner-toast]')).toContainText('save failed', { timeout: 30_000 })
+      await expect(page.getByTestId('filter-setup-error')).toContainText('save failed', { timeout: 30_000 })
+      await expect(page.locator('[data-sonner-toast]')).toHaveCount(0)
       expect(posts).toHaveLength(1)
-      expect(posts[0]?.state?.source).toBeUndefined()
+      expect(posts[0]?.state?.source).toBeNull()
       await expect(cheese).not.toHaveClass(/\bon\b/)
       await expect(products.getByTestId('view-source-label')).toHaveText('All Products')
       expect(await products.getByTestId('object-row').count()).toBe(before)

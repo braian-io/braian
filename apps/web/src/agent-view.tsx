@@ -26,6 +26,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from './components/ui/tooltip
 import { formatTimestamp } from './format'
 import { copy } from './i18n'
 import { reviewOperation } from './review-cells'
+import { captureAgentOpener, markAgentFocusRelease } from './agent-focus'
 import { readAgentFollowDraft, writeAgentFollowDraft } from './agent-follow-draft'
 import { runCommand } from './command-registry'
 import type { Json } from './api'
@@ -150,6 +151,7 @@ function chatLines(data: AgentRunDetail): Array<{ key: string; kind: string; nod
                 variant="ghost"
                 className="agent-result-link"
                 data-testid="agent-result-link"
+                aria-label={`${copy.openDraftInTable}: ${objectLabel}`}
                 onClick={() => openDraft(proposal)}
               >
                 {objectLabel}
@@ -227,6 +229,7 @@ export function AgentView({ runId, title: viewTitle }: AgentViewProps) {
     void queryClient.invalidateQueries({ queryKey: ['object'] })
   }
   const focusInput = () => {
+    captureAgentOpener()
     requestAnimationFrame(() => followRef.current?.focus())
   }
   const modeChange = useMutation({
@@ -439,6 +442,7 @@ export function AgentView({ runId, title: viewTitle }: AgentViewProps) {
               event.preventDefault()
               event.stopPropagation()
               writeAgentFollowDraft(runId, draft)
+              markAgentFocusRelease()
               event.currentTarget.blur()
               void runCommand('layout:focus:left')
               return

@@ -19,8 +19,9 @@ use braian_model::{AttributeId, AttributeKind, DefinitionSet, Object, ObjectId, 
 use braian_search::SearchQuery;
 use braian_store::{
     Actor, BatchKind, HistoryEntry, ObjectOp, ObjectProjection, ProposalLock, ProposalRow,
-    ProposalWrite, Store, WriteReceipt,
+    ProposalWrite, Store, ViewWrite, WorkspaceStateWrite, WriteReceipt,
 };
+use chrono::DateTime;
 use futures::stream;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
@@ -85,7 +86,12 @@ pub fn routes() -> axum::Router<AppState> {
                 .delete(delete_assortment),
         )
         .route("/v1/assortments/{id}/usage", get(assortment_usage))
-        .route("/v1/assortments/{id}/members", get(assortment_members))
+        .route(
+            "/v1/assortments/{id}/members",
+            get(assortment_members)
+                .post(add_assortment_members)
+                .delete(remove_assortment_members),
+        )
         .route("/v1/job-types", get(list_job_types).post(register_job_type))
         .route("/v1/job-types/{key}/runs", get(job_runs))
         .route("/v1/jobs/{id}", get(job_run))
@@ -458,7 +464,7 @@ fn registry() -> &'static [Operation] {
             name: "catalog.cleanup",
             title: "Soft-delete every object in a source catalog",
             permission: Role::Editor,
-            needs_approval: false,
+            needs_approval: true,
             params: &[],
         },
         Operation {
@@ -1139,9 +1145,9 @@ const AGENT_UI_EXCLUDED: &[&str] = &[];
 /// Operations an agent must not be offered and must not run.
 ///
 /// `accept_proposal` is a person's save. Most other names delete data or a
-/// definition that data hangs on. `merge.run` and `catalog.cleanup` write the
-/// master or wipe a source catalog; a person runs those. `propose` rejects
-/// the delete steps too.
+/// definition that data hangs on. `merge.run` writes the master. `catalog.cleanup`
+/// files a proposal that wipes a source catalog once a person approves it.
+/// `propose` rejects the delete steps too.
 const AGENT_COMMIT_EXCLUDED: &[&str] = &[
     "accept_proposal",
     "discard_proposal",
@@ -2992,11 +2998,19 @@ async fn put_workspace_state(
         ));
     }
     let environment = layout_environment(body.environment.as_deref());
-    let updated = state
+    let expected = parse_expected_updated_at(body.expected_updated_at)?;
+    let written = state
         .store
-        .put_workspace_state(owner, &environment, id, &body.document)
+        .put_workspace_state(owner, &environment, id, &body.document, expected)
         .await
         .map_err(store_status)?;
+    let WorkspaceStateWrite::Saved(updated) = written else {
+        return Err(Problem::new(
+            StatusCode::CONFLICT,
+            "stale_layout",
+            "the layout changed since expected_updated_at",
+        ));
+    };
     Ok(Json(json!({
         "environment": environment,
         "updated_at": updated.to_rfc3339(),
@@ -3155,7 +3169,10 @@ async fn save_view(
             "layout is locked",
         ));
     }
-    let mut view_state = body.state.unwrap_or(json!({}));
+    let mut view_state = match body.state {
+        Some(Value::Object(map)) => Value::Object(map),
+        _ => json!({}),
+    };
     if let Ok(cached) = state.models.get(&state.store).await {
         braian_model::translate_view_state(&mut view_state, &cached.defs);
         braian_model::sanitize_view_table_prefs(&body.r#type, &mut view_state, &cached.defs)
@@ -3167,10 +3184,13 @@ async fn save_view(
                 )
             })?;
     }
-    braian_model::strip_ephemeral_table_search(&body.r#type, &mut view_state);
-    state
+    // Do not invent a `table` key. A catalog-only patch must not replace the
+    // stored table. Filter text is still dropped when the patch carries `table`.
+    strip_view_state_patch(&body.r#type, &mut view_state);
+    let expected = parse_expected_updated_at(body.expected_updated_at)?;
+    let written = state
         .store
-        .save_view(
+        .merge_view(
             id,
             body.workspace_id,
             &body.r#type,
@@ -3178,10 +3198,57 @@ async fn save_view(
             &body.pane.unwrap_or_else(|| "main".into()),
             body.position.unwrap_or(0),
             &view_state,
+            expected,
         )
         .await
         .map_err(store_status)?;
-    Ok(Json(json!({ "id": id })))
+    let ViewWrite::Saved(updated) = written else {
+        return Err(Problem::new(
+            StatusCode::CONFLICT,
+            "stale_view",
+            "the view changed since expected_updated_at",
+        ));
+    };
+    Ok(Json(json!({
+        "id": id,
+        "updated_at": updated.to_rfc3339(),
+    })))
+}
+
+/// `None` is an omitted field. `Some(None)` is a present JSON null ("I saw no row").
+fn parse_expected_updated_at(
+    value: Option<Option<String>>,
+) -> Result<Option<Option<String>>, Problem> {
+    match value {
+        None => Ok(None),
+        Some(None) => Ok(Some(None)),
+        Some(Some(raw)) => {
+            if DateTime::parse_from_rfc3339(&raw).is_err() {
+                return Err(Problem::new(
+                    StatusCode::BAD_REQUEST,
+                    "expected_updated_at",
+                    "expected_updated_at must be an RFC3339 timestamp",
+                ));
+            }
+            Ok(Some(Some(raw)))
+        }
+    }
+}
+
+/// Drop ephemeral search from a view-state patch without creating keys the
+/// client did not send. `strip_ephemeral_table_search` inserts `table` when it
+/// is missing, which would replace a stored table during a per-key merge.
+fn strip_view_state_patch(view_type: &str, state: &mut Value) {
+    if view_type != "object_table" && view_type != "table" {
+        return;
+    }
+    let Some(object) = state.as_object_mut() else {
+        return;
+    };
+    object.remove("filter");
+    if let Some(table) = object.get_mut("table").and_then(Value::as_object_mut) {
+        table.insert("filter".into(), Value::String(String::new()));
+    }
 }
 
 async fn list_view_types(
@@ -3489,10 +3556,38 @@ fn manual_has_no_query() -> Problem {
     )
 }
 
+/// A dynamic wire query is either the filter string or `{ filter, q }`.
+fn dynamic_query_text(query: &Value) -> Result<(String, String), Problem> {
+    if let Some(text) = query.as_str() {
+        return Ok((text.trim().to_owned(), String::new()));
+    }
+    let Some(object) = query.as_object() else {
+        return Err(dynamic_query_required());
+    };
+    let filter = object
+        .get("filter")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_owned();
+    let q = object
+        .get("q")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_owned();
+    Ok((filter, q))
+}
+
+fn invalid_filter(code: &str, message: String) -> Problem {
+    Problem::new(StatusCode::UNPROCESSABLE_ENTITY, code, message)
+}
+
 /// Turns the wire `query` into the stored JSONB shape for one kind.
 ///
-/// Dynamic selections store a filter in the same syntax as a view's filter and
-/// validate it through the same translate path the search uses. Manual
+/// Dynamic selections store a filter in the same syntax as a view's filter.
+/// Free text is rejected here, before Typesense can answer 400. An optional
+/// `q` is the table search term and is stored beside the filter. Manual
 /// selections keep the legacy group/labels document (no filter).
 fn normalize_selection_query(
     defs: &DefinitionSet,
@@ -3501,15 +3596,24 @@ fn normalize_selection_query(
 ) -> Result<Value, Problem> {
     match kind {
         "dynamic" => {
-            let filter = query
-                .as_str()
-                .map(str::trim)
-                .filter(|filter| !filter.is_empty())
-                .ok_or_else(dynamic_query_required)?;
-            braian_model::translate_filter_expression(filter, defs).map_err(|message| {
-                Problem::new(StatusCode::UNPROCESSABLE_ENTITY, "invalid_path", message)
-            })?;
-            Ok(json!({ "filter": filter }))
+            let (filter, q) = dynamic_query_text(&query)?;
+            if filter.is_empty() && q.is_empty() {
+                return Err(dynamic_query_required());
+            }
+            if !filter.is_empty() {
+                braian_model::explain_filter_syntax(&filter)
+                    .map_err(|message| invalid_filter("invalid_query", message))?;
+                braian_model::translate_filter_expression(&filter, defs)
+                    .map_err(|message| invalid_filter("invalid_path", message))?;
+            }
+            let mut stored = serde_json::Map::new();
+            if !filter.is_empty() {
+                stored.insert("filter".into(), json!(filter));
+            }
+            if !q.is_empty() {
+                stored.insert("q".into(), json!(q));
+            }
+            Ok(Value::Object(stored))
         }
         "manual" => {
             if query.is_string() {
@@ -3738,8 +3842,8 @@ fn assortment_usage_json(usage: braian_store::AssortmentUsage) -> Value {
 }
 
 /// Members of a dynamic selection are re-evaluated on every read through the
-/// same filter parse and search path a view uses. A manual selection has no
-/// members yet: hand-picked members come with the selection UI.
+/// same filter parse and search path a view uses. A manual selection returns
+/// the objects added by hand, in add order, without calling search.
 async fn assortment_members(
     State(state): State<AppState>,
     Auth(identity): Auth,
@@ -3753,19 +3857,35 @@ async fn assortment_members(
             "selection not found",
         ));
     };
-    let filter = if row.get("kind").and_then(Value::as_str) == Some("dynamic") {
-        row.get("query")
-            .and_then(|query| query.get("filter"))
-            .and_then(Value::as_str)
-            .unwrap_or("")
-    } else {
-        return Ok(Json(json!({ "members": [], "found": 0 })));
-    };
+    if row.get("kind").and_then(Value::as_str) != Some("dynamic") {
+        let member_ids = state
+            .store
+            .assortment_member_ids(id)
+            .await
+            .map_err(store_status)?;
+        return Ok(Json(json!({
+            "members": [],
+            "found": member_ids.len(),
+            "member_ids": member_ids,
+        })));
+    }
+    let query = row.get("query");
+    let filter = query
+        .and_then(|query| query.get("filter"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let q = query
+        .and_then(|query| query.get("q"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    if filter.is_empty() && q.is_empty() {
+        return Ok(Json(json!({ "members": [], "found": 0, "member_ids": [] })));
+    }
     let (filter_by, _, _) =
         search_fields(&state, filter.to_owned(), String::new(), String::new()).await?;
     let page = run_search(
         &state,
-        String::new(),
+        q.to_owned(),
         String::new(),
         filter_by,
         String::new(),
@@ -3774,7 +3894,174 @@ async fn assortment_members(
         50,
     )
     .await?;
-    Ok(Json(json!({ "members": page.hits, "found": page.found })))
+    Ok(Json(
+        json!({ "members": page.hits, "found": page.found, "member_ids": [] }),
+    ))
+}
+
+#[derive(Deserialize, ToSchema)]
+pub(crate) struct AssortmentMembersBody {
+    object_ids: Vec<Uuid>,
+}
+
+fn only_manual_members() -> Problem {
+    Problem::new(
+        StatusCode::BAD_REQUEST,
+        "assortment",
+        "only a manual selection can add or remove objects",
+    )
+}
+
+fn choose_objects() -> Problem {
+    Problem::new(
+        StatusCode::BAD_REQUEST,
+        "assortment",
+        "choose at least one object",
+    )
+}
+
+/// `{ "hand": true }` marks a manual selection whose objects were chosen one by one.
+fn is_hand_only(query: &Value) -> bool {
+    let Some(object) = query.as_object() else {
+        return false;
+    };
+    object.get("hand").and_then(Value::as_bool) == Some(true)
+        && object.get("group").is_none()
+        && object.get("labels").is_none()
+        && object.get("filter").is_none()
+}
+
+fn selection_type_id(row: &Value) -> Result<Uuid, Problem> {
+    row.get("type_id")
+        .and_then(Value::as_str)
+        .and_then(|value| Uuid::parse_str(value).ok())
+        .ok_or_else(|| {
+            Problem::new(
+                StatusCode::BAD_REQUEST,
+                "assortment",
+                "a selection needs a type",
+            )
+        })
+}
+
+async fn load_manual_selection(state: &AppState, id: Uuid) -> Result<Value, Problem> {
+    let Some(row) = state.store.assortment(id).await.map_err(store_status)? else {
+        return Err(Problem::new(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            "selection not found",
+        ));
+    };
+    if row.get("kind").and_then(Value::as_str) != Some("manual") {
+        return Err(only_manual_members());
+    }
+    Ok(row)
+}
+
+/// Keeps the first occurrence of each id and rejects anything that is missing,
+/// deleted, or a different type than the selection.
+async fn live_member_ids(
+    state: &AppState,
+    type_id: Uuid,
+    object_ids: &[Uuid],
+) -> Result<Vec<Uuid>, Problem> {
+    if object_ids.is_empty() {
+        return Err(choose_objects());
+    }
+    let mut unique = Vec::with_capacity(object_ids.len());
+    for id in object_ids {
+        if !unique.contains(id) {
+            unique.push(*id);
+        }
+    }
+    let wanted: Vec<ObjectId> = unique.iter().copied().map(ObjectId::from_uuid).collect();
+    let stored = state
+        .store
+        .get_objects(&wanted)
+        .await
+        .map_err(store_status)?;
+    if stored.len() != unique.len() {
+        return Err(Problem::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "assortment",
+            "object not found",
+        ));
+    }
+    for object in &stored {
+        if object.deleted_at.is_some() {
+            return Err(Problem::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "assortment",
+                "object not found",
+            ));
+        }
+        if object.object.type_id.as_uuid() != type_id {
+            return Err(Problem::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "assortment",
+                "an object must belong to the selection's type",
+            ));
+        }
+    }
+    Ok(unique)
+}
+
+async fn member_ids_json(state: &AppState, id: Uuid) -> Result<Json<Value>, Problem> {
+    let member_ids = state
+        .store
+        .assortment_member_ids(id)
+        .await
+        .map_err(store_status)?;
+    Ok(Json(json!({
+        "member_ids": member_ids,
+        "found": member_ids.len(),
+    })))
+}
+
+async fn add_assortment_members(
+    State(state): State<AppState>,
+    Auth(identity): Auth,
+    Path(id): Path<Uuid>,
+    Json(body): Json<AssortmentMembersBody>,
+) -> Result<Json<Value>, Problem> {
+    require(&identity, Role::Editor)?;
+    crate::auth::require_commit(&identity)?;
+    let row = load_manual_selection(&state, id).await?;
+    let type_id = selection_type_id(&row)?;
+    let object_ids = live_member_ids(&state, type_id, &body.object_ids).await?;
+    state
+        .store
+        .add_assortment_members(id, &object_ids)
+        .await
+        .map_err(store_status)?;
+    let query = row.get("query").cloned().unwrap_or_else(|| json!({}));
+    if !is_hand_only(&query) {
+        state
+            .store
+            .update_assortment_query(id, &json!({ "hand": true }))
+            .await
+            .map_err(store_status)?;
+    }
+    member_ids_json(&state, id).await
+}
+
+async fn remove_assortment_members(
+    State(state): State<AppState>,
+    Auth(identity): Auth,
+    Path(id): Path<Uuid>,
+    Json(body): Json<AssortmentMembersBody>,
+) -> Result<Json<Value>, Problem> {
+    require(&identity, Role::Editor)?;
+    crate::auth::require_commit(&identity)?;
+    let row = load_manual_selection(&state, id).await?;
+    let type_id = selection_type_id(&row)?;
+    let object_ids = live_member_ids(&state, type_id, &body.object_ids).await?;
+    state
+        .store
+        .remove_assortment_members(id, &object_ids)
+        .await
+        .map_err(store_status)?;
+    member_ids_json(&state, id).await
 }
 
 async fn propose_assortment(
@@ -5300,6 +5587,56 @@ fn applied_row(receipt: &braian_store::WriteReceipt) -> AppliedRow {
     }
 }
 
+async fn apply_object_delete(
+    state: &AppState,
+    identity: &Identity,
+    proposal_id: Uuid,
+    row_id: Uuid,
+    row: &Value,
+    claim: Uuid,
+) -> Result<Option<AppliedRow>, Problem> {
+    let object_id = row
+        .get("object_id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            Problem::new(
+                StatusCode::BAD_REQUEST,
+                "missing_id",
+                "name the object to delete",
+            )
+        })?;
+    let id =
+        ObjectId::from_uuid(Uuid::parse_str(object_id).map_err(|error| {
+            Problem::new(StatusCode::BAD_REQUEST, "invalid_id", error.to_string())
+        })?);
+    let base = row
+        .get("base_version")
+        .and_then(Value::as_i64)
+        .and_then(|version| u64::try_from(version).ok());
+    let Some(receipt) = finish_row(
+        state,
+        identity,
+        proposal_id,
+        row_id,
+        "accepted",
+        ProposalWrite::Objects {
+            ops: vec![braian_store::ObjectOp::Delete {
+                id,
+                base_version: base,
+            }],
+            expect_version: base.map(|version| (id, version)),
+        },
+        claim,
+    )
+    .await?
+    else {
+        return Ok(None);
+    };
+    state.emit(json!({ "seq": receipt.last_seq, "op": "delete", "object_id": id.as_uuid() }));
+    state.index_after_commit(id.as_uuid(), receipt.last_seq);
+    Ok(Some(applied_row(&receipt)))
+}
+
 async fn apply_row(
     state: &AppState,
     identity: &Identity,
@@ -5331,6 +5668,14 @@ async fn apply_row(
         return accept_legacy_relation(state, identity, proposal_id, row_id, row, to, &kind, claim)
             .await
             .map(|seq| seq.map(|seq| AppliedRow { seq, version: None }));
+    }
+    if row
+        .get("patch")
+        .and_then(|patch| patch.get("op"))
+        .and_then(Value::as_str)
+        == Some("delete")
+    {
+        return apply_object_delete(state, identity, proposal_id, row_id, row, claim).await;
     }
     let cached = state.models.get(&state.store).await?;
     let patch_body = row.get("patch").cloned().unwrap_or(json!({}));
@@ -6618,26 +6963,7 @@ pub(crate) async fn run_operation(
             actor.source = "merge".into();
             crate::merge::apply_profile(&state.store, &actor, key, name == "merge.dry_run").await
         }
-        "catalog.cleanup" => {
-            let key = args.get("key").and_then(Value::as_str).unwrap_or("");
-            let catalog = state
-                .store
-                .require_catalog(key)
-                .await
-                .map_err(store_status)?;
-            if catalog.kind != braian_store::CatalogKind::Source {
-                return Err(Problem::new(
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    "not_a_source",
-                    "cleanup removes objects from a source catalog",
-                ));
-            }
-            let scoped = state.store.with_catalog(catalog.id);
-            let mut actor = identity.actor.clone();
-            actor.source = "cleanup".into();
-            let removed = crate::catalogs::cleanup_objects(&scoped, &actor, &catalog.key).await?;
-            Ok(json!({ "removed": removed }))
-        }
+        "catalog.cleanup" => propose_catalog_cleanup(state, identity, args).await,
         "model.list_attribute_definitions" => crate::attribute_catalog::list(state).await,
         "list_attribute_paths" => {
             let token = args
@@ -7147,6 +7473,29 @@ fn invalid_base_version() -> Problem {
     )
 }
 
+async fn propose_catalog_cleanup(
+    state: &AppState,
+    identity: &Identity,
+    args: &Value,
+) -> Result<Value, Problem> {
+    let key = args.get("key").and_then(Value::as_str).unwrap_or("");
+    let catalog = state
+        .store
+        .require_catalog(key)
+        .await
+        .map_err(store_status)?;
+    if catalog.kind != braian_store::CatalogKind::Source {
+        return Err(Problem::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "not_a_source",
+            "cleanup removes objects from a source catalog",
+        ));
+    }
+    let mut scoped = state.clone();
+    scoped.store = state.store.with_catalog(catalog.id);
+    crate::catalogs::propose_cleanup(&scoped, identity).await
+}
+
 async fn propose_operation(
     state: &AppState,
     identity: &Identity,
@@ -7179,6 +7528,7 @@ async fn propose_operation(
         name if name.starts_with("model.") => {
             crate::model_proposal::propose(state, identity, name, args).await
         }
+        "catalog.cleanup" => propose_catalog_cleanup(state, identity, args).await,
         "assortment.save" => propose_assortment(state, identity, args).await,
         "assortment.update" => propose_assortment_update(state, identity, args).await,
         "assortment.delete" => propose_assortment_delete(state, identity, args).await,
@@ -7454,6 +7804,21 @@ pub(crate) struct StateBody {
     environment: Option<String>,
     #[schema(value_type = crate::http_schema::FreeObject)]
     document: Value,
+    /// RFC3339 `updated_at` this edit was based on.
+    /// JSON `null` means the client saw no saved layout.
+    /// Omit the field for a last-write-wins save.
+    // `Option` reads JSON null as absent. The helper wraps a present null as `Some(None)`.
+    #[serde(default, deserialize_with = "deserialize_present_option")]
+    #[schema(value_type = Option<String>)]
+    expected_updated_at: Option<Option<String>>,
+}
+
+fn deserialize_present_option<'de, T, D>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    T: serde::Deserialize<'de>,
+    D: serde::Deserializer<'de>,
+{
+    Ok(Some(Option::deserialize(deserializer)?))
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -7470,8 +7835,17 @@ pub(crate) struct ViewBody {
     title: String,
     pane: Option<String>,
     position: Option<i32>,
+    /// Top-level keys replace those keys in the stored view.
+    /// A JSON null removes that key. Keys left out stay as stored.
     #[schema(value_type = Option<crate::http_schema::FreeObject>)]
     state: Option<Value>,
+    /// RFC3339 `updated_at` this edit was based on.
+    /// JSON `null` means the client saw no saved view.
+    /// Omit the field to merge per key without a version check.
+    // `Option` reads JSON null as absent. The helper wraps a present null as `Some(None)`.
+    #[serde(default, deserialize_with = "deserialize_present_option")]
+    #[schema(value_type = Option<String>)]
+    expected_updated_at: Option<Option<String>>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -7613,6 +7987,35 @@ mod tests {
     use tokio::net::TcpListener;
 
     use super::*;
+
+    #[test]
+    fn expected_updated_at_null_is_not_an_omitted_field() {
+        let absent: StateBody = serde_json::from_str(r#"{"document":{}}"#).unwrap();
+        assert!(absent.expected_updated_at.is_none());
+        let empty: StateBody =
+            serde_json::from_str(r#"{"document":{},"expected_updated_at":null}"#).unwrap();
+        assert!(matches!(empty.expected_updated_at, Some(None)));
+        let stamped: StateBody =
+            serde_json::from_str(r#"{"document":{},"expected_updated_at":"2026-01-01T00:00:00Z"}"#)
+                .unwrap();
+        assert!(matches!(
+            stamped.expected_updated_at,
+            Some(Some(ref value)) if value == "2026-01-01T00:00:00Z"
+        ));
+    }
+
+    #[test]
+    fn view_expected_updated_at_null_is_not_an_omitted_field() {
+        let absent: ViewBody =
+            serde_json::from_str(r#"{"workspace_id":"018f2000-0000-7000-8000-000000000003","type":"graph","title":"Graph"}"#)
+                .unwrap();
+        assert!(absent.expected_updated_at.is_none());
+        let empty: ViewBody = serde_json::from_str(
+            r#"{"workspace_id":"018f2000-0000-7000-8000-000000000003","type":"graph","title":"Graph","expected_updated_at":null}"#,
+        )
+        .unwrap();
+        assert!(matches!(empty.expected_updated_at, Some(None)));
+    }
 
     #[test]
     fn search_hides_a_link_type_even_when_the_index_returns_it() {

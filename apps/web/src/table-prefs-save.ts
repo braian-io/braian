@@ -20,6 +20,8 @@ export type TablePrefsSnapshot = {
   view: TablePrefsView
   workspaceId: string
   table: TablePrefsTable
+  /** Undefined when this client has not seen the view clock yet. */
+  updatedAt?: string | null
 }
 
 export type TablePrefsBody = {
@@ -30,6 +32,7 @@ export type TablePrefsBody = {
   pane: string
   position: number
   state: Json
+  expected_updated_at?: string | null
 }
 
 export type TablePrefsPost = (body: TablePrefsBody, signal: AbortSignal) => Promise<unknown>
@@ -41,7 +44,9 @@ export type TablePrefsSaverOptions = {
 
 export function tablePrefsBody(snapshot: TablePrefsSnapshot): TablePrefsBody {
   const { view, workspaceId, table } = snapshot
-  return {
+  // Only the table key. A sort change must not replace catalog, source, or
+  // any other key a concurrent save already stored.
+  const body: TablePrefsBody = {
     id: view.id,
     workspace_id: workspaceId,
     type: view.type,
@@ -49,7 +54,6 @@ export function tablePrefsBody(snapshot: TablePrefsSnapshot): TablePrefsBody {
     pane: view.pane ?? 'center',
     position: view.position ?? 0,
     state: {
-      ...view.state,
       table: {
         // Never persist the live free-text search. Writing an empty filter also
         // clears a query already saved on a shared view (row 242).
@@ -60,6 +64,8 @@ export function tablePrefsBody(snapshot: TablePrefsSnapshot): TablePrefsBody {
       },
     },
   }
+  if (snapshot.updatedAt !== undefined) body.expected_updated_at = snapshot.updatedAt
+  return body
 }
 
 export function createTablePrefsSaver(post: TablePrefsPost, options: TablePrefsSaverOptions = {}) {

@@ -33,10 +33,17 @@ The agent pane is a conversation:
   starts a new line. Its border and keyboard focus ring match the other search
   fields in the app (`var(--inset)` with a `var(--accent)` ring).
 - When the agent is working, the status chip updates and **Send** is disabled.
-- When the agent files a draft, the reply includes a **link** that jumps to the
-  affected row or object. Review and **Save** (or **Discard**) there — the same
-  flow as edits you make yourself. There are no Approve/Reject buttons in the
-  chat.
+- When the agent files a **proposal**, the reply includes **Open in the table**
+  (the link shows the object's key). That opens the table for the object's own
+  type — Products for a product — and leaves Detail
+  open on that same object. The same action is on the object in Detail and on
+  a proposal row.
+- The proposal then shows up as a **draft**: Pending, then one **Discard** /
+  **Save** bar. While Detail is open on that object the bar is in Detail. When
+  Detail is not open on it, the bar is in the table. **Save** writes the draft.
+  The table, the API and History then show the saved object. **Discard** throws
+  the draft away. There is no separate Approve or Reject step. A change you
+  type yourself keeps that same single bar in the pane where you made it.
 
 Follow-up messages stay in the **same run**, so you can continue with context
 (for example adjusting another field on the same product).
@@ -59,7 +66,13 @@ the pane with **Ctrl+J** and restored when you open it again.
 
 While the follow-up input is focused, **Esc** blurs the field and moves keyboard
 focus to the **pane on the left** (for example Products or Detail). Your draft
-text stays in the input. **Esc** does not close the agent pane.
+text stays in the input. **Esc** does not close the agent pane. If there is no
+pane on the left, focus returns to the element that had it before the agent
+opened, then to the last focused pane, then to any open pane. It does not stay
+on the page background.
+
+Closing the pane with **Ctrl+J** returns focus the same way: first to that
+earlier element, then to the last focused pane, then to any open pane.
 
 Use **Ctrl+J** when you want to hide the whole agent column.
 

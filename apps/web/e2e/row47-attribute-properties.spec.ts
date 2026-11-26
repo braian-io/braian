@@ -16,6 +16,9 @@ async function command(page: Page, title: string) {
   await expect(palette).toBeVisible()
   await palette.fill(title)
   await page.keyboard.press('Enter')
+  // The command has to dismiss the palette. A create dialog stays open until
+  // its commit returns, and the next shortcut must not land in that dialog.
+  await expect(palette).toBeHidden()
 }
 
 async function openTypeAttributes(page: Page, typeKey: string) {
@@ -64,10 +67,12 @@ test('type attribute rule columns stage, save, and restore (row 47)', async ({ p
   await page.getByTestId('model-dialog-name').fill('ROW47 Colors')
   await page.getByTestId('model-dialog-options').fill('Red, Blue')
   await page.getByTestId('model-dialog-save').click()
+  await expect(page.getByTestId('model-dialog')).toHaveCount(0)
 
   await command(page, 'New type')
   await page.getByTestId('model-dialog-name').fill('ROW47 Demo')
   await page.getByTestId('model-dialog-save').click()
+  await expect(page.getByTestId('model-dialog')).toHaveCount(0)
 
   const attributes = await openTypeAttributes(page, 'row47_demo')
 

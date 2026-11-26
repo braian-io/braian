@@ -2,10 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useCatalogsQuery, type CatalogListRow } from '../catalog-list'
 import { ApiError } from '../api'
+import { selectedCatalogRow, setCatalogSelection } from '../catalog-selection'
 import { copy } from '../i18n'
 import { registerCommandRunner } from '../command-registry'
 import { onDraftChange, requestReview, stageModelSteps } from '../model-stage'
 import { commitModelSteps } from '../model-commit'
+import { publishProposal } from '../proposal-bus'
 import { reportWriteError } from '../write-error'
 import { StateNote } from '../states'
 import {
@@ -61,7 +63,7 @@ export function CatalogsTable() {
   const [draftRows, setDraftRows] = useState<Record<string, CatalogTableRow>>({})
   const [activeRowId, setActiveRowId] = useState<string | null>(null)
   const [editRequest, setEditRequest] = useState<EditRequest | null>(null)
-  const [message, setMessage] = useState('')
+  const [message, setMessage] = useState<{ text: string; tone: 'error' | 'empty' } | null>(null)
   const [nextNew, setNextNew] = useState(0)
   const rowsRef = useRef<CatalogTableRow[]>([])
   const activeIdRef = useRef<string | null>(null)
@@ -88,13 +90,18 @@ export function CatalogsTable() {
   rowsRef.current = displayRows
   activeIdRef.current = activeRowId
 
+  useEffect(() => {
+    const row = selectedCatalogRow(displayRows, activeRowId)
+    setCatalogSelection(row?.key ? { key: row.key, kind: row.kind } : null)
+  }, [activeRowId, displayRows])
+
+  useEffect(() => () => setCatalogSelection(null), [])
+
   const isPersisted = (row: CatalogTableRow) => rows.some((item) => item.id === row.id)
   const isNew = (row: CatalogTableRow) => row.id.startsWith('catalog-new-') || !isPersisted(row)
 
   const runAction = async (action: 'new' | 'rename' | 'delete' | 'infer' | 'cleanup') => {
-    const row =
-      rowsRef.current.find((item) => item.id === activeIdRef.current) ??
-      rowsRef.current[0]
+    const row = selectedCatalogRow(rowsRef.current, activeIdRef.current)
     if (action === 'new') {
       const id = `catalog-new-${nextNew}`
       setNextNew((value) => value + 1)
@@ -111,8 +118,12 @@ export function CatalogsTable() {
       return
     }
     if (action === 'delete') {
-      if (row.kind === 'master' || !row.key) return
-      setMessage('')
+      if (row.kind === 'master') {
+        setMessage({ text: copy.masterCatalogDeleteBlocked, tone: 'error' })
+        return
+      }
+      if (!row.key) return
+      setMessage(null)
       try {
         await stageModelSteps([{ op: 'delete_catalog', key: row.key }])
         await requestReview()
@@ -123,7 +134,7 @@ export function CatalogsTable() {
     }
     if (action === 'infer' || action === 'cleanup') {
       if (row.kind !== 'source' || !row.key) return
-      setMessage('')
+      setMessage(null)
       try {
         const path = action === 'infer'
           ? `/v1/catalogs/${encodeURIComponent(row.key)}/infer`
@@ -138,10 +149,28 @@ export function CatalogsTable() {
           const text = await response.text()
           throw new ApiError(response.status, text || response.statusText, null)
         }
-        void queryClient.invalidateQueries({ queryKey: ['catalogs'] })
+        const payload = await response.json() as { proposal_id?: string | null }
+        const proposalId = String(payload.proposal_id ?? '')
+        if (!proposalId) {
+          setMessage({
+            text: action === 'infer' ? copy.inferNothingNew : copy.cleanupNothing,
+            tone: 'empty',
+          })
+          return
+        }
+        publishProposal(
+          proposalId,
+          action === 'infer' ? 'catalog.infer' : 'catalog.cleanup',
+          undefined,
+          row.key,
+        )
+        setMessage({ text: copy.catalogProposalReady, tone: 'empty' })
       } catch (reason: unknown) {
         const detail = reason instanceof ApiError ? reason.message : ''
-        setMessage(detail || (action === 'infer' ? copy.inferModelFailed : copy.cleanupCatalogFailed))
+        setMessage({
+          text: detail || (action === 'infer' ? copy.inferModelFailed : copy.cleanupCatalogFailed),
+          tone: 'error',
+        })
         reportWriteError(reason)
       }
     }
@@ -215,7 +244,7 @@ export function CatalogsTable() {
 
   return (
     <div data-testid="catalogs-table">
-      {message ? <StateNote tone="error" title={message} /> : null}
+      {message ? <StateNote tone={message.tone} title={message.text} testId="catalog-inline-message" /> : null}
       <StandardEditableTable
         testId="catalogs-table-chrome"
         columns={columns}
@@ -247,7 +276,7 @@ export function CatalogsTable() {
         editRequest={editRequest}
         onEditRequestHandled={() => setEditRequest(null)}
         saveCell={async (row) => {
-          setMessage('')
+          setMessage(null)
           if (isNew(row)) {
             const key = row.key.trim() || attributeKey(row.name)
             if (!key) return

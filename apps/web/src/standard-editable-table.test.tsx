@@ -756,4 +756,47 @@ describe('semantic no-op drafts', () => {
     expect(saveCell.mock.calls[1]?.[0].active).toBe(false)
     release()
   })
+
+  it('saves a checkbox toggled back after the first save resolves and before rows catch up', async () => {
+    type BoolRow = { id: string; active: boolean }
+    const boolColumns: Array<StandardColumn<BoolRow>> = [{
+      id: 'active',
+      header: 'Active',
+      type: 'boolean',
+      display: 'checkbox',
+      cellTestId: () => 'active-checkbox',
+      read: (row) => row.active,
+      write: (row, value) => ({ ...row, active: value === 'true' }),
+    }]
+    const saveCell = vi.fn((_row: BoolRow) => Promise.resolve())
+    const onDraft = vi.fn()
+    const base = { id: '1', active: false }
+    const { rerender } = render(
+      <StandardEditableTable
+        columns={boolColumns}
+        rows={[base]}
+        draftRows={{}}
+        onDraftRowsChange={onDraft}
+        saveCell={saveCell}
+        editable
+      />,
+    )
+    fireEvent.click(screen.getByTestId('active-checkbox'))
+    await waitFor(() => expect(saveCell).toHaveBeenCalledTimes(1))
+    const drafted = onDraft.mock.calls.at(-1)?.[0] as Record<string, BoolRow>
+    expect(drafted['1']?.active).toBe(true)
+    rerender(
+      <StandardEditableTable
+        columns={boolColumns}
+        rows={[base]}
+        draftRows={drafted}
+        onDraftRowsChange={onDraft}
+        saveCell={saveCell}
+        editable
+      />,
+    )
+    fireEvent.click(screen.getByTestId('active-checkbox'))
+    await waitFor(() => expect(saveCell).toHaveBeenCalledTimes(2))
+    expect(saveCell.mock.calls[1]?.[0].active).toBe(false)
+  })
 })

@@ -2,6 +2,15 @@ import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
 import { mainTable, paneWithTab } from './ui'
 
+async function closeTrashTab(page: Page) {
+  const trashTab = page.locator('.pane-tab').filter({ hasText: /^Trash/ }).first()
+  if (await trashTab.count()) {
+    await trashTab.hover()
+    await trashTab.getByRole('button', { name: 'Close tab' }).click()
+    await expect(page.getByTestId('trash-table-chrome')).toHaveCount(0)
+  }
+}
+
 async function login(page: Page) {
   const demo = demoCredentials()
   await page.goto('/')
@@ -200,7 +209,7 @@ async function productWithArticles(page: Page) {
   throw new Error('no product with two linked articles')
 }
 
-test('removing a link updates the peer list at once and Undo brings the row back', async ({ page }) => {
+test('removing a link updates the peer list at once and Trash restore brings the row back', async ({ page }) => {
   test.setTimeout(180_000)
   await login(page)
   const { product, articles: linked } = await productWithArticles(page)
@@ -238,6 +247,37 @@ test('removing a link updates the peer list at once and Undo brings the row back
   }
 
   await expect(removedRow).toHaveCount(0)
-  await page.getByRole('button', { name: 'Undo' }).click()
-  await expect(removedRow).toBeVisible()
+  await page.getByTestId('user-menu').click()
+  await page.getByTestId('user-menu-trash').click()
+  const trash = page.getByTestId('trash-table-chrome')
+  await expect(trash).toBeVisible()
+  const trashRow = trash
+    .locator('[data-testid="trash-row"]')
+    .filter({ hasText: product.key! })
+    .filter({ hasText: removed.peer_key })
+  await expect(trashRow).toBeVisible()
+  await trashRow.click()
+  await page.getByTestId('trash-detail-restore').click()
+  await expect(trashRow).toHaveCount(0)
+  await expect.poll(async () => {
+    const loaded = await page.request.get(`/v1/objects/${product.id}`)
+    if (!loaded.ok()) return false
+    const body = (await loaded.json()) as { links?: Array<{ link_type: string; links?: Array<{ peer_key?: string }> }> }
+    const side = body.links?.find((item) => item.link_type === 'product_articles')
+    return side?.links?.some((link) => link.peer_key === removed.peer_key) ?? false
+  }).toBe(true)
+  await closeTrashTab(page)
+  const productsTabAfter = page.locator('nav.tabs').getByRole('button', { name: /^Products/ })
+  await productsTabAfter.click()
+  await expect(productsTabAfter).toHaveClass(/active/)
+  const productsAfter = mainTable(page, 'Products')
+  await expect(productsAfter).toBeVisible({ timeout: 60_000 })
+  await productsAfter.getByTestId('quick-filter').first().fill(product.key!)
+  await productsAfter.locator(`#object-row-${product.id}`).click()
+  await page.locator('[data-view-type="object_detail"]').first().click()
+  const articlesAfter = paneWithTab(page, 'Articles').getByTestId('object-table').first()
+  await expect.poll(async () => articlesAfter.locator(`#object-row-${removed.peer_id}`).count(), {
+    timeout: 60_000,
+  }).toBe(1)
+  await expect(page.getByTestId('object-detail').getByTestId('link-row').filter({ hasText: removed.peer_key }).first()).toBeVisible()
 })

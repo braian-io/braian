@@ -862,6 +862,48 @@ button.agent-approve:disabled:hover {
 }
 .detail-section-skeleton { height: 3.5rem; margin: var(--space-1) 0; }
 .detail-link-skeleton { margin: var(--space-1) 0 var(--space-2); max-width: 70%; }
+
+.link-row-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.link-row-peer {
+  min-width: 8rem;
+}
+
+.link-inline-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+}
+
+.link-inline-label {
+  color: var(--fg-muted);
+}
+
+.link-inline-input {
+  width: 4.5rem;
+  padding: 0.15rem 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.link-inline-error {
+  font-size: var(--text-xs);
+}
+
+.link-edit-action {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+}
 .agent-failed, .agent-fetch-error { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); min-width: 0; max-width: 100%; }
 .agent-failed p, .agent-fetch-error p { margin: 0; max-width: 100%; overflow-wrap: anywhere; }
 .agent-failed button, .agent-fetch-error button { max-width: 100%; }
@@ -984,6 +1026,8 @@ button.agent-bg-indicator strong { font-variant-numeric: tabular-nums; }
 .pane-body > .table-wrap,
 .pane-body > .graph-wrap,
 .pane-body > .detail-form { overflow: hidden; }
+/* Basis 0 so a tall Detail form fills the pane instead of growing past it and clipping Save. */
+.pane-body > .detail-form { flex: 1 1 0; }
 .pane-body:has(> .table-wrap[data-testid='agents-table']) {
   overflow: auto;
 }
@@ -1092,14 +1136,20 @@ select.link-type-line { width: 100%; font-weight: 600; }
 .status-bar-action:hover { color: var(--text); }
 .draft-bar {
   display: flex;
-  gap: var(--space-3);
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
   align-items: center;
-  margin: 0 var(--space-1_5) var(--space-1_5);
+  margin: 0 0 var(--space-1_5);
   padding: var(--space-1_5) var(--space-2_5);
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   background: var(--panel);
   border-radius: var(--r-lg);
   box-shadow: var(--inset);
 }
+.draft-bar > span:first-child { flex: 1 1 8rem; min-width: 0; }
+.draft-bar .btn { flex: none; }
 .model-reload-bar { color: var(--text-2); }
 
 .standard-table-bar {
@@ -1461,7 +1511,7 @@ button.filter-chip:hover:not(.on) {
 .form, .detail-form { display: flex; flex-direction: column; gap: var(--space-2); }
 .detail-form { min-width: 0; width: 100%; }
 .detail-scroll {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-height: 0;
   min-width: 0;
   overflow-x: hidden;
@@ -1476,9 +1526,12 @@ button.filter-chip:hover:not(.on) {
 .detail-title-row {
   display: flex;
   align-items: flex-start;
+  flex-wrap: nowrap;
   gap: var(--space-2);
   min-width: 0;
 }
+.detail-title-row > button { flex: none; white-space: nowrap; }
+.detail-form > .draft-bar { position: relative; z-index: 2; flex: 0 0 auto; }
 .detail-title-row .detail-title { flex: 1 1 auto; min-width: 0; }
 .detail-title-row .detail-delete { flex: none; margin-top: var(--space-0_5); }
 .icon-btn.icon-danger:hover,
@@ -2299,6 +2352,12 @@ canvas.graph.panning { cursor: grabbing; }
 .hit.disabled:hover, .hit[data-disabled='true']:hover { background: transparent; }
 .hit.ask { z-index: 1; background: var(--raised); border-top: 1px solid var(--border); flex: none; }
 .hit small { display: block; color: var(--muted); font-size: var(--text-sm); font-weight: 400; }
+.hit .hit-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.25;
+}
 .hit .hit-title { font-size: var(--text-base); }
 .hit kbd, .menu kbd { margin-left: auto; }
 .palette .hit.ask:not(.on) { color: var(--text-2); }
@@ -2441,6 +2500,17 @@ kbd {
   padding: var(--space-1) var(--space-2);
   font-size: var(--text-md);
   box-shadow: var(--shadow-md);
+}
+.inline-hint {
+  margin: 0;
+  padding: 0 var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+.inline-hint-action { min-height: auto; margin-left: var(--space-1); padding: 0 var(--space-1); font-size: var(--text-sm); }
+[data-testid="link-row"][data-just-linked="true"] {
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+  animation: flash 600ms var(--ease);
 }
 [data-sonner-toaster] { pointer-events: none; }
 /* Sit in the gutter before the detail pane, above the status bar, so a finish toast does not cover Detail. */

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { toast } from 'sonner'
 import { api } from './api'
 import { Button } from './components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
@@ -109,33 +108,6 @@ export function DeleteObjectsHost() {
       ])
       setBusy(false)
       if (!failed) {
-        toast(copy.deleteObjectDone, {
-          action: {
-            label: copy.undo,
-            onClick: () => {
-              void (async () => {
-                for (const id of deleted) {
-                  try {
-                    await api.post('/v1/trash/{kind}/{id}/undelete', {
-                      params: { path: { kind: 'object', id } },
-                    })
-                    clearObjectGone(queryClient, id)
-                  } catch (reason) {
-                    reportWriteError(reason)
-                    return
-                  }
-                }
-                await Promise.all([
-                  queryClient.invalidateQueries({ queryKey: ['objects'] }),
-                  queryClient.invalidateQueries({ queryKey: ['object'] }),
-                  queryClient.invalidateQueries({ queryKey: ['search'] }),
-                  queryClient.invalidateQueries({ queryKey: ['path-values'] }),
-                  queryClient.invalidateQueries({ queryKey: ['trash'] }),
-                ])
-              })()
-            },
-          },
-        })
         setRequest(null)
       }
     })()

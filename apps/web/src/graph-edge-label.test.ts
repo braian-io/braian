@@ -62,6 +62,17 @@ describe('edge label placement', () => {
     expect(distanceToBox(nodes[0]!, labelBox(point))).toBeGreaterThanOrEqual(30)
   })
 
+  it('steps clear of a band of nodes that covers the nearby offsets', () => {
+    const nodes = []
+    for (let x = 0; x <= 200; x += 16) {
+      for (let y = -90; y <= 90; y += 16) nodes.push({ x, y, radius: 18 })
+    }
+    const point = placeEdgeLabel(from, control, to, size, nodes)
+    const box = labelBox(point)
+    const covered = nodes.some((node) => distanceToBox(node, box) < node.radius)
+    expect(covered).toBe(false)
+  })
+
   it('finds a clear slot past a cluster when the short search is blocked', () => {
     const nodes: EdgeLabelNode[] = []
     for (let x = 40; x <= 180; x += 16) {

@@ -653,6 +653,30 @@ describe('review dialog', () => {
     expect((screen.getByTestId('model-dialog-name') as HTMLInputElement).value).toBe('Recipe')
   })
 
+  it('does not post a second create while the first commit is in flight', async () => {
+    let release: () => void = () => {}
+    const pending = new Promise<void>((resolve) => { release = resolve })
+    const commits: unknown[] = []
+    mock.use((path, init) => {
+      if (String(path).includes('/v1/model/commit')) {
+        commits.push(init?.body)
+        return pending.then(() => ({ model_revision: 2 }))
+      }
+      if (path === '/v1/definitions') return Promise.resolve({ model_revision: 1 })
+      return Promise.resolve({})
+    })
+    render(<Host />)
+    openModelDialog('type')
+    const input = await screen.findByTestId('model-dialog-name')
+    fireEvent.change(input, { target: { value: 'Recipe' } })
+    fireEvent.click(screen.getByTestId('model-dialog-save'))
+    fireEvent.click(screen.getByTestId('model-dialog-save'))
+    await waitFor(() => expect(commits).toHaveLength(1))
+    release()
+    await waitFor(() => expect(screen.queryByTestId('model-dialog')).toBeNull())
+    expect(commits).toHaveLength(1)
+  })
+
   it('labels the create dialog through the shared dialog after a direct save', async () => {
     render(<Host />)
     fireEvent.click(await screen.findByTestId('review-save'))

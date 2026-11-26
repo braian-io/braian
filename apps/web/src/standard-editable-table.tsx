@@ -269,6 +269,9 @@ export function StandardEditableTable<T extends { id: string }>({
   const [cellSave, setCellSave] = useState<Record<string, { state: 'saving' | 'saved' | 'error'; message?: string }>>({})
   const saveTimers = useRef<Record<string, number>>({})
   const savesInFlight = useRef(new Map<string, number>())
+  // The last value sent for a row, kept until `rows` shows it. A toggle back
+  // in the gap after the request resolves still has to be committed.
+  const lastSent = useRef(new Map<string, T>())
   const [internalActiveRowId, setInternalActiveRowId] = useState<string | null>(null)
   const [reorderOrder, setReorderOrder] = useState<string[] | null>(null)
   const inputRef = useRef<HTMLInputElement | HTMLSelectElement | null>(null)
@@ -297,12 +300,15 @@ export function StandardEditableTable<T extends { id: string }>({
   }
   const runSave = (row: T, columnId: string) => {
     if (!saveCell) return
+    lastSent.current.set(row.id, row)
     savesInFlight.current.set(row.id, (savesInFlight.current.get(row.id) ?? 0) + 1)
     noteSave(row.id, columnId, 'saving')
     void saveCell(row, columnId).then(() => {
       noteSave(row.id, columnId, 'saved')
     }).catch((reason: unknown) => {
       noteSave(row.id, columnId, 'error', writeErrorMessage(reason) ?? copy.validation)
+      const sent = lastSent.current.get(row.id)
+      if (sent && sameRow(sent, row)) lastSent.current.delete(row.id)
     }).finally(() => {
       const left = (savesInFlight.current.get(row.id) ?? 1) - 1
       if (left <= 0) savesInFlight.current.delete(row.id)
@@ -379,16 +385,26 @@ export function StandardEditableTable<T extends { id: string }>({
     left.id === right.id
     && columns.every((column) => sameCellValue(column.read(left)) === sameCellValue(column.read(right)))
 
+  useEffect(() => {
+    for (const [id, sent] of lastSent.current) {
+      const base = rows.find((row) => row.id === id)
+      if (base && sameRow(base, sent)) lastSent.current.delete(id)
+    }
+  }, [rows, columns])
+
   const patchRow = useCallback(
     (rowId: string, next: T, columnId = '') => {
       if (!onDraftRowsChange && !saveCell) return
       const base = rows.find((row) => row.id === rowId)
       if (base && sameRow(next, base)) {
         // The value is back where the server was when this render started.
-        // A save of the opposite value may still be in flight; dropping the
+        // A save of the opposite value may still be in flight, or already
+        // resolved while `rows` still shows the old value. Dropping the
         // follow-up would let that save land and leave the cell on the value
         // the person just toggled away from.
-        if (columnId && (savesInFlight.current.get(rowId) ?? 0) > 0) {
+        const sent = lastSent.current.get(rowId)
+        const sentDiffers = Boolean(sent && !sameRow(sent, next))
+        if (columnId && (sentDiffers || (savesInFlight.current.get(rowId) ?? 0) > 0)) {
           if (onDraftRowsChange) onDraftRowsChange(keepRowOrder({ ...draftRows, [rowId]: next }))
           runSave(next, columnId)
           return
