@@ -349,6 +349,18 @@ describe('opening a tab keeps the existing order', () => {
     expect(after.find((ids) => ids.includes('products'))?.[0]).toBe('products')
   })
 
+  it('adds another agent run as a tab in the open agent pane', () => {
+    const layout = splitPair('horizontal', 0.7, tabs(['products']), tabs(['agent']))
+    const result = applyLayoutCommand(
+      doc(layout, { focus: 'products' }),
+      'ui.open_view',
+      { id: 'agent2', zone: 'right', dock: 'edge', share: 0.3 },
+      { views: [...catalog, { id: 'agent2', title: 'Agent', type: 'agent' }] },
+    )
+    expect(leaves(result.doc.layout).map((leaf) => leaf.views)).toEqual([['products'], ['agent', 'agent2']])
+    expect(result.doc.focus).toBe('agent2')
+  })
+
   it('pulls an agent out of the Products tabs without reordering the ones left behind', () => {
     const layout = tabs(['agent', 'products', 'articles'], 0)
     const result = applyLayoutCommand(
