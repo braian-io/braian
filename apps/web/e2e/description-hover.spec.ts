@@ -26,10 +26,8 @@ async function openProductDetail(page: Page) {
   const filter = mainTable(page).getByTestId('quick-filter').first()
   if ((await filter.inputValue()) !== '') await filter.fill('')
   const row = mainTable(page).getByTestId('object-row').filter({ hasText: 'Cheddar' }).first()
-  const fallback = mainTable(page).getByTestId('object-row').first()
-  await expect(row.or(fallback)).toBeVisible()
-  if ((await row.count()) > 0) await row.click()
-  else await fallback.click()
+  await expect(row).toBeVisible({ timeout: 60_000 })
+  await row.click()
   const detailTab = page.locator('[data-view-type="object_detail"]').first()
   if (await detailTab.isVisible()) await detailTab.click()
   await waitDetailReady(page)
@@ -56,7 +54,6 @@ test.describe('detail field description tooltip and language tag alignment', () 
       hadDescription = original.trim().length > 0
 
       await stageAndSave(page, [{ op: 'update_attribute', key: 'ingredients', description: ingredientsHelp }])
-      await page.reload()
       await openProductDetail(page)
 
       const detail = page.getByTestId('object-detail')
@@ -64,12 +61,10 @@ test.describe('detail field description tooltip and language tag alignment', () 
       if (await more.isVisible()) {
         if ((await more.getAttribute('aria-expanded')) !== 'true') await more.click()
       }
-      const ingredientsField = detail.locator('.field').filter({
-        has: detail.locator('label', { hasText: /^Ingredients\b/ }),
-      }).first()
-      await expect(ingredientsField).toBeVisible()
-
-      const ingredientsLabel = ingredientsField.locator('label').first()
+      const ingredientsControl = detail.getByTestId('detail-field-control-ingredients')
+      await expect(ingredientsControl).toBeVisible({ timeout: 30_000 })
+      const ingredientsField = ingredientsControl.locator('xpath=ancestor::div[contains(@class,"field")][1]')
+      const ingredientsLabel = ingredientsField.locator('.field-label-line label').first()
       const ingredientsTip = page.getByTestId('detail-field-desc-ingredients')
       await expect(ingredientsTip).not.toBeVisible()
       await ingredientsLabel.hover()
