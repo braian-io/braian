@@ -33,6 +33,10 @@ async function openTypeAttributes(page: Page, typeKey: string) {
 async function stageAndSaveUi(page: Page, operation: string, args: Record<string, unknown>) {
   const staged = await page.request.post('/v1/model/draft/steps', { data: { operation, args } })
   expect(staged.ok(), await staged.text()).toBeTruthy()
+  // API staging does not update the in-memory draft query; reload to paint the bar.
+  await page.reload()
+  await expect(page.getByTestId('workspace')).toBeVisible()
+  await openDataModel(page)
   await expect(page.getByTestId('unsaved-changes')).toBeVisible({ timeout: 30_000 })
   const saved = page.waitForResponse(
     (response) => response.url().includes('/v1/model/draft/save') && response.request().method() === 'POST',
@@ -82,7 +86,8 @@ test.describe('model reload banner (row 309)', () => {
 
       const tableAfter = await openTypeAttributes(pageB, 'product')
       await expect(tableAfter.getByTestId('review-and-save')).toBeVisible()
-      await expect(searchable).toBeChecked({ checked: !before })
+      const searchableAfter = tableAfter.locator('[data-key="description"]').getByRole('checkbox', { name: 'Searchable' })
+      await expect(searchableAfter).toBeChecked({ checked: !before })
     } finally {
       try {
         const cleanup = await browser.newContext()
