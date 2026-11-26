@@ -274,4 +274,35 @@ describe('planSelectionApply', () => {
     expect(labelOnly.patch.localGroup).toBeNull()
     expect(labelOnly.patch.labelFilter).toContain('organic_eu')
   })
+
+  it('applies hand-picked members as an id filter and does not pin the group', () => {
+    const hand = {
+      id: 'sel-hand',
+      name: 'Hand',
+      kind: 'manual',
+      query: { hand: true },
+      member_ids: ['obj-a', 'obj-b'],
+    }
+    const plan = planSelectionApply({
+      item: hand,
+      ctx: idle(true, 'food:cheese'),
+      mode: 'follow',
+      locked: false,
+    })
+    expect(plan.action).toBe('apply')
+    if (plan.action !== 'apply') return
+    expect(plan.patch.selectionFilter).toBe('id:=[`obj-a`,`obj-b`]')
+    expect(plan.patch.labelFilter).toBe('')
+    expect(plan.patch.localGroup).toBeNull()
+    expect(plan.patch.globalGroup).toBeNull()
+    expect(plan.patch.selectionId).toBe('sel-hand')
+    const ctx = {
+      ...idle(false),
+      activeSelectionFilter: plan.patch.selectionFilter,
+      activeSelectionId: plan.patch.selectionId,
+      activeFilter: '',
+    }
+    expect(assortmentChipActive(hand, ctx)).toBe(true)
+    expect(assortmentChipActive({ ...hand, member_ids: ['obj-a'] }, ctx)).toBe(false)
+  })
 })

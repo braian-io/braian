@@ -396,6 +396,8 @@ pub struct AssortmentRow {
     pub type_id: Uuid,
     pub kind: String,
     pub query: FreeObject,
+    /// Objects added by hand. Empty when the selection still uses a group or label filter.
+    pub member_ids: Vec<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "type")]
     pub object_type: Option<String>,
@@ -430,6 +432,13 @@ pub struct AssortmentUsageWebhook {
 #[derive(Serialize, ToSchema)]
 pub struct AssortmentMembers {
     pub members: Vec<SearchHit>,
+    pub found: u32,
+    pub member_ids: Vec<Uuid>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct AssortmentMemberIds {
+    pub member_ids: Vec<Uuid>,
     pub found: u32,
 }
 

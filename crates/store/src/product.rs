@@ -1,7 +1,9 @@
 //! Tables that sit on the log: people, workspaces, jobs, proposals, relations.
 
+use std::collections::BTreeMap;
+
 use chrono::{DateTime, Utc};
-use serde_json::Value;
+use serde_json::{Value, json};
 use tokio_postgres::types::ToSql;
 use uuid::Uuid;
 
@@ -73,6 +75,13 @@ pub struct AttributeUsageCount {
 
 fn usage_attribute_id(text: String) -> Option<Uuid> {
     Uuid::parse_str(&text).ok()
+}
+
+/// Result of saving a personal layout. `Stale` means the client's `expected_updated_at` lost the race.
+#[derive(Debug)]
+pub enum WorkspaceStateWrite {
+    Saved(DateTime<Utc>),
+    Stale,
 }
 
 impl Store {
@@ -617,6 +626,26 @@ impl Store {
         environment: &str,
         workspace_id: Uuid,
         document: &Value,
+        expected_updated_at: Option<Option<String>>,
+    ) -> Result<WorkspaceStateWrite, Error> {
+        // Absent expected_updated_at keeps the older last-write-wins save.
+        // A present value is the updated_at the client based this edit on.
+        let Some(expected) = expected_updated_at else {
+            return self
+                .put_workspace_state_unversioned(user_id, environment, workspace_id, document)
+                .await
+                .map(WorkspaceStateWrite::Saved);
+        };
+        self.put_workspace_state_versioned(user_id, environment, workspace_id, document, expected)
+            .await
+    }
+
+    async fn put_workspace_state_unversioned(
+        &self,
+        user_id: Uuid,
+        environment: &str,
+        workspace_id: Uuid,
+        document: &Value,
     ) -> Result<DateTime<Utc>, Error> {
         let client = self.checkout().await?;
         // clientSavedAt is a client clock. A layout save that left the browser
@@ -646,6 +675,71 @@ impl Store {
             )
             .await?;
         Ok(current.get(0))
+    }
+
+    async fn put_workspace_state_versioned(
+        &self,
+        user_id: Uuid,
+        environment: &str,
+        workspace_id: Uuid,
+        document: &Value,
+        expected_updated_at: Option<String>,
+    ) -> Result<WorkspaceStateWrite, Error> {
+        let mut client = self.checkout().await?;
+        let tx = client.transaction().await?;
+        let current = tx
+            .query_opt(
+                "SELECT document, updated_at FROM workspace_states
+                 WHERE user_id = $1 AND environment = $2 AND workspace_id = $3
+                 FOR UPDATE",
+                &[&user_id, &environment, &workspace_id],
+            )
+            .await?;
+        let write = match current {
+            None => {
+                let inserted = tx
+                    .query_opt(
+                        "INSERT INTO workspace_states (user_id, environment, workspace_id, document, updated_at)
+                         VALUES ($1, $2, $3, $4, now())
+                         ON CONFLICT (user_id, environment, workspace_id) DO NOTHING
+                         RETURNING updated_at",
+                        &[&user_id, &environment, &workspace_id, document],
+                    )
+                    .await?;
+                match inserted {
+                    Some(row) => WorkspaceStateWrite::Saved(row.get(0)),
+                    None => WorkspaceStateWrite::Stale,
+                }
+            }
+            Some(row) => {
+                let stored: DateTime<Utc> = row.get(1);
+                // Compare in process. Casting the parameter to timestamptz makes
+                // Postgres expect a binary timestamp, and the text the client sent
+                // then fails to serialize.
+                let matches = expected_updated_at
+                    .as_deref()
+                    .and_then(|raw| DateTime::parse_from_rfc3339(raw).ok())
+                    .is_some_and(|stamp| {
+                        stamp.with_timezone(&Utc).timestamp_micros() == stored.timestamp_micros()
+                    });
+                if !matches {
+                    WorkspaceStateWrite::Stale
+                } else {
+                    let updated = tx
+                        .query_one(
+                            "UPDATE workspace_states
+                             SET document = $4, updated_at = now()
+                             WHERE user_id = $1 AND environment = $2 AND workspace_id = $3
+                             RETURNING updated_at",
+                            &[&user_id, &environment, &workspace_id, document],
+                        )
+                        .await?;
+                    WorkspaceStateWrite::Saved(updated.get(0))
+                }
+            }
+        };
+        tx.commit().await?;
+        Ok(write)
     }
 
     pub async fn delete_workspace_state(
@@ -965,31 +1059,142 @@ impl Store {
     }
 
     pub async fn list_assortments(&self, type_id: Option<Uuid>) -> Result<Vec<Value>, Error> {
-        let client = self.checkout().await?;
-        let rows = client
-            .query(
-                "SELECT id, name, type_id, kind, query FROM assortments
-                 WHERE deleted_at IS NULL AND ($1::uuid IS NULL OR type_id = $1)
-                 ORDER BY name",
-                &[&type_id],
-            )
-            .await?;
-        Ok(rows.iter().map(assortment_json).collect())
+        let values = {
+            let client = self.checkout().await?;
+            let rows = client
+                .query(
+                    "SELECT id, name, type_id, kind, query FROM assortments
+                     WHERE deleted_at IS NULL AND ($1::uuid IS NULL OR type_id = $1)
+                     ORDER BY name",
+                    &[&type_id],
+                )
+                .await?;
+            rows.iter().map(assortment_json).collect()
+        };
+        self.attach_member_ids(values).await
     }
 
     pub async fn assortment(&self, id: Uuid) -> Result<Option<Value>, Error> {
-        let client = self.checkout().await?;
-        let Some(row) = client
-            .query_opt(
-                "SELECT id, name, type_id, kind, query FROM assortments
-                 WHERE id = $1 AND deleted_at IS NULL",
-                &[&id],
-            )
-            .await?
-        else {
+        let found = {
+            let client = self.checkout().await?;
+            client
+                .query_opt(
+                    "SELECT id, name, type_id, kind, query FROM assortments
+                     WHERE id = $1 AND deleted_at IS NULL",
+                    &[&id],
+                )
+                .await?
+                .map(|row| assortment_json(&row))
+        };
+        let Some(mut value) = found else {
             return Ok(None);
         };
-        Ok(Some(assortment_json(&row)))
+        let members = self.assortment_member_ids(id).await?;
+        value["member_ids"] = json!(members);
+        Ok(Some(value))
+    }
+
+    /// Live objects in a manual selection, in the order they were added.
+    pub async fn assortment_member_ids(&self, assortment_id: Uuid) -> Result<Vec<Uuid>, Error> {
+        let client = self.checkout().await?;
+        let rows = client
+            .query(
+                "SELECT m.object_id
+                 FROM assortment_members m
+                 JOIN objects o ON o.id = m.object_id
+                 WHERE m.assortment_id = $1 AND o.deleted_at IS NULL
+                 ORDER BY m.added_at, m.object_id",
+                &[&assortment_id],
+            )
+            .await?;
+        Ok(rows.iter().map(|row| row.get(0)).collect())
+    }
+
+    /// Adds objects. A repeated id is a no-op.
+    pub async fn add_assortment_members(
+        &self,
+        assortment_id: Uuid,
+        object_ids: &[Uuid],
+    ) -> Result<(), Error> {
+        if object_ids.is_empty() {
+            return Ok(());
+        }
+        let client = self.checkout().await?;
+        client
+            .execute(
+                "INSERT INTO assortment_members (assortment_id, object_id)
+                 SELECT $1, object_id FROM unnest($2::uuid[]) AS object_id
+                 ON CONFLICT (assortment_id, object_id) DO NOTHING",
+                &[&assortment_id, &object_ids],
+            )
+            .await?;
+        Ok(())
+    }
+
+    /// Removes objects. An id that is not a member is a no-op.
+    pub async fn remove_assortment_members(
+        &self,
+        assortment_id: Uuid,
+        object_ids: &[Uuid],
+    ) -> Result<(), Error> {
+        if object_ids.is_empty() {
+            return Ok(());
+        }
+        let client = self.checkout().await?;
+        client
+            .execute(
+                "DELETE FROM assortment_members
+                 WHERE assortment_id = $1 AND object_id = ANY($2)",
+                &[&assortment_id, &object_ids],
+            )
+            .await?;
+        Ok(())
+    }
+
+    async fn assortment_member_map(
+        &self,
+        assortment_ids: &[Uuid],
+    ) -> Result<BTreeMap<Uuid, Vec<Uuid>>, Error> {
+        if assortment_ids.is_empty() {
+            return Ok(BTreeMap::new());
+        }
+        let client = self.checkout().await?;
+        let rows = client
+            .query(
+                "SELECT m.assortment_id, m.object_id
+                 FROM assortment_members m
+                 JOIN objects o ON o.id = m.object_id
+                 WHERE m.assortment_id = ANY($1) AND o.deleted_at IS NULL
+                 ORDER BY m.assortment_id, m.added_at, m.object_id",
+                &[&assortment_ids],
+            )
+            .await?;
+        let mut map: BTreeMap<Uuid, Vec<Uuid>> = BTreeMap::new();
+        for row in rows {
+            map.entry(row.get(0)).or_default().push(row.get(1));
+        }
+        Ok(map)
+    }
+
+    async fn attach_member_ids(&self, mut rows: Vec<Value>) -> Result<Vec<Value>, Error> {
+        let ids = rows
+            .iter()
+            .filter_map(|row| {
+                row.get("id")
+                    .and_then(Value::as_str)
+                    .and_then(|text| Uuid::parse_str(text).ok())
+            })
+            .collect::<Vec<_>>();
+        let map = self.assortment_member_map(&ids).await?;
+        for row in &mut rows {
+            let id = row
+                .get("id")
+                .and_then(Value::as_str)
+                .and_then(|text| Uuid::parse_str(text).ok());
+            let members = id.and_then(|id| map.get(&id)).cloned().unwrap_or_default();
+            row["member_ids"] = json!(members);
+        }
+        Ok(rows)
     }
 
     /// Views, job types and webhooks that reference this selection.
