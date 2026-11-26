@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState, useSyncExternalStore, type KeyboardEvent 
 import { useQuery } from '@tanstack/react-query'
 import { Check } from 'lucide-react'
 import { MetaChip, type ChipTone } from './chips'
-import { toast } from 'sonner'
 import { announce, takeShortcutTip } from './shortcut-tip'
 import { ApiError, api, operationId, textValue, type Json } from './api'
 import { reportWriteError } from './write-error'
@@ -631,7 +630,7 @@ export function CommandPalette({
 
   const blockUntilWorkspace = (commandId: string) => {
     if (workspaceReady || !needsWorkspace(commandId)) return false
-    toast.message(copy.workspaceOpeningWhenReady)
+    announce(copy.workspaceOpeningWhenReady)
     return true
   }
 
@@ -1146,7 +1145,6 @@ export function CommandPalette({
     if (item.shortcut) {
       const tip = takeShortcutTip(item.sourceId ?? item.id, item.shortcut, item.subtitle || item.title)
       if (tip) {
-        toast(tip)
         announce(tip)
       }
     }

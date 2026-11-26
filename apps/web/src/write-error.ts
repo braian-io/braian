@@ -1,5 +1,5 @@
-import { toast } from 'sonner'
 import { ApiError } from './api/client'
+import { writeSettled } from './write-status'
 import { copy } from './i18n'
 
 export type WriteFieldError = {
@@ -119,10 +119,10 @@ export function writeErrorMessage(error: unknown, quiet?: QuietWrite): string | 
   return 'The write failed'
 }
 
-/** Toast the server message. Returns the text, or null when nothing was shown. */
+/** Record a failed write for the status bar. Returns the text, or null when suppressed. */
 export function reportWriteError(error: unknown, quiet?: QuietWrite): string | null {
   const message = writeErrorMessage(error, quiet)
   if (!message) return null
-  toast.error(message)
+  writeSettled(message)
   return message
 }

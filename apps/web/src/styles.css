@@ -2459,6 +2459,17 @@ kbd {
   font-size: var(--text-md);
   box-shadow: var(--shadow-md);
 }
+.inline-hint {
+  margin: 0;
+  padding: 0 var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+.inline-hint-action { min-height: auto; margin-left: var(--space-1); padding: 0 var(--space-1); font-size: var(--text-sm); }
+[data-testid="link-row"][data-just-linked="true"] {
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+  animation: flash 600ms var(--ease);
+}
 [data-sonner-toaster] { pointer-events: none; }
 /* Sit in the gutter before the detail pane, above the status bar, so a finish toast does not cover Detail. */
 [data-sonner-toaster][data-x-position='right'] { right: var(--toast-right, 24px) !important; }

@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Check } from 'lucide-react'
-import { toast } from 'sonner'
 import { api, textValue, type Json } from './api'
+import { LINK_FEEDBACK_EVENT, pendingLinkFeedback, type LinkFeedbackDetail } from './link-feedback'
 import { Button } from './components/ui/button'
 import { Dialog, DialogContent, DialogDescription } from './components/ui/dialog'
 import { formatCount } from './format'
@@ -74,6 +73,38 @@ export function LinkSections({
   const [request, setRequest] = useState<LinkAddRequest | null>(null)
   const [dropKey, setDropKey] = useState<string | null>(null)
   const [denyKey, setDenyKey] = useState<string | null>(null)
+  const [confirm, setConfirm] = useState<Removal | null>(null)
+  const [confirmError, setConfirmError] = useState('')
+  const [sectionHints, setSectionHints] = useState<Record<string, string>>({})
+  const [justLinkedPeers, setJustLinkedPeers] = useState<Set<string>>(() => new Set())
+  const feedbackTimers = useRef<number[]>([])
+  const sections = useMemo(() => sectionsFor(defs, typeKey, links), [defs, typeKey, links])
+  const applyLinkFeedback = (detail: LinkFeedbackDetail) => {
+    if (detail.sectionObjectId !== objectId) return
+    if (detail.hint) {
+      const sectionKey = detail.linkType && detail.direction ? `${detail.linkType}:${detail.direction}` : 'default'
+      setSectionHints((current) => ({ ...current, [sectionKey]: detail.hint!, default: detail.hint! }))
+      const timer = window.setTimeout(() => {
+        setSectionHints((current) => {
+          const next = { ...current }
+          if (next[sectionKey] === detail.hint) delete next[sectionKey]
+          return next
+        })
+      }, 30_000)
+      feedbackTimers.current.push(timer)
+    }
+    if (detail.peerKeys.length > 0) {
+      setJustLinkedPeers((current) => new Set([...current, ...detail.peerKeys]))
+      const timer = window.setTimeout(() => {
+        setJustLinkedPeers((current) => {
+          const next = new Set(current)
+          for (const key of detail.peerKeys) next.delete(key)
+          return next
+        })
+      }, 30_000)
+      feedbackTimers.current.push(timer)
+    }
+  }
   useEffect(() => {
     const clear = () => {
       setDropKey(null)
@@ -82,10 +113,24 @@ export function LinkSections({
     window.addEventListener('braian-link-dragend', clear)
     return () => window.removeEventListener('braian-link-dragend', clear)
   }, [])
+  useEffect(() => {
+    const onFeedback = (event: Event) => {
+      const detail = (event as CustomEvent<LinkFeedbackDetail>).detail
+      if (!detail) return
+      applyLinkFeedback(detail)
+    }
+    window.addEventListener(LINK_FEEDBACK_EVENT, onFeedback)
+    return () => {
+      window.removeEventListener(LINK_FEEDBACK_EVENT, onFeedback)
+      for (const timer of feedbackTimers.current) clearTimeout(timer)
+      feedbackTimers.current = []
+    }
+  }, [objectId])
+  useEffect(() => {
+    const detail = pendingLinkFeedback(objectId)
+    if (detail) applyLinkFeedback(detail)
+  }, [objectId, links, bodyLoading])
   const opener = useRef<HTMLElement | null>(null)
-  const [confirm, setConfirm] = useState<Removal | null>(null)
-  const [confirmError, setConfirmError] = useState('')
-  const sections = useMemo(() => sectionsFor(defs, typeKey, links), [defs, typeKey, links])
   const onOpenRef = useRef(onOpen)
   onOpenRef.current = onOpen
   const sectionsRef = useRef(sections)
@@ -103,18 +148,6 @@ export function LinkSections({
     void queryClient.invalidateQueries({ queryKey: ['graph', objectId] })
     if (peerId) void queryClient.invalidateQueries({ queryKey: ['graph', peerId] })
   }
-  const recreate = (removal: Removal) => {
-    const values: Json = removal.values
-      ? { ...removal.values }
-      : removal.sortOrder == null || removal.sortOrder === ''
-        ? {}
-        : { sort_order: typeof removal.sortOrder === 'object' ? removal.sortOrder : { value: String(removal.sortOrder) } }
-    void api.post('/v1/links', {
-      body: { type: removal.linkType, from_id: removal.fromId, to_id: removal.toId, values },
-    }).then(() => refresh(removal.peerId)).catch((reason: unknown) => {
-      reportWriteError(reason)
-    })
-  }
   const remove = (link: LinkItem, section: LinkSide) => {
     const removal = removalFor(link, section, objectId)
     if (removal.hasValues) {
@@ -124,9 +157,6 @@ export function LinkSections({
     }
     void api.delete('/v1/links/{id}', { params: { path: { id: removal.id } } }).then(() => {
       refresh(removal.peerId)
-      toast(copy.linkRemoved, {
-        action: { label: copy.undo, onClick: () => recreate(removal) },
-      })
     }).catch((reason: unknown) => {
       reportWriteError(reason)
     })
@@ -138,9 +168,6 @@ export function LinkSections({
       setConfirm(null)
       setConfirmError('')
       refresh(removal.peerId)
-      toast(copy.linkRemoved, {
-        action: { label: copy.undo, onClick: () => recreate(removal) },
-      })
     }).catch((reason: unknown) => {
       const message = writeErrorMessage(reason)
       if (message) setConfirmError(message)
@@ -226,6 +253,7 @@ export function LinkSections({
           setDropKey(key)
         }
         const tone = dropKey === key ? ' link-drop' : denyKey === key ? ' link-drop-deny' : ''
+        const hint = sectionHints[key] ?? sectionHints.default
         return (
         <section
           key={key}
@@ -268,6 +296,11 @@ export function LinkSections({
           }}
         >
           <h3>{section.label} ({formatCount(section.links.length)})</h3>
+          {hint ? (
+            <p className="inline-hint" role="status" data-testid="link-section-feedback">
+              {hint}
+            </p>
+          ) : null}
           {bodyLoading && section.links.length === 0 ? (
             <span className="detail-link-skeleton" data-testid="detail-link-skeleton" aria-busy="true" />
           ) : null}
@@ -279,6 +312,11 @@ export function LinkSections({
               tabIndex={0}
               data-testid="link-row"
               data-peer={link.peer_key}
+              data-just-linked={
+                justLinkedPeers.has(link.peer_key) || (link.peer_name ? justLinkedPeers.has(link.peer_name) : false)
+                  ? 'true'
+                  : undefined
+              }
               onFocus={() => {
                 focused = { id: link.id, peer: link.peer_key, hasValues: link.has_values }
               }}

@@ -6,12 +6,6 @@ import { api } from './api'
 import { copy } from './i18n'
 import { LinkSections } from './link-section'
 
-const mocks = vi.hoisted(() => ({
-  toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn(), message: vi.fn() }),
-}))
-
-vi.mock('sonner', () => ({ toast: mocks.toast }))
-
 const defs = {
   types: [
     {
@@ -80,12 +74,10 @@ async function removeFocusedLink() {
 }
 
 const del = vi.spyOn(api, 'delete')
-const post = vi.spyOn(api, 'post')
 
 beforeEach(() => {
   vi.clearAllMocks()
   del.mockResolvedValue({} as never)
-  post.mockResolvedValue({} as never)
 })
 
 afterEach(() => {
@@ -93,7 +85,7 @@ afterEach(() => {
 })
 
 describe('LinkSections removal', () => {
-  it('toasts Undo after removing a link without values and recreates it with its sort order', async () => {
+  it('removes a link without values without a success notice', async () => {
     renderLinks(link({ sort_order: '3' }))
 
     await removeFocusedLink()
@@ -101,27 +93,7 @@ describe('LinkSections removal', () => {
     await waitFor(() => {
       expect(del).toHaveBeenCalledWith('/v1/links/{id}', { params: { path: { id: 'link-1' } } })
     })
-    await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
-    const [message, options] = mocks.toast.mock.calls[0] as [
-      string,
-      { action: { label: string; onClick: () => void } },
-    ]
-    expect(message).toBe('Link removed')
-    expect(options.action.label).toBe('Undo')
-
-    await act(async () => {
-      options.action.onClick()
-    })
-
-    await waitFor(() => expect(post).toHaveBeenCalledTimes(1))
-    expect(post).toHaveBeenCalledWith('/v1/links', {
-      body: {
-        type: 'related',
-        from_id: 'object-1',
-        to_id: 'peer-1',
-        values: { sort_order: { value: '3' } },
-      },
-    })
+    expect(screen.queryByTestId('link-section-feedback')).toBeNull()
   })
 
   it('confirms a link with values using a plain danger confirm and no text input', async () => {
@@ -166,7 +138,7 @@ describe('LinkSections removal', () => {
     await waitFor(() => expect(document.activeElement).toBe(row))
   })
 
-  it('refreshes both endpoints, peer lists and history on remove and on Undo', async () => {
+  it('refreshes both endpoints, peer lists and history on remove', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const invalidate = vi.spyOn(client, 'invalidateQueries')
     renderLinks(link({ sort_order: '3' }), client)
@@ -179,22 +151,6 @@ describe('LinkSections removal', () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['peer-links'] })
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['link-search'] })
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['history', 'object-1'] })
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['history', 'peer-1'] })
-
-    const [, options] = mocks.toast.mock.calls[0] as [
-      string,
-      { action: { label: string; onClick: () => void } },
-    ]
-    invalidate.mockClear()
-
-    await act(async () => {
-      options.action.onClick()
-    })
-
-    await waitFor(() => expect(post).toHaveBeenCalledTimes(1))
-    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['object', 'peer-1'] }))
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['objects'] })
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['peer-links'] })
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['history', 'peer-1'] })
   })
 })

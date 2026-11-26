@@ -118,7 +118,9 @@ test.describe('type attributes draft patch persist (row 422)', () => {
     await page.reload()
     await expect(page.getByTestId('workspace')).toBeVisible()
     const reloaded = await openTypeAttributes(page, 'product')
-    await expect(page.getByText('Dropped unsaved change to brand (searchable) because the model changed.')).toBeVisible()
+    await expect(page.getByTestId('model-pane-notice')).toContainText(
+      'Dropped unsaved change to brand (searchable) because the model changed.',
+    )
     const checkbox = reloaded.locator('[data-key="brand"]').getByRole('checkbox', { name: 'Searchable' })
     await expect(checkbox).toBeChecked({ checked: !brandSearchable })
     await expect(reloaded.getByTestId('review-and-save')).toHaveCount(0)

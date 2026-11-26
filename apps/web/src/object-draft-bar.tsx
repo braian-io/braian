@@ -67,6 +67,7 @@ export function ObjectDraftBar({
   canDiscard,
   saveReason,
   discardReason,
+  saveError = '',
   pending,
   onSave,
   onDiscard,
@@ -76,15 +77,21 @@ export function ObjectDraftBar({
   canDiscard: boolean
   saveReason: string
   discardReason: string
+  saveError?: string
   pending?: boolean
   onSave: () => void
   onDiscard: () => void
 }) {
-  if (count <= 0 && !saveReason) return null
+  if (count <= 0 && !saveReason && !saveError) return null
   return (
     <div className="draft-bar" data-testid="object-draft-bar" role="status">
       <span>{unsavedChangeLabel(count)}</span>
       {saveReason ? <span className="error" data-testid="review-blocked">{saveReason}</span> : null}
+      {saveError ? (
+        <span className="error" role="alert" data-testid="draft-save-error" title={saveError}>
+          {saveError}
+        </span>
+      ) : null}
       <Button
         type="button"
         variant="danger"

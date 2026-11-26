@@ -298,6 +298,8 @@ export function ObjectTable({
   const [moving, setMoving] = useState<string | null>(null)
   const [massConfirm, setMassConfirm] = useState(false)
   const [flashId, setFlashId] = useState('')
+  const [tableSaveError, setTableSaveError] = useState('')
+  const [filterSetupError, setFilterSetupError] = useState('')
   const [editingCell, setEditingCell] = useState<{ rowId: string; columnId: string } | null>(null)
   const [editingDraft, setEditingDraft] = useState('')
   const [editingMeasureDraft, setEditingMeasureDraft] = useState<MeasureEditDraft | null>(null)
@@ -642,7 +644,8 @@ export function ObjectTable({
           views: views.map((item) => (String(item.id) === view.id ? { ...item, state: prevState } : item)),
         })
       }
-      reportWriteError(reason)
+      const message = writeErrorMessage(reason) ?? copy.saveFailed
+      setFilterSetupError(message)
       throw reason
     }
   }, [explicitAll, workspace.id, workspace.locked, view, queryClient])
@@ -676,6 +679,7 @@ export function ObjectTable({
     })
     if (plan.action === 'ignore') return
     if (plan.action === 'clear') {
+      setFilterSetupError('')
       commitSelection({
         filter: '',
         selectionFilter: '',
@@ -693,6 +697,7 @@ export function ObjectTable({
         return
       }
     }
+    setFilterSetupError('')
     commitSelection(plan.patch)
   }
   useEffect(() => {
@@ -2383,10 +2388,14 @@ export function ObjectTable({
           })
           void runDraftSave(plan, queryClient, viewingAgentRunId() ?? '').then((reason) => {
             if (isDraftSaveInFlight(reason)) return
-            if (reason) reportWriteError(new Error(reason))
-            else session.push(copy.saved)
+            if (reason) setTableSaveError(reason)
+            else {
+              setTableSaveError('')
+              session.push(copy.saved)
+            }
           })
         }}
+        saveError={tableSaveError}
         onDiscard={() => {
           void runDraftDiscard({
             objectIds: [...visibleIds],
@@ -2396,7 +2405,7 @@ export function ObjectTable({
             viaAgent: false,
             surface: 'table',
           }).then((reason) => {
-            if (reason) reportWriteError(new Error(reason))
+            if (reason) setTableSaveError(reason)
             void queryClient.invalidateQueries({ queryKey: ['proposals'] })
             void queryClient.invalidateQueries({ queryKey: ['proposal'] })
           })
@@ -2459,6 +2468,11 @@ export function ObjectTable({
             })
           }}
         />
+        {filterSetupError ? (
+          <span className="error" role="alert" data-testid="filter-setup-error" title={filterSetupError}>
+            {filterSetupError}
+          </span>
+        ) : null}
       </div>
       {pathFilters.length > 0 ? (
         <div className="toolbar path-filter-chips" data-testid="path-filter-chips">

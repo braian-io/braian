@@ -29,6 +29,7 @@ import { SearchRefresh } from './live-refresh'
 import { Button } from './components/ui/button'
 import { Input } from './components/ui/input'
 import { Toaster } from './components/ui/sonner'
+import { announce } from './shortcut-tip'
 import { workspaceDisplayName } from './demo-labels'
 import { WorkspaceDock } from './dock'
 import { flashObject } from './flash'
@@ -2497,7 +2498,7 @@ export function Shell() {
     const surfaceNow = workspaceRef.current
     const docNow = docRef.current
     if (!surfaceNow || !docNow) {
-      toast.message(copy.workspaceOpeningWhenReady)
+      announce(copy.workspaceOpeningWhenReady)
       return
     }
     const defs = queryClient.getQueryData<Json>(['definitions'])
@@ -2588,7 +2589,7 @@ export function Shell() {
     if (!surfaceNow || !docNow) {
       // Notion 112: palette already closes on select — queue until doc+workspace paint.
       queueOpenTypeView(typeId)
-      toast.message(copy.workspaceOpeningWhenReady)
+      announce(copy.workspaceOpeningWhenReady)
       return
     }
     clearQueuedOpenTypeView()

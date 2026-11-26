@@ -208,7 +208,7 @@ async function productWithArticles(page: Page) {
   throw new Error('no product with two linked articles')
 }
 
-test('removing a link updates the peer list at once and Undo brings the row back', async ({ page }) => {
+test('removing a link updates the peer list at once', async ({ page }) => {
   test.setTimeout(180_000)
   await login(page)
   const { product, articles: linked } = await productWithArticles(page)
@@ -246,6 +246,4 @@ test('removing a link updates the peer list at once and Undo brings the row back
   }
 
   await expect(removedRow).toHaveCount(0)
-  await page.getByRole('button', { name: 'Undo' }).click()
-  await expect(removedRow).toBeVisible()
 })

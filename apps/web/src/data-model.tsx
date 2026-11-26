@@ -44,8 +44,8 @@ import {
 import { valueListLabel } from './value-list-table-steps'
 import { registerModelTableDraft, tryChooseModelSelection } from './model-table-draft'
 import { buildAttributeCreateSteps, buildAttributeUpdateSteps } from './attribute-table-steps'
-import { toast } from 'sonner'
 import { MODEL_RELOADED_EVENT } from './model-reload-banner'
+import { stashModelPaneNotice, takeModelPaneNotice } from './model-pane-notice'
 import { CreateDialog, requireText } from './create-dialog'
 import { onAttributeAction, type AttributeAction } from './attribute-actions'
 import { writeErrorMessage } from './write-error'
@@ -242,6 +242,7 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
   const [pendingDetach, setPendingDetach] = useState<Set<string>>(() => new Set())
   const [pendingDelete, setPendingDelete] = useState<Set<string>>(() => new Set())
   const [message, setMessage] = useState('')
+  const [paneNotice, setPaneNotice] = useState<{ text: string; action?: { label: string; onClick: () => void } } | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [createName, setCreateName] = useState('')
   const [createKind, setCreateKind] = useState('text')
@@ -249,6 +250,7 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
   const [pendingKey, setPendingKey] = useState<string | null>(null)
   const [activeRowId, setActiveRowId] = useState<string | null>(null)
   const restoredDraftToken = useRef('')
+  const previousSelectionKey = useRef('')
   const selectionKey = selection ? (selection.kind === 'type' ? selection.typeKey : `${selection.structure}/${selection.group}`) : ''
   const keyAttribute = keyAttributeOf(defs, selection)
   const families = ((defs?.unit_families as Json[]) ?? []).map((item) => String(item.key ?? '')).filter(Boolean)
@@ -264,12 +266,34 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
   )
 
   useEffect(() => {
+    if (previousSelectionKey.current && previousSelectionKey.current !== selectionKey) {
+      setPaneNotice(null)
+    }
+    previousSelectionKey.current = selectionKey
     setFilter('')
     setMessage('')
     setCreateOpen(false)
     setPendingKey(null)
     setActiveRowId(null)
     setTypeHeaderPatch({})
+  }, [selectionKey])
+
+  const applyDraftRestoreNotices = (restored: ReturnType<typeof validateStoredModelTableDraft>) => {
+    const lines: string[] = []
+    if (restored.trimmed) lines.push(copy.modelTableDraftRestoreTrimmed)
+    for (const dropped of restored.droppedFields) {
+      lines.push(copy.modelTableDraftRestoreFieldDropped(dropped.attributeKey, dropped.field))
+    }
+    if (lines.length > 0) {
+      const text = lines.join(' ')
+      stashModelPaneNotice(text)
+      setPaneNotice({ text })
+    }
+  }
+
+  useEffect(() => {
+    const text = takeModelPaneNotice()
+    if (text) setPaneNotice({ text })
   }, [selectionKey])
 
   useEffect(() => {
@@ -301,10 +325,7 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
     setTypeHeaderPatch(restored.typeHeader ?? {})
     setPendingDetach(new Set(restored.pendingDetach))
     setPendingDelete(new Set(restored.pendingDelete))
-    if (restored.trimmed) toast.message(copy.modelTableDraftRestoreTrimmed)
-    for (const dropped of restored.droppedFields) {
-      toast.message(copy.modelTableDraftRestoreFieldDropped(dropped.attributeKey, dropped.field))
-    }
+    applyDraftRestoreNotices(restored)
   }, [selectionKey, draftScope?.userId, draftScope?.workspaceId, selection, defs])
 
   const rows = useMemo(() => {
@@ -588,7 +609,8 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
     const onStorage = (event: StorageEvent) => {
       if (event.storageArea !== localStorage || event.key !== storageKey || !event.newValue) return
       if (!tableDirty()) return
-      toast.message(copy.modelTableDraftRemoteChanged, {
+      setPaneNotice({
+        text: copy.modelTableDraftRemoteChanged,
         action: {
           label: copy.loadRemoteDraft,
           onClick: () => {
@@ -600,7 +622,8 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
             setTypeHeaderPatch(restored.typeHeader ?? {})
             setPendingDetach(new Set(restored.pendingDetach))
             setPendingDelete(new Set(restored.pendingDelete))
-            if (restored.trimmed) toast.message(copy.modelTableDraftRestoreTrimmed)
+            if (restored.trimmed) setPaneNotice({ text: copy.modelTableDraftRestoreTrimmed })
+            else setPaneNotice(null)
           },
         },
       })
@@ -610,30 +633,27 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
   }, [draftScope?.userId, draftScope?.workspaceId, selection, selectionKey, defs, draftRows, typeHeaderPatch, pendingDetach, pendingDelete])
 
   useEffect(() => {
-  const reconcileAfterReload = () => {
-    if (!selection || !draftScope?.userId || !draftScope.workspaceId) return
-    const freshDefs = queryClient.getQueryData<Json>(['definitions'])
-    if (!freshDefs) return
-    if (!tableDirty()) return
-    const snapshot = serializeModelTableDraftForStorage({
-      draftRows: draftRows as Record<string, StoredAttributeTableRow>,
-      draftPatches,
-      typeHeader: typeHeaderPatch,
-      pendingDetach: [...pendingDetach],
-      pendingDelete: [...pendingDelete],
-      defs: freshDefs,
-    })
-    const restored = validateStoredModelTableDraft(snapshot, freshDefs, selection)
-    setDraftRows(restored.draftRows as Record<string, AttributeTableRow>)
-    setDraftPatches(restored.draftPatches)
-    setTypeHeaderPatch(restored.typeHeader ?? {})
-    setPendingDetach(new Set(restored.pendingDetach))
-    setPendingDelete(new Set(restored.pendingDelete))
-    if (restored.trimmed) toast.message(copy.modelTableDraftRestoreTrimmed)
-    for (const dropped of restored.droppedFields) {
-      toast.message(copy.modelTableDraftRestoreFieldDropped(dropped.attributeKey, dropped.field))
+    const reconcileAfterReload = () => {
+      if (!selection || !draftScope?.userId || !draftScope.workspaceId) return
+      const freshDefs = queryClient.getQueryData<Json>(['definitions'])
+      if (!freshDefs) return
+      if (!tableDirty()) return
+      const snapshot = serializeModelTableDraftForStorage({
+        draftRows: draftRows as Record<string, StoredAttributeTableRow>,
+        draftPatches,
+        typeHeader: typeHeaderPatch,
+        pendingDetach: [...pendingDetach],
+        pendingDelete: [...pendingDelete],
+        defs: freshDefs,
+      })
+      const restored = validateStoredModelTableDraft(snapshot, freshDefs, selection)
+      setDraftRows(restored.draftRows as Record<string, AttributeTableRow>)
+      setDraftPatches(restored.draftPatches)
+      setTypeHeaderPatch(restored.typeHeader ?? {})
+      setPendingDetach(new Set(restored.pendingDetach))
+      setPendingDelete(new Set(restored.pendingDelete))
+      applyDraftRestoreNotices(restored)
     }
-  }
     window.addEventListener(MODEL_RELOADED_EVENT, reconcileAfterReload)
     return () => window.removeEventListener(MODEL_RELOADED_EVENT, reconcileAfterReload)
   }, [
@@ -963,6 +983,24 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
       <div className="attr-title">
         <span>{title}</span>
       </div>
+      {paneNotice ? (
+        <p className="inline-hint model-pane-notice" role="status" data-testid="model-pane-notice">
+          {paneNotice.text}
+          {paneNotice.action ? (
+            <Button
+              type="button"
+              variant="ghost"
+              className="inline-hint-action"
+              data-testid="model-pane-notice-action"
+              onClick={() => {
+                paneNotice.action?.onClick()
+              }}
+            >
+              {paneNotice.action.label}
+            </Button>
+          ) : null}
+        </p>
+      ) : null}
       {selection.kind === 'type' ? (
         <>
           <TypeNameFields
