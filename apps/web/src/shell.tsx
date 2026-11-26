@@ -11,6 +11,7 @@ import { StatusBar, useOnline } from './status-bar'
 import { isConnected, type LiveState } from './status-message'
 import { TrashTable } from './trash-table'
 import { openTrashTableEvent, requestOpenTrashTable } from './trash-runs'
+import { openImportMappingsEvent } from './import/open-mappings'
 import { DeleteObjectsHost } from './delete-objects-dialog'
 import { requestDeleteObjects } from './delete-objects'
 import { UserMenu } from './user-menu'
@@ -338,6 +339,7 @@ export function Shell() {
   const openAgentRunRef = useRef<(run: { id: string; title: string; view_id?: string | null; tab_open?: boolean; messages?: AgentMessage[] }) => void>(() => {})
   const openAgentsTableRef = useRef<() => void>(() => {})
   const openTrashTableRef = useRef<() => void>(() => {})
+  const openImportMappingsRef = useRef<() => void>(() => {})
   const showAgentSessionRef = useRef<(run: AgentRunSummary) => void>(() => {})
   const backToMineRef = useRef<() => void>(() => {})
   const mineDocRef = useRef<LayoutDoc | null>(null)
@@ -871,6 +873,7 @@ export function Shell() {
     }
     const onTable = () => openAgentsTableRef.current()
     const onTrash = () => openTrashTableRef.current()
+    const onImportMappings = () => openImportMappingsRef.current()
     const onShow = (event: Event) => {
       const run = (event as CustomEvent<AgentRunSummary>).detail
       if (run?.id) showAgentSessionRef.current(run)
@@ -879,12 +882,14 @@ export function Shell() {
     window.addEventListener(openAgentEvent, onRun)
     window.addEventListener(openAgentsTableEvent, onTable)
     window.addEventListener(openTrashTableEvent, onTrash)
+    window.addEventListener(openImportMappingsEvent, onImportMappings)
     window.addEventListener(showAgentSessionEvent, onShow)
     window.addEventListener(backToMySessionEvent, onBack)
     return () => {
       window.removeEventListener(openAgentEvent, onRun)
       window.removeEventListener(openAgentsTableEvent, onTable)
       window.removeEventListener(openTrashTableEvent, onTrash)
+      window.removeEventListener(openImportMappingsEvent, onImportMappings)
       window.removeEventListener(showAgentSessionEvent, onShow)
       window.removeEventListener(backToMySessionEvent, onBack)
     }
@@ -2188,6 +2193,65 @@ export function Shell() {
           id,
           type: 'agents',
           title: copy.agents,
+          pane: 'center',
+          position: views.length,
+          state: {},
+        }
+        await api.post('/v1/views', {
+          body: {
+            id,
+            workspace_id: surfaceNow.id,
+            type: found.type,
+            title: found.title,
+            pane: 'center',
+            position: views.length,
+            state: {},
+          },
+        })
+        views = [...views, found]
+        const nextSurface = {
+          ...surfaceNow,
+          views: views.map((view) => ({
+            ...view,
+            pane: view.pane ?? 'center',
+            position: view.position ?? 0,
+            state: freeObject(view.state),
+          })),
+        }
+        workspaceRef.current = nextSurface
+        queryClient.setQueryData(['workspace', surfaceNow.id], nextSurface)
+      }
+      const current = docRef.current
+      if (!current || !found) return
+      const open = layoutViews(current.layout).includes(found.id)
+      const result = applyLayoutCommand(
+        current,
+        'ui.open_view',
+        open ? { id: found.id } : { id: found.id, zone: 'center' },
+        {
+          views: views.map((view) => ({ id: view.id, title: view.title, type: view.type })),
+          canonical: canonicalRef.current,
+          place: placeOverride.current,
+        },
+      )
+      if (result.handled && result.doc !== current) commitDoc(result.doc)
+    })().catch((reason: unknown) => reportWriteError(reason))
+  }
+
+  openImportMappingsRef.current = () => {
+    void queryClient.invalidateQueries({ queryKey: ['import-mappings'] })
+    void (async () => {
+      const surfaceNow = workspaceRef.current
+      const docNow = docRef.current
+      if (!surfaceNow || !docNow) return
+      let views: View[] = viewRows(surfaceNow.views)
+      let found = views.find((view) => view.type === 'import_mappings')
+      if (!found) {
+        const id = crypto.randomUUID()
+        found = {
+          id,
+          type: 'import_mappings',
+          title: copy.importMappings,
           pane: 'center',
           position: views.length,
           state: {},

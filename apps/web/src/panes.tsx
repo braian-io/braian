@@ -35,6 +35,7 @@ import { batchGetObjects } from './batch'
 import { MetaChip, optionLabel, statusTone, typeLabel } from './chips'
 import { BulkWriteConfirm } from './bulk-write'
 import { Button } from './components/ui/button'
+import { AttributeFieldLabel } from './attribute-field-label'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './components/ui/tooltip'
 import { Dialog, DialogContent } from './components/ui/dialog'
 import { Slider } from './components/ui/slider'
@@ -100,7 +101,7 @@ import {
   subscribeObjectDrafts,
 } from './object-draft'
 import { CellDiff, ObjectDraftBar, UnmappedDraftLinks } from './object-draft-bar'
-import { draftSavePlan, isDraftSaveInFlight, runDraftDiscard, runDraftSave } from './object-draft-save'
+import { acceptProposal, draftSavePlan, isDraftSaveInFlight, runDraftDiscard, runDraftSave } from './object-draft-save'
 import { useObjectDraftSaving } from './use-object-draft-saving'
 import { useOpenObjectProposals } from './use-open-proposals'
 import { shouldHoldTablePaint, shouldRefreshTableSnapshot } from './table-live-paint'
@@ -144,9 +145,9 @@ import { splitDetailKeys } from './detail-fields'
 import { DetailFieldDraftHost, type DetailFieldDraftHandle } from './detail-field-draft'
 import { DetailNumberMeasureField } from './detail-number-measure-field'
 import { beginLinkDrag, dispatchLinkDrop, endLinkDrag, linkDragActive, linkDragContains, linkDragLabel, linkDragMime, linkDragObjects, linkDragPayload, linkDropDecision, readLinkDrag, setLinkDragHint } from './link-drag'
-import { EMPTY_MANUAL_FILTER, isEmptyManualQuery, labelCodes, labelSearchFilter, publishSelectionLabels, SELECTION_APPLIED_EVENT, selectionFilterText, selectionMatchesType } from './assortment-filter'
+import { EMPTY_MANUAL_FILTER, labelCodes, publishSelectionLabels, SELECTION_APPLIED_EVENT, selectionMatchesType } from './assortment-filter'
 import { appendPathFilter, objectTableFilter } from './table-filter'
-import { assortmentChipActive, isGroupOnlyManualSelection, manualSelectionHasGroup } from './table-filters'
+import { assortmentChipActive, planSelectionApply, selectionChipContext, type AssortmentChipContext, type SelectionApplyMode } from './table-filters'
 import { dispatchUi, onUi } from './ui-bus'
 import { columnMoveAppliesTo, uiCommandAppliesToView } from './column-move'
 import {
@@ -256,6 +257,8 @@ export function ObjectTable({
   const [selectionFilter, setSelectionFilter] = useState('')
   const [activeSelectionId, setActiveSelectionId] = useState('')
   const [labelFilter, setLabelFilter] = useState('')
+  // Group half of a selection that must not move the workspace group.
+  const [localGroup, setLocalGroup] = useState<string | null>(null)
   const [pathFilters, setPathFilters] = useState<string[]>([])
   const [exportPaths, setExportPaths] = useState<Array<{ id: string; header: string }>>([])
   const [picker, setPicker] = useState<null | 'filter' | 'export' | { text: string; label: string }>(null)
@@ -453,9 +456,10 @@ export function ObjectTable({
     setFilter('')
     setQueryText('')
     setSelectionFilter('')
-    session.setGroup(null)
+    setLocalGroup(null)
+    if (!workspace.locked) session.setGroup(null)
     setLabelFilter('')
-  }, [activeSelectionId, assortments.isSuccess, selectionRows, session])
+  }, [activeSelectionId, assortments.isSuccess, selectionRows, session, workspace.locked])
   useEffect(() => {
     session.setListType?.(typeKey || null)
   }, [session, typeKey])
@@ -474,27 +478,10 @@ export function ObjectTable({
   const peerSource = peerSourceOf(view.state)
   const explicitAll = isExplicitAllSource(view.state)
   const groupFilterApplies = !peerSource && !explicitAll
+  const peerKey = peerSource ? `${peerSource.viewId}:${peerSource.selection}:${peerSource.linkType ?? ''}` : ''
   useEffect(() => {
-    const onApply = (event: Event) => {
-      const item = (event as CustomEvent<Json>).detail
-      if (!item || !selectionMatchesType(item, typeKey, bound?.id ?? '')) return
-      const query = (item.query as Json) ?? {}
-      const dynamicFilter = selectionFilterText(query)
-      const emptyManual = !dynamicFilter && isEmptyManualQuery(query)
-      // Pure group assortments do not apply while a peer source drives the table.
-      if (peerSource && isGroupOnlyManualSelection(query)) return
-      setActiveSelectionId(String(item.id ?? ''))
-      setFilter('')
-      setSelectionFilter(dynamicFilter || (emptyManual ? EMPTY_MANUAL_FILTER : ''))
-      session.setGroup(dynamicFilter || emptyManual ? null : query.group ? String(query.group) : null)
-      setLabelFilter(dynamicFilter || emptyManual ? '' : labelSearchFilter(query, defs.data))
-    }
-    window.addEventListener(SELECTION_APPLIED_EVENT, onApply)
-    return () => window.removeEventListener(SELECTION_APPLIED_EVENT, onApply)
-  }, [session, typeKey, bound?.id, defs.data, peerSource])
-  useEffect(() => {
-    if (peerSource) setActiveSelectionId('')
-  }, [peerSource])
+    if (peerKey) setActiveSelectionId('')
+  }, [peerKey])
   const peerSourceView = peerSource
     ? ((workspace.views as PanesView[] | null | undefined) ?? []).find((item) => item.id === peerSource.viewId)
     : undefined
@@ -540,7 +527,18 @@ export function ObjectTable({
       ? (peerNode ? peerNodeFilter(peerNode) : peerIdsFilter([]))
       : (peerIds.isSuccess ? peerIdsFilter(peerIds.data) : peerIdsFilter([]))
     : ''
-  const filterBy = [objectTableFilter(typeKey, peerSource || explicitAll ? null : session.group, defs.data), peerFilter, selectionFilter, labelFilter, ...pathFilters]
+  const selectionMode: SelectionApplyMode = peerSource ? 'peer' : explicitAll ? 'explicit-all' : 'follow'
+  const chipContext = selectionChipContext({
+    sessionGroup: session.group,
+    activeLabelFilter: labelFilter,
+    activeSelectionFilter: selectionFilter,
+    activeSelectionId,
+    activeFilter: filter,
+    sessionGroupApplies: groupFilterApplies,
+    localGroup,
+    defs: defs.data,
+  })
+  const filterBy = [objectTableFilter(typeKey, chipContext.groupFilterApplies ? chipContext.activeGroup : null, defs.data), peerFilter, selectionFilter, labelFilter, ...pathFilters]
     .filter(Boolean)
     .join(' && ')
   const enableGroupAssortmentFilter = useCallback(async () => {
@@ -578,6 +576,52 @@ export function ObjectTable({
       throw reason
     }
   }, [explicitAll, workspace.id, workspace.locked, view, queryClient])
+  const commitSelection = (patch: { filter: string; selectionFilter: string; labelFilter: string; selectionId: string; localGroup: string | null; globalGroup?: string | null }) => {
+    setFilter(patch.filter)
+    setSelectionFilter(patch.selectionFilter)
+    setLabelFilter(patch.labelFilter)
+    setActiveSelectionId(patch.selectionId)
+    setLocalGroup(patch.localGroup)
+    if (patch.globalGroup !== undefined && !workspace.locked) session.setGroup(patch.globalGroup)
+  }
+  // Click and a selection broadcast from another view share this commit.
+  const applySavedSelection = async (item: Json) => {
+    const plan = planSelectionApply({
+      item,
+      ctx: chipContext,
+      mode: selectionMode,
+      locked: Boolean(workspace.locked),
+    })
+    if (plan.action === 'ignore') return
+    if (plan.action === 'clear') {
+      commitSelection({
+        filter: '',
+        selectionFilter: '',
+        labelFilter: '',
+        selectionId: '',
+        localGroup: null,
+        ...(plan.globalGroup !== undefined ? { globalGroup: plan.globalGroup } : {}),
+      })
+      return
+    }
+    if (plan.action === 'leave-all') {
+      try {
+        await enableGroupAssortmentFilter()
+      } catch {
+        return
+      }
+    }
+    commitSelection(plan.patch)
+  }
+  useEffect(() => {
+    const onApply = (event: Event) => {
+      const item = (event as CustomEvent<Json>).detail
+      if (!item || !selectionMatchesType(item, typeKey, bound?.id ?? '')) return
+      void applySavedSelection(item)
+    }
+    window.addEventListener(SELECTION_APPLIED_EVENT, onApply)
+    return () => window.removeEventListener(SELECTION_APPLIED_EVENT, onApply)
+  }, [applySavedSelection, typeKey, bound?.id])
   const attributePaths = useQuery({
     queryKey: ['attribute-paths', typeKey],
     queryFn: () =>
@@ -1607,6 +1651,7 @@ export function ObjectTable({
         originalText: original,
         proposedText: result.proposedText,
         value: result.stored,
+        surface: 'table',
       })
       return
     }
@@ -1661,6 +1706,7 @@ export function ObjectTable({
       originalText: original,
       proposedText,
       value,
+      surface: 'table',
     })
   }
 
@@ -2161,8 +2207,13 @@ export function ObjectTable({
   }
   const visibleRows = groupBy ? groupedRows : [...byIndex.values()]
   const visibleIds = new Set(visibleRows.map((row) => row.id))
-  const tableObjectIds = [...new Set(drafts.cells.map((cell) => cell.objectId))]
-    .filter((id) => visibleIds.has(id))
+  // A Detail edit stays on the Detail bar. This table only saves cells staged here.
+  const tableObjectIds = [...new Set(
+    drafts.cells.filter((cell) => cell.surface == null || cell.surface === 'table').map((cell) => cell.objectId),
+  )].filter((id) => visibleIds.has(id))
+  const draftElsewhere = new Set(
+    drafts.cells.filter((cell) => cell.surface === 'detail').map((cell) => cell.objectId),
+  )
   const tableVersions: Record<string, number> = {}
   const tableMeta: Record<string, { key: string; type: string }> = {}
   for (const row of visibleRows) {
@@ -2179,7 +2230,7 @@ export function ObjectTable({
     viaAgent: false,
     open: true,
     stale: tableObjectIds.some((id) => {
-      const base = draftBaseVersion(id)
+      const base = draftBaseVersion(id, 'table')
       return base != null && tableVersions[id] != null && tableVersions[id] !== base
     }) || (tableObjectIds.length === 0 && visibleProposalCells.some((cell) => cell.stale)),
     conflict: tableObjectIds.length === 0 && visibleProposalCells.some((cell) => cell.conflict),
@@ -2217,6 +2268,7 @@ export function ObjectTable({
             proposals: visibleProposalCells,
             meta: tableMeta,
             scope: [...visibleIds],
+            surface: 'table',
           })
           void runDraftSave(plan, queryClient, viewingAgentRunId() ?? '').then((reason) => {
             if (isDraftSaveInFlight(reason)) return
@@ -2231,6 +2283,7 @@ export function ObjectTable({
             membership: openProposals.membership,
             principal: me.data?.kind === 'agent' ? 'agent' : 'human',
             viaAgent: false,
+            surface: 'table',
           }).then((reason) => {
             if (reason) reportWriteError(new Error(reason))
             void queryClient.invalidateQueries({ queryKey: ['proposals'] })
@@ -2280,20 +2333,19 @@ export function ObjectTable({
         <TableFilters
           groupBy={groupBy}
           setGroupBy={setGroupBy}
-          setFilter={setFilter}
-          setGroup={session.setGroup}
-          setLabelFilter={setLabelFilter}
-          setSelectionFilter={setSelectionFilter}
-          activeGroup={session.group}
-          activeLabelFilter={labelFilter}
-          activeSelectionFilter={selectionFilter}
-          activeSelectionId={activeSelectionId}
-          setActiveSelectionId={setActiveSelectionId}
-          activeFilter={filter}
+          chipContext={chipContext}
           assortments={selectionRows}
-          groupFilterApplies={groupFilterApplies}
-          onBeforeGroupAssortment={peerSource ? undefined : enableGroupAssortmentFilter}
-          defs={defs.data}
+          onAssortment={(item) => { void applySavedSelection(item) }}
+          onClear={() => {
+            commitSelection({
+              filter: '',
+              selectionFilter: '',
+              labelFilter: '',
+              selectionId: '',
+              localGroup: null,
+              ...(workspace.locked ? {} : { globalGroup: null }),
+            })
+          }}
         />
       </div>
       {pathFilters.length > 0 ? (
@@ -2425,6 +2477,7 @@ export function ObjectTable({
                         }}
                         onFocusGrid={focusGrid}
                         linkDrop={linkDropId === row.id}
+                        draftElsewhere={draftElsewhere.has(row.id)}
                         onLinkDragStart={onLinkDragStart}
                         onLinkDragOver={onLinkDragOver}
                         onLinkDragLeave={onLinkDragLeave}
@@ -2464,6 +2517,7 @@ export function ObjectTable({
                   }}
                   onFocusGrid={focusGrid}
                   linkDrop={linkDropId === row.id}
+                  draftElsewhere={draftElsewhere.has(row.id)}
                   onLinkDragStart={onLinkDragStart}
                   onLinkDragOver={onLinkDragOver}
                   onLinkDragLeave={onLinkDragLeave}
@@ -2685,6 +2739,7 @@ function Row({
   onFocusGrid,
   onCellDoubleClick,
   linkDrop,
+  draftElsewhere = false,
   onLinkDragStart,
   onLinkDragOver,
   onLinkDragLeave,
@@ -2706,6 +2761,8 @@ function Row({
   onFocusGrid: () => void
   onCellDoubleClick?: (row: ObjRow, column: string) => void
   linkDrop?: boolean
+  /** The row has a draft staged in Detail. This table does not offer Save for it. */
+  draftElsewhere?: boolean
   onLinkDragStart?: (row: ObjRow, event: ReactDragEvent<HTMLDivElement>) => void
   onLinkDragOver?: (row: ObjRow, event: ReactDragEvent<HTMLDivElement>) => void
   onLinkDragLeave?: (row: ObjRow) => void
@@ -2723,6 +2780,7 @@ function Row({
       role="row"
       aria-selected={isSelected}
       data-testid="object-row"
+      data-draft-elsewhere={draftElsewhere ? 'true' : undefined}
       data-link-drop={linkDrop ? 'true' : undefined}
       data-index={index}
       draggable
@@ -2809,96 +2867,27 @@ async function loadPage(q: string, filter: string, sort: string, groupBy: string
 function TableFilters({
   groupBy,
   setGroupBy,
-  setFilter,
-  setGroup,
-  setLabelFilter,
-  setSelectionFilter,
-  activeGroup,
-  activeLabelFilter,
-  activeSelectionFilter,
-  activeSelectionId,
-  setActiveSelectionId,
-  activeFilter,
+  chipContext,
   assortments,
-  groupFilterApplies,
-  onBeforeGroupAssortment,
-  defs,
+  onAssortment,
+  onClear,
 }: {
   groupBy: string
   setGroupBy: (value: string) => void
-  setFilter: (value: string) => void
-  setGroup: (value: string | null) => void
-  setLabelFilter: (value: string) => void
-  setSelectionFilter: (value: string) => void
-  activeGroup: string | null
-  activeLabelFilter: string
-  activeSelectionFilter: string
-  activeSelectionId: string
-  setActiveSelectionId: (value: string) => void
-  activeFilter: string
+  chipContext: AssortmentChipContext
   assortments: Json[]
-  groupFilterApplies: boolean
-  onBeforeGroupAssortment?: () => void | Promise<void>
-  defs?: Json
+  onAssortment: (item: Json) => void
+  onClear: () => void
 }) {
   const clear = () => {
     setGroupBy('')
-    setFilter('')
-    setGroup(null)
-    setLabelFilter('')
-    setSelectionFilter('')
-    setActiveSelectionId('')
-  }
-  const chipContext = {
-    activeGroup,
-    activeLabelFilter,
-    activeSelectionFilter,
-    activeSelectionId,
-    activeFilter,
-    groupFilterApplies,
-    defs,
-  }
-  const applyAssortment = async (item: Json) => {
-    const query = (item.query as Json) ?? {}
-    const dynamicFilter = selectionFilterText(query)
-    const emptyManual = !dynamicFilter && isEmptyManualQuery(query)
-    const nextGroup = query.group ? String(query.group) : null
-    const nextLabels = labelSearchFilter(query, defs)
-    const same = assortmentChipActive(item, chipContext)
-    if (same) {
-      setGroup(null)
-      setLabelFilter('')
-      setSelectionFilter('')
-      setFilter('')
-      setActiveSelectionId('')
-      return
-    }
-    const needsGroupFilter = manualSelectionHasGroup(query)
-    if (needsGroupFilter && !groupFilterApplies) {
-      if (!onBeforeGroupAssortment) return
-      try {
-        await onBeforeGroupAssortment()
-      } catch {
-        return
-      }
-    }
-    setFilter('')
-    setActiveSelectionId(String(item.id ?? ''))
-    if (emptyManual) {
-      setSelectionFilter(EMPTY_MANUAL_FILTER)
-      setGroup(null)
-      setLabelFilter('')
-      return
-    }
-    setSelectionFilter(dynamicFilter)
-    setGroup(dynamicFilter ? null : nextGroup)
-    setLabelFilter(dynamicFilter ? '' : nextLabels)
+    onClear()
   }
   const assortmentActive = (item: Json) => assortmentChipActive(item, chipContext)
   const selectionOn = Boolean(
-    (groupFilterApplies && activeGroup)
-    || activeLabelFilter
-    || activeSelectionFilter,
+    (chipContext.groupFilterApplies && chipContext.activeGroup)
+    || chipContext.activeLabelFilter
+    || chipContext.activeSelectionFilter,
   )
   return (
     <>
@@ -2913,7 +2902,7 @@ function TableFilters({
           className={assortmentActive(item) ? 'filter-chip on' : 'filter-chip'}
           data-testid="assortment"
           aria-pressed={assortmentActive(item)}
-          onClick={() => { void applyAssortment(item) }}
+          onClick={() => { onAssortment(item) }}
         >
           {assortmentDisplayName(String(item.name))}
         </Button>
@@ -2977,6 +2966,7 @@ function NewObject({
     autoFocus: field.key === 'number',
     options: field.options,
     multiline: field.multiline,
+    fieldDescription: field.fieldDescription,
   })
   const fields = fieldGroups.primary.map(dialogField)
   if (showType) {
@@ -3251,6 +3241,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   const label = recordNumber(serverValues) || String(object.data.id ?? '')
   const suggestionCount = suggestionIndex(suggestions.data).get(objectId) ?? 0
   const localCells = drafts.cells.filter((cell) => cell.objectId === objectId)
+  const detailCells = localCells.filter((cell) => cell.surface == null || cell.surface === 'detail')
   // Delete/create/model rows have no ordinary value cell. They stay visible in
   // the proposal review link instead of being accepted from a hidden diff.
   const proposalCells = (openProposals.byObject.get(objectId) ?? []).filter((cell) => cell.op === 'update')
@@ -3302,6 +3293,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
           originalText: displayOf(beforeRecord[language]),
           proposedText: displayOf(afterRecord[language]),
           value: afterRecord[language],
+          surface: 'detail',
         })
       }
       return
@@ -3315,15 +3307,16 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       originalText: displayOf(before),
       proposedText: displayOf(next),
       value: next,
+      surface: 'detail',
     })
   }
   const detailReview = reviewCapabilities({
     principal: me.data?.kind === 'agent' ? 'agent' : 'human',
     viaAgent: false,
     open: true,
-    stale: (draftBaseVersion(objectId) != null && draftBaseVersion(objectId) !== serverVersion)
-      || (localCells.length === 0 && proposalCells.some((cell) => cell.stale)),
-    conflict: localCells.length === 0 && proposalCells.some((cell) => cell.conflict),
+    stale: (draftBaseVersion(objectId, 'detail') != null && draftBaseVersion(objectId, 'detail') !== serverVersion)
+      || (detailCells.length === 0 && proposalCells.some((cell) => cell.stale)),
+    conflict: detailCells.length === 0 && proposalCells.some((cell) => cell.conflict),
     // A failed save is displayed as its own error and must not block retry.
     validationErrors: [],
     roleCanWrite: me.data ? roleCanWrite(me.data.role) : true,
@@ -3342,6 +3335,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       proposals: proposalCells,
       meta: { [objectId]: { key: label, type: String(object.data?.type ?? '') } },
       scope: [objectId],
+      surface: 'detail',
     })
     void runDraftSave(plan, queryClient, viewingAgentRunId() ?? '').then((reason) => {
       if (isDraftSaveInFlight(reason)) return
@@ -3359,7 +3353,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   const number = recordNumber(values)
   const name = recordTitle(values, uiLanguage)
   const inAgentSession = Boolean(viewingAgentRunId())
-  const dirty = localCells.length > 0 || proposalCells.length > 0
+  const dirty = detailCells.length > 0 || proposalCells.length > 0
   const typeDef = ((defs.data?.types as Json[]) ?? []).find((item) => item.key === object.data?.type)
   const typeIds = new Set(((typeDef?.attributes as unknown[]) ?? []).map(String))
   const fileKeys = attributes
@@ -3401,12 +3395,9 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
     return (
       <div key={key} className={owner ? 'field locked' : 'field'} data-testid={owner ? 'locked-field' : undefined}>
         <div className="field-label-line">
-          <label>{fieldLabel}{owner ? ` · ${copy.ownedBy} ${owner}` : ''}</label>
-          {fieldDescription ? (
-            <span className="detail-field-help" data-testid={`detail-field-desc-${key}`} title={fieldDescription}>
-              {fieldDescription}
-            </span>
-          ) : null}
+          <AttributeFieldLabel description={fieldDescription} descTestId={`detail-field-desc-${key}`}>
+            {fieldLabel}{owner ? ` · ${copy.ownedBy} ${owner}` : ''}
+          </AttributeFieldLabel>
         </div>
         <div className={controlClass} data-testid={`detail-field-control-${key}`}>
           {!fieldKnownInPreview(key) ? (
@@ -3576,7 +3567,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       <UnmappedDraftLinks proposals={openProposals.unmapped} />
       {dirty ? (
         <ObjectDraftBar
-          count={localCells.length + (proposalCells.length > 0 ? 1 : 0)}
+          count={detailCells.length + (proposalCells.length > 0 ? 1 : 0)}
           canSave={detailReview.canSave && editingReady}
           canDiscard={detailReview.canDiscard && editingReady}
           saveReason={detailReview.saveReason}
@@ -3591,6 +3582,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
               membership: openProposals.membership,
               principal: me.data?.kind === 'agent' ? 'agent' : 'human',
               viaAgent: false,
+              surface: 'detail',
             }).then((reason) => {
               if (reason) setError(reason)
               void queryClient.invalidateQueries({ queryKey: ['proposals'] })
@@ -3967,7 +3959,7 @@ export function HistoryView({ session }: { session: PanesSession }) {
     },
     onSuccess: ({ proposal, at }) => {
       const id = String(proposal.id)
-      // Same as assortment / model proposes: open the review dialog so Confirm applies it.
+      // Same as assortment / model proposes: open the review dialog so Save applies it.
       publishProposal(id, 'rollback', { targetSeq: at })
       session.setProposalId(id)
       session.push(copy.proposed)
@@ -4254,7 +4246,7 @@ export function ProposalView({ session }: { session: PanesSession }) {
   const loadingObjects = loaded.some((query) => query.isLoading)
   const accept = useMutation({
     mutationFn: (body: { rows: string[]; patches: Record<string, Json> }) =>
-      api.post('/v1/proposals/{id}/accept', { params: { path: { id: session.proposalId ?? '' } }, body: body }),
+      acceptProposal(session.proposalId ?? '', body),
     onSuccess: (result) => {
       const failed = failureLines(result)
       session.push(failed.length > 0 ? String(failed[0]?.detail ?? copy.validation) : copy.saved)

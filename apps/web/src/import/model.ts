@@ -233,7 +233,7 @@ export function cellClass(state: string): string {
 }
 
 export function saveLabel(_failed: number, changes: number): string {
-  return `Approve ${changes} ${changes === 1 ? 'row' : 'rows'}`
+  return `Save ${changes} ${changes === 1 ? 'row' : 'rows'}`
 }
 
 export function phaseOf(status: string): ImportPhase {

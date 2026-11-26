@@ -419,6 +419,7 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
 .pane.focused .pane-tab.active {
   background: var(--accent-dim);
   color: var(--text);
+  border-radius: var(--r-md) var(--r-md) 0 0;
 }
 /* Hover is weaker than the selected tab's dim fill. */
 .pane-tab:hover:not(.active) {
@@ -558,6 +559,7 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
   background: var(--surface);
   overflow: hidden;
   pointer-events: none;
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
 }
 .pane-tabs > * {
   pointer-events: auto;
@@ -666,7 +668,8 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
 .catalog-field > label { color: var(--text-2); font-size: var(--text-md); font-weight: 500; }
 .catalog-field-help { margin: 0; color: var(--muted); font-size: var(--text-sm); line-height: 1.4; }
 .field-label-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1); }
-.detail-field-help { color: var(--muted); font-size: var(--text-sm); line-height: 1.35; font-weight: 400; max-width: 36rem; }
+.field-label-line > label { min-width: 0; cursor: default; }
+.field-label-line > label[tabindex='0'] { cursor: help; }
 .catalog-check { display: inline-flex; align-items: center; gap: var(--space-1_5); color: var(--text-2); font-size: var(--text-md); }
 .catalog-list-actions { display: inline-flex; align-items: center; gap: var(--space-0_5); margin-left: var(--space-1); vertical-align: middle; }
 .catalog-form-actions { display: flex; align-items: center; gap: var(--space-1_5); flex-wrap: wrap; }
@@ -1351,6 +1354,7 @@ button.filter-chip:hover:not(.on) {
   box-shadow: inset 3px 0 0 var(--accent);
 }
 .row.picked { box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 55%, transparent); }
+.row[data-draft-elsewhere='true'] { outline: 1px solid color-mix(in srgb, var(--accent) 50%, transparent); outline-offset: -1px; }
 .row:hover:not(.selected) { background: var(--hover); }
 /* Draft is signalled by the save bar. An amber fill behind a field would read as a second focus state. */
 .draft-user { background: transparent; border-radius: 0; }
@@ -1554,13 +1558,13 @@ button.filter-chip:hover:not(.on) {
   border: 0;
   box-shadow: none;
 }
-.lang-row:has(textarea) { align-items: flex-start; }
 .lang-tag {
   display: inline-flex;
   flex: none;
   align-items: center;
   align-self: center;
   width: 2.25em;
+  height: 30px;
   margin: 0;
   padding: 0;
   background: transparent;
@@ -1569,11 +1573,12 @@ button.filter-chip:hover:not(.on) {
   color: var(--text-2);
   font-size: var(--text-sm);
   font-weight: 600;
-  line-height: 1;
+  line-height: 30px;
   text-transform: lowercase;
 }
 .lang-row:has(textarea) .lang-tag {
   align-self: flex-start;
+  height: auto;
   padding-top: var(--space-1_5);
   line-height: 1.4;
 }
@@ -3207,6 +3212,9 @@ html[data-theme-switching] *::after {
 .import-cell.error { box-shadow: inset 0 0 0 1px var(--danger); background: color-mix(in srgb, var(--danger) 16%, transparent); border-radius: var(--r-sm); }
 .import-popover { position: fixed; right: 24px; bottom: 72px; z-index: 2; min-width: 220px; justify-items: stretch; }
 .import-confirm { position: fixed; inset: 0; margin: auto; height: max-content; z-index: 82; translate: none; }
+/* The import screen covers the app. Its save dialog has to sit above that screen. */
+.overlay:has(+ [data-testid='import-save-mapping-dialog']) { z-index: 91; }
+[data-testid='import-save-mapping-dialog'] { z-index: 92; }
 .class-attributes { display: flex; flex-direction: column; gap: 14px; padding: var(--space-3) 14px; min-height: 0; }
 .class-section h3 { margin: 0 0 var(--space-1); font-size: var(--text-md); font-weight: 600; }
 .class-attr { display: flex; justify-content: space-between; gap: var(--space-2); padding: 5px 0; border-bottom: 1px solid var(--line); font-size: var(--text-md); }
@@ -3416,14 +3424,37 @@ button.primary[aria-disabled='true'] {
 }
 .standard-grid-cell.truncate { max-width: 280px; }
 .standard-grid-cell.column-head { font-weight: 500; }
+/* Inline editors align with read-only text: no nested box inside the selected row. */
+.standard-grid-cell-editing,
+.standard-grid-cell-editing:focus-visible {
+  outline: none;
+}
+.standard-grid-cell-editing:has(:focus-visible) {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
 .standard-grid-cell input:not([type='checkbox']),
 .standard-grid-cell select {
   width: 100%;
-  height: 26px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  padding: 0 var(--space-1_5);
-  background: var(--panel);
+  min-width: 0;
+  height: auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+}
+.standard-grid-cell input:not([type='checkbox']):focus,
+.standard-grid-cell input:not([type='checkbox']):focus-visible,
+.standard-grid-cell select:focus,
+.standard-grid-cell select:focus-visible {
+  outline: none;
+  box-shadow: none;
+  background: transparent;
 }
 .standard-grid-cell-bool {
   display: flex;
@@ -3575,10 +3606,36 @@ button.primary[aria-disabled='true'] {
   min-width: 0;
   width: 100%;
 }
+.standard-grid-cell .standard-cell-editor-stack {
+  gap: 0;
+}
 .cell-edit-error {
   color: var(--danger, #c62828);
   font-size: var(--text-xs, 11px);
   line-height: 1.2;
+}
+.standard-grid-cell .standard-cell-select-trigger,
+.standard-grid-cell .standard-cell-select-trigger.select-trigger {
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  gap: var(--space-1);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  justify-content: flex-start;
+}
+.standard-grid-cell .standard-cell-select-trigger:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 .standard-cell-select-trigger {
   width: 100%;

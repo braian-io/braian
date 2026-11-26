@@ -464,6 +464,18 @@ fn operations() -> Vec<(HttpMethod, &'static str, Operation)> {
             true,
         ),
         call(
+            HttpMethod::Post,
+            "/v1/imports/{id}/saved-mapping",
+            "import_apply_saved_mapping",
+            "Apply a saved mapping, or clear it",
+            vec![path_uuid("id", "Import id")],
+            Some("ApplySavedBody"),
+            Some("ImportSessionView"),
+            "200",
+            "Session after the saved mapping was applied",
+            true,
+        ),
+        call(
             HttpMethod::Put,
             "/v1/imports/{id}/mapping",
             "import_mapping",
