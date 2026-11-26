@@ -542,7 +542,7 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
   box-shadow: var(--inset);
   position: relative;
   isolation: isolate;
-  overflow: hidden;
+  overflow: visible;
 }
 /* The pane is a definite grid item, so a Detail pane can answer its own width query. */
 .pane:has(.detail-form) { container-type: inline-size; container-name: detail-pane; }
@@ -556,8 +556,9 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
   max-height: 32px;
   padding: 0 var(--space-1_5);
   background: var(--surface);
-  overflow: hidden;
+  overflow: visible;
   pointer-events: none;
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
 }
 .pane-tabs > * {
   pointer-events: auto;
@@ -968,6 +969,7 @@ button.agent-bg-indicator strong { font-variant-numeric: tabular-nums; }
   padding: var(--space-2);
   display: flex;
   flex-direction: column;
+  border-radius: 0 0 var(--r-lg) var(--r-lg);
 }
 /* The view fills the pane under the fixed tab bar and is the one scrollport.
    Toolbar, graph canvas, and the detail save bar opt out and scroll an inner body instead. */
@@ -3416,14 +3418,37 @@ button.primary[aria-disabled='true'] {
 }
 .standard-grid-cell.truncate { max-width: 280px; }
 .standard-grid-cell.column-head { font-weight: 500; }
+/* Inline editors align with read-only text: no nested box inside the selected row. */
+.standard-grid-cell-editing,
+.standard-grid-cell-editing:focus-visible {
+  outline: none;
+}
+.standard-grid-cell-editing:has(:focus-visible) {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
 .standard-grid-cell input:not([type='checkbox']),
 .standard-grid-cell select {
   width: 100%;
-  height: 26px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  padding: 0 var(--space-1_5);
-  background: var(--panel);
+  min-width: 0;
+  height: auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+}
+.standard-grid-cell input:not([type='checkbox']):focus,
+.standard-grid-cell input:not([type='checkbox']):focus-visible,
+.standard-grid-cell select:focus,
+.standard-grid-cell select:focus-visible {
+  outline: none;
+  box-shadow: none;
+  background: transparent;
 }
 .standard-grid-cell-bool {
   display: flex;
@@ -3575,10 +3600,36 @@ button.primary[aria-disabled='true'] {
   min-width: 0;
   width: 100%;
 }
+.standard-grid-cell .standard-cell-editor-stack {
+  gap: 0;
+}
 .cell-edit-error {
   color: var(--danger, #c62828);
   font-size: var(--text-xs, 11px);
   line-height: 1.2;
+}
+.standard-grid-cell .standard-cell-select-trigger,
+.standard-grid-cell .standard-cell-select-trigger.select-trigger {
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  gap: var(--space-1);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  justify-content: flex-start;
+}
+.standard-grid-cell .standard-cell-select-trigger:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 .standard-cell-select-trigger {
   width: 100%;
