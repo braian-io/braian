@@ -12,21 +12,21 @@ const fields: FieldDef[] = [
     typeLabel: 'number',
     shape: 'unit',
     units: ['g', 'kg'],
-    source: 'Dairy & eggs',
+    source: 'Food › Dairy & eggs',
   },
   {
     id: 'fat_content.value',
     name: 'Fat content (value)',
     typeLabel: 'number',
     shape: 'number',
-    source: 'Dairy & eggs',
+    source: 'Food › Dairy & eggs',
   },
   {
     id: 'fat_content.unit',
     name: 'Fat content (unit)',
     typeLabel: 'text',
     shape: 'text',
-    source: 'Dairy & eggs',
+    source: 'Food › Dairy & eggs',
   },
 ]
 

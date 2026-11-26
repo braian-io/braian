@@ -1,14 +1,17 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Lock, MoreHorizontal } from 'lucide-react'
-import { api, catalogName, searchQuery, type Json } from './api'
+import { ApiError, api, catalogName, searchQuery, type Json } from './api'
 import { formatCount } from './format'
 import {
   assortmentSearchFilter,
   currentSelectionLabels,
   DELETE_SELECTION_EVENT,
   EDIT_SELECTION_EVENT,
+  isHandPickedQuery,
   labelCodes,
+  memberIdFilter,
+  memberIdsOf,
   NEW_SELECTION_EVENT,
   requestDeleteSelection,
   requestEditSelection,
@@ -16,12 +19,15 @@ import {
   selectionKind,
   selectionMatchesType,
   selectionQueryValue,
+  selectionSearchText,
   selectionUsageLines,
   type NewSelectionRequest,
 } from './assortment-filter'
 import {
   discardSelectionDraft,
   getSelectionDraft,
+  retainSelectionSurface,
+  selectionDraftChanges,
   startEditSelection,
   startNewSelection,
   subscribeSelectionDraft,
@@ -37,7 +43,16 @@ import { copy, uiLanguage } from './i18n'
 import { registerCommandRunner } from './command-registry'
 import { ObjectDraftBar } from './object-draft-bar'
 import { typeNames } from './type-labels'
-import { writeErrorMessage } from './write-error'
+import { errorCodeFromBody, writeErrorMessage } from './write-error'
+import { RemoveSelectionConfirm, SelectionPicker, selectionDropHandlers, type AddSelectionRequest } from './selection-picker'
+import {
+  memberErrorSnapshot,
+  needsRemoveConfirm,
+  objectIdsFromTarget,
+  saveSelectionMembers,
+  setMemberError,
+  subscribeMemberError,
+} from './selection-members'
 
 type SelectionSession = {
   group: string | null
@@ -80,6 +95,8 @@ function SelectionDraftDetail({
   const firstType = types[0]?.key ?? ''
   const workspaceType = session.workspaceType || session.listType || ''
   const [error, setError] = useState('')
+  const [nameError, setNameError] = useState('')
+  const [queryError, setQueryError] = useState('')
   const [saving, setSaving] = useState(false)
   const nameRef = useRef<HTMLInputElement>(null)
   const queryClient = useQueryClient()
@@ -127,12 +144,15 @@ function SelectionDraftDetail({
     // truth so a click immediately after the last key cannot save a prefix.
     const title = (nameRef.current?.value ?? draft.name).trim()
     const chosen = draft.type || workspaceType || firstType
-    if (!title || !chosen) return
-    if (draft.kind === 'dynamic' && !draft.query.trim()) {
-      setError(copy.filterQueryRequired)
+    const nextNameError = title ? '' : copy.selectionNameRequired
+    const nextQueryError = draft.kind === 'dynamic' && !draft.query.trim() ? copy.filterQueryRequired : ''
+    setNameError(nextNameError)
+    setQueryError(nextQueryError)
+    setError('')
+    if (nextNameError || nextQueryError || !chosen) {
+      if (nextNameError) nameRef.current?.focus()
       return
     }
-    setError('')
     setSaving(true)
     const manual = editing ? draft.manual : manualSelectionQuery(session)
     const body = {
@@ -140,7 +160,7 @@ function SelectionDraftDetail({
       name: title,
       ...(editing ? {} : { type: chosen }),
       kind: draft.kind,
-      query: selectionQueryValue(draft.kind, draft.query, manual),
+      query: selectionQueryValue(draft.kind, draft.query, manual, draft.q),
     }
     try {
       const saved = editing && draft.id
@@ -151,20 +171,26 @@ function SelectionDraftDetail({
       void queryClient.invalidateQueries({ queryKey: ['assortments'] })
       discardSelectionDraft()
     } catch (reason) {
+      const code = reason instanceof ApiError ? errorCodeFromBody(reason.body) : ''
       const message = writeErrorMessage(reason)
-      if (message) setError(message)
+      if (message && (code === 'invalid_query' || code === 'invalid_path')) setQueryError(message)
+      else if (message) setError(message)
     } finally {
       setSaving(false)
     }
   }
 
+  const changes = selectionDraftChanges(draft)
+
   return (
     <div className="assortment-open selection-detail" data-testid="selection-detail">
       <h3>{editing ? copy.editSelection : copy.newSelection}</h3>
-      <p className="hint">
+      <p className="hint" data-testid="selection-hint">
         {editing
           ? 'Change the name and filter. The kind and object type stay locked.'
-          : 'Name a saved selection and choose whether it follows a filter or stores the group and label filters active at creation. There is no separate add/remove-object picker yet.'}
+          : draft.kind === 'dynamic'
+            ? copy.dynamicSelectionHint
+            : copy.manualSelectionHint}
       </p>
       <form
         className="form"
@@ -181,9 +207,17 @@ function SelectionDraftDetail({
             data-testid="assortment-name"
             value={draft.name}
             aria-label={copy.assortment}
+            aria-invalid={nameError ? true : undefined}
+            aria-describedby={nameError ? 'selection-name-error' : undefined}
             placeholder={copy.assortment}
-            onChange={(event) => updateSelectionDraft({ name: event.target.value })}
+            onChange={(event) => {
+              setNameError('')
+              updateSelectionDraft({ name: event.target.value })
+            }}
           />
+          {nameError ? (
+            <p id="selection-name-error" className="error" role="alert" data-testid="selection-name-error">{nameError}</p>
+          ) : null}
         </label>
         <label className="model-field">
           <span>{copy.type}</span>
@@ -239,23 +273,43 @@ function SelectionDraftDetail({
           )}
         </label>
         {draft.kind === 'dynamic' ? (
+          <>
           <label className="model-field">
             <span>{copy.filterQuery}</span>
             <Input
               data-testid="selection-query"
               value={draft.query}
               aria-label={copy.filterQuery}
+              aria-invalid={queryError ? true : undefined}
+              aria-describedby={queryError ? 'selection-query-error' : undefined}
               placeholder="type_key:=product && groups:=food:cheese"
-              onChange={(event) => updateSelectionDraft({ query: event.target.value })}
+              onChange={(event) => {
+                setQueryError('')
+                updateSelectionDraft({ query: event.target.value })
+              }}
             />
-            <small>{copy.filterQueryHint}</small>
+            {queryError ? (
+              <p id="selection-query-error" className="error" role="alert" data-testid="selection-query-error">{queryError}</p>
+            ) : (
+              <small>{copy.filterQueryHint}</small>
+            )}
           </label>
-        ) : (
-          <p className="hint">{copy.manualSelection}</p>
-        )}
+          <label className="model-field">
+            <span>{copy.selectionSearch}</span>
+            <Input
+              data-testid="selection-search"
+              value={draft.q}
+              aria-label={copy.selectionSearch}
+              placeholder="oat"
+              onChange={(event) => updateSelectionDraft({ q: event.target.value })}
+            />
+            <small>{copy.selectionSearchHint}</small>
+          </label>
+          </>
+        ) : null}
         {error ? <p className="error" data-testid="selection-error">{error}</p> : null}
         <ObjectDraftBar
-          count={1}
+          count={changes}
           canSave
           canDiscard
           saveReason=""
@@ -264,6 +318,8 @@ function SelectionDraftDetail({
           onSave={() => void save()}
           onDiscard={() => {
             setError('')
+            setNameError('')
+            setQueryError('')
             discardSelectionDraft()
           }}
         />
@@ -284,6 +340,7 @@ export function DeleteSelectionDialog({ session }: { session: SelectionSession }
     enabled: Boolean(id),
   })
   const lines = selectionUsageLines(usage.data)
+  const waiting = usage.isPending
 
   useEffect(() => {
     const onDelete = (event: Event) => {
@@ -322,8 +379,8 @@ export function DeleteSelectionDialog({ session }: { session: SelectionSession }
         <DialogTitle className="pr-8">{copy.deleteSelection}</DialogTitle>
         <DialogDescription>{copy.deleteSelectionDetail}</DialogDescription>
         <p className="hint">{String(item?.name ?? '')}</p>
-        {usage.isLoading ? (
-          <p className="hint">{copy.loading}</p>
+        {waiting ? (
+          <p className="hint" data-testid="selection-usage">{copy.checkingSelectionUse}</p>
         ) : (
           <div className="selection-usage" data-testid="selection-usage">
             {lines.length > 0 ? (
@@ -345,8 +402,14 @@ export function DeleteSelectionDialog({ session }: { session: SelectionSession }
           <Button type="button" variant="ghost" onClick={() => setItem(null)}>
             {copy.cancel}
           </Button>
-          <Button type="button" variant="danger" disabled={deleting || usage.isLoading} onClick={() => void remove()}>
-            {copy.delete}
+          <Button
+            type="button"
+            variant="danger"
+            disabled={deleting || waiting}
+            aria-label={waiting ? copy.checkingSelectionUseAction : copy.delete}
+            onClick={() => void remove()}
+          >
+            {waiting ? copy.checkingSelectionUseAction : copy.delete}
           </Button>
         </div>
       </DialogContent>
@@ -363,6 +426,23 @@ function showSelectionView() {
 
 export function SelectionHost({ session }: { session: SelectionSession }) {
   const workspaceType = session.workspaceType || session.listType || ''
+  const queryClient = useQueryClient()
+  const [addRequest, setAddRequest] = useState<AddSelectionRequest | null>(null)
+  const [pendingRemove, setPendingRemove] = useState<{ selectionId: string; ids: string[] } | null>(null)
+  const [removeError, setRemoveError] = useState('')
+  const [removing, setRemoving] = useState(false)
+  const removeMembers = (selectionId: string, ids: string[]) => {
+    setRemoving(true)
+    setRemoveError('')
+    void saveSelectionMembers(queryClient, selectionId, ids, 'remove')
+      .then(() => setPendingRemove(null))
+      .catch((reason: unknown) => {
+        const message = writeErrorMessage(reason) ?? copy.validation
+        setRemoveError(message)
+        setMemberError(selectionId, message)
+      })
+      .finally(() => setRemoving(false))
+  }
   useEffect(() => {
     const onNew = (event: Event) => {
       const request = ((event as CustomEvent<NewSelectionRequest>).detail ?? {}) as NewSelectionRequest
@@ -392,15 +472,48 @@ export function SelectionHost({ session }: { session: SelectionSession }) {
       const item = target.selection
       if (item && typeof item === 'object' && !Array.isArray(item)) requestDeleteSelection(item as Json)
     })
+    const offAdd = registerCommandRunner('selection:add-objects', (target) => {
+      const objectIds = objectIdsFromTarget(target)
+      if (objectIds.length === 0) return
+      setAddRequest({ objectIds, typeKey: String(target.typeKey ?? workspaceType) })
+    })
+    const offRemove = registerCommandRunner('selection:remove-objects', (target) => {
+      const selectionId = String(target.manualSelectionId ?? '')
+      const ids = objectIdsFromTarget(target)
+      if (!selectionId || ids.length === 0) return
+      if (needsRemoveConfirm(ids.length)) {
+        setRemoveError('')
+        setPendingRemove({ selectionId, ids })
+        return
+      }
+      removeMembers(selectionId, ids)
+    })
     return () => {
       offEdit()
       offDelete()
+      offAdd()
+      offRemove()
     }
-  }, [])
-  return <DeleteSelectionDialog session={session} />
+  }, [queryClient, workspaceType])
+  return (
+    <>
+      <DeleteSelectionDialog session={session} />
+      {addRequest ? <SelectionPicker request={addRequest} onClose={() => setAddRequest(null)} /> : null}
+      {pendingRemove ? (
+        <RemoveSelectionConfirm
+          count={pendingRemove.ids.length}
+          pending={removing}
+          error={removeError}
+          onCancel={() => setPendingRemove(null)}
+          onConfirm={() => removeMembers(pendingRemove.selectionId, pendingRemove.ids)}
+        />
+      ) : null}
+    </>
+  )
 }
 
 export function AssortmentList({ session }: { session: SelectionSession }) {
+  useEffect(() => retainSelectionSurface(), [])
   const typeKey = session.workspaceType || session.listType || ''
   const defs = useQuery({ queryKey: ['definitions'], queryFn: () => api.get('/v1/definitions') })
   const typeId = typeNames(defs.data, uiLanguage).find((type) => type.key === typeKey)?.id ?? ''
@@ -415,13 +528,31 @@ export function AssortmentList({ session }: { session: SelectionSession }) {
   const open = items.find((item) => String(item.id) === openId)
   const query = (open?.query as Json) ?? {}
   const dynamicFilter = open ? selectionFilterText(query) : ''
-  const filter = open
-    ? dynamicFilter || assortmentSearchFilter(query, String(open.type ?? typeKey), defs.data)
-    : ''
+  const searchText = open ? selectionSearchText(query) : ''
+  const openMembers = open ? memberIdsOf(open) : []
+  let filter = ''
+  if (open) {
+    if (dynamicFilter) filter = dynamicFilter
+    else if (searchText) filter = ''
+    else if (openMembers.length > 0 || isHandPickedQuery(query)) filter = memberIdFilter(openMembers)
+    else filter = assortmentSearchFilter(query, String(open.type ?? typeKey), defs.data)
+  }
+  const memberError = useSyncExternalStore(subscribeMemberError, memberErrorSnapshot, memberErrorSnapshot)
+  const queryClient = useQueryClient()
+  const addDropped = (selectionId: string, ids: string[]) => {
+    void saveSelectionMembers(queryClient, selectionId, ids, 'add').catch((reason: unknown) => {
+      setMemberError(selectionId, writeErrorMessage(reason) ?? copy.validation)
+    })
+  }
   const matches = useQuery({
-    queryKey: ['assortment-matches', openId, filter],
-    queryFn: () => api.get('/v1/search', { params: { query: searchQuery(new URLSearchParams({ filter, per_page: '20' })) } }),
-    enabled: Boolean(open && filter),
+    queryKey: ['assortment-matches', openId, filter, searchText],
+    queryFn: () => {
+      const params = new URLSearchParams({ per_page: '20' })
+      if (filter) params.set('filter', filter)
+      if (searchText) params.set('q', searchText)
+      return api.get('/v1/search', { params: { query: searchQuery(params) } })
+    },
+    enabled: Boolean(open && (filter || searchText)),
   })
   const hits = searchDocuments(matches.data ?? {})
   const found = Number(matches.data?.found ?? hits.length)
@@ -448,6 +579,9 @@ export function AssortmentList({ session }: { session: SelectionSession }) {
         onSaved={(item) => setOpenId(String(item.id ?? ''))}
       />
       {items.length === 0 ? <p className="hint">{copy.noAssortments}</p> : null}
+      {memberError.message && items.some((item) => String(item.id) === memberError.selectionId) ? (
+        <p className="error" data-testid="selection-member-error" role="alert">{memberError.message}</p>
+      ) : null}
       <div className="assortment-picks" tabIndex={0}>
         {items.map((item) => {
           const id = String(item.id)
@@ -457,6 +591,8 @@ export function AssortmentList({ session }: { session: SelectionSession }) {
               key={id}
               className="assortment-row"
               data-testid="assortment-row"
+              data-member-count={memberIdsOf(item).length}
+              {...selectionDropHandlers(selectionKind(item.kind) === 'manual', id, (ids) => addDropped(id, ids))}
               onContextMenu={(event) => {
                 if (prefersNativeContextMenu(event.target)) return
                 event.preventDefault()
@@ -496,6 +632,7 @@ export function AssortmentList({ session }: { session: SelectionSession }) {
         <div data-testid="assortment-open">
           <div className="assortment-query">
             {open.type ? <span className="filter-chip">{String(open.type)}</span> : null}
+            {searchText ? <span className="filter-chip" data-testid="selection-search-chip">{searchText}</span> : null}
             {dynamicFilter ? <span className="filter-chip">{dynamicFilter}</span> : null}
             {!dynamicFilter && query.group ? <span className="filter-chip">{groupChip(String(query.group), defs.data)}</span> : null}
             {!dynamicFilter

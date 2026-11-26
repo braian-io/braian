@@ -1,6 +1,13 @@
 import { Button } from './components/ui/button'
+import { formatCount } from './format'
 import { copy } from './i18n'
 import type { UnmappedProposal } from './review-cells'
+
+/** One change, or many. The count is the number of unsaved edits in this pane. */
+export function unsavedChangeLabel(count: number): string {
+  const shown = formatCount(count)
+  return `${shown} ${count === 1 ? copy.unsavedChange : copy.unsavedChanges}`
+}
 
 const UNMAPPED_LABEL = {
   create: copy.unmappedDraftCreate,
@@ -60,6 +67,7 @@ export function ObjectDraftBar({
   canDiscard,
   saveReason,
   discardReason,
+  saveError = '',
   pending,
   onSave,
   onDiscard,
@@ -69,15 +77,21 @@ export function ObjectDraftBar({
   canDiscard: boolean
   saveReason: string
   discardReason: string
+  saveError?: string
   pending?: boolean
   onSave: () => void
   onDiscard: () => void
 }) {
-  if (count <= 0 && !saveReason) return null
+  if (count <= 0 && !saveReason && !saveError) return null
   return (
     <div className="draft-bar" data-testid="object-draft-bar" role="status">
-      <span>{count} {copy.unsavedChanges}</span>
+      <span>{unsavedChangeLabel(count)}</span>
       {saveReason ? <span className="error" data-testid="review-blocked">{saveReason}</span> : null}
+      {saveError ? (
+        <span className="error" role="alert" data-testid="draft-save-error" title={saveError}>
+          {saveError}
+        </span>
+      ) : null}
       <Button
         type="button"
         variant="danger"

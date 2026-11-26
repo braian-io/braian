@@ -62,6 +62,17 @@ describe('edge label placement', () => {
     expect(distanceToBox(nodes[0]!, labelBox(point))).toBeGreaterThanOrEqual(30)
   })
 
+  it('steps clear of a band of nodes that covers the nearby offsets', () => {
+    const nodes = []
+    for (let x = 0; x <= 200; x += 16) {
+      for (let y = -90; y <= 90; y += 16) nodes.push({ x, y, radius: 18 })
+    }
+    const point = placeEdgeLabel(from, control, to, size, nodes)
+    const box = labelBox(point)
+    const covered = nodes.some((node) => distanceToBox(node, box) < node.radius)
+    expect(covered).toBe(false)
+  })
+
   it('moves away from a node caption covering the default mid', () => {
     const defaultPoint = curvePoint(from, control, to, 0.68)
     const caption = { x: defaultPoint.x - 40, y: defaultPoint.y - 8, width: 80, height: 16 }

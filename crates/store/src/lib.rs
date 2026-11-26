@@ -50,6 +50,7 @@ pub use ops::{ProposalLock, ProposalWrite};
 pub use pressure::InteractiveGuard;
 pub use product::{
     AssortmentUsage, AttributeUsageCount, DiscardReport, HistoryEntry, ProposalRow, UserRecord,
+    ViewWrite, WorkspaceStateWrite,
 };
 pub use retention::{PurgeCounts, RETENTION_DAYS};
 pub use scan::{EXPORT_CHUNK, ExportObject, ExportOrder, ExportScan};

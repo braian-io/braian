@@ -293,11 +293,16 @@ test('a scoped Save accepts only the visible row and the hidden row stays review
     await expect(rowFor(page, b.id)).toHaveCount(0)
 
     await visibleA.click()
+    // Row 57: one Discard/Save bar, in the pane being edited. Detail is open
+    // on this object, so the proposal bar is there and the table has none.
+    const detail = page.getByTestId('object-detail')
+    await expect(detail.getByTestId('review-and-save')).toBeVisible()
+    await expect(mainTable(page).getByTestId('object-draft-bar')).toHaveCount(0)
     const accepted = page.waitForResponse(
       (response) => response.url().includes(`/v1/proposals/${proposalId}/accept`) && response.ok(),
       { timeout: 30_000 },
     )
-    await mainTable(page).getByTestId('review-and-save').click()
+    await detail.getByTestId('review-and-save').click()
     await accepted
     await expect.poll(() => objectName(page, a!.id), { timeout: 30_000 }).toBe(SAVED_A)
 

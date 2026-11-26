@@ -319,6 +319,72 @@ describe('placeView and ensureInLayout', () => {
   })
 })
 
+describe('opening a tab keeps the existing order', () => {
+  const catalog = [
+    { id: 'tree', title: 'Food', type: 'structure_tree' },
+    { id: 'products', title: 'Products', type: 'object_table' },
+    { id: 'articles', title: 'Articles', type: 'object_table' },
+    { id: 'detail', title: 'Detail', type: 'object_detail' },
+    { id: 'agent', title: 'Agent', type: 'agent' },
+    { id: 'graph', title: 'Graph', type: 'graph' },
+  ]
+
+  it('docks a new agent without reordering Products or swapping into that tab', () => {
+    const layout = splitPair(
+      'horizontal',
+      0.22,
+      tabs(['tree']),
+      splitPair('horizontal', 0.62, tabs(['products', 'articles']), tabs(['detail'])),
+    )
+    const before = leaves(layout).map((leaf) => leaf.views)
+    const result = applyLayoutCommand(
+      doc(layout, { focus: 'products' }),
+      'ui.open_view',
+      { id: 'agent', zone: 'right', dock: 'edge', share: 0.3 },
+      { views: catalog },
+    )
+    const after = leaves(result.doc.layout).map((leaf) => leaf.views)
+    expect(after.filter((ids) => !ids.includes('agent'))).toEqual(before)
+    expect(after.find((ids) => ids.includes('agent'))).toEqual(['agent'])
+    expect(after.find((ids) => ids.includes('products'))?.[0]).toBe('products')
+  })
+
+  it('adds another agent run as a tab in the open agent pane', () => {
+    const layout = splitPair('horizontal', 0.7, tabs(['products']), tabs(['agent']))
+    const result = applyLayoutCommand(
+      doc(layout, { focus: 'products' }),
+      'ui.open_view',
+      { id: 'agent2', zone: 'right', dock: 'edge', share: 0.3 },
+      { views: [...catalog, { id: 'agent2', title: 'Agent', type: 'agent' }] },
+    )
+    expect(leaves(result.doc.layout).map((leaf) => leaf.views)).toEqual([['products'], ['agent', 'agent2']])
+    expect(result.doc.focus).toBe('agent2')
+  })
+
+  it('pulls an agent out of the Products tabs without reordering the ones left behind', () => {
+    const layout = tabs(['agent', 'products', 'articles'], 0)
+    const result = applyLayoutCommand(
+      doc(layout, { focus: 'products' }),
+      'ui.open_view',
+      { id: 'agent', zone: 'right', dock: 'edge' },
+      { views: catalog },
+    )
+    const after = leaves(result.doc.layout).map((leaf) => leaf.views)
+    expect(after).toContainEqual(['products', 'articles'])
+    expect(after).toContainEqual(['agent'])
+  })
+
+  it('appends a new center tab after the existing tabs', () => {
+    const result = applyLayoutCommand(
+      doc(tabs(['products', 'articles'], 0), { focus: 'products' }),
+      'ui.open_view',
+      { id: 'graph', zone: 'center', target: 'products' },
+      { views: catalog },
+    )
+    expect(result.doc.layout).toEqual(tabs(['products', 'articles', 'graph'], 2))
+  })
+})
+
 describe('agent dock shell', () => {
   it('finds the empty slot after closing the agent and reuses it on reopen', () => {
     const catalog = splitPair('horizontal', 0.22, tabs(['tree']), tabs(['products']))

@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api } from './api'
+import { api, type Json } from './api'
 import { copy } from './i18n'
-import { type LinkHit } from './link-choices'
+import { linkCountNoun, linkEndLabel, type LinkHit } from './link-choices'
 import { LinkCreateDialog, type LinkEndpoint } from './link-create-dialog'
 import { dispatchLinkDrop, type LinkDropDetail } from './link-drag'
 import { LinkObjectPicker } from './link-object-picker'
-import { type LinkSubmitResult, submitLinks } from './link-write'
+import { type LinkSubmitResult, type LinkWrite, submitLinks } from './link-write'
+import { linkSectionObjectId, publishLinkFeedback, publishLinkFeedbackToEndpoints, type LinkFeedbackDetail } from './link-feedback'
 import { reportWriteError } from './write-error'
 
 export { dispatchLinkDrop }
@@ -41,14 +42,35 @@ export function LinkDropHost() {
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ['object'] })
     void queryClient.invalidateQueries({ queryKey: ['objects'] })
-  }
-  const noteSaved = (result: LinkSubmitResult, _detail: LinkDropDetail) => {
-    if (result.created.length === 0 && result.outcome !== 'proposed') return
-    refresh()
     void queryClient.invalidateQueries({ queryKey: ['trash'] })
-    if (result.outcome === 'partial') {
-      reportWriteError(new Error(result.failed.message || copy.validation))
+  }
+  const noteSaved = (result: LinkSubmitResult, detail: LinkDropDetail, linkType?: string) => {
+    const saved = result.created.map((item) => ({ ...item, label: peerLabel(detail, item.body) }))
+    if (saved.length === 0) return
+    refresh()
+    const message = result.outcome === 'proposed'
+      ? copy.linkedFiled.replace('{linked}', String(saved.length)).replace('{filed}', String(result.filed))
+      : linkedMessage(detail.source, detail.targets, saved.length, defs.data)
+    const first = saved[0]!
+    const sectionObjectId = linkSectionObjectId(detail, first.body)
+    const tableObjectIds = [...new Set([
+      ...detail.targets.map((item) => item.id),
+      detail.source.id,
+      sectionObjectId,
+    ])]
+    const peerKeys = [
+      ...saved.map((item) => item.label).filter(Boolean),
+      ...detail.targets.map((item) => item.key || item.name || '').filter(Boolean),
+      detail.source.key || detail.source.name || '',
+    ].filter((key, index, all) => key && all.indexOf(key) === index)
+    const feedback: Omit<LinkFeedbackDetail, 'sectionObjectId'> = {
+      linkType: linkType ?? first.body.type,
+      direction: detail.preferred?.direction,
+      peerKeys,
+      hint: message,
+      tableObjectIds,
     }
+    publishLinkFeedbackToEndpoints(detail, feedback)
   }
   if (picking && !drop) {
     const exclude = picking.map((item) => item.id)
@@ -85,19 +107,41 @@ export function LinkDropHost() {
           values: request.values,
         })))
         if (result.outcome === 'created' || result.outcome === 'partial' || result.outcome === 'proposed') {
-          noteSaved(result, drop)
+          noteSaved(result, drop, requests[0]?.type)
         }
         return result
       }}
-      onReplaced={() => {
+      onReplaced={(request) => {
         refresh()
-        void queryClient.invalidateQueries({ queryKey: ['trash'] })
+        const peerKeys = drop.targets
+          .map((item) => item.key || item.name || item.id)
+          .concat(drop.source.key || drop.source.name || drop.source.id)
+        publishLinkFeedbackToEndpoints(drop, {
+          linkType: request.type,
+          direction: drop.preferred?.direction,
+          peerKeys,
+          hint: copy.linkReplaced,
+          tableObjectIds: [drop.source.id, ...drop.targets.map((item) => item.id)],
+        })
       }}
     />
   )
+}
+
+function peerLabel(detail: LinkDropDetail, body: LinkWrite) {
+  const peerId = body.from_id === detail.source.id ? body.to_id : body.from_id
+  const peer = detail.targets.find((item) => item.id === peerId)
+    ?? (detail.source.id === peerId ? detail.source : undefined)
+  return peer ? (peer.key || linkEndLabel(peer)) : peerId
 }
 
 function endpointFromHit(hit: LinkHit): LinkEndpoint {
   return { id: hit.id, typeKey: hit.typeKey, name: hit.name, key: hit.key }
 }
 
+function linkedMessage(source: LinkEndpoint, targets: LinkEndpoint[], count: number, defs?: Json) {
+  const shared = targets.every((item) => item.typeKey === targets[0]?.typeKey) ? targets[0]?.typeKey ?? '' : ''
+  const what = linkCountNoun(count, defs, shared)
+  const name = source.name || source.key || source.id
+  return copy.linkedToast.replace('{what}', what).replace('{name}', name)
+}

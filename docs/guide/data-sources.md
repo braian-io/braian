@@ -176,12 +176,13 @@ only saved when you press `Save`.
 A dynamic selection recalculates from its filter whenever it is applied, so the table
 shows the objects that match now, not a snapshot from when the selection was saved.
 
-A manual selection stores the group and label filters that are active when you create
-it, and it does not take a dynamic filter query. There is no separate picker yet for
-adding or removing individual objects by hand, and a query combined with manual
-additions is still out of scope. To choose what a manual selection contains, create it
-while the group or label filter you want is active. A manual selection with no group
-or labels matches no objects, not every object of the type.
+A manual selection is filled by hand. In an object table, select rows and choose
+`Add to selection…`, or drag the rows onto the selection in its list or onto a table
+that is showing it. In a table whose source is that manual selection, `Remove from
+selection` takes the chosen rows back out. A dynamic filter combined with hand-picked
+objects is still out of scope. A manual selection that has not been filled by hand
+still stores the group and label filters that were active when you created it. One
+with no group, labels, or objects matches nothing, not every object of the type.
 
 Selecting a selection chip applies it to the table, and clicking the active chip
 clears it. Group chips do not apply in peer-linked tables; label chips still do.

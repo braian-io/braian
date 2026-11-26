@@ -3,9 +3,11 @@ import { flushSync } from 'react-dom'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { History as HistoryIcon, Trash2 } from 'lucide-react'
-import { api, catalogName, failureLines, freeObject, jsonRecord, recordNumber, recordTitle, searchQuery, textValue, type Json } from './api'
+import { ApiError, api, catalogName, failureLines, freeObject, jsonRecord, recordNumber, recordTitle, searchQuery, textValue, type Json } from './api'
 import { AutoResizeTextarea } from './auto-resize-textarea'
 import { messageFromErrorBody, reportWriteError, writeErrorMessage } from './write-error'
+import { acknowledgeWriteError } from './write-status'
+import { saveVersionedViewKeys, saveViewChange, viewStateRecord, type ViewState } from './view-state-save'
 import { catalogKeyOf, inCatalog, workspaceCatalogRef } from './catalog-scope'
 import { useCatalogIdToKey } from './catalog-list'
 import { CreateDialog, requireText, type CreateDialogField } from './create-dialog'
@@ -65,7 +67,7 @@ import { EMPTY_CELL } from './fields/qualifiers'
 import { columnPrefsHasOverride, fetchColumnPrefs, isHopPath, orderHiddenToDocument, ensureSystemColumns,
   prefsToOrderHidden, saveColumnPrefsKeepalive, type ColumnPrefsDocument, type SystemViewColumn } from './column-prefs'
 import { columnPrefsMutationKey, columnPrefsQueryKey, resetColumnPrefs, useSaveColumnPrefs } from './column-prefs-mutation'
-import { createTablePrefsSaver, type TablePrefsSnapshot } from './table-prefs-save'
+import { createTablePrefsSaver, tablePrefsBody, type TablePrefsSnapshot } from './table-prefs-save'
 import { readPathFromDoc, summarizePathValues } from './path-cell'
 import { cellPathValues, fetchPathValues } from './path-values'
 import { applyObjectWrite, currentSearchWaitSeq, reconcileObjectWrite } from './object-write'
@@ -91,16 +93,21 @@ import {
   draftBaseVersion,
   draftEditorSeed,
   editBaseVersion,
+  getDetailDraftOwner,
   getObjectDraftSnapshot,
   objectDraftCells,
   overlayValues,
   paintObjectCell,
+  proposalCellsForTableBar,
   reviewCapabilities,
   roleCanWrite,
+  setDetailDraftOwner,
   stageObjectCell,
+  subscribeDetailDraftOwner,
   subscribeObjectDrafts,
 } from './object-draft'
 import { CellDiff, ObjectDraftBar, UnmappedDraftLinks } from './object-draft-bar'
+import { getSelectionBarActive, subscribeSelectionDraft } from './selection-draft'
 import { acceptProposal, draftSavePlan, isDraftSaveInFlight, runDraftDiscard, runDraftSave } from './object-draft-save'
 import { useObjectDraftSaving } from './use-object-draft-saving'
 import { useOpenObjectProposals } from './use-open-proposals'
@@ -145,7 +152,9 @@ import { splitDetailKeys } from './detail-fields'
 import { DetailFieldDraftHost, type DetailFieldDraftHandle } from './detail-field-draft'
 import { DetailNumberMeasureField } from './detail-number-measure-field'
 import { beginLinkDrag, dispatchLinkDrop, endLinkDrag, linkDragActive, linkDragContains, linkDragLabel, linkDragMime, linkDragObjects, linkDragPayload, linkDropDecision, readLinkDrag, setLinkDragHint } from './link-drag'
-import { EMPTY_MANUAL_FILTER, labelCodes, publishSelectionLabels, SELECTION_APPLIED_EVENT, selectionMatchesType } from './assortment-filter'
+import { EMPTY_MANUAL_FILTER, isHandPickedQuery, labelCodes, memberIdFilter, memberIdsOf, publishSelectionLabels, SELECTION_APPLIED_EVENT, selectionKind, selectionMatchesType } from './assortment-filter'
+import { selectionDropHandlers } from './selection-picker'
+import { SELECTION_MEMBERS_EVENT, finishSelectionDrop, saveSelectionMembers, selectionDragActive, setMemberError, memberErrorSnapshot, subscribeMemberError, type SelectionMembersDetail } from './selection-members'
 import { appendPathFilter, objectTableFilter } from './table-filter'
 import { assortmentChipActive, planSelectionApply, selectionChipContext, type AssortmentChipContext, type SelectionApplyMode } from './table-filters'
 import { dispatchUi, onUi } from './ui-bus'
@@ -185,6 +194,7 @@ export type PanesView = {
   pane?: string
   position?: number
   state: Json
+  updated_at?: string | null
 }
 
 export type PanesWorkspace = {
@@ -288,6 +298,8 @@ export function ObjectTable({
   const [moving, setMoving] = useState<string | null>(null)
   const [massConfirm, setMassConfirm] = useState(false)
   const [flashId, setFlashId] = useState('')
+  const [tableSaveError, setTableSaveError] = useState('')
+  const [filterSetupError, setFilterSetupError] = useState('')
   const [editingCell, setEditingCell] = useState<{ rowId: string; columnId: string } | null>(null)
   const [editingDraft, setEditingDraft] = useState('')
   const [editingMeasureDraft, setEditingMeasureDraft] = useState<MeasureEditDraft | null>(null)
@@ -296,6 +308,7 @@ export function ObjectTable({
   const editingOriginalRef = useRef('')
   const skipBlurCommitRef = useRef(false)
   const drafts = useSyncExternalStore(subscribeObjectDrafts, getObjectDraftSnapshot, getObjectDraftSnapshot)
+  const selectionOwnsSave = useSyncExternalStore(subscribeSelectionDraft, getSelectionBarActive, getSelectionBarActive)
   const draftSaving = useObjectDraftSaving()
   const openProposals = useOpenObjectProposals()
   const queryClient = useQueryClient()
@@ -367,17 +380,48 @@ export function ObjectTable({
     view,
     workspaceId: workspace.id,
     table: { sort, groupBy, sizes },
+    updatedAt: view.updated_at,
   })
   latestTableSave.current = {
     view,
     workspaceId: workspace.id,
     table: { sort, groupBy, sizes },
+    updatedAt: view.updated_at,
   }
   const tableSaver = useRef<ReturnType<typeof createTablePrefsSaver> | null>(null)
   if (!tableSaver.current) {
-    tableSaver.current = createTablePrefsSaver((body, signal) =>
-      api.post('/v1/views', { body, signal }),
-    )
+    tableSaver.current = createTablePrefsSaver(async (body, signal) => {
+      const post = (patch: ViewState, expected: string | null | undefined) =>
+        api.post('/v1/views', {
+          body: {
+            id: body.id,
+            workspace_id: body.workspace_id,
+            type: body.type,
+            title: body.title,
+            pane: body.pane,
+            position: body.position,
+            state: freeObject(patch),
+            ...(expected !== undefined ? { expected_updated_at: expected } : {}),
+          },
+          signal,
+        })
+      if (body.expected_updated_at === undefined) return post(viewStateRecord(body.state), undefined)
+      return saveVersionedViewKeys({
+        baseUpdatedAt: body.expected_updated_at,
+        pending: viewStateRecord(body.state),
+        latestPending: () => viewStateRecord(tablePrefsBody(latestTableSave.current).state),
+        post,
+        refetch: async () => {
+          const snapshot = latestTableSave.current
+          const fresh = await api.get('/v1/workspaces/{id}', { params: { path: { id: snapshot.workspaceId } } })
+          const found = fresh.views?.find((item) => item.id === snapshot.view.id)
+          if (found?.updated_at) latestTableSave.current = { ...latestTableSave.current, updatedAt: found.updated_at }
+          return { state: viewStateRecord(found?.state), updated_at: found?.updated_at ?? null }
+        },
+        isConflict: (error) => error instanceof ApiError && error.status === 409,
+        onConflict: () => acknowledgeWriteError(409),
+      })
+    })
   }
 
   useEffect(() => {
@@ -447,6 +491,13 @@ export function ObjectTable({
   const selectionRows = (assortments.data?.assortments ?? []).filter((item) =>
     selectionMatchesType(item, typeKey, bound?.id ?? ''),
   )
+  const activeManual = selectionRows.find((item) => String(item.id) === activeSelectionId)
+  const activeManualSelectionId = activeManual
+    && selectionKind(activeManual.kind) !== 'dynamic'
+    && (memberIdsOf(activeManual).length > 0 || isHandPickedQuery(activeManual.query))
+    ? String(activeManual.id)
+    : ''
+  const memberError = useSyncExternalStore(subscribeMemberError, memberErrorSnapshot, memberErrorSnapshot)
   useEffect(() => {
     if (!activeSelectionId || !assortments.isSuccess) return
     if (selectionRows.some((item) => String(item.id) === activeSelectionId)) return
@@ -527,6 +578,7 @@ export function ObjectTable({
       ? (peerNode ? peerNodeFilter(peerNode) : peerIdsFilter([]))
       : (peerIds.isSuccess ? peerIdsFilter(peerIds.data) : peerIdsFilter([]))
     : ''
+  const handPicked = selectionFilter.startsWith('id:=[') || selectionFilter === EMPTY_MANUAL_FILTER
   const selectionMode: SelectionApplyMode = peerSource ? 'peer' : explicitAll ? 'explicit-all' : 'follow'
   const chipContext = selectionChipContext({
     sessionGroup: session.group,
@@ -538,22 +590,13 @@ export function ObjectTable({
     localGroup,
     defs: defs.data,
   })
-  const filterBy = [objectTableFilter(typeKey, chipContext.groupFilterApplies ? chipContext.activeGroup : null, defs.data), peerFilter, selectionFilter, labelFilter, ...pathFilters]
+  const filterBy = [objectTableFilter(typeKey, !handPicked && chipContext.groupFilterApplies ? chipContext.activeGroup : null, defs.data), peerFilter, selectionFilter, labelFilter, ...pathFilters]
     .filter(Boolean)
     .join(' && ')
   const enableGroupAssortmentFilter = useCallback(async () => {
     if (!explicitAll || workspace.locked) return
     const prevState = view.state
     const nextState = clearExplicitAllSource(view.state)
-    const body = {
-      id: view.id,
-      workspace_id: workspace.id,
-      type: view.type,
-      title: view.title,
-      pane: view.pane ?? 'center',
-      position: view.position ?? 0,
-      state: freeObject(nextState),
-    }
     const surface = queryClient.getQueryData<Json>(['workspace', workspace.id])
     if (surface && typeof surface === 'object' && !Array.isArray(surface)) {
       const views = (surface.views as Json[] | undefined) ?? []
@@ -563,7 +606,36 @@ export function ObjectTable({
       })
     }
     try {
-      await api.post('/v1/views', { body })
+      await saveViewChange({
+        id: view.id,
+        workspaceId: workspace.id,
+        type: view.type,
+        title: view.title,
+        pane: view.pane ?? 'center',
+        position: view.position ?? 0,
+        baseState: viewStateRecord(prevState),
+        nextState: viewStateRecord(nextState),
+        updatedAt: view.updated_at,
+        post: (body) => api.post('/v1/views', {
+          body: {
+            id: body.id,
+            workspace_id: body.workspace_id,
+            type: body.type,
+            title: body.title,
+            pane: body.pane,
+            position: body.position,
+            state: freeObject(body.state),
+            ...(body.expected_updated_at !== undefined ? { expected_updated_at: body.expected_updated_at } : {}),
+          },
+        }),
+        refetch: async () => {
+          const fresh = await api.get('/v1/workspaces/{id}', { params: { path: { id: workspace.id } } })
+          const found = fresh.views?.find((item) => item.id === view.id)
+          return { state: viewStateRecord(found?.state), updated_at: found?.updated_at ?? null }
+        },
+        isConflict: (error) => error instanceof ApiError && error.status === 409,
+        onConflict: () => acknowledgeWriteError(409),
+      })
     } catch (reason) {
       if (surface && typeof surface === 'object' && !Array.isArray(surface)) {
         const views = (surface.views as Json[] | undefined) ?? []
@@ -572,7 +644,8 @@ export function ObjectTable({
           views: views.map((item) => (String(item.id) === view.id ? { ...item, state: prevState } : item)),
         })
       }
-      reportWriteError(reason)
+      const message = writeErrorMessage(reason) ?? copy.saveFailed
+      setFilterSetupError(message)
       throw reason
     }
   }, [explicitAll, workspace.id, workspace.locked, view, queryClient])
@@ -584,6 +657,18 @@ export function ObjectTable({
     setLocalGroup(patch.localGroup)
     if (patch.globalGroup !== undefined && !workspace.locked) session.setGroup(patch.globalGroup)
   }
+  useEffect(() => {
+    const onMembers = (event: Event) => {
+      const detail = (event as CustomEvent<SelectionMembersDetail>).detail
+      if (!detail?.id || detail.id !== activeSelectionId) return
+      setSelectionFilter(memberIdFilter(detail.memberIds))
+      setLabelFilter('')
+      setLocalGroup(null)
+      if (!workspace.locked) session.setGroup(null)
+    }
+    window.addEventListener(SELECTION_MEMBERS_EVENT, onMembers)
+    return () => window.removeEventListener(SELECTION_MEMBERS_EVENT, onMembers)
+  }, [activeSelectionId, session, workspace.locked])
   // Click and a selection broadcast from another view share this commit.
   const applySavedSelection = async (item: Json) => {
     const plan = planSelectionApply({
@@ -594,6 +679,7 @@ export function ObjectTable({
     })
     if (plan.action === 'ignore') return
     if (plan.action === 'clear') {
+      setFilterSetupError('')
       commitSelection({
         filter: '',
         selectionFilter: '',
@@ -611,6 +697,7 @@ export function ObjectTable({
         return
       }
     }
+    setFilterSetupError('')
     commitSelection(plan.patch)
   }
   useEffect(() => {
@@ -913,7 +1000,7 @@ export function ObjectTable({
     }
     // Publish committed selections. Detail and peer panes follow `selected`.
     const marked = scopeChanged ? [] : selected.map(described)
-    publishTable(view.id, [queryText, filterBy].filter(Boolean).join(' '), sort, filterBy)
+    publishTable(view.id, [queryText, filterBy].filter(Boolean).join(' '), sort, filterBy, queryText)
     publishSelection(view.id, marked)
   }, [peerScope, selected, queryText, filterBy, sort, view.id, knownStamp])
 
@@ -1062,6 +1149,8 @@ export function ObjectTable({
       setSort(String(args.sort))
     }
     if (event.name === 'ui.select' && args.id) {
+      const target = String(args.view ?? '')
+      if (target && target !== view.id) return
       const id = String(args.id)
       session.setObjectId(id)
       setSelected([id])
@@ -1291,7 +1380,8 @@ export function ObjectTable({
         column: column || undefined,
         columnHeader: column ? columnHeader(column) : undefined,
         hiddenColumns,
-        typeKey: session.listType ?? undefined,
+        typeKey: typeKey || row.type || session.listType || undefined,
+        manualSelectionId: activeManualSelectionId || undefined,
         viewId: view.id,
         columnPrefsOverride: hasColumnOverride,
         objects: chosen.flatMap((id) => {
@@ -2207,23 +2297,28 @@ export function ObjectTable({
   }
   const visibleRows = groupBy ? groupedRows : [...byIndex.values()]
   const visibleIds = new Set(visibleRows.map((row) => row.id))
+  const detailOwner = useSyncExternalStore(subscribeDetailDraftOwner, getDetailDraftOwner, getDetailDraftOwner)
   // A Detail edit stays on the Detail bar. This table only saves cells staged here.
   const tableObjectIds = [...new Set(
     drafts.cells.filter((cell) => cell.surface == null || cell.surface === 'table').map((cell) => cell.objectId),
   )].filter((id) => visibleIds.has(id))
-  const draftElsewhere = new Set(
-    drafts.cells.filter((cell) => cell.surface === 'detail').map((cell) => cell.objectId),
-  )
+  const visibleProposalUpdates = [...openProposals.byObject.entries()]
+    .filter(([objectId]) => visibleIds.has(objectId))
+    .flatMap(([, cells]) => cells)
+    .filter((cell) => cell.op === 'update')
+  // One proposal bar: Detail's, when Detail is open on that object.
+  const tableProposals = proposalCellsForTableBar(visibleProposalUpdates, detailOwner)
+  const draftElsewhere = new Set([
+    ...drafts.cells.filter((cell) => cell.surface === 'detail').map((cell) => cell.objectId),
+    ...tableProposals.elsewhere,
+  ])
   const tableVersions: Record<string, number> = {}
   const tableMeta: Record<string, { key: string; type: string }> = {}
   for (const row of visibleRows) {
     tableVersions[row.id] = Number(row.version ?? 0)
     tableMeta[row.id] = { key: row.key, type: row.type }
   }
-  const visibleProposalCells = [...openProposals.byObject.entries()]
-    .filter(([objectId]) => visibleIds.has(objectId))
-    .flatMap(([, cells]) => cells)
-    .filter((cell) => cell.op === 'update')
+  const visibleProposalCells = tableProposals.bar
   const proposalObjectIds = [...new Set(visibleProposalCells.map((cell) => cell.objectId))]
   const tableReview = reviewCapabilities({
     principal: me.data?.kind === 'agent' ? 'agent' : 'human',
@@ -2250,7 +2345,28 @@ export function ObjectTable({
       onFilterChange={setFilter}
       onFilterFocus={() => { searchFocusedRef.current = true }}
       onFilterBlur={() => { searchFocusedRef.current = false }}
+      onDragOver={(event) => {
+        if (!activeManualSelectionId || !selectionDragActive(event.dataTransfer.types)) return
+        const node = event.target
+        if (node instanceof Element && node.closest('[data-testid="object-row"]')) return
+        event.preventDefault()
+        event.stopPropagation()
+        event.dataTransfer.dropEffect = 'copy'
+      }}
+      onDrop={(event) => {
+        if (!activeManualSelectionId || !selectionDragActive(event.dataTransfer.types)) return
+        const node = event.target
+        if (node instanceof Element && node.closest('[data-testid="object-row"]')) return
+        event.preventDefault()
+        event.stopPropagation()
+        const ids = finishSelectionDrop(event.dataTransfer)
+        if (ids.length === 0) return
+        void saveSelectionMembers(queryClient, activeManualSelectionId, ids, 'add').catch((reason: unknown) => {
+          setMemberError(activeManualSelectionId, writeErrorMessage(reason) ?? copy.validation)
+        })
+      }}
     >
+      {selectionOwnsSave ? null : (
       <ObjectDraftBar
         count={draftCount}
         canSave={tableReview.canSave}
@@ -2272,10 +2388,14 @@ export function ObjectTable({
           })
           void runDraftSave(plan, queryClient, viewingAgentRunId() ?? '').then((reason) => {
             if (isDraftSaveInFlight(reason)) return
-            if (reason) reportWriteError(new Error(reason))
-            else session.push(copy.saved)
+            if (reason) setTableSaveError(reason)
+            else {
+              setTableSaveError('')
+              session.push(copy.saved)
+            }
           })
         }}
+        saveError={tableSaveError}
         onDiscard={() => {
           void runDraftDiscard({
             objectIds: [...visibleIds],
@@ -2285,12 +2405,13 @@ export function ObjectTable({
             viaAgent: false,
             surface: 'table',
           }).then((reason) => {
-            if (reason) reportWriteError(new Error(reason))
+            if (reason) setTableSaveError(reason)
             void queryClient.invalidateQueries({ queryKey: ['proposals'] })
             void queryClient.invalidateQueries({ queryKey: ['proposal'] })
           })
         }}
       />
+      )}
       <UnmappedDraftLinks proposals={openProposals.unmapped} />
       {peerSource && peerSourceView ? (
         <p className="table-source" data-testid="peer-linked-to">
@@ -2347,6 +2468,11 @@ export function ObjectTable({
             })
           }}
         />
+        {filterSetupError ? (
+          <span className="error" role="alert" data-testid="filter-setup-error" title={filterSetupError}>
+            {filterSetupError}
+          </span>
+        ) : null}
       </div>
       {pathFilters.length > 0 ? (
         <div className="toolbar path-filter-chips" data-testid="path-filter-chips">
@@ -2883,7 +3009,14 @@ function TableFilters({
     setGroupBy('')
     onClear()
   }
+  const queryClient = useQueryClient()
   const assortmentActive = (item: Json) => assortmentChipActive(item, chipContext)
+  const memberError = useSyncExternalStore(subscribeMemberError, memberErrorSnapshot, memberErrorSnapshot)
+  const addDropped = (selectionId: string, ids: string[]) => {
+    void saveSelectionMembers(queryClient, selectionId, ids, 'add').catch((reason: unknown) => {
+      setMemberError(selectionId, writeErrorMessage(reason) ?? copy.validation)
+    })
+  }
   const selectionOn = Boolean(
     (chipContext.groupFilterApplies && chipContext.activeGroup)
     || chipContext.activeLabelFilter
@@ -2894,19 +3027,28 @@ function TableFilters({
       <Button type="button" variant="ghost" className={!selectionOn && groupBy === '' ? 'filter-chip on' : 'filter-chip'} onClick={clear}>{copy.all}</Button>
       <Button type="button" variant="ghost" className={groupBy === 'type_key' ? 'filter-chip on' : 'filter-chip'} onClick={() => setGroupBy(groupBy === 'type_key' ? '' : 'type_key')}>{copy.type}</Button>
       <Button type="button" variant="ghost" className={groupBy === 'a_status' ? 'filter-chip on' : 'filter-chip'} onClick={() => setGroupBy(groupBy === 'a_status' ? '' : 'a_status')}>{copy.status}</Button>
-      {assortments.map((item) => (
-        <Button
-          key={String(item.id)}
-          type="button"
-          variant="ghost"
-          className={assortmentActive(item) ? 'filter-chip on' : 'filter-chip'}
-          data-testid="assortment"
-          aria-pressed={assortmentActive(item)}
-          onClick={() => { onAssortment(item) }}
-        >
-          {assortmentDisplayName(String(item.name))}
-        </Button>
-      ))}
+      {assortments.map((item) => {
+        const id = String(item.id)
+        const manual = selectionKind(item.kind) !== 'dynamic'
+        return (
+          <Button
+            key={id}
+            type="button"
+            variant="ghost"
+            className={assortmentActive(item) ? 'filter-chip on' : 'filter-chip'}
+            data-testid="assortment"
+            data-member-count={memberIdsOf(item).length}
+            aria-pressed={assortmentActive(item)}
+            onClick={() => { onAssortment(item) }}
+            {...selectionDropHandlers(manual, id, (ids) => addDropped(id, ids))}
+          >
+            {assortmentDisplayName(String(item.name))}
+          </Button>
+        )
+      })}
+      {memberError.message && assortments.some((item) => String(item.id) === memberError.selectionId) ? (
+        <p className="error" data-testid="selection-member-error" role="alert">{memberError.message}</p>
+      ) : null}
     </>
   )
 }
@@ -3124,6 +3266,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
     enabled: Boolean(session.objectId) && !objectGoneState && objectFetchSettled,
   })
   const drafts = useSyncExternalStore(subscribeObjectDrafts, getObjectDraftSnapshot, getObjectDraftSnapshot)
+  const selectionOwnsSave = useSyncExternalStore(subscribeSelectionDraft, getSelectionBarActive, getSelectionBarActive)
   const draftSaving = useObjectDraftSaving()
   const openProposals = useOpenObjectProposals()
   const me = useQuery({ queryKey: ['me'], queryFn: () => api.get('/v1/me'), retry: false })
@@ -3162,6 +3305,15 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   useEffect(() => {
     if (detailLoadFailed && session.objectId) clearObjectNavReplace(session.objectId)
   }, [detailLoadFailed, session.objectId])
+  useEffect(() => {
+    const id = session.objectId
+    if (!id) {
+      setDetailDraftOwner(null)
+      return
+    }
+    setDetailDraftOwner(id)
+    return () => setDetailDraftOwner(null)
+  }, [session.objectId])
   useEffect(() => {
     if (!session.objectId || !object.data) return
     const stored = (object.data.values as Json) ?? {}
@@ -3476,6 +3628,22 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
               <strong title={name || number}>{name || number}</strong>
               {number ? <span className="detail-id">{number}</span> : null}
             </div>
+            <Button
+              type="button"
+              variant="ghost"
+              data-testid="open-draft-in-table"
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('braian-open-draft', {
+                  detail: {
+                    objectId: session.objectId,
+                    typeKey: String(object.data?.type ?? ''),
+                    viewType: 'object_table',
+                  },
+                }))
+              }}
+            >
+              {copy.openDraftInTable}
+            </Button>
             {allowDeleted ? (
               <Button
                 type="button"
@@ -3565,7 +3733,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       </div>
       </DetailFieldDraftHost>
       <UnmappedDraftLinks proposals={openProposals.unmapped} />
-      {dirty ? (
+      {dirty && !selectionOwnsSave ? (
         <ObjectDraftBar
           count={detailCells.length + (proposalCells.length > 0 ? 1 : 0)}
           canSave={detailReview.canSave && editingReady}
@@ -4467,6 +4635,24 @@ function SuggestionCard({
         {' '}
         <MetaChip tone={statusTone(String(row.status))}>{String(row.status)}</MetaChip>
         {row.conflict ? ` · ${copy.conflict}` : ''}
+        {!model && row.object_id ? (
+          <Button
+            type="button"
+            variant="ghost"
+            data-testid="open-draft-in-table"
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent('braian-open-draft', {
+                detail: {
+                  objectId: String(row.object_id),
+                  typeKey: String(row.type_key ?? ''),
+                  viewType: 'object_table',
+                },
+              }))
+            }}
+          >
+            {copy.openDraftInTable}
+          </Button>
+        ) : null}
       </h3>
       {lines.map((line) => {
         const id = `${String(row.id)}:${line.id}`

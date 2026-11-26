@@ -87,12 +87,13 @@ afterEach(() => {
 })
 
 describe('LinkSections removal', () => {
-  it('removes a link without values without a success toast', async () => {
+  it('removes a link without values without a success notice', async () => {
     renderLinks(link({ sort_order: '3' }))
     await removeFocusedLink()
     await waitFor(() => {
       expect(del).toHaveBeenCalledWith('/v1/links/{id}', { params: { path: { id: 'link-1' } } })
     })
+    expect(screen.queryByTestId('link-section-feedback')).toBeNull()
   })
 
   it('confirms a link with values using a plain danger confirm and no text input', async () => {
@@ -134,6 +135,7 @@ describe('LinkSections removal', () => {
     await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['object', 'object-1'] }))
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['trash'] })
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['history', 'object-1'] })
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['history', 'peer-1'] })
   })
 
   it('opens edit link attributes from the row action', async () => {

@@ -22,19 +22,34 @@ type AgentPresenceProps = {
 
 function showAgentNotices(notices: AgentNotice[], onReview: (run: AgentRunSummary) => void) {
   for (const notice of notices) {
-    const show = notice.failed ? toast.error : toast
     const run = notice.run
-    show(notice.text, {
+    const open = () => {
+      if (run) onReview(run)
+      else requestOpenAgentsTable()
+    }
+    if (notice.failed) {
+      toast.error(notice.text, {
+        id: notice.id,
+        duration: 20000,
+        className: 'agent-notice-toast',
+        action: { label: notice.actionLabel, onClick: open },
+      })
+      continue
+    }
+    if (run?.status === 'waiting') {
+      toast(notice.text, {
+        id: notice.id,
+        duration: 20000,
+        className: 'agent-notice-toast',
+        action: { label: notice.actionLabel, onClick: open },
+      })
+      continue
+    }
+    toast(notice.text, {
       id: notice.id,
       duration: 20000,
       className: 'agent-notice-toast',
-      action: {
-        label: notice.actionLabel,
-        onClick: () => {
-          if (run) onReview(run)
-          else requestOpenAgentsTable()
-        },
-      },
+      action: { label: notice.actionLabel, onClick: open },
     })
   }
 }
