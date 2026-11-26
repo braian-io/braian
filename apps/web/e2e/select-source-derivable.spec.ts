@@ -139,7 +139,7 @@ async function waitForSourceState(
   workspaceId: string,
   viewId: string,
   expected: SourceState | undefined,
-  timeout = 60_000,
+  timeout = 30_000,
 ) {
   await expect
     .poll(async () => {
@@ -223,28 +223,23 @@ test.describe('Select source lists every derivable source (row 103 follow-up)', 
         if (title !== 'All Articles') {
           await expect(articles.getByTestId('peer-linked-to')).toBeVisible({ timeout: 20_000 })
         }
+        if (title === 'Articles from Food') {
+          await expect(articles.getByTestId('view-source-label')).toContainText('Food', { timeout: 30_000 })
+          await waitForSourceState(page, own.workspaceId, articlesId, { kind: 'peer', viewId: treeId, selection: 'node' })
+        }
       }
-
-      // The tree source itself is stored as a peer with its node selection.
-      await waitForSourceState(page, own.workspaceId, articlesId, { kind: 'peer', viewId: treeId, selection: 'node' })
 
       // Reload keeps a row-driven peer too: the URL restores the product row, so
       // Articles from Products shows the same linked rows after F5.
       await chooseTitle(page, articles, 'Articles from Products')
-      await waitForSourceState(page, own.workspaceId, articlesId, {
-        kind: 'peer',
-        viewId: productsId,
-        selection: 'row',
-        linkType: 'product_articles',
-      })
       await expect(articles.getByTestId('peer-linked-to')).toContainText('Linked to: Products', { timeout: 30_000 })
-      const before = await articles.getByTestId('object-row').allInnerTexts()
       await waitForSourceState(page, own.workspaceId, articlesId, {
         kind: 'peer',
         viewId: productsId,
         selection: 'row',
         linkType: 'product_articles',
       })
+      const before = await articles.getByTestId('object-row').allInnerTexts()
       await page.reload()
       await expect(page.getByTestId('workspace')).toBeVisible({ timeout: 60_000 })
       const articlesAfter = pane(page, articlesId)

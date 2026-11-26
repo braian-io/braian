@@ -89,7 +89,9 @@ afterEach(() => {
 describe('LinkSections removal', () => {
   it('removes a link without values without a success notice', async () => {
     renderLinks(link({ sort_order: '3' }))
+
     await removeFocusedLink()
+
     await waitFor(() => {
       expect(del).toHaveBeenCalledWith('/v1/links/{id}', { params: { path: { id: 'link-1' } } })
     })
@@ -98,14 +100,19 @@ describe('LinkSections removal', () => {
 
   it('confirms a link with values using a plain danger confirm and no text input', async () => {
     renderLinks(link({ has_values: true }))
+
     await removeFocusedLink()
+
     const dialog = await screen.findByTestId('link-confirm')
     const description = document.getElementById(dialog.getAttribute('aria-describedby') ?? '')
     expect(description?.textContent).toBe('Remove the link to Mature cheddar? Its link values are deleted too.')
     expect(screen.queryByTestId('link-confirm-input')).toBeNull()
     expect(dialog.querySelector('input')).toBeNull()
+
     const confirm = screen.getByTestId('link-confirm-remove') as HTMLButtonElement
     expect(confirm.className).toContain('btn-danger')
+    expect(confirm.disabled).toBe(false)
+
     fireEvent.click(confirm)
     await waitFor(() => {
       expect(del).toHaveBeenCalledWith('/v1/links/{id}', { params: { path: { id: 'link-1' } } })
@@ -121,8 +128,14 @@ describe('LinkSections removal', () => {
     await act(async () => {
       window.dispatchEvent(new Event('braian-remove-link'))
     })
+
     const dialog = await screen.findByRole('dialog')
+    const description = document.getElementById(dialog.getAttribute('aria-describedby') ?? '')
+    expect(dialog.getAttribute('aria-label')).toBe(copy.removeLink)
+    expect(description?.textContent).toBe('Remove the link to Mature cheddar? Its link values are deleted too.')
+
     fireEvent.keyDown(dialog, { key: 'Escape' })
+
     await waitFor(() => expect(screen.queryByTestId('link-confirm')).toBeNull())
     await waitFor(() => expect(document.activeElement).toBe(row))
   })
@@ -131,11 +144,17 @@ describe('LinkSections removal', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const invalidate = vi.spyOn(client, 'invalidateQueries')
     renderLinks(link({ sort_order: '3' }), client)
+
     await removeFocusedLink()
+
     await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['object', 'object-1'] }))
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['trash'] })
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['object', 'peer-1'] })
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['objects'] })
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['peer-links'] })
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['link-search'] })
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['history', 'object-1'] })
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['history', 'peer-1'] })
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['trash'] })
   })
 
   it('opens edit link attributes from the row action', async () => {

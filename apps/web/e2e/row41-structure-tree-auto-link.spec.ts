@@ -121,10 +121,9 @@ test.describe('structure tree auto-links object tables (Notion row 41)', () => {
         await expect(products.getByTestId('object-row').filter({ hasText: name })).toHaveCount(0)
       }
 
-      await expect(async () => {
-        await products.getByTestId('view-source-label').click()
-        await expect(products.getByTestId('view-source-label')).toHaveText('All Products', { timeout: 5_000 })
-      }).toPass({ timeout: 30_000 })
+      // After tree auto-link the header only clears the peer; use Select source
+      // (same as the start of the test) for an explicit All Products again.
+      await chooseAllProducts(page, products)
       await expect.poll(async () => products.getByTestId('object-row').count()).toBe(allRows)
     } finally {
       await page.request.delete(`/v1/workspaces/${workspaceId}`)
