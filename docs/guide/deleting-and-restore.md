@@ -56,9 +56,10 @@ Open **Trash** from the user menu. It is a standard table view (not a dialog) wi
 columns for number, name, type, and deleted time. Deleted link objects show a readable
 name (endpoint numbers), never a raw UUID.
 
-**Restore** is available from the row context menu, Ctrl+K, and from Detail when you
-open a deleted object from Trash. **Delete permanently** removes an item from Trash
-with a confirmation dialog; it cannot be undone (`POST /v1/trash/{kind}/{id}/purge`).
+**Restore** is available from the row context menu, the Trash row menu, Ctrl+K, and
+from Detail when you open a deleted object from Trash. **Delete permanently** removes
+an item from Trash with a confirmation dialog; it cannot be undone
+(`POST /v1/trash/{kind}/{id}/purge`).
 
 Deleted objects appear in **Trash**. **Restore** (the button keeps that label) brings
 the object back and, in the same transaction, restores the link rows and link objects
