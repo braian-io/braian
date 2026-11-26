@@ -1,4 +1,5 @@
 import type { Json } from './api'
+import { effectiveFields } from './model-view'
 
 export type DetailFieldSplit = {
   primaryKeys: string[]
@@ -26,4 +27,26 @@ export function splitDetailKeys(defs: Json | undefined, keys: string[]): DetailF
     else primaryKeys.push(key)
   }
   return { primaryKeys, moreKeys }
+}
+
+/** Object membership is `{ structureKey: groupKey }`. */
+export function groupMemberships(groups: unknown): Array<{ structure: string; group: string }> {
+  if (!groups || typeof groups !== 'object' || Array.isArray(groups)) return []
+  return Object.entries(groups as Record<string, unknown>)
+    .filter((entry): entry is [string, string] => typeof entry[1] === 'string' && entry[1] !== '')
+    .map(([structure, group]) => ({ structure, group }))
+}
+
+/**
+ * Attribute keys that apply to an object: its type, its groups, and ancestor
+ * groups. Empty inherited fields are included so Detail can show them before
+ * a value is stored.
+ */
+export function applicableDetailKeys(
+  defs: Json | undefined,
+  typeKey: string,
+  groups: unknown,
+  language = 'en',
+): string[] {
+  return effectiveFields(defs, typeKey, groupMemberships(groups), language).map((field) => field.key)
 }

@@ -109,16 +109,12 @@ test('type attribute rule columns stage, save, and restore (row 47)', async ({ p
   await page.getByRole('option', { name: 'row47_colors' }).click()
   await create.getByTestId('create-object').click()
   const colorRow = attributes.locator('[data-key="row47_color"]')
-  await colorRow.getByRole('checkbox', { name: 'Multiple' }).click()
-
   const saved = page.waitForResponse((response) =>
-    response.url().includes('/v1/model/draft/save') && response.request().method() === 'POST')
-  await attributes.getByTestId('review-and-save').click()
-  const review = page.getByTestId('review-dialog')
-  if (await review.isVisible()) {
-    await review.getByRole('button', { name: 'Save' }).click()
-  }
+    response.url().includes('/v1/model/commit') && response.request().method() === 'POST')
+  await colorRow.getByRole('checkbox', { name: 'Multiple' }).click()
   expect((await saved).ok()).toBeTruthy()
+  await expect(attributes.getByTestId('review-and-save')).toHaveCount(0)
+  await expect(page.getByTestId('review-dialog')).toHaveCount(0)
   await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
 
   await expect.poll(() => attributeKind(page, 'row47_note')).toMatchObject({
@@ -146,8 +142,11 @@ test('type attribute rule columns stage, save, and restore (row 47)', async ({ p
   await countReloaded.locator('[data-column="max"]').dblclick()
   const maxEditor = countReloaded.getByTestId('standard-cell-editor')
   await maxEditor.fill('')
+  const cleared = page.waitForResponse((response) =>
+    response.url().includes('/v1/model/commit') && response.request().method() === 'POST')
   await maxEditor.press('Enter')
-  await reloaded.getByTestId('review-and-save').click()
+  expect((await cleared).ok()).toBeTruthy()
+  await expect(reloaded.getByTestId('review-and-save')).toHaveCount(0)
   await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
   await expect.poll(async () => (await attributeKind(page, 'row47_count')).kind?.max).toBeUndefined()
 

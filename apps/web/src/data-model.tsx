@@ -19,6 +19,7 @@ import { structureCaption } from './graph-scene'
 import { StructureSection } from './structure-tree'
 import { StateNote } from './states'
 import { noteAllowedTreesFocus, onDraftChange, requestReview, setModelFocus, stageModel, stageModelSteps, StructuresCancelled } from './model-stage'
+import { commitModelSteps, dropSavedDraftRow } from './model-commit'
 import { getModelSelection, getPreviewType, setPreviewType, subscribeModelSelection } from './model-selection'
 import {
   applyDraftPatchesToRow,
@@ -38,7 +39,6 @@ import { readModelTableDraftForKey, storageKeyForSelection } from './model-table
 import {
   buildTypeHeaderSteps,
   recordTypeHeaderStringField,
-  recordTypeHeaderStructuresField,
   typeHeaderPatchDirty,
 } from './type-header-table-steps'
 import { valueListLabel } from './value-list-table-steps'
@@ -416,7 +416,6 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
     const persisted = ((defs?.attributes as Json[]) ?? []).some(
       (item) => String(item.id ?? '') === row.id || String(item.key ?? '') === row.key,
     )
-    const attached = rows.some((item) => item.id === row.id)
     if (!persisted) {
       setDraftRows((current) => {
         const next = { ...current }
@@ -431,11 +430,16 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
       })
       return
     }
-    if (deleteDefinition) {
-      setPendingDelete((current) => new Set(current).add(row.id))
-    } else if (attached) {
-      setPendingDetach((current) => new Set(current).add(row.id))
-    }
+    if (!selection) return
+    const step = deleteDefinition
+      ? { op: 'delete_attribute', key: row.key }
+      : selection.kind === 'type'
+        ? { op: 'detach_attribute', attribute: row.key, type_key: selection.typeKey }
+        : { op: 'detach_attribute', attribute: row.key, structure: selection.structure, group: selection.group }
+    void stageModelSteps([step]).then(() => requestReview()).catch((reason: unknown) => {
+      if (reason instanceof StructuresCancelled) return
+      setMessage(errorText(reason))
+    })
   }
 
   const attachStep = (attribute: string) => {
@@ -491,69 +495,60 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
     return () => window.removeEventListener('braian-model-table-draft-discard', onDiscard)
   }, [])
 
+  const saveAttributeRow = async (row: AttributeTableRow) => {
+    const original = allAttributeRows.find((item) => item.id === row.id)
+    if (!original) {
+      const created = buildCreateSteps(row)
+      if (created.length === 0) return
+      await commitModelSteps(queryClient, created)
+      setDraftRows((current) => dropSavedDraftRow(current, row.id, row))
+      return
+    }
+    const effective = applyDraftPatchesToRow(original, draftPatchesRef.current[row.id])
+    const steps = buildUpdateSteps(original, { ...effective, ...row })
+    if (steps.length === 0) return
+    await commitModelSteps(queryClient, steps)
+    setDraftRows((current) => dropSavedDraftRow(current, row.id, row))
+    setDraftPatches((current) => {
+      if (!(row.id in current)) return current
+      const next = { ...current }
+      delete next[row.id]
+      return next
+    })
+  }
+  const saveAttributeRowRef = useRef(saveAttributeRow)
+  saveAttributeRowRef.current = saveAttributeRow
+
+  const commitHeader = async (patch: StoredTypeHeaderPatch) => {
+    if (selection?.kind !== 'type') return
+    const steps = buildTypeHeaderSteps(selection.typeKey, patch, uiLanguage).filter((step) => step.op !== 'set_structures')
+    if (steps.length === 0) return
+    await commitModelSteps(queryClient, steps)
+    setTypeHeaderPatch({})
+  }
+
   const flushTableDraftRef = useRef<() => Promise<void>>(async () => {})
   const flushTableDraftToModel = async () => {
-    const steps: Array<{ op: string } & Record<string, unknown>> = []
-    const existing = new Map(allAttributeRows.map((row) => [row.id, row]))
-    const byId = new Map(allAttributeRows.map((row) => [row.id, row]))
-    for (const id of pendingDelete) {
-      const row = byId.get(id)
-      if (row) steps.push({ op: 'delete_attribute', key: row.key })
-    }
-    for (const id of pendingDetach) {
-      const row = byId.get(id)
-      if (!row || !selection) continue
-      if (selection.kind === 'type') {
-        steps.push({ op: 'detach_attribute', attribute: row.key, type_key: selection.typeKey })
-      } else {
-        steps.push({ op: 'detach_attribute', attribute: row.key, structure: selection.structure, group: selection.group })
-      }
-    }
-    for (const row of Object.values(draftRows)) {
-      if ((row as { id?: string }).id === ROW_ORDER_KEY) continue
-      const original = existing.get(row.id)
-      if (original) {
-        const effective = applyDraftPatchesToRow(original, draftPatches[row.id])
-        steps.push(...buildUpdateSteps(original, effective))
-      } else steps.push(...buildCreateSteps(row))
-    }
-    if (selection?.kind === 'type') steps.push(...buildTypeHeaderSteps(selection.typeKey, typeHeaderPatch, uiLanguage))
-    const reorder = selection ? buildAttributeReorderStep(selection, rows, draftRows) : null
-    if (reorder) steps.push(reorder)
-    if (steps.length === 0) return
-    const structures = steps.filter((step) => step.op === 'set_structures')
-    const rest = steps.filter((step) => step.op !== 'set_structures')
-    if (rest.length > 0) await stageModelSteps(rest)
-    for (const step of structures) {
-      await stageModel('model.set_structures', {
-        type_key: step.type_key,
-        structures: step.structures,
-      })
-    }
-    discardTableDraft()
-    await queryClient.invalidateQueries({ queryKey: ['model-draft'] })
-  }
-  flushTableDraftRef.current = flushTableDraftToModel
-
-  const saveRef = useRef<() => Promise<void>>(async () => {})
-  const save = async () => {
     setMessage('')
+    for (const row of Object.values(draftRowsRef.current)) {
+      if ((row as { id?: string }).id === ROW_ORDER_KEY) continue
+      await saveAttributeRowRef.current(row)
+    }
     try {
-      await flushTableDraftRef.current()
-      requestReview()
+      await commitHeader(typeHeaderPatchRef.current)
     } catch (reason) {
       if (reason instanceof StructuresCancelled) return
       setMessage(errorText(reason))
       throw reason
     }
   }
-  saveRef.current = save
+  flushTableDraftRef.current = flushTableDraftToModel
 
   useEffect(() => {
     registerModelTableDraft({
       dirty: tableDirty,
       discard: discardTableDraft,
-      review: () => saveRef.current(),
+      review: () => flushTableDraftRef.current(),
       flushToDraft: () => flushTableDraftRef.current(),
     })
     return () => registerModelTableDraft(null)
@@ -971,8 +966,9 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
             patch={typeHeaderPatch}
             onError={setMessage}
             onPatch={setTypeHeaderPatch}
+            onCommit={(next) => { void commitHeader(next).catch((reason: unknown) => setMessage(errorText(reason))) }}
           />
-          <AllowedTrees defs={defs} typeKey={selection.typeKey} patch={typeHeaderPatch} onPatch={setTypeHeaderPatch} onError={setMessage} />
+          <AllowedTrees defs={defs} typeKey={selection.typeKey} onError={setMessage} />
         </>
       ) : null}
       <StandardEditableTable
@@ -1009,8 +1005,19 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
           setActiveRowId(row.id)
           if (row.key) setModelFocus({ kind: 'attribute', key: row.key })
         }}
-        reviewVisible={tableDirty()}
-        onReviewAndSave={save}
+        saveCell={(row) => saveAttributeRow(row)}
+        onReorder={async (ordered) => {
+          if (!selection) return
+          const overlay: Record<string, AttributeTableRow> = {}
+          for (const row of ordered) overlay[row.id] = row
+          Object.defineProperty(overlay, ROW_ORDER_KEY, {
+            value: ordered.map((row) => row.id),
+            enumerable: false,
+          })
+          const step = buildAttributeReorderStep(selection, rows, overlay)
+          if (!step) return
+          await commitModelSteps(queryClient, [step])
+        }}
       />
       <CreateDialog
         open={createOpen}
@@ -1075,11 +1082,12 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
             textForm: '',
             media: false,
           }
-          setDraftRows((current) => ({ ...current, [key]: row }))
+          const steps = buildAttributeCreateSteps(defs, row, attachStep(key))
+          if (steps.length === 0) throw new Error(copy.validation)
+          await commitModelSteps(queryClient, steps)
           setActiveRowId(key)
           setModelFocus({ kind: 'attribute', key })
-          setPendingKey(null)
-          setCreateOpen(false)
+          setPendingKey(key)
         }}
       />
       {message ? <p className="error">{message}</p> : null}
@@ -1090,19 +1098,15 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
 function AllowedTrees({
   defs,
   typeKey,
-  patch,
-  onPatch,
   onError,
 }: {
   defs: Json | undefined
   typeKey: string
-  patch: StoredTypeHeaderPatch
-  onPatch: (next: StoredTypeHeaderPatch) => void
   onError: (message: string) => void
 }) {
   const raw = ((defs?.types as Json[]) ?? []).find((item) => String(item.key) === typeKey)
   const base = Array.isArray(raw?.structures) ? raw.structures.map((id) => String(id)) : []
-  const selected = new Set(patch.structures?.value ?? patch.structures?.base ?? base)
+  const selected = new Set(base)
   const structures = ((defs?.structures as Json[]) ?? [])
   const [focus, setFocus] = useState(false)
   useEffect(() => {
@@ -1131,14 +1135,12 @@ function AllowedTrees({
                 const next = new Set(selected)
                 if (event.target.checked) next.add(id)
                 else next.delete(id)
-                const value = [...next]
-                const change = recordTypeHeaderStructuresField(base, value, patch.structures)
-                if (!change) {
-                  const { structures, ...rest } = patch
-                  onPatch(rest)
-                  return
-                }
-                onPatch({ ...patch, structures: change as StoredTypeHeaderPatch['structures'] })
+                void stageModel('model.set_structures', { type_key: typeKey, structures: [...next] })
+                  .then(() => requestReview())
+                  .catch((reason: unknown) => {
+                    if (reason instanceof StructuresCancelled) return
+                    onError(errorText(reason))
+                  })
               }}
             />
             {label}
@@ -1161,20 +1163,29 @@ function TypeNameFields({
   patch,
   onError,
   onPatch,
+  onCommit,
 }: {
   defs: Json | undefined
   typeKey: string
   patch: StoredTypeHeaderPatch
   onError: (message: string) => void
   onPatch: (next: StoredTypeHeaderPatch) => void
+  onCommit: (patch: StoredTypeHeaderPatch) => void
 }) {
   const row = objectTypes(defs, uiLanguage).find((item) => item.key === typeKey)
   const raw = ((defs?.types as Json[]) ?? []).find((item) => String(item.key) === typeKey)
   const singularBase = textValue(raw?.singular, uiLanguage) || row?.singular || ''
   const pluralBase = textValue(raw?.plural, uiLanguage) || row?.plural || ''
+  const patchRef = useRef(patch)
+  patchRef.current = patch
   const singularValue = String(patch.singular?.value ?? singularBase)
   const pluralValue = String(patch.plural?.value ?? pluralBase)
   const keyValue = String(patch.typeKey?.value ?? typeKey)
+  const publish = (next: StoredTypeHeaderPatch) => {
+    patchRef.current = next
+    onPatch(next)
+  }
+  const commit = () => onCommit(patchRef.current)
   return (
     <div className="type-names">
       <label>
@@ -1182,16 +1193,17 @@ function TypeNameFields({
         <input
           aria-label={copy.singular}
           value={singularValue}
+          onBlur={commit}
           onChange={(event) => {
             onError('')
             const next = event.target.value
             const change = recordTypeHeaderStringField(singularBase, next.trim(), patch.singular)
             if (!change) {
-              const { singular, ...rest } = patch
-              onPatch(rest)
+              const { singular, ...rest } = patchRef.current
+              publish(rest)
               return
             }
-            onPatch({ ...patch, singular: change as StoredTypeHeaderPatch['singular'] })
+            publish({ ...patchRef.current, singular: change as StoredTypeHeaderPatch['singular'] })
           }}
         />
       </label>
@@ -1200,16 +1212,17 @@ function TypeNameFields({
         <input
           aria-label={copy.plural}
           value={pluralValue}
+          onBlur={commit}
           onChange={(event) => {
             onError('')
             const next = event.target.value
             const change = recordTypeHeaderStringField(pluralBase, next.trim(), patch.plural)
             if (!change) {
-              const { plural, ...rest } = patch
-              onPatch(rest)
+              const { plural, ...rest } = patchRef.current
+              publish(rest)
               return
             }
-            onPatch({ ...patch, plural: change as StoredTypeHeaderPatch['plural'] })
+            publish({ ...patchRef.current, plural: change as StoredTypeHeaderPatch['plural'] })
           }}
         />
       </label>
@@ -1219,16 +1232,17 @@ function TypeNameFields({
           aria-label={copy.key}
           data-testid={`type-key-${typeKey}`}
           value={keyValue}
+          onBlur={commit}
           onChange={(event) => {
             onError('')
             const next = event.target.value.trim()
             const change = recordTypeHeaderStringField(typeKey, next, patch.typeKey)
             if (!change) {
-              const { typeKey: _drop, ...rest } = patch
-              onPatch(rest)
+              const { typeKey: _drop, ...rest } = patchRef.current
+              publish(rest)
               return
             }
-            onPatch({ ...patch, typeKey: change as StoredTypeHeaderPatch['typeKey'] })
+            publish({ ...patchRef.current, typeKey: change as StoredTypeHeaderPatch['typeKey'] })
           }}
         />
       </label>

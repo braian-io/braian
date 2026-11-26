@@ -638,7 +638,7 @@ describe('review dialog', () => {
   it('keeps the create dialog and the typed name when the write fails', async () => {
     mock.use((path) => {
       if (path === '/v1/model/draft') return Promise.resolve(draft)
-      if (String(path).includes('/v1/model/draft/steps')) {
+      if (String(path).includes('/v1/model/commit') || String(path).includes('/v1/model/draft/steps')) {
         return Promise.reject(new ApiError(422, 'Unprocessable Entity', { detail: 'the write failed validation' }))
       }
       return Promise.resolve({})

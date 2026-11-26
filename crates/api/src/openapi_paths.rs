@@ -932,6 +932,18 @@ fn operations() -> Vec<(HttpMethod, &'static str, Operation)> {
             "200",
             "Dry run or applied revision",
         ),
+        call(
+            HttpMethod::Post,
+            "/v1/model/commit",
+            "commit_model",
+            "Apply model steps as one revision without using the draft",
+            vec![],
+            Some("CommitBody"),
+            Some("ModelSaveResult"),
+            "200",
+            "Applied revision",
+            true,
+        ),
     ]
 }
 

@@ -816,6 +816,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/model/commit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply model steps as one revision without using the draft */
+        post: operations["commit_model"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/model/draft": {
         parameters: {
             query?: never;
@@ -2123,6 +2140,19 @@ export interface components {
             environment: string;
             stale_paths: string[];
             updated_at?: string | null;
+        };
+        /** @description One model revision, applied immediately. Does not read or write the person's draft. */
+        CommitBody: {
+            args?: null | components["schemas"]["FreeObject"];
+            /**
+             * Format: int64
+             * @description Revision the edit was made against. A newer model is a conflict.
+             */
+            base_revision: number;
+            confirm_name?: string | null;
+            /** @description Registry operation, converted the same way as a draft step. */
+            operation?: string | null;
+            steps?: components["schemas"]["ModelStep"][];
         };
         /** @description One overlapping edit, named with keys where the model still has them. */
         ConflictBody: {
@@ -5532,6 +5562,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    commit_model: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommitBody"];
+            };
+        };
+        responses: {
+            /** @description Applied revision */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelSaveResult"];
+                };
+            };
+            /** @description Missing or unknown token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };

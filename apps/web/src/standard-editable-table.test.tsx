@@ -47,6 +47,30 @@ describe('standard editable table', () => {
     expect(screen.queryByTestId('standard-cell-editor')).toBeNull()
   })
 
+  it('saves a closed cell without a table Save button', async () => {
+    const saveCell = vi.fn(() => Promise.resolve())
+    const onDraft = vi.fn()
+    render(
+      <StandardEditableTable
+        columns={columns}
+        rows={[{ id: '1', name: 'Colour', kind: 'text' }]}
+        draftRows={{}}
+        onDraftRowsChange={onDraft}
+        onReviewAndSave={() => undefined}
+        saveCell={saveCell}
+        editable
+      />,
+    )
+    const row = screen.getByTestId('standard-grid-row')
+    fireEvent.keyDown(row, { key: 'Enter' })
+    const editor = screen.getByTestId('standard-cell-editor') as HTMLInputElement
+    fireEvent.change(editor, { target: { value: 'Shade' } })
+    fireEvent.keyDown(editor, { key: 'Enter' })
+    await waitFor(() => expect(saveCell).toHaveBeenCalled())
+    expect(screen.queryByTestId('review-and-save')).toBeNull()
+    await waitFor(() => expect(screen.getByTestId('cell-save-state').getAttribute('data-state')).toBe('saved'))
+  })
+
   it('shows Review and save when drafts exist and runs the save handler', () => {
     const onReview = vi.fn()
     render(

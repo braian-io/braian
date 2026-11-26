@@ -187,18 +187,18 @@ test('type attributes reorder and checkbox persist after reload', async ({ page 
   await openAttributes()
   const table = page.getByTestId('attribute-table')
   await expect(table.locator(`[data-row-id="${first.id}"]`)).toBeVisible()
+  const moved = page.waitForResponse((response) =>
+    response.url().includes('/v1/model/commit') && response.request().method() === 'POST')
   await table.locator(`[data-row-id="${first.id}"]`).getByLabel('Move row down').click()
+  expect((await moved).ok()).toBeTruthy()
 
   const checkbox = table.locator(`[data-row-id="${boolean.id}"]`).getByRole('checkbox', { name: 'Searchable' })
   const expected = !(await checkbox.isChecked())
-  await checkbox.click()
-
-  const save = table.getByTestId('review-and-save')
-  await expect(save).toHaveText('Save')
   const saved = page.waitForResponse((response) =>
-    response.url().includes('/v1/model/draft/save') && response.request().method() === 'POST')
-  await save.click()
+    response.url().includes('/v1/model/commit') && response.request().method() === 'POST')
+  await checkbox.click()
   expect((await saved).ok()).toBeTruthy()
+  await expect(table.getByTestId('review-and-save')).toHaveCount(0)
   await expect(page.getByTestId('review-dialog')).toHaveCount(0)
   await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
 

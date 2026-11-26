@@ -166,7 +166,6 @@ describe('type attributes table', () => {
       return Promise.resolve({})
     })
     mock.methods.put.mockReset()
-    mock.methods.post.mockReset()
     stageModel.mockClear()
     stageModelSteps.mockClear()
     requestReview.mockClear()
@@ -194,72 +193,78 @@ describe('type attributes table', () => {
     expect(screen.queryByText(copy.standardAttributes)).toBeNull()
   })
 
-  it('reorders own attributes and saves a checkbox change in one review', async () => {
+  it('reorders own attributes and saves a checkbox change without a table Save', async () => {
     chooseModelSelection({ kind: 'type', typeKey: 'recipe' })
     const { container } = render(<Host />)
     await screen.findByTestId('attribute-table')
     fireEvent.click(within(row(container, ownText.id)).getByLabelText('Move row down'))
     fireEvent.click(within(row(container, ownBoolean.id)).getByRole('checkbox', { name: copy.searchable }))
-    fireEvent.click(screen.getByTestId('review-and-save'))
-    await waitFor(() => expect(stageModelSteps).toHaveBeenCalledWith([
-      { op: 'update_attribute', key: 'own_a', searchable: true },
-      { op: 'reorder_type_attributes', type_key: 'recipe', attributes: ['name', 'own_a', 'own_b'] },
-    ]))
+    await waitFor(() => {
+      const bodies = mock.methods.post.mock.calls
+        .filter((call) => call[0] === '/v1/model/commit')
+        .map((call) => call[1]?.body?.steps)
+      expect(bodies).toEqual(expect.arrayContaining([
+        [{ op: 'reorder_type_attributes', type_key: 'recipe', attributes: ['name', 'own_a', 'own_b'] }],
+        [{ op: 'update_attribute', key: 'own_a', searchable: true }],
+      ]))
+    })
+    expect(screen.queryByTestId('review-and-save')).toBeNull()
     expect(stageModel).not.toHaveBeenCalled()
-    expect(requestReview).toHaveBeenCalled()
+    expect(stageModelSteps).not.toHaveBeenCalled()
+    expect(requestReview).not.toHaveBeenCalled()
   })
 
   it('creates an attribute from the dialog and attaches it on save', async () => {
     chooseModelSelection({ kind: 'type', typeKey: 'recipe' })
-    const { container } = render(<Host />)
+    render(<Host />)
     await screen.findByTestId('attribute-table')
     fireEvent.click(screen.getByTestId('table-add-row'))
     const dialog = await screen.findByRole('dialog', { name: copy.newAttribute })
     fireEvent.change(within(dialog).getByRole('textbox', { name: copy.name }), { target: { value: 'Extra' } })
     fireEvent.click(within(dialog).getByTestId('create-object'))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    const created = row(container, 'extra')
-    expect(created.className).toMatch(/\bon\b/)
-    expect(created.className).toMatch(/\bdraft\b/)
-    expect(created.getAttribute('data-draft')).toBe('true')
+    await waitFor(() => {
+      const posted = mock.methods.post.mock.calls.find((call) => call[0] === '/v1/model/commit')
+      expect(posted?.[1]?.body?.steps).toEqual([
+        {
+          op: 'create_attribute',
+          key: 'extra',
+          label: 'Extra',
+          kind: 'text',
+          multiple: false,
+          languages: true,
+          required: false,
+          show_by_default: true,
+          searchable: false,
+          filterable: false,
+          sortable: false,
+        },
+        { op: 'attach_attribute', attribute: 'extra', type_key: 'recipe' },
+      ])
+    })
+    expect(screen.queryByTestId('review-and-save')).toBeNull()
     expect(stageModel).not.toHaveBeenCalled()
     expect(stageModelSteps).not.toHaveBeenCalled()
-    await expect(screen.findByTestId(`attr-label-extra`)).resolves.toBeTruthy()
-    fireEvent.click(screen.getByTestId('review-and-save'))
-    await waitFor(() => expect(stageModelSteps).toHaveBeenCalledWith([
-      {
-        op: 'create_attribute',
-        key: 'extra',
-        label: 'Extra',
-        kind: 'text',
-        multiple: false,
-        languages: true,
-        required: false,
-        show_by_default: true,
-        searchable: false,
-        filterable: false,
-        sortable: false,
-      },
-      { op: 'attach_attribute', attribute: 'extra', type_key: 'recipe' },
-    ]))
-    expect(requestReview).toHaveBeenCalled()
+    expect(requestReview).not.toHaveBeenCalled()
   })
 
-  it('batches detach with checkbox edits on save', async () => {
+  it('saves a checkbox immediately and opens review when the attribute is removed', async () => {
     chooseModelSelection({ kind: 'type', typeKey: 'recipe' })
     const { container } = render(<Host />)
     await screen.findByTestId('attribute-table')
     fireEvent.click(within(row(container, ownBoolean.id)).getByRole('checkbox', { name: copy.searchable }))
+    await waitFor(() => {
+      const posted = mock.methods.post.mock.calls.find((call) => call[0] === '/v1/model/commit')
+      expect(posted?.[1]?.body?.steps).toEqual([{ op: 'update_attribute', key: 'own_a', searchable: true }])
+    })
     fireEvent.keyDown(within(row(container, ownBoolean.id)).getByTestId('attr-menu-own_a'), { key: 'Enter' })
     const menu = await screen.findByRole('menu')
     fireEvent.click(within(menu).getByRole('menuitem', { name: copy.removeFromThisType }))
-    expect(stageModelSteps).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByTestId('review-and-save'))
     await waitFor(() => expect(stageModelSteps).toHaveBeenCalledWith([
       { op: 'detach_attribute', attribute: 'own_a', type_key: 'recipe' },
-      { op: 'update_attribute', key: 'own_a', searchable: true },
     ]))
     expect(requestReview).toHaveBeenCalled()
+    expect(screen.queryByTestId('review-and-save')).toBeNull()
   })
 
   it('opens one create dialog and closes it with Escape', async () => {
@@ -284,18 +289,16 @@ describe('type attributes table', () => {
     expect((await screen.findByTestId('impact-error')).textContent).toBe('impact failed')
   })
 
-  it('stages allowed trees for Review and save without saving directly', async () => {
+  it('stages allowed trees for review on the click, without a table Save', async () => {
     chooseModelSelection({ kind: 'type', typeKey: 'recipe' })
     render(<Host />)
     const trees = await screen.findByTestId('allowed-trees')
     fireEvent.click(within(trees).getByRole('checkbox', { name: 'Food' }))
-    await screen.findByTestId('review-and-save')
-    expect(stageModel).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByTestId('review-and-save'))
     await waitFor(() => expect(stageModel).toHaveBeenCalledWith('model.set_structures', {
       type_key: 'recipe',
       structures: ['structure-food'],
     }))
+    expect(screen.queryByTestId('review-and-save')).toBeNull()
     expect(stageModelSteps).not.toHaveBeenCalled()
     expect(requestReview).toHaveBeenCalledTimes(1)
     expect(mock.methods.put).not.toHaveBeenCalled()
@@ -306,7 +309,7 @@ describe('type attributes table', () => {
     render(<HostWithDraftBar />)
     const trees = await screen.findByTestId('allowed-trees')
     fireEvent.click(within(trees).getByRole('checkbox', { name: 'Food' }))
-    fireEvent.click(await screen.findByTestId('review-and-save'))
+    expect(screen.queryByTestId('review-and-save')).toBeNull()
     await waitFor(() => expect(stageModel).toHaveBeenCalledWith('model.set_structures', {
       type_key: 'recipe',
       structures: ['structure-food'],
@@ -323,8 +326,8 @@ describe('type attributes table', () => {
     render(<Host />)
     const trees = await screen.findByTestId('allowed-trees')
     fireEvent.click(within(trees).getByRole('checkbox', { name: 'Food' }))
-    fireEvent.click(await screen.findByTestId('review-and-save'))
     expect(await screen.findByText('could not save allowed trees')).toBeTruthy()
+    expect(screen.queryByTestId('review-and-save')).toBeNull()
     expect(requestReview).not.toHaveBeenCalled()
   })
 
@@ -338,9 +341,8 @@ describe('type attributes table', () => {
     const trees = await screen.findByTestId('allowed-trees')
     const checkbox = within(trees).getByRole('checkbox', { name: 'Food' }) as HTMLInputElement
     fireEvent.click(checkbox)
-    fireEvent.click(await screen.findByTestId('review-and-save'))
     await waitFor(() => expect(stageModel).toHaveBeenCalled())
-    expect(checkbox.checked).toBe(true)
+    expect(checkbox.checked).toBe(false)
     window.dispatchEvent(new Event('braian-model-table-draft-discard'))
     await waitFor(() => {
       const current = within(trees).getByRole('checkbox', { name: 'Food' }) as HTMLInputElement

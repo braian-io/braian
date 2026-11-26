@@ -159,8 +159,9 @@ describe('attribute definitions view', () => {
     fireEvent.keyDown(picker, { key: 'Enter' })
 
     await waitFor(() => {
-      const posted = mock.methods.post.mock.calls.find((call) => call[0] === '/v1/model/draft/steps')
+      const posted = mock.methods.post.mock.calls.find((call) => call[0] === '/v1/model/commit')
       expect(posted?.[1]?.body).toEqual({
+        base_revision: 0,
         operation: 'model.attach_attribute',
         args: { attribute: 'gross_weight', type: 'supplier' },
       })
@@ -175,8 +176,9 @@ describe('attribute definitions view', () => {
     fireEvent.change(within(dialog).getByRole('textbox', { name: copy.name }), { target: { value: 'Colour' } })
     fireEvent.click(within(dialog).getByTestId('create-object'))
     await waitFor(() => {
-      const posted = mock.methods.post.mock.calls.find((call) => call[0] === '/v1/model/draft/steps')
+      const posted = mock.methods.post.mock.calls.find((call) => call[0] === '/v1/model/commit')
       expect(posted?.[1]?.body).toEqual({
+        base_revision: 0,
         operation: 'model.create_attribute',
         args: { key: 'colour', label: 'Colour', kind: 'text' },
       })

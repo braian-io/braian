@@ -24,15 +24,6 @@ async function openDataModelTab(page: Page, tab: string) {
   await page.locator('.pane-tab', { hasText: tab }).first().click()
 }
 
-async function saveModelDraft(page: Page) {
-  await page.keyboard.press('Control+S')
-  const review = page.getByTestId('review-dialog')
-  if (await review.isVisible()) {
-    await page.getByTestId('confirm-review').click()
-  }
-  await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
-}
-
 async function linkTypeDef(page: Page, key: string) {
   const body = (await (await page.request.get('/v1/definitions')).json()) as {
     types?: Array<{ key?: string; kind?: string; link?: Record<string, unknown> }>
@@ -60,14 +51,21 @@ test('link types are editable with blocking cardinality (row 47)', async ({ page
   await dialog.getByTestId('link-type-to-label').fill('Product supplier')
   await dialog.getByTestId('link-type-to-cardinality').click()
   await page.getByRole('option', { name: 'Many' }).click()
+  const created = page.waitForResponse((response) =>
+    response.url().includes('/v1/model/commit') && response.request().method() === 'POST')
   await dialog.getByTestId('create-object').click()
-  await expect(page.getByTestId('unsaved-changes')).toBeVisible()
+  expect((await created).ok()).toBeTruthy()
+  await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
+  await expect(table.getByTestId('review-and-save')).toHaveCount(0)
   const row = table.locator('[data-key]').filter({ has: page.getByText('Suppliers') }).first()
   await expect(row).toBeVisible()
   await row.locator('[data-column="key"]').dblclick()
   await row.getByTestId('standard-cell-editor').fill(linkKey)
+  const renamed = page.waitForResponse((response) =>
+    response.url().includes('/v1/model/commit') && response.request().method() === 'POST')
   await row.getByTestId('standard-cell-editor').press('Enter')
-  await saveModelDraft(page)
+  expect((await renamed).ok()).toBeTruthy()
+  await expect(page.getByTestId('review-dialog')).toHaveCount(0)
   const savedRow = table.locator(`[data-row-id="${linkKey}"]`)
   await expect(savedRow).toBeVisible()
   await savedRow.click()
@@ -82,7 +80,8 @@ test('link types are editable with blocking cardinality (row 47)', async ({ page
   await attrCreate.getByTestId('create-object').click()
   await expect(attrCreate).toHaveCount(0)
   await expect(attributes.locator(`[data-key="${rankKey}"]`)).toBeVisible()
-  await saveModelDraft(page)
+  await expect(attributes.getByTestId('review-and-save')).toHaveCount(0)
+  await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
 
   const stored = await linkTypeDef(page, linkKey)
   expect(stored?.kind).toBe('link')
@@ -97,8 +96,11 @@ test('link types are editable with blocking cardinality (row 47)', async ({ page
   await expect(reloaded).toBeVisible()
   await reloaded.locator('[data-column="fromLabel"]').dblclick()
   await reloaded.getByTestId('standard-cell-editor').fill('Vendor list')
+  const relabel = page.waitForResponse((response) =>
+    response.url().includes('/v1/model/commit') && response.request().method() === 'POST')
   await reloaded.getByTestId('standard-cell-editor').press('Enter')
-  await saveModelDraft(page)
+  expect((await relabel).ok()).toBeTruthy()
+  await expect(page.getByTestId('review-and-save')).toHaveCount(0)
   const relabeled = await linkTypeDef(page, linkKey)
   expect(String((relabeled?.link as { from_label?: { labels?: Record<string, string> } })?.from_label?.labels?.en ?? '')).toBe('Vendor list')
 
@@ -126,13 +128,15 @@ test('link types are editable with blocking cardinality (row 47)', async ({ page
   const editRow = page.getByTestId('link-types-table').locator(`[data-row-id="${linkKey}"]`)
   await editRow.locator('[data-column="fromCardinality"]').dblclick()
   await editRow.getByTestId('standard-cell-editor').click()
+  const blocked = page.waitForResponse((response) =>
+    response.url().includes('/v1/model/commit') && response.request().method() === 'POST')
   await page.getByRole('option', { name: 'One' }).click()
-  await page.keyboard.press('Control+S')
-  const review = page.getByTestId('review-dialog')
-  await expect(review).toBeVisible()
-  await expect(review.locator('.error')).toContainText(String(product!.key ?? ''))
-  await review.getByRole('button', { name: 'Cancel' }).click()
-  await expect(page.getByTestId('unsaved-changes')).toBeVisible()
+  expect((await blocked).ok()).toBeFalsy()
+  await expect(page.getByTestId('review-dialog')).toHaveCount(0)
+  await expect(page.getByTestId('review-loading')).toHaveCount(0)
+  await expect(editRow.getByTestId('cell-save-state')).toHaveAttribute('data-state', 'error')
+  await expect(editRow.getByTestId('cell-save-state')).toContainText(String(product!.key ?? ''))
+  await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
   const after = await linkTypeDef(page, linkKey)
   expect(after?.link).toMatchObject({ from_cardinality: 'many' })
 })

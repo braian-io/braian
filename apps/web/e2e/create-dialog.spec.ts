@@ -211,7 +211,7 @@ async function exercise(page: Page, options: {
   await expect(options.selected).toBeVisible({ timeout: 30_000 })
 }
 
-/** Type attributes stage creates in the table draft; nothing posts until Review and save. */
+/** Type attributes save a new attribute when the create dialog is confirmed. */
 async function exerciseLocalModelCreate(page: Page, options: {
   opener: Locator
   dialogTestId: string
@@ -261,8 +261,10 @@ async function exerciseLocalModelCreate(page: Page, options: {
   await fill(dialog, options.success)
   await page.keyboard.press('Enter')
   await expect(dialog).toHaveCount(0)
-  await expect(options.table.getByTestId('review-and-save')).toBeVisible()
+  await expect(options.table.getByTestId('review-and-save')).toHaveCount(0)
+  await expect(page.getByTestId('review-dialog')).toHaveCount(0)
   await expect(options.selected).toBeVisible({ timeout: 30_000 })
+  await expect(options.selected).not.toHaveAttribute('data-draft', 'true')
 }
 
 test('Products create dialog', async ({ page }) => {
@@ -397,7 +399,7 @@ test('Object types create dialog', async ({ page }) => {
     firstField: 'new-name',
     failure: { 'new-name': 'Duplicate type' },
     success: { 'new-name': `Kind ${suffix}`, 'new-plural': `Kinds ${suffix}` },
-    route: '**/v1/model/draft/steps',
+    route: '**/v1/model/commit',
     selected: table.locator(`[data-row-id="${key}"]`),
   })
   await expect(table.locator(`[data-row-id="${key}"]`)).toHaveClass(/\bon\b/)
@@ -442,7 +444,7 @@ test('Link types create dialog', async ({ page }) => {
   await expect(dialog).toHaveCount(0)
   await expect(opener).toBeFocused()
 
-  const stop = await rejectWrites(page, '**/v1/model/draft/steps', false)
+  const stop = await rejectWrites(page, '**/v1/model/commit', false)
   await opener.click()
   await expect(dialog).toBeVisible()
   await fill(dialog, failureFields)
@@ -509,7 +511,7 @@ test('Value lists create dialog', async ({ page }) => {
     firstField: 'new-name',
     failure: { 'new-name': 'Duplicate list' },
     success: { 'new-name': `Shade ${suffix}` },
-    route: '**/v1/model/draft/steps',
+    route: '**/v1/model/commit',
     selected: table.locator(`[data-row-id="${key}"]`),
   })
   await expect(table.locator(`[data-row-id="${key}"]`)).toHaveClass(/\bon\b/)
@@ -533,7 +535,7 @@ test('List values create dialog', async ({ page }) => {
     firstField: 'new-name',
     failure: { 'new-name': 'Duplicate value' },
     success: { 'new-name': `Held ${suffix}` },
-    route: '**/v1/model/draft/steps',
+    route: '**/v1/model/commit',
     selected: table.locator(`[data-row-id="status:${code}"]`),
   })
   await expect(table.locator(`[data-row-id="status:${code}"]`)).toHaveClass(/\bon\b/)
@@ -554,7 +556,7 @@ test('Units create dialog', async ({ page }) => {
     firstField: 'new-name',
     failure: { 'new-name': 'duplicate_family', 'new-key': 'g' },
     success: { 'new-name': family, 'new-key': 'gram', 'new-factor': '1' },
-    route: '**/v1/model/draft/steps',
+    route: '**/v1/model/commit',
     selected: table.locator(`[data-row-id="${family}:gram"]`),
   })
   await expect(table.locator(`[data-row-id="${family}:gram"]`)).toHaveClass(/\bon\b/)
@@ -575,7 +577,7 @@ test('Attribute definitions create dialog', async ({ page }) => {
     firstField: 'new-name',
     failure: { 'new-name': 'Duplicate attribute' },
     success: { 'new-name': `Colour ${suffix}` },
-    route: '**/v1/model/draft/steps',
+    route: '**/v1/model/commit',
     selected: table.locator(`[data-key="${key}"]`),
   })
   await expect(table.locator(`[data-key="${key}"]`)).toHaveClass(/\bon\b/)

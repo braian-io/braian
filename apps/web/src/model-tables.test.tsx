@@ -91,11 +91,15 @@ describe('value lists table', () => {
     const dialog = await screen.findByRole('dialog', { name: copy.newValueList })
     fireEvent.change(within(dialog).getByRole('textbox', { name: copy.name }), { target: { value: 'Shade' } })
     fireEvent.click(within(dialog).getByTestId('create-object'))
-    await waitFor(() => expect(stageModel).toHaveBeenCalledWith('model.create_value_list', {
-      key: 'shade',
-      label: 'Shade',
-      language: 'en',
-    }))
+    await waitFor(() => {
+      const posted = mock.methods.post.mock.calls.find((call) => call[0] === '/v1/model/commit')
+      expect(posted?.[1]?.body).toEqual({
+        base_revision: 0,
+        operation: 'model.create_value_list',
+        args: { key: 'shade', label: 'Shade', language: 'en' },
+      })
+    })
+    expect(stageModel).not.toHaveBeenCalled()
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 

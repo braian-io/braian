@@ -3111,6 +3111,52 @@
         ]
       }
     },
+    "/v1/model/commit": {
+      "post": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Apply model steps as one revision without using the draft",
+        "operationId": "commit_model",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommitBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Applied revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelSaveResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or unknown token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/v1/model/draft": {
       "get": {
         "tags": [
@@ -8622,6 +8668,50 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "CommitBody": {
+        "type": "object",
+        "description": "One model revision, applied immediately. Does not read or write the person's draft.",
+        "required": [
+          "base_revision"
+        ],
+        "properties": {
+          "args": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/FreeObject"
+              }
+            ]
+          },
+          "base_revision": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Revision the edit was made against. A newer model is a conflict.",
+            "minimum": 0
+          },
+          "confirm_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "operation": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Registry operation, converted the same way as a draft step."
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelStep"
+            }
           }
         }
       },

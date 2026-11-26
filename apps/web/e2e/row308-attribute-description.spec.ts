@@ -42,14 +42,17 @@ async function stageAndSave(page: Page, steps: Array<Record<string, unknown>>) {
   expect(saved.ok(), await saved.text()).toBeTruthy()
 }
 
-async function editBrandDescription(row: Locator, value: string) {
+async function editBrandDescription(page: Page, row: Locator, value: string) {
   const descCell = row.locator('[data-column="description"]')
   await descCell.scrollIntoViewIfNeeded()
   await descCell.dblclick()
   const editor = row.getByTestId('attr-desc-brand')
   await expect(editor).toBeVisible()
   await editor.fill(value)
+  const saved = page.waitForResponse((response) =>
+    response.url().includes('/v1/model/commit') && response.request().method() === 'POST')
   await editor.press('Enter')
+  expect((await saved).ok()).toBeTruthy()
 }
 
 async function openProductDetail(page: Page) {
@@ -77,17 +80,10 @@ test.describe('attribute description (row 308)', () => {
     const table = await openProductAttributes(page)
     await table.getByTestId('quick-filter').fill('brand')
     const row = table.locator('[data-key="brand"]')
-    await editBrandDescription(row, helpText)
-
-    const staged = page.waitForResponse((response) =>
-      response.url().includes('/v1/model/draft/steps') && response.request().method() === 'POST')
-    const saved = page.waitForResponse((response) =>
-      response.url().includes('/v1/model/draft/save') && response.request().method() === 'POST')
-    await table.getByTestId('review-and-save').click()
-    const review = page.getByTestId('review-dialog')
-    if (await review.isVisible()) await review.getByRole('button', { name: 'Save' }).click()
-    expect((await staged).ok()).toBeTruthy()
-    expect((await saved).ok()).toBeTruthy()
+    await editBrandDescription(page, row, helpText)
+    await expect(table.getByTestId('review-and-save')).toHaveCount(0)
+    await expect(page.getByTestId('review-dialog')).toHaveCount(0)
+    await expect(page.getByTestId('review-loading')).toHaveCount(0)
     await expect.poll(() => brandDescription(page)).toBe(helpText)
 
     await page.reload()
@@ -101,16 +97,9 @@ test.describe('attribute description (row 308)', () => {
     const clearedTable = await openProductAttributes(page)
     await clearedTable.getByTestId('quick-filter').fill('brand')
     const clearedRow = clearedTable.locator('[data-key="brand"]')
-    await editBrandDescription(clearedRow, '')
-    const clearStage = page.waitForResponse((response) =>
-      response.url().includes('/v1/model/draft/steps') && response.request().method() === 'POST')
-    const clearSave = page.waitForResponse((response) =>
-      response.url().includes('/v1/model/draft/save') && response.request().method() === 'POST')
-    await clearedTable.getByTestId('review-and-save').click()
-    const clearReview = page.getByTestId('review-dialog')
-    if (await clearReview.isVisible()) await clearReview.getByRole('button', { name: 'Save' }).click()
-    expect((await clearStage).ok()).toBeTruthy()
-    expect((await clearSave).ok()).toBeTruthy()
+    await editBrandDescription(page, clearedRow, '')
+    await expect(clearedTable.getByTestId('review-and-save')).toHaveCount(0)
+    await expect(page.getByTestId('review-dialog')).toHaveCount(0)
     await expect.poll(() => brandDescription(page)).toBe('')
 
     await page.reload()

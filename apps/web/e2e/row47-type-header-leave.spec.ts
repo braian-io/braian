@@ -39,16 +39,29 @@ test.describe('row 47 type header draft and leave guard', () => {
     await login(page)
     const table = await openTypeAttributes(page, 'product')
     const brand = table.locator('[data-key="brand"] [data-column="label"]').first()
+    const before = await brand.innerText()
     await brand.dblclick()
     await page.getByRole('textbox', { name: 'Name' }).fill('Brand draft row47')
+    const saved = page.waitForResponse((response) =>
+      response.url().includes('/v1/model/commit') && response.request().method() === 'POST')
     await page.keyboard.press('Enter')
-    await expect(table.getByTestId('review-and-save')).toBeVisible()
+    expect((await saved).ok()).toBeTruthy()
+    await expect(table.getByTestId('review-and-save')).toHaveCount(0)
     await page.evaluate(() => {
       window.dispatchEvent(new CustomEvent('braian-open-proposal', { detail: { proposalId: 'unused' } }))
     })
-    const dialog = page.getByTestId('model-table-leave-dialog')
-    await expect(dialog).toBeVisible()
-    await page.keyboard.press('Escape')
-    await expect(dialog).toHaveCount(0)
+    await expect(page.getByTestId('model-table-leave-dialog')).toHaveCount(0)
+    await expect(page.getByTestId('review-dialog')).toHaveCount(0)
+    const label = async () => {
+      const body = (await (await page.request.get('/v1/definitions')).json()) as {
+        attributes?: Array<{ key?: string; labels?: Record<string, string> }>
+      }
+      return body.attributes?.find((item) => item.key === 'brand')?.labels?.en
+    }
+    await expect.poll(label).toBe('Brand draft row47')
+    await page.request.post('/v1/model/draft/steps', {
+      data: { steps: [{ op: 'rename_attribute', attribute: 'brand', label: before.trim() }] },
+    })
+    await page.request.post('/v1/model/draft/save', { data: {} })
   })
 })

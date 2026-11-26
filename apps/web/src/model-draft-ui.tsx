@@ -31,6 +31,7 @@ import { registerModelDefinitions } from './model-selection'
 import { flushModelTableDraftToStaged } from './model-table-draft'
 import { StateNote } from './states'
 import { beginOwnModelSave, endOwnModelSave } from './model-revision-watch'
+import { commitModelOperation } from './model-commit'
 
 export type DraftSaveGate = 'idle' | 'direct' | 'confirm' | 'blocked'
 
@@ -754,6 +755,7 @@ function ReviewLoadingDialog({ onCancel }: { onCancel: () => void }) {
 }
 
 function CreateDialog({ kind, onClose }: { kind: DialogKind; onClose: () => void }) {
+  const queryClient = useQueryClient()
   const [label, setLabel] = useState('')
   const [extra, setExtra] = useState('')
   const [fromType, setFromType] = useState('')
@@ -793,7 +795,7 @@ function CreateDialog({ kind, onClose }: { kind: DialogKind; onClose: () => void
     const forward = fromLabel.trim() || name
     const reverse = toLabel.trim() || name
     const work = kind === 'link'
-      ? stageModel('model.create_link_type', {
+      ? commitModelOperation(queryClient, 'model.create_link_type', {
           key,
           label: name,
           from_types: [fromType],
@@ -807,9 +809,9 @@ function CreateDialog({ kind, onClose }: { kind: DialogKind; onClose: () => void
           attributes: [],
         })
       : kind === 'type'
-      ? stageModel('model.create_type', { key, label: name })
+      ? commitModelOperation(queryClient, 'model.create_type', { key, label: name })
       : kind === 'list'
-        ? stageModel('model.create_value_list', {
+        ? commitModelOperation(queryClient, 'model.create_value_list', {
             key,
             label: name,
             options: extra.split(',').map((item) => item.trim()).filter(Boolean).map((item) => ({
@@ -818,7 +820,7 @@ function CreateDialog({ kind, onClose }: { kind: DialogKind; onClose: () => void
             })),
           })
         : kind === 'family'
-          ? stageModel('model.create_unit_family', {
+          ? commitModelOperation(queryClient, 'model.create_unit_family', {
               key,
               dimension: name,
               base_unit: extra.trim() || key,
