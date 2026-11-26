@@ -9,6 +9,7 @@ import {
   memberIdFilter,
   memberIdsOf,
   selectionFilterText,
+  selectionSearchText,
 } from './assortment-filter'
 
 /** Manual assortment stored with a group (not a dynamic filter query). */
@@ -63,7 +64,8 @@ export function assortmentChipActive(item: Json, ctx: AssortmentChipContext): bo
 export type SelectionApplyMode = 'follow' | 'peer' | 'explicit-all'
 
 export type SelectionPatch = {
-  filter: ''
+  /** Table search box. A dynamic selection can carry the saved `q`. */
+  filter: string
   selectionFilter: string
   labelFilter: string
   selectionId: string
@@ -142,7 +144,7 @@ export function planSelectionApply(input: {
     return {
       action: 'leave-all',
       patch: {
-        filter: '',
+        filter: parts.q,
         selectionFilter: parts.selectionFilter,
         labelFilter: parts.labelFilter,
         selectionId: parts.selectionId,
@@ -156,7 +158,7 @@ export function planSelectionApply(input: {
     return {
       action: 'apply',
       patch: {
-        filter: '',
+        filter: parts.q,
         selectionFilter: parts.selectionFilter,
         labelFilter: parts.labelFilter,
         selectionId: parts.selectionId,
@@ -167,7 +169,7 @@ export function planSelectionApply(input: {
   return {
     action: 'apply',
     patch: {
-      filter: '',
+      filter: parts.q,
       selectionFilter: parts.selectionFilter,
       labelFilter: parts.labelFilter,
       selectionId: parts.selectionId,
@@ -183,6 +185,7 @@ function selectionParts(item: Json, defs?: Json) {
   if (members.length > 0 || isHandPickedQuery(query)) {
     return {
       query,
+      q: '',
       selectionId: String(item.id ?? ''),
       selectionFilter: memberIdFilter(members),
       labelFilter: '',
@@ -190,13 +193,15 @@ function selectionParts(item: Json, defs?: Json) {
     }
   }
   const dynamicFilter = selectionFilterText(query)
-  const emptyManual = !dynamicFilter && isEmptyManualQuery(query)
+  const q = selectionSearchText(query)
+  const emptyManual = !dynamicFilter && !q && isEmptyManualQuery(query)
   const rawGroup = (query as { group?: unknown }).group
   const group = !dynamicFilter && !emptyManual && typeof rawGroup === 'string' && rawGroup
     ? rawGroup
     : null
   return {
     query,
+    q,
     selectionId: String(item.id ?? ''),
     selectionFilter: dynamicFilter || (emptyManual ? EMPTY_MANUAL_FILTER : ''),
     labelFilter: dynamicFilter || emptyManual ? '' : labelSearchFilter(query, defs),

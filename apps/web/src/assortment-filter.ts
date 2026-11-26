@@ -28,7 +28,7 @@ export function isHandPickedQuery(query: unknown): boolean {
 /** True when a stored query has neither a dynamic filter nor manual members. */
 export function isEmptyManualQuery(query: unknown): boolean {
   if (!query || typeof query !== 'object') return false
-  if (selectionFilterText(query)) return false
+  if (selectionFilterText(query) || selectionSearchText(query)) return false
   const item = query as { group?: unknown; labels?: unknown }
   if (typeof item.group === 'string' && item.group) return false
   return labelCodes(item.labels).length === 0
@@ -74,9 +74,20 @@ export function selectionFilterText(query: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
-/** A dynamic selection's query is the string itself, not an object. */
-export function selectionQueryValue(kind: SelectionKind, filter: string, manual: Json): Json {
-  return (kind === 'dynamic' ? filter.trim() : manual) as unknown as Json
+/** The table search term stored beside a dynamic filter. */
+export function selectionSearchText(query: unknown): string {
+  if (!query || typeof query !== 'object') return ''
+  const value = (query as { q?: unknown }).q
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+/** A dynamic selection's query is the filter string, plus `q` when a search term is saved. */
+export function selectionQueryValue(kind: SelectionKind, filter: string, manual: Json, q = ''): Json {
+  if (kind !== 'dynamic') return manual
+  const text = filter.trim()
+  const term = q.trim()
+  if (!term) return text as unknown as Json
+  return { filter: text, q: term } as unknown as Json
 }
 
 /** Keep the type clause when a view filter is saved as a dynamic selection. */
@@ -161,6 +172,8 @@ export type NewSelectionRequest = {
   name?: string
   kind?: SelectionKind
   query?: string
+  /** Table search term (`q`) to save with the filter. */
+  q?: string
   type?: string
 }
 

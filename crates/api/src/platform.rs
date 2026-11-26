@@ -3556,10 +3556,38 @@ fn manual_has_no_query() -> Problem {
     )
 }
 
+/// A dynamic wire query is either the filter string or `{ filter, q }`.
+fn dynamic_query_text(query: &Value) -> Result<(String, String), Problem> {
+    if let Some(text) = query.as_str() {
+        return Ok((text.trim().to_owned(), String::new()));
+    }
+    let Some(object) = query.as_object() else {
+        return Err(dynamic_query_required());
+    };
+    let filter = object
+        .get("filter")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_owned();
+    let q = object
+        .get("q")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_owned();
+    Ok((filter, q))
+}
+
+fn invalid_filter(code: &str, message: String) -> Problem {
+    Problem::new(StatusCode::UNPROCESSABLE_ENTITY, code, message)
+}
+
 /// Turns the wire `query` into the stored JSONB shape for one kind.
 ///
-/// Dynamic selections store a filter in the same syntax as a view's filter and
-/// validate it through the same translate path the search uses. Manual
+/// Dynamic selections store a filter in the same syntax as a view's filter.
+/// Free text is rejected here, before Typesense can answer 400. An optional
+/// `q` is the table search term and is stored beside the filter. Manual
 /// selections keep the legacy group/labels document (no filter).
 fn normalize_selection_query(
     defs: &DefinitionSet,
@@ -3568,15 +3596,24 @@ fn normalize_selection_query(
 ) -> Result<Value, Problem> {
     match kind {
         "dynamic" => {
-            let filter = query
-                .as_str()
-                .map(str::trim)
-                .filter(|filter| !filter.is_empty())
-                .ok_or_else(dynamic_query_required)?;
-            braian_model::translate_filter_expression(filter, defs).map_err(|message| {
-                Problem::new(StatusCode::UNPROCESSABLE_ENTITY, "invalid_path", message)
-            })?;
-            Ok(json!({ "filter": filter }))
+            let (filter, q) = dynamic_query_text(&query)?;
+            if filter.is_empty() && q.is_empty() {
+                return Err(dynamic_query_required());
+            }
+            if !filter.is_empty() {
+                braian_model::explain_filter_syntax(&filter)
+                    .map_err(|message| invalid_filter("invalid_query", message))?;
+                braian_model::translate_filter_expression(&filter, defs)
+                    .map_err(|message| invalid_filter("invalid_path", message))?;
+            }
+            let mut stored = serde_json::Map::new();
+            if !filter.is_empty() {
+                stored.insert("filter".into(), json!(filter));
+            }
+            if !q.is_empty() {
+                stored.insert("q".into(), json!(q));
+            }
+            Ok(Value::Object(stored))
         }
         "manual" => {
             if query.is_string() {
@@ -3832,16 +3869,23 @@ async fn assortment_members(
             "member_ids": member_ids,
         })));
     }
-    let filter = row
-        .get("query")
+    let query = row.get("query");
+    let filter = query
         .and_then(|query| query.get("filter"))
         .and_then(Value::as_str)
         .unwrap_or("");
+    let q = query
+        .and_then(|query| query.get("q"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    if filter.is_empty() && q.is_empty() {
+        return Ok(Json(json!({ "members": [], "found": 0, "member_ids": [] })));
+    }
     let (filter_by, _, _) =
         search_fields(&state, filter.to_owned(), String::new(), String::new()).await?;
     let page = run_search(
         &state,
-        String::new(),
+        q.to_owned(),
         String::new(),
         filter_by,
         String::new(),
