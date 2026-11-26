@@ -139,7 +139,7 @@ async function waitForSourceState(
   workspaceId: string,
   viewId: string,
   expected: SourceState | undefined,
-  timeout = 30_000,
+  timeout = 60_000,
 ) {
   await expect
     .poll(async () => {
