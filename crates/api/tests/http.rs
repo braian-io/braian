@@ -3445,6 +3445,78 @@ async fn a_dynamic_selection_validates_and_stores_its_filter() {
 }
 
 #[tokio::test]
+async fn a_dynamic_selection_rejects_free_text_and_keeps_the_search_term() {
+    let (db, app) = app().await;
+    let cookie = selection_cookie(&db, &app, "query@braian.local").await;
+
+    let (status, _, invalid) = call(
+        &app,
+        "POST",
+        "/v1/assortments",
+        None,
+        &[("cookie", &cookie), ("content-type", "application/json")],
+        Some(r#"{"name":"Cheddar text","type":"item","kind":"dynamic","query":"cheddar"}"#),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{invalid}");
+    assert_eq!(invalid["code"], "invalid_query", "{invalid}");
+    assert!(
+        invalid["detail"]
+            .as_str()
+            .unwrap_or("")
+            .contains("Could not parse the filter query"),
+        "{invalid}"
+    );
+
+    let (status, _, listed) = call(
+        &app,
+        "GET",
+        "/v1/assortments?type=item",
+        None,
+        &[("cookie", &cookie)],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{listed}");
+    assert!(
+        listed["assortments"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|row| row["name"] != "Cheddar text"),
+        "{listed}"
+    );
+
+    let (status, _, saved) = call(
+        &app,
+        "POST",
+        "/v1/assortments",
+        None,
+        &[("cookie", &cookie), ("content-type", "application/json")],
+        Some(
+            r#"{"name":"Oat search","type":"item","kind":"dynamic","query":{"filter":"type_key:=item","q":"oat"}}"#,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{saved}");
+    assert_eq!(saved["query"]["filter"], "type_key:=item", "{saved}");
+    assert_eq!(saved["query"]["q"], "oat", "{saved}");
+    let id = saved["id"].as_str().unwrap();
+
+    let (status, _, updated) = call(
+        &app,
+        "PUT",
+        &format!("/v1/assortments/{id}"),
+        None,
+        &[("cookie", &cookie), ("content-type", "application/json")],
+        Some(r#"{"name":"Oat search","query":"cheddar"}"#),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{updated}");
+    assert_eq!(updated["code"], "invalid_query", "{updated}");
+}
+
+#[tokio::test]
 async fn updating_a_selection_locks_kind_and_type() {
     let (db, app) = app().await;
     let cookie = selection_cookie(&db, &app, "update@braian.local").await;

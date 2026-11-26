@@ -250,6 +250,19 @@ describe('planSelectionApply', () => {
     expect(leave.patch.labelFilter).toBe('')
   })
 
+  it('puts a saved search term in the table search box', () => {
+    const oat = {
+      id: 'sel-oat',
+      name: 'Oat',
+      query: { filter: 'type_key:=product', q: 'oat' },
+    }
+    const plan = planSelectionApply({ item: oat, ctx: idle(true), mode: 'follow', locked: false })
+    expect(plan.action).toBe('apply')
+    if (plan.action !== 'apply') return
+    expect(plan.patch.filter).toBe('oat')
+    expect(plan.patch.selectionFilter).toBe('type_key:=product')
+  })
+
   it('still publishes a group on an unlocked table that follows the tree', () => {
     const plan = planSelectionApply({
       item: cheeseOrganic,

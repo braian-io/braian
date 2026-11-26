@@ -101,6 +101,7 @@ import {
   subscribeObjectDrafts,
 } from './object-draft'
 import { CellDiff, ObjectDraftBar, UnmappedDraftLinks } from './object-draft-bar'
+import { getSelectionBarActive, subscribeSelectionDraft } from './selection-draft'
 import { acceptProposal, draftSavePlan, isDraftSaveInFlight, runDraftDiscard, runDraftSave } from './object-draft-save'
 import { useObjectDraftSaving } from './use-object-draft-saving'
 import { useOpenObjectProposals } from './use-open-proposals'
@@ -296,6 +297,7 @@ export function ObjectTable({
   const editingOriginalRef = useRef('')
   const skipBlurCommitRef = useRef(false)
   const drafts = useSyncExternalStore(subscribeObjectDrafts, getObjectDraftSnapshot, getObjectDraftSnapshot)
+  const selectionOwnsSave = useSyncExternalStore(subscribeSelectionDraft, getSelectionBarActive, getSelectionBarActive)
   const draftSaving = useObjectDraftSaving()
   const openProposals = useOpenObjectProposals()
   const queryClient = useQueryClient()
@@ -913,7 +915,7 @@ export function ObjectTable({
     }
     // Publish committed selections. Detail and peer panes follow `selected`.
     const marked = scopeChanged ? [] : selected.map(described)
-    publishTable(view.id, [queryText, filterBy].filter(Boolean).join(' '), sort, filterBy)
+    publishTable(view.id, [queryText, filterBy].filter(Boolean).join(' '), sort, filterBy, queryText)
     publishSelection(view.id, marked)
   }, [peerScope, selected, queryText, filterBy, sort, view.id, knownStamp])
 
@@ -2251,6 +2253,7 @@ export function ObjectTable({
       onFilterFocus={() => { searchFocusedRef.current = true }}
       onFilterBlur={() => { searchFocusedRef.current = false }}
     >
+      {selectionOwnsSave ? null : (
       <ObjectDraftBar
         count={draftCount}
         canSave={tableReview.canSave}
@@ -2291,6 +2294,7 @@ export function ObjectTable({
           })
         }}
       />
+      )}
       <UnmappedDraftLinks proposals={openProposals.unmapped} />
       {peerSource && peerSourceView ? (
         <p className="table-source" data-testid="peer-linked-to">
@@ -3124,6 +3128,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
     enabled: Boolean(session.objectId) && !objectGoneState && objectFetchSettled,
   })
   const drafts = useSyncExternalStore(subscribeObjectDrafts, getObjectDraftSnapshot, getObjectDraftSnapshot)
+  const selectionOwnsSave = useSyncExternalStore(subscribeSelectionDraft, getSelectionBarActive, getSelectionBarActive)
   const draftSaving = useObjectDraftSaving()
   const openProposals = useOpenObjectProposals()
   const me = useQuery({ queryKey: ['me'], queryFn: () => api.get('/v1/me'), retry: false })
@@ -3565,7 +3570,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       </div>
       </DetailFieldDraftHost>
       <UnmappedDraftLinks proposals={openProposals.unmapped} />
-      {dirty ? (
+      {dirty && !selectionOwnsSave ? (
         <ObjectDraftBar
           count={detailCells.length + (proposalCells.length > 0 ? 1 : 0)}
           canSave={detailReview.canSave && editingReady}
