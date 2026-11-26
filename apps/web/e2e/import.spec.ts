@@ -32,7 +32,7 @@ test('mapping lines can change and the preview paints the diff', async ({ page }
   await expect(page.getByTestId('import-row-new')).toBeVisible()
   await expect(page.getByTestId('import-row-changed').locator('.changed')).toBeVisible()
   await expect(page.getByTestId('import-row-failed').locator('.error')).toBeVisible()
-  await expect(page.getByTestId('import-save')).toContainText('Approve')
+  await expect(page.getByTestId('import-save')).toHaveText('Save 3 rows')
   await expect(page.getByTestId('import-save')).toBeDisabled()
   await page.screenshot({ path: `${shots}/import-preview.png` })
 })

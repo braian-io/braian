@@ -18,7 +18,7 @@ async function command(page: Page, title: string) {
   await page.keyboard.press('Enter')
 }
 
-test('attribute definitions open from the keyboard, show usage, and attach in a draft', async ({ page }) => {
+test('attribute definitions open from the keyboard, show usage, and attach on confirm', async ({ page }) => {
   test.setTimeout(180_000)
   await login(page)
   await command(page, 'Attribute definitions')
@@ -58,9 +58,14 @@ test('attribute definitions open from the keyboard, show usage, and attach in a 
   const picker = page.getByTestId('add-to-type-search')
   await expect(picker).toBeVisible()
   await picker.fill('Supplier')
+  const attached = page.waitForResponse((response) =>
+    response.url().includes('/v1/model/commit') && response.request().method() === 'POST')
   await picker.press('Enter')
-  await expect(page.getByTestId('unsaved-changes')).toBeVisible()
-
-  await command(page, 'Discard draft')
+  expect((await attached).ok()).toBeTruthy()
   await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
+  await expect(page.getByTestId('review-dialog')).toHaveCount(0)
+  const usageAgain = await page.request.post('/v1/operations/model.attribute_usage', { data: { attribute: key } })
+  expect(usageAgain.ok()).toBeTruthy()
+  const attachedBody = await usageAgain.json() as { used_in?: { types?: Array<{ key?: string }> } }
+  expect(attachedBody.used_in?.types?.some((item) => item.key === 'supplier')).toBe(true)
 })

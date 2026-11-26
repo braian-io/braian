@@ -3,7 +3,7 @@ import { demoCredentials } from './demo'
 
 const PRODUCT_TYPE = 'product'
 const ACCEPTED = 'Proposal already accepted'
-const STALE = 'This proposal is stale and cannot be approved.'
+const STALE = 'This proposal is stale and cannot be saved.'
 
 async function login(page: Page) {
   const demo = demoCredentials()

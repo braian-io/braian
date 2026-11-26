@@ -324,6 +324,56 @@ describe('proposal accept results', () => {
   })
 })
 
+describe('pane save scope', () => {
+  it('saves and discards only the cells staged in that pane', async () => {
+    stageObjectCell({
+      objectId: 'obj-1',
+      attribute: 'name',
+      columnId: 'name',
+      baseVersion: 4,
+      originalText: 'Old',
+      proposedText: 'From detail',
+      value: 'From detail',
+      surface: 'detail',
+    })
+    stageObjectCell({
+      objectId: 'obj-1',
+      attribute: 'status',
+      columnId: 'status',
+      baseVersion: 4,
+      originalText: 'draft',
+      proposedText: 'ok',
+      value: 'ok',
+      surface: 'table',
+    })
+    const shared = {
+      objectIds: ['obj-1'],
+      serverVersions: { 'obj-1': 4 },
+      principal: 'human' as const,
+      fileAsProposal: false,
+      roleCanWrite: true,
+    }
+    const table = draftSavePlan({ ...shared, surface: 'table' })
+    const detail = draftSavePlan({ ...shared, surface: 'detail' })
+    expect(table).toEqual([expect.objectContaining({ kind: 'patch', values: { status: 'ok' } })])
+    expect(detail).toEqual([expect.objectContaining({ kind: 'patch', values: { name: 'From detail' } })])
+    const dropped = draftDiscardPlan({
+      objectIds: ['obj-1'],
+      principal: 'human',
+      viaAgent: false,
+      surface: 'detail',
+    })
+    expect(dropped.clear).toEqual(['obj-1'])
+    expect(await runDraftDiscard({
+      objectIds: ['obj-1'],
+      principal: 'human',
+      viaAgent: false,
+      surface: 'detail',
+    })).toBe('')
+    expect(objectDraftCells('obj-1').map((cell) => cell.attribute)).toEqual(['status'])
+  })
+})
+
 describe('discard scope', () => {
   it('does not discard a proposal that touches another object', () => {
     stage('obj-1', 'One')

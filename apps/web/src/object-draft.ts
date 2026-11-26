@@ -9,6 +9,9 @@ import { textValue, type Json } from './api'
 
 export type DraftPrincipal = 'human' | 'agent' | 'integration'
 
+/** Which pane staged the cell. The Save bar lives only in that pane. */
+export type DraftSurface = 'table' | 'detail'
+
 export type ObjectDraftCell = {
   objectId: string
   attribute: string
@@ -18,6 +21,13 @@ export type ObjectDraftCell = {
   originalText: string
   proposedText: string
   value: unknown
+  surface?: DraftSurface
+}
+
+/** Untagged cells stay visible to every pane. A tagged cell belongs to one pane. */
+export function cellOnSurface(cell: { surface?: DraftSurface }, surface?: DraftSurface): boolean {
+  if (!surface) return true
+  return cell.surface == null || cell.surface === surface
 }
 
 type Committed = {
@@ -58,8 +68,9 @@ export function draftCellKey(cell: { objectId: string; attribute: string; langua
   return `${cell.objectId}\n${cell.attribute}\n${cell.language ?? ''}`
 }
 
-export function objectDraftCells(objectId?: string): ObjectDraftCell[] {
-  return objectId ? state.cells.filter((cell) => cell.objectId === objectId) : [...state.cells]
+export function objectDraftCells(objectId?: string, surface?: DraftSurface): ObjectDraftCell[] {
+  const cells = objectId ? state.cells.filter((cell) => cell.objectId === objectId) : [...state.cells]
+  return surface ? cells.filter((cell) => cellOnSurface(cell, surface)) : cells
 }
 
 export function stageObjectCell(cell: ObjectDraftCell): void {
@@ -74,7 +85,10 @@ export function stageObjectCell(cell: ObjectDraftCell): void {
     emit({ ...state, cells: rest })
     return
   }
-  emit({ ...state, cells: [...rest, { ...cell, originalText, baseVersion }] })
+  emit({
+    ...state,
+    cells: [...rest, { ...cell, originalText, baseVersion, surface: cell.surface ?? previous?.surface }],
+  })
 }
 
 export function discardObjectDraft(objectId: string): void {
@@ -93,8 +107,8 @@ export function discardSubmittedCells(submitted: ObjectDraftCell[]): void {
   })
 }
 
-export function draftBaseVersion(objectId: string): number | null {
-  const cells = objectDraftCells(objectId)
+export function draftBaseVersion(objectId: string, surface?: DraftSurface): number | null {
+  const cells = objectDraftCells(objectId, surface)
   if (cells.length === 0) return null
   return Math.min(...cells.map((cell) => cell.baseVersion))
 }
@@ -159,15 +173,15 @@ function valuesFromCells(cells: ObjectDraftCell[]): Json {
   return values
 }
 
-export function draftValues(objectId: string): Json {
-  return valuesFromCells(objectDraftCells(objectId))
+export function draftValues(objectId: string, surface?: DraftSurface): Json {
+  return valuesFromCells(objectDraftCells(objectId, surface))
 }
 
 /** The exact cells a Save is about to submit. Edits made during the await stay out. */
-export function objectDraftSnapshot(objectIds: string[]): ObjectDraftCell[] {
+export function objectDraftSnapshot(objectIds: string[], surface?: DraftSurface): ObjectDraftCell[] {
   const scope = new Set(objectIds)
   return state.cells
-    .filter((cell) => scope.has(cell.objectId))
+    .filter((cell) => scope.has(cell.objectId) && cellOnSurface(cell, surface))
     .map((cell) => ({ ...cell }))
 }
 

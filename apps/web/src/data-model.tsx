@@ -523,8 +523,17 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
     if (selection?.kind !== 'type') return
     const steps = buildTypeHeaderSteps(selection.typeKey, patch, uiLanguage).filter((step) => step.op !== 'set_structures')
     if (steps.length === 0) return
-    await commitModelSteps(queryClient, steps)
+    // Clear before the request so leaving the field does not open the leave
+    // dialog for an edit that is already being saved. A failure puts it back.
+    typeHeaderPatchRef.current = {}
     setTypeHeaderPatch({})
+    try {
+      await commitModelSteps(queryClient, steps)
+    } catch (reason) {
+      typeHeaderPatchRef.current = patch
+      setTypeHeaderPatch(patch)
+      throw reason
+    }
   }
 
   const flushTableDraftRef = useRef<() => Promise<void>>(async () => {})

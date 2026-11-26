@@ -131,7 +131,7 @@ An import has three steps, shown as `1 Map`, `2 Check`, and `3 Save`:
 - **Check.** Review the draft with the filters `All`, `New`, `Changed`, `Errors`,
   `Unchanged`, and `Excluded`. You can leave out invalid cells instead of skipping the
   row, include a row that was left out, download failing rows with `Download failing
-  rows (.xlsx)`, go `Back to mapping`, or approve with `Approve N rows`.
+  rows (.xlsx)`, go `Back to mapping`, or save with `Save N rows`.
 - **Save.** Braian reports the result as `Imported {created} · Updated {updated} ·
   Skipped {skipped}`.
 

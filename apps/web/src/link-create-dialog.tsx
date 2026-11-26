@@ -476,7 +476,7 @@ function LinkFields({
               {replacing ? copy.linkReplacing : copy.linkReplace}
             </Button>
           ) : (
-            <Button type="submit" variant="primary" data-testid="link-create-confirm" disabled={saving}>{copy.confirm}</Button>
+            <Button type="submit" variant="primary" data-testid="link-create-confirm" disabled={saving}>{copy.save}</Button>
           )}
         </div>
       </form>

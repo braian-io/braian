@@ -701,7 +701,10 @@ export function StandardEditableTable<T extends { id: string }>({
       const directSave = cellSave[cellKey(row.id, column.id)]
       const orderSave = columns[0]?.id === column.id ? cellSave[cellKey(row.id, 'order')] : undefined
       const saveNote = directSave ?? orderSave
+      const rowHasSaveNote = columns.some((item) => cellSave[cellKey(row.id, item.id)])
+        || cellSave[cellKey(row.id, 'order')] !== undefined
       const restoredUnsaved = !saveNote
+        && !rowHasSaveNote
         && autosave
         && columns[0]?.id === column.id
         && Boolean(draftRows[row.id])

@@ -6,7 +6,10 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use braian_model::{AttributeId, Cardinality, DefinitionSet, Object, ObjectId, TypeId};
+use braian_model::{
+    AttributeId, Cardinality, DefinitionSet, LanguageTag, ModelChange, Object, ObjectId, TypeId,
+    UnitFamily, UnitFamilyId, UnitSpec, apply_all,
+};
 use braian_rules::CompiledModel;
 use braian_search::Typesense;
 use braian_store::{Actor, BatchKind, Error, ObjectOp, PrincipalId, ProposalRow, Store};
@@ -60,6 +63,7 @@ pub async fn run(store: &Store, search: Option<&Typesense>) -> anyhow::Result<()
     // Views and selections are translated against the live definition set.
     // Install it first so the first seed can store ids, not keys.
     let defs = ensure_definitions(store, &actor).await?;
+    let defs = ensure_temperature_family(store, &actor, defs).await?;
     seed_demo_surface(store, &user, &defs).await?;
     let model =
         CompiledModel::compile(&defs).map_err(|errors| anyhow::anyhow!("{}", errors[0].message))?;
@@ -334,6 +338,142 @@ async fn ensure_definitions(store: &Store, actor: &Actor) -> anyhow::Result<Defi
         }
         Err(error) => Err(error.into()),
     }
+}
+
+const TEMPERATURE_FAMILY_ID: &str = "018f0000-0000-7000-8000-000000000015";
+
+fn temperature_specs() -> Vec<UnitSpec> {
+    vec![
+        UnitSpec {
+            code: "C".into(),
+            factor: "1".into(),
+            offset: "0".into(),
+            symbol: "°C".into(),
+            label: "Celsius".into(),
+        },
+        UnitSpec {
+            code: "F".into(),
+            factor: "5/9".into(),
+            offset: "-160/9".into(),
+            symbol: "°F".into(),
+            label: "Fahrenheit".into(),
+        },
+        UnitSpec {
+            code: "K".into(),
+            factor: "1".into(),
+            offset: "-273.15".into(),
+            symbol: "K".into(),
+            label: "Kelvin".into(),
+        },
+    ]
+}
+
+/// °C is the base. °F uses `base = value * 5/9 + (-160/9)`. K uses offset −273.15.
+fn canonical_temperature() -> UnitFamily {
+    let mut scratch = DefinitionSet {
+        model_revision: 0,
+        languages: vec![LanguageTag::parse("en").expect("en")],
+        unit_families: Vec::new(),
+        value_lists: Vec::new(),
+        attributes: Vec::new(),
+        types: Vec::new(),
+        structures: Vec::new(),
+    };
+    apply_all(
+        &mut scratch,
+        &[ModelChange::CreateUnitFamily {
+            key: "temperature".into(),
+            dimension: Some("temperature".into()),
+            base_unit: "C".into(),
+            units: temperature_specs(),
+        }],
+    )
+    .expect("temperature family");
+    let mut family = scratch.unit_families.pop().expect("temperature");
+    family.id = UnitFamilyId::from_uuid(Uuid::parse_str(TEMPERATURE_FAMILY_ID).expect("id"));
+    family
+}
+
+/// Adds the temperature family, or only the C/F/K rows that are not already there.
+/// Existing factor, offset and base are left as stored.
+fn merge_temperature_units(defs: &mut DefinitionSet) -> bool {
+    let canonical = canonical_temperature();
+    let celsius = canonical
+        .units
+        .iter()
+        .find(|unit| unit.code == "C")
+        .expect("celsius");
+    let base_factor = celsius.factor;
+    let base_offset = celsius.offset;
+    let Some(index) = defs
+        .unit_families
+        .iter()
+        .position(|family| family.key.eq_ignore_ascii_case("temperature"))
+    else {
+        defs.unit_families.push(canonical);
+        return true;
+    };
+    let family = &mut defs.unit_families[index];
+    let mut changed = false;
+    for unit in canonical.units {
+        if family
+            .units
+            .iter()
+            .any(|existing| existing.code == unit.code)
+        {
+            continue;
+        }
+        let adds_base = unit.factor == base_factor && unit.offset == base_offset;
+        let has_base = family
+            .units
+            .iter()
+            .any(|existing| existing.factor == base_factor && existing.offset == base_offset);
+        if adds_base && has_base && family.base_unit != unit.code {
+            continue;
+        }
+        family.units.push(unit);
+        changed = true;
+    }
+    changed
+}
+
+/// Runs on API startup, including after autodeploy. Adds only missing temperature
+/// unit codes. Does nothing when the database has no definitions yet (the seed
+/// installs the catalog, which already contains the family) and does not bump
+/// the revision when every code is already stored.
+pub(crate) async fn ensure_temperature_on_startup(store: &Store) -> anyhow::Result<()> {
+    let defs = match store.definition_set().await {
+        Ok(defs) => defs,
+        Err(Error::NoDefinitions) => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    // The system principal is created on connect. Repeat it so a startup that
+    // has to write still has an actor if that row is missing.
+    store.ensure_system_principal().await?;
+    let actor = Actor {
+        actor: braian_store::SYSTEM_PRINCIPAL,
+        on_behalf_of: None,
+        kind: BatchKind::Bulk,
+        source: "temperature-units".into(),
+    };
+    ensure_temperature_family(store, &actor, defs).await?;
+    Ok(())
+}
+
+/// Idempotent on a database that already has definitions. Does not reset the model.
+async fn ensure_temperature_family(
+    store: &Store,
+    actor: &Actor,
+    defs: DefinitionSet,
+) -> anyhow::Result<DefinitionSet> {
+    let mut next = defs;
+    if !merge_temperature_units(&mut next) {
+        return Ok(next);
+    }
+    CompiledModel::compile(&next).map_err(|errors| anyhow::anyhow!("{}", errors[0].message))?;
+    next.model_revision += 1;
+    store.put_definitions(actor, &next).await?;
+    Ok(next)
 }
 
 async fn seed_demo_surface(
@@ -2217,6 +2357,12 @@ mod tests {
                 .iter()
                 .any(|family| family.key == "energy")
         );
+        let temperature = defs
+            .unit_families
+            .iter()
+            .find(|family| family.key == "temperature")
+            .expect("temperature");
+        assert_eq!(temperature, &canonical_temperature());
         assert!(defs.value_lists.iter().any(|list| list.key == "allergens"));
         assert!(defs.value_lists.iter().all(|list| {
             list.key
@@ -2492,6 +2638,145 @@ mod tests {
         }
         assert!(products_in > 0 && articles_in > 0);
         assert!(products_out > 0 && articles_out > 0);
+    }
+
+    #[test]
+    fn temperature_merge_adds_missing_units_and_keeps_stored_ones() {
+        let mut defs = DefinitionSet {
+            model_revision: 1,
+            languages: vec![LanguageTag::parse("en").expect("en")],
+            unit_families: Vec::new(),
+            value_lists: Vec::new(),
+            attributes: Vec::new(),
+            types: Vec::new(),
+            structures: Vec::new(),
+        };
+        assert!(merge_temperature_units(&mut defs));
+        assert!(!merge_temperature_units(&mut defs));
+        let family = defs
+            .unit_families
+            .iter_mut()
+            .find(|family| family.key == "temperature")
+            .expect("temperature");
+        family.units.retain(|unit| unit.code != "K");
+        let fahrenheit = family
+            .units
+            .iter_mut()
+            .find(|unit| unit.code == "F")
+            .expect("F");
+        let mut raw = serde_json::to_value(&*fahrenheit).expect("unit");
+        raw["factor"] = json!("2");
+        raw["offset"] = json!("3");
+        raw["symbol"] = json!("degF");
+        *fahrenheit = serde_json::from_value(raw).expect("edited unit");
+        assert!(merge_temperature_units(&mut defs));
+        let family = defs
+            .unit_families
+            .iter()
+            .find(|family| family.key == "temperature")
+            .expect("temperature");
+        let fahrenheit = family
+            .units
+            .iter()
+            .find(|unit| unit.code == "F")
+            .expect("F");
+        let stored = serde_json::to_value(fahrenheit).expect("stored");
+        assert_eq!(stored["factor"], "2");
+        assert_eq!(stored["offset"], "3");
+        assert_eq!(stored["symbol"], "degF");
+        assert!(family.units.iter().any(|unit| unit.code == "K"));
+        assert!(!merge_temperature_units(&mut defs));
+    }
+
+    #[tokio::test]
+    async fn existing_model_gains_missing_temperature_units() {
+        load_test_database_url();
+        let db = braian_store::testing::TestDb::create().await;
+        let store = db.store();
+        let principal = store
+            .create_principal(braian_store::PrincipalKind::Human, "seed")
+            .await
+            .expect("principal");
+        let actor = Actor {
+            actor: principal,
+            on_behalf_of: None,
+            kind: BatchKind::Interactive,
+            source: "seed".into(),
+        };
+        let mut defs: DefinitionSet = serde_json::from_str(DEFINITIONS).expect("definitions");
+        defs.unit_families
+            .retain(|family| family.key != "temperature");
+        let families = defs.unit_families.len();
+        let attributes = defs.attributes.len();
+        store.put_definitions(&actor, &defs).await.expect("save");
+        let revision = store.definition_set().await.expect("defs").model_revision;
+        let updated =
+            ensure_temperature_family(store, &actor, store.definition_set().await.expect("defs"))
+                .await
+                .expect("temperature");
+        assert_eq!(updated.model_revision, revision + 1);
+        assert_eq!(updated.attributes.len(), attributes);
+        assert_eq!(updated.unit_families.len(), families + 1);
+        let family = updated
+            .unit_families
+            .iter()
+            .find(|family| family.key == "temperature")
+            .expect("temperature");
+        assert_eq!(family.base_unit, "C");
+        for code in ["C", "F", "K"] {
+            assert!(family.units.iter().any(|unit| unit.code == code), "{code}");
+        }
+        let again = ensure_temperature_family(store, &actor, updated.clone())
+            .await
+            .expect("second seed");
+        assert_eq!(again.model_revision, updated.model_revision);
+
+        let mut partial = again;
+        let family = partial
+            .unit_families
+            .iter_mut()
+            .find(|family| family.key == "temperature")
+            .expect("temperature");
+        family.units.retain(|unit| unit.code != "K");
+        let fahrenheit = family
+            .units
+            .iter_mut()
+            .find(|unit| unit.code == "F")
+            .expect("F");
+        fahrenheit.symbol = "degF".into();
+        partial.model_revision += 1;
+        store
+            .put_definitions(&actor, &partial)
+            .await
+            .expect("custom factor stays");
+        let restored =
+            ensure_temperature_family(store, &actor, store.definition_set().await.expect("defs"))
+                .await
+                .expect("missing kelvin");
+        let family = restored
+            .unit_families
+            .iter()
+            .find(|family| family.key == "temperature")
+            .expect("temperature");
+        assert_eq!(
+            family
+                .units
+                .iter()
+                .find(|unit| unit.code == "F")
+                .expect("F")
+                .symbol,
+            "degF"
+        );
+        assert!(family.units.iter().any(|unit| unit.code == "K"));
+        let quiet = ensure_temperature_family(store, &actor, restored.clone())
+            .await
+            .expect("quiet");
+        assert_eq!(quiet.model_revision, restored.model_revision);
+        ensure_temperature_on_startup(store).await.expect("startup");
+        assert_eq!(
+            store.definition_set().await.expect("defs").model_revision,
+            quiet.model_revision
+        );
     }
 
     /// First seed on an empty database creates "Accept ART-CHED-400".

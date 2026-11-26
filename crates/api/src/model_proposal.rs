@@ -934,12 +934,23 @@ pub(crate) fn changes_from(
                 None
             },
         }]),
-        "model.create_unit_family" => Ok(vec![ModelChange::CreateUnitFamily {
-            key: required_str(args, "key")?,
-            dimension: optional_str(args, "dimension"),
-            base_unit: required_str(args, "base_unit")?,
-            units: unit_specs(args),
-        }]),
+        "model.create_unit_family" => {
+            let key = required_str(args, "key")?;
+            let units = unit_specs(args);
+            // A family created earlier in this draft is already in `defs` when the
+            // caller plans against the draft preview. Creating it again adds the
+            // new unit instead of storing a no-op create.
+            if braian_model::refs::unit_family_id(defs, &key).is_ok() {
+                Ok(vec![extend_unit_family(defs, &key, units)?])
+            } else {
+                Ok(vec![ModelChange::CreateUnitFamily {
+                    key,
+                    dimension: optional_str(args, "dimension"),
+                    base_unit: required_str(args, "base_unit")?,
+                    units,
+                }])
+            }
+        }
         "model.update_unit_family" => Ok(vec![ModelChange::UpdateUnitFamily {
             key: required_str(args, "key")?,
             dimension: optional_str(args, "dimension"),
@@ -1125,6 +1136,34 @@ fn named_options(args: &Value, key: &str) -> Vec<braian_model::NamedOption> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+fn extend_unit_family(
+    defs: &DefinitionSet,
+    family_key: &str,
+    incoming: Vec<braian_model::UnitSpec>,
+) -> Result<ModelChange, Problem> {
+    let mut added = false;
+    update_family_units(defs, family_key, None, |specs| {
+        for unit in incoming {
+            if specs
+                .iter()
+                .any(|item| item.code.eq_ignore_ascii_case(&unit.code))
+            {
+                continue;
+            }
+            specs.push(unit);
+            added = true;
+        }
+        if !added {
+            return Err(Problem::new(
+                StatusCode::BAD_REQUEST,
+                "model",
+                "unit already exists",
+            ));
+        }
+        Ok(())
+    })
 }
 
 fn update_family_units(

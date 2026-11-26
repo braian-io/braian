@@ -31,6 +31,24 @@ describe('link type table steps', () => {
     }])
   })
 
+  it('splits side keys when both labels slug to the same key', () => {
+    const same = { ...base, key: 'related', id: 'related', fromLabel: 'Related', toLabel: 'Related' }
+    expect(buildLinkTypeCreateSteps(same)).toEqual([{
+      op: 'create_link_type',
+      key: 'related',
+      label: 'Related',
+      from_types: ['product'],
+      to_types: ['supplier'],
+      from_key: 'related_from',
+      from_label: 'Related',
+      to_key: 'related_to',
+      to_label: 'Related',
+      from_cardinality: 'many',
+      to_cardinality: 'one',
+      attributes: [],
+    }])
+  })
+
   it('builds update steps only for changed fields', () => {
     const changed = { ...base, fromLabel: 'Vendor list', toCardinality: 'many' as const }
     expect(buildLinkTypeUpdateSteps(base, changed)).toEqual([{

@@ -1,4 +1,5 @@
 import { ApiError, api, jsonRecord, type Schemas } from '../api'
+import { acceptProposal } from '../object-draft-save'
 import { reportWriteError } from '../write-error'
 import {
   acceptsFile,
@@ -336,10 +337,7 @@ export async function saveImport(excluded: number[] = []) {
   const draftId = session.draft_id
   if (!draftId) throw new Error('The draft is not ready yet.')
   const failed = Number(session.counters.failed ?? 0)
-  const body = (await api.post('/v1/proposals/{id}/accept', {
-    params: { path: { id: draftId } },
-    body: { skip_failed: failed > 0, exclude_rows: excluded },
-  })) as { job_id?: string }
+  const body = await acceptProposal(draftId, { skip_failed: failed > 0, exclude_rows: excluded }) as { job_id?: string }
   patch({ phase: 'saving', session: { ...session, job_id: body.job_id ?? null, status: 'saving' } })
 }
 /** Works through an import draft inside a workspace pane (no dialog). */

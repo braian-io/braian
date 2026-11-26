@@ -604,9 +604,15 @@ test('Type attributes create dialog', async ({ page }) => {
     selected: table.locator(`[data-key="${key}"]`),
   })
   const created = table.locator(`[data-key="${key}"]`)
-  await expect(created).toHaveClass(/draft/)
-  await expect(created).toHaveAttribute('data-draft', 'true')
+  await expect(created).not.toHaveClass(/draft/)
+  await expect(created).not.toHaveAttribute('data-draft', 'true')
   await expect(created).toHaveClass(/\bon\b/)
+  await expect.poll(async () => {
+    const body = await (await page.request.get('/v1/definitions')).json() as {
+      attributes?: Array<{ key?: string }>
+    }
+    return body.attributes?.some((item) => item.key === key) ?? false
+  }).toBe(true)
 })
 
 test('Structures create dialog', async ({ page }) => {

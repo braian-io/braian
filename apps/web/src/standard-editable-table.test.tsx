@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { useState } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { StandardEditableTable, type StandardColumn } from './standard-editable-table'
@@ -69,6 +70,42 @@ describe('standard editable table', () => {
     await waitFor(() => expect(saveCell).toHaveBeenCalled())
     expect(screen.queryByTestId('review-and-save')).toBeNull()
     await waitFor(() => expect(screen.getByTestId('cell-save-state').getAttribute('data-state')).toBe('saved'))
+  })
+
+  it('shows a failed save on the edited cell only', async () => {
+    function Host() {
+      const [drafts, setDrafts] = useState<Record<string, Row>>({})
+      return (
+        <StandardEditableTable
+          columns={[
+            columns[0]!,
+            {
+              id: 'note',
+              header: 'Note',
+              editable: true,
+              read: (row) => row.kind,
+              write: (row, value) => ({ ...row, kind: value }),
+            },
+          ]}
+          rows={[{ id: '1', name: 'Colour', kind: 'text' }]}
+          draftRows={drafts}
+          onDraftRowsChange={setDrafts}
+          saveCell={() => Promise.reject(new Error('the model moved'))}
+          editable
+        />
+      )
+    }
+    const { container } = render(<Host />)
+    const note = container.querySelector('[data-row-id="1"] [data-column="note"]') as HTMLElement
+    fireEvent.doubleClick(note)
+    const editor = screen.getByTestId('standard-cell-editor') as HTMLInputElement
+    fireEvent.change(editor, { target: { value: 'changed' } })
+    fireEvent.keyDown(editor, { key: 'Enter' })
+    await waitFor(() => expect(screen.getAllByTestId('cell-save-state')).toHaveLength(1))
+    const state = within(note).getByTestId('cell-save-state')
+    expect(state.getAttribute('data-state')).toBe('error')
+    expect(state.textContent).toContain('the model moved')
+    expect(container.querySelector('[data-column="name"]')?.querySelector('[data-testid="cell-save-state"]')).toBeNull()
   })
 
   it('shows Review and save when drafts exist and runs the save handler', () => {

@@ -233,8 +233,10 @@ the change stream; there is no manual refresh.
 
 ## Review and save
 
-An object table and a Detail view share the same Save/Discard draft bar. Both act on
-the same unsaved cells, so an edit made in one view is visible in the other.
+An object table and a Detail view share the unsaved cells, so an edit made in one
+view is visible in the other. The Save/Discard bar appears only in the pane where
+the edit was made. The other pane may mark the row, and it does not show a second
+Save.
 
 A Save that fails on the server or in transport is shown as an error. It is not a
 field-validation error, so the draft stays valid and Save is still available: fix the
@@ -243,9 +245,9 @@ save succeeds, or when you switch to another object. Real field-validation error
 still block Save until the value is corrected.
 
 While a save request is in flight, Save reads `Saving…` and both Save and Discard are
-disabled. A second click cannot run another save, so it never reports `Saved` when
-nothing was saved. When the request finishes, the bar returns to Save and Discard, or
-disappears if the draft is gone.
+disabled in that pane. A second click cannot run another save, so it never reports
+`Saved` when nothing was saved. When the request finishes, the bar returns to Save
+and Discard, or disappears if the draft is gone.
 
 ## Review proposals
 
