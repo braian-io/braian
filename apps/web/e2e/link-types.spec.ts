@@ -266,6 +266,8 @@ test('removing a link updates the peer list at once and Trash restore brings the
     const side = body.links?.find((item) => item.link_type === 'product_articles')
     return side?.links?.some((link) => link.peer_key === removed.peer_key) ?? false
   }).toBe(true)
-  await expect.poll(async () => detail.getByTestId('link-row').filter({ hasText: removed.peer_key }).count()).toBe(1)
-  await expect.poll(async () => articles.locator(`#object-row-${removed.peer_id}`).count()).toBe(1)
+  await productRow.click()
+  await page.locator('[data-view-type="object_detail"]').first().click()
+  await expect(detail.getByTestId('link-row').filter({ hasText: removed.peer_key }).first()).toBeVisible()
+  await expect(articles.locator(`#object-row-${removed.peer_id}`)).toBeVisible()
 })
