@@ -140,7 +140,12 @@ test('a user edit marks the agent proposal stale', async ({ page }) => {
   await expect(reason).toContainText(edited, { timeout: 30_000 })
   await expect(reason).toContainText(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}/)
   await openAgentDraftInTable(page, view)
-  await expect(page.getByTestId('review-and-save').first()).toBeDisabled()
+  // Row 57: one Discard/Save bar, in the pane being edited. Detail is open on
+  // this object, so the stale proposal's bar is there and the products table
+  // has none. A linked table can still show its own object's bar.
+  await expect(mainTable(page).getByTestId('object-draft-bar')).toHaveCount(0)
+  const detailSave = page.getByTestId('object-detail').getByTestId('review-and-save')
+  await expect(detailSave).toBeDisabled()
   await nameCell.dblclick()
   await page.getByTestId('cell-editor-name').fill(original)
   await page.getByTestId('cell-editor-name').press('Enter')
@@ -148,8 +153,9 @@ test('a user edit marks the agent proposal stale', async ({ page }) => {
   await expect(page.getByTestId('cell-editor-name')).toHaveCount(0)
   // Let the revert save land, then remove the stale proposal so the rest of
   // this file starts from the seed name again.
-  await expect(page.getByTestId('review-and-save').first()).toBeDisabled({ timeout: 30_000 })
-  await page.getByTestId('discard-draft').first().click()
+  await expect(mainTable(page).getByTestId('object-draft-bar')).toHaveCount(0)
+  await expect(detailSave).toBeDisabled({ timeout: 30_000 })
+  await page.getByTestId('object-detail').getByTestId('discard-draft').click()
   await expect(nameCell.getByTestId('cell-diff')).toHaveCount(0, { timeout: 30_000 })
   await expect(nameCell).toContainText(original)
 })
@@ -183,7 +189,9 @@ test('approving toasts the change, records who approved it, and undo restores th
   await expect(view.getByTestId('agent-result-link').first()).toBeVisible({ timeout: 30_000 })
   await openAgentDraftInTable(page, view)
   await expect(row.locator('[data-column="name"]').getByTestId('cell-diff')).toContainText('Agent draft', { timeout: 30_000 })
-  await page.getByTestId('review-and-save').first().click()
+  // Row 57: Detail is open, so Save is the Detail bar. The products table has none.
+  await expect(mainTable(page).getByTestId('object-draft-bar')).toHaveCount(0)
+  await page.getByTestId('object-detail').getByTestId('review-and-save').click()
   await expect(row.locator('[data-column="name"]').first()).toContainText('Agent draft', { timeout: 30_000 })
 })
 
@@ -198,7 +206,9 @@ test('undo after a later edit does not overwrite the name', async ({ page }) => 
   const view = agentView(page, title)
   await expect(view.getByTestId('agent-result-link').first()).toBeVisible({ timeout: 30_000 })
   await openAgentDraftInTable(page, view)
-  const review = page.getByTestId('review-and-save').first()
+  // Row 57: Detail is open, so Save is the Detail bar. The products table has none.
+  await expect(mainTable(page).getByTestId('object-draft-bar')).toHaveCount(0)
+  const review = page.getByTestId('object-detail').getByTestId('review-and-save')
   await expect(review).toBeEnabled({ timeout: 30_000 })
   await review.click()
   await showProducts(page)
@@ -230,7 +240,9 @@ test('rejecting toasts the field and leaves the name unchanged', async ({ page }
   await expect(view.getByTestId('agent-result-link').first()).toBeVisible({ timeout: 30_000 })
   await openAgentDraftInTable(page, view)
   await expect(row.locator('[data-column="name"]').getByTestId('cell-diff')).toContainText('Agent draft', { timeout: 30_000 })
-  await page.getByTestId('discard-draft').first().click()
+  // Row 57: Detail is open, so Discard is the Detail bar. The products table has none.
+  await expect(mainTable(page).getByTestId('object-draft-bar')).toHaveCount(0)
+  await page.getByTestId('object-detail').getByTestId('discard-draft').click()
   await expect(row.locator('[data-column="name"]').first()).toContainText(original)
   await expect(view.getByTestId('agent-proposal')).toHaveCount(0)
 })
@@ -404,7 +416,9 @@ test('screenshots of the agent tab in dark and light', async ({ page }) => {
   await page.screenshot({ path: `${dir}/agent-diff-dark.png`, fullPage: true })
   await setTheme(page, 'light')
   await page.screenshot({ path: `${dir}/agent-diff-light.png`, fullPage: true })
-  await page.getByTestId('review-and-save').first().click()
+  // Row 57: Detail is open, so Save is the Detail bar. The products table has none.
+  await expect(mainTable(page).getByTestId('object-draft-bar')).toHaveCount(0)
+  await page.getByTestId('object-detail').getByTestId('review-and-save').click()
   await setTheme(page, 'dark')
   await page.screenshot({ path: `${dir}/agent-approved-dark.png`, fullPage: true })
   await setTheme(page, 'light')
