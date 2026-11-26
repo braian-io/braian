@@ -20,6 +20,8 @@ describe('palette switch catalog', () => {
     ])
     expect(parseSwitchCatalogChoice(`catalog:${SAP_CATALOG_ID}`)).toBe(SAP_CATALOG_ID)
     expect(parseSwitchCatalogChoice(SWITCH_CATALOG_ROOT_ID)).toBeNull()
+    expect(parseSwitchCatalogChoice('catalog:delete')).toBeNull()
+    expect(parseSwitchCatalogChoice('catalog:new')).toBeNull()
     expect(isSwitchCatalogRoot(SWITCH_CATALOG_ROOT_ID)).toBe(true)
   })
 
