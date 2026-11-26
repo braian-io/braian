@@ -10561,7 +10561,8 @@
           "peer_id",
           "peer_key",
           "peer_type",
-          "has_values"
+          "has_values",
+          "version"
         ],
         "properties": {
           "has_values": {
@@ -10580,6 +10581,17 @@
           },
           "peer_type": {
             "type": "string"
+          },
+          "sort_order": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
           }
         }
       },
