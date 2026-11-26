@@ -134,8 +134,10 @@ test('link types are editable with blocking cardinality (row 47)', async ({ page
   expect((await blocked).ok()).toBeFalsy()
   await expect(page.getByTestId('review-dialog')).toHaveCount(0)
   await expect(page.getByTestId('review-loading')).toHaveCount(0)
-  await expect(editRow.getByTestId('cell-save-state')).toHaveAttribute('data-state', 'error')
-  await expect(editRow.getByTestId('cell-save-state')).toContainText(String(product!.key ?? ''))
+  // The label cell can still show Saved. The blocked cardinality edit is the error.
+  const cardinality = editRow.locator('[data-column="fromCardinality"]')
+  await expect(cardinality.getByTestId('cell-save-state')).toHaveAttribute('data-state', 'error')
+  await expect(cardinality.getByTestId('cell-save-state')).toContainText(String(product!.key ?? ''))
   await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
   const after = await linkTypeDef(page, linkKey)
   expect(after?.link).toMatchObject({ from_cardinality: 'many' })
