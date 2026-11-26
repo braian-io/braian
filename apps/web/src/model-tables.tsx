@@ -1,14 +1,28 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, textValue, type Json } from './api'
 import { CreateDialog, requireText } from './create-dialog'
 import { copy, uiLanguage } from './i18n'
 import { attributeKey, objectTypes } from './model-view'
-import { onDraftChange, setModelFocus, stageModel } from './model-stage'
+import { onDraftChange, setModelFocus, stageModel, stageModelSteps } from './model-stage'
+import { buildLinkTypeCreateSteps, buildLinkTypeUpdateSteps } from './link-type-table-steps'
+import {
+  clearStoredLinkTypesTableDraft,
+  readStoredLinkTypesTableDraft,
+  restoreLinkTypesTableDraft,
+  serializeLinkTypeDraftRow,
+  writeStoredLinkTypesTableDraft,
+} from './link-type-table-draft-persist'
+import { entityTypeKeys, linkTypeRows, type LinkTypeRow } from './link-type-view'
+import { registerModelTableDraft } from './model-table-draft'
+import type { ModelTableDraftScope } from './data-model'
+import { typeNames } from './type-labels'
 import { StandardEditableTable, type StandardColumn } from './standard-editable-table'
-import { chooseModelSelection, getModelSelection, subscribeModelSelection } from './model-selection'
+import { getModelSelection, subscribeModelSelection } from './model-selection'
+import { tryChooseModelSelection } from './model-table-draft'
 import { clearPendingModelType, OPEN_MODEL_TYPE, peekPendingModelType } from './model-type-open'
 import { StateNote } from './states'
+import { valueListOptionSteps } from './value-list-table-steps'
 
 type TypeRow = {
   id: string
@@ -21,7 +35,18 @@ type TypeRow = {
 
 type ListRow = { id: string; key: string; label: string; optionCount: number }
 type OptionRow = { id: string; code: string; label: string; listKey: string }
-type UnitRow = { id: string; family: string; code: string; factor: string }
+type UnitRow = {
+  id: string
+  family: string
+  familyKey: string
+  baseUnit: string
+  code: string
+  factor: string
+  offset: string
+  symbol: string
+  label: string
+  isBase: boolean
+}
 
 export function valueListOptions(defs: Json | undefined, listKey: string): OptionRow[] {
   const list = ((defs?.value_lists as Json[] | undefined) ?? []).find((item) => String(item.key) === listKey)
@@ -167,9 +192,8 @@ export function ObjectTypesTable() {
       menuContext={(row) => (row?.key ? 'model-type' : 'model')}
       getMenuTarget={(row) => ({ typeKey: row?.key || undefined })}
       onActivateRow={(row) => {
-        setActiveRowId(row.id)
         if (!row.key) return
-        chooseModelSelection({ kind: 'type', typeKey: row.key })
+        tryChooseModelSelection({ kind: 'type', typeKey: row.key })
         setModelFocus({ kind: 'type', key: row.key })
       }}
       onReviewAndSave={async () => {
@@ -229,61 +253,113 @@ export function ObjectTypesTable() {
   )
 }
 
-export function LinkTypesTable() {
+export function LinkTypesTable({ draftScope }: { draftScope?: ModelTableDraftScope }) {
+  const queryClient = useQueryClient()
   const { stored, defs } = useModelDefs()
   const [filter, setFilter] = useState('')
   const { activeRowId, setActiveRowId } = useActiveRowId()
-  const [draftRows, setDraftRows] = useState<Record<string, TypeRow>>({})
+  const serverRows = useMemo(() => linkTypeRows(defs, uiLanguage), [defs])
+  const [draftRows, setDraftRows] = useState<Record<string, LinkTypeRow>>({})
   const [createOpen, setCreateOpen] = useState(false)
   const [linkName, setLinkName] = useState('')
   const [fromType, setFromType] = useState('')
   const [toType, setToType] = useState('')
+  const [fromCardinality, setFromCardinality] = useState('many')
+  const [toCardinality, setToCardinality] = useState('many')
+  const [fromLabel, setFromLabel] = useState('')
+  const [toLabel, setToLabel] = useState('')
   const [pendingKey, setPendingKey] = useState<string | null>(null)
-  const entities = useMemo(
-    () => ((defs?.types as Json[]) ?? [])
-      .filter((item) => item.kind !== 'link')
-      .map((item) => String(item.key ?? ''))
-      .filter(Boolean),
+  const entityKeys = useMemo(() => entityTypeKeys(defs), [defs])
+  const entityChoices = useMemo(
+    () => typeNames(defs, uiLanguage)
+      .filter((item) => item.kind === 'entity')
+      .map((item) => ({ value: item.key, label: item.singular || item.key })),
     [defs],
   )
-  const rows = useMemo(() => {
-    const raw = ((defs?.types as Json[]) ?? []).filter((item) => item.kind === 'link')
-    return objectTypes({ ...defs, types: raw }, uiLanguage).map((item) => ({
-      id: item.key,
-      key: item.key,
-      label: item.label,
-      singular: item.singular,
-      plural: item.plural || item.label,
-      kind: 'link',
-    }))
-  }, [defs])
+  const cardinalityOptions = useMemo(
+    () => [
+      { value: 'one', label: copy.cardinalityOne },
+      { value: 'many', label: copy.cardinalityMany },
+    ],
+    [],
+  )
+
+  useEffect(() => {
+    if (!draftScope?.userId || !draftScope.workspaceId) return
+    const storedDraft = readStoredLinkTypesTableDraft(draftScope.userId, draftScope.workspaceId)
+    if (!storedDraft) return
+    const { draftRows: restored } = restoreLinkTypesTableDraft(storedDraft, serverRows)
+    if (Object.keys(restored).length > 0) setDraftRows(restored)
+  }, [draftScope?.userId, draftScope?.workspaceId, serverRows])
+
+  useEffect(() => {
+    if (!draftScope?.userId || !draftScope.workspaceId) return
+    if (Object.keys(draftRows).length === 0) {
+      clearStoredLinkTypesTableDraft(draftScope.userId, draftScope.workspaceId)
+      return
+    }
+    const payload = {
+      v: 1 as const,
+      draftRows: Object.fromEntries(
+        Object.entries(draftRows).flatMap(([id, row]) => {
+          const server = serverRows.find((item) => item.id === id)
+          if (!server) return []
+          const stored = serializeLinkTypeDraftRow(server, row)
+          return stored ? [[id, stored]] : []
+        }),
+      ),
+    }
+    writeStoredLinkTypesTableDraft(draftScope.userId, draftScope.workspaceId, payload)
+  }, [draftRows, draftScope?.userId, draftScope?.workspaceId, serverRows])
+
+  const dirty = useCallback(() => Object.keys(draftRows).length > 0, [draftRows])
+  const discardDraft = useCallback(() => {
+    setDraftRows({})
+    if (draftScope?.userId && draftScope.workspaceId) {
+      clearStoredLinkTypesTableDraft(draftScope.userId, draftScope.workspaceId)
+    }
+  }, [draftScope?.userId, draftScope?.workspaceId])
+  const flushLinkTypesDraft = useCallback(async () => {
+    const steps: Array<{ op: string } & Record<string, unknown>> = []
+    for (const row of Object.values(draftRows)) {
+      const server = serverRows.find((item) => item.id === row.id)
+      if (!server) {
+        steps.push(...buildLinkTypeCreateSteps(row))
+        continue
+      }
+      steps.push(...buildLinkTypeUpdateSteps(server, row))
+    }
+    if (steps.length > 0) await stageModelSteps(steps)
+    discardDraft()
+    await queryClient.invalidateQueries({ queryKey: ['model-draft'] })
+  }, [discardDraft, draftRows, queryClient, serverRows])
+
+  const reviewDraftRows = useCallback(async () => {
+    await flushLinkTypesDraft()
+    await reviewDraft()
+  }, [flushLinkTypesDraft])
+
+  useEffect(() => {
+    registerModelTableDraft({
+      dirty,
+      discard: discardDraft,
+      review: reviewDraftRows,
+      flushToDraft: flushLinkTypesDraft,
+    })
+    return () => registerModelTableDraft(null)
+  }, [dirty, discardDraft, flushLinkTypesDraft, reviewDraftRows])
 
   useEffect(() => {
     if (!pendingKey) return
-    const row = rows.find((item) => item.id === pendingKey || item.key === pendingKey)
+    const row = serverRows.find((item) => item.id === pendingKey || item.key === pendingKey)
     if (!row) return
     setActiveRowId(row.id)
     setModelFocus({ kind: 'type', key: row.key })
+    tryChooseModelSelection({ kind: 'type', typeKey: row.key })
     setPendingKey(null)
-  }, [rows, pendingKey])
+  }, [serverRows, pendingKey])
 
-  const columns: Array<StandardColumn<TypeRow>> = [
-    {
-      id: 'singular',
-      header: copy.singular,
-      editable: true,
-      truncate: true,
-      read: (row) => row.singular,
-      write: (row, value) => ({ ...row, singular: value, label: value || row.label }),
-    },
-    {
-      id: 'plural',
-      header: copy.plural,
-      editable: true,
-      truncate: true,
-      read: (row) => row.plural,
-      write: (row, value) => ({ ...row, plural: value }),
-    },
+  const columns: Array<StandardColumn<LinkTypeRow>> = [
     {
       id: 'key',
       header: copy.key,
@@ -291,6 +367,63 @@ export function LinkTypesTable() {
       truncate: true,
       read: (row) => row.key,
       write: (row, value) => ({ ...row, key: value }),
+      validate: (value) => (attributeKey(value) ? undefined : copy.validation),
+    },
+    {
+      id: 'fromType',
+      header: copy.fromType,
+      type: 'enum',
+      enumSelect: true,
+      editable: true,
+      options: entityChoices,
+      read: (row) => row.fromType,
+      write: (row, value) => ({ ...row, fromType: value }),
+    },
+    {
+      id: 'toType',
+      header: copy.toType,
+      type: 'enum',
+      enumSelect: true,
+      editable: true,
+      options: entityChoices,
+      read: (row) => row.toType,
+      write: (row, value) => ({ ...row, toType: value }),
+    },
+    {
+      id: 'fromLabel',
+      header: copy.linkForwardLabel,
+      editable: true,
+      truncate: true,
+      read: (row) => row.fromLabel,
+      write: (row, value) => ({ ...row, fromLabel: value }),
+    },
+    {
+      id: 'toLabel',
+      header: copy.linkReverseLabel,
+      editable: true,
+      truncate: true,
+      read: (row) => row.toLabel,
+      write: (row, value) => ({ ...row, toLabel: value }),
+    },
+    {
+      id: 'fromCardinality',
+      header: `${copy.fromType} ${copy.cardinality}`,
+      type: 'enum',
+      enumSelect: true,
+      editable: true,
+      options: cardinalityOptions,
+      read: (row) => row.fromCardinality,
+      write: (row, value) => ({ ...row, fromCardinality: value === 'one' ? 'one' : 'many' }),
+    },
+    {
+      id: 'toCardinality',
+      header: `${copy.toType} ${copy.cardinality}`,
+      type: 'enum',
+      enumSelect: true,
+      editable: true,
+      options: cardinalityOptions,
+      read: (row) => row.toCardinality,
+      write: (row, value) => ({ ...row, toCardinality: value === 'one' ? 'one' : 'many' }),
     },
   ]
 
@@ -302,13 +435,18 @@ export function LinkTypesTable() {
     <StandardEditableTable
       testId="link-types-table"
       columns={columns}
-      rows={rows}
+      rows={serverRows}
       draftRows={draftRows}
       onDraftRowsChange={setDraftRows}
+      reviewVisible={dirty()}
       onNewRow={() => {
         setLinkName('')
-        setFromType(entities[0] ?? '')
-        setToType(entities[0] ?? '')
+        setFromLabel('')
+        setToLabel('')
+        setFromType(entityKeys[0] ?? '')
+        setToType(entityKeys[0] ?? '')
+        setFromCardinality('many')
+        setToCardinality('many')
         setCreateOpen(true)
       }}
       newRowLabel={copy.newLinkType}
@@ -318,35 +456,16 @@ export function LinkTypesTable() {
         setActiveRowId(null)
       }}
       activeRowId={activeRowId}
+      getRowKeyAttr={(row) => row.key}
       menuContext={(row) => (row?.key ? 'model-link' : 'model')}
       getMenuTarget={(row) => ({ typeKey: row?.key || undefined })}
       onActivateRow={(row) => {
         setActiveRowId(row.id)
         if (!row.key) return
+        tryChooseModelSelection({ kind: 'type', typeKey: row.key })
         setModelFocus({ kind: 'type', key: row.key })
       }}
-      onReviewAndSave={async () => {
-        for (const row of Object.values(draftRows)) {
-          const existing = rows.some((item) => item.id === row.id)
-          if (!existing) {
-            await stageModel('model.create_link_type', {
-              key: row.key || row.singular.toLowerCase().replace(/\s+/g, '_'),
-              singular: row.singular,
-              plural: row.plural || row.singular,
-              language: uiLanguage,
-            })
-          } else {
-            await stageModel('model.update_type', {
-              key: row.id,
-              singular: row.singular,
-              plural: row.plural,
-              language: uiLanguage,
-            })
-          }
-        }
-        setDraftRows({})
-        await reviewDraft()
-      }}
+      onReviewAndSave={reviewDraftRows}
     />
     <CreateDialog
       open={createOpen}
@@ -354,36 +473,40 @@ export function LinkTypesTable() {
       description={copy.createNameHint}
       fields={[
         { id: 'name', label: copy.name, value: linkName, testId: 'new-name', autoFocus: true },
-        { id: 'from', label: copy.fromType, value: fromType, testId: 'new-type', options: entities.map((key) => ({ value: key, label: key })) },
-        { id: 'to', label: copy.toType, value: toType, testId: 'new-to-type', options: entities.map((key) => ({ value: key, label: key })) },
+        { id: 'from', label: copy.fromType, value: fromType, testId: 'link-type-from', options: entityChoices },
+        { id: 'to', label: copy.toType, value: toType, testId: 'link-type-to', options: entityChoices },
+        { id: 'fromLabel', label: copy.linkForwardLabel, value: fromLabel, testId: 'link-type-from-label' },
+        { id: 'toLabel', label: copy.linkReverseLabel, value: toLabel, testId: 'link-type-to-label' },
+        { id: 'fromCardinality', label: `${copy.fromType} ${copy.cardinality}`, value: fromCardinality, testId: 'link-type-from-cardinality', options: cardinalityOptions },
+        { id: 'toCardinality', label: `${copy.toType} ${copy.cardinality}`, value: toCardinality, testId: 'link-type-to-cardinality', options: cardinalityOptions },
       ]}
       onField={(id, value) => {
         if (id === 'name') setLinkName(value)
         else if (id === 'from') setFromType(value)
-        else setToType(value)
+        else if (id === 'to') setToType(value)
+        else if (id === 'fromLabel') setFromLabel(value)
+        else if (id === 'toLabel') setToLabel(value)
+        else if (id === 'fromCardinality') setFromCardinality(value)
+        else setToCardinality(value)
       }}
       onClose={() => setCreateOpen(false)}
       onSubmit={async () => {
         const name = requireText(linkName)
         const key = attributeKey(name)
         if (!key || !fromType || !toType) throw new Error(copy.validation)
-        const side = attributeKey(name)
-        await stageModel('model.create_link_type', {
+        const row: LinkTypeRow = {
+          id: key,
           key,
-          label: name,
-          singular: name,
-          plural: name,
-          language: uiLanguage,
-          from_types: [fromType],
-          to_types: [toType],
-          from_key: side,
-          from_label: name,
-          to_key: `${side}_to`,
-          to_label: name,
-          from_cardinality: 'many',
-          to_cardinality: 'many',
-          attributes: [],
-        })
+          fromType,
+          toType,
+          fromLabel: fromLabel.trim() || name,
+          toLabel: toLabel.trim() || name,
+          fromCardinality: fromCardinality === 'one' ? 'one' : 'many',
+          toCardinality: toCardinality === 'one' ? 'one' : 'many',
+        }
+        const steps = buildLinkTypeCreateSteps(row)
+        if (steps.length === 0) throw new Error(copy.validation)
+        await stageModelSteps(steps)
         setPendingKey(key)
       }}
     />
@@ -590,26 +713,10 @@ export function ValueListValuesTable({ listKey }: { listKey: string }) {
         listKey: row?.listKey || listKey,
         optionCode: row?.code || undefined,
       })}
+      reorderable
       onReviewAndSave={async () => {
-        for (const row of Object.values(draftRows)) {
-          const existing = rows.some((item) => item.id === row.id)
-          if (!existing) {
-            await stageModel('model.add_value_option', {
-              value_list: listKey,
-              option: row.code || row.label.toLowerCase().replace(/\s+/g, '_'),
-              label: row.label,
-              language: uiLanguage,
-            })
-          } else {
-            await stageModel('model.update_value_option', {
-              value_list: listKey,
-              option: row.id.split(':').pop(),
-              label: row.label,
-              language: uiLanguage,
-              ...(row.code !== row.id.split(':').pop() ? { new_code: row.code } : {}),
-            })
-          }
-        }
+        const steps = valueListOptionSteps(listKey, rows, draftRows, uiLanguage)
+        if (steps.length > 0) await stageModelSteps(steps)
         setDraftRows({})
         await reviewDraft()
       }}
@@ -651,22 +758,44 @@ export function UnitsTable() {
   const [familyName, setFamilyName] = useState('')
   const [unitCode, setUnitCode] = useState('')
   const [factor, setFactor] = useState('1')
+  const [offset, setOffset] = useState('0')
+  const [symbol, setSymbol] = useState('')
+  const [unitLabel, setUnitLabel] = useState('')
   const [pendingId, setPendingId] = useState<string | null>(null)
   const rows = useMemo<UnitRow[]>(() => {
     const out: UnitRow[] = []
     for (const family of (defs?.unit_families as Json[] | undefined) ?? []) {
       const familyKey = String(family.key ?? '')
+      const baseUnit = String(family.base_unit ?? '')
+      const familyLabel = familyKey
       for (const unit of (family.units as Json[] | undefined) ?? []) {
         const code = String(unit.code ?? '')
         out.push({
           id: `${familyKey}:${code}`,
-          family: familyKey,
+          family: familyLabel,
+          familyKey,
+          baseUnit,
           code,
           factor: String(unit.factor ?? '1'),
+          offset: String(unit.offset ?? '0'),
+          symbol: String(unit.symbol ?? code),
+          label: textValue(unit.labels as Json, uiLanguage),
+          isBase: code === baseUnit,
         })
       }
       if (((family.units as Json[] | undefined) ?? []).length === 0) {
-        out.push({ id: `${familyKey}:`, family: familyKey, code: '', factor: '' })
+        out.push({
+          id: `${familyKey}:`,
+          family: familyLabel,
+          familyKey,
+          baseUnit,
+          code: '',
+          factor: '',
+          offset: '',
+          symbol: '',
+          label: '',
+          isBase: false,
+        })
       }
     }
     return out
@@ -684,24 +813,55 @@ export function UnitsTable() {
     {
       id: 'family',
       header: copy.unitFamilies,
-      editable: true,
+      editable: false,
       read: (row) => row.family,
       write: (row, value) => ({ ...row, family: value }),
     },
     {
       id: 'code',
-      header: copy.unit,
+      header: copy.key,
       editable: true,
       read: (row) => row.code,
       write: (row, value) => ({ ...row, code: value }),
     },
     {
+      id: 'labels',
+      header: copy.labels,
+      editable: true,
+      read: (row) => row.label,
+      write: (row, value) => ({ ...row, label: value }),
+    },
+    {
+      id: 'symbol',
+      header: copy.symbol,
+      editable: true,
+      read: (row) => row.symbol,
+      write: (row, value) => ({ ...row, symbol: value }),
+    },
+    {
       id: 'factor',
-      header: copy.number,
+      header: copy.factor,
       type: 'number',
       editable: true,
       read: (row) => row.factor,
       write: (row, value) => ({ ...row, factor: value }),
+      display: (row) => (row.isBase ? '1' : row.factor),
+    },
+    {
+      id: 'offset',
+      header: copy.offset,
+      type: 'number',
+      editable: true,
+      read: (row) => row.offset,
+      write: (row, value) => ({ ...row, offset: value }),
+      display: (row) => (row.isBase ? '0' : row.offset),
+    },
+    {
+      id: 'isBase',
+      header: copy.baseUnit,
+      type: 'readonly',
+      editable: false,
+      read: (row) => (row.isBase ? copy.baseUnit : ''),
     },
   ]
 
@@ -720,6 +880,9 @@ export function UnitsTable() {
         setFamilyName('')
         setUnitCode('')
         setFactor('1')
+        setOffset('0')
+        setSymbol('')
+        setUnitLabel('')
         setCreateOpen(true)
       }}
       newRowLabel={copy.newUnit}
@@ -740,28 +903,48 @@ export function UnitsTable() {
         unitCode: row?.code || undefined,
       })}
       onReviewAndSave={async () => {
+        const knownFamilies = new Set(
+          ((defs?.unit_families as Json[]) ?? []).map((item) => String(item.key ?? '')),
+        )
         for (const row of Object.values(draftRows)) {
           const existing = rows.some((item) => item.id === row.id)
           if (!existing) {
-            const hasFamily = ((defs?.unit_families as Json[]) ?? []).some((item) => String(item.key) === row.family)
-            if (!hasFamily && row.family) {
+            const hasFamily = knownFamilies.has(row.familyKey)
+            if (!hasFamily && row.familyKey) {
               await stageModel('model.create_unit_family', {
-                key: row.family,
-                base_unit: row.code || row.family,
-                units: row.code ? [{ code: row.code, factor: row.factor || '1' }] : [],
+                key: row.familyKey,
+                base_unit: row.code || row.familyKey,
+                units: row.code
+                  ? [{
+                      code: row.code,
+                      factor: row.factor || '1',
+                      offset: row.offset || '0',
+                      symbol: row.symbol || row.code,
+                      label: row.label,
+                    }]
+                  : [],
               })
+              knownFamilies.add(row.familyKey)
             } else if (row.code) {
               await stageModel('model.add_unit', {
-                unit_family: row.family,
+                unit_family: row.familyKey,
                 code: row.code,
                 factor: row.factor || '1',
+                offset: row.offset || '0',
+                symbol: row.symbol || row.code,
+                label: row.label,
               })
             }
           } else if (row.code) {
+            const unit = row.id.split(':').pop()
             await stageModel('model.update_unit', {
-              unit_family: row.family,
-              unit: row.id.split(':').pop(),
+              unit_family: row.familyKey,
+              unit,
               factor: row.factor,
+              offset: row.offset,
+              symbol: row.symbol,
+              label: row.label,
+              ...(row.code !== unit ? { new_code: row.code } : {}),
             })
           }
         }
@@ -772,34 +955,46 @@ export function UnitsTable() {
     <CreateDialog
       open={createOpen}
       title={copy.newUnit}
-      description={copy.createNameHint}
+      description={copy.newUnitHint}
       fields={[
         { id: 'family', label: copy.unitFamilies, value: familyName, testId: 'new-name', autoFocus: true },
         { id: 'code', label: copy.unit, value: unitCode, testId: 'new-key' },
+        { id: 'symbol', label: copy.symbol, value: symbol, testId: 'new-symbol' },
         { id: 'factor', label: copy.factor, value: factor, testId: 'new-factor' },
+        { id: 'offset', label: copy.offset, value: offset, testId: 'new-offset' },
+        { id: 'labels', label: copy.labels, value: unitLabel, testId: 'new-labels' },
       ]}
       onField={(id, value) => {
         if (id === 'family') setFamilyName(value)
         else if (id === 'code') setUnitCode(value)
-        else setFactor(value)
+        else if (id === 'symbol') setSymbol(value)
+        else if (id === 'factor') setFactor(value)
+        else if (id === 'offset') setOffset(value)
+        else setUnitLabel(value)
       }}
       onClose={() => setCreateOpen(false)}
       onSubmit={async () => {
         const family = requireText(familyName)
         const code = unitCode.trim() || family
+        const unit = {
+          code,
+          factor: factor.trim() || '1',
+          offset: offset.trim() || '0',
+          symbol: symbol.trim(),
+          label: unitLabel.trim(),
+        }
         const hasFamily = ((defs?.unit_families as Json[]) ?? []).some((item) => String(item.key) === family)
         if (!hasFamily) {
           await stageModel('model.create_unit_family', {
             key: family,
             dimension: family,
             base_unit: code,
-            units: [{ code, factor: factor.trim() || '1' }],
+            units: [unit],
           })
         } else {
           await stageModel('model.add_unit', {
             unit_family: family,
-            code,
-            factor: factor.trim() || '1',
+            ...unit,
           })
         }
         setPendingId(`${family}:${code}`)
@@ -810,9 +1005,9 @@ export function UnitsTable() {
 }
 
 /** Thin wrapper kept for shell routing. */
-export function ModelTableView({ view }: { view: { type: string; state: Json } }) {
+export function ModelTableView({ view, draftScope }: { view: { type: string; state: Json }; draftScope?: ModelTableDraftScope }) {
   if (view.type === 'object_types') return <ObjectTypesTable />
-  if (view.type === 'link_types') return <LinkTypesTable />
+  if (view.type === 'link_types') return <LinkTypesTable draftScope={draftScope} />
   if (view.type === 'value_lists') return <ValueListsTable />
   if (view.type === 'value_list_values') return <ValueListValuesTable listKey={String(view.state.list_key ?? '')} />
   if (view.type === 'units') return <UnitsTable />

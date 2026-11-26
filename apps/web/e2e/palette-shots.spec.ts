@@ -72,9 +72,9 @@ test('palette flows for the local screenshot pass', async ({ page }) => {
   await expect(page.getByTestId('command-palette')).toHaveCount(0)
   const agent = page.getByTestId('agent-view')
   await expect(agent).toContainText('how many products')
-  await expect(page.getByTestId('agent-answer')).toHaveCount(0)
+  await expect(agent.getByTestId('agent-follow-up')).toBeVisible()
   await shot(agent, '07-ctrl-j-ask-ai.png')
-  await shot(page.getByTestId('agent-open-draft'), '12-ask-ai-footer.png')
+  await shot(agent.getByTestId('agent-follow-up'), '12-ask-ai-footer.png')
   await expect(page.getByTestId('activity-log')).not.toContainText('Agent:')
 
   async function drill(query: string) {

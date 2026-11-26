@@ -2,6 +2,15 @@ import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
 import { mainTable, paneWithTab } from './ui'
 
+async function closeTrashTab(page: Page) {
+  const trashTab = page.locator('.pane-tab').filter({ hasText: /^Trash/ }).first()
+  if (await trashTab.count()) {
+    await trashTab.hover()
+    await trashTab.getByRole('button', { name: 'Close tab' }).click()
+    await expect(page.getByTestId('trash-table-chrome')).toHaveCount(0)
+  }
+}
+
 async function login(page: Page) {
   const demo = demoCredentials()
   await page.goto('/')
@@ -17,6 +26,26 @@ async function command(page: Page, title: string) {
   await expect(palette).toBeVisible()
   await palette.fill(title)
   await page.keyboard.press('Enter')
+}
+
+async function saveModelDraft(page: Page) {
+  await page.keyboard.press('Control+S')
+  const review = page.getByTestId('review-dialog')
+  if (await review.isVisible()) {
+    await page.getByTestId('confirm-review').click()
+  }
+  await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
+}
+
+async function ensureNoteAttribute(page: Page) {
+  const defs = (await (await page.request.get('/v1/definitions')).json()) as { attributes?: Array<{ key?: string }> }
+  if (defs.attributes?.some((item) => item.key === 'note')) return
+  const staged = await page.request.post('/v1/model/draft/steps', {
+    data: { steps: [{ op: 'create_attribute', key: 'note', label: 'Note', kind: 'text' }] },
+  })
+  expect(staged.ok(), await staged.text()).toBeTruthy()
+  const saved = await page.request.post('/v1/model/draft/save', { data: {} })
+  expect(saved.ok(), await saved.text()).toBeTruthy()
 }
 
 async function openObject(page: Page, key: string) {
@@ -40,9 +69,12 @@ test('pairs with links two cheeses from the keyboard and the link type can be de
 
   await command(page, 'New link type')
   await page.getByTestId('model-dialog-name').fill('Pairs with')
-  await page.getByTestId('link-type-from').selectOption('article')
-  await page.getByTestId('link-type-to').selectOption('article')
-  await page.getByTestId('link-type-attribute').fill('note')
+  await page.getByTestId('link-type-from').click()
+  await page.getByRole('option', { name: 'article' }).click()
+  await page.getByTestId('link-type-to').click()
+  await page.getByRole('option', { name: 'article' }).click()
+  await page.getByTestId('link-type-from-label').fill('Pairs with')
+  await page.getByTestId('link-type-to-label').fill('Pairs with')
   await page.getByTestId('model-dialog-save').click()
   await expect(page.getByTestId('unsaved-changes')).toBeVisible()
   await page.keyboard.press('Control+S')
@@ -51,6 +83,16 @@ test('pairs with links two cheeses from the keyboard and the link type can be de
   const linkTypeRow = page.getByTestId('link-types-table').locator('[data-row-id="pairs_with"]')
   await page.locator('.pane-tab', { hasText: 'Link types' }).first().click()
   await expect(linkTypeRow).toBeVisible()
+  await linkTypeRow.click()
+  await page.locator('.pane-tab', { hasText: 'Type attributes' }).first().click()
+  const attributes = page.getByTestId('attribute-table')
+  await expect(attributes).toBeVisible()
+  await attributes.getByTestId('table-add-row').click()
+  const create = page.getByTestId('create-dialog')
+  await create.getByTestId('new-name').fill('Note')
+  await create.getByTestId('create-object').click()
+  await expect(attributes.locator('[data-key="note"]')).toBeVisible()
+  await saveModelDraft(page)
 
   const productsTab = page.locator('nav.tabs').getByRole('button', { name: /^Products/ })
   await productsTab.click()
@@ -90,6 +132,7 @@ test('pairs with links two cheeses from the keyboard and the link type can be de
 test('removing a link with values opens a plain confirm with no text input', async ({ page }) => {
   test.setTimeout(180_000)
   await login(page)
+  await ensureNoteAttribute(page)
   const key = `rated_with_${crypto.randomUUID().slice(0, 8)}`
   const created = await page.request.post('/v1/link-types', {
     data: {
@@ -109,24 +152,32 @@ test('removing a link with values opens a plain confirm with no text input', asy
   expect(created.status(), `create link type ${created.status()}`).toBe(204)
 
   try {
-    const searched = await page.request.get('/v1/search?q=*&filter=type_key:=product&per_page=2')
-    const hits = ((await searched.json()) as {
-      hits?: Array<{ id?: string; key?: string; document?: { id?: string; key?: string } }>
-    }).hits ?? []
-    const docs = hits.map((hit) => hit.document ?? hit).filter((doc) => doc.id && doc.key)
-    expect(docs.length).toBeGreaterThanOrEqual(2)
-    const from = docs[0]!
-    const to = docs[1]!
+    const tag = crypto.randomUUID().slice(0, 8)
+    const createProduct = async (suffix: string) => {
+      const response = await page.request.post('/v1/objects', {
+        data: {
+          type: 'product',
+          groups: { food: 'bread' },
+          values: { number: `LT-${tag}-${suffix}`, name: { en: `Link ${suffix}` }, status: 'draft' },
+        },
+      })
+      expect(response.ok(), await response.text()).toBeTruthy()
+      return (await response.json()) as { id: string; key: string }
+    }
+    const fromNumber = `LT-${tag}-a`
+    const toNumber = `LT-${tag}-b`
+    const from = await createProduct('a')
+    const to = await createProduct('b')
     const linked = await page.request.post('/v1/links', {
-      data: { type: key, from_id: from.id, to_id: to.id, values: { note: 'aged' } },
+      data: { type: key, from_id: from.id, to_id: to.id, values: { note: { en: 'aged' } } },
     })
-    expect(linked.ok(), `create link ${linked.status()}`).toBeTruthy()
+    expect(linked.ok(), `create link ${linked.status()} ${await linked.text()}`).toBeTruthy()
 
     await page.reload()
-    await openObject(page, from.key!)
+    await openObject(page, fromNumber)
 
-    const linkRow = page.getByTestId('link-row').filter({ hasText: to.key! }).first()
-    await expect(linkRow).toBeVisible({ timeout: 30_000 })
+    const linkRow = page.getByTestId('link-row').filter({ hasText: toNumber }).first()
+    await expect(linkRow).toBeVisible()
     await linkRow.click({ button: 'right' })
     await page.getByTestId('context-menu').getByRole('menuitem', { name: 'Remove link' }).click()
 
@@ -141,7 +192,7 @@ test('removing a link with values opens a plain confirm with no text input', asy
     await expect(dialog).toBeHidden()
     await expect(linkRow).toHaveCount(0)
   } finally {
-    await page.request.delete(`/v1/link-types/${key}`, { timeout: 30_000 }).catch(() => undefined)
+    await page.request.delete(`/v1/link-types/${key}`).catch(() => undefined)
   }
 })
 
@@ -166,7 +217,7 @@ async function productWithArticles(page: Page) {
   throw new Error('no product with two linked articles')
 }
 
-test('removing a link updates the peer list at once and Undo brings the row back', async ({ page }) => {
+test('removing a link updates the peer list at once and Trash restore brings the row back', async ({ page }) => {
   test.setTimeout(180_000)
   await login(page)
   const { product, articles: linked } = await productWithArticles(page)
@@ -177,24 +228,24 @@ test('removing a link updates the peer list at once and Undo brings the row back
   await expect(productsTab).toHaveClass(/active/)
   const products = mainTable(page, 'Products')
   const articles = paneWithTab(page, 'Articles').getByTestId('object-table').first()
-  await expect(products).toBeVisible({ timeout: 60_000 })
-  await expect(articles).toBeVisible({ timeout: 60_000 })
+  await expect(products).toBeVisible()
+  await expect(articles).toBeVisible()
 
   await products.getByTestId('quick-filter').first().fill(product.key!)
   const productRow = products.locator(`#object-row-${product.id}`)
-  await expect(productRow).toBeVisible({ timeout: 30_000 })
+  await expect(productRow).toBeVisible()
   await productRow.click()
   await expect(productRow).toHaveAttribute('aria-selected', 'true')
   await page.locator('[data-view-type="object_detail"]').first().click()
 
   const removed = linked[0]!
   const removedRow = articles.locator(`#object-row-${removed.peer_id}`)
-  await expect(removedRow).toBeVisible({ timeout: 30_000 })
+  await expect(removedRow).toBeVisible()
 
   const detail = page.getByTestId('object-detail')
   await expect(detail).toBeVisible()
   const linkRow = detail.getByTestId('link-row').filter({ hasText: removed.peer_key }).first()
-  await expect(linkRow).toBeVisible({ timeout: 30_000 })
+  await expect(linkRow).toBeVisible()
   await linkRow.click({ button: 'right' })
   await page.getByTestId('context-menu').getByRole('menuitem', { name: 'Remove link' }).click()
   const confirm = page.getByTestId('link-confirm')
@@ -203,7 +254,38 @@ test('removing a link updates the peer list at once and Undo brings the row back
     await expect(confirm).toBeHidden()
   }
 
-  await expect(removedRow).toHaveCount(0, { timeout: 30_000 })
-  await page.getByRole('button', { name: 'Undo' }).click()
-  await expect(removedRow).toBeVisible({ timeout: 30_000 })
+  await expect(removedRow).toHaveCount(0)
+  await page.getByTestId('user-menu').click()
+  await page.getByTestId('user-menu-trash').click()
+  const trash = page.getByTestId('trash-table-chrome')
+  await expect(trash).toBeVisible()
+  const trashRow = trash
+    .locator('[data-testid="trash-row"]')
+    .filter({ hasText: product.key! })
+    .filter({ hasText: removed.peer_key })
+  await expect(trashRow).toBeVisible()
+  await trashRow.click()
+  await page.getByTestId('trash-detail-restore').click()
+  await expect(trashRow).toHaveCount(0)
+  await expect.poll(async () => {
+    const loaded = await page.request.get(`/v1/objects/${product.id}`)
+    if (!loaded.ok()) return false
+    const body = (await loaded.json()) as { links?: Array<{ link_type: string; links?: Array<{ peer_key?: string }> }> }
+    const side = body.links?.find((item) => item.link_type === 'product_articles')
+    return side?.links?.some((link) => link.peer_key === removed.peer_key) ?? false
+  }).toBe(true)
+  await closeTrashTab(page)
+  const productsTabAfter = page.locator('nav.tabs').getByRole('button', { name: /^Products/ })
+  await productsTabAfter.click()
+  await expect(productsTabAfter).toHaveClass(/active/)
+  const productsAfter = mainTable(page, 'Products')
+  await expect(productsAfter).toBeVisible({ timeout: 60_000 })
+  await productsAfter.getByTestId('quick-filter').first().fill(product.key!)
+  await productsAfter.locator(`#object-row-${product.id}`).click()
+  await page.locator('[data-view-type="object_detail"]').first().click()
+  const articlesAfter = paneWithTab(page, 'Articles').getByTestId('object-table').first()
+  await expect.poll(async () => articlesAfter.locator(`#object-row-${removed.peer_id}`).count(), {
+    timeout: 60_000,
+  }).toBe(1)
+  await expect(page.getByTestId('object-detail').getByTestId('link-row').filter({ hasText: removed.peer_key }).first()).toBeVisible()
 })

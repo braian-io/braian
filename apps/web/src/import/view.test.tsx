@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { copy } from '../i18n'
@@ -16,7 +17,11 @@ afterEach(() => {
 
 describe('import confirm dialog', () => {
   it('uses the shared dialog and closes on Escape', async () => {
-    render(<ImportScreen />)
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ImportScreen />
+      </QueryClientProvider>,
+    )
     requestCloseImport()
 
     const dialog = await screen.findByTestId('import-confirm')

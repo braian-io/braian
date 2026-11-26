@@ -3,7 +3,7 @@ import { catalogName } from './api'
 import { argumentBreadcrumb, isObjectParam, objectTypeFilter, paletteKeyEffect, placeTargetId, tabHint } from './palette-core'
 import { argumentCommands } from './palette-operations'
 import { objectPaletteRows } from './palette-objects'
-import { activeAfterQuery, askIndex, markedTitle, paletteMatchScore, readPaletteMemory, recentSlice, rememberPaletteItem, rememberRecent, resultAnnouncement, selectedObjectId, sublistPlaceholder, visibleRows, withRecent, type PaletteItem } from './palette-model'
+import { activeAfterQuery, askIndex, markedTitle, paletteMatchScore, readPaletteMemory, recentSlice, rememberPaletteItem, rememberRecent, resolveActiveAfterQuery, resultAnnouncement, selectedObjectId, sublistPlaceholder, visibleRows, withRecent, type PaletteItem } from './palette-model'
 
 function memoryStorage() {
   const data = new Map<string, string>()
@@ -90,6 +90,7 @@ describe('palette rows', () => {
     expect(opened.find((row) => row.id === 'op:ui.open_view')?.argument).toEqual({ name: 'id', type: 'view' })
     expect(opened.some((row) => row.id === 'view:a' || row.sourceId === 'view:a')).toBe(false)
     expect(activeAfterQuery(opened, 'Open view')).toBe(opened.findIndex((row) => row.id === 'op:ui.open_view'))
+    expect(resolveActiveAfterQuery(opened, 'Open view')).toBe(opened.findIndex((row) => row.id === 'op:ui.open_view'))
     expect(visibleRows('Articles', [command, ...views], [], {}).some((row) => row.title === 'Articles')).toBe(true)
 
     const overview: PaletteItem = { id: 'view:overview', group: 'views', title: 'Overview', subtitle: 'Open view', entity: true }
@@ -201,7 +202,7 @@ describe('palette rows', () => {
       'view:a': { uses: 4, last: now - 500 },
       'view:z': { uses: 4, last: now - 500 },
     }
-    expect(recentSlice([zebra, apple], tied).map((row) => row.title)).toEqual(['Open apple ›', 'Open zebra ›'])
+    expect(recentSlice([zebra, apple], tied, 4, undefined, now).map((row) => row.title)).toEqual(['Open apple ›', 'Open zebra ›'])
     expect(resultAnnouncement(0, '')).toBe('')
     expect(resultAnnouncement(12, '   ')).toBe('')
     expect(resultAnnouncement(1, 'a')).toBe('1 result')
@@ -342,6 +343,16 @@ describe('palette key effect', () => {
     expect(paletteKeyEffect({ ...entity, key: 'k', ctrlKey: true })).toEqual({ type: 'none' })
     expect(paletteKeyEffect({ ...entity, key: 'k', metaKey: true })).toEqual({ type: 'none' })
     expect(paletteKeyEffect({ ...entity, key: 'j', ctrlKey: true })).toEqual({ type: 'ask' })
+  })
+
+  it('activates open structure rows on Ctrl+Enter instead of opening actions', () => {
+    const structure = {
+      ...base,
+      stackDepth: 1,
+      row: { argument: false, entity: false, ask: false, disabled: false, openStructure: true },
+    }
+    expect(paletteKeyEffect({ ...structure, key: 'Enter', ctrlKey: true })).toEqual({ type: 'activate', index: 0 })
+    expect(paletteKeyEffect({ ...structure, key: 'Enter', metaKey: true })).toEqual({ type: 'activate', index: 0 })
   })
 
   it('leaves Home and End to the query caret', () => {

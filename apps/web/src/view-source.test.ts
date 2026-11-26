@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   applyPeerSource,
   applyTypeSource,
+  clearExplicitAllSource,
   defaultPeerLinkType,
   isExplicitAllSource,
   isObjectTableView,
@@ -130,6 +131,19 @@ describe('peer source (Notion 103 PR 2)', () => {
     expect(isExplicitAllSource({ source: { kind: 'peer', viewId: 'v' } })).toBe(false)
     expect(isExplicitAllSource({})).toBe(false)
     expect(isExplicitAllSource(undefined)).toBe(false)
+  })
+
+  it('clears an explicit all marker without touching the bound type', () => {
+    const cleared = clearExplicitAllSource({
+      object_type: 't-product',
+      type_key: 'product',
+      source: { kind: 'all' },
+      table: { sort: 'number' },
+    })
+    expect(cleared.source).toBeUndefined()
+    expect(cleared.object_type).toBe('t-product')
+    expect((cleared.table as { sort: string }).sort).toBe('number')
+    expect(isExplicitAllSource(cleared)).toBe(false)
   })
 
   it('builds node and linked-id filters', () => {

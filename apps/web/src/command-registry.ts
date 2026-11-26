@@ -16,6 +16,7 @@ export type MenuContext =
   | 'model-option'
   | 'model-family'
   | 'model-unit'
+  | 'model-catalog'
   | 'assortment'
   | 'attribute'
   | 'dock-view'
@@ -23,6 +24,7 @@ export type MenuContext =
   | 'tab'
   | 'link'
   | 'import'
+  | 'trash'
 
 export type CommandTarget = {
   objectId?: string
@@ -41,6 +43,8 @@ export type CommandTarget = {
   optionCode?: string
   familyKey?: string
   unitCode?: string
+  catalogKey?: string
+  catalogKind?: string
   workspaceId?: string
   feedbackEnabled?: boolean
   hiddenColumns?: Array<{ id: string; header: string }>
@@ -193,6 +197,26 @@ export const registryCommands: RegistryCommand[] = [
     when: (target) => Boolean(target.objectId),
   },
   {
+    id: 'selection:add-objects',
+    title: copy.addToSelection,
+    contexts: ['row', 'cell'],
+    group: 'object',
+    keywords: ['selection', 'add', 'manual'],
+    palette: false,
+    when: (target) =>
+      Boolean(target.objectId)
+      || (Array.isArray(target.objects) && target.objects.length > 0),
+  },
+  {
+    id: 'selection:remove-objects',
+    title: copy.removeFromSelection,
+    contexts: ['row', 'cell'],
+    group: 'object',
+    keywords: ['selection', 'remove', 'manual'],
+    palette: false,
+    when: (target) => Boolean(target.manualSelectionId),
+  },
+  {
     id: 'object:delete',
     title: copy.deleteMenu,
     contexts: ['row', 'cell', 'object-detail'],
@@ -204,12 +228,39 @@ export const registryCommands: RegistryCommand[] = [
       || (Array.isArray(target.objects) && target.objects.length > 0),
   },
   {
+    id: 'trash:restore',
+    title: copy.trashRestore,
+    contexts: ['trash', 'object-detail'],
+    group: 'object',
+    keywords: ['trash', 'restore', 'undelete'],
+    palette: true,
+    when: (target) => Boolean(target.trashKind) || target.objectAllowDeleted === true,
+  },
+  {
+    id: 'trash:purge',
+    title: copy.trashPurge,
+    contexts: ['trash', 'object-detail'],
+    group: 'object',
+    keywords: ['trash', 'purge', 'delete', 'permanent'],
+    danger: true,
+    palette: true,
+    when: (target) => Boolean(target.trashKind) || target.objectAllowDeleted === true,
+  },
+  {
     id: 'columns:hide',
     title: copy.hideColumn,
     contexts: ['table-header', 'cell', 'row'],
     group: 'views',
     keywords: ['column', 'hide'],
     when: (target) => Boolean(target.column),
+  },
+  {
+    id: 'columns:reset',
+    title: copy.resetToDefault,
+    contexts: ['table-header', 'cell', 'row'],
+    group: 'views',
+    keywords: ['column', 'reset', 'default', 'visibility', 'order'],
+    when: (target) => Boolean(target.viewId) && target.columnPrefsOverride === true,
   },
   {
     id: 'column:move-left',
@@ -304,6 +355,44 @@ export const registryCommands: RegistryCommand[] = [
     group: 'object',
     danger: true,
     when: (target) => Boolean(target.typeKey),
+  },
+  {
+    id: 'catalog:new',
+    global: true,
+    title: copy.newCatalog,
+    contexts: ['model', 'model-catalog'],
+    group: 'object',
+    keywords: ['catalog', 'source'],
+  },
+  {
+    id: 'catalog:rename',
+    title: copy.renameCatalog,
+    contexts: ['model-catalog'],
+    group: 'object',
+    when: (target) => Boolean(target.catalogKey),
+  },
+  {
+    id: 'catalog:delete',
+    title: copy.deleteCatalog,
+    contexts: ['model-catalog'],
+    group: 'object',
+    danger: true,
+    when: (target) => Boolean(target.catalogKey) && target.catalogKind !== 'master',
+  },
+  {
+    id: 'catalog:infer',
+    title: copy.inferModel,
+    contexts: ['model-catalog'],
+    group: 'object',
+    when: (target) => target.catalogKind === 'source' && Boolean(target.catalogKey),
+  },
+  {
+    id: 'catalog:cleanup',
+    title: copy.cleanupCatalog,
+    contexts: ['model-catalog'],
+    group: 'object',
+    danger: true,
+    when: (target) => target.catalogKind === 'source' && Boolean(target.catalogKey),
   },
   {
     id: 'model:new-list',

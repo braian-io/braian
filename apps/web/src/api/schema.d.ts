@@ -185,11 +185,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Members of a dynamic selection, re-evaluated through the search path. */
+        /** Members of a selection. Dynamic selections are re-evaluated through search. Manual selections return the objects added by hand. */
         get: operations["assortment_members"];
         put?: never;
-        post?: never;
-        delete?: never;
+        /** Add objects to a manual selection. A dynamic selection is rejected. */
+        post: operations["add_assortment_members"];
+        /** Remove objects from a manual selection. A dynamic selection is rejected. */
+        delete: operations["remove_assortment_members"];
         options?: never;
         head?: never;
         patch?: never;
@@ -615,6 +617,23 @@ export interface paths {
         head?: never;
         /** Edit one cell of a draft row */
         patch: operations["import_row_edit"];
+        trace?: never;
+    };
+    "/v1/imports/{id}/saved-mapping": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply a saved mapping, or clear it */
+        post: operations["import_apply_saved_mapping"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/v1/imports/{id}/sheet": {
@@ -1448,6 +1467,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/trash/{kind}/{id}/purge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["purge"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/trash/{kind}/{id}/undelete": {
         parameters: {
             query?: never;
@@ -1635,7 +1670,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Create or update a view, including table state */
+        /** Create or update a view. State merges per top-level key. */
         post: operations["save_view"];
         delete?: never;
         options?: never;
@@ -1818,6 +1853,7 @@ export interface components {
             created_at: string;
             error?: string | null;
             finished_at?: string | null;
+            first_message?: string | null;
             hidden: boolean;
             /** Format: uuid */
             id: string;
@@ -1859,6 +1895,8 @@ export interface components {
             created_at: string;
             error?: string | null;
             finished_at?: string | null;
+            /** @description First user message in the session. */
+            first_message?: string | null;
             hidden: boolean;
             /** Format: uuid */
             id: string;
@@ -1894,6 +1932,13 @@ export interface components {
             name: components["schemas"]["JsonValue"];
             result: components["schemas"]["JsonValue"];
         };
+        ApplySavedBody: {
+            /**
+             * Format: uuid
+             * @description Saved mapping to apply. Null maps the columns again without one.
+             */
+            mapping_id?: string | null;
+        };
         AsOfView: {
             deleted: boolean;
             /** Format: int64 */
@@ -1916,15 +1961,26 @@ export interface components {
         AssortmentList: {
             assortments: components["schemas"]["AssortmentRow"][];
         };
+        AssortmentMemberIds: {
+            /** Format: int32 */
+            found: number;
+            member_ids: string[];
+        };
         AssortmentMembers: {
             /** Format: int32 */
             found: number;
+            member_ids: string[];
             members: components["schemas"]["SearchHit"][];
+        };
+        AssortmentMembersBody: {
+            object_ids: string[];
         };
         AssortmentRow: {
             /** Format: uuid */
             id: string;
             kind: string;
+            /** @description Objects added by hand. Empty when the selection still uses a group or label filter. */
+            member_ids: string[];
             name: string;
             query: components["schemas"]["FreeObject"];
             type?: string | null;
@@ -1961,6 +2017,8 @@ export interface components {
          *     unit for that key is rejected when the attribute is added.
          */
         Attribute: {
+            /** @description Optional help text for editors. Not copied into the search index. */
+            description?: string | null;
             id: components["schemas"]["AttributeId"];
             index: components["schemas"]["IndexFlags"];
             key: string;
@@ -1987,6 +2045,8 @@ export interface components {
             /** @enum {string} */
             type: "text";
         } | {
+            /** @description Default unit code inside the family when a value is still empty. */
+            default_unit?: string | null;
             /** @description When true the entered value must be a whole number. Storage stays decimal. */
             integer?: boolean;
             max?: string | null;
@@ -1995,6 +2055,7 @@ export interface components {
             type: "number";
             unit_family?: null | components["schemas"]["UnitFamilyId"];
         } | {
+            default_unit?: string | null;
             /** @enum {string} */
             type: "range";
             unit_family?: null | components["schemas"]["UnitFamilyId"];
@@ -2596,6 +2657,9 @@ export interface components {
             peer_id: string;
             peer_key: string;
             peer_type: string;
+            sort_order?: string | null;
+            /** Format: int64 */
+            version: number;
         };
         /** @description The name shown on one side of a link, and the key used later in an attribute path. */
         LinkLabel: {
@@ -3025,13 +3089,30 @@ export interface components {
             name: string;
         };
         SavedMappingView: {
+            /** @description True when this caller may rename or delete the mapping. */
+            can_edit: boolean;
             columns: components["schemas"]["JsonValue"];
+            created_at: string;
+            /** @description Display name of the person who saved the mapping. */
+            created_by: string;
+            /** Format: uuid */
+            created_by_id: string;
             empty_clears: boolean;
+            header_signature: string;
             headers: components["schemas"]["JsonValue"];
             /** Format: uuid */
             id: string;
+            id_header?: string | null;
             name: string;
             type: string;
+            updated_at: string;
+        };
+        /** @description `POST /v1/views` receipt. `updated_at` is the clock the next write must send back. */
+        SavedView: {
+            /** Format: uuid */
+            id: string;
+            /** @description RFC3339 time of this save. Send it back as `expected_updated_at`. */
+            updated_at: string;
         };
         SearchGroup: {
             /** Format: int32 */
@@ -3073,6 +3154,12 @@ export interface components {
         StateBody: {
             document: components["schemas"]["FreeObject"];
             environment?: string | null;
+            /**
+             * @description RFC3339 `updated_at` this edit was based on.
+             *     JSON `null` means the client saw no saved layout.
+             *     Omit the field for a last-write-wins save.
+             */
+            expected_updated_at?: string | null;
         };
         StatsResponse: {
             by_type: components["schemas"]["TypeCount"][];
@@ -3161,6 +3248,8 @@ export interface components {
             id: string;
             kind: string;
             label: string;
+            number?: string;
+            type_key?: string;
         };
         TrashList: {
             items: components["schemas"]["TrashItem"][];
@@ -3184,13 +3273,21 @@ export interface components {
             code: string;
             /** @description Multiplier into the base unit. Serialized as a decimal string. */
             factor: string;
+            labels?: {
+                [key: string]: string;
+            };
+            /** @description Additive term in the base unit after scaling. Serialized as a decimal string. */
+            offset?: string;
+            /** @description Short display text such as `°C`. Defaults to the code when unset. */
+            symbol?: string;
         };
         /**
-         * @description Units that convert to one base unit by multiplication.
+         * @description Units that convert to one base unit by an affine map: `base = value * factor + offset`.
          *
-         *     `factor` turns an entered value into the base unit: 5000 g with factor
-         *     0.001 is 5 kg. The base unit itself has factor 1. Filters and sorting use
-         *     the base-unit value; the entered value and unit are what gets stored.
+         *     `offset` is in the base unit and defaults to 0, so older families that only
+         *     stored `factor` still convert by multiplication. The named base unit has
+         *     factor 1 and offset 0. Filters and sorting use the base-unit value; the
+         *     entered value and unit are what gets stored.
          */
         UnitFamily: {
             base_unit: string;
@@ -3246,6 +3343,12 @@ export interface components {
             };
         };
         ViewBody: {
+            /**
+             * @description RFC3339 `updated_at` this edit was based on.
+             *     JSON `null` means the client saw no saved view.
+             *     Omit the field to merge per key without a version check.
+             */
+            expected_updated_at?: string | null;
             /** Format: uuid */
             id?: string | null;
             pane?: string | null;
@@ -3331,6 +3434,8 @@ export interface components {
             state: components["schemas"]["FreeObject"];
             title: string;
             type: string;
+            /** @description RFC3339 time of the last saved view state. */
+            updated_at: string;
         };
     };
     responses: never;
@@ -3845,6 +3950,78 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssortmentMembers"];
+                };
+            };
+            /** @description Missing or unknown token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    add_assortment_members: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Selection id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssortmentMembersBody"];
+            };
+        };
+        responses: {
+            /** @description Objects now in the selection */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssortmentMemberIds"];
+                };
+            };
+            /** @description Missing or unknown token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    remove_assortment_members: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Selection id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssortmentMembersBody"];
+            };
+        };
+        responses: {
+            /** @description Objects still in the selection */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssortmentMemberIds"];
                 };
             };
             /** @description Missing or unknown token */
@@ -4959,6 +5136,42 @@ export interface operations {
             };
         };
     };
+    import_apply_saved_mapping: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Import id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplySavedBody"];
+            };
+        };
+        responses: {
+            /** @description Session after the saved mapping was applied */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportSessionView"];
+                };
+            };
+            /** @description Missing or unknown token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     import_sheet: {
         parameters: {
             query?: never;
@@ -5820,6 +6033,8 @@ export interface operations {
             query?: {
                 /** @description Pass `inapplicable` to include values that no longer apply */
                 include?: string;
+                /** @description When true, returns a soft-deleted object for Trash detail */
+                allow_deleted?: boolean;
             };
             header?: never;
             path: {
@@ -7225,6 +7440,38 @@ export interface operations {
             };
         };
     };
+    purge: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description object, workspace, view, assortment, import_mapping, catalog, merge_profile, or merge_link */
+                kind: string;
+                /** @description Item id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Permanently deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not in the trash */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     undelete: {
         parameters: {
             query?: never;
@@ -7822,17 +8069,26 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Saved view id */
+            /** @description Saved view id and updated_at */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["IdBody"];
+                    "application/json": components["schemas"]["SavedView"];
                 };
             };
             /** @description Missing or unknown token */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The view changed since expected_updated_at */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8236,6 +8492,15 @@ export interface operations {
             };
             /** @description Missing or unknown token */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The layout changed since expected_updated_at */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

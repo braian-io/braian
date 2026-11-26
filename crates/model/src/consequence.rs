@@ -30,6 +30,8 @@ pub struct DataPurge {
     pub match_value: Option<ValueMatch>,
     /// Objects of these types are deleted, with their values, links and selections.
     pub delete_types: Vec<Uuid>,
+    /// Canonical type workspaces (`braian-type-*` share tokens) removed with the type.
+    pub delete_type_workspace_tokens: Vec<String>,
     /// Placements in these groups are removed. The objects stay.
     pub unplace_groups: Vec<Uuid>,
 }
@@ -98,6 +100,10 @@ pub fn purge_for(defs: &DefinitionSet, changes: &[ModelChange]) -> DataPurge {
         push_unique(&mut merged.limit_types, step.limit_types);
         push_unique(&mut merged.limit_groups, step.limit_groups);
         push_unique(&mut merged.delete_types, step.delete_types);
+        push_unique_strings(
+            &mut merged.delete_type_workspace_tokens,
+            step.delete_type_workspace_tokens,
+        );
         push_unique(&mut merged.unplace_groups, step.unplace_groups);
         if merged.match_value.is_none() {
             merged.match_value = step.match_value;
@@ -279,6 +285,14 @@ fn push_unique(into: &mut Vec<Uuid>, values: Vec<Uuid>) {
     }
 }
 
+fn push_unique_strings(into: &mut Vec<String>, values: Vec<String>) {
+    for value in values {
+        if !into.contains(&value) {
+            into.push(value);
+        }
+    }
+}
+
 fn purge_one(defs: &DefinitionSet, change: &ModelChange) -> DataPurge {
     if !deletes_data(change) {
         return DataPurge::default();
@@ -347,6 +361,9 @@ fn type_purge(defs: &DefinitionSet, token: &str) -> DataPurge {
         confirm_name: object_type.singular_label("en"),
         link_attributes,
         delete_types: vec![object_type.id.as_uuid()],
+        delete_type_workspace_tokens: vec![crate::type_workspace::type_share_token(
+            &object_type.key,
+        )],
         ..DataPurge::default()
     }
 }
@@ -689,10 +706,18 @@ pub fn apply_destructive(defs: &mut DefinitionSet, change: &ModelChange) -> Resu
 
 fn clear_family(kind: &mut AttributeKind, family: crate::id::UnitFamilyId) {
     match kind {
-        AttributeKind::Number { unit_family, .. } | AttributeKind::Range { unit_family }
-            if *unit_family == Some(family) =>
-        {
+        AttributeKind::Number {
+            unit_family,
+            default_unit,
+            ..
+        }
+        | AttributeKind::Range {
+            unit_family,
+            default_unit,
+            ..
+        } if *unit_family == Some(family) => {
             *unit_family = None;
+            *default_unit = None;
         }
         _ => {}
     }
@@ -729,6 +754,7 @@ mod tests {
             id: AttributeId::from_uuid(id(n)),
             key: key.to_owned(),
             labels: label(name),
+            description: None,
             language_dependent: false,
             multiple: false,
             required: false,
@@ -762,6 +788,7 @@ mod tests {
         let mut weight_attr = text_attr(12, "weight", "Weight");
         weight_attr.kind = AttributeKind::Number {
             unit_family: Some(UnitFamilyId::from_uuid(mass)),
+            default_unit: None,
             min: None,
             max: None,
             integer: false,
@@ -780,14 +807,8 @@ mod tests {
                 dimension: None,
                 base_unit: "kg".into(),
                 units: vec![
-                    Unit {
-                        code: "kg".into(),
-                        factor: "1".parse().expect("factor"),
-                    },
-                    Unit {
-                        code: "g".into(),
-                        factor: "0.001".parse().expect("factor"),
-                    },
+                    Unit::with_factor("kg", "1".parse().expect("factor")),
+                    Unit::with_factor("g", "0.001".parse().expect("factor")),
                 ],
             }],
             value_lists: vec![SharedValueList {
@@ -936,6 +957,7 @@ mod tests {
             ModelChange::CreateAttribute {
                 key: "note".into(),
                 label: "Note".into(),
+                description: None,
                 kind: "text".into(),
                 unit: None,
                 multiple: false,
@@ -950,6 +972,8 @@ mod tests {
             ModelChange::UpdateAttribute {
                 key: "name".into(),
                 label: Some("Title".into()),
+                description: None,
+                clear_description: false,
                 kind: None,
                 unit: None,
                 clear_unit: false,
@@ -1293,5 +1317,9 @@ mod tests {
         assert_eq!(counts.removed, 1);
         assert_eq!(counts.links, 1);
         assert_eq!(purge.confirm_name, "Article");
+        assert_eq!(
+            purge.delete_type_workspace_tokens,
+            vec!["braian-type-article"]
+        );
     }
 }

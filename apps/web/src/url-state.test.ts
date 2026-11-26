@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { markObjectNavReplace, objectNavReplaceId, resetObjectNavReplace } from './object-nav-signal'
 import {
   parseUrlState,
   serializeUrlState,
@@ -9,7 +10,10 @@ import {
   type UrlStateValidity,
 } from './url-state'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  resetObjectNavReplace()
+})
 
 const base: UrlStateValues = {
   workspaceId: 'w1',
@@ -31,6 +35,7 @@ function setup(input: {
   ready?: boolean
   viewOpen?: (id: string) => boolean
   forceReplace?: boolean
+  navObjectId?: string | null
 }) {
   const navigate = vi.fn()
   const apply = vi.fn()
@@ -41,6 +46,7 @@ function setup(input: {
       ready: boolean
       viewOpen: ((id: string) => boolean) | undefined
       forceReplace: boolean | undefined
+      navObjectId: string | null | undefined
     }) =>
       useUrlStateSync({
         search: props.search,
@@ -49,6 +55,7 @@ function setup(input: {
         valid,
         viewOpen: props.viewOpen,
         forceReplace: props.forceReplace,
+        navObjectId: props.navObjectId,
         navigate,
         apply,
       }),
@@ -59,6 +66,7 @@ function setup(input: {
         ready: input.ready ?? true,
         viewOpen: input.viewOpen,
         forceReplace: input.forceReplace,
+        navObjectId: input.navObjectId,
       },
     },
   )
@@ -68,10 +76,12 @@ function setup(input: {
     ready: boolean
     viewOpen?: (id: string) => boolean
     forceReplace?: boolean
+    navObjectId?: string | null
   }) => hook.rerender({
     ...props,
     viewOpen: props.viewOpen ?? input.viewOpen,
     forceReplace: props.forceReplace ?? input.forceReplace,
+    navObjectId: props.navObjectId === undefined ? input.navObjectId : props.navObjectId,
   })
   return { navigate, apply, rerender }
 }
@@ -309,5 +319,92 @@ describe('URL sync', () => {
     const hook = setup({ search: { ws: 'w1', view: 'v1' }, ready: false })
     expect(hook.apply).not.toHaveBeenCalled()
     expect(hook.navigate).not.toHaveBeenCalled()
+  })
+
+  it('replaces history only when the URL write is the arrow target', () => {
+    const hook = setup({
+      search: { ws: 'w1', view: 'v1', catalog: 'master', object: 'o1' },
+      state: { ...base, objectId: 'o1' },
+    })
+    hook.navigate.mockClear()
+    // A stale arrow mark (failed load, or A → B → A) must not replace the next click.
+    markObjectNavReplace('uuid-arrow')
+    hook.rerender({
+      search: { ws: 'w1', view: 'v1', catalog: 'master', object: 'o1' },
+      state: { ...base, objectId: 'o2' },
+      ready: true,
+      navObjectId: 'uuid-clicked',
+    })
+    expect(hook.navigate).toHaveBeenCalledWith({
+      search: { ws: 'w1', view: 'v1', catalog: 'master', object: 'o2' },
+      replace: false,
+    })
+    expect(objectNavReplaceId()).toBeNull()
+
+    hook.rerender({
+      search: { ws: 'w1', view: 'v1', catalog: 'master', object: 'o2' },
+      state: { ...base, objectId: 'o2' },
+      ready: true,
+      navObjectId: 'uuid-clicked',
+    })
+    hook.navigate.mockClear()
+    markObjectNavReplace('uuid-arrow')
+    hook.rerender({
+      search: { ws: 'w1', view: 'v1', catalog: 'master', object: 'o2' },
+      state: { ...base, objectId: 'o1' },
+      ready: true,
+      navObjectId: 'uuid-arrow',
+    })
+    expect(hook.navigate).toHaveBeenCalledWith({
+      search: { ws: 'w1', view: 'v1', catalog: 'master', object: 'o1' },
+      replace: true,
+    })
+  })
+
+  it('does not apply a stale object param while the router is catching up', () => {
+    const hook = setup({
+      search: { ws: 'w1', view: 'v1', catalog: 'master', object: 'o1' },
+      state: { ...base, objectId: 'o1' },
+    })
+    hook.rerender({
+      search: { ws: 'w1', view: 'v1', catalog: 'master', object: 'o1' },
+      state: { ...base, objectId: 'o1' },
+      ready: true,
+    })
+    hook.navigate.mockClear()
+    hook.apply.mockClear()
+
+    hook.rerender({
+      search: { ws: 'w1', view: 'v1', catalog: 'master', object: 'o1' },
+      state: { ...base, objectId: 'o3' },
+      ready: true,
+    })
+    expect(hook.navigate).toHaveBeenCalled()
+
+    hook.apply.mockClear()
+    hook.rerender({
+      search: { ws: 'w1', view: 'v1', catalog: 'master', object: 'o2' },
+      state: { ...base, objectId: 'o3' },
+      ready: true,
+    })
+    expect(hook.apply).not.toHaveBeenCalledWith(expect.objectContaining({ objectId: 'o2' }))
+  })
+
+  it('pushes the next object change when arrowing at the edge did not mark replace', () => {
+    const hook = setup({
+      search: { ws: 'w1', view: 'v1', catalog: 'master', object: 'o1' },
+      state: { ...base, objectId: 'o1' },
+    })
+    hook.navigate.mockClear()
+
+    hook.rerender({
+      search: { ws: 'w1', view: 'v1', catalog: 'master', object: 'o1' },
+      state: { ...base, objectId: 'o2' },
+      ready: true,
+    })
+    expect(hook.navigate).toHaveBeenCalledWith({
+      search: { ws: 'w1', view: 'v1', catalog: 'master', object: 'o2' },
+      replace: false,
+    })
   })
 })

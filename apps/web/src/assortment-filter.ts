@@ -1,5 +1,39 @@
 import type { Json } from './api'
 
+/** A manual selection with no members must match nothing, not every object. */
+export const EMPTY_MANUAL_FILTER = 'id:=__braian_empty_manual__'
+
+/** Typesense filter for objects added to a manual selection by hand. */
+export function memberIdFilter(ids: string[]): string {
+  if (ids.length === 0) return EMPTY_MANUAL_FILTER
+  const list = ids.map((id) => `\`${id}\``).join(',')
+  return `id:=[${list}]`
+}
+
+export function memberIdsOf(item: { member_ids?: unknown } | null | undefined): string[] {
+  const raw = item?.member_ids
+  if (!Array.isArray(raw)) return []
+  const ids: string[] = []
+  for (const id of raw) {
+    if (typeof id === 'string' && id && !ids.includes(id)) ids.push(id)
+  }
+  return ids
+}
+
+/** True after objects have been added or removed by hand. */
+export function isHandPickedQuery(query: unknown): boolean {
+  return Boolean(query && typeof query === 'object' && (query as { hand?: unknown }).hand === true)
+}
+
+/** True when a stored query has neither a dynamic filter nor manual members. */
+export function isEmptyManualQuery(query: unknown): boolean {
+  if (!query || typeof query !== 'object') return false
+  if (selectionFilterText(query) || selectionSearchText(query)) return false
+  const item = query as { group?: unknown; labels?: unknown }
+  if (typeof item.group === 'string' && item.group) return false
+  return labelCodes(item.labels).length === 0
+}
+
 /** Typesense filter for a saved selection.
  *
  * `type` on the query is ignored. The selection's type is passed in, so a
@@ -14,6 +48,10 @@ export function assortmentSearchFilter(query: unknown, typeKey = '', defs?: Json
     const type = typeKey ? `type_key:=${typeKeyOf(typeKey, defs)}` : ''
     if (!type || hasTypeClause(filter)) return filter
     return `${type} && (${filter})`
+  }
+  if (isEmptyManualQuery(query)) {
+    const type = typeKey ? `type_key:=${typeKeyOf(typeKey, defs)}` : ''
+    return type ? `${type} && ${EMPTY_MANUAL_FILTER}` : EMPTY_MANUAL_FILTER
   }
   const item = query as { group?: unknown; labels?: unknown }
   const parts: string[] = []
@@ -36,9 +74,20 @@ export function selectionFilterText(query: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
-/** A dynamic selection's query is the string itself, not an object. */
-export function selectionQueryValue(kind: SelectionKind, filter: string, manual: Json): Json {
-  return (kind === 'dynamic' ? filter.trim() : manual) as unknown as Json
+/** The table search term stored beside a dynamic filter. */
+export function selectionSearchText(query: unknown): string {
+  if (!query || typeof query !== 'object') return ''
+  const value = (query as { q?: unknown }).q
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+/** A dynamic selection's query is the filter string, plus `q` when a search term is saved. */
+export function selectionQueryValue(kind: SelectionKind, filter: string, manual: Json, q = ''): Json {
+  if (kind !== 'dynamic') return manual
+  const text = filter.trim()
+  const term = q.trim()
+  if (!term) return text as unknown as Json
+  return { filter: text, q: term } as unknown as Json
 }
 
 /** Keep the type clause when a view filter is saved as a dynamic selection. */
@@ -123,6 +172,8 @@ export type NewSelectionRequest = {
   name?: string
   kind?: SelectionKind
   query?: string
+  /** Table search term (`q`) to save with the filter. */
+  q?: string
   type?: string
 }
 

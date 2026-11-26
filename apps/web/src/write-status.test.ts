@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { isWrite, resetWriteStatus, writeSettled, writeStarted, writeStatus } from './write-status'
+import { acknowledgeWriteError, isWrite, resetWriteStatus, writeSettled, writeStarted, writeStatus } from './write-status'
 
 afterEach(() => {
   resetWriteStatus()
@@ -30,6 +30,21 @@ describe('write status', () => {
     writeSettled('boom')
     writeStarted()
     writeSettled()
+    expect(writeStatus().error).toBeNull()
+  })
+
+  it('acknowledges a handled failure without hiding a different one', () => {
+    writeStarted()
+    writeSettled('422 Unprocessable Entity')
+    acknowledgeWriteError(409)
+    expect(writeStatus().error).toBe('422 Unprocessable Entity')
+    acknowledgeWriteError(422)
+    expect(writeStatus().error).toBeNull()
+
+    writeSettled('500 Internal Server Error')
+    acknowledgeWriteError(422)
+    expect(writeStatus().error).toBe('500 Internal Server Error')
+    acknowledgeWriteError()
     expect(writeStatus().error).toBeNull()
   })
 })

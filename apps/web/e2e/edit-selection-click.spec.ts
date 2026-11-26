@@ -89,15 +89,15 @@ async function openEdit(page: Page) {
   const menu = page.getByTestId('context-menu')
   await expect(menu).toBeVisible()
   await menu.getByRole('menuitem', { name: 'Edit selection' }).click()
-  const dialog = page.getByTestId('new-selection')
-  await expect(dialog).toBeVisible()
-  await expect(dialog.getByRole('heading', { name: 'Edit selection' })).toBeVisible()
-  return dialog
+  const detail = page.getByTestId('selection-detail')
+  await expect(detail).toBeVisible()
+  await expect(detail.getByRole('heading', { name: 'Edit selection' })).toBeVisible()
+  return detail
 }
 
 async function noStrandedOverlay(page: Page) {
   await expect(page.locator('.overlay')).toHaveCount(0)
-  await expect(page.getByTestId('new-selection')).toHaveCount(0)
+  await expect(page.getByTestId('selection-detail')).toHaveCount(0)
   expect(await page.evaluate(() => getComputedStyle(document.body).pointerEvents)).toBe('auto')
 }
 
@@ -106,21 +106,20 @@ test.beforeEach(async ({ page }) => {
   await resetCheese(page)
 })
 
-test('Edit selection from the row menu keeps focus in the dialog and renames a manual Articles selection', async ({ page }, testInfo) => {
+test('Edit selection from the row menu keeps focus in Detail and renames a manual Articles selection', async ({ page }, testInfo) => {
   await openWorkspace(page, 'Articles')
   await openSelections(page)
   const before = selectionRow(page, 'Cheese')
   await expect(before).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('01-selections-before.png') })
 
-  const dialog = await openEdit(page)
+  const detail = await openEdit(page)
   await expect(page.getByTestId('assortment-name')).toBeFocused()
   await expectLocked(page, 'selection-type', 'Articles')
   await expectLocked(page, 'selection-kind', 'Manual')
-  await expect(dialog.locator('select')).toHaveCount(0)
-  await dialog.getByRole('heading', { name: 'Edit selection' }).click()
+  await expect(detail.locator('select')).toHaveCount(0)
   await expectVisibleNameBorder(page)
-  await page.screenshot({ path: testInfo.outputPath('02-edit-dialog.png') })
+  await page.screenshot({ path: testInfo.outputPath('02-edit-detail.png') })
 
   const name = page.getByTestId('assortment-name')
   await name.click()
@@ -131,15 +130,13 @@ test('Edit selection from the row menu keeps focus in the dialog and renames a m
   })
   expect(selected).toEqual({ start: 0, end: 'Cheese'.length, length: 'Cheese'.length })
   expect(await page.evaluate(() => document.activeElement?.getAttribute('data-testid'))).toBe('assortment-name')
-  // Browsers expose an input selection differently: either nothing or exactly
-  // the field's text. Either way the page outside the field is not selected.
-  expect(['', 'Cheese']).toContain(await page.evaluate(() => window.getSelection()?.toString() ?? ''))
+  // Before Save the stored selection and the chips still carry the old name.
+  expect((await articleCheese(page))?.name).toBe('Cheese')
   // Type fast and press Save in the next action: the full value must win.
   await name.pressSequentially('Aged cheese 215', { delay: 0 })
-  await dialog.getByRole('button', { name: 'Save selection' }).click()
-  await expect(dialog).toBeHidden()
+  await detail.getByTestId('review-and-save').click()
+  await expect(detail).toHaveCount(0)
   await noStrandedOverlay(page)
-  await expect(selectionRow(page, 'Aged cheese 215').getByTestId('selection-menu')).toBeFocused()
   await expectCheeseEverywhere(page, 'Aged cheese 215')
   await page.screenshot({ path: testInfo.outputPath('03-after-save.png') })
 
@@ -159,7 +156,7 @@ test('Edit selection from the row menu keeps focus in the dialog and renames a m
 test('Save shows a pending state and stores the full fast-typed name', async ({ page }, testInfo) => {
   await openWorkspace(page, 'Articles')
   await openSelections(page)
-  const dialog = await openEdit(page)
+  const detail = await openEdit(page)
 
   let release: () => void = () => undefined
   const gate = new Promise<void>((resolve) => { release = resolve })
@@ -172,15 +169,14 @@ test('Save shows a pending state and stores the full fast-typed name', async ({ 
   await name.click()
   await page.keyboard.press('Control+A')
   await name.pressSequentially('Aged cheese 215 pending', { delay: 0 })
-  await page.getByTestId('save-selection').click()
+  const save = detail.getByTestId('review-and-save')
+  await save.click()
 
-  const saving = dialog.getByTestId('save-selection')
-  await expect(saving).toHaveText('Saving…')
-  await expect(saving).toBeDisabled()
-  await expect(dialog).toBeVisible()
+  await expect(save).toBeDisabled()
+  await expect(detail).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('06-saving.png') })
   release()
-  await expect(dialog).toBeHidden()
+  await expect(detail).toHaveCount(0)
   await expect.poll(async () => (await articleCheese(page))?.name).toBe('Aged cheese 215 pending')
 
   await page.reload()
@@ -190,68 +186,56 @@ test('Save shows a pending state and stores the full fast-typed name', async ({ 
   await expectCheeseEverywhere(page, 'Aged cheese 215 pending')
 })
 
-test('Cancel closes without saving and leaves the page interactive', async ({ page }, testInfo) => {
+test('Discard closes without saving and leaves the page interactive', async ({ page }, testInfo) => {
   await openWorkspace(page, 'Articles')
   await openSelections(page)
-  const dialog = await openEdit(page)
-  await page.getByTestId('assortment-name').fill('Cheese cancel 215')
-  await dialog.getByRole('button', { name: 'Cancel' }).click()
-  await expect(dialog).toBeHidden()
+  const detail = await openEdit(page)
+  await page.getByTestId('assortment-name').fill('Cheese discard 215')
+  await detail.getByTestId('discard-draft').click()
+  await expect(detail).toHaveCount(0)
   await noStrandedOverlay(page)
   expect((await articleCheese(page))?.name).toBe('Cheese')
 
   const row = selectionRow(page, 'Cheese')
-  await expect(row.getByTestId('selection-menu')).toBeFocused()
+  await expect(row).toBeVisible()
   await row.getByRole('button', { name: 'Cheese' }).click()
   await expect(page.getByTestId('assortment-open')).toBeVisible()
-  await page.screenshot({ path: testInfo.outputPath('05-after-cancel.png') })
-})
-
-test('The close X discards the edit', async ({ page }) => {
-  await openWorkspace(page, 'Articles')
-  await openSelections(page)
-  const dialog = await openEdit(page)
-  await page.getByTestId('assortment-name').fill('Cheese x 215')
-  await dialog.getByRole('button', { name: 'Close' }).click()
-  await expect(dialog).toBeHidden()
-  await noStrandedOverlay(page)
-  expect((await articleCheese(page))?.name).toBe('Cheese')
-  await expect(selectionRow(page, 'Cheese').getByTestId('selection-menu')).toBeFocused()
+  await page.screenshot({ path: testInfo.outputPath('05-after-discard.png') })
 })
 
 test('Escape discards the edit', async ({ page }) => {
   await openWorkspace(page, 'Articles')
   await openSelections(page)
-  const dialog = await openEdit(page)
+  const detail = await openEdit(page)
   await page.getByTestId('assortment-name').fill('Cheese escape 215')
   await page.keyboard.press('Escape')
-  await expect(dialog).toBeHidden()
+  await expect(detail).toHaveCount(0)
   await noStrandedOverlay(page)
   expect((await articleCheese(page))?.name).toBe('Cheese')
-  await expect(selectionRow(page, 'Cheese').getByTestId('selection-menu')).toBeFocused()
+  await expect(selectionRow(page, 'Cheese')).toBeVisible()
 })
 
 test('Editing stays clickable after repeated open and save', async ({ page }) => {
   await openWorkspace(page, 'Articles')
   await openSelections(page)
   for (let cycle = 0; cycle < 3; cycle += 1) {
-    const dialog = await openEdit(page)
+    const detail = await openEdit(page)
     const name = page.getByTestId('assortment-name')
     await name.click()
     await name.fill(`Cheese cycle 215 ${cycle}`)
     if (cycle < 2) {
-      await dialog.getByRole('button', { name: 'Cancel' }).click()
-      await expect(dialog).toBeHidden()
+      await detail.getByTestId('discard-draft').click()
+      await expect(detail).toHaveCount(0)
       await expect(selectionRow(page, 'Cheese')).toBeVisible()
     } else {
-      await dialog.getByRole('button', { name: 'Save selection' }).click()
-      await expect(dialog).toBeHidden()
+      await detail.getByTestId('review-and-save').click()
+      await expect(detail).toHaveCount(0)
       await expect(selectionRow(page, 'Cheese cycle 215 2')).toBeVisible()
     }
   }
 })
 
-test('A staged table draft does not block the Edit selection dialog', async ({ page }) => {
+test('A staged table draft does not block the Edit selection Detail', async ({ page }) => {
   await openWorkspace(page, 'Articles')
   const table = page.locator('section.pane').filter({
     has: page.locator('.pane-tab[data-view-type="object_table"]', { hasText: 'Articles' }),
@@ -267,11 +251,11 @@ test('A staged table draft does not block the Edit selection dialog', async ({ p
   await expect(page.getByTestId('object-draft-bar').first()).toBeVisible()
 
   await openSelections(page)
-  const dialog = await openEdit(page)
+  const detail = await openEdit(page)
   await expect(page.getByTestId('assortment-name')).toBeFocused()
   await page.getByTestId('assortment-name').fill('Cheese with draft 215')
-  await dialog.getByRole('button', { name: 'Cancel' }).click()
-  await expect(dialog).toBeHidden()
+  await detail.getByTestId('discard-draft').click()
+  await expect(detail).toHaveCount(0)
   await expect(page.getByTestId('object-draft-bar').first()).toBeVisible()
   await page.getByTestId('discard-draft').first().click()
   await expect(page.getByTestId('object-draft-bar')).toHaveCount(0)

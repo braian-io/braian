@@ -4,6 +4,7 @@
  * Used by the field-picker prototype for column paths; the same types and
  * helpers are meant for filters, import mapping, and similar surfaces later.
  */
+import { formatConvertedMeasure, formatUnitCode } from '../format'
 
 export type QualifierKind = 'cardinality' | 'language' | 'unit' | 'value_list' | 'range'
 
@@ -56,6 +57,8 @@ export type FieldDef = {
   rangeParts?: Array<'min' | 'max'>
   /** Suffix appended to range cell values (e.g. °C). */
   rangeUnit?: string
+  /** Group display name when the attribute came from an allowed structure. */
+  source?: string
 }
 
 const CARDINALITY_STEP: QualifierStep = {
@@ -128,6 +131,7 @@ export function qualifierShortLabel(q: AppliedQualifier): string {
     // Prefer display label (size, or size · GTIN when ambiguous); value is the GTIN identity.
     if (q.optionId === 'specific') return q.label || q.value || 'specific'
   }
+  if (q.kind === 'unit') return q.label || q.optionId
   return q.label.toLowerCase()
 }
 
@@ -261,15 +265,12 @@ function projectLeaf(raw: unknown, field: FieldDef, qualifiers: AppliedQualifier
       const toUnit = unit ?? fromUnit
       if (Number.isFinite(rawValue) && fromUnit && toUnit) {
         const converted = convertMeasure(rawValue, fromUnit, toUnit)
-        const display =
-          (toUnit === 'l' || toUnit === 'kg') && converted % 1 !== 0
-            ? String(converted)
-            : String(converted)
-        return `${display} ${toUnit}`
+        return formatConvertedMeasure(converted, toUnit)
       }
       const value = obj.value ?? raw
       const u = unit ?? (obj.unit != null ? String(obj.unit) : '')
-      return u ? `${value} ${u}` : String(value ?? '')
+      const unitLabel = u ? formatUnitCode(u) : ''
+      return unitLabel ? `${value} ${unitLabel}` : String(value ?? '')
     }
     return String(raw)
   }

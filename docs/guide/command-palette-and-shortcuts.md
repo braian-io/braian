@@ -11,13 +11,31 @@ headings such as `Recent`, `Navigation`, `Create`, `Data model`, `Links`, and
 Common root commands include:
 
 - `Open view`, `Open workspace`, and `Open object`, plus one `Open {type}` row per
-  object type.
-- `Add view`, `New from template`, and `Switch catalog`.
-- `Data source`, `Select fields`, `Filter by`, `Export columns`, and `Hide column`.
+  object type. `Open view` focuses a view in place; it never moves one into the
+  focused pane and never lists old agent-run tabs.
+- `Open structure` lists every structure in the active catalog by label and key.
+  Choose one to open its tree in the focused pane (`Enter`) or in a new pane to
+  the right (`Ctrl+Enter` or `Cmd+Enter`). An existing tree view for that structure
+  is reused by structure key or id in the view state (not by title); otherwise Braian
+  creates one. When Detail is focused, `Enter` opens the tree beside Detail (on the
+  table or tree pane), not as a tab on Detail. On a locked workspace, creating a new
+  tree shows `layout is locked`; an existing tree still opens.
+- `Add view`, `New from template`, and `Switch catalog`. `Add view` is the way to
+  bring an existing view into the focused pane. A type row always creates a new copy
+  of that type's object table in a new pane immediately to the right of the open
+  table, even when a closed copy exists; it never reopens a closed view and never
+  adds a second tab in the same pane.
+- `Data source`, `Select fields`, `Filter by`, `Export columns`, `Hide column`, and
+  `Reset to default`.
 - `Selections`, `Link to`, `New type`, `New link type`, `New value list`, `New unit
   family`, and `New tree`.
 - `Reset layout`, `Delete workspace…`, and the model draft commands.
 - Theme, feedback, sign-out, and the `Ask AI` row at the bottom.
+
+`Reset to default` appears when the focused object table has a personal column
+override. It clears the current user's column order and visibility for that view and
+restores the view's default columns. The same command is in the column header menu,
+opened with `Shift+F10` or the context-menu key.
 
 ## Keys inside the palette
 
@@ -27,19 +45,23 @@ Common root commands include:
 | `PageDown` / `PageUp` | Move a page at a time |
 | `Home` / `End` | Jump to the first or last row |
 | `Enter` | Run the highlighted row |
-| `Tab` | Enter a sub-list when the row takes an argument |
-| `Backspace` | Go up one level when the query is empty |
-| `Escape` | Close the palette |
-| `Ctrl+Enter` or `Ctrl+.` | Open the action panel for the highlighted entity |
-| `→` | Open the action panel for an entity row |
+| `Tab` | Open the argument sub-list for the highlighted row when that row takes a parameter (e.g. **Open structure ›**) |
+| `Backspace` | Go up one level when the query field is empty and you are in a sub-list |
+| `Escape` | Close the palette (does not go up a level) |
+| `Ctrl+Enter` or `Ctrl+.` | Open the action panel for the highlighted entity, or run Open structure to the right |
+| `→` | Open the action panel for a highlighted entity row (objects, views, workspaces); does not drill into argument sub-lists — use `Tab` for those |
 | `Ctrl+J` | Ask AI with the current query |
 
-`Enter` runs the highlighted row. `Ctrl+Enter` (or `Ctrl+K` on a result) opens its
-actions. `Backspace` on an empty query goes up one level; `Escape` closes the palette
-and does not go up a level. Rows whose command has a chord show it. Not every command
-has one. The footer shows `Enter Run`, `Tab Open`, `⌫ Back`, `Ctrl+J Ask AI`, and
-`Esc Close` as a reminder. When no row matches, the palette shows `No results for
-"{query}"`.
+`Enter` runs the highlighted row. `Tab` on a highlighted argument row (including **Open
+structure ›**, **Open view**, and similar) pushes the searchable sub-list without
+running the command. `Ctrl+Enter` (or `Ctrl+.` on a row) opens secondary actions for
+entity rows. `Backspace` with an empty query pops one breadcrumb level; there is no
+`←` back shortcut on the root palette itself — only `Backspace`. `Escape` always
+closes the palette and does not pop a level. Pointer hover and the mouse wheel scroll
+the list without moving the keyboard highlight or snapping scroll back to the active
+row. Rows whose command has a chord show it. Not every command has one. The footer
+shows `Enter Run`, `Tab Open`, `⌫ Back`, `Ctrl+J Ask AI`, and `Esc Close` as a
+reminder. When no row matches, the palette shows `No results for "{query}"`.
 
 ## Action panels
 
@@ -47,15 +69,25 @@ An entity row in the palette has more than one action. For an object, the action
 offers `Open`, `Open to the right`, and `Copy id`. For a view or workspace, it offers
 `Place left`, `Place right`, `Place top`, `Place bottom`, and `New tab`.
 
-## Agent in the palette
+## Agent chat
 
-`Ctrl+J` opens the agent palette. Inside the palette, `Ctrl+J` asks the agent with the
-current query. The input shows an `AI` badge and the placeholder `Ask AI`. Previous
-turns are shown as clickable chips; send with `Enter` and close with `Escape`.
+With the command palette **closed**, `Ctrl+J` **toggles** the docked agent pane: it
+closes when any agent view is open (wherever focus is), or reopens the last session and
+focuses the follow-up box. With no prior session it opens the palette in Ask AI mode.
+
+Inside an **open** command palette, `Ctrl+J` asks the agent with the current query
+instead of toggling the dock. See [Agent chat](/docs/agent-chat) for follow-up keys:
+`Enter` sends, `Shift+Enter` adds a line, and `Esc` in the follow-up box returns focus
+to the pane on the left without clearing your draft.
 
 The agent runs in the context you are looking at: the focused view, the selected rows
 and the current filter. It proposes changes; a person reviews and saves them. See
 [Deleting and restore](/docs/deleting-and-restore/) for what the agent may not do.
+
+`Agents ›` and **Agents table** list your sessions. Their search boxes match the
+short **session title**, the **full first message**, status labels, and — while a run
+is waiting — the agent's latest question. Words that appear only in the first message
+still find the session after the title has been shortened.
 
 AI replies require a model to be configured on the server. If it is not, the answer is
 `AI isn't set up for this workspace`, and the agent tab explains that an administrator
@@ -76,7 +108,7 @@ shortcut. See [Feedback](/docs/feedback/).
 | Chord | Action |
 | --- | --- |
 | `Ctrl+K` | Open the command palette |
-| `Ctrl+J` | Open the agent palette |
+| `Ctrl+J` | Toggle the agent chat pane (or ask from the palette) |
 | `Ctrl+S` | Save review drafts |
 | `Ctrl+Shift+B` | Send feedback (when the operator enables it) |
 | `F1` | Show keyboard shortcuts |
@@ -104,9 +136,12 @@ The authoritative list is generated from the app's shortcut registry in
 
 Some keys belong to a view rather than to the app:
 
-- **Object table.** Arrow keys move focus, `Enter` or `Space` commits the row as the
-  selection, and `Shift` plus an arrow key extends the selection. `←` and `→` move the
-  active column. `Shift+F10` or the context-menu key opens the row menu. Double-click a
+- **Object table.** Arrow keys select the row and update Detail immediately. Fast
+  arrowing still shows every highlight; only the network fetch for the full object is
+  debounced to the row you land on. A failed full load shows **Retry** in Detail; Save
+  stays off until the body is loaded. `Enter` or `Space` confirms the focused row, and
+  `Shift` plus an arrow key extends the selection. `←` and `→` move the active column.
+  `Shift+F10` or the context-menu key opens the row menu. Double-click a
   cell to edit it, and press `/` to focus the quick filter.
 - **Detail.** `↑` and `↓` move between fields, `Home` and `End` jump to the first or
   last field, `Ctrl+S` saves the object draft, and `Escape` discards it.
@@ -115,7 +150,13 @@ Some keys belong to a view rather than to the app:
 - **Model and definition tables.** `Enter` or `F2` edits a cell, `Escape` cancels, `Tab`
   moves to the next cell, and `Shift+F10` or the context-menu key opens the row menu.
 - **Field picker.** Arrow keys move, `Enter` toggles or opens, `→` drills in, `←` or
-  `Backspace` goes back, and `Escape` closes the picker.
+  `Backspace` goes back, and `Escape` closes the picker. Closing the Select fields
+  palette returns focus to the control that opened it, including when it is dismissed
+  by clicking the backdrop. The list includes the type's attributes and the
+  attributes from allowed structures (nested groups and older class lists). Group
+  and class fields show their group name, and typing that name finds them. A
+  measured number field can be added as the combined column or as separate value
+  and unit columns.
 - **Import.** `Ctrl+Z` and `Ctrl+Shift+Z` undo and redo a mapping, `Delete` or
   `Backspace` removes a column mapping, and `Escape` closes the import or its
   confirmation.

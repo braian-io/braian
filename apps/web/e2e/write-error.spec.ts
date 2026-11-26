@@ -11,7 +11,7 @@ async function login(page: Page) {
   await expect(page.getByTestId('workspace')).toBeVisible()
 }
 
-test('a failed cell edit toasts the server message and keeps the previous value', async ({ page }) => {
+test('a failed cell edit shows the server message inline and keeps the previous value', async ({ page }) => {
   test.setTimeout(120_000)
   await login(page)
   await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
@@ -53,7 +53,8 @@ test('a failed cell edit toasts the server message and keeps the previous value'
 
   // Enter stages the cell; the failed Save keeps the draft and reports the server message.
   await table.getByTestId('review-and-save').click()
-  await expect(page.locator('[data-sonner-toast]')).toContainText('the write failed validation')
+  await expect(page.getByTestId('draft-save-error')).toContainText('the write failed validation')
+  await expect(page.locator('[data-sonner-toast]')).toHaveCount(0)
   await expect(nameCell).toContainText(original)
   await expect(nameCell.getByTestId('cell-diff')).toContainText('Renamed cheddar')
 })

@@ -195,6 +195,7 @@ async fn prepare(
             &reuse.lines,
         )
         .await;
+        proposal.saved_mapping = Some(reuse.id);
         proposal.ai = format!("saved: {}", reuse.name);
         let proposal_json = serde_json::to_value(&proposal).map_err(|error| error.to_string())?;
         state

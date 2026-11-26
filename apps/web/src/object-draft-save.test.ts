@@ -7,10 +7,14 @@ import {
   stageObjectCell,
 } from './object-draft'
 import {
+  DRAFT_SAVE_IN_FLIGHT,
   draftDiscardPlan,
   draftSavePlan,
+  isDraftSaveInFlight,
+  objectDraftSaving,
   runDraftDiscard,
   runDraftSave,
+  subscribeObjectDraftSaving,
 } from './object-draft-save'
 import type { IndexedProposalCell, ProposalMembership } from './review-cells'
 
@@ -197,6 +201,41 @@ describe('partial and transport failures', () => {
     expect(objectDraftCells('obj-1')[0]?.proposedText).toBe('One')
   })
 
+  it('rejects a concurrent save with the in-flight constant, not an empty success', async () => {
+    let resolve: ((value: Json) => void) | undefined
+    mock.methods.patch.mockImplementation(() => new Promise((done) => { resolve = done as (value: Json) => void }))
+    stage('obj-1', 'First')
+    const client = new QueryClient()
+    const first = runDraftSave(humanPlan(['obj-1'], { 'obj-1': 1 }), client)
+    await new Promise((done) => setTimeout(done, 0))
+
+    const second = await runDraftSave(humanPlan(['obj-1'], { 'obj-1': 1 }), client)
+    expect(second).toBe(DRAFT_SAVE_IN_FLIGHT)
+    expect(isDraftSaveInFlight(second)).toBe(true)
+    expect(second).not.toBe('')
+    expect(mock.methods.patch).toHaveBeenCalledTimes(1)
+
+    resolve?.({ id: 'obj-1', version: 2, values: {} })
+    expect(await first).toBe('')
+    expect(objectDraftCells('obj-1')).toHaveLength(0)
+  })
+
+  it('notifies subscribers when a save starts and finishes', async () => {
+    let resolve: ((value: Json) => void) | undefined
+    mock.methods.patch.mockImplementation(() => new Promise((done) => { resolve = done as (value: Json) => void }))
+    stage('obj-1', 'One')
+    const seen: boolean[] = []
+    const stop = subscribeObjectDraftSaving(() => seen.push(objectDraftSaving()))
+    const running = runDraftSave(humanPlan(['obj-1'], { 'obj-1': 1 }), new QueryClient())
+    expect(objectDraftSaving()).toBe(true)
+    await new Promise((done) => setTimeout(done, 0))
+    resolve?.({ id: 'obj-1', version: 2, values: {} })
+    expect(await running).toBe('')
+    expect(objectDraftSaving()).toBe(false)
+    expect(seen).toEqual([true, false])
+    stop()
+  })
+
   it('keeps an edit typed while the request is in flight', async () => {
     let resolve: ((value: Json) => void) | undefined
     mock.methods.patch.mockImplementation(() => new Promise((done) => { resolve = done as (value: Json) => void }))
@@ -282,6 +321,56 @@ describe('proposal accept results', () => {
     const reason = await runDraftSave(plan, client)
     expect(reason).toContain('offline')
     expect(invalidate).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['proposals'] }))
+  })
+})
+
+describe('pane save scope', () => {
+  it('saves and discards only the cells staged in that pane', async () => {
+    stageObjectCell({
+      objectId: 'obj-1',
+      attribute: 'name',
+      columnId: 'name',
+      baseVersion: 4,
+      originalText: 'Old',
+      proposedText: 'From detail',
+      value: 'From detail',
+      surface: 'detail',
+    })
+    stageObjectCell({
+      objectId: 'obj-1',
+      attribute: 'status',
+      columnId: 'status',
+      baseVersion: 4,
+      originalText: 'draft',
+      proposedText: 'ok',
+      value: 'ok',
+      surface: 'table',
+    })
+    const shared = {
+      objectIds: ['obj-1'],
+      serverVersions: { 'obj-1': 4 },
+      principal: 'human' as const,
+      fileAsProposal: false,
+      roleCanWrite: true,
+    }
+    const table = draftSavePlan({ ...shared, surface: 'table' })
+    const detail = draftSavePlan({ ...shared, surface: 'detail' })
+    expect(table).toEqual([expect.objectContaining({ kind: 'patch', values: { status: 'ok' } })])
+    expect(detail).toEqual([expect.objectContaining({ kind: 'patch', values: { name: 'From detail' } })])
+    const dropped = draftDiscardPlan({
+      objectIds: ['obj-1'],
+      principal: 'human',
+      viaAgent: false,
+      surface: 'detail',
+    })
+    expect(dropped.clear).toEqual(['obj-1'])
+    expect(await runDraftDiscard({
+      objectIds: ['obj-1'],
+      principal: 'human',
+      viaAgent: false,
+      surface: 'detail',
+    })).toBe('')
+    expect(objectDraftCells('obj-1').map((cell) => cell.attribute)).toEqual(['status'])
   })
 })
 

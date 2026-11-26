@@ -101,6 +101,20 @@ export function pathTextFrom(fieldPath: string[], leaf: FieldDef, qualifiers: Ap
   return via ? `${via}>${body}` : body
 }
 
+/**
+ * Field ids for a stored path text. Keeps a part leaf such as `fat_content.unit`
+ * when the catalog has it, and otherwise strips the part the way qualifier paths
+ * (`allergens.code`, `size.min`, `name@en`) are rebuilt.
+ */
+export function fieldPathForPath(path: string, fields: FieldDef[]): string[] {
+  const parts = path.split('>')
+  const rawLeaf = (parts[parts.length - 1] ?? path).split('@')[0] ?? path
+  const via = parts.slice(0, -1)
+  const withPart = [...via, rawLeaf]
+  if (makeViewColumn(withPart, [], fields)) return withPart
+  return [...via, rawLeaf.split('.')[0] ?? rawLeaf]
+}
+
 export function makeViewColumn(
   fieldPath: string[],
   qualifiers: AppliedQualifier[],

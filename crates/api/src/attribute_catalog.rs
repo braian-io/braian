@@ -288,7 +288,7 @@ fn kind_fields(defs: &DefinitionSet, kind: &AttributeKind) -> (String, Value, Va
             family_json(defs, *unit_family),
             Value::Null,
         ),
-        AttributeKind::Range { unit_family } => {
+        AttributeKind::Range { unit_family, .. } => {
             ("range".into(), family_json(defs, *unit_family), Value::Null)
         }
         AttributeKind::ValueList { list, .. } => (

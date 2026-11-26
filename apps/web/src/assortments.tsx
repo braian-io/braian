@@ -1,26 +1,38 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Lock, MoreHorizontal } from 'lucide-react'
-import { api, catalogName, searchQuery, type Json } from './api'
+import { ApiError, api, catalogName, searchQuery, type Json } from './api'
 import { formatCount } from './format'
 import {
   assortmentSearchFilter,
   currentSelectionLabels,
   DELETE_SELECTION_EVENT,
   EDIT_SELECTION_EVENT,
+  isHandPickedQuery,
   labelCodes,
+  memberIdFilter,
+  memberIdsOf,
   NEW_SELECTION_EVENT,
   requestDeleteSelection,
   requestEditSelection,
-  requestNewSelection,
   selectionFilterText,
   selectionKind,
   selectionMatchesType,
   selectionQueryValue,
+  selectionSearchText,
   selectionUsageLines,
   type NewSelectionRequest,
-  type SelectionKind,
 } from './assortment-filter'
+import {
+  discardSelectionDraft,
+  getSelectionDraft,
+  retainSelectionSurface,
+  selectionDraftChanges,
+  startEditSelection,
+  startNewSelection,
+  subscribeSelectionDraft,
+  updateSelectionDraft,
+} from './selection-draft'
 import { Button } from './components/ui/button'
 import { openSharedContextMenu, prefersNativeContextMenu } from './shared-context-menu'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
@@ -29,8 +41,18 @@ import { assortmentDisplayName } from './demo-labels'
 import { searchDocuments, structureCaption } from './graph-scene'
 import { copy, uiLanguage } from './i18n'
 import { registerCommandRunner } from './command-registry'
+import { ObjectDraftBar } from './object-draft-bar'
 import { typeNames } from './type-labels'
-import { writeErrorMessage } from './write-error'
+import { errorCodeFromBody, writeErrorMessage } from './write-error'
+import { RemoveSelectionConfirm, SelectionPicker, selectionDropHandlers, type AddSelectionRequest } from './selection-picker'
+import {
+  memberErrorSnapshot,
+  needsRemoveConfirm,
+  objectIdsFromTarget,
+  saveSelectionMembers,
+  setMemberError,
+  subscribeMemberError,
+} from './selection-members'
 
 type SelectionSession = {
   group: string | null
@@ -58,206 +80,251 @@ function manualSelectionQuery(session: SelectionSession): Json {
   }
 }
 
-export function NewSelectionDialog({ session }: { session: SelectionSession }) {
-  const defs = useQuery({ queryKey: ['definitions'], queryFn: () => api.get('/v1/definitions') })
-  const types = typeNames(defs.data, uiLanguage)
+/** The Selections view keeps the create and edit draft in its Detail area. */
+function SelectionDraftDetail({
+  session,
+  defs,
+  onSaved,
+}: {
+  session: SelectionSession
+  defs?: Json
+  onSaved?: (item: Json) => void
+}) {
+  const draft = useSyncExternalStore(subscribeSelectionDraft, getSelectionDraft, getSelectionDraft)
+  const types = typeNames(defs, uiLanguage)
   const firstType = types[0]?.key ?? ''
   const workspaceType = session.workspaceType || session.listType || ''
-  const [open, setOpen] = useState(false)
-  const [name, setName] = useState('')
-  const [kind, setKind] = useState<SelectionKind>('manual')
-  const [typeKey, setTypeKey] = useState(workspaceType)
-  const typeLabel = types.find((type) => type.key === typeKey)?.plural || typeKey
-  const [query, setQuery] = useState('')
-  const [editing, setEditing] = useState<Json | null>(null)
   const [error, setError] = useState('')
+  const [nameError, setNameError] = useState('')
+  const [queryError, setQueryError] = useState('')
   const [saving, setSaving] = useState(false)
   const nameRef = useRef<HTMLInputElement>(null)
   const queryClient = useQueryClient()
+  const identity = draft ? `${draft.mode}:${draft.id ?? 'new'}` : ''
 
   useEffect(() => {
-    if (open && !typeKey && firstType) setTypeKey(firstType)
-  }, [open, typeKey, firstType])
-
-  useEffect(() => {
-    const onOpen = (event: Event) => {
-      const draft = ((event as CustomEvent<NewSelectionRequest>).detail ?? {}) as NewSelectionRequest
-      setEditing(null)
-      setName(draft.name ?? '')
-      setKind(draft.kind === 'dynamic' ? 'dynamic' : 'manual')
-      setQuery(draft.query ?? '')
-      setTypeKey(draft.type || workspaceType || firstType)
-      setError('')
-      setOpen(true)
-    }
-    const onEdit = (event: Event) => {
-      const item = (event as CustomEvent<Json>).detail
-      if (!item) return
-      setEditing(item)
-      setName(String(item.name ?? ''))
-      setKind(selectionKind(item.kind))
-      setQuery(selectionFilterText(item.query))
-      setTypeKey(String(item.type ?? item.type_id ?? (workspaceType || firstType)))
-      setError('')
-      setOpen(true)
-    }
-    window.addEventListener(NEW_SELECTION_EVENT, onOpen)
-    window.addEventListener(EDIT_SELECTION_EVENT, onEdit)
+    if (!identity) return
+    const focusName = () => nameRef.current?.focus()
+    focusName()
+    // The shared context menu restores focus to the trigger in a microtask,
+    // and ui.open_view focuses the pane on the next animation frame. Land on
+    // the name field after both of those.
+    let later = 0
+    const frame = requestAnimationFrame(() => {
+      later = requestAnimationFrame(focusName)
+    })
     return () => {
-      window.removeEventListener(NEW_SELECTION_EVENT, onOpen)
-      window.removeEventListener(EDIT_SELECTION_EVENT, onEdit)
+      cancelAnimationFrame(frame)
+      cancelAnimationFrame(later)
     }
-  }, [workspaceType, firstType])
+  }, [identity])
+
+  useEffect(() => {
+    if (!draft) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || saving) return
+      event.preventDefault()
+      discardSelectionDraft()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [draft, saving])
+
+  useEffect(() => {
+    if (draft && !draft.type && firstType) updateSelectionDraft({ type: firstType })
+  }, [draft, firstType])
+
+  if (!draft) return null
+  const editing = draft.mode === 'edit'
+  const typeLabel = types.find((type) => type.key === draft.type || type.id === draft.type)?.plural || draft.type
 
   const save = async () => {
     if (saving) return
     // Fast typing can outrun React state; the input's value is the source of
     // truth so a click immediately after the last key cannot save a prefix.
-    const title = (nameRef.current?.value ?? name).trim()
-    const chosen = typeKey || workspaceType
-    if (!title || !chosen) return
-    if (kind === 'dynamic' && !query.trim()) {
-      setError(copy.filterQueryRequired)
+    const title = (nameRef.current?.value ?? draft.name).trim()
+    const chosen = draft.type || workspaceType || firstType
+    const nextNameError = title ? '' : copy.selectionNameRequired
+    const nextQueryError = draft.kind === 'dynamic' && !draft.query.trim() ? copy.filterQueryRequired : ''
+    setNameError(nextNameError)
+    setQueryError(nextQueryError)
+    setError('')
+    if (nextNameError || nextQueryError || !chosen) {
+      if (nextNameError) nameRef.current?.focus()
       return
     }
-    setError('')
     setSaving(true)
-    const manual = (editing?.query as Json | undefined) ?? manualSelectionQuery(session)
+    const manual = editing ? draft.manual : manualSelectionQuery(session)
     const body = {
-      ...(editing ? { id: String(editing.id) } : {}),
+      ...(editing && draft.id ? { id: draft.id } : {}),
       name: title,
       ...(editing ? {} : { type: chosen }),
-      kind,
-      query: selectionQueryValue(kind, query, manual),
+      kind: draft.kind,
+      query: selectionQueryValue(draft.kind, draft.query, manual, draft.q),
     }
     try {
-      if (editing) {
-        // Selections are written directly through the assortment endpoint, not
-        // as review drafts. Keep that path; only the pending state is new.
-        await api.put('/v1/assortments/{id}', { params: { path: { id: String(editing.id) } }, body })
-      } else {
-        await api.post('/v1/assortments', { body })
-      }
+      const saved = editing && draft.id
+        ? await api.put('/v1/assortments/{id}', { params: { path: { id: draft.id } }, body })
+        : await api.post('/v1/assortments', { body })
       session.push(copy.saved)
-      setError('')
-      setOpen(false)
-      setEditing(null)
-      setName('')
+      if (saved && typeof saved === 'object' && !Array.isArray(saved)) onSaved?.(saved as Json)
       void queryClient.invalidateQueries({ queryKey: ['assortments'] })
+      discardSelectionDraft()
     } catch (reason) {
+      const code = reason instanceof ApiError ? errorCodeFromBody(reason.body) : ''
       const message = writeErrorMessage(reason)
-      if (message) setError(message)
+      if (message && (code === 'invalid_query' || code === 'invalid_path')) setQueryError(message)
+      else if (message) setError(message)
     } finally {
       setSaving(false)
     }
   }
 
+  const changes = selectionDraftChanges(draft)
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent data-testid="new-selection">
-        <DialogTitle className="pr-8">{editing ? copy.editSelection : copy.newSelection}</DialogTitle>
-        <DialogDescription>
-          {editing
-            ? 'Change the name and filter. The kind and object type stay locked.'
-            : 'Name a saved selection and choose whether it follows a filter or is filled by hand.'}
-        </DialogDescription>
-        <form
-          className="form"
-          onSubmit={(event) => {
-            event.preventDefault()
-            void save()
-          }}
-        >
-          <label className="model-field">
-            <span>{copy.assortment}</span>
-            <Input
-              ref={nameRef}
-              className="selection-name"
-              data-testid="assortment-name"
-              value={name}
-              aria-label={copy.assortment}
-              placeholder={copy.assortment}
-              onChange={(event) => setName(event.target.value)}
-            />
-          </label>
-          <label className="model-field">
-            <span>{copy.type}</span>
-            {editing ? (
-              <span
-                className="model-field-locked"
-                data-testid="selection-type"
-                data-locked="true"
-                aria-readonly="true"
-                aria-label={copy.type}
-              >
-                <Lock size={12} aria-hidden="true" />
-                <span>{typeLabel}</span>
-              </span>
-            ) : (
-              <select
-                aria-label={copy.type}
-                data-testid="selection-type"
-                value={typeKey}
-                onChange={(event) => setTypeKey(event.target.value)}
-              >
-                {types.map((type) => (
-                  <option key={type.key} value={type.key}>
-                    {type.plural || type.key}
-                  </option>
-                ))}
-              </select>
-            )}
-          </label>
-          <label className="model-field">
-            <span>{copy.selectionKind}</span>
-            {editing ? (
-              <span
-                className="model-field-locked"
-                data-testid="selection-kind"
-                data-locked="true"
-                aria-readonly="true"
-                aria-label={copy.selectionKind}
-              >
-                <Lock size={12} aria-hidden="true" />
-                <span>{kind === 'dynamic' ? copy.dynamicSelection : copy.manualSelection}</span>
-              </span>
-            ) : (
-              <select
-                aria-label={copy.selectionKind}
-                data-testid="selection-kind"
-                value={kind}
-                onChange={(event) => setKind(selectionKind(event.target.value))}
-              >
-                <option value="dynamic">{copy.dynamicSelection}</option>
-                <option value="manual">{copy.manualSelection}</option>
-              </select>
-            )}
-          </label>
-          {kind === 'dynamic' ? (
-            <label className="model-field">
-              <span>{copy.filterQuery}</span>
-              <Input
-                data-testid="selection-query"
-                value={query}
-                aria-label={copy.filterQuery}
-                placeholder="type_key:=product && groups:=food:cheese"
-                onChange={(event) => setQuery(event.target.value)}
-              />
-              <small>{copy.filterQueryHint}</small>
-            </label>
+    <div className="assortment-open selection-detail" data-testid="selection-detail">
+      <h3>{editing ? copy.editSelection : copy.newSelection}</h3>
+      <p className="hint" data-testid="selection-hint">
+        {editing
+          ? 'Change the name and filter. The kind and object type stay locked.'
+          : draft.kind === 'dynamic'
+            ? copy.dynamicSelectionHint
+            : copy.manualSelectionHint}
+      </p>
+      <form
+        className="form"
+        onSubmit={(event) => {
+          event.preventDefault()
+          void save()
+        }}
+      >
+        <label className="model-field">
+          <span>{copy.assortment}</span>
+          <Input
+            ref={nameRef}
+            className="selection-name"
+            data-testid="assortment-name"
+            value={draft.name}
+            aria-label={copy.assortment}
+            aria-invalid={nameError ? true : undefined}
+            aria-describedby={nameError ? 'selection-name-error' : undefined}
+            placeholder={copy.assortment}
+            onChange={(event) => {
+              setNameError('')
+              updateSelectionDraft({ name: event.target.value })
+            }}
+          />
+          {nameError ? (
+            <p id="selection-name-error" className="error" role="alert" data-testid="selection-name-error">{nameError}</p>
           ) : null}
-          {error ? <p className="error" data-testid="selection-error">{error}</p> : null}
-          <div className="dialog-actions">
-            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
-              {copy.cancel}
-            </Button>
-            <Button type="submit" variant="primary" data-testid="save-selection" disabled={saving}>
-              {saving ? copy.saving : copy.saveAssortment}
-            </Button>
-          </div>
-        </form>
-      </DialogContent>
-    </Dialog>
+        </label>
+        <label className="model-field">
+          <span>{copy.type}</span>
+          {editing ? (
+            <span
+              className="model-field-locked"
+              data-testid="selection-type"
+              data-locked="true"
+              aria-readonly="true"
+              aria-label={copy.type}
+            >
+              <Lock size={12} aria-hidden="true" />
+              <span>{typeLabel}</span>
+            </span>
+          ) : (
+            <select
+              aria-label={copy.type}
+              data-testid="selection-type"
+              value={draft.type}
+              onChange={(event) => updateSelectionDraft({ type: event.target.value })}
+            >
+              {types.map((type) => (
+                <option key={type.key} value={type.key}>
+                  {type.plural || type.key}
+                </option>
+              ))}
+            </select>
+          )}
+        </label>
+        <label className="model-field">
+          <span>{copy.selectionKind}</span>
+          {editing ? (
+            <span
+              className="model-field-locked"
+              data-testid="selection-kind"
+              data-locked="true"
+              aria-readonly="true"
+              aria-label={copy.selectionKind}
+            >
+              <Lock size={12} aria-hidden="true" />
+              <span>{draft.kind === 'dynamic' ? copy.dynamicSelection : copy.manualSelection}</span>
+            </span>
+          ) : (
+            <select
+              aria-label={copy.selectionKind}
+              data-testid="selection-kind"
+              value={draft.kind}
+              onChange={(event) => updateSelectionDraft({ kind: selectionKind(event.target.value) })}
+            >
+              <option value="dynamic">{copy.dynamicSelection}</option>
+              <option value="manual">{copy.manualSelection}</option>
+            </select>
+          )}
+        </label>
+        {draft.kind === 'dynamic' ? (
+          <>
+          <label className="model-field">
+            <span>{copy.filterQuery}</span>
+            <Input
+              data-testid="selection-query"
+              value={draft.query}
+              aria-label={copy.filterQuery}
+              aria-invalid={queryError ? true : undefined}
+              aria-describedby={queryError ? 'selection-query-error' : undefined}
+              placeholder="type_key:=product && groups:=food:cheese"
+              onChange={(event) => {
+                setQueryError('')
+                updateSelectionDraft({ query: event.target.value })
+              }}
+            />
+            {queryError ? (
+              <p id="selection-query-error" className="error" role="alert" data-testid="selection-query-error">{queryError}</p>
+            ) : (
+              <small>{copy.filterQueryHint}</small>
+            )}
+          </label>
+          <label className="model-field">
+            <span>{copy.selectionSearch}</span>
+            <Input
+              data-testid="selection-search"
+              value={draft.q}
+              aria-label={copy.selectionSearch}
+              placeholder="oat"
+              onChange={(event) => updateSelectionDraft({ q: event.target.value })}
+            />
+            <small>{copy.selectionSearchHint}</small>
+          </label>
+          </>
+        ) : null}
+        {error ? <p className="error" data-testid="selection-error">{error}</p> : null}
+        <ObjectDraftBar
+          count={changes}
+          canSave
+          canDiscard
+          saveReason=""
+          discardReason=""
+          pending={saving}
+          onSave={() => void save()}
+          onDiscard={() => {
+            setError('')
+            setNameError('')
+            setQueryError('')
+            discardSelectionDraft()
+          }}
+        />
+      </form>
+    </div>
   )
 }
 
@@ -273,6 +340,7 @@ export function DeleteSelectionDialog({ session }: { session: SelectionSession }
     enabled: Boolean(id),
   })
   const lines = selectionUsageLines(usage.data)
+  const waiting = usage.isPending
 
   useEffect(() => {
     const onDelete = (event: Event) => {
@@ -311,8 +379,8 @@ export function DeleteSelectionDialog({ session }: { session: SelectionSession }
         <DialogTitle className="pr-8">{copy.deleteSelection}</DialogTitle>
         <DialogDescription>{copy.deleteSelectionDetail}</DialogDescription>
         <p className="hint">{String(item?.name ?? '')}</p>
-        {usage.isLoading ? (
-          <p className="hint">{copy.loading}</p>
+        {waiting ? (
+          <p className="hint" data-testid="selection-usage">{copy.checkingSelectionUse}</p>
         ) : (
           <div className="selection-usage" data-testid="selection-usage">
             {lines.length > 0 ? (
@@ -334,8 +402,14 @@ export function DeleteSelectionDialog({ session }: { session: SelectionSession }
           <Button type="button" variant="ghost" onClick={() => setItem(null)}>
             {copy.cancel}
           </Button>
-          <Button type="button" variant="danger" disabled={deleting || usage.isLoading} onClick={() => void remove()}>
-            {copy.delete}
+          <Button
+            type="button"
+            variant="danger"
+            disabled={deleting || waiting}
+            aria-label={waiting ? copy.checkingSelectionUseAction : copy.delete}
+            onClick={() => void remove()}
+          >
+            {waiting ? copy.checkingSelectionUseAction : copy.delete}
           </Button>
         </div>
       </DialogContent>
@@ -343,7 +417,52 @@ export function DeleteSelectionDialog({ session }: { session: SelectionSession }
   )
 }
 
+function showSelectionView() {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent('braian-open-draft', {
+    detail: { viewType: 'assortment_list' },
+  }))
+}
+
 export function SelectionHost({ session }: { session: SelectionSession }) {
+  const workspaceType = session.workspaceType || session.listType || ''
+  const queryClient = useQueryClient()
+  const [addRequest, setAddRequest] = useState<AddSelectionRequest | null>(null)
+  const [pendingRemove, setPendingRemove] = useState<{ selectionId: string; ids: string[] } | null>(null)
+  const [removeError, setRemoveError] = useState('')
+  const [removing, setRemoving] = useState(false)
+  const removeMembers = (selectionId: string, ids: string[]) => {
+    setRemoving(true)
+    setRemoveError('')
+    void saveSelectionMembers(queryClient, selectionId, ids, 'remove')
+      .then(() => setPendingRemove(null))
+      .catch((reason: unknown) => {
+        const message = writeErrorMessage(reason) ?? copy.validation
+        setRemoveError(message)
+        setMemberError(selectionId, message)
+      })
+      .finally(() => setRemoving(false))
+  }
+  useEffect(() => {
+    const onNew = (event: Event) => {
+      const request = ((event as CustomEvent<NewSelectionRequest>).detail ?? {}) as NewSelectionRequest
+      startNewSelection(request, workspaceType)
+      showSelectionView()
+    }
+    const onEdit = (event: Event) => {
+      const item = (event as CustomEvent<Json>).detail
+      if (!item) return
+      startEditSelection(item, workspaceType)
+      showSelectionView()
+    }
+    window.addEventListener(NEW_SELECTION_EVENT, onNew)
+    window.addEventListener(EDIT_SELECTION_EVENT, onEdit)
+    return () => {
+      window.removeEventListener(NEW_SELECTION_EVENT, onNew)
+      window.removeEventListener(EDIT_SELECTION_EVENT, onEdit)
+    }
+  }, [workspaceType])
+
   useEffect(() => {
     const offEdit = registerCommandRunner('selection:edit', (target) => {
       const item = target.selection
@@ -353,23 +472,52 @@ export function SelectionHost({ session }: { session: SelectionSession }) {
       const item = target.selection
       if (item && typeof item === 'object' && !Array.isArray(item)) requestDeleteSelection(item as Json)
     })
+    const offAdd = registerCommandRunner('selection:add-objects', (target) => {
+      const objectIds = objectIdsFromTarget(target)
+      if (objectIds.length === 0) return
+      setAddRequest({ objectIds, typeKey: String(target.typeKey ?? workspaceType) })
+    })
+    const offRemove = registerCommandRunner('selection:remove-objects', (target) => {
+      const selectionId = String(target.manualSelectionId ?? '')
+      const ids = objectIdsFromTarget(target)
+      if (!selectionId || ids.length === 0) return
+      if (needsRemoveConfirm(ids.length)) {
+        setRemoveError('')
+        setPendingRemove({ selectionId, ids })
+        return
+      }
+      removeMembers(selectionId, ids)
+    })
     return () => {
       offEdit()
       offDelete()
+      offAdd()
+      offRemove()
     }
-  }, [])
+  }, [queryClient, workspaceType])
   return (
     <>
-      <NewSelectionDialog session={session} />
       <DeleteSelectionDialog session={session} />
+      {addRequest ? <SelectionPicker request={addRequest} onClose={() => setAddRequest(null)} /> : null}
+      {pendingRemove ? (
+        <RemoveSelectionConfirm
+          count={pendingRemove.ids.length}
+          pending={removing}
+          error={removeError}
+          onCancel={() => setPendingRemove(null)}
+          onConfirm={() => removeMembers(pendingRemove.selectionId, pendingRemove.ids)}
+        />
+      ) : null}
     </>
   )
 }
 
 export function AssortmentList({ session }: { session: SelectionSession }) {
+  useEffect(() => retainSelectionSurface(), [])
   const typeKey = session.workspaceType || session.listType || ''
   const defs = useQuery({ queryKey: ['definitions'], queryFn: () => api.get('/v1/definitions') })
   const typeId = typeNames(defs.data, uiLanguage).find((type) => type.key === typeKey)?.id ?? ''
+  const draft = useSyncExternalStore(subscribeSelectionDraft, getSelectionDraft, getSelectionDraft)
   const list = useQuery({
     queryKey: ['assortments', typeKey],
     queryFn: () => api.get('/v1/assortments', { params: { query: { type: typeKey } } }),
@@ -380,13 +528,31 @@ export function AssortmentList({ session }: { session: SelectionSession }) {
   const open = items.find((item) => String(item.id) === openId)
   const query = (open?.query as Json) ?? {}
   const dynamicFilter = open ? selectionFilterText(query) : ''
-  const filter = open
-    ? dynamicFilter || assortmentSearchFilter(query, String(open.type ?? typeKey), defs.data)
-    : ''
+  const searchText = open ? selectionSearchText(query) : ''
+  const openMembers = open ? memberIdsOf(open) : []
+  let filter = ''
+  if (open) {
+    if (dynamicFilter) filter = dynamicFilter
+    else if (searchText) filter = ''
+    else if (openMembers.length > 0 || isHandPickedQuery(query)) filter = memberIdFilter(openMembers)
+    else filter = assortmentSearchFilter(query, String(open.type ?? typeKey), defs.data)
+  }
+  const memberError = useSyncExternalStore(subscribeMemberError, memberErrorSnapshot, memberErrorSnapshot)
+  const queryClient = useQueryClient()
+  const addDropped = (selectionId: string, ids: string[]) => {
+    void saveSelectionMembers(queryClient, selectionId, ids, 'add').catch((reason: unknown) => {
+      setMemberError(selectionId, writeErrorMessage(reason) ?? copy.validation)
+    })
+  }
   const matches = useQuery({
-    queryKey: ['assortment-matches', openId, filter],
-    queryFn: () => api.get('/v1/search', { params: { query: searchQuery(new URLSearchParams({ filter, per_page: '20' })) } }),
-    enabled: Boolean(open && filter),
+    queryKey: ['assortment-matches', openId, filter, searchText],
+    queryFn: () => {
+      const params = new URLSearchParams({ per_page: '20' })
+      if (filter) params.set('filter', filter)
+      if (searchText) params.set('q', searchText)
+      return api.get('/v1/search', { params: { query: searchQuery(params) } })
+    },
+    enabled: Boolean(open && (filter || searchText)),
   })
   const hits = searchDocuments(matches.data ?? {})
   const found = Number(matches.data?.found ?? hits.length)
@@ -403,11 +569,19 @@ export function AssortmentList({ session }: { session: SelectionSession }) {
   return (
     <div className="assortment-list" data-testid="assortment-list">
       <div className="toolbar">
-        <Button type="button" data-testid="new-selection-button" onClick={() => requestNewSelection()}>
+        <Button type="button" data-testid="new-selection-button" onClick={() => startAndShow(session)}>
           {copy.newSelection}
         </Button>
       </div>
+      <SelectionDraftDetail
+        session={session}
+        defs={defs.data}
+        onSaved={(item) => setOpenId(String(item.id ?? ''))}
+      />
       {items.length === 0 ? <p className="hint">{copy.noAssortments}</p> : null}
+      {memberError.message && items.some((item) => String(item.id) === memberError.selectionId) ? (
+        <p className="error" data-testid="selection-member-error" role="alert">{memberError.message}</p>
+      ) : null}
       <div className="assortment-picks" tabIndex={0}>
         {items.map((item) => {
           const id = String(item.id)
@@ -417,6 +591,8 @@ export function AssortmentList({ session }: { session: SelectionSession }) {
               key={id}
               className="assortment-row"
               data-testid="assortment-row"
+              data-member-count={memberIdsOf(item).length}
+              {...selectionDropHandlers(selectionKind(item.kind) === 'manual', id, (ids) => addDropped(id, ids))}
               onContextMenu={(event) => {
                 if (prefersNativeContextMenu(event.target)) return
                 event.preventDefault()
@@ -452,10 +628,11 @@ export function AssortmentList({ session }: { session: SelectionSession }) {
           )
         })}
       </div>
-      {open ? (
+      {!draft && open ? (
         <div data-testid="assortment-open">
           <div className="assortment-query">
             {open.type ? <span className="filter-chip">{String(open.type)}</span> : null}
+            {searchText ? <span className="filter-chip" data-testid="selection-search-chip">{searchText}</span> : null}
             {dynamicFilter ? <span className="filter-chip">{dynamicFilter}</span> : null}
             {!dynamicFilter && query.group ? <span className="filter-chip">{groupChip(String(query.group), defs.data)}</span> : null}
             {!dynamicFilter
@@ -484,4 +661,9 @@ export function AssortmentList({ session }: { session: SelectionSession }) {
       ) : null}
     </div>
   )
+}
+
+function startAndShow(session: SelectionSession) {
+  startNewSelection({}, session.workspaceType || session.listType || '')
+  showSelectionView()
 }

@@ -71,15 +71,15 @@ export function useShortcutBindings(handlers: ShortcutHandlers) {
   )
   useRegisteredHotkey('palette.search', openPalette)
 
-  // While the palette is open, Ctrl+J belongs to it: ask with the current query.
-  // The global binding would remount a blank AI panel and drop that query.
+  // Ctrl+J stays live while the palette is open. openAi asks with the query
+  // instead of remounting a blank AI panel, and it still runs when focus has
+  // left the palette input.
   useRegisteredHotkey(
     'palette.ai',
     useCallback((event) => {
       event.stopPropagation()
       handlers.openAi()
     }, [handlers]),
-    { enabled: !handlers.paletteOpen },
   )
   useRegisteredHotkey('review.save', useCallback(() => handlers.saveReview(), [handlers]))
   useRegisteredHotkey(

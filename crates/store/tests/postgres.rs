@@ -396,6 +396,7 @@ async fn adding_attributes_does_not_move_existing_values() {
             id: AttributeId::from_uuid(Uuid::from_u128(50_000 + index)),
             key: format!("0{index:04}"),
             labels: BTreeMap::new(),
+            description: None,
             language_dependent: false,
             multiple: false,
             required: false,

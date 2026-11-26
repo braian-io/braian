@@ -10,6 +10,7 @@ import {
   objectDraftSnapshot,
   reviewCapabilities,
   type DraftPrincipal,
+  type DraftSurface,
   type ObjectDraftCell,
 } from './object-draft'
 import type { IndexedProposalCell, ProposalMembership } from './review-cells'
@@ -33,6 +34,8 @@ export function draftSavePlan(input: {
   meta?: Record<string, { key: string; type: string }>
   /** The rows the person is reviewing. Anything outside it is not saved. */
   scope?: string[]
+  /** Save only the cells staged in this pane. The other pane keeps its own draft. */
+  surface?: DraftSurface
 }): DraftSaveItem[] {
   const items: DraftSaveItem[] = []
   const inScope = (objectId: string) => !input.scope || input.scope.includes(objectId)
@@ -43,9 +46,9 @@ export function draftSavePlan(input: {
   const writtenObjects = new Set<string>()
   for (const objectId of input.objectIds) {
     if (!inScope(objectId)) continue
-    const cells = objectDraftCells(objectId)
+    const cells = objectDraftCells(objectId, input.surface)
     if (cells.length === 0) continue
-    const base = draftBaseVersion(objectId) ?? input.serverVersions[objectId] ?? 0
+    const base = draftBaseVersion(objectId, input.surface) ?? input.serverVersions[objectId] ?? 0
     const server = input.serverVersions[objectId]
     const stale = server != null && server !== base
     const capability = reviewCapabilities({
@@ -62,7 +65,7 @@ export function draftSavePlan(input: {
       continue
     }
     writtenObjects.add(objectId)
-    const values = draftValues(objectId)
+    const values = draftValues(objectId, input.surface)
     if (input.fileAsProposal) {
       const meta = input.meta?.[objectId]
       items.push({
@@ -137,6 +140,8 @@ export function draftDiscardPlan(input: {
   proposals?: IndexedProposalCell[]
   /** Complete pending membership per proposal, including objects outside the scope and unmapped rows. */
   membership?: Map<string, ProposalMembership> | ProposalMembership[]
+  /** Drop only the cells staged in this pane. */
+  surface?: DraftSurface
 }): { clear: string[]; discard: string[]; reason: string } {
   const capability = reviewCapabilities({
     principal: input.principal,
@@ -149,7 +154,7 @@ export function draftDiscardPlan(input: {
   })
   if (!capability.canDiscard) return { clear: [], discard: [], reason: capability.discardReason }
   const scope = new Set(input.objectIds)
-  const clear = input.objectIds.filter((id) => objectDraftCells(id).length > 0)
+  const clear = input.objectIds.filter((id) => objectDraftSnapshot([id], input.surface).length > 0)
   const reviewed = new Set(
     (input.proposals ?? []).map((cell) => cell.proposalId).filter(Boolean),
   )
@@ -172,10 +177,29 @@ export function draftDiscardPlan(input: {
   return { clear, discard, reason: '' }
 }
 
+/** Returned instead of '' when another save is already running. */
+export const DRAFT_SAVE_IN_FLIGHT = '__braian_draft_save_in_flight__'
+
+export function isDraftSaveInFlight(reason: string): boolean {
+  return reason === DRAFT_SAVE_IN_FLIGHT
+}
+
 let saving = false
+const savingListeners = new Set<() => void>()
+
+function setSaving(next: boolean): void {
+  if (saving === next) return
+  saving = next
+  for (const listener of savingListeners) listener()
+}
 
 export function objectDraftSaving(): boolean {
   return saving
+}
+
+export function subscribeObjectDraftSaving(listener: () => void): () => void {
+  savingListeners.add(listener)
+  return () => savingListeners.delete(listener)
 }
 
 export async function runDraftDiscard(input: {
@@ -184,10 +208,11 @@ export async function runDraftDiscard(input: {
   membership?: Map<string, ProposalMembership> | ProposalMembership[]
   principal: DraftPrincipal
   viaAgent: boolean
+  surface?: DraftSurface
 }): Promise<string> {
   const plan = draftDiscardPlan(input)
   if (plan.reason) return plan.reason
-  for (const id of plan.clear) discardSubmittedCells(objectDraftSnapshot([id]))
+  for (const id of plan.clear) discardSubmittedCells(objectDraftSnapshot([id], input.surface))
   for (const id of plan.discard) {
     await api.post('/v1/proposals/{id}/discard', { params: { path: { id } } })
   }
@@ -216,15 +241,26 @@ async function refreshProposals(queryClient: QueryClient): Promise<void> {
   ])
 }
 
+/**
+ * One accept call for a human Save, an agent proposal and an import draft.
+ * The server still records who filed the change and checks base_version.
+ */
+export async function acceptProposal(proposalId: string, body: Json): Promise<Json> {
+  return await api.post('/v1/proposals/{id}/accept', {
+    params: { path: { id: proposalId } },
+    body: body as never,
+  }) as Json
+}
+
 export async function runDraftSave(
   items: DraftSaveItem[],
   queryClient: QueryClient,
   agentRunId = '',
 ): Promise<string> {
-  if (saving) return ''
+  if (saving) return DRAFT_SAVE_IN_FLIGHT
   const blocked = items.find((item) => item.kind === 'blocked')
   if (blocked && blocked.kind === 'blocked') return blocked.reason
-  saving = true
+  setSaving(true)
   const errors: string[] = []
   try {
     for (const item of items) {
@@ -265,10 +301,7 @@ export async function runDraftSave(
         }
       } else if (item.kind === 'accept') {
         try {
-          const result = await api.post('/v1/proposals/{id}/accept', {
-            params: { path: { id: item.proposalId } },
-            body: { rows: item.rowIds },
-          }) as Json
+          const result = await acceptProposal(item.proposalId, { rows: item.rowIds })
           const failed = failureReason(result)
           if (failed) errors.push(failed)
         } catch (reason) {
@@ -283,6 +316,6 @@ export async function runDraftSave(
     }
     return errors.filter(Boolean).join('; ')
   } finally {
-    saving = false
+    setSaving(false)
   }
 }

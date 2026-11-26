@@ -115,6 +115,7 @@ function PaletteHost({
       push: () => undefined,
       openWorkspace: () => undefined,
       openTypeView: () => undefined,
+      openStructureView: () => undefined,
     }),
     [],
   )

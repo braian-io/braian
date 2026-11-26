@@ -21,6 +21,7 @@ export type AgentRunSummary = {
   finished_at?: string | null
   proposal_count?: number
   question?: string | null
+  first_message?: string | null
 }
 
 export type AgentMessage = {
@@ -160,20 +161,74 @@ export function cleanAgentError(text: string): string {
   return cleaned || copy.agentFailed
 }
 
-/** Tab label. The full prompt stays on the tooltip. */
-export function agentTabTitle(prompt: string): string {
-  const trimmed = prompt.trim().replace(/\s+/g, ' ')
-  if (trimmed.length <= 48) return trimmed
-  const cut = trimmed.slice(0, 48)
-  const space = cut.lastIndexOf(' ')
-  const base = space > 16 ? cut.slice(0, space) : cut
-  return `${base}…`
+const SESSION_DISPLAY_TITLE_WORDS = 6
+
+/** Pane tab label. Session text lives in the header and tab tooltip. */
+export function agentTabTitle(_prompt?: string): string {
+  return copy.agent
 }
 
-export function agentRunPrompt(run: { title: string; messages?: AgentMessage[] }): string {
+export function agentRunPrompt(run: { title: string; first_message?: string | null; messages?: AgentMessage[] }): string {
   const text = run.messages?.find((message) => message.kind === 'user')?.body.text
   if (typeof text === 'string' && text.trim()) return text.trim()
+  const stored = run.first_message?.trim()
+  if (stored) return stored
   return run.title
+}
+
+/** Truncated first-message fallback while the short session title is pending. */
+export function agentDisplayTitleFallback(text: string): string {
+  const trimmed = text.trim()
+  if (!trimmed) return copy.agent
+  const words = trimmed.split(/\s+/)
+  if (words.length <= SESSION_DISPLAY_TITLE_WORDS) return trimmed
+  return `${words.slice(0, SESSION_DISPLAY_TITLE_WORDS).join(' ')}…`
+}
+
+/** Palette and Agents table search: title, first message, status, and waiting question. */
+export function agentRunSearchHaystack(run: AgentRunSummary): string {
+  return [
+    run.title,
+    run.first_message,
+    run.question,
+    run.status,
+    run.mode,
+    agentStatusLabel(run.status),
+  ]
+    .map((part) => (typeof part === 'string' ? part.trim() : ''))
+    .filter(Boolean)
+    .join(' ')
+}
+
+/** Short title for the session header and dock tooltip. */
+export function agentSessionHeaderTitle(run: { title: string; messages?: AgentMessage[] }): string {
+  const short = run.title.trim()
+  if (short && short !== copy.agent) return short
+  return agentDisplayTitleFallback(agentRunPrompt(run))
+}
+
+/** Full first message for the header tooltip and accessible description. */
+export function agentSessionAccessibleDescription(run: { title: string; messages?: AgentMessage[] }): string {
+  return agentRunPrompt(run)
+}
+
+/** Dock tab tooltip suffix. Legacy agent views without a run title show only "Agent". */
+export function agentDockTabSessionLabel(
+  view: { type: string; state?: { prompt?: unknown; run_id?: unknown } },
+  runs?: AgentRunSummary[],
+): string | undefined {
+  if (view.type !== 'agent') return undefined
+  const runId = String(view.state?.run_id ?? '')
+  const fromRun = runs?.find((run) => run.id === runId)?.title?.trim()
+  if (fromRun && fromRun !== copy.agent) return fromRun
+  const stored = typeof view.state?.prompt === 'string' ? view.state.prompt.trim() : ''
+  if (stored) return agentDisplayTitleFallback(stored)
+  return undefined
+}
+
+/** @deprecated use agentDockTabSessionLabel */
+export function agentViewTabPrompt(view: { type: string; state?: { prompt?: unknown } }): string | undefined {
+  return agentDockTabSessionLabel(view)
 }
 
 export const openAgentEvent = 'braian-open-agent'
@@ -233,6 +288,41 @@ export function backgroundWorkingCount(runs: AgentRunSummary[]): number {
 export function backgroundWorkingLabel(count: number): string {
   if (count === 1) return copy.agentWorkingOne
   return copy.agentsWorking.replace('{count}', String(count))
+}
+
+/** Keep one list row aligned with a run the open view just observed. */
+export function mergeRunSummary(
+  list: AgentRunSummary[] | undefined,
+  detail: AgentRunSummary,
+): AgentRunSummary[] | undefined {
+  if (!list) return list
+  const index = list.findIndex((run) => run.id === detail.id)
+  if (index < 0) return list
+  const current = list[index]
+  if (!current) return list
+  if (current.mode === detail.mode && current.status === detail.status && current.updated_at === detail.updated_at) {
+    return list
+  }
+  const next = list.slice()
+  next[index] = {
+    ...current,
+    title: detail.title,
+    status: detail.status,
+    mode: detail.mode,
+    updated_at: detail.updated_at,
+    error: detail.error,
+    proposal_count: detail.proposal_count,
+    question: detail.question,
+  }
+  return next
+}
+
+export const agentNoticeEvent = 'braian-agent-notice'
+
+/** Tell the shell a background run needs a toast, without waiting for the next list poll. */
+export function requestAgentNotice(run: AgentRunSummary) {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent<AgentRunSummary>(agentNoticeEvent, { detail: run }))
 }
 
 /** A background run that just finished or started waiting for a decision. */
@@ -297,7 +387,7 @@ export function agentNotices(runs: AgentRunSummary[]): AgentNotice[] {
     }]
   }
   return runs.map((run) => ({
-    id: `agent-notice-${run.id}-${run.status}`,
+    id: `agent-notice-${run.id}-${run.status}-${run.updated_at}`,
     text: agentNoticeText(run),
     failed: run.status === 'failed',
     run,
@@ -329,15 +419,34 @@ export function agentsTablePaletteItem(): PaletteItem {
 export function agentPaletteRows(runs: AgentRunSummary[]): PaletteItem[] {
   return runs.map((run) => {
     const question = run.question?.trim() ?? ''
+    const firstMessage = run.first_message?.trim() ?? ''
     return {
       id: `agent-run:${run.id}`,
       group: 'views' as const,
       title: run.title,
       subtitle: run.status === 'waiting' && question ? question : '',
-      keywords: [run.status, run.mode, agentStatusLabel(run.status), question, 'agent'],
+      keywords: [agentRunSearchHaystack(run), question, firstMessage, 'agent'],
       chips: [{ text: agentStatusLabel(run.status), tone: agentStatusTone(run.status) }],
     }
   })
+}
+
+/** Foreground runs with tab_open whose agent view is actually open in the layout. */
+export function agentRunsToRestoreInLayout(
+  runs: AgentRunSummary[],
+  workspaceId: string,
+  openViewIds: readonly string[],
+): { restore: AgentRunSummary[]; stale: AgentRunSummary[] } {
+  const open = new Set(openViewIds)
+  const { here } = agentRunsForWorkspace(runs, workspaceId)
+  const restore: AgentRunSummary[] = []
+  const stale: AgentRunSummary[] = []
+  for (const item of here) {
+    const viewId = item.view_id?.trim() ?? ''
+    if (viewId && open.has(viewId)) restore.push(item)
+    else stale.push(item)
+  }
+  return { restore, stale }
 }
 
 /** Open tabs for this workspace, and open tabs that belong somewhere else. */

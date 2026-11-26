@@ -573,6 +573,90 @@ async fn column_prefs_agent_ops_use_owner_and_skip_approval() {
 }
 
 #[tokio::test]
+async fn column_prefs_delete_agent_op_uses_owner_and_skips_approval() {
+    let (db, app) = app().await;
+    let hash = hash_password("secret-agent-delete").unwrap();
+    let user = db
+        .store()
+        .create_user(
+            "agent-delete-prefs@braian.local",
+            &hash,
+            "editor",
+            "AgentDelete",
+        )
+        .await
+        .unwrap();
+    let other = db
+        .store()
+        .create_user(
+            "other-delete-prefs@braian.local",
+            &hash_password("secret-agent-delete-2").unwrap(),
+            "viewer",
+            "OtherOwner",
+        )
+        .await
+        .unwrap();
+    let view = seed_object_table_view(&db, user.id).await;
+    let raw = "agent-delete-prefs-token-1";
+    db.store()
+        .insert_api_token(&user, "prefs-delete-bot", "agent", &token_hash(raw))
+        .await
+        .unwrap();
+    let document = json!({
+        "version": 2,
+        "columns": [{ "path": "sku", "visible": true }]
+    });
+    db.store()
+        .put_view_column_prefs(user.id, "default", view, &document)
+        .await
+        .unwrap();
+    db.store()
+        .put_view_column_prefs(other.id, "default", view, &document)
+        .await
+        .unwrap();
+
+    let (status, _, deleted) = call(
+        &app,
+        "POST",
+        "/v1/operations/delete_view_column_prefs",
+        Some(raw),
+        &[("content-type", "application/json")],
+        Some(&serde_json::to_string(&json!({ "view": view })).unwrap()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{deleted}");
+    assert_eq!(deleted["deleted"], true);
+    assert!(deleted.get("proposal_id").is_none(), "{deleted}");
+    assert!(
+        db.store()
+            .view_column_prefs(user.id, "default", view)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        db.store()
+            .view_column_prefs(other.id, "default", view)
+            .await
+            .unwrap()
+            .is_some()
+    );
+
+    // Running reset with no override is a no-op, not an error.
+    let (status, _, again) = call(
+        &app,
+        "POST",
+        "/v1/operations/delete_view_column_prefs",
+        Some(raw),
+        &[("content-type", "application/json")],
+        Some(&serde_json::to_string(&json!({ "view": view })).unwrap()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{again}");
+    assert_eq!(again["deleted"], true);
+}
+
+#[tokio::test]
 async fn column_prefs_rows_cascade_when_view_or_user_is_removed() {
     let (db, app) = app().await;
     let hash = hash_password("secret-cascade").unwrap();

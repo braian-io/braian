@@ -103,6 +103,7 @@ pub fn definitions_with(tier: Tier, seed: u64, budget: IndexBudget) -> Definitio
             id,
             key: key.clone(),
             labels: label(&label_language, format!("Attribute {key}")),
+            description: None,
             language_dependent,
             multiple,
             required: false,
@@ -118,6 +119,7 @@ pub fn definitions_with(tier: Tier, seed: u64, budget: IndexBudget) -> Definitio
         id: unused_id,
         key: "unused".to_owned(),
         labels: label(&label_language, "Unused".to_owned()),
+        description: None,
         language_dependent: false,
         multiple: false,
         required: false,
@@ -224,10 +226,7 @@ fn unit_family(ids: &mut Ids, key: &str, base: &str, units: &[(&str, Decimal)]) 
         base_unit: base.to_owned(),
         units: units
             .iter()
-            .map(|(code, factor)| Unit {
-                code: (*code).to_owned(),
-                factor: *factor,
-            })
+            .map(|(code, factor)| Unit::with_factor(*code, *factor))
             .collect(),
     }
 }
@@ -247,6 +246,7 @@ fn kind_for(index: usize, mass: UnitFamilyId, length: UnitFamilyId) -> Attribute
             let family = if generation % 4 == 2 { length } else { mass };
             AttributeKind::Number {
                 unit_family: generation.is_multiple_of(2).then_some(family),
+                default_unit: None,
                 min: Some(Decimal::ZERO),
                 max: Some(Decimal::from(1000)),
                 integer: false,

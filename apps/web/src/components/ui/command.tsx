@@ -58,9 +58,12 @@ export const CommandInput = forwardRef<
   )
 })
 
-export function CommandList({ className, ...props }: ComponentProps<typeof CommandPrimitive.List>) {
-  return <CommandPrimitive.List className={cn('palette-list', className)} {...props} />
-}
+export const CommandList = forwardRef<
+  HTMLDivElement,
+  ComponentProps<typeof CommandPrimitive.List>
+>(function CommandList({ className, ...props }, ref) {
+  return <CommandPrimitive.List ref={ref} className={cn('palette-list', className)} {...props} />
+})
 
 export function CommandEmpty({ ...props }: ComponentProps<typeof CommandPrimitive.Empty>) {
   return <CommandPrimitive.Empty className="palette-empty" {...props} />

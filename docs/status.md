@@ -1,8 +1,454 @@
-# Status 2026-11-12
+# Status 2026-11-24
+
+## Row 291 — CI flakes on agent dock hit-test and demo-2 drop (branch `cursor/ci-flake-fixes-f91c`)
+
+- **E2E:** `review-and-save` uses `disabled:pointer-events-none` (`button.tsx`). While Detail
+  still shows a list preview (`data-detail-ready="false"`) or Save is disabled, `elementFromPoint`
+  hits the element behind the bar, so the strict hit assertion flakes. `agent-chat-dock.spec.ts`
+  now waits for `data-detail-ready`, the draft bar, and enabled Save/Discard, then polls the same
+  hit check (no assertion weakened).
+- **Load:** `drop_database` set `statement_timeout = 3s` on a plain `DROP DATABASE`. A large
+  `braian_demo` catalog after demo-2 can exceed that under CI I/O; demo-2 also ignored drop
+  failures. Drop now uses `WITH (FORCE)` (same as `scripts/e2e.mjs`) and propagates errors.
+- **Bevis:** demo-2 light 100k × 10 → 10/10; `agent-chat-dock` 1920-test × 20 isolerade e2e → 20/20
+  (head `1e94878`, cloud-agent-miljö).
+
+# Status 2026-11-14
+
+## Row 239 — Detail and table share width (in progress, not merged)
+
+Branch `junior/239-detail-width` starts at `origin/main` `68e8fe4` (row 238 / PR #322)
+and is open as **PR #323**. It is **not merged, not deployed and not accepted**. Nothing
+below describes live behavior on main or the demo.
+
+The six acceptance criteria are implemented in the product, the guide and the tests:
+
+- **The table keeps a minimum width.** A split that contains `object_detail` marks
+  itself with `data-has-detail`. In a split at least 640 px wide, an active
+  object-table cell that is not a nested split gets `min-width: 440px`. That floor is
+  **cancelled** when the table shares its split with a direct Detail pane, so the seed
+  Articles table next to Detail is not forced to 440 px (that had crushed Detail to
+  about 118 px). Every child of a split that contains Detail uses `flex: 0 1`. A Detail
+  leaf cell has `min-width: 220px`.
+- **The Detail title is fully readable.** The title wraps (`flex-wrap` plus
+  `overflow-wrap: anywhere`) and carries the full name in its `title` tooltip.
+- **Field values are not clipped to one letter.** Single-line inputs and measured
+  values carry the full value in `title`. The language tag **stays beside** the value
+  rather than wrapping below it. When the measured Detail form is narrower than 360 px,
+  a `ResizeObserver` sets `data-narrow` and labels stack above their fields. This is not
+  a CSS container query.
+- **The measure input can grow.** `.control .measure input` starts from 88 px and grows
+  with `flex: 1 1 88px`; it is no longer locked with `flex: none`.
+- **Light and dark theme match.** All changes share the same layout CSS and existing
+  tokens, with no theme-specific exceptions.
+
+Files: `apps/web/src/styles.css`, `apps/web/src/dock.tsx`, `apps/web/src/panes.tsx`,
+`apps/web/src/detail-width-css.test.ts`, `apps/web/src/dock.test.tsx`,
+`docs/guide/workspaces-and-panels.md`, `apps/web/e2e/row239-detail-width.spec.ts`, and
+its registration in `scripts/e2e.mjs` (weight 45 s). Screenshots go to
+`apps/web/test-results/row239-shots` (ignored by git).
+
+`sha256sum apps/web/src/data-model.tsx` is
+`2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`, unchanged.
+
+CI: on run **1013**
+(https://github.com/braian-io/braian/actions/runs/43557800618), head `df23362`, the
+official `row239-detail-width.spec.ts` passed, including the 900 px viewport. The same
+run failed only in e2e shard 5, where `link-types.spec.ts` timed out waiting for
+`data-testid="data-model"` after the command palette. This status update retriggers CI.
+Do not read it as a green full CI result; the branch is still not merged.
+
+## Row 238 — Detail and table Save retry and in-flight state (merged as #322, `68e8fe4`)
+
+Branch `junior/238-detail-save-flow` started at `origin/main` `4fcbe4c` and is **merged
+to `main` as PR #322 (squash `68e8fe40918c903e026c57850a6b21b06c9238a7`)**. Demo
+Playwright against https://demo.braian.io ran after autodeploy when `version.json` showed
+`68e8fe4`. Test has approved the row. The rest of this section describes what #322
+contained.
+
+The product WIP for the four acceptance criteria is finished and committed together with
+the tests and this status note:
+
+- **Failed Save does not lock retry.** `Detail` passes `validationErrors: []` to
+  `reviewCapabilities` / `draftSavePlan`; a server or transport failure is shown only in
+  the existing `data-testid="detail-error"` banner. Save stays enabled for an otherwise
+  valid draft, and the banner clears when a new save starts or the save succeeds. The
+  table already used an empty validation list and still reports through
+  `reportWriteError`/the toast.
+- **In-flight is not success.** `runDraftSave` returns the named
+  `DRAFT_SAVE_IN_FLIGHT` constant instead of `''` when a save is already running.
+  `isDraftSaveInFlight` lets both callers ignore that result, so an overlapping request
+  can never push `Saved`.
+- **Pending reaches the bar.** `setSaving`/`subscribeObjectDraftSaving` expose the
+  in-flight flag; the new `useObjectDraftSaving` hook uses `useSyncExternalStore`, and
+  both table and Detail pass `pending={draftSaving}`. While pending, Save reads
+  `Saving…` and both Save and Discard are disabled.
+- **Both views share the behavior.** The table and Detail use the same constant, the same
+  subscription and the same bar copy.
+
+New `apps/web/e2e/row238-detail-save.spec.ts` covers four cases: a failed Detail Save
+shows the banner and retries successfully, a failed table Save keeps Save enabled and
+retries successfully, and each view shows `Saving…` with both buttons disabled while a
+delayed PATCH is in flight. The in-flight case also force-clicks the disabled button and
+verifies that the activity log gains no `Saved` line. Screenshots of the failed-Detail
+retry state and both in-flight states are written to `apps/web/test-results/row238-shots`
+(ignored by git). The spec is registered in `scripts/e2e.mjs` with a measured weight of
+45 s, which makes the file weight 49 s including the 4 s reseed.
+
+Evidence locally in this worktree:
+
+- `docker run --rm --network none` with the real symlinked `apps/web/node_modules` and
+  `node:22-bookworm`: `./node_modules/.bin/tsc --noEmit` exit 0.
+- Full vitest suite in the same container: **173 files / 1022 tests passed**, including
+  the new `object-draft-bar.test.tsx` (2 tests) and the new in-flight cases in
+  `object-draft-save.test.ts` and `object-draft.test.ts`.
+- `python3 scripts/check-english.py` exit 0 and `git diff --check` exit 0.
+- `sha256sum apps/web/src/data-model.tsx` is
+  `2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`, unchanged.
+
+Playwright ran against the demo after autodeploy as described above, and Test has
+approved the row.
+
+## Rad 226 — graph-uppföljningen från 128g (inte mergad)
+
+Grenen `junior/226-graph-fixes` utgår från `origin/main` i den här worktreen (`669c84b`, PR #319) som bygger på den begärda basen `03b207b` (PR #318). Den innehåller guide-/statuscommiten, kod-/testcommitarna och den här statusnotisen. Den är **inte mergad, inte deployad och inte accepterad**; inget här ska läsas som att beteendet är live.
+
+CI-körning **#990 på head `4c0c79e` föll** på riktiga regressioner från rad 226: `row128e-picker-on-top` (en befintlig nods `data-x` flyttades 34 px efter add-link, och en object-caption kunde krocka med `value:created_at` i en liten pane), `row128g-graph-menu-fit` och `row226-graph-fixes` (den valda artikeln tappade `Supplier`-etiketten). Uppföljningen `bd2e39e` rättade `Supplier`-regressionerna i 128g/226, men **CI-körning #991 föll fortfarande** på 128e: stay-put flyttade en befintlig nod 29 px efter add-link och object-captionen kunde fortfarande krocka med `value:created_at` i en pane under 260 px. Den här uppföljningen fryser idle-refit-baslinjen och återställer `[full]`-only idle fit; 16 px-, kamera-, stay-put- och överlappsassertionerna i de äldre specarna är fortfarande orörda. Raden är fortfarande inte mergad.
+
+Bara de fem acceptanskriterierna från `ACCEPTANCE.md` är byggda:
+
+- **Pin överlever klick.** `onPointerUp` rensar inte längre `fx`/`fy` när `travel <= 3`; en ny `staysPinnedAfterPointerUp` behåller en befintlig pin genom både klick och drag, medan drag fortfarande pinnar där noden släpps. Endast **Unpin** och **Re-layout** släpper pinnen. Model graph behåller sitt gamla dragbeteende men tappar inte en pin som redan finns.
+- **Kameran passar om vid laddning/F5, full storlek och orörd resize.** `[full]`-passningen (120 ms så chromen hinner sätta sig) och canvas-`ResizeObserver` (som kontrollerar `dataset.dragging !== 'true'`) passar om så länge `movedRef` är falsk. Captions som löses ut efter första målningen (F5) ger en ny omfit **bara när nod-id-mängden är oförändrad jämfört med den frysta baslinjen från första observationen**; när nodmängden växer (add-link, expand group) uppdateras aldrig baslinjen och kameran rör sig inte, inte ens när den nya nodens caption fylls i efteråt. Efter användarens zoom, pan eller nodrag är `movedRef` fortfarande satt och kameran står kvar.
+- **Menyn håller sig inom 16 px.** `placeBesideMenu` provar nu 8 px-steg längs varje sida av nodens cirkel + mätta caption, så en ledig närplats hittas innan rutnätet väljs. Den egna noden täcks aldrig; i en trång pane får menyn fortfarande täcka en annan etikett.
+- **Gruppnoder får egen meny.** `canOpenGraphNodeMenu` släpper igenom `group`, `class` och `structure`. Deras meny har `graph:node:expand` (`Show members` för grupp, `Expand` för klass/struktur) som kör samma expansion som `Enter`/dubbelklick. Högerklick på hubben i full storlek hit-testas med canvasens klientrektangel och väljer närmaste nod, så en centrerad träff öppnar nodmenyn.
+- **Kantetiketter krockar inte med captions.** `placeEdgeLabel` tar emot synliga caption-rektanglar som hinder för etiketter som bara visas i vila; en vald eller hovrad (aktiv-endpoint) etikett hoppar över caption-hindren, flyttas bara undan från nodcirklar och andra etiketter och **får aldrig kastas för en captions skull**. Om den enda platsen ligger över en caption behålls etiketten och captionen döljs. Etiketter som ändå inte får plats döljs som förut.
+
+Filer: `apps/web/src/graph-map.tsx`, `apps/web/src/shared-context-menu.tsx`, `apps/web/src/graph-edge-label.ts`, `apps/web/src/i18n.ts` (engelsk `Show members`), `apps/web/src/graph-map.test.tsx`, `apps/web/src/graph-edge-label.test.ts`, nya `apps/web/e2e/row226-graph-fixes.spec.ts` samt registrering i `scripts/e2e.mjs` (vikt 70 s). Skärmbilder skrivs till den relativa katalogen `apps/web/test-results/row226-shots`.
+
+Bevis lokalt i worktreen:
+
+- `pnpm --filter ./apps/web exec tsc --noEmit` exit 0.
+- `pnpm --filter ./apps/web exec vitest run` gav **172 filer / 1017 tester** gröna.
+- `publish()` mäter nu nodetiketten med samma orundade radie som canvasmålningen, så `data-label-*` och den målade captionen håller samma rektangel.
+- `python3 scripts/check-english.py` exit 0. `sha256sum apps/web/src/data-model.tsx` är `2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`, oförändrad. `product_suppliers`-etiketterna, landing och `crates/` är orörda.
+- Playwright-specen är skriven och registrerad men **kördes inte i den här sessionen**; ingen isolerad Postgres/Typesense/API-stack startades, så resultatet från `row226-graph-fixes.spec.ts` och regressionerna `row128e`/`row128f`/`row128g` saknas här. Följden verifieras av CI på den här grenen, inte av lokala enhetstester.
+
+## Rad 213b — Add view klonar alltid till en ny panel till höger (mergad som #319, `669c84b`)
+
+Grenen `junior/213b-add-view-clone` utgick från `origin/main` `03b207b` (PR #318, rad 213) och är **mergad till `main` som PR #319 (squash `669c84b`)**. CI-körning #988 var grön på head `9ca0c02`. Demo Playwright mot https://demo.braian.io kördes efter autodeploy när `version.json` visade `669c84b`. Avsnittet nedan beskriver vad #319 innehöll.
+
+Buggen: på den delade demon öppnade Add view → Products view en gammal **stängd** Products-objekttabell som en flik i den fokuserade panelen. `objectTableViewForType` föredrog en stängd träff, och `openTypeView` öppnade den med `zone: 'center'`. Move right kunde dessutom lägga kopian som flik i en befintlig granne, och Ctrl+Alt+→ snappas ofta av operativsystemet. K3 underkändes därför.
+
+Beteendet nu:
+
+- `objectTableViewForType` returnerar bara en typstabell som redan ligger i layouten. Stängda vyer ignoreras som mål. En stängd (eller öppen) mall används bara för att kopiera tabellstate till ett **nytt** id.
+- Add view → typrad skapar alltid en ny vy och placerar den med `placeView`/`insert` och `zone: 'right'` intill den öppna typstabellen, annars till höger om fokuserad panel. Den använder inte `moveDir`, återöppnar aldrig en stängd kopia och lägger aldrig en andra typflik i samma panel.
+- Open view för sparade `view:`-rader är oförändrat: den fokuserar vyn på plats. Move right behövs inte för att få en andra typstabell.
+- K5-testet i `row213-open-view.spec.ts` stänger nu den agentflik som testet själv skapade (UI-knappen PATCH:ar `tab_open: false`), laddar om och verifierar att körningen finns kvar men fliken inte kommer tillbaka.
+
+Vad som ändrades:
+
+- `apps/web/src/open-type-view.ts`: `objectTableViewForType` returnerar endast öppna träffar; ny `objectTableTemplateForType` hittar en stängd eller öppen mall enbart för klonstate.
+- `apps/web/src/shell.tsx`: `openTypeView` klonar alltid till nytt id och placerar med `zone: 'right'` (mål = öppen typstabell när den finns).
+- `apps/web/src/open-type-view.test.ts`: testerna dokumenterar att stängd träff aldrig väljs som mål men kan användas som mall.
+- `apps/web/e2e/row213b-add-view-clone.spec.ts` (ny) och `scripts/e2e.mjs` (registrering och vikt 35): K3 börjar med en icke-tom demoyta, skapar en Products-kopia, stänger fliken så vyn ligger kvar i katalogen, fokuserar trädet och kräver sedan en ny `data-pane` till höger. Ett andra fall stänger alla öppna Products-tabeller och kräver en helt ny vy i stället för den stängda. Förstärkningen `fc87d4c` kontrollerar också att Graph och Detail behåller sina paneler.
+- `apps/web/e2e/row213-open-view.spec.ts`: K5-testet stänger agentfliken och verifierar efter omladdning att körningen finns kvar.
+- `docs/guide/workspaces-and-panels.md` och `docs/guide/command-palette-and-shortcuts.md`: Add view → typrad beskrivs som en ny panel till höger som aldrig återöppnar en stängd kopia; Open view fokuserar fortfarande på plats.
+
+Bevis (lokalt i worktreen, utan skrivningar mot delad demo eller produktion):
+
+- `pnpm --filter ./apps/web exec tsc --noEmit` exit 0.
+- `pnpm --filter ./apps/web exec vitest run` gav **172 filer / 1011 tester** gröna, inklusive de uppdaterade `open-type-view.test.ts`-fallen.
+- `python3 scripts/check-english.py` exit 0. `sha256sum apps/web/src/data-model.tsx` är `2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`, oförändrad.
+- Playwright kördes i isolerad compose (`braian-e2e-213b`) med API/Vite bundna till `127.0.0.1` på track A-portarna 25452/28150 och Postgres/Typesense på 25450/25451. Resultat: `row213-open-view.spec.ts` 3 godkända, `row213b-add-view-clone.spec.ts` 2 godkända, `open-type-view-ready.spec.ts` 1 godkänd och `duplicate-type-views.spec.ts` 1 godkänd. Skärmbilder skrivs under `apps/web/test-results/row213-shots` och `row213b-shots` (ignorerade av git).
+- Ingen deploy, PR eller merge gjordes från grenen, och den isolerade stacken togs ner utan att röra delade volymer.
+
+## Rad 213 — Open view fokuserar på plats och rör inte strukturen (mergad som #318, `03b207b`)
+
+Grenen `junior/213-open-view` utgick från `origin/main` `7b18f18` (PR #317, rad 211) och är **mergad till `main` som PR #318 (squash `03b207b`)**. Acceptanstestet underkände K3 på grund av den stängda Products-kopian; rättningen är rad 213b ovan. Avsnittet nedan beskriver vad #318 innehöll.
+
+Buggen: Ctrl+K → Open view → Products flyttade den redan öppna Products-vyn in i den fokuserade panelen. Stod strukturen (Food/Selections) i fokus hamnade Products som aktiv flik där, så trädet försvann ur synhåll och det såg ut som att det stängdes eller ersattes. Paletten listade dessutom gamla agentkörningar som vyer.
+
+Den här skivan delar kommandona så här:
+
+- **Open view** fokuserar och aktiverar en vy som redan finns i layouten på dess plats. Den flyttar inte vyn, stänger inte strukturen och rör inte Graph. Palettens `view:`-rader skickar inte längre `zone: 'center'`, så layouten går genom `ensureInLayout` i stället för `moveView`.
+- **Add view** är kvar som vägen till den fokuserade panelen. En rad för en befintlig vy skickar fortfarande `zone: 'center'` plus `target` och flyttar in vyn dit. En typrad (`Products view`) går fortfarande genom `openTypeView`, som kopierar en redan öppen typ-tabell och placerar kopian till höger.
+- Open view döljer vyer vars typ är `agent`. Agentkörningarna och deras flikar finns kvar; det är bara destinationslistan som inte erbjuder dem.
+
+Vad som ändrades:
+
+- `apps/web/src/palette.tsx`: `view:`-raden dispatchar `ui.open_view` utan `zone`, och rotkatalogens `view:`-rader filtrerar bort `type === 'agent'`.
+- `apps/web/src/palette-views.ts`: Open view-listan filtrerar bort `type === 'agent'` innan raderna byggs.
+- `apps/web/src/layout.test.ts`: enhetstest för att `ui.open_view` utan `zone` aktiverar en öppen vy på plats och lämnar layouten orörd.
+- `apps/web/src/palette-views.test.ts` (ny): enhetstest för att agentkörningar inte blir Open view-destinationer och att typraden döljs när en vy med samma titel redan finns.
+- `apps/web/e2e/row213-open-view.spec.ts` (ny) och `scripts/e2e.mjs` (registrering och vikt 30): Playwright täcker kriterium 1–5 med skärmbilder under `apps/web/test-results/row213-shots` (inom worktreen, så CI kan skriva dem).
+- `docs/guide/workspaces-and-panels.md` och `docs/guide/command-palette-and-shortcuts.md`: avsnittet Open a view beskriver fokus på plats, att strukturen och Graph står kvar, att listan inte tar med agentkörningar, och att Add view är vägen till fokuserad panel eller en andra typkopia.
+
+Bevis efter merge av #318 (historiskt för den här skivan; K3 underkändes sedan på demon):
+
+- CI-körning #987 var grön på head `e81ccad`. Squash-mergad till `main` som PR #318 (`03b207b`). Demo Playwright mot https://demo.braian.io kördes efter autodeploy när `version.json` visade `03b207b`.
+- Acceptanstestet underkände därefter K3 på den delade demon: Add view återöppnade en stängd Products-vy som flik i samma panel. Rättningen är rad 213b ovan; avsnittet ovan ska inte läsas som att K3 är löst i `03b207b`.
+
+## Rad 211 — New from template skapar en ny workspace (mergad som #317, `7b18f18`)
+
+Grenen `junior/211-new-from-template` utgår från `origin/main` `b4d4d62` (PR #316, rad 51c). Den är **mergad till `main` som PR #317 (squash `7b18f18`)**. Rad 51c är mergad som PR #316 (squash `b4d4d62`).
+
+Buggen: Ctrl+K → New from template → Products öppnade bara den befintliga Products-workspacen i stället för att skapa en ny. `createWorkspaceFromTemplate` återanvände workspacen med typens kanoniska `share_token`, och palettraden sa Open existing.
+
+Den här skivan skiljer den explicita New from template-vägen för objekttabeller från de andra anropare som fortfarande ska öppna-eller-skapa singletons:
+
+- Om typens kanoniska workspace redan finns skapar New from template en ny workspace med eget id, egen `user-…`-token och namn `Products 2`, sedan `Products 3`, och så vidare. Den använder typmallens layout (samma slags vyer som en färsk Products-workspace). Ingen namnpopup.
+- Om den kanoniska workspacen saknas skapas den som förut, med typens namn och typens `share_token`.
+- Data model och Review öppnar fortfarande sin befintliga kanoniska workspace (`Open existing`) och skapar ingen dubblett. Sparade workspace-mallar skapar fortfarande en ny workspace.
+- `shell.tsx` och andra anropare som ser till att en typworkspace finns är oförändrade och öppnar-eller-skapar fortfarande singeln.
+
+Vad som ändrades:
+
+- `apps/web/src/templates.ts`: `createWorkspaceFromTemplate` har fått `{ forceNew?: boolean }`, `nextWorkspaceName` räknar ut nästa lediga `"{name} {n}"` från 2, och `isTypeWorkspaceTemplate` identifierar `type:`-mallarna.
+- `apps/web/src/palette-new-from-template.ts` och `apps/web/src/palette.tsx`: endast objekttabeller skickar `forceNew`; deras rad säger Create medan Data model och Review säger Open existing.
+- `apps/web/src/templates.test.ts` och `apps/web/src/palette-new-from-template.test.ts`: enhetstester för unikt namn, force-new och underrubrikerna.
+- `docs/guide/workspaces-and-panels.md`: avsnittet Create a workspace beskriver kopiorna, det oförändrade originalet, att standardworkspacen skapas när den saknas, samt att Data model/Review och sparade mallar är oförändrade.
+- `apps/web/e2e/row211-new-from-template.spec.ts` (ny) och `scripts/e2e.mjs` (registrering och vikt 40): Playwright täcker kriterium 1–6 med skärmbilder under `apps/web/test-results/row211-shots` (inom worktreen, så CI kan skriva dem).
+
+Bevis (lokalt i worktreen, utan demo- eller produktionsskrivningar):
+
+- `pnpm --filter ./apps/web exec tsc --noEmit` exit 0.
+- `pnpm --filter ./apps/web exec vitest run` gav **171 filer / 1006 tester** gröna, inklusive de nya `templates.test.ts`- och `palette-new-from-template.test.ts`-fallen.
+- `python3 scripts/check-english.py` exit 0. `sha256sum apps/web/src/data-model.tsx` är `2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`, oförändrad.
+- E2e-specen är typkontrollerad och registrerad men inte körd lokalt; ingen isolerad compose-stack startades och hela e2e-sviten kördes inte. Ingen demo-mutation, ingen deploy, ingen PR och ingen merge gjordes från grenen.
+
+## Rad 51b — taxonomi- och gruppfält i Select fields (mergad som #314, `0513ee9`)
+
+Grenen `junior/51b-taxonomy-fields` utgick från `origin/main` `5949cb1` (#310), hade guidecommiten `efefeb5` och ordinary-mergade `origin/main` `8367722` (rad 51a-fix, PR #313) som `a47f262`, därefter `origin/main` `bcc7e2b` (rad 77, PR #312) och sedan `origin/main` `76d96f0` (rad 77:s status- och mätuppföljning). Den är **mergad till `main` som PR #314 (squash `0513ee9`) och live på demon med buildId `0513ee9`**. Rad 51a är mergad som PR #310 (squash `5949cb1`), 51a-fixen som PR #313 (squash `8367722`) och rad 77 som PR #312 (squash `bcc7e2b`).
+
+Den här skivan gör `Select fields` till en ärlig och testad katalog över typens egna attribut plus attribut från typens tillåtna strukturer: alla grupper, inklusive nästlade grupper, och äldre klasslistor. Värdearv, separata värde/enhet-kolumner (51c) och skrivning till länkade/hop-fält är utanför omfattningen.
+
+Acceptanskriterierna (Braian Test grindar bara på dessa):
+
+1. **Select fields listar typens egna attribut och gruppattribut från alla tillåtna strukturer, inklusive nästlade grupper.** På seed/demoträdet för livsmedel innehåller Product Fat content (dairy), Caffeine (coffee_tea, under beverages) och Cocoa content (chocolate, under snacks), och de kan slås på som kolumner. En typ som inte tillåter en struktur ser inte den strukturens gruppattribut.
+2. **Äldre klasslistor ingår på samma sätt.** `structure.classes` som är bundna till en grupp ingår för typer som tillåter strukturen. Om en payload fortfarande nästlar klasser under `group.classes` ingår de också. Detta påverkar bara vilka fält som kan väljas som kolumner; värden ärvs aldrig.
+3. **Katalogens nycklar för typens egna attribut följer `GET /v1/types/{id}/attribute-paths`.** Varje löv för typens egna attribut som API:t listar erbjöds som fält med samma attributnyckel. I 51b var delar som `.unit` / `.label` fortsatt kvalificerare, inte egna kolumner; 51c lägger senare till `.value` / `.unit` som egna kolumner för måttfält.
+4. **Grupp- och klassfält syns och går att hitta.** Väljaren visar en källhint för dessa fält (gruppens visningsnamn, till exempel `Dairy & eggs` eller `Chocolate`), och att skriva gruppnamnet i Select fields-sökningen hittar fältet.
+5. **Guidesidorna är redan uppdaterade i `efefeb5`.** `workspaces-and-panels.md` har avsnittet Select fields och `object-types-and-relations.md` samt `command-palette-and-shortcuts.md` har meningarna om grupp- och klassfält. De är oförändrade här och beskriver det som koden nu gör.
+6. **Automatiska tester täcker kriterium 1–4.** Ny enhetstest `apps/web/src/fields/catalog-taxonomy.test.ts` med fixture för typattribut, nästlade grupper, en äldre klass och en typ som inte tillåter strukturen, plus kontroll mot `crates/server/demo/definitions.json` för Product. Ny komponenttest `apps/web/src/fields/fields-mode-source.test.tsx` täcker källhinten och sökning på gruppnamn. Befintliga Select fields-, hide- och Reset to default-tester är fortsatt gröna.
+7. **Endast engelska i UI, skyddade filer orörda.** Ingen ändring av `data-model.tsx`, `product_suppliers`-etiketter, värde/enhet som separata kolumner eller skrivning till hop-fält.
+
+Vad som ändrades:
+
+- `apps/web/src/fields/catalog.ts`: `attributesForType` följer nu `attributes_for_type` i `crates/model/src/path.rs`: typens egna attribut först, därefter varje grupp i varje tillåten struktur (saknad lista = alla, tom lista = inga), därefter `structure.classes` vars grupp matchar och även `group.classes` om den finns. Fält från grupp eller klass får gruppens visningsnamn som `source`; typens egna fält får ingen källa. Länkade fält behåller ett hopp och är skrivskyddade.
+- `apps/web/src/fields/qualifiers.ts`: `FieldDef` har ett valfritt `source`.
+- `apps/web/src/fields/fields-mode.tsx`: källan används som radens underrubrik när ingen annan valunderrubrik gäller, och ingår i sökunderlaget (både vid filtrering och efter aktivering).
+- `apps/web/src/fields/catalog-taxonomy.test.ts` och `apps/web/src/fields/fields-mode-source.test.tsx` (nya) enligt kriterium 6.
+- `docs/status.md`: den här statusraden. Inga guideändringar i den här skivan.
+
+Bevis (lokalt i worktreen, utan demo- eller produktionsskrivningar):
+
+- `pnpm --filter ./apps/web exec tsc --noEmit` exit 0.
+- `pnpm --filter ./apps/web exec vitest run` gav **168 filer / 991 tester** gröna, inklusive de nya `catalog-taxonomy.test.ts` och `fields-mode-source.test.tsx` samt befintliga `field-picker.test.tsx`, `catalog-system.test.ts` och `language-toggle.test.tsx`.
+- `python3 scripts/check-english.py` exit 0. `sha256sum apps/web/src/data-model.tsx` är oförändrad.
+- Ingen e2e-körning gjordes lokalt; kriterium 1–4 täcks av enhets- och komponenttesterna samt demo-definitionerna. Ingen demo-mutation, ingen deploy, ingen PR och ingen merge.
+
+
+## Rad 51c — värde och enhet som separata kolumner (mergad som #316, `b4d4d62`)
+
+Grenen `junior/51c-value-unit-columns` utgår från `origin/main` `0513ee9` (#314, rad 51b). Den är **mergad till `main` som PR #316 (squash `b4d4d62`)**. Rad 51b är mergad som PR #314 (squash `0513ee9`) och live på demon med buildId `0513ee9`. Rad 51a är mergad som PR #310 (squash `5949cb1`), rättningen som PR #313 (squash `8367722`) och båda är live.
+
+Den här skivan låter `Select fields` erbjuda värde och enhet som två egna kolumner för måttfält (nummer med enhetsfamilj), samtidigt som den kombinerade kolumnen och dess visningsenhet finns kvar.
+
+Acceptanskriterierna (Braian Test grindar bara på dessa):
+
+1. **Värde och enhet kan vara separata kolumner.** På Product i seed/demoträdet för livsmedel kan ett måttfält läggas till som `Fat content (value)` och `Fat content (unit)`. Båda kan vara synliga samtidigt, även efter omladdning. Sökvägarna är `fat_content.value` och `fat_content.unit`, samma text som `GET /v1/types/{id}/attribute-paths` listar. Värdekolumnen visar bara värdet och enhetskolumnen bara enhetskoden.
+2. **Kombinerade kolumnen och visningsenheten fungerar fortfarande.** `Fat content` utan ändelse finns kvar och visar värde och enhet tillsammans (till exempel `35 g`). En visningsenhet på den kolumnen konverterar det visade värdet och gömmer eller ersätter inte värde- och enhetskolumnerna.
+3. **Sökning och källhint fungerar.** Ett gruppkällt måttfält går fortfarande att hitta på gruppnamnet, och värde- och enhetskolumnerna syns som `(value)` / `(unit)`.
+4. **Länkade/hop-fält är skrivskyddade.** Om ett hop-fält har en enhetsfamilj kan dess värde/enhet listas ett hopp bort, men de förblir skrivskyddade. Inga skrivningar till länkade/hop-fält läggs till.
+5. **Guidesidorna är uppdaterade i samma gren.** `docs/guide/workspaces-and-panels.md` beskriver att ett måttfält kan läggas till som kombinerad kolumn och/eller som separata värde- och enhetskolumner, och att en visningsenhet på den kombinerade kolumnen bara ändrar hur värdet visas. Gruppnamnen är `Dairy & eggs` och `Coffee & tea`.
+6. **Automatiska tester täcker kriterium 1–3**, inklusive katalog/sökvägstest mot fixture och Product i `crates/server/demo/definitions.json`, samt picker/cell-test där båda kolumnerna kan vara på och visningskonverteringen på hela kolumnen är oförändrad. Befintliga Select fields-, hide-, Reset-, taxonomi- och kvalificerartester är fortsatt gröna.
+7. **Endast engelska, skyddade filer orörda.** Ingen ändring av `data-model.tsx`, `product_suppliers`-etiketter eller skrivning till hop/länkade fält.
+
+Vad som ändrades:
+
+- `apps/web/src/fields/catalog.ts`: ett måttfält (`shape: 'unit'`) får två syskonfält med id `{key}.value` och `{key}.unit`, namnen `{name} (value)` / `{name} (unit)` och källan från föräldern. Samma gäller fält ett hopp bort, som fortsatt är skrivskyddade.
+- `apps/web/src/fields/columns.ts`: en lagrad kolumns sökväg behåller `.value` / `.unit` när katalogen har ett sådant löv, annars faller den tillbaka på den gamla kvalificerar-delningen (`.code`, `.label`, `.min`, `.max`).
+- `apps/web/src/panes.tsx`: kolumnrubriken och återuppbyggnaden från personliga kolumnval använder samma sökvägsuppslag, så båda kolumnerna finns kvar efter omladdning.
+- `apps/web/src/path-cell.ts`: den kombinerade måttkolumnen läser det indexerade värdet och enhetsfältet och visar dem tillsammans (`35 g`) när ingen visningsenhet är vald. `.value` läser värdet och `.unit` enhetskoden.
+- `crates/server/demo/definitions.json`, `crates/server/demo/objects.json` och `crates/server/src/seed.rs`: `fat_content` blir ett måttfält i massfamiljen, och demo-/seedvärden anger enheten `g`.
+- Tester: `apps/web/src/fields/catalog-value-unit.test.ts`, `apps/web/src/fields/fields-mode-value-unit.test.tsx`, `apps/web/src/value-unit-columns.test.tsx` och utökade `apps/web/src/path-cell.test.tsx` samt `apps/web/src/cell-edit.test.ts`; ett kort e2e-fall i `apps/web/e2e/field-picker.spec.ts` slår på Fat content som kolumn.
+- `docs/guide/workspaces-and-panels.md` och `docs/guide/command-palette-and-shortcuts.md`: Select fields-avsnittet beskriver värde- och enhetskolumnerna och de exakta gruppnamnen.
+
+Ärlig avgränsning: att redigera en separat värde- eller enhetscell inline skulle behöva skriva ett måttobjekt med både värde och enhet, vilket är en större skrivväg än den här skivan. De separata kolumnerna är därför visningskolumner och inline-redigering för dem är avstängd; måttfältets redigering i övrigt är oförändrad. Vid den lokala bevisningen gjordes ingen deploy; grenen är senare mergad som PR #316 (squash `b4d4d62`).
+
+Bevis (lokalt i worktreen, utan demo- eller produktionsskrivningar):
+
+- `pnpm --filter ./apps/web exec tsc --noEmit` exit 0.
+- `pnpm --filter ./apps/web exec vitest run` gav **171 filer / 1001 tester** gröna, inklusive de nya `catalog-value-unit.test.ts`, `fields-mode-value-unit.test.tsx` och `value-unit-columns.test.tsx` samt befintliga Select fields-, hide-, Reset-, taxonomi- och kvalificerartester.
+- `python3 scripts/check-english.py` exit 0. `sha256sum apps/web/src/data-model.tsx` är `2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`, oförändrad.
+- Det korta e2e-fallet i `field-picker.spec.ts` är typkontrollerat men inte kört lokalt; hela e2e-sviten kördes inte. Ingen demo-mutation eller deploy gjordes från grenen; den är senare mergad som PR #316 (squash `b4d4d62`).
+
+## Rad 77 — snabbare CI: färska e2e-vikter och åtta shards (mergad som #312, `bcc7e2b`)
+
+Grenen `junior/77-faster-ci` är **mergad till `main` som PR #312 (squash `bcc7e2bed0fffc6e3ea510f47ec34311bd3722f8`) och live på demon med buildId `bcc7e2b`**. Test godkände raden 2026-11-12. Den exakta gröna toppen som pinades vid mergen var `3400e88b834da3fd906413c6293c05e5ee9bae33`. Arbetet rörde bara CI, testskript och docs; ingen produktkod. Rad 61 / #309 / `0aaf71f` och rad 61b / #311 / `f8d0cb6` är mergade och live.
+
+
+Acceptanskriterierna från briefen (uppfyllda):
+
+1. **Median tid till grönt minskar minst 15 %.** Baslinjen är de tio senaste gröna `push`-körningarna på `main`: median **9m20s (560s)**. Målet är **≤ 7m56s (476s)** på en full körning, mätt som `updated_at - run_started_at`.
+2. **Alla jobb gröna under samma namn.** `rust`, `phase-1`, `bins`, `web`, `licenses`, `e2e`-shards och `stack`; `load` när `mode=full`. Fortfarande gratis `ubuntu-latest`.
+3. **Samma testtäckning.** Ingen spec, inget testfall och ingen kontroll tas bort eller stängs av. Alla 93 registrerade e2e-specar körs exakt en gång per full/web-körning.
+4. **Path-filtren intakta.** `skip`, `web` och `full` i `scripts/ci-changes.sh` är oförändrade; push till `main` kör fortfarande `mode=full` för att fylla cache.
+5. **Inga nya secrets eller inställningar.** Inga secrets, variabler, miljöer eller repo-inställningar tillkom; ingen tredjeparts-cache kräver credentials.
+6. **Docs i samma PR, demo orörd.** `docs/dev.md` har en CI-sektion, mätningen ligger i `docs/measurements/2026-11-12-ci-wall-clock.md`, och `data-model.tsx` samt `product_suppliers`-etiketterna är orörda. Ingen guide-sida lades till.
+
+Vad som ändrades i #312:
+
+- `.github/workflows/ci.yml`: e2e-matrisen går från sex till åtta shards (`0..7`) och `BRAIAN_E2E_SHARDS` är `8`. Inga jobbnamn, behov, path-filter eller secrets ändrades.
+- `scripts/e2e.mjs`: första kalibreringen av `measuredSeconds` 2026-11-12 delade varje shards totaltid i de tio gröna baslinjekörningarna proportionellt mot gamla vikter. Tre gröna fulla PR-körningar (965/966/967) gav median **8m07s (487s)**, 11 s över målet 7m56s, för att shard 7 bar under-viktade tunga filer (`column-move-race` 6 s mot 1,7–1,8 min, `layout` 15 s mot 1,1–1,3 min). En andra kalibrering sätter vikterna till `ceil` av faktiska per-fil-tider från körning 967 (alla shards) och max mot 966 för shard 7. Packaren, `reseedSeconds` (4 s) och åtta shards är oförändrade. Före PR:en var fallback för en spec utan vikt **12 s per test** (`tests * 12 + reseedSeconds` på `8367722`); #312 sänkte den till **4 s per test**. Det är inte så att fallback redan var 4 s före ändringen.
+- `docs/dev.md`, `docs/measurements/2026-11-12-ci-wall-clock.md` och den här sektionen beskriver nu mergen och efter-tabellen.
+
+Bevis (lokalt, utan databas eller compose, plus GitHub API):
+
+- Första packningen: `BRAIAN_E2E_PLAN=1 BRAIAN_E2E_SHARDS=8` gav åtta shards, 93 unika filer, inga dubbletter, prediktion 267–268 s. Efter-körningarna 965 (6m17s), 966 (8m39s) och 967 (8m07s) var alla `mode=full` och gröna under samma jobbnamn; 964 failade på en `field-picker`-flake och räknas inte. Den packningen mergades inte.
+- Andra packningen: `BRAIAN_E2E_PLAN=1 BRAIAN_E2E_SHARDS=8` gav åtta shards, 93 unika filer, inga dubbletter, prediktion 251–259 s. Efter-körningarna är PR 970 på `5a74d8b` **7m10s (430s)** och PR 972 på `3400e88` **6m20s (380s)**, båda `mode=full` (`load` success). Median **6m45s (405s)**, under målet 7m56s. Push till `main` 973 på `bcc7e2b` var **6m23s (383s)**, `mode=full` och grön.
+- `sha256sum apps/web/src/data-model.tsx` = `2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`.
+
+Ärlig avgränsning: den första efter-medianen missade målet, så den packningen mergades inte. Den andra kalibreringen uppfyllde ≤ 7m56s och är den som mergades. Baslinjen 9m20s kommer från push-körningar, så den rättvisa jämförelsen är push 973 mot 9m20s (**−31,6 %**). PR mot PR är **15,4 %** under en median på 7m59s (479s) från de tio senaste gröna PR-körningarna i 947–968 som inte är docs/landing-only och inte 77:s egna 965–967; detaljerna står i mätfilen. Prediktionen 251–259 s / ~5m30s vägg träffade inte (faktisk Playwright-spridning 194–319 s, vägg 6m20s–7m10s). `sccache` lämnades utanför. Ingen automatisk omkalibrering av vikter och ingen kortare autodeploy-poll byggdes i #312. Ingen skrivning gjordes mot demo, `/opt/braian`, `/var/www/braian`, Caddy eller Track A (51a-sektionerna i den här filen lämnades orörda).
+
+
+## Rad 51a-uppföljning — Reset to default i maximerad panel (mergad som #313, `8367722`)
+
+Rad 51a är mergad till `main` som PR #310 (squash `5949cb1`) och live på demon med buildId `5949cb1`. Test underkände kriterium 2 i en maximerad panel: Ctrl+K visade `Reset to default`, men körningen gjorde inget. `zoomView` sätter bara `doc.zoom`; `doc.focus` kan ligga kvar på en dold syskonvy som Detail. `publishFrame` remappar fokus till zoomtabellen, men paletten skickade rå `doc.focus` till kommandot, så `ui.reset_columns` träffade Detail i stället för Products: ingen DELETE och den dolda kolumnen kom inte tillbaka.
+
+Uppföljningen ligger i grenen `junior/51a-reset-maximized`, utgår från `origin/main` `5949cb1` (#310) och är **mergad till `main` som PR #313 (squash `8367722`) och live på demon med buildId `8367722`**. Kriterium 1 och 3–7 från 51a är oförändrade och fortsatt uppfyllda.
+
+- `apps/web/src/palette.tsx`: Ctrl+K-kommandot `columns:reset` skickar nu den publicerade fokusvyn (`readUiContext().focused`, redan remappad till zoomtabellen) i stället för palettens råa `focusViewId` (`doc.focus`). Kolumnmenyn är oförändrad och skickar fortfarande sin egen `view.id`.
+- `apps/web/src/palette-column-reset.test.tsx` (ny): publicerar en ram där fokus är Products (som `publishFrame` gör när `doc.zoom` är satt) medan paletten får `doc.focus` = Detail, kör `Reset to default` och kräver att `ui.reset_columns` får Products, inte Detail.
+- `apps/web/e2e/column-prefs-multitab.spec.ts`: nytt fall seedar Brand dold, sätter dokumentfokus på Detail, maximerar Products, kör Ctrl+K → `Reset to default`, kräver DELETE 204, att Brand syns direkt och att standardkolumner plus `document: null` finns kvar efter omladdning. Layouten återställs efter testet.
+- `docs/status.md`: den här statusraden. Inga guideändringar; de befintliga guiderna beskriver redan kommandot.
+
+Bevis (lokalt i worktreen, utan demo- eller produktionsskrivningar):
+
+- `pnpm --filter ./apps/web exec tsc --noEmit` exit 0.
+- `pnpm --filter ./apps/web exec vitest run` gav **166 filer / 981 tester** gröna, inklusive den nya `palette-column-reset.test.tsx` och de befintliga reset-, hide/show- och Select fields-testerna.
+- `python3 scripts/check-english.py` exit 0. `sha256sum apps/web/src/data-model.tsx` är oförändrad.
+- Den utökade `column-prefs-multitab.spec.ts` är typkontrollerad men inte körd lokalt i den här rundan; den befintliga reset-specen är utökad, inte ersatt.
+
+## Rad 51a — Reset to default för personliga kolumnval (mergad som #310, `5949cb1`)
+
+Grenen `junior/51a-reset-to-default` är **mergad till `main` som PR #310 (squash `5949cb1`) och live på demon med buildId `5949cb1`**. Test godkände kriterium 1 och 3–7 men underkände kriterium 2 i en maximerad panel; rättningen är uppföljningen ovan, som **är mergad som PR #313 (squash `8367722`) och live på demon med buildId `8367722`**. Detta är den första skivan av Notion-rad 51 (välja fält per vy). Hide column, Select fields, en hop av länkade fält (skrivskyddade) och personliga `column-prefs` v2 finns redan på main. HTTP `DELETE /v1/views/{view_id}/column-prefs` fanns redan och raderar bara anroparens egen rad. Senare skivor som låg utanför den PR:en: **51b** taxonomi-/gruppfält i fältväljaren (nu mergad som #314, `0513ee9`) och **51c** värde- och enhetskolumner för måttfält (egen gren, inte mergad). Skrivning till länkade/hop-fält är utanför omfattningen.
+
+Acceptanskriterierna (Braian Test grindar bara på dessa):
+
+1. **Reset to default tar bort den personliga överstyrningen.** Efter dölja, visa, ordna om eller lägga till ett fält återställer kommandot vyn till typens standardkolumner (`defaultColumnIdsForType` + systemkolumner) genom `DELETE /v1/views/{view_id}/column-prefs` för den inloggade användaren, inte genom att skriva ett dokument som råkar se ut som standard. Efter omladdning syns fortfarande standardkolumnerna.
+2. **Samma kommando i kolumnmenyn och Ctrl+K.** Det finns i kolumnhuvudets/vyns snabbmeny (`Shift+F10` eller context-menu-tangenten på ett huvud) och i Ctrl+K, avgränsat till den fokuserade objekttabellen. Den engelska etiketten är exakt `Reset to default`.
+3. **Kommandot visas bara när en överstyrning finns.** Utan personligt prefs-dokument är det dolt. Ett anrop utan överstyrning ska inte ge fel (HTTP DELETE och agentoperationen är no-op med 204/200).
+4. **Agenten kan nollställa bara anroparens egna prefs.** Kommandot finns i registret som `delete_view_column_prefs` och är anropbart som de befintliga get/put-operationerna. Det är en personlig inställning, inte ett delat vy-förslag, och kan inte radera en annan användares prefs.
+5. **Guiden är uppdaterad i samma gren.** `docs/guide/workspaces-and-panels.md` (avsnittet “What is saved, and for whom”) och `docs/guide/command-palette-and-shortcuts.md` beskriver att personlig kolumnordning och synlighet nollställs till vyns standard med `Reset to default` från menyn eller Ctrl+K. `deleting-and-restore.md` och landningsfiler är orörda.
+6. **Tester täcker återställning och omladdning.** Efter dölja/omordning återställer Reset standard-id:n, och en omladdning visar fortfarande standard. Befintligt hide/show/Select fields-beteende förblir grönt.
+7. **Engelska bara, skyddade filer orörda.** Ingen ändring av taxonomikatalogen, värde/enhet-kolumndelar, skrivning till hop-fält, `apps/web/src/data-model.tsx` (`sha256 2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`) eller `product_suppliers`-etiketter.
+
+Vad som ändrades:
+
+- `apps/web/src/column-prefs.ts` och `column-prefs-mutation.ts`: `deleteColumnPrefs`, `columnPrefsHasOverride` och `resetColumnPrefs` som gör DELETE, sätter cachen till `document: null` och invaliderar query-nyckeln.
+- `apps/web/src/panes.tsx`: `ui.reset_columns` målar standardkolumnerna, riktar in snapshoten så att ingen lookalike-PUT skrivs, och publicerar överstyrningsflaggan till menyn.
+- `apps/web/src/command-registry.ts`, `palette.tsx`, `shell.tsx`, `ui-context.ts` och `i18n.ts`: kommandot `columns:reset` med etiketten `Reset to default`, i kolumnmenyn och Ctrl+K bara när en överstyrning finns.
+- `crates/api/src/column_prefs.rs` och `platform.rs`: agentoperationen `delete_view_column_prefs` (alltid anroparens egen rad). Den är undantagen från det generella agent-delete-skyddet eftersom den bara tar bort anroparens egen UI-rad.
+- Guiden som i kriterium 5.
+
+Bevis (lokalt före PR, plus CI 13/13 grön på `4027c8e` och på `66ebf9c` före merge av `f8d0cb6`):
+
+- `pnpm --filter ./apps/web typecheck` och `pnpm --filter ./apps/web exec vitest run` (163 filer / 971 tester) gröna, inklusive `command-registry-column-reset.test.ts`, utökad `column-prefs-mutation.test.ts` och `field-picker.test.tsx` (DELETE, ingen lookalike-PUT, standard efter omladdning).
+- E2E `apps/web/e2e/column-prefs-multitab.spec.ts` täcker Ctrl+K-reset och att standard överlever omladdning; den kördes i CI.
+- `cargo fmt --check`, `cargo check -p braian-api`, `cargo clippy -p braian-api --all-targets -- -D warnings`, `cargo test -p braian-api --test column_prefs` (10 tester mot en tillfällig `postgres:18`-container som togs bort) och `cargo test -p braian-api --lib platform::tests` (25 tester).
+- `sha256sum apps/web/src/data-model.tsx` oförändrad. Ingen demo-mutation, ingen deploy, ingen ändring av `/opt/braian` eller `/var/www/braian`.
+
+## Rad 61 — skapa och redigera selection genom det delade utkastet (mergad som #309, `0aaf71f`)
+
+Grenen `junior/61-selection-draft` utgick från `origin/main` `c8fb0af` och är **mergad till `main` som PR #309 (squash `0aaf71f54e1fdc1a5ff854b684a47cc8422527f5`)** samt live på demon med buildId `0aaf71f`. Test godkände kriterium 1, 2, 3, 5 och 6 men underkände kriterium 4; rättningen är 61b nedan, som är **mergad till `main` som PR #311 (squash `f8d0cb6`) och live på demon med buildId `f8d0cb6`**. Detta är Test-avvisningen av #154 / #158, inte en ny rad 154 eller 158: skapa och redigera en selection gjordes i en fristående dialog som skrev `POST`/`PUT` direkt i stället för i `Selections`-vyn och dess `Detail` med det delade utkastet från rad 212.
+
+Acceptanskriterierna från `brief.md` (Braian Test grindar bara på dessa):
+
+1. **Skapa skriver inget före Save.** `Ctrl+K` → `New selection` eller `New selection` i `Selections`-vyn öppnar `Selections` och dess `Detail`, inte en fristående dialog. Namn, `Type`, `Kind` och, för `Dynamic`, filterfrågan kan sättas. `Discard` och `Escape` skriver inget; `Save` i det delade utkastfältet skapar selectionen, som sedan syns i listan och som filterchip.
+2. **Redigera använder samma utkast.** Namn och, för `Dynamic`, filterfrågan ändras i `Detail`. `Kind` och objekttyp är låsta som förut. Inget skrivs före `Save` (`PUT` bara på `Save`), och `Discard` återställer föregående namn och fråga.
+3. **Save filter as selection förfyller fortfarande.** `Ctrl+K` → `Save filter as selection` öppnar samma `Detail` med `Kind = Dynamic` och vyfiltret ifyllt, men skriver inget före `Save`; `Discard` skriver inget.
+4. **Delete, fallback och manuella selectioner fungerar som förut.** Delete bekräftar användning, vyer faller tillbaka till `All …`, och en manuell selection skapas utan att den dynamiska frågan blandas in. Test fann ingen fungerande hand-fyllningsväg; 61b rättar den guiden ärligt.
+5. **Dynamisk fråga räknas om.** Efter `Save` visar selectionen de objekt som matchar frågan nu, och en sparad ändrad fråga visar den nya mängden. Detta täcks av isolerade tester med egna selectioner, inte seeddata.
+6. **Guide, tester, engelska, skyddade filer.** Endast den befintliga `Saved selections`-sektionen i `docs/guide/data-sources.md` uppdateras. Isolerade tester täcker kriterium 1–5; de gamla `dynamic-selection`, `edit-selection-click`- och `new-selection-dialog`-specarna är uppdaterade eller omdöpta så de inte kräver den gamla dialogen som sparar direkt. `apps/web/src/data-model.tsx` (`sha256 2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`) och `product_suppliers`-etiketterna är orörda. Ingen demo-mutation, ingen PR, ingen merge och ingen deploy.
+
+Vad som ändrades:
+
+- `apps/web/src/selection-draft.ts` (ny): en liten global utkaststore för skapa/redigera. Den håller namn, typ, kind, fråga och den sparade manuella frågan, och har `startNewSelection`, `startEditSelection`, `updateSelectionDraft` och `discardSelectionDraft`.
+- `apps/web/src/assortments.tsx`: den fristående `NewSelectionDialog` som `POST`ade/`PUT`ade i `save()` är borta. `SelectionDraftDetail` renderas i `Selections`-vyns `Detail` och använder `ObjectDraftBar` (`review-and-save`, `discard-draft`) som objekt- och modelutkasten. `SelectionHost` startar utkastet från `NEW_SELECTION_EVENT`/`EDIT_SELECTION_EVENT` och fokuserar `Selections`-vyn via `braian-open-draft`. `Escape` kastar utkastet. Skrivning sker bara i Save, och för redigering skickas `PUT` med `id`. Delete-dialogen, `All …`-fallbacken och den manuella frågan är oförändrade.
+- `docs/guide/data-sources.md`: `Saved selections` beskriver nu `Selections`-vyn/`Detail`, det delade utkastfältets `Save`/`Discard`, att typ och kind är låsta vid redigering, att `Save filter as selection` förfyller ett dynamiskt utkast, samt att delete bekräftar användning och faller tillbaka till `All …`. Ingen ny guidesida och ingen ny `index.md`.
+- `apps/web/src/selection-draft.test.tsx` (ny): isolerade tester för kriterium 1–4: skapa skriver inget före Save och listas efter, `Discard`/`Escape` skriver inget, redigering `PUT`:ar bara på Save och har låst typ/kind, filterförfyllnad väntar på Save, manuell selection tar ingen dynamisk fråga, och delete-preview listar användning.
+- `apps/web/src/selection-recalculate.test.tsx` (ny): kriterium 5. En egen dynamisk selection öppnas, dess fråga ändras och sparas, och `Detail` kör den nya frågan mot sökningen i stället för att visa den gamla träffmängden.
+- `apps/web/e2e/new-selection-draft.spec.ts` (omdöpt från `new-selection-dialog.spec.ts`), `apps/web/e2e/edit-selection-click.spec.ts` och `apps/web/e2e/dynamic-selections.spec.ts`: använder `selection-detail`, `review-and-save` och `discard-draft` i stället för den gamla dialogen, `Save selection` och `Cancel`; `scripts/e2e.mjs` pekar på det nya specnamnet. Den gamla close-X-coverage är ersatt av `Discard`/`Escape`.
+
+Bevis (endast `docker run --rm`, inga databaser behövdes):
+
+- `pnpm --dir apps/web exec vitest run` gav **164 filer / 971 tester** gröna, inklusive de fem nya selectionstesterna.
+- `pnpm --dir apps/web exec tsc --noEmit` exit 0; `python3 scripts/check-english.py` exit 0.
+- `sha256sum apps/web/src/data-model.tsx` = `2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`; `product_suppliers`-etiketterna är orörda.
+- Ärlig avgränsning: ingen isolerad compose eller Playwright-körning gjordes, eftersom kriterium 1–5 kunde täckas med jsdom-tester och befintliga Rust-tester för sparande, låst kind/typ och delete-fallback. De uppdaterade E2E-specarna är typkontrollerade och registrerade men inte körda mot demo. Ingen skrivning gjordes mot demo, `/opt/braian`, `/var/www/braian`, Caddy eller Track A; ingen PR öppnades och inget mergades eller deployades.
+
+## Rad 61b-uppföljning — delete-fallback, tom manuell, användningstext och guide (mergad som #311, `f8d0cb6`)
+
+Grenen `junior/61b-selection-fixes` utgick från `origin/main` `0aaf71f` (#309, rad 61) och är **mergad till `main` som PR #311 (squash `f8d0cb6`) samt live på demon med buildId `f8d0cb6`**. Den rättar Test-avvisningen av `0aaf71f` på kriterium 4: efter delete av den aktiva filterchippen låg tabellen kvar på den gamla frågan (24 rader i stället för alla 407), en tom `Manual`-selection visade alla objekt i stället för noll, delete-dialogen sa `Not used anywhere.` trots att chippen var aktiv, och guiden lovade en hand-fyllningsväg som inte fanns.
+
+Acceptanskriterierna för den här rundan (Braian Test grindar bara på dessa):
+
+1. **Skapa skriver inget före Save.** Oförändrat från 61: `Ctrl+K` → `New selection` och `New selection` i `Selections`-vyn öppnar `Selections`/`Detail`, inte en dialog som sparar direkt. `Discard` och `Escape` skriver inget; `Save` skapar selectionen.
+2. **Redigera använder samma utkast.** Oförändrat från 61: `Edit selection` öppnar samma `Detail`, `Kind` och `Type` är låsta, `Discard` återställer namn och fråga och endast `Save` skriver.
+3. **Save filter as selection förfyller och går via utkastet.** Oförändrat från 61: kommandot öppnar ett `Dynamic`-utkast med vyfiltret ifyllt och skriver inget före `Save`.
+4. **Delete-fallback, tom manuell, användningstext och hand-fyllning.** (a) Delete av den aktiva filterchippen väljer `All` direkt och visar alla objekt av typen; ingen `POST /v1/views` behövs. (b) En tom `Manual`-selection matchar noll objekt i `assortment-open`, som chip och i sökningen. (c) Delete-dialogen säger att listan bara omfattar sparade vyer, jobb och webhooks, inte en aktiv filterchip. (d) Hand-fyllning av enskilda objekt är uttryckligen utanför den här rundan; guiden lovar den inte längre och beskriver i stället att en manuell selection tar med sig de grupp- och etikettfilter som är aktiva när den skapas, samt att en tom manuell selection inte matchar något.
+5. **Dynamisk fråga räknas om.** Oförändrat från 61 och fortsatt täckt av isolerat test.
+6. **Guide, tester, engelska, skyddade filer.** `docs/guide/data-sources.md` `Saved selections` är uppdaterad på plats utan ny guidesida. Isolerade tester täcker (a)–(c) och regressionsfallen 1, 2, 3 och 5. `apps/web/src/data-model.tsx` (`sha256 2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`) och `product_suppliers`-etiketterna är orörda.
+
+Vad som ändrades:
+
+- `apps/web/src/assortment-filter.ts`: `EMPTY_MANUAL_FILTER` och `isEmptyManualQuery` gör en manuell selection utan grupp och etiketter till ett filter som matchar noll objekt (`id:=__braian_empty_manual__`), i stället för att `assortmentSearchFilter` bara lämnade typen kvar och därmed matchade allt.
+- `apps/web/src/panes.tsx`: `ObjectTable`/`TableFilters` håller reda på vilken selection som är applicerad. När listan inte längre innehåller den valda selectionen (till exempel efter delete) nollställs selection-, grupp-, etikett- och snabbfiltret, så `All` blir vald direkt. Tom manuell appliceras som nollmatchningsfiltret, och snabbfiltrets etikett visar inte den interna markören.
+- `apps/web/src/i18n.ts`: `noSelectionUsage` säger `Not used by a saved view, job, or webhook.` i stället för `Not used anywhere.`
+- `docs/guide/data-sources.md`: `Saved selections` beskriver delete-fallbacken till `All`, att en tom manuell selection matchar noll, vilka användningar delete-listan omfattar, och att det inte finns någon separat hand-fyllningsväljare ännu.
+- `apps/web/src/assortment-filter.test.ts`, `apps/web/src/selection-draft.test.tsx` och `apps/web/src/selections.test.tsx`: nya isolerade tester för tom manuell (både förhandsvisning och chip/sök), delete av aktiv chip med `All`-fallback och den ärliga användningstexten. Befintliga tester för kriterium 1, 2, 3 och 5 är oförändrade och fortsatt gröna.
+
+Bevis (endast `docker run --rm`, ingen databas behövdes):
+
+- `pnpm --dir apps/web exec vitest run` gav **164 filer / 975 tester** gröna, inklusive de nya selectionstesterna.
+- `pnpm --dir apps/web exec tsc --noEmit` exit 0; `python3 scripts/check-english.py` exit 0.
+- `sha256sum apps/web/src/data-model.tsx` = `2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`; `product_suppliers`-etiketterna är orörda.
+- Ärlig avgränsning: ingen isolerad compose, databas eller Playwright-körning gjordes. Befintliga E2E-specar är oförändrade; den nya chip-fallbacken är täckt av jsdom-testet i `selections.test.tsx`, inte av en demokörning. Ingen skrivning gjordes mot demo, `/opt/braian`, `/var/www/braian`, Caddy eller Track A. PR #311 öppnades och mergades efter denna körning.
+
+## Rad 196-uppföljning — länkfel och Replace använder aktuellt utkast
+
+Rad 196-uppföljningen är mergad till `main` som PR #307 (squash `c8fb0af26d50f1dcb36d67742387448df3b29e1a`) och live på demon med buildId `c8fb0af`. Test har godkänt den. Grenen `junior/196-link-field-replace` utgick från `origin/main` `45ea113` (#305). Detta är Test-avvisningen av #223 / `fc24906`, inte en ny rad 223: efter en kardinalitetskonflikt återanvände `replace()` de gamla värdena i `conflict.request.values`, Replace-knappen gick att använda efter att Sort order ändrats till ett ogiltigt värde, och statusfoten kunde visa `Save failed: 422` för en konflikt som dialogen redan förklarat.
+
+Acceptanskriterierna från `brief.md` (Braian Test grindar bara på dessa):
+
+1. **Ogiltig Sort order stannar i dialogen.** Ett icke-numeriskt värde visar `Enter a number.` vid fältet (`link-field-error-sort_order`), Sort order är ett nummerfält, dialogen stannar öppen och ingen länk skrivs.
+2. **Kardinalitet förklaras och Replace flyttar länken.** En artikel som redan har en produkt får en begriplig ett-länk-förklaring och `Replace link`; Replace flyttar länken till den valda produkten.
+3. **Första giltiga länken fungerar.** Numerisk Sort order sparas som förut och toasten behåller Undo.
+4. **Replace validerar aktuellt utkast.** Efter konflikten gör ett ogiltigt värde att Replace är avstängt och fältfelet syns; ett giltigt värde skriver **utkastets** värden, inte de sparade `conflict.request.values`.
+5. **Ingen rå footer för hanterad konflikt.** Statusfoten visar inte `Save failed: 422` när dialogen tagit över konflikten; riktiga ohanterade skrivfel visas fortfarande.
+6. **Guide, tester och skyddade filer.** Endast den befintliga sektionen “Add and remove links” i `docs/guide/object-types-and-relations.md` uppdateras, utan ny guidesida. Isolerade tester täcker kriterium 1, 2, 4 och 5 och kriterium 3 är fortsatt grönt. `apps/web/src/data-model.tsx` är orörd (`sha256 2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`) och `product_suppliers`-etiketterna är orörda.
+
+Vad som ändrades:
+
+- `apps/web/src/link-create-dialog.tsx`: `replace()` räknar om `linkFieldErrors` mot det aktuella utkastet, skriver inget när fältet är ogiltigt, och bygger `values` med `linkFieldValues(choice.fields, draft)` i stället för `conflict.request.values`. Replace-knappen är avstängd så länge utkastet eller ett fältfel är ogiltigt. `onReplaced` får den aktuella requesten.
+- `apps/web/src/write-status.ts` och `apps/web/src/link-create-dialog.tsx`: ny `acknowledgeWriteError(status)` tar bort just den hanterade skrivningen från statusfoten, men lämnar en annan eller nyare felkod kvar. Dialogen anropar den när den visar kardinalitetskonflikten eller mappar serverfältfel.
+- `apps/web/src/link-create-dialog.test.tsx`: nya tester för att Replace är avstängt vid ogiltigt utkast, att det giltiga Replace-anropet skickar `{sort_order: {value: '7'}}` i stället för det gamla `5`, och att en hanterad 422 inte blir `Save failed` i foten medan en ohanterad 500 fortfarande visas. Det befintliga testet för första länk, kardinalitet och Replace är kvar.
+- `apps/web/src/write-status.test.ts`: enhetstest för att en hanterad felkod rensas utan att en annan kod göms.
+- `docs/guide/object-types-and-relations.md`: sektionen “Add and remove links” beskriver nu fältfelet vid fältet, att Sort order är ett nummer, att Replace erbjuds vid ett-länk-konflikt, att Replace är avstängt medan utkastet är ogiltigt, att det sparar värdena på skärmen och att konflikten inte lämnar en rå spara-fel-rad i statusfoten.
+- `apps/web/e2e/row196-demo-link-errors.spec.ts`: förberedd men **inte registrerad** i `scripts/e2e.mjs` och **inte körd** mot `https://demo.braian.io`. Den använder egna `DEMO196-*`-objekt för kriterium 1–5 och städar dem.
+
+Bevis (endast `docker run --rm`, inga databaser behövdes för enhetstesten):
+
+- `pnpm --dir apps/web exec vitest run src/link-create-dialog.test.tsx src/write-status.test.ts src/link-add.test.tsx src/link-write.test.ts src/link-section.test.tsx` gav 5 filer / 32 tester gröna.
+- Hela vitest-sviten: **162 filer / 966 tester** gröna.
+- `pnpm --dir apps/web exec tsc --noEmit` exit 0; `python3 scripts/check-english.py` exit 0.
+- Ärlig avgränsning: ingen isolerad compose, databas eller Playwright-körning gjordes; webbläsarbeviset för kriterium 1–5 ligger i den oregistrerade demo-specen och ska köras av koordinatorn efter merge. Ingen skrivning gjordes mot demo, `/opt/braian`, `/var/www/braian`, Caddy, Track A eller någon annan rad.
 
 ## Rad 216b — rättade antal och återställningsfel efter Test på e70184f
 
-Rad 216b är mergad till `main` som PR #305 (squash `45ea1132d8e2d124864a43d6cbee0142ef3e6b92`) och live på demon med buildId `45ea113`. Grenen `junior/216b-delete-fixes` utgick från `origin/main` `e70184f` (#301) och ordinary-mergade `5f2402e` (row 225, #303) och `7eaee05` (row 225b, #304). Den rättade Test-avvisningen: antalet objekt räknade kaskadlänkar som objekt, singular saknades och samma rad visades två gånger; efter Trash Restore visade Detail och Graph fortfarande "The graph could not be loaded. Validation stopped the save.", även efter F5.
+Grenen `junior/216b-delete-fixes` utgår från `origin/main` `e70184f` (#301), har ordinary-mergat `5f2402e` (row 225, #303) och `7eaee05` (row 225b, #304) och är **inte mergad, deployad eller accepterad**. Den rättar Test-avvisningen: antalet objekt räknade kaskadlänkar som objekt, singular saknades och samma rad visades två gånger; efter Trash Restore visade Detail och Graph fortfarande "The graph could not be loaded. Validation stopped the save.", även efter F5.
 
 De sex acceptanskriterierna från `brief.md` (Braian Test grindar bara på dessa):
 
@@ -11,7 +457,7 @@ De sex acceptanskriterierna från `brief.md` (Braian Test grindar bara på dessa
 3. **K3 Flera val.** Valda objekt plus unika live-länkar; en delad länk räknas en gång och en länk som A har till ART1 ger minst 1 länk.
 4. **K1, K4 och K7 håller.** Fyra ytor, samma `DeleteObjectsHost`, `dry_run` för antal, Cancel fokuserad, Escape/overlay skriver inget, `DELETE /v1/objects/{id}` per id, rader borta från tabeller och sök, och Delete-tangenten öppnar inte dialogen medan en editor, ett textfält eller quick-filtret har fokus.
 5. **Guide.** Efter ordinary-merge av `origin/main` `5f2402e` (#303) och `7eaee05` (#304) uppdateras den befintliga `docs/guide/deleting-and-restore.md` så att den beskriver de rättade antalen och restore-beteendet (en mening, `Removes 1 object and N links` med rätt singular/plural, länkobjekt räknas som länkar, unika live-länkar vid flerval, ärligt raderat tillstånd i Detail/Graph, återställt objekt öppnas även efter F5). 225b:s tillfälliga demonot om att räkningar/Restore rättas i 216b tas bort, så sidan som autodeployas från main stämmer med den rättade produkten vid merge. Ingen ny `docs/guide/deleting.md`.
-6. **Tester och skyddade filer.** Isolerade regressionstester för K5 och K2/K3; engelsk copy; `apps/web/src/data-model.tsx` (`sha256 2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`) och `product_suppliers`-etiketterna orörda. Ingen demo-mutation gjordes; arbetet öppnades som PR #305 och mergades.
+6. **Tester och skyddade filer.** Isolerade regressionstester för K5 och K2/K3; engelsk copy; `apps/web/src/data-model.tsx` (`sha256 2d3459c60dd7473f2af3c0ff15cf1fd3295b5bc1da9da0e1046905de35babcaa`) och `product_suppliers`-etiketterna orörda. Ingen demo-mutation, ingen PR, ingen merge.
 
 Vad som ändrades:
 
@@ -61,7 +507,7 @@ Bevis (inga databaser eller containrar behövdes):
 
 ## Rad 225 — guiden publiceras som statisk HTML under /docs, med graph-sidan
 
-Rad 225 är mergad till `main` som #303 (squash `5f2402e`) och publicerad på https://braian.io/docs/. Grenen `junior/225-docs-foundation` utgick från `origin/main` `59ba66f` (row 128g, #302) och ordinary-mergade `junior/224-landing-update` (`d0e9a56`, bas `e70184f`/#301), så att 224:s `docs/guide`-träd blev basen; 225 lade till den statiska `/docs`-publiceringen som 224 saknade och uppdaterade graph-sidan. Test gav GODKÄND för 225 efter omtestet av 225b; båda ligger live på https://braian.io/docs/ sedan 225b publicerades 00:32 Europe/Stockholm den 12 november 2026.
+Rad 225 är mergad till `main` som #303 (squash `5f2402e`) och publicerad på https://braian.io/docs/. Grenen `junior/225-docs-foundation` utgick från `origin/main` `59ba66f` (row 128g, #302) och ordinary-mergade `junior/224-landing-update` (`d0e9a56`, bas `e70184f`/#301), så att 224:s `docs/guide`-träd blev basen; 225 lade till den statiska `/docs`-publiceringen som 224 saknade och uppdaterade graph-sidan.
 
 Vad som ändrades:
 
@@ -73,12 +519,12 @@ Vad som ändrades:
 
 Bevis: `pnpm --dir apps/landing exec tsc --noEmit` exit 0; `pnpm --dir apps/landing build` exit 0 med `prerendered 10 guide pages under dist/docs` och homepage-kontrollerna intakta; `pnpm --dir apps/landing check:frozen` exit 0 efter sitemap-uppdateringen; `python3 scripts/check-english.py` exit 0. En saknad guidesida får bygget att falla (verifierat). Ingen compose, databas eller E2E behövdes. `apps/web/src/data-model.tsx` och produktbeteendet är orörda. Ärlig avgränsning: guiden beskriver nuvarande webbapp; den publiceras som statisk HTML av landningsbygget, inte av en separat docs-tjänst. 225 öppnades som PR #303 och mergades; uppgiften deployade inte själv, utan publiceringen på https://braian.io/docs/ följde av mergen.
 
-## Rad 225b — docs-sanning, mergad och live efter Test-godkännande
+## Rad 225b — docs-sanning efter Test-avslag på rad 225
 
-Rad 225b är mergad till `main` som #304 (squash `7eaee05e56cbf0bbc29bfc4d046d5c41e4506f67`) och publicerad på https://braian.io/docs/ från 00:32 Europe/Stockholm den 12 november 2026. Test gav GODKÄND efter omtestet av 225b. Grenen `junior/225b-docs-truth` utgick från `origin/main` `5f2402e` (#303) och rättade guiden mot demon på buildId `5f2402e` utan att ändra produktbeteende.
+Grenen `junior/225b-docs-truth` utgår från `origin/main` `5f2402e` (#303). Den rättar guiden mot demon på buildId `5f2402e` utan att ändra produktbeteende.
 
 - `docs/guide/graph.md`: menyn beskrivs som intill noden utan avståndslöfte; Fit körs vid Re-layout och när full storlek öppnas, inte efter F5 eller när full storlek stängs; ett klick på en pinnad nod släpper pinnen; gruppnoder får canvasmenyn Fit/Re-layout; inget påstående att etiketter undviker varandra.
-- `docs/guide/deleting-and-restore.md`: en kort not sade att räkningarna och Restore var under rättning i 216b, med demon `5f2402e` som exempel. Den noten togs bort i 216b när rättningen landade (PR #305), så den inte autodeployas vidare.
+- `docs/guide/deleting-and-restore.md`: en kort not sade att räkningarna och Restore är under rättning i 216b, med demon `5f2402e` som exempel. Den noten tas bort i 216b när rättningen landar, så den inte autodeployas vidare.
 - `apps/landing/src/content.ts`: `docsUrl` pekar på `https://braian.io/docs/`, så footerns Documentation-länk gör detsamma.
 - `apps/landing/public/sitemap.xml` och `apps/landing/scripts/guide.mjs`: `/docs/<slug>/` med avslutande snedstreck i sitemap samt i canonical och `og:url`; index är kvar på `/docs/`. Endast sitemap-hashen i `check-frozen.mjs` är uppdaterad.
 

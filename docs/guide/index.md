@@ -6,11 +6,12 @@ these pages; if a claim is not here, it does not belong there yet. It walks thro
 the daily flows rather than the internals.
 
 - [Getting started](/docs/getting-started/) — run Braian locally, sign in and open the demo workspace.
-- [Workspaces and panels](/docs/workspaces-and-panels/) — tiled views, layouts and sharing.
-- [Object types and relations](/docs/object-types-and-relations/) — the model, attributes and link types.
-- [Data sources](/docs/data-sources/) — make a view follow a type, a linked object or a structure node.
-- [Command palette and shortcuts](/docs/command-palette-and-shortcuts/) — Ctrl+K, the agent and the keyboard.
-- [Deleting and restore](/docs/deleting-and-restore/) — four delete entry points, confirm counts and Trash.
+- [Workspaces and panels](/docs/workspaces-and-panels/) — tiled views, Select fields, unit display and one Save bar.
+- [Object types and relations](/docs/object-types-and-relations/) — object types, attributes, value lists, units and link types.
+- [Data sources](/docs/data-sources/) — table sources, catalogs, imports and saved selections.
+- [Command palette and shortcuts](/docs/command-palette-and-shortcuts/) — Ctrl+K and the keyboard.
+- [Agent chat](/docs/agent-chat/) — the docked agent pane, follow-ups and drafts.
+- [Deleting and restore](/docs/deleting-and-restore/) — confirm counts, Trash, restore and permanent delete.
 - [Graph](/docs/graph/) — the object graph and the model graph.
 - [Feedback](/docs/feedback/) — in-app reports when an operator enables them.
 - [Self-hosting](/docs/self-hosting/) — one binary, several roles, Postgres and Typesense.

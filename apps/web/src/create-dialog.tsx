@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Button } from './components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select'
+import { AttributeFieldLabel } from './attribute-field-label'
 import { copy } from './i18n'
 import { writeErrorMessage } from './write-error'
 
@@ -13,6 +14,7 @@ export type CreateDialogField = {
   autoFocus?: boolean
   options?: Array<{ value: string; label: string }>
   multiline?: boolean
+  fieldDescription?: string
 }
 
 /**
@@ -91,7 +93,13 @@ export function CreateDialog({
     const focus = field.autoFocus || (index === 0 && !list.some((item) => item.autoFocus))
     return (
       <div className="create-field" key={field.id}>
-        <label htmlFor={inputId}>{field.label}</label>
+        <AttributeFieldLabel
+          htmlFor={inputId}
+          description={field.fieldDescription}
+          descTestId={field.fieldDescription?.trim() ? `create-field-desc-${field.id}` : undefined}
+        >
+          {field.label}
+        </AttributeFieldLabel>
         {field.options ? (
           <Select value={field.value || undefined} onValueChange={(value) => onField(field.id, value)}>
             <SelectTrigger
@@ -140,6 +148,15 @@ export function CreateDialog({
         <form
           className="dialog-form create-form"
           onSubmit={(event) => {
+            event.preventDefault()
+            submit()
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter' || event.defaultPrevented || saving) return
+            const target = event.target
+            if (!(target instanceof HTMLElement)) return
+            if (target.tagName === 'TEXTAREA' && !event.ctrlKey && !event.metaKey) return
+            if (target.getAttribute('role') === 'combobox' && target.getAttribute('aria-expanded') === 'true') return
             event.preventDefault()
             submit()
           }}

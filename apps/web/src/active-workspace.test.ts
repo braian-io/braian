@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   activeWorkspaceStorageKey,
   defaultActiveWorkspaceId,
+  openWorkspaceAfterRefetch,
   readActiveWorkspaceId,
   resolveActiveWorkspaceId,
   writeActiveWorkspaceId,
@@ -51,6 +52,26 @@ describe('active workspace persistence', () => {
   it('falls back when current and stored are missing from the list', () => {
     expect(resolveActiveWorkspaceId(rows, 'gone', 'also-gone')).toBe('products')
     expect(resolveActiveWorkspaceId(rows, null, 'gone')).toBe('products')
+  })
+
+  it('activates a new workspace only after the refetch lists it', async () => {
+    const before = [{ id: 'products', share_token: 'braian-type-product' }]
+    const after = [...before, { id: 'copy', name: 'Products 2', share_token: 'user-abc' }]
+    let release!: () => void
+    const refetched = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const opened: string[] = []
+
+    const activating = openWorkspaceAfterRefetch('copy', () => refetched, (id) => opened.push(id))
+    await Promise.resolve()
+    expect(opened).toEqual([])
+    expect(resolveActiveWorkspaceId(before, 'copy', 'products')).toBe('products')
+
+    release()
+    await activating
+    expect(opened).toEqual(['copy'])
+    expect(resolveActiveWorkspaceId(after, 'copy', 'products')).toBe('copy')
   })
 
   it('round-trips through storage', () => {

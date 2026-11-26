@@ -98,6 +98,8 @@ describe('proposal mutation errors', () => {
     await screen.findAllByText('Proposal')
 
     fireEvent.click(screen.getByTestId('discard-all'))
+    await screen.findByTestId('discard-all-confirm')
+    fireEvent.click(screen.getByTestId('confirm-discard-all'))
 
     await waitFor(() => expect(push).toHaveBeenCalledWith('proposal p1 is already being applied'))
     expect(screen.getByTestId('proposal-error').textContent).toBe('proposal p1 is already being applied')

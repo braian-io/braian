@@ -1332,6 +1332,77 @@ impl Store {
         Ok(receipt)
     }
 
+    /// Applies one side-table write outside a proposal row. Used when a person
+    /// saves a model draft that includes catalog steps.
+    pub async fn apply_proposal_write(
+        &self,
+        actor: &Actor,
+        write: ProposalWrite,
+    ) -> Result<(), Error> {
+        let mut client = self.checkout().await?;
+        let tx = client.transaction().await?;
+        self.ensure_actor(&tx, actor).await?;
+        match write {
+            ProposalWrite::Catalog {
+                id,
+                key,
+                name,
+                kind,
+                editable,
+            } => {
+                let updated = tx
+                    .execute(
+                        "UPDATE catalogs SET key = $2, name = $3, kind = $4, editable = $5 WHERE id = $1",
+                        &[&id, &key, &name, &kind, &editable],
+                    )
+                    .await?;
+                if updated == 0 {
+                    tx.execute(
+                        "INSERT INTO catalogs (id, key, name, kind, editable) VALUES ($1, $2, $3, $4, $5)",
+                        &[&id, &key, &name, &kind, &editable],
+                    )
+                    .await?;
+                    let progress_id: i32 = tx
+                        .query_one("SELECT COALESCE(MAX(id), 0) + 1 FROM indexer_progress", &[])
+                        .await?
+                        .get(0);
+                    tx.execute(
+                        "INSERT INTO indexer_progress (id, seq, catalog_id) VALUES ($1, 0, $2)",
+                        &[&progress_id, &id],
+                    )
+                    .await?;
+                }
+            }
+            ProposalWrite::CatalogDelete { id, accepting } => {
+                let usage = crate::catalogs::usage_in(&tx, id, Some(accepting)).await?;
+                if usage.has_dependents() {
+                    let key: Option<String> = tx
+                        .query_opt("SELECT key FROM catalogs WHERE id = $1", &[&id])
+                        .await?
+                        .map(|row| row.get(0));
+                    return Err(Error::CatalogInUse {
+                        key: key.unwrap_or_else(|| id.to_string()),
+                        detail: usage.detail(),
+                    });
+                }
+                tx.execute(
+                    "UPDATE merge_profiles SET deleted_at = now()
+                     WHERE source_catalog_id = $1 AND deleted_at IS NULL",
+                    &[&id],
+                )
+                .await?;
+                tx.execute(
+                    "UPDATE catalogs SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL",
+                    &[&id],
+                )
+                .await?;
+            }
+            _ => return Err(Error::Data("unsupported direct write".into())),
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
     /// Clears `deleted_at` and writes an update so the indexer puts the object back.
     ///
     /// A live object with the same key, or a live link on the same side, blocks

@@ -12,7 +12,8 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use braian_model::{
     DefinitionSet, ModelChange, ModelDraft, SharedValueList, change_removed_definitions,
-    groups_removed_by_structure_upserts, preview, purge_for, restored_definitions, undo_purge,
+    draft_needs_reindex, groups_removed_by_structure_upserts, preview, purge_for,
+    restored_definitions, undo_purge,
 };
 use braian_rules::CompiledModel;
 use braian_store::{Actor, BatchKind, Error, PrincipalKind};
@@ -130,6 +131,50 @@ async fn load_draft(state: &AppState, user_id: Uuid) -> Result<Option<StoredDraf
     }))
 }
 
+/// Appends catalog and other model steps to the person's draft. Nothing is
+/// applied until Review saves the draft.
+pub(crate) async fn stage_changes(
+    state: &AppState,
+    identity: &Identity,
+    steps: Vec<ModelChange>,
+) -> Result<Value, Problem> {
+    for step in &steps {
+        if let ModelChange::UpsertCatalog { catalog } = step {
+            crate::model_proposal::reject_catalog_key_change(state, catalog).await?;
+        }
+    }
+    let user_id = require_person(state, identity).await?;
+    let current = state
+        .store
+        .model_revision()
+        .await
+        .map_err(store_status)?
+        .unwrap_or(0);
+    let loaded = load_draft(state, user_id).await?;
+    let mut draft = loaded
+        .as_ref()
+        .map(|row| row.draft.clone())
+        .unwrap_or_else(|| ModelDraft::new(current));
+    if draft.conflicts(current) && !steps.is_empty() {
+        return Err(conflict_problem(draft.base_revision, current));
+    }
+    for step in steps {
+        draft.add(step);
+    }
+    if draft.steps.is_empty() {
+        state
+            .store
+            .delete_model_draft(user_id)
+            .await
+            .map_err(store_status)?;
+        return draft_view(state, None, current, None).await;
+    }
+    let defs = state.store.definition_set().await.map_err(store_status)?;
+    preview(&defs, &draft.steps).map_err(model_status)?;
+    store_draft(state, user_id, &draft).await?;
+    draft_view(state, Some(&draft), current, Some(Utc::now())).await
+}
+
 async fn store_draft(state: &AppState, user_id: Uuid, draft: &ModelDraft) -> Result<(), Problem> {
     let steps = serde_json::to_value(&draft.steps).map_err(|error| {
         Problem::new(
@@ -176,11 +221,18 @@ async fn draft_view(
     let defs = state.store.definition_set().await.map_err(store_status)?;
     match preview(&defs, &draft.steps) {
         Ok((after, impact)) => {
-            let report = consequence(state, &defs, &draft.steps, &impact).await?;
-            body["lines"] = json!(impact.lines);
-            body["warnings"] = json!(impact.warnings);
-            body["consequence"] = report;
-            body["definitions"] = serde_json::to_value(&after).unwrap_or(Value::Null);
+            if let Err(message) =
+                crate::link_type_validate::validate_for_app(state, &defs, &after, &draft.steps)
+                    .await
+            {
+                body["error"] = json!(message);
+            } else {
+                let report = consequence(state, &defs, &draft.steps, &impact).await?;
+                body["lines"] = json!(impact.lines);
+                body["warnings"] = json!(impact.warnings);
+                body["consequence"] = report;
+                body["definitions"] = serde_json::to_value(&after).unwrap_or(Value::Null);
+            }
         }
         Err(error) => {
             body["error"] = json!(error.to_string());
@@ -240,9 +292,16 @@ async fn post_steps(
                 "delete from the dialog; it is not collected in the draft",
             ));
         }
-        let defs = state.store.definition_set().await.map_err(store_status)?;
+        let stored = state.store.definition_set().await.map_err(store_status)?;
+        // add_unit and update_unit copy the family from these definitions.
+        // A family created earlier in this draft is not in the saved revision yet.
+        let planning = if draft.conflicts(current) {
+            stored
+        } else {
+            planning_defs(&stored, &draft.steps)?
+        };
         let args = body.args.unwrap_or(Value::Null);
-        steps.extend(crate::model_proposal::changes_from(name, &args, &defs)?);
+        steps.extend(crate::model_proposal::changes_from(name, &args, &planning)?);
     }
     if draft.conflicts(current) && (body.remove.is_some() || !steps.is_empty()) {
         return Err(conflict_problem(draft.base_revision, current));
@@ -252,6 +311,11 @@ async fn post_steps(
             .remove(index)
             .map_err(|message| Problem::new(StatusCode::BAD_REQUEST, "draft", message))?;
     } else {
+        for step in &steps {
+            if let ModelChange::UpsertCatalog { catalog } = step {
+                crate::model_proposal::reject_catalog_key_change(&state, catalog).await?;
+            }
+        }
         for step in steps {
             draft.add(step);
         }
@@ -355,6 +419,15 @@ async fn save_draft(
     Ok(Json(saved))
 }
 
+fn planning_defs(defs: &DefinitionSet, steps: &[ModelChange]) -> Result<DefinitionSet, Problem> {
+    if steps.is_empty() {
+        return Ok(defs.clone());
+    }
+    preview(defs, steps)
+        .map(|(after, _)| after)
+        .map_err(model_status)
+}
+
 fn conflict_problem(base: u64, current: u64) -> Problem {
     Problem::new(
         StatusCode::CONFLICT,
@@ -393,6 +466,18 @@ pub(crate) async fn commit_steps(
         }
         let (mut after, impact) = preview(&defs, changes).map_err(model_status)?;
         CompiledModel::compile(&after).map_err(Problem::definitions)?;
+        for change in changes {
+            if let ModelChange::UpsertCatalog { catalog } = change {
+                crate::model_proposal::reject_catalog_key_change(state, catalog).await?;
+            }
+        }
+        crate::link_type_validate::reject_blocked_link_type_changes(
+            &state.store,
+            &defs,
+            &after,
+            changes,
+        )
+        .await?;
         let purge = purge_for(&defs, changes);
         let report = consequence(state, &defs, changes, &impact).await?;
         if dry_run {
@@ -426,7 +511,24 @@ pub(crate) async fn commit_steps(
         };
         match write {
             Ok(receipt) => {
+                for change in changes {
+                    if matches!(
+                        change,
+                        ModelChange::UpsertCatalog { .. } | ModelChange::DeleteCatalog { .. }
+                    ) && let Some(reference) =
+                        crate::model_proposal::reference_write(state, Uuid::nil(), change).await?
+                    {
+                        state
+                            .store
+                            .apply_proposal_write(actor, reference)
+                            .await
+                            .map_err(store_status)?;
+                    }
+                }
                 state.models.invalidate().await;
+                if draft_needs_reindex(&defs, changes) {
+                    state.store.request_reindex().await.map_err(store_status)?;
+                }
                 let source = state
                     .store
                     .definition_batch_source(after.model_revision)

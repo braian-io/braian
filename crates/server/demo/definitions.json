@@ -91,6 +91,40 @@
           "factor": "4.184"
         }
       ]
+    },
+    {
+      "id": "018f0000-0000-7000-8000-000000000015",
+      "key": "temperature",
+      "dimension": "temperature",
+      "base_unit": "C",
+      "units": [
+        {
+          "code": "C",
+          "factor": "1",
+          "symbol": "°C",
+          "labels": {
+            "en": "Celsius"
+          }
+        },
+        {
+          "code": "F",
+          "factor": "0.5555555555555555555555555556",
+          "offset": "-17.777777777777777777777777778",
+          "symbol": "°F",
+          "labels": {
+            "en": "Fahrenheit"
+          }
+        },
+        {
+          "code": "K",
+          "factor": "1",
+          "offset": "-273.15",
+          "symbol": "K",
+          "labels": {
+            "en": "Kelvin"
+          }
+        }
+      ]
     }
   ],
   "value_lists": [
@@ -1674,6 +1708,7 @@
       "multiple": false,
       "kind": {
         "type": "number",
+        "unit_family": "018f0000-0000-7000-8000-000000000011",
         "min": "0",
         "max": "100"
       },

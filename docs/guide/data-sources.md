@@ -40,6 +40,20 @@ The active row carries a `Current` chip.
    yield the target type is listed. The table shows the objects placed in that group.
    The filter is the exact placed group, not the whole subtree.
 
+When you add a structure tree to the workspace — **Open view**, **Add view**, or a
+future Open structure command — any open object table whose type can use that tree
+is linked to it automatically, even if the table was on **All {type}**. The pane
+header then shows `All {type} · {tree} › {node}`. Click the header once to return
+to **All {type}**; that choice stays until another structure tree is added to the
+layout. Selection chips in the filter bar light up only when their filter is really
+applied to the table (on **All {type}**, a tree-side group selection does not
+highlight a matching assortment chip). A **group** chip on a table in explicit
+**All {type}** (after auto-linking a structure tree) leaves that saved All mode
+and applies the group filter to the whole type. In a **peer-linked** table,
+group chips such as Cheese have no effect; label chips such as Organic still
+apply. Clicking the pane header while following a peer returns to **All {type}**;
+its accessible name names that destination, not the current peer selection.
+
 Sources that cannot produce the target type are not listed. A Products view never
 offers an Article-only source, and a source with no derivation path never appears.
 
@@ -81,10 +95,13 @@ for the focused view only; the top-bar selector sets it for the whole workspace.
 view uses its own override when it has one, otherwise the workspace catalog, otherwise
 the master catalog.
 
-The `Catalogs` view in the `Sources` workspace lists catalogs with their name, key,
-and kind. A source catalog has `Infer model` and `Clean up` actions, and the view has
-a `New source catalog` form with `Catalog key`, `Catalog name`, `Editable`, and
-`Save`.
+The `Catalogs` view in the `Sources` workspace is a standard table with columns
+`Name`, `Key`, `Kind` (master or source), and `Editable`. Use **+** to add a source
+catalog row, edit cells inline, then **Save** (Review when the draft has more than a
+trivial change). **Rename catalog** and **Delete catalog** live in the row context
+menu and in **Ctrl+K**; the master catalog cannot be deleted, and **Key** cannot
+change after creation. Column headers show tooltips for **Key** and **Editable**.
+Source catalogs also offer **Infer model** and **Clean up** from the row menu.
 
 ## Source catalogs and merges
 
@@ -107,19 +124,24 @@ and the empty import screen offers `Choose file`.
 
 An import has three steps, shown as `1 Map`, `2 Check`, and `3 Save`:
 
-- **Map.** Choose the `Type` and how rows are matched with `Matched by`. The checkbox
-  `Empty cells remove the stored value (otherwise they are left unchanged)` controls
-  empty cells. Each file column is mapped to a field or to `Don't import`. `Save
-  mapping as…` stores the mapping for files with the same columns, and `Next` moves on.
+- **Map.** Choose the `Type` and how rows are matched with `Matched by`. `Saved mapping`
+  shows the name of the mapping that was applied, or `None` for a manual mapping.
+  Picking another saved mapping, or `None`, applies that choice to the columns.
+  The checkbox `Empty cells remove the stored value (otherwise they are left unchanged)`
+  controls empty cells. Each file column is mapped to a field or to `Don't import`.
+  `Save mapping as…` opens a dialog and stores the mapping for files with the same
+  columns. The step then reads `Saved as {name}.` `Next` moves on.
 - **Check.** Review the draft with the filters `All`, `New`, `Changed`, `Errors`,
   `Unchanged`, and `Excluded`. You can leave out invalid cells instead of skipping the
   row, include a row that was left out, download failing rows with `Download failing
-  rows (.xlsx)`, go `Back to mapping`, or approve with `Approve N rows`.
+  rows (.xlsx)`, go `Back to mapping`, or save with `Save N rows`.
 - **Save.** Braian reports the result as `Imported {created} · Updated {updated} ·
   Skipped {skipped}`.
 
-Imports use saved mappings, available in the `Import mappings` view with the columns
-`Name`, `Object type`, `Columns`, and `Delete`. A running import can be reopened from
+Saved mappings are opened with `Ctrl+K` and `Import mappings`. The table shows `Name`,
+`Source`, `Object type`, `Created by`, and `Updated`. Rename the name in the cell; it
+saves when you leave the cell. Delete asks you to confirm. Only the person who saved
+a mapping, or an admin, can rename or delete it. A running import can be reopened from
 its `?import=` URL.
 
 Braian accepts `.xlsx`, `.xls`, `.csv`, `.tsv`, and `.txt` files. The error text for a
@@ -132,13 +154,44 @@ the table filter bar next to `All`, `Type`, and `Status`. Selecting a chip appli
 filter; clicking the active chip clears it.
 
 Create one from the `Selections` view with `New selection`, or from `Ctrl+K` and `New
-selection`. The dialog has `Selection`, `Type`, `Kind` (`Dynamic` or `Manual`), and
-`Filter query`. The filter query uses the same syntax as a view filter, for example
-`type_key:=product && groups:=food:cheese`. The button is `Save selection`.
+selection`. Both open the `Selections` view and its `Detail`, where you set `Selection`,
+`Type`, `Kind` (`Dynamic` or `Manual`), and, for a dynamic selection, `Filter query`.
+The filter query uses the same syntax as a view filter, for example
+`type_key:=product && groups:=food:cheese`.
 
-A dynamic selection follows its filter. A manual selection is filled by hand.
-Selections are listed with an `Edit selection` and `Delete selection` action for each
-row.
+Creating and editing a selection uses the same draft bar as objects and model changes.
+Nothing is written until you press `Save`; `Discard` or `Escape` throws the draft away,
+and no selection is created or changed.
+
+Edit a selection with the `Edit selection` action on its row or through `Ctrl+K` and
+`Edit selection`. The `Detail` then lets you change the name and, for a dynamic
+selection, the filter query. `Kind` and object `Type` stay locked after creation.
+`Discard` restores the previous name and query. `Save` is the only action that stores
+the change.
+
+`Ctrl+K` and `Save filter as selection` opens the same draft `Detail` with `Kind` set to
+`Dynamic` and the current view filter already filled in. It is still a draft: it is
+only saved when you press `Save`.
+
+A dynamic selection recalculates from its filter whenever it is applied, so the table
+shows the objects that match now, not a snapshot from when the selection was saved.
+
+A manual selection is filled by hand. In an object table, select rows and choose
+`Add to selection…`, or drag the rows onto the selection in its list or onto a table
+that is showing it. In a table whose source is that manual selection, `Remove from
+selection` takes the chosen rows back out. A dynamic filter combined with hand-picked
+objects is still out of scope. A manual selection that has not been filled by hand
+still stores the group and label filters that were active when you created it. One
+with no group, labels, or objects matches nothing, not every object of the type.
+
+Selecting a selection chip applies it to the table, and clicking the active chip
+clears it. Group chips do not apply in peer-linked tables; label chips still do.
+Selections are listed with an `Edit selection` and `Delete selection`
+action for each row. `Delete selection` first shows the saved views, jobs, and webhooks
+that use the selection; an active filter chip is not part of that list. Deleting a
+selection that is the active chip makes the table fall back to `All` at once, with the
+`All` chip selected and every object of the type shown. Views that were saved with the
+selection fall back to `All …` as well.
 
 ## Which one do I need?
 

@@ -1,4 +1,4 @@
-import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react'
+import type { DragEvent as ReactDragEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react'
 import { Columns3, Plus, Search } from 'lucide-react'
 import { copy } from './i18n'
 import { formatCount } from './format'
@@ -16,6 +16,8 @@ export type StandardTableChromeProps = {
   /** Generic text filter shared by every table that opts in. */
   filterValue?: string
   onFilterChange?: (value: string) => void
+  onFilterFocus?: () => void
+  onFilterBlur?: () => void
   filterOnKeyDown?: (event: ReactKeyboardEvent<HTMLInputElement>) => void
   filterPlaceholder?: string
   /** When true, show Save (same action as Ctrl+S). */
@@ -23,6 +25,8 @@ export type StandardTableChromeProps = {
   onReview?: () => void
   children: ReactNode
   testId?: string
+  onDragOver?: (event: ReactDragEvent<HTMLDivElement>) => void
+  onDrop?: (event: ReactDragEvent<HTMLDivElement>) => void
 }
 
 /**
@@ -37,15 +41,19 @@ export function StandardTableChrome({
   rowCount,
   filterValue,
   onFilterChange,
+  onFilterFocus,
+  onFilterBlur,
   filterOnKeyDown,
   filterPlaceholder = copy.search,
   reviewVisible = false,
   onReview,
   children,
   testId = 'standard-table',
+  onDragOver,
+  onDrop,
 }: StandardTableChromeProps) {
   return (
-    <div className="table-wrap" data-testid={testId}>
+    <div className="table-wrap" data-testid={testId} onDragOver={onDragOver} onDrop={onDrop}>
       <div className="toolbar standard-table-bar" data-testid="standard-table-bar">
         {onFilterChange ? (
           <label className="search-field">
@@ -55,6 +63,8 @@ export function StandardTableChrome({
               placeholder={filterPlaceholder}
               value={filterValue ?? ''}
               onChange={(event) => onFilterChange(event.target.value)}
+              onFocus={onFilterFocus}
+              onBlur={onFilterBlur}
               onKeyDown={filterOnKeyDown}
             />
             <Kbd>/</Kbd>

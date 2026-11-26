@@ -2,6 +2,7 @@ import { api, type Json } from './api'
 import { splitPair, tabGroup, type Node } from './layout'
 import { typeNames, type TypeName } from './type-labels'
 import { MODEL_WORKSPACE_VIEW_SPECS, modelWorkspaceLayout } from './model-workspace-migrate'
+import { structureTreeViewState } from './structure-tree-view'
 import { typeShareToken, typeUsesTree } from './type-workspaces'
 import { linkedTypeIds } from './view-source'
 
@@ -23,6 +24,17 @@ const TABLE_STATE = {
 }
 
 /** First linked object type in definition order, never a link type itself. */
+/** Structure key when the type is bound to exactly one tree (e.g. product → food). */
+function singleStructureKey(type: TypeName, defs?: Json): string | undefined {
+  if (type.structures?.length !== 1) return undefined
+  const token = type.structures[0]
+  const structure = ((defs?.structures as Json[]) ?? []).find(
+    (row) => String(row.id ?? '') === token || String(row.key ?? '') === token,
+  )
+  const key = String(structure?.key ?? '').trim()
+  return key || token
+}
+
 function firstLinkedType(type: TypeName, defs: Json | undefined): TypeName | undefined {
   if (!defs || !type.id) return undefined
   const linkedId = linkedTypeIds(type.id, defs)[0]
@@ -39,8 +51,15 @@ export function typeWorkspaceTemplate(type: TypeName, defs?: Json): WorkspaceTem
   const mainIndex = tree ? 2 : 1
   const peerIndex = linked ? mainIndex + 1 : -1
   const rightIndex = linked ? peerIndex + 1 : mainIndex + 1
+  const structureKey = tree ? singleStructureKey(type, defs) : undefined
   const views: WorkspaceTemplate['views'] = [
-    ...(tree ? [{ type: 'structure_tree', title: treeTitle, state: {} }] : []),
+    ...(tree
+      ? [{
+          type: 'structure_tree',
+          title: treeTitle,
+          state: structureKey ? structureTreeViewState(structureKey, defs) : {},
+        }]
+      : []),
     { type: 'assortment_list', title: 'Selections', state: {} },
     {
       type: 'object_table',
@@ -127,12 +146,25 @@ export function workspaceTemplates(types: TypeName[] = [], defs?: Json): Workspa
 }
 
 
+/** True for object-type templates, which the palette may copy when canonical exists. */
+export function isTypeWorkspaceTemplate(template: Pick<WorkspaceTemplate, 'id'>): boolean {
+  return template.id.startsWith('type:')
+}
+
 /** Stable share token for seeded / type workspaces. Undefined → personal user-* copy. */
 export function canonicalShareToken(template: WorkspaceTemplate): string | undefined {
   if (template.id === 'model') return 'braian-model'
   if (template.id === 'review') return 'braian-review'
-  if (template.id.startsWith('type:')) return typeShareToken(template.id.slice('type:'.length))
+  if (isTypeWorkspaceTemplate(template)) return typeShareToken(template.id.slice('type:'.length))
   return undefined
+}
+
+/** Next free "{name} {n}" among taken names, starting at 2. */
+export function nextWorkspaceName(name: string, taken: Iterable<string>): string {
+  const used = new Set(taken)
+  let index = 2
+  while (used.has(`${name} ${index}`)) index += 1
+  return `${name} ${index}`
 }
 
 /**
@@ -151,30 +183,44 @@ async function withTypeDefinitions(template: WorkspaceTemplate): Promise<Workspa
   }
 }
 
-export async function createWorkspaceFromTemplate(input: WorkspaceTemplate, options?: { shareToken?: string }) {
-  const shareToken = options?.shareToken ?? canonicalShareToken(input)
-  if (shareToken) {
-    const listed = await api.get('/v1/workspaces')
-    const existing = listed.workspaces?.find((row) => row.share_token === shareToken)
-    if (existing?.id) return existing.id
-  }
+export async function createWorkspaceFromTemplate(
+  input: WorkspaceTemplate,
+  options?: { shareToken?: string; forceNew?: boolean },
+) {
   const template = await withTypeDefinitions(input)
+  const canonical = options?.shareToken ?? canonicalShareToken(template)
+  let shareToken = canonical
+  let name = template.name
+  if (canonical) {
+    const listed = await api.get('/v1/workspaces')
+    const rows = listed.workspaces ?? []
+    const existing = rows.find((row) => row.share_token === canonical)
+    if (existing?.id) {
+      // New from template on an object type makes a personal copy instead of
+      // reopening the canonical workspace. Model and Review keep reopening it.
+      if (!options?.forceNew) return existing.id
+      shareToken = undefined
+      name = nextWorkspaceName(template.name, rows.map((row) => row.name))
+    }
+  }
   const workspaceId = crypto.randomUUID()
   const viewIds = template.views.map(() => crypto.randomUUID())
   const token = shareToken ?? `user-${workspaceId.slice(0, 8)}`
   try {
     await api.post('/v1/workspaces', { body: {
         id: workspaceId,
-        name: template.name,
+        name,
         locked: false,
         share_token: token,
         layout: template.layout(viewIds),
       } })
   } catch (error) {
-    // Unique share_token race: another tab created the canonical workspace first.
-    const listed = await api.get('/v1/workspaces')
-    const existing = listed.workspaces?.find((row) => row.share_token === token)
-    if (existing?.id) return existing.id
+    if (shareToken) {
+      // Unique share_token race: another tab created the canonical workspace first.
+      const listed = await api.get('/v1/workspaces')
+      const existing = listed.workspaces?.find((row) => row.share_token === shareToken)
+      if (existing?.id) return existing.id
+    }
     throw error
   }
   for (const [index, view] of template.views.entries()) {

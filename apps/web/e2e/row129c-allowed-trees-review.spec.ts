@@ -2,6 +2,7 @@ import { expect, test, type APIResponse, type Page } from '@playwright/test'
 import { mkdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { saveAttributeTableDraft } from './allowed-trees-table-draft'
 import { demoCredentials } from './demo'
 
 const shots = process.env.BRAIAN_ROW129C_SHOTS
@@ -204,6 +205,7 @@ test('the review lists an earlier unsaved step and saves only after one approval
     const checkbox = page.getByTestId('allowed-trees').getByRole('checkbox', { name: fixture.label })
     await expect(checkbox).not.toBeChecked()
     await checkbox.click()
+    await saveAttributeTableDraft(page)
 
     const dialog = page.getByTestId('review-dialog')
     await expect(dialog).toBeVisible({ timeout: 20_000 })
@@ -277,6 +279,7 @@ test('Cancel reverts the checkbox and the unsaved count before the remove reques
 
     const checkbox = page.getByTestId('allowed-trees').getByRole('checkbox', { name: fixture.label })
     await checkbox.click()
+    await saveAttributeTableDraft(page)
     const dialog = page.getByTestId('review-dialog')
     await expect(dialog).toBeVisible({ timeout: 20_000 })
     await dialog.getByRole('button', { name: 'Cancel' }).click()
@@ -321,6 +324,7 @@ test('Cancel keeps an earlier set_structures step on the same type', async ({ pa
     const checkbox = page.getByTestId('allowed-trees').getByRole('checkbox', { name: fixture.label })
     await expect(checkbox).not.toBeChecked()
     await checkbox.click()
+    await saveAttributeTableDraft(page)
     const dialog = page.getByTestId('review-dialog')
     await expect(dialog).toBeVisible({ timeout: 20_000 })
     await dialog.getByRole('button', { name: 'Cancel' }).click()

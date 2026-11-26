@@ -11,6 +11,7 @@ import {
   type QualifierStep,
 } from './qualifiers'
 import { makeViewColumn, withReplacedQualifier, type ViewColumn } from './columns'
+import { fieldHaystack } from './field-search'
 
 export type PeerPickOption = {
   id: string
@@ -70,8 +71,10 @@ type Row = {
   id: string
   title: string
   subtitle: string
+  path?: string
   drill?: boolean
   checked?: boolean
+  input?: 'checkbox' | 'radio'
   run: () => void
 }
 
@@ -189,6 +192,30 @@ function qualifiersMatch(col: ViewColumn, required: AppliedQualifier[]): boolean
 
 function columnsUnder(columns: ViewColumn[], pathIds: string[], required: AppliedQualifier[]): ViewColumn[] {
   return columns.filter((col) => pathMatches(col, pathIds) && qualifiersMatch(col, required))
+}
+
+/** Qualifiers for matching a column before the display unit is chosen. */
+function appliedWithoutUnit(applied: AppliedQualifier[]): AppliedQualifier[] {
+  return applied.filter(
+    (item) =>
+      item.kind !== 'unit' &&
+      !(item.kind === 'cardinality' && item.optionId === 'specific' && !item.value),
+  )
+}
+
+function unitColumnsForPath(columns: ViewColumn[], pathIds: string[], applied: AppliedQualifier[]): ViewColumn[] {
+  const base = appliedWithoutUnit(applied)
+  return columns.filter(
+    (col) =>
+      pathMatches(col, pathIds) &&
+      qualifiersMatch(col, base) &&
+      col.qualifiers.some((item) => item.kind === 'unit'),
+  )
+}
+
+function activeUnitOptionId(columns: ViewColumn[], pathIds: string[], applied: AppliedQualifier[]): string | undefined {
+  const hit = unitColumnsForPath(columns, pathIds, applied)[0]
+  return hit?.qualifiers.find((item) => item.kind === 'unit')?.optionId
 }
 
 /** Subtitle for a checked row: which sub-choice is active, e.g. `Description — sv`. */
@@ -338,7 +365,7 @@ export function FieldsMode({ open, columns, fields: catalog, onClose, onToggleCo
 
     if (top.kind === 'fields') {
       return top.fields
-        .filter((field) => !needle || `${field.name} ${field.typeLabel}`.toLowerCase().includes(needle))
+        .filter((field) => !needle || fieldHaystack(field).includes(needle))
         .map((field) => {
           const isLink = field.shape === 'link'
           const needsQualify = nextQualifierSteps(field, top.linkQualifiers).length > 0
@@ -351,6 +378,7 @@ export function FieldsMode({ open, columns, fields: catalog, onClose, onToggleCo
             id: field.id,
             title: field.name,
             subtitle: choice || field.typeLabel,
+            path: choice ? undefined : field.source,
             drill,
             checked,
             run: () => activateField(field, top),
@@ -371,6 +399,8 @@ export function FieldsMode({ open, columns, fields: catalog, onClose, onToggleCo
             // Edit field…: check must reflect THIS column only, not sibling hop columns.
             const current = editingHit.qualifiers.find((q) => q.kind === top.step.kind)
             checked = current?.optionId === option.id
+          } else if (top.step.kind === 'unit') {
+            checked = activeUnitOptionId(cols, top.pathIds, top.applied) === option.id
           } else {
             checked =
               columnsUnder(cols, top.pathIds, [
@@ -388,6 +418,7 @@ export function FieldsMode({ open, columns, fields: catalog, onClose, onToggleCo
             subtitle: option.subtitle ?? '',
             drill,
             checked,
+            input: top.step.kind === 'unit' ? 'radio' : 'checkbox',
             run: () => activateQualifier(option, top),
           }
         })
@@ -594,7 +625,7 @@ export function FieldsMode({ open, columns, fields: catalog, onClose, onToggleCo
       // (Re-adding still appends last in the table — Glenn's rule — but the list stays put.)
       const needle = query.trim().toLowerCase()
       const filtered = frame.fields.filter(
-        (item) => !needle || `${item.name} ${item.typeLabel}`.toLowerCase().includes(needle),
+        (item) => !needle || fieldHaystack(item).includes(needle),
       )
       const at = filtered.findIndex((item) => item.id === field.id)
       setActive(at >= 0 ? at : 0)
@@ -725,7 +756,22 @@ export function FieldsMode({ open, columns, fields: catalog, onClose, onToggleCo
     // Always toggle (not show-only): Enter, Enter must turn nested hops and
     // composites (value_list Label/Code, unit, range, language) off again.
     // Root cause of "Label stuck on": onShowColumn never hid; isChecked stayed true.
-    onToggleColumn(col)
+    if (frame.step.kind === 'unit') {
+      const siblings = unitColumnsForPath(columnsRef.current, frame.pathIds, nextApplied)
+      const existing = siblings[0]
+      if (existing) {
+        const existingUnit = existing.qualifiers.find((item) => item.kind === 'unit')?.optionId
+        if (existingUnit === option.id) {
+          // Single-choice: re-selecting the active unit is a no-op (K1).
+        } else {
+          onReplaceColumn(existing.id, col)
+        }
+      } else {
+        onToggleColumn(col)
+      }
+    } else {
+      onToggleColumn(col)
+    }
     // After a language pick, return to the fields list so fields-check-${fieldId} shows.
     // Keep filter when staying on this qualify list (value_list / unit / …).
     if (frame.step.kind === 'language') {
@@ -854,6 +900,10 @@ export function FieldsMode({ open, columns, fields: catalog, onClose, onToggleCo
     }
     if (event.key === 'Enter') {
       event.preventDefault()
+      const row = rows[Math.min(active, Math.max(0, rows.length - 1))]
+      // Empty filter at the field list: Enter drills into All/language/unit steps, but must not
+      // toggle simple columns (e.g. Number) on the first row.
+      if (query.trim() === '' && top.kind === 'fields' && !row?.drill) return
       runActive()
     }
   }

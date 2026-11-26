@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { agentNoticeText, agentNotices, agentPaletteRows, agentRunPrompt, agentRunsForWorkspace, agentStatusLabel, agentTabTitle, agentsPaletteRoot, backgroundNotices, backgroundWorkingCount, cleanAgentError, sortAgentRuns, type AgentRunSummary } from './agent-runs'
+import { agentDisplayTitleFallback, agentDockTabSessionLabel, agentNoticeText, agentNotices, agentPaletteRows, agentRunPrompt, agentRunSearchHaystack, agentRunsForWorkspace, agentRunsToRestoreInLayout, agentSessionAccessibleDescription, agentSessionHeaderTitle, agentStatusLabel, agentTabTitle, agentViewTabPrompt, agentsPaletteRoot, backgroundNotices, backgroundWorkingCount, cleanAgentError, mergeRunSummary, sortAgentRuns, type AgentRunSummary } from './agent-runs'
 
 function run(patch: Partial<AgentRunSummary>): AgentRunSummary {
   return {
@@ -18,19 +18,26 @@ function run(patch: Partial<AgentRunSummary>): AgentRunSummary {
 }
 
 describe('agent run presentation', () => {
-  it('shortens a long prompt and keeps a short one', () => {
-    expect(agentTabTitle('propose a new name')).toBe('propose a new name')
+  it('uses a fixed Agent tab title regardless of prompt length', () => {
+    expect(agentTabTitle('propose a new name')).toBe('Agent')
     const long = 'please rewrite the selected product description so it fits the catalog voice and stays specific'
-    const title = agentTabTitle(long)
-    expect(title.endsWith('…')).toBe(true)
-    expect(title.length).toBeLessThan(long.length)
-    expect(long.startsWith(title.slice(0, -1))).toBe(true)
+    expect(agentTabTitle(long)).toBe('Agent')
   })
 
   it('cleans a failed run error', () => {
     expect(cleanAgentError('openai error: the model request failed (status 500)')).toBe(
       'The model request failed. Try again, or check the AI settings.',
     )
+  })
+
+  it('only restores tab_open runs whose agent view is open in the layout', () => {
+    const runs = [
+      run({ id: 'open', view_id: 'agent-a', workspace_id: 'ws-a' }),
+      run({ id: 'stale', view_id: 'agent-b', workspace_id: 'ws-a' }),
+    ]
+    const split = agentRunsToRestoreInLayout(runs, 'ws-a', ['products', 'agent-a'])
+    expect(split.restore.map((item) => item.id)).toEqual(['open'])
+    expect(split.stale.map((item) => item.id)).toEqual(['stale'])
   })
 
   it('keeps another workspace visible instead of dropping the tab', () => {
@@ -79,6 +86,21 @@ describe('agent run presentation', () => {
     const foreground = run({ id: 'b', mode: 'foreground', status: 'waiting' })
     const sentBack = run({ ...foreground, mode: 'background' })
     expect(backgroundNotices([foreground], [sentBack]).map((item) => item.id)).toEqual(['b'])
+    const sentBackAgain = run({ ...sentBack, mode: 'background', updated_at: '2026-11-05T12:10:00Z' })
+    const broughtFront = run({ ...sentBackAgain, mode: 'foreground', updated_at: '2026-11-05T12:11:00Z' })
+    const notices = agentNotices(backgroundNotices([broughtFront], [sentBackAgain]))
+    expect(notices.map((notice) => notice.actionLabel)).toEqual(['Answer'])
+    expect(notices[0]?.id).not.toBe(`agent-notice-b-waiting-${foreground.updated_at}`)
+    const list = [foreground, working]
+    expect(mergeRunSummary(list, foreground)).toBe(list)
+    const merged = mergeRunSummary(list, sentBack)
+    expect(merged?.[0]?.mode).toBe('background')
+    expect(merged?.[1]).toBe(working)
+    // A poll that never sampled foreground cannot see the trip back to background.
+    expect(backgroundNotices([sentBackAgain], [sentBackAgain])).toEqual([])
+    const seen = mergeRunSummary([sentBackAgain], broughtFront)
+    const sentBackAfter = run({ ...broughtFront, mode: 'background', updated_at: '2026-11-05T12:12:00Z' })
+    expect(backgroundNotices(seen ?? [], [sentBackAfter]).map((item) => item.id)).toEqual(['b'])
   })
 
   it('sorts waiting ahead of working and done', () => {
@@ -122,5 +144,48 @@ describe('agent run presentation', () => {
       ...run({ title: 'short' }),
       messages: [{ id: 'm', kind: 'user', body: { text: 'the full prompt' }, created_at: '' }],
     })).toBe('the full prompt')
+  })
+
+  it('omits the dock tab prompt for legacy agent views', () => {
+    expect(agentViewTabPrompt({ type: 'agent', state: {} })).toBeUndefined()
+    expect(agentViewTabPrompt({ type: 'agent', state: { prompt: '  ' } })).toBeUndefined()
+    expect(agentViewTabPrompt({ type: 'object_table' })).toBeUndefined()
+    expect(agentViewTabPrompt({ type: 'agent', state: { prompt: 'rename Cheddar' } })).toBe('rename Cheddar')
+  })
+
+  it('truncates long prompts to six words for the header fallback', () => {
+    const long = Array.from({ length: 12 }, (_, index) => `word${index}`).join(' ')
+    expect(agentDisplayTitleFallback(long)).toBe('word0 word1 word2 word3 word4 word5…')
+  })
+
+  it('indexes the first message for agent search', () => {
+    const haystack = agentRunSearchHaystack(run({
+      title: 'Winter plan',
+      first_message: 'ask me before the palette lists it',
+      status: 'waiting',
+      question: 'Which catalog?',
+    }))
+    expect(haystack.toLowerCase()).toContain('palette lists')
+    const rows = agentPaletteRows([run({
+      title: 'Winter plan',
+      first_message: 'ask me before the palette lists it',
+    })])
+    expect(rows[0]?.keywords?.join(' ').toLowerCase()).toContain('palette lists')
+  })
+
+  it('uses the short title in the header but keeps the full prompt accessible', () => {
+    const run = {
+      title: 'Rename Cheddar slice',
+      messages: [{ id: 'm', kind: 'user', body: { text: 'please rename Cheddar to Blue and keep the key' }, created_at: '' }],
+    }
+    expect(agentSessionHeaderTitle(run)).toBe('Rename Cheddar slice')
+    expect(agentSessionAccessibleDescription(run)).toBe('please rename Cheddar to Blue and keep the key')
+  })
+
+  it('prefers the run title for dock tooltips', () => {
+    expect(agentDockTabSessionLabel(
+      { type: 'agent', state: { run_id: 'r1' } },
+      [run({ id: 'r1', title: 'Winter assortment plan' })],
+    )).toBe('Winter assortment plan')
   })
 })

@@ -4,12 +4,110 @@ import { expect, type Locator, type Page } from '@playwright/test'
 export function paneWithTab(page: Page, title: string): Locator {
   return page.locator('section.pane').filter({
     has: page.locator('.pane-tab[data-view-type="object_table"]', { hasText: title }),
-  })
+  }).first()
 }
 
 /** Main object table in a type workspace. Products is the default type workspace. */
 export function mainTable(page: Page, title = 'Products'): Locator {
   return paneWithTab(page, title).getByTestId('object-table').first()
+}
+
+/** Full Postgres body loaded; list preview and debounced nav have settled. */
+export async function waitDetailReady(page: Page, detail = page.getByTestId('object-detail')) {
+  await expect(detail).toBeVisible()
+  await expect(detail).toHaveAttribute('data-detail-ready', 'true', { timeout: 60_000 })
+}
+
+/** Mirrors the server title stub (first five words) used in e2e under BRAIAN_AGENT_MOCK. */
+export function agentTitleStubHint(text: string): string {
+  return text.trim().split(/\s+/).slice(0, 5).join(' ')
+}
+
+/** Mirrors session_title_word_fallback (six words) on the server. */
+export function agentWordFallbackHint(text: string): string {
+  const words = text.trim().split(/\s+/)
+  if (words.length <= 6) return words.join(' ')
+  return `${words.slice(0, 6).join(' ')}…`
+}
+
+export function agentPaneTab(page: Page, sessionTitle?: string, which: 'first' | 'last' = 'last') {
+  let tabs = page.locator('.pane-tab[data-view-type="agent"]')
+  if (sessionTitle) {
+    const hint = agentTitleStubHint(sessionTitle)
+    const escaped = hint.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+    tabs = page.locator(`.pane-tab[data-view-type="agent"][title*="${escaped}"]`)
+  } else {
+    tabs = tabs.filter({ hasText: /^Agent$/ })
+  }
+  return which === 'first' ? tabs.first() : tabs.last()
+}
+
+export function agentSessionView(page: Page, needle: string) {
+  const escaped = needle.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  const heading = page.getByTestId('agent-session-title')
+  return page.getByTestId('agent-view').filter({
+    has: heading.filter({ hasText: needle }).or(page.locator(`[data-testid="agent-session-title"][title*="${escaped}"]`)),
+  }).last()
+}
+
+export function agentSessionViewByFullPrompt(page: Page, fragment: string) {
+  return agentSessionView(page, fragment)
+}
+
+/** Close every open agent pane tab so layout reset can paint the catalog again. */
+export async function closeAllAgentTabs(page: Page) {
+  for (let guard = 0; guard < 16; guard += 1) {
+    const tabs = page.locator('.pane-tab[data-view-type="agent"]')
+    const count = await tabs.count()
+    if (count === 0) return
+    const tab = tabs.first()
+    await tab.hover({ timeout: 3_000 }).catch(() => undefined)
+    await tab.getByRole('button', { name: 'Close tab' }).click({ timeout: 3_000 }).catch(() => undefined)
+    if ((await tabs.count()) >= count) {
+      await page.keyboard.press('Control+j').catch(() => undefined)
+    }
+  }
+}
+
+export async function resetProductsLayout(page: Page, title = 'Products') {
+  await closeAllAgentTabs(page).catch(() => undefined)
+  await page.getByTestId('discard-draft').first().click({ timeout: 2_000 }).catch(() => undefined)
+  await page.evaluate(() => sessionStorage.setItem('braian.layout.suppressFlush', '1'))
+  const listed = await page.request.get('/v1/workspaces')
+  const body = (await listed.json()) as { workspaces: Array<{ id: string; name: string }> }
+  const workspace = body.workspaces.find((item) => item.name === title)
+  const me = await page.request.get('/v1/me')
+  const userId = ((await me.json()) as { user_id?: string }).user_id
+  if (userId && workspace) {
+    await page.evaluate((key) => localStorage.removeItem(key), `braian.layout.${userId}.default.${workspace.id}`)
+    await page.request.delete(`/v1/workspaces/${workspace.id}/state?environment=default`)
+  }
+  await page.reload()
+  await expect(page.locator('nav.tabs')).toBeVisible({ timeout: 60_000 })
+  await page.evaluate(() => sessionStorage.removeItem('braian.layout.suppressFlush'))
+  await showProductsInner(page, title)
+}
+
+async function showProductsInner(page: Page, title = 'Products') {
+  await page.locator('nav.tabs').getByRole('button', { name: new RegExp(`^${title}`) }).click()
+  const rows = mainTable(page, title).getByTestId('object-row')
+  if (await rows.first().isVisible().catch(() => false)) return
+  const pane = paneWithTab(page, title)
+  const tab = pane.locator('.pane-tab[data-view-type="object_table"]', { hasText: title }).first()
+  await tab.scrollIntoViewIfNeeded()
+  await tab.click()
+  await expect(rows.first()).toBeVisible({ timeout: 60_000 })
+}
+
+/** Focus the Products table in the pane that owns the main object table. */
+export async function showProducts(page: Page, title = 'Products') {
+  await showProductsInner(page, title)
+}
+
+/** Draft links live in chat; review and save stay on the object table pane. */
+export async function openAgentDraftInTable(page: Page, view: Locator, title = 'Products') {
+  await view.getByTestId('agent-result-link').first().click({ timeout: 15_000 })
+  await showProducts(page, title)
 }
 
 /**

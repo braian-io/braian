@@ -17,7 +17,7 @@ function overlap(
   return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y
 }
 
-test('New selection dialog opens with aligned fields and keyboard focus', async ({ page }) => {
+test('New selection opens the Selections Detail with aligned fields and keyboard focus', async ({ page }) => {
   test.setTimeout(120_000)
   await login(page)
   await page.locator('nav.tabs').getByRole('button', { name: 'Products' }).click()
@@ -28,30 +28,23 @@ test('New selection dialog opens with aligned fields and keyboard focus', async 
   await expect(palette.locator('.hit').filter({ hasText: 'New selection' }).first()).toBeVisible()
   await page.keyboard.press('Enter')
 
-  const dialog = page.getByTestId('new-selection')
-  await expect(dialog).toBeVisible()
-  const title = dialog.getByRole('heading', { name: 'New selection' })
-  const close = dialog.getByRole('button', { name: 'Close' })
+  const detail = page.getByTestId('selection-detail')
+  await expect(detail).toBeVisible()
+  await expect(page.getByTestId('assortment-list')).toBeVisible()
+  const title = detail.getByRole('heading', { name: 'New selection' })
   const name = page.getByTestId('assortment-name')
   const type = page.getByTestId('selection-type')
-  const typeLabel = dialog.locator('label.model-field', { has: type }).locator('span')
+  const typeLabel = detail.locator('label.model-field', { has: type }).locator('span')
   await expect(name).toBeVisible()
   await expect(type).toBeVisible()
+  await expect(title).toBeVisible()
   await name.focus()
 
-  const closeBox = await close.boundingBox()
   const nameBox = await name.boundingBox()
   const typeBox = await type.boundingBox()
   const typeLabelBox = await typeLabel.boundingBox()
-  expect(closeBox && nameBox && typeBox && typeLabelBox).toBeTruthy()
-  if (!closeBox || !nameBox || !typeBox || !typeLabelBox) return
-
-  const titleTextRight = await title.evaluate((el) => {
-    const range = document.createRange()
-    range.selectNodeContents(el)
-    return range.getBoundingClientRect().right
-  })
-  expect(titleTextRight).toBeLessThan(closeBox.x - 4)
+  expect(nameBox && typeBox && typeLabelBox).toBeTruthy()
+  if (!nameBox || !typeBox || !typeLabelBox) return
 
   expect(overlap(nameBox, typeLabelBox)).toBe(false)
   expect(overlap(nameBox, typeBox)).toBe(false)

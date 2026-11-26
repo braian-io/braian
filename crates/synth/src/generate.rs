@@ -224,7 +224,7 @@ fn scalar(
                     .unwrap_or_default(),
             )
         }
-        AttributeKind::Range { unit_family } => {
+        AttributeKind::Range { unit_family, .. } => {
             let min = Decimal::from((shifted % 20) + 1);
             let max = min + Decimal::from(5);
             let unit = unit_family.and_then(|family_id| {

@@ -177,3 +177,5 @@ Unless you explicitly state otherwise, any contribution intentionally submitted 
 Copyright (c) 2026 Glenn Svanberg.
 
 Braian talks over the network to Typesense (GPL-3.0). Postgres uses the PostgreSQL License. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+Created by [Glenn Svanberg](https://www.glennsvanberg.se).

@@ -223,14 +223,16 @@ test.describe('Select source lists every derivable source (row 103 follow-up)', 
         if (title !== 'All Articles') {
           await expect(articles.getByTestId('peer-linked-to')).toBeVisible({ timeout: 20_000 })
         }
+        if (title === 'Articles from Food') {
+          await expect(articles.getByTestId('view-source-label')).toContainText('Food', { timeout: 30_000 })
+          await waitForSourceState(page, own.workspaceId, articlesId, { kind: 'peer', viewId: treeId, selection: 'node' })
+        }
       }
-
-      // The tree source itself is stored as a peer with its node selection.
-      await waitForSourceState(page, own.workspaceId, articlesId, { kind: 'peer', viewId: treeId, selection: 'node' })
 
       // Reload keeps a row-driven peer too: the URL restores the product row, so
       // Articles from Products shows the same linked rows after F5.
       await chooseTitle(page, articles, 'Articles from Products')
+      await expect(articles.getByTestId('peer-linked-to')).toContainText('Linked to: Products', { timeout: 30_000 })
       await waitForSourceState(page, own.workspaceId, articlesId, {
         kind: 'peer',
         viewId: productsId,

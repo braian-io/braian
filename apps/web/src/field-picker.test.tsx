@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { useMemo, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FieldPicker } from './field-picker'
-import { ensureSystemColumns, orderHiddenToDocument, prefsToOrderHidden, type ColumnPrefsResponse, type SystemViewColumn } from './column-prefs'
+import { columnPrefsHasOverride, ensureSystemColumns, orderHiddenToDocument, prefsToOrderHidden, type ColumnPrefsResponse, type SystemViewColumn } from './column-prefs'
 import { ObjectTable, type PanesSession } from './panes'
 import { dispatchUi } from './ui-bus'
 
@@ -136,6 +136,13 @@ describe('column prefs helpers', () => {
       order: ['sku', 'name', 'packaging>name'],
       hidden: ['name'],
     })
+  })
+
+  it('reports a personal override only for a v2 document with columns', () => {
+    expect(columnPrefsHasOverride(prefsDocument)).toBe(true)
+    expect(columnPrefsHasOverride({ document: null })).toBe(false)
+    expect(columnPrefsHasOverride({ document: { version: 2, columns: [] } })).toBe(false)
+    expect(columnPrefsHasOverride({ document: { version: 1, columns: [{ path: 'sku' }] } })).toBe(false)
   })
 
   it('returns null for an empty document', () => {
@@ -331,6 +338,76 @@ describe('ObjectTable column prefs', () => {
     await waitFor(() => expect(headerIds()).toEqual(['col-type', 'col-version']))
   })
 
+
+  it('resets a personal override with DELETE and still shows defaults after reload', async () => {
+    const viewId = '018f0000-0000-7000-8000-000000000999'
+    let stored: ColumnPrefsResponse = prefsDocument
+    const calls: Array<{ method: string; url: string }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        const method = (init?.method ?? 'GET').toUpperCase()
+        calls.push({ method, url })
+        if (url.includes('/column-prefs')) {
+          if (method === 'DELETE') {
+            stored = { document: null }
+            return new Response(null, { status: 204 })
+          }
+          if (method === 'PUT') {
+            stored = { document: JSON.parse(String(init?.body)).document }
+            return json(stored)
+          }
+          return json(stored)
+        }
+        if (url.includes('/attribute-paths')) return json({ paths, system_columns: systemColumns })
+        if (url.includes('/v1/search')) return json({ found: 0, hits: [] })
+        if (url.includes('/v1/definitions')) {
+          return json({
+            languages: ['en'],
+            types: [{ id: product, key: 'product', labels: { en: 'Product' }, singular: { en: 'Product' }, plural: { en: 'Products' }, key_attribute: 'sku', attributes: [] }],
+            attributes: [],
+            structures: [],
+          })
+        }
+        if (url.includes('/v1/assortments')) return json({ assortments: [] })
+        if (url.includes('/v1/proposals')) return json({ pending: { total: 0 } })
+        if (url.includes('/v1/views')) return json({})
+        return json({})
+      }),
+    )
+    const { unmount } = render(<PrefsTable />)
+    await waitFor(() =>
+      expect(headerIds()).toEqual(['col-sku', 'col-type', 'col-version', 'col-packaging>name']),
+    )
+    act(() => {
+      dispatchUi('ui.hide_column', { column: 'sku' })
+    })
+    await waitFor(() =>
+      expect(headerIds()).toEqual(['col-type', 'col-version', 'col-packaging>name']),
+    )
+    await waitFor(() =>
+      expect(stored.document?.columns?.some((column) => column.path === 'sku' && column.visible === false)).toBe(true),
+    )
+
+    act(() => {
+      dispatchUi('ui.reset_columns', { view: viewId })
+    })
+    await waitFor(() =>
+      expect(headerIds()).toEqual(['col-number', 'col-name', 'col-type', 'col-version']),
+    )
+
+    const deleteAt = calls.findIndex((call) => call.method === 'DELETE' && call.url.includes(`/v1/views/${viewId}/column-prefs`))
+    expect(deleteAt).toBeGreaterThanOrEqual(0)
+    expect(calls.slice(deleteAt + 1).some((call) => call.method === 'PUT')).toBe(false)
+    expect(stored.document).toBeNull()
+
+    unmount()
+    render(<PrefsTable />)
+    await waitFor(() =>
+      expect(headerIds()).toEqual(['col-number', 'col-name', 'col-type', 'col-version']),
+    )
+  })
 
   it('flushes a pending PUT when unmounted before the debounce', async () => {
     const { unmount } = render(<PrefsTable />)

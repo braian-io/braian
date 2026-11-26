@@ -14,6 +14,7 @@ import {
   nodeObstacles,
   openGraphNodeMenu,
   runGraphNodeCommand,
+  staysPinnedAfterPointerUp,
   valueNodeObjectId,
 } from './graph-map'
 import { SharedContextMenuHost } from './shared-context-menu'
@@ -106,18 +107,34 @@ afterEach(() => {
 })
 
 describe('graph node menu gate', () => {
-  it('allows object, model type and value nodes', () => {
+  it('allows object, model type, value and structure nodes', () => {
     expect(canOpenGraphNodeMenu({ kind: 'object', typeKey: 'product' })).toBe(true)
     expect(canOpenGraphNodeMenu({ kind: 'type', typeKey: 'product' })).toBe(true)
     expect(canOpenGraphNodeMenu({ kind: 'value' })).toBe(true)
+    expect(canOpenGraphNodeMenu({ kind: 'group' })).toBe(true)
+    expect(canOpenGraphNodeMenu({ kind: 'class' })).toBe(true)
+    expect(canOpenGraphNodeMenu({ kind: 'structure' })).toBe(true)
   })
 
-  it('rejects other kinds and object/type nodes without a type key', () => {
-    for (const kind of ['class', 'group', 'structure'] as const) {
-      expect(canOpenGraphNodeMenu({ kind, typeKey: 'product' })).toBe(false)
-    }
+  it('rejects object and type nodes without a type key', () => {
     expect(canOpenGraphNodeMenu({ kind: 'object' })).toBe(false)
     expect(canOpenGraphNodeMenu({ kind: 'type' })).toBe(false)
+  })
+})
+
+describe('pin on pointer up', () => {
+  it('keeps an existing pin through a click and a drag', () => {
+    expect(staysPinnedAfterPointerUp(true, false)).toBe(true)
+    expect(staysPinnedAfterPointerUp(true, true)).toBe(true)
+    expect(staysPinnedAfterPointerUp(true, false, true)).toBe(true)
+  })
+
+  it('pins a dragged node and leaves a clicked unpinned node alone', () => {
+    expect(staysPinnedAfterPointerUp(false, false)).toBe(false)
+    expect(staysPinnedAfterPointerUp(false, true)).toBe(true)
+    // The model graph keeps its old drag behaviour, but never silently drops
+    // an existing pin.
+    expect(staysPinnedAfterPointerUp(false, true, true)).toBe(false)
   })
 })
 
@@ -184,6 +201,24 @@ describe('graph node menu extras', () => {
 
   it('leaves object nodes without link choices empty', () => {
     expect(graphNodeMenuExtras(defs, { kind: 'object', typeKey: 'unknown', caption: 'Unknown' })).toEqual([])
+  })
+
+  it('gives a group its own show-members action, not the canvas menu', () => {
+    const group = graphNodeMenuExtras(defs, { kind: 'group', caption: 'Chocolate' })
+    expect(group.map((extra) => extra.id)).toEqual(['graph:node:expand'])
+    expect(group[0]?.title).toBe('Show members')
+    expect(group[0]?.contexts).toEqual(['graph-node'])
+    expect(group.map((extra) => extra.id)).not.toContain('graph:canvas:fit')
+  })
+
+  it('gives class and structure nodes their expand action', () => {
+    expect(graphNodeMenuExtras(defs, { kind: 'class', caption: 'Cocoa' }).map((extra) => extra.id)).toEqual([
+      'graph:node:expand',
+    ])
+    expect(graphNodeMenuExtras(defs, { kind: 'class', caption: 'Cocoa' })[0]?.title).toBe('Expand')
+    expect(graphNodeMenuExtras(defs, { kind: 'structure', caption: 'Food' }).map((extra) => extra.id)).toEqual([
+      'graph:node:expand',
+    ])
   })
 })
 
@@ -389,6 +424,14 @@ describe('GraphMap model type node menu', () => {
     )
     runGraphNodeCommand('graph:nothing', { objectId: 'obj-1' }, (request) => requests.push(request))
     expect(requests).toEqual([{ linkType: 'replaces', direction: 'in', objectId: 'obj-1', typeKey: 'article' }])
+  })
+
+  it('the runner expands a group or structure node through its own action', () => {
+    let expanded = 0
+    runGraphNodeCommand('graph:node:expand', {}, undefined, () => {
+      expanded += 1
+    })
+    expect(expanded).toBe(1)
   })
 
   it('empty canvas right-click does not open a menu', () => {

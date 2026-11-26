@@ -107,6 +107,7 @@ export function recentSlice(
   frecency: Record<string, FrecencyEntry>,
   limit = 4,
   live?: Set<string>,
+  now = Date.now(),
 ): PaletteItem[] {
   return dedupe(items)
     .filter((item) => rememberRecent(item))
@@ -115,7 +116,7 @@ export function recentSlice(
     .sort((left, right) => {
       const last = (frecency[identity(right)]?.last ?? 0) - (frecency[identity(left)]?.last ?? 0)
       if (last !== 0) return last
-      const frec = score(frecency[identity(right)]) - score(frecency[identity(left)])
+      const frec = score(frecency[identity(right)], now) - score(frecency[identity(left)], now)
       if (frec !== 0) return frec
       return labelOrder(left, right)
     })
@@ -129,6 +130,7 @@ function isCreateId(id: string): boolean {
     id === 'workspace:new'
     || id === 'import:file'
     || id === 'layout:add-view'
+    || id === 'layout:open-structure'
     || id === 'selection:new'
     || id === 'attr:new'
     || id.startsWith('model:new-')
@@ -391,7 +393,7 @@ export function visibleRows(
   const live = new Set<string>([...pool, ...hits].map((item) => identity(item)))
   if (openObjectId) live.add(`hit:${openObjectId}`)
   const remembered = memory.filter((item) => live.has(identity(item)))
-  const recent = needle ? [] : recentSlice([...pool, ...remembered, ...hits], frecency, 4, live)
+  const recent = needle ? [] : recentSlice([...pool, ...remembered, ...hits], frecency, 4, live, now)
   const recentIds = new Set(recent.map((item) => identity(item)))
   const matched = pool
     .filter((item) => (!needle || paletteMatchScore(item, needle) > 0) && !recentIds.has(identity(item)))
@@ -434,6 +436,20 @@ export function activeAfterQuery(rows: PaletteItem[], query: string): number | n
   return best >= 0 ? best : null
 }
 
+/** Highlight index while filtering, including the first visible match when ranking ties at zero. */
+export function resolveActiveAfterQuery(rows: PaletteItem[], query: string): number | null {
+  const picked = activeAfterQuery(rows, query)
+  if (picked != null) return picked
+  const needle = query.trim().toLowerCase()
+  if (!needle) return null
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index]!
+    if (row.group === 'ask' || row.group === 'recent') continue
+    if (paletteMatchScore(row, needle) > 0) return index
+  }
+  return null
+}
+
 /** Recent rows at the top of a sub-list. A query hides them so the matches stay first. */
 export function withRecent(
   rows: PaletteItem[],
@@ -444,7 +460,7 @@ export function withRecent(
 ): PaletteItem[] {
   if (query.trim()) return rows
   const live = new Set(rows.map((item) => identity(item)))
-  const recent = recentSlice([...rows, ...extras.filter((item) => live.has(identity(item)))], frecency, 4, live)
+  const recent = recentSlice([...rows, ...extras.filter((item) => live.has(identity(item)))], frecency, 4, live, _now)
   const recentIds = new Set(recent.map((item) => identity(item)))
   return [
     ...recent,
@@ -481,6 +497,8 @@ export function markedTitle(item: PaletteItem): string {
 export function sublistPlaceholder(frame: { label: string; paramType?: string }, plurals: string[] = []): string {
   if (frame.paramType === 'agent' || /\bagents?\b/i.test(frame.label)) return 'Search agents…'
   if (frame.paramType === 'view' || /\bview\b/i.test(frame.label)) return 'Search views…'
+  if (/\bstructure\b/i.test(frame.label) && /\btree\b/i.test(frame.label)) return 'Search structures…'
+  if (/\bstructure\b/i.test(frame.label)) return 'Search structures…'
   if (frame.paramType === 'workspace' || /\bworkspace\b/i.test(frame.label)) return 'Search workspaces…'
   const plural = plurals.find((name) => name && frame.paramType && name.toLowerCase().startsWith(frame.paramType.toLowerCase()))
   if (plural) return `Search ${plural.toLowerCase()}…`

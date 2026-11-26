@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { takeObjectNavReplace } from './object-nav-signal'
 
 /** URL search params that mirror what the shell is showing. */
 export type UrlState = {
@@ -91,10 +92,12 @@ export function useUrlStateSync(input: {
   viewOpen?: (id: string) => boolean
   /** A resolution-driven write (for example a renamed key) replaces. */
   forceReplace?: boolean
+  /** Uuid of the object being shown. Arrow replace applies only when it matches. */
+  navObjectId?: string | null
   navigate: (next: UrlStateNavigation) => void
   apply: (next: UrlStateApply) => void
 }) {
-  const { search, state, ready, valid, viewOpen, forceReplace, navigate, apply } = input
+  const { search, state, ready, valid, viewOpen, forceReplace, navObjectId, navigate, apply } = input
   const parsed = parseUrlState(search)
   const key = urlStateKey(parsed)
   const validRef = useRef(valid)
@@ -116,13 +119,26 @@ export function useUrlStateSync(input: {
   const navigationInFlight = useRef(false)
 
   useEffect(() => {
+    const onPop = () => {
+      lastWritten.current = null
+      navigationInFlight.current = false
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+
+  useEffect(() => {
     if (!ready) return
     if (lastKey.current !== key) {
       lastKey.current = key
       pending.current = new Set(URL_STATE_PARAMS.filter((param) => parsed[param] !== undefined))
       settling.current = true
-      lastWritten.current = null
-      navigationInFlight.current = false
+      // Only treat the location as caught up when it matches the last write. An
+      // intermediate object token from a fast arrow burst must not clear inFlight.
+      if (lastWritten.current === key) {
+        lastWritten.current = null
+        navigationInFlight.current = false
+      }
     }
     if (pending.current.size === 0) return
 
@@ -151,6 +167,9 @@ export function useUrlStateSync(input: {
         pending.current.delete(param)
         continue
       }
+      // A router write can lag behind fast table arrows. Do not pin a stale object
+      // token from the URL while the outgoing navigation is still in flight.
+      if (param === 'object' && navigationInFlight.current) continue
       const stateKey = VALUE_KEY[param]
       if (state[stateKey] !== value) changes[stateKey] = value
       pending.current.delete(param)
@@ -188,14 +207,25 @@ export function useUrlStateSync(input: {
     // replace instead of pushing.
     const backWorthy =
       parsed.ws !== next.ws || parsed.view !== next.view || parsed.object !== next.object
+    const objectOnly =
+      parsed.ws === next.ws
+      && parsed.view === next.view
+      && parsed.catalog === next.catalog
+      && parsed.object !== next.object
+    const arrowReplace = objectOnly && takeObjectNavReplace(navObjectId)
     navigate({
       search: next,
-      replace: Boolean(forceReplace) || !synced.current || !backWorthy || settling.current || navigationInFlight.current,
+      replace: Boolean(forceReplace)
+        || arrowReplace
+        || !synced.current
+        || !backWorthy
+        || settling.current
+        || navigationInFlight.current,
     })
     lastWritten.current = nextKey
     navigationInFlight.current = true
     synced.current = true
-  }, [ready, key, state.workspaceId, state.viewId, state.catalogId, state.objectId, parsed.ws, parsed.view, parsed.catalog, parsed.object, forceReplace])
+  }, [ready, key, state.workspaceId, state.viewId, state.catalogId, state.objectId, parsed.ws, parsed.view, parsed.catalog, parsed.object, forceReplace, navObjectId])
 }
 
 function isValid(param: Param, value: string, valid: UrlStateValidity): boolean {

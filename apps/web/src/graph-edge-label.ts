@@ -5,7 +5,9 @@ export type EdgeLabelBox = Point & { width: number; height: number }
 
 const DEFAULT_T = 0.68
 const CANDIDATE_TS = [DEFAULT_T, 0.6, 0.52, 0.44, 0.36, 0.75]
-const CANDIDATE_OFFSETS = [0, 1, -1, 2, -2, 3, -3]
+// Nearby steps first. The further ones are for a selected edge whose label
+// would otherwise sit inside a dense cluster and be dropped.
+const CANDIDATE_OFFSETS = [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6, 8, -8]
 
 /** Readable edge labels everywhere on a small graph, only on the active node elsewhere. */
 export type EdgeLabelMode = 'all' | 'active' | 'none'
@@ -58,11 +60,19 @@ function boxOverlap(a: EdgeLabelBox, b: EdgeLabelBox): number {
   return width > 0 && height > 0 ? width * height : 0
 }
 
-function score(point: Point, size: EdgeLabelSize, nodes: EdgeLabelNode[], placed: EdgeLabelBox[]): number {
+function score(
+  point: Point,
+  size: EdgeLabelSize,
+  nodes: EdgeLabelNode[],
+  placed: EdgeLabelBox[],
+  avoid: EdgeLabelBox[],
+): number {
   const box = centeredBox(point, size)
   let total = 0
   for (const node of nodes) total += discOverlap(box, node) * 100
   for (const other of placed) total += boxOverlap(box, other)
+  // Captions are as important as circles: a shown label must not sit on one.
+  for (const rect of avoid) total += boxOverlap(box, rect) * 100
   return total
 }
 
@@ -73,11 +83,12 @@ export function placeEdgeLabel(
   size: EdgeLabelSize,
   nodes: EdgeLabelNode[],
   placed: EdgeLabelBox[] = [],
+  avoid: EdgeLabelBox[] = [],
 ): Point {
   const maxRadius = nodes.reduce((max, node) => Math.max(max, node.radius), 0)
   const offsetStep = Math.max(size.height / 2 + 6, maxRadius + size.height / 2 + 4)
   let best = curvePoint(from, control, to, DEFAULT_T)
-  let bestScore = score(best, size, nodes, placed)
+  let bestScore = score(best, size, nodes, placed, avoid)
   for (const t of CANDIDATE_TS) {
     const point = curvePoint(from, control, to, t)
     const tangent = curveTangent(from, control, to, t)
@@ -88,7 +99,7 @@ export function placeEdgeLabel(
         x: point.x + normal.x * offset * offsetStep,
         y: point.y + normal.y * offset * offsetStep,
       }
-      const candidateScore = score(candidate, size, nodes, placed)
+      const candidateScore = score(candidate, size, nodes, placed, avoid)
       if (candidateScore < bestScore) {
         best = candidate
         bestScore = candidateScore

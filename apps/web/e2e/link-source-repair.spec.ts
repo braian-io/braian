@@ -46,6 +46,9 @@ test('Products pane in the Articles workspace lists rows after link repair', asy
         type_key: 'product_articles',
         columns: ['number', 'name', 'brand'],
         sort: 'number',
+        // A view save merges keys. Null drops the seeded peer source, which a
+        // whole-document replace used to drop by leaving the key out.
+        source: null,
       },
     },
   })

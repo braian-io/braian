@@ -102,6 +102,7 @@ mod tests {
             id: AttributeId::from_uuid(Uuid::from_u128(id)),
             key: key.to_owned(),
             labels: BTreeMap::new(),
+            description: None,
             language_dependent: false,
             multiple: false,
             required: false,

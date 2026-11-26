@@ -278,6 +278,14 @@ pub struct UnitConfig {
     pub code: String,
     /// Multiplier into the base unit, as a decimal string.
     pub factor: String,
+    /// Offset in the base unit after scaling, as a decimal string.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub offset: String,
+    /// Display symbol. Defaults to the code when omitted.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub symbol: String,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub labels: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -331,6 +339,8 @@ pub enum AttributeKindConfig {
     Number {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         unit_family: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        default_unit: Option<String>,
         /// Lower bound in the base unit, as a decimal string.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         min: Option<String>,
@@ -343,6 +353,8 @@ pub enum AttributeKindConfig {
     Range {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         unit_family: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        default_unit: Option<String>,
     },
     ValueList {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]

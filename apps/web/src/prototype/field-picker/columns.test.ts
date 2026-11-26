@@ -23,7 +23,7 @@ describe('prototype columns', () => {
     expect(col).not.toBeNull()
     expect(columnTitle(col!)).toBe('Articles › Net volume (all, ml)')
     const oat = MOCK_PRODUCTS[0]!
-    expect(readCell(oat, col!)).toBe('1000 ml, 250 ml')
+    expect(readCell(oat, col!)).toBe('1,000 ml, 250 ml')
   })
 
   it('exposes full list title for +N tooltips', () => {
@@ -36,8 +36,8 @@ describe('prototype columns', () => {
     )!
     const milk = MOCK_PRODUCTS[1]! // 1L, 1.5L, 250ml → three values
     const detail = readCellDetail(milk, col)
-    expect(detail.text).toBe('1000 ml, 1500 ml +1')
-    expect(detail.title).toBe('1000 ml, 1500 ml, 250 ml')
+    expect(detail.text).toBe('1,000 ml, 1,500 ml +1')
+    expect(detail.title).toBe('1,000 ml, 1,500 ml, 250 ml')
   })
 
   it('shows an em dash for empty cells', () => {
@@ -134,7 +134,7 @@ describe('prototype columns', () => {
     expect(readCell(bread, volume)).toBe(EMPTY_CELL)
     expect(readCell(yogurt, weight)).toBe('450 g')
     expect(readCell(cheddar, weight)).toBe('200 g, 400 g')
-    expect(readCell(pasta, weight)).toBe('500 g, 1000 g')
+    expect(readCell(pasta, weight)).toBe('500 g, 1,000 g')
     expect(readCell(bread, weight)).toBe('800 g')
     expect(readCell(oat, weight)).toBe(EMPTY_CELL)
     const weightKg = makeColumn(
@@ -194,6 +194,6 @@ describe('prototype columns', () => {
     )!
     const first = withReplacedQualifier(all, { kind: 'cardinality', optionId: 'first', label: 'First' })
     expect(columnTitle(first)).toBe('Articles › Net volume (first, ml)')
-    expect(readCell(MOCK_PRODUCTS[0]!, first)).toBe('1000 ml')
+    expect(readCell(MOCK_PRODUCTS[0]!, first)).toBe('1,000 ml')
   })
 })

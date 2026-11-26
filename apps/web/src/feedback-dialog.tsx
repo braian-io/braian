@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import { toast } from 'sonner'
 import { api } from './api'
 import { copy } from './i18n'
 import { writeErrorMessage } from './write-error'
@@ -77,7 +76,6 @@ export function FeedbackDialog({
             log: includeLog ? logSnapshot : null,
             screenshot: includeScreenshot ? capture?.screenshot ?? null : null,
           } })
-        toast.success(copy.feedbackSent)
         onClose()
       } catch (reason: unknown) {
         const detail = writeErrorMessage(reason) ?? copy.feedbackSendFailed

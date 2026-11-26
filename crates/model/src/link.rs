@@ -476,6 +476,7 @@ mod tests {
             id: AttributeId::from_uuid(Uuid::from_u128(id)),
             key: key.to_owned(),
             labels: BTreeMap::from([(LanguageTag::parse("en").unwrap(), key.to_owned())]),
+            description: None,
             language_dependent: false,
             multiple,
             required: true,

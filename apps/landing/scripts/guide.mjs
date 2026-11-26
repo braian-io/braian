@@ -51,6 +51,14 @@ export const GUIDE_PAGES = [
     description: 'Open the Braian command palette and use the keyboard shortcuts.',
   },
   {
+    source: 'agent-chat.md',
+    slug: 'agent-chat',
+    path: '/docs/agent-chat',
+    title: 'Agent chat',
+    nav: 'Agent chat',
+    description: 'Open the docked agent chat with Ctrl+J, follow up in one session, and review drafts in the table.',
+  },
+  {
     source: 'deleting-and-restore.md',
     slug: 'deleting-and-restore',
     path: '/docs/deleting-and-restore/',

@@ -21,6 +21,7 @@ mod review;
 pub mod standard;
 pub mod structure;
 pub mod system_view_columns;
+mod type_workspace;
 
 pub use consequence::{
     ConsequenceCounts, DataPurge, UsageFixture, ValueMatch, consequence_lines,
@@ -45,20 +46,21 @@ pub use link::{RefConversion, RefLinkPlan, convert_object_refs, explain_link};
 pub use model_change::{
     ApplyError, AttributeBounds, Catalog, CatalogKind, ChangeImpact, MergeProfile,
     MergeProfileMode, ModelChange, NamedOption, OwnershipRule, UnitSpec, WorkspaceTemplate,
-    apply_all, change_needs_reindex, deletes_data, diff as model_diff,
+    apply_all, change_needs_reindex, deletes_data, diff as model_diff, draft_needs_reindex,
     groups_removed_by_structure_upserts, interpret, preview,
 };
 pub use object::Object;
 pub use patch::{AttributePatch, ObjectPatch, ValuePatch, apply_object_patch, apply_value_patch};
 pub use path::{
-    AttributePath, ListedPath, PathPart, PathSide, PathVia, extra_parts, format_path_id,
-    format_path_id_text, format_path_text, list_attribute_paths, parse_path, parse_path_id,
-    parse_path_text, part_fits, path_index_field, path_label, stored_field_as_path,
+    AttributePath, ListedPath, PathPart, PathSide, PathVia, explain_filter_syntax, extra_parts,
+    format_path_id, format_path_id_text, format_path_text, list_attribute_paths, parse_path,
+    parse_path_id, parse_path_text, part_fits, path_index_field, path_label, stored_field_as_path,
     translate_filter_expression, translate_sort_expression, validate_path,
 };
 pub use refs::{
-    RefKind, ResolvedRef, attribute_index_field, key_rename_warning, resolve,
-    translate_assortment_query, translate_import_mapping, translate_view_state,
+    RefKind, ResolvedRef, attribute_index_field, default_table_sort, key_rename_warning, resolve,
+    sanitize_view_table_prefs, strip_ephemeral_table_search, translate_assortment_query,
+    translate_import_mapping, translate_view_state,
 };
 pub use review::{
     DraftOrigin, DraftStatus, ReviewAction, ReviewActor, ReviewDraft, ReviewGate, ReviewKind,
@@ -76,4 +78,5 @@ pub use system_view_columns::{
     SYSTEM_VIEW_COLUMNS, SystemViewColumn, ensure_system_view_columns, is_system_view_column,
     system_view_columns_json,
 };
+pub use type_workspace::type_share_token;
 pub use uuid::Uuid;

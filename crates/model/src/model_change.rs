@@ -55,6 +55,8 @@ pub enum ModelChange {
         key: String,
         #[serde(default)]
         label: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        description: Option<String>,
         kind: String,
         #[serde(default)]
         unit: Option<String>,
@@ -116,6 +118,10 @@ pub enum ModelChange {
         key: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         label: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        description: Option<String>,
+        #[serde(default, skip_serializing_if = "is_false_flag")]
+        clear_description: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         kind: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -489,12 +495,18 @@ pub struct NamedOption {
     pub label: String,
 }
 
-/// One unit in a family. `factor` is a decimal string. The base unit is 1.
+/// One unit in a family. `factor` is a decimal string. The base unit is 1 with offset 0.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UnitSpec {
     pub code: String,
     #[serde(default = "factor_one")]
     pub factor: String,
+    #[serde(default)]
+    pub offset: String,
+    #[serde(default)]
+    pub symbol: String,
+    #[serde(default)]
+    pub label: String,
 }
 
 fn factor_one() -> String {
@@ -526,6 +538,10 @@ pub struct AttributeBounds {
     pub clear_value_list: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unit_family: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_unit: Option<String>,
+    #[serde(default, skip_serializing_if = "is_false_flag")]
+    pub clear_default_unit: bool,
 }
 
 fn is_false_flag(value: &bool) -> bool {
@@ -620,6 +636,41 @@ pub fn change_needs_reindex(change: &ModelChange) -> bool {
             | ModelChange::RenameGroupKey { .. }
             | ModelChange::SetStructures { .. }
     )
+}
+
+/// Whether applying these steps would leave search index floats stale.
+pub fn draft_needs_reindex(before: &DefinitionSet, changes: &[ModelChange]) -> bool {
+    if changes.iter().any(change_needs_reindex) {
+        return true;
+    }
+    let Ok((after, _)) = preview(before, changes) else {
+        return false;
+    };
+    unit_conversion_index_stale(before, &after)
+}
+
+fn unit_conversion_index_stale(before: &DefinitionSet, after: &DefinitionSet) -> bool {
+    for next in &after.unit_families {
+        let Some(old) = before
+            .unit_families
+            .iter()
+            .find(|family| family.id == next.id)
+        else {
+            continue;
+        };
+        if old.base_unit != next.base_unit {
+            return true;
+        }
+        for unit in &next.units {
+            let Some(prev) = old.units.iter().find(|item| item.code == unit.code) else {
+                continue;
+            };
+            if prev.factor != unit.factor || prev.offset != unit.offset {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// Applies every step. Later steps see earlier ones. Idempotent creates stay put.
@@ -1191,6 +1242,7 @@ fn apply_one(defs: &mut DefinitionSet, change: &ModelChange) -> Result<(), Apply
         ModelChange::CreateAttribute {
             key,
             label,
+            description,
             kind,
             unit,
             multiple,
@@ -1206,6 +1258,7 @@ fn apply_one(defs: &mut DefinitionSet, change: &ModelChange) -> Result<(), Apply
             AttributeDraft {
                 key,
                 label,
+                description: description.as_deref(),
                 kind,
                 unit: unit.as_deref(),
                 multiple: *multiple,
@@ -1280,6 +1333,24 @@ fn apply_one(defs: &mut DefinitionSet, change: &ModelChange) -> Result<(), Apply
                 .map(|key| attribute_id(defs, key))
                 .collect::<Result<Vec<_>, _>>()?;
             let structure = structure_mut(defs, structure)?;
+            // The attribute table reorders the group's own list. A class of the
+            // same key still uses the class list.
+            let is_group = structure
+                .groups
+                .iter()
+                .any(|group| eq_key(&group.key, class_key));
+            if is_group {
+                let group = group_mut(structure, class_key)?;
+                if ids.len() != group.attributes.len()
+                    || ids.iter().any(|id| !group.attributes.contains(id))
+                {
+                    return Err(
+                        format!("reorder of {} must list the same attributes", group.key).into(),
+                    );
+                }
+                group.attributes = ids;
+                return Ok(());
+            }
             let class = class_mut(structure, class_key)?;
             if ids.len() != class.attributes.len()
                 || ids.iter().any(|id| !class.attributes.contains(id))
@@ -1451,6 +1522,8 @@ fn apply_one(defs: &mut DefinitionSet, change: &ModelChange) -> Result<(), Apply
         ModelChange::UpdateAttribute {
             key,
             label,
+            description,
+            clear_description,
             kind,
             unit,
             clear_unit,
@@ -1467,6 +1540,8 @@ fn apply_one(defs: &mut DefinitionSet, change: &ModelChange) -> Result<(), Apply
             AttributeUpdate {
                 key,
                 label,
+                description,
+                clear_description: *clear_description,
                 kind,
                 unit,
                 clear_unit: *clear_unit,
@@ -1495,6 +1570,7 @@ fn add_attribute_command(rest: &str, defs: &DefinitionSet) -> Option<Vec<ModelCh
         steps.push(ModelChange::CreateAttribute {
             key: key.clone(),
             label: key.clone(),
+            description: None,
             kind: if unit.is_some() { "number" } else { "text" }.into(),
             unit,
             multiple: false,
@@ -2085,6 +2161,8 @@ fn update_type(
 struct AttributeUpdate<'a> {
     key: &'a str,
     label: &'a Option<String>,
+    description: &'a Option<String>,
+    clear_description: bool,
     kind: &'a Option<String>,
     unit: &'a Option<String>,
     clear_unit: bool,
@@ -2102,6 +2180,8 @@ fn update_attribute(defs: &mut DefinitionSet, patch: AttributeUpdate<'_>) -> Res
     let AttributeUpdate {
         key,
         label,
+        description,
+        clear_description,
         kind,
         unit,
         clear_unit,
@@ -2175,6 +2255,16 @@ fn update_attribute(defs: &mut DefinitionSet, patch: AttributeUpdate<'_>) -> Res
     if let (Some(label), Some(tag)) = (label, label_tag) {
         attribute.labels.insert(tag, label.clone());
     }
+    if clear_description {
+        attribute.description = None;
+    } else if let Some(text) = description {
+        let trimmed = text.trim();
+        attribute.description = if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_owned())
+        };
+    }
     attribute.kind = next_kind;
     if let Some(value) = multiple {
         attribute.multiple = value;
@@ -2203,6 +2293,7 @@ fn update_attribute(defs: &mut DefinitionSet, patch: AttributeUpdate<'_>) -> Res
 struct AttributeDraft<'a> {
     key: &'a str,
     label: &'a str,
+    description: Option<&'a str>,
     kind: &'a str,
     unit: Option<&'a str>,
     multiple: bool,
@@ -2219,6 +2310,7 @@ fn create_attribute(defs: &mut DefinitionSet, draft: AttributeDraft<'_>) -> Resu
     let AttributeDraft {
         key,
         label,
+        description,
         kind,
         unit,
         multiple,
@@ -2244,10 +2336,15 @@ fn create_attribute(defs: &mut DefinitionSet, draft: AttributeDraft<'_>) -> Resu
         }
         return Ok(());
     }
+    let description = description
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .map(str::to_owned);
     defs.attributes.push(Attribute {
         id: AttributeId::from_uuid(stable_uuid(&format!("attribute:{key}"))),
         key: key.to_owned(),
         labels: label_map(defs, if label.is_empty() { key } else { label }),
+        description,
         language_dependent: languages,
         multiple,
         required,
@@ -2539,6 +2636,7 @@ fn ensure_text_attributes(defs: &mut DefinitionSet, keys: &[String]) -> Result<(
             AttributeDraft {
                 key,
                 label: key,
+                description: None,
                 kind: "text",
                 unit: None,
                 multiple: false,
@@ -2634,7 +2732,7 @@ fn create_unit_family(
             .filter(|text| !text.is_empty())
             .map(str::to_owned),
         base_unit: base_unit.to_owned(),
-        units: unit_specs(base_unit, units)?,
+        units: unit_specs(defs, base_unit, units)?,
     });
     Ok(())
 }
@@ -2648,6 +2746,20 @@ fn update_unit_family(
     units: Option<&[UnitSpec]>,
 ) -> Result<(), ApplyError> {
     let id = crate::refs::unit_family_id(defs, key)?;
+    let built_units = units
+        .map(|unit_rows| {
+            let family = defs
+                .unit_families
+                .iter()
+                .find(|item| item.id == id)
+                .ok_or_else(|| format!("unknown unit family {key}"))?;
+            let base = base_unit
+                .map(str::trim)
+                .filter(|text| !text.is_empty())
+                .unwrap_or(family.base_unit.as_str());
+            unit_specs(defs, base, unit_rows)
+        })
+        .transpose()?;
     let family = defs
         .unit_families
         .iter_mut()
@@ -2662,9 +2774,8 @@ fn update_unit_family(
     if let Some(base_unit) = base_unit.map(str::trim).filter(|text| !text.is_empty()) {
         family.base_unit = base_unit.to_owned();
     }
-    if let Some(units) = units {
-        let base = family.base_unit.clone();
-        family.units = unit_specs(&base, units)?;
+    if let Some(units) = built_units {
+        family.units = units;
     }
     if !family
         .units
@@ -2676,6 +2787,9 @@ fn update_unit_family(
             Unit {
                 code: family.base_unit.clone(),
                 factor: Decimal::ONE,
+                offset: Decimal::ZERO,
+                symbol: family.base_unit.clone(),
+                labels: BTreeMap::new(),
             },
         );
     }
@@ -2888,9 +3002,12 @@ fn upsert_posted_family(defs: &mut DefinitionSet, posted: &UnitFamily) -> Result
         .map(|unit| UnitSpec {
             code: unit.code.clone(),
             factor: unit.factor.to_string(),
+            offset: unit.offset.to_string(),
+            symbol: unit.symbol.clone(),
+            label: unit.labels.values().next().cloned().unwrap_or_default(),
         })
         .collect::<Vec<_>>();
-    unit_specs(posted.base_unit.trim(), &specs)?;
+    unit_specs(defs, posted.base_unit.trim(), &specs)?;
     crate::edit::upsert_unit_family(defs, posted.clone());
     Ok(())
 }
@@ -2963,7 +3080,11 @@ fn named_options(
     Ok(out)
 }
 
-fn unit_specs(base_unit: &str, units: &[UnitSpec]) -> Result<Vec<Unit>, String> {
+fn unit_specs(
+    defs: &DefinitionSet,
+    base_unit: &str,
+    units: &[UnitSpec],
+) -> Result<Vec<Unit>, String> {
     let mut out = Vec::new();
     let mut seen = BTreeSet::new();
     for spec in units {
@@ -2974,10 +3095,7 @@ fn unit_specs(base_unit: &str, units: &[UnitSpec]) -> Result<Vec<Unit>, String> 
         if !seen.insert(code.to_owned()) {
             return Err(format!("unit {code} is repeated"));
         }
-        out.push(Unit {
-            code: code.to_owned(),
-            factor: parse_decimal(&spec.factor)?,
-        });
+        out.push(unit_from_spec(defs, code, spec)?);
     }
     if !seen.contains(base_unit) {
         out.insert(
@@ -2985,16 +3103,57 @@ fn unit_specs(base_unit: &str, units: &[UnitSpec]) -> Result<Vec<Unit>, String> 
             Unit {
                 code: base_unit.to_owned(),
                 factor: Decimal::ONE,
+                offset: Decimal::ZERO,
+                symbol: base_unit.to_owned(),
+                labels: label_map(defs, base_unit),
             },
         );
     }
     Ok(out)
 }
 
+fn unit_from_spec(defs: &DefinitionSet, code: &str, spec: &UnitSpec) -> Result<Unit, String> {
+    let factor = parse_decimal(&spec.factor)?;
+    let offset = if spec.offset.trim().is_empty() {
+        Decimal::ZERO
+    } else {
+        parse_decimal(&spec.offset)?
+    };
+    let symbol = if spec.symbol.trim().is_empty() {
+        code.to_owned()
+    } else {
+        spec.symbol.trim().to_owned()
+    };
+    let labels = if spec.label.trim().is_empty() {
+        BTreeMap::new()
+    } else {
+        label_map(defs, spec.label.trim())
+    };
+    Ok(Unit {
+        code: code.to_owned(),
+        factor,
+        offset,
+        symbol,
+        labels,
+    })
+}
+
 fn set_unit_family(kind: &mut AttributeKind, family: Option<UnitFamilyId>) -> Result<(), String> {
     match kind {
-        AttributeKind::Number { unit_family, .. } | AttributeKind::Range { unit_family } => {
+        AttributeKind::Number {
+            unit_family,
+            default_unit,
+            ..
+        }
+        | AttributeKind::Range {
+            unit_family,
+            default_unit,
+            ..
+        } => {
             *unit_family = family;
+            if family.is_none() {
+                *default_unit = None;
+            }
             Ok(())
         }
         _ if family.is_none() => Ok(()),
@@ -3072,12 +3231,50 @@ fn apply_bounds(
             *list = Some(token.clone());
         }
     }
+    if bounds.clear_default_unit || bounds.default_unit.is_some() {
+        match kind {
+            AttributeKind::Number { default_unit, .. }
+            | AttributeKind::Range { default_unit, .. } => {
+                if bounds.clear_default_unit {
+                    *default_unit = None;
+                }
+                if let Some(code) = bounds
+                    .default_unit
+                    .as_ref()
+                    .map(|text| text.trim())
+                    .filter(|text| !text.is_empty())
+                {
+                    *default_unit = Some(code.to_owned());
+                }
+            }
+            _ => return Err("default unit applies to a number or range".into()),
+        }
+    }
     Ok(())
 }
 
 fn parse_decimal(text: &str) -> Result<Decimal, String> {
-    text.trim()
-        .parse::<Decimal>()
+    let text = text.trim();
+    if let Some((left, right)) = text.split_once('/') {
+        if left.contains('/') || right.contains('/') {
+            return Err(format!("invalid number {text}"));
+        }
+        let numerator = left
+            .trim()
+            .parse::<Decimal>()
+            .map_err(|_| format!("invalid number {text}"))?;
+        let denominator = right
+            .trim()
+            .parse::<Decimal>()
+            .map_err(|_| format!("invalid number {text}"))?;
+        if denominator.is_zero() {
+            return Err(format!("invalid number {text}"));
+        }
+        return numerator
+            .checked_div(denominator)
+            .ok_or_else(|| format!("invalid number {text}"));
+    }
+    text.parse::<Decimal>()
         .map_err(|_| format!("invalid number {text}"))
 }
 
@@ -3089,6 +3286,7 @@ fn attribute_kind(kind: &str, unit_family: Option<UnitFamilyId>) -> Result<Attri
         }),
         "number" => Ok(AttributeKind::Number {
             unit_family,
+            default_unit: None,
             min: None,
             max: None,
             integer: false,
@@ -3099,7 +3297,10 @@ fn attribute_kind(kind: &str, unit_family: Option<UnitFamilyId>) -> Result<Attri
             options: vec![],
             list: None,
         }),
-        "range" => Ok(AttributeKind::Range { unit_family }),
+        "range" => Ok(AttributeKind::Range {
+            unit_family,
+            default_unit: None,
+        }),
         "file" | "file_ref" => Ok(AttributeKind::FileRef { media: false }),
         "object" | "object_ref" => Err("object references are link types".into()),
         other => Err(format!("unknown attribute type {other}")),
@@ -3254,10 +3455,10 @@ mod tests {
                 key: "mass".into(),
                 dimension: Some("mass".into()),
                 base_unit: "kg".into(),
-                units: vec![crate::definition::Unit {
-                    code: "kg".into(),
-                    factor: rust_decimal::Decimal::ONE,
-                }],
+                units: vec![crate::definition::Unit::with_factor(
+                    "kg",
+                    rust_decimal::Decimal::ONE,
+                )],
             }],
             value_lists: vec![],
             attributes: vec![
@@ -3265,12 +3466,14 @@ mod tests {
                     id: weight,
                     key: "weight".into(),
                     labels: BTreeMap::new(),
+                    description: None,
                     language_dependent: false,
                     multiple: false,
                     required: false,
                     show_by_default: true,
                     kind: AttributeKind::Number {
                         unit_family: Some(family),
+                        default_unit: None,
                         min: None,
                         max: None,
                         integer: false,
@@ -3281,6 +3484,7 @@ mod tests {
                     id: status,
                     key: "status".into(),
                     labels: BTreeMap::new(),
+                    description: None,
                     language_dependent: false,
                     multiple: false,
                     required: false,
@@ -3335,6 +3539,27 @@ mod tests {
                 }],
             }],
         }
+    }
+
+    #[test]
+    fn reorder_attributes_reorders_the_group_list() {
+        let mut defs = base();
+        let weight = defs.attributes[0].id;
+        let status = defs.attributes[1].id;
+        defs.structures[0].groups[0].attributes = vec![weight, status];
+        apply_all(
+            &mut defs,
+            &[ModelChange::ReorderAttributes {
+                structure: "assortment".into(),
+                class_key: "camp".into(),
+                attributes: vec!["status".into(), "weight".into()],
+            }],
+        )
+        .expect("reorder group");
+        assert_eq!(
+            defs.structures[0].groups[0].attributes,
+            vec![status, weight]
+        );
     }
 
     #[test]
@@ -3479,6 +3704,9 @@ mod tests {
                 units: vec![UnitSpec {
                     code: "pc".into(),
                     factor: "1".into(),
+                    offset: String::new(),
+                    symbol: String::new(),
+                    label: String::new(),
                 }],
             },
             ModelChange::CreateType {
@@ -3491,6 +3719,7 @@ mod tests {
             ModelChange::CreateAttribute {
                 key: "servings".into(),
                 label: "Servings".into(),
+                description: None,
                 kind: "number".into(),
                 unit: Some("pc".into()),
                 multiple: false,
@@ -3555,6 +3784,7 @@ mod tests {
         ModelChange::CreateAttribute {
             key: key.into(),
             label: key.into(),
+            description: None,
             kind: kind.into(),
             unit: unit.map(str::to_owned),
             multiple: false,
@@ -3722,6 +3952,7 @@ mod tests {
             .clone();
         name.kind = AttributeKind::Number {
             unit_family: None,
+            default_unit: None,
             min: None,
             max: None,
             integer: false,
@@ -3981,5 +4212,253 @@ mod tests {
             }],
         );
         assert!(deleted.is_empty());
+    }
+
+    #[test]
+    fn attribute_description_set_clear_and_old_revision_load() {
+        let mut defs = base();
+        let weight_key = defs.attributes[0].key.clone();
+        apply_all(
+            &mut defs,
+            &[ModelChange::CreateAttribute {
+                key: "note".into(),
+                label: "Note".into(),
+                description: Some("Helps editors".into()),
+                kind: "text".into(),
+                unit: None,
+                multiple: false,
+                languages: false,
+                required: false,
+                show_by_default: true,
+                searchable: false,
+                filterable: false,
+                sortable: false,
+                bounds: AttributeBounds::default(),
+            }],
+        )
+        .expect("create");
+        let note = defs
+            .attributes
+            .iter()
+            .find(|item| item.key == "note")
+            .expect("note");
+        assert_eq!(note.description.as_deref(), Some("Helps editors"));
+
+        apply_all(
+            &mut defs,
+            &[ModelChange::UpdateAttribute {
+                key: "note".into(),
+                label: None,
+                description: Some("Updated help".into()),
+                clear_description: false,
+                kind: None,
+                unit: None,
+                clear_unit: false,
+                languages: None,
+                required: None,
+                show_by_default: None,
+                searchable: None,
+                filterable: None,
+                sortable: None,
+                multiple: None,
+                bounds: AttributeBounds::default(),
+            }],
+        )
+        .expect("update");
+        let note = defs
+            .attributes
+            .iter()
+            .find(|item| item.key == "note")
+            .expect("note");
+        assert_eq!(note.description.as_deref(), Some("Updated help"));
+
+        apply_all(
+            &mut defs,
+            &[ModelChange::UpdateAttribute {
+                key: "note".into(),
+                label: None,
+                description: None,
+                clear_description: true,
+                kind: None,
+                unit: None,
+                clear_unit: false,
+                languages: None,
+                required: None,
+                show_by_default: None,
+                searchable: None,
+                filterable: None,
+                sortable: None,
+                multiple: None,
+                bounds: AttributeBounds::default(),
+            }],
+        )
+        .expect("clear");
+        let note = defs
+            .attributes
+            .iter()
+            .find(|item| item.key == "note")
+            .expect("note");
+        assert_eq!(note.description, None);
+
+        apply_all(
+            &mut defs,
+            &[ModelChange::UpdateAttribute {
+                key: weight_key,
+                label: None,
+                description: Some("".into()),
+                clear_description: false,
+                kind: None,
+                unit: None,
+                clear_unit: false,
+                languages: None,
+                required: None,
+                show_by_default: None,
+                searchable: None,
+                filterable: None,
+                sortable: None,
+                multiple: None,
+                bounds: AttributeBounds::default(),
+            }],
+        )
+        .expect("empty clears");
+        let weight = defs
+            .attributes
+            .iter()
+            .find(|item| item.key == "weight")
+            .expect("weight");
+        assert_eq!(weight.description, None);
+
+        let legacy = serde_json::json!({
+            "id": "018f0000-0000-7000-8000-000000000099",
+            "key": "legacy",
+            "labels": { "en": "Legacy" },
+            "language_dependent": false,
+            "multiple": false,
+            "required": false,
+            "show_by_default": true,
+            "kind": { "type": "text" },
+            "index": { "searchable": false, "filterable": false, "sortable": false }
+        });
+        let loaded: Attribute = serde_json::from_value(legacy).expect("legacy attribute");
+        assert_eq!(loaded.description, None);
+    }
+
+    #[test]
+    fn fractional_factor_and_offset_match_affine_celsius() {
+        let mut defs = base();
+        apply_all(
+            &mut defs,
+            &[ModelChange::CreateUnitFamily {
+                key: "temperature".into(),
+                dimension: Some("temperature".into()),
+                base_unit: "C".into(),
+                units: vec![
+                    UnitSpec {
+                        code: "C".into(),
+                        factor: "1".into(),
+                        offset: "0".into(),
+                        symbol: "°C".into(),
+                        label: "Celsius".into(),
+                    },
+                    UnitSpec {
+                        code: "F".into(),
+                        factor: "5/9".into(),
+                        offset: "-160/9".into(),
+                        symbol: "°F".into(),
+                        label: "Fahrenheit".into(),
+                    },
+                ],
+            }],
+        )
+        .expect("temperature");
+        let family = defs
+            .unit_families
+            .iter()
+            .find(|item| item.key == "temperature")
+            .expect("family");
+        let fahrenheit = family
+            .units
+            .iter()
+            .find(|unit| unit.code == "F")
+            .expect("F");
+        assert_eq!(fahrenheit.factor, Decimal::from(5) / Decimal::from(9));
+        assert_eq!(fahrenheit.offset, Decimal::from(-160) / Decimal::from(9));
+        let boiling = Decimal::from(212) * fahrenheit.factor + fahrenheit.offset;
+        assert_eq!(boiling.trunc_with_scale(12), Decimal::from(100));
+        let freezing = Decimal::from(32) * fahrenheit.factor + fahrenheit.offset;
+        assert_eq!(freezing.trunc_with_scale(12), Decimal::ZERO);
+    }
+
+    #[test]
+    fn factor_offset_and_base_changes_need_reindex() {
+        let defs = base();
+        let symbol_only = ModelChange::UpdateUnitFamily {
+            key: "mass".into(),
+            dimension: None,
+            clear_dimension: false,
+            base_unit: None,
+            units: Some(vec![UnitSpec {
+                code: "kg".into(),
+                factor: "1".into(),
+                offset: "0".into(),
+                symbol: "kg".into(),
+                label: "Kilogram".into(),
+            }]),
+        };
+        assert!(!draft_needs_reindex(&defs, &[symbol_only]));
+
+        let offset = ModelChange::UpdateUnitFamily {
+            key: "mass".into(),
+            dimension: None,
+            clear_dimension: false,
+            base_unit: None,
+            units: Some(vec![UnitSpec {
+                code: "kg".into(),
+                factor: "1".into(),
+                offset: "1".into(),
+                symbol: String::new(),
+                label: String::new(),
+            }]),
+        };
+        assert!(draft_needs_reindex(&defs, &[offset]));
+
+        let factor = ModelChange::UpdateUnitFamily {
+            key: "mass".into(),
+            dimension: None,
+            clear_dimension: false,
+            base_unit: None,
+            units: Some(vec![UnitSpec {
+                code: "kg".into(),
+                factor: "2".into(),
+                offset: "0".into(),
+                symbol: String::new(),
+                label: String::new(),
+            }]),
+        };
+        assert!(draft_needs_reindex(&defs, &[factor]));
+
+        let base_unit = ModelChange::UpdateUnitFamily {
+            key: "mass".into(),
+            dimension: None,
+            clear_dimension: false,
+            base_unit: Some("g".into()),
+            units: Some(vec![
+                UnitSpec {
+                    code: "kg".into(),
+                    factor: "1000".into(),
+                    offset: "0".into(),
+                    symbol: String::new(),
+                    label: String::new(),
+                },
+                UnitSpec {
+                    code: "g".into(),
+                    factor: "1".into(),
+                    offset: "0".into(),
+                    symbol: String::new(),
+                    label: String::new(),
+                },
+            ]),
+        };
+        assert!(draft_needs_reindex(&defs, &[base_unit]));
     }
 }

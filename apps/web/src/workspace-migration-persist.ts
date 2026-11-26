@@ -46,6 +46,8 @@ export type PersistWorkspaceBody = {
 export type PersistDeps = {
   postView: (body: PersistViewBody) => Promise<unknown>
   postWorkspace: (body: PersistWorkspaceBody) => Promise<unknown>
+  /** Personal layout document. Called only after every view write succeeds. */
+  putPersonalLayout?: (layout: { [key: string]: unknown }) => Promise<unknown>
   freeObject: (value: object) => { [key: string]: unknown }
 }
 
@@ -56,10 +58,10 @@ function viewRows<T>(views: readonly T[] | null | undefined): T[] {
 /**
  * Persist a workspace migration.
  *
- * Views are created/updated first. The layout (and optional rename) is written
- * only after every view operation succeeds. If a create fails mid-way, nothing
- * half-applied is written to the workspace layout so the next load can retry
- * (paired with clearing migratedRef in the shell).
+ * View creates and updates run first. The personal layout PUT runs only after
+ * those succeed, so a failed create leaves the personal document untouched.
+ * Shared POST /v1/workspaces is reserved for an explicit rename and keeps the
+ * workspace's existing layout JSON.
  */
 export async function persistWorkspaceMigration(
   workspace: PersistWorkspace,
@@ -90,12 +92,18 @@ export async function persistWorkspaceMigration(
       state: deps.freeObject(view.state),
     })
   }
-  // Layout only after every view create/update above succeeded.
-  if ((patch.name && patch.name !== workspace.name) || patch.layout) {
-    const layout = patch.layout ?? workspace.layout ?? { tabs: [] }
+  if (patch.layout && deps.putPersonalLayout) {
+    const layout = patch.layout
+    await deps.putPersonalLayout(
+      deps.freeObject(layout && typeof layout === 'object' ? (layout as object) : { tabs: [] }),
+    )
+  }
+  // Rename only. The layout field stays the shared workspace layout, never a heal.
+  if (patch.name && patch.name !== workspace.name) {
+    const layout = workspace.layout ?? { tabs: [] }
     await deps.postWorkspace({
       id: workspace.id,
-      name: patch.name ?? workspace.name,
+      name: patch.name,
       locked: workspace.locked,
       share_token: workspace.share_token,
       layout: deps.freeObject(layout && typeof layout === 'object' ? (layout as object) : { tabs: [] }),
