@@ -37,19 +37,16 @@ test('dragging one row onto another table creates the link', async ({ page }) =>
   await shot(page, 'link-drag-dialog-dark.png')
   await page.getByTestId('link-create-confirm').click()
   await expect(dialog).toBeHidden()
-  const notice = page.getByTestId('inline-action-notice').filter({ hasText: 'Linked 1 article' })
-  await expect(notice).toBeVisible()
-  await expect.poll(async () => {
-    const box = await notice.boundingBox()
-    if (!box) return 0
-    return box.y >= 0 && box.y + box.height <= 890 ? 1 : box.y
-  }).toBe(1)
-  await shot(page, 'link-drag-toast-dark.png')
+  await expectNoFloatingNotice(page)
   await product.click()
   await expect(page.getByTestId('object-detail')).toContainText('PROD-COFFEE')
-  await expect(page.getByTestId('link-row').filter({ hasText: 'ART-OAT-1L' })).toBeVisible()
-  await page.getByTestId('inline-action-notice-undo').click()
-  await expect(page.getByTestId('link-row').filter({ hasText: 'ART-OAT-1L' })).toHaveCount(0)
+  const linked = page.getByTestId('link-row').filter({ hasText: 'ART-OAT-1L' })
+  await expect(linked).toBeVisible()
+  await expect(page.getByTestId('link-section-feedback')).toContainText('Linked 1 article')
+  await shot(page, 'link-drag-feedback-dark.png')
+  await linked.click({ button: 'right' })
+  await page.getByTestId('context-menu').getByRole('menuitem', { name: 'Remove link' }).click()
+  await expect(linked).toHaveCount(0)
 })
 
 test('dragging several selected rows creates one link each', async ({ page }) => {
@@ -144,7 +141,7 @@ test('a partial multi-drop names the failure and does not create the saved link 
   await page.getByTestId('link-create-confirm').click()
   await expect(dialog.getByTestId('link-create-error')).toContainText('Linked 1 of 2')
   await expect(dialog.getByTestId('link-create-error')).toContainText('allows one link')
-  await expect(page.getByTestId('inline-action-notice')).toContainText('Linked 1 article')
+  await expectNoFloatingNotice(page)
   const firstSaved = posted[0] ?? ''
   const failed = posted[1] ?? ''
   expect(firstSaved).not.toBe('')
@@ -204,14 +201,16 @@ test('a full cardinality offers replace and retargets the existing link', async 
   await expect(dialog.getByTestId('link-replace')).toBeVisible()
   await dialog.getByTestId('link-replace').click()
   await expect(dialog).toBeHidden()
-  await expect(page.getByTestId('inline-action-notice')).toContainText('Replaced the existing link')
+  await expectNoFloatingNotice(page)
+  await article.click()
+  await expect(page.getByTestId('link-section-feedback')).toContainText('Replaced the existing link')
   const after = await productLinks(page, articleId)
   expect(after).toHaveLength(1)
   expect(after[0]?.peer_id).toBe(targetId)
   expect(after[0]?.peer_id).not.toBe(current.peer_id)
 })
 
-test('undo keeps a link that changed after it was created', async ({ page }) => {
+test('Remove link still works after the link values changed', async ({ page }) => {
   await openArticles(page)
   await unlink(page, mainTable(page, 'Articles'), 'ART-OAT-1L', 'product_articles')
   const article = row(mainTable(page, 'Articles'), 'ART-OAT-1L')
@@ -221,16 +220,15 @@ test('undo keeps a link that changed after it was created', async ({ page }) => 
   await expect(dialog).toBeVisible()
   await page.getByTestId('link-create-confirm').click()
   await expect(dialog).toBeHidden()
-  const notice = page.getByTestId('inline-action-notice').filter({ hasText: 'Linked 1 article' })
-  await expect(notice).toBeVisible()
-  const productId = ((await product.getAttribute('id')) ?? '').replace(/^object-row-/, '')
-  const loaded = await page.request.get(`/v1/objects/${productId}`)
-  expect(loaded.ok()).toBeTruthy()
-  const sides = ((await loaded.json()) as {
+  await expectNoFloatingNotice(page)
+  await product.click()
+  const linked = page.getByTestId('link-row').filter({ hasText: 'ART-OAT-1L' })
+  await expect(linked).toBeVisible()
+  const sides = ((await (await page.request.get(`/v1/objects/${await objectId(product)}`)).json()) as {
     links?: Array<{ link_type?: string; links?: Array<{ id?: string; peer_key?: string }> }>
   }).links ?? []
   const linkId = sides.flatMap((side) => side.link_type === 'product_articles' ? side.links ?? [] : [])
-    .find((link) => link.peer_key === 'ART-OAT-1L')?.id
+    .find((item) => item.peer_key === 'ART-OAT-1L')?.id
   expect(linkId).toBeTruthy()
   const link = await page.request.get(`/v1/objects/${linkId}`)
   expect(link.ok()).toBeTruthy()
@@ -240,12 +238,9 @@ test('undo keeps a link that changed after it was created', async ({ page }) => 
     data: { values: { sort_order: { value: '9' } } },
   })
   expect(patched.ok(), `patch link ${patched.status()} ${await patched.text()}`).toBeTruthy()
-  await page.getByTestId('inline-action-notice-undo').click()
-  const kept = page.getByTestId('inline-action-notice').filter({ hasText: 'changed since, kept' })
-  await expect(kept).toContainText('Undid 0 of 1')
-  await expect(kept).toContainText('ART-OAT-1L')
-  await product.click()
-  await expect(page.getByTestId('link-row').filter({ hasText: 'ART-OAT-1L' })).toBeVisible()
+  await linked.click({ button: 'right' })
+  await page.getByTestId('context-menu').getByRole('menuitem', { name: 'Remove link' }).click()
+  await expect(page.getByTestId('link-row').filter({ hasText: 'ART-OAT-1L' })).toHaveCount(0)
 })
 
 test('Escape during a drag clears the preview and the drop highlight', async ({ page }) => {
@@ -306,15 +301,14 @@ test('the light theme shows the drag highlight, dialogs, and toast', async ({ pa
   await expect(page.getByTestId('link-ends')).toContainText('ART-CHED-400')
   await shot(page, 'link-drag-dialog-light.png')
   await page.getByTestId('link-create-confirm').click()
-  const lightToast = page.getByTestId('inline-action-notice').filter({ hasText: 'Linked 1 article' })
-  await expect(lightToast).toBeVisible()
-  await expect.poll(async () => {
-    const box = await lightToast.boundingBox()
-    if (!box) return 0
-    return box.y >= 0 && box.y + box.height <= 890 ? 1 : box.y
-  }).toBe(1)
-  await shot(page, 'link-drag-toast-light.png')
-  await page.getByTestId('inline-action-notice-undo').click()
+  await expectNoFloatingNotice(page)
+  await product.click()
+  await expect(page.getByTestId('link-section-feedback')).toContainText('Linked 1 article')
+  await shot(page, 'link-drag-feedback-light.png')
+  const linked = page.getByTestId('link-row').filter({ hasText: 'ART-CHED-400' })
+  await linked.click({ button: 'right' })
+  await page.getByTestId('context-menu').getByRole('menuitem', { name: 'Remove link' }).click()
+  await expect(linked).toHaveCount(0)
 
   const articles = mainTable(page, 'Articles')
   await unlink(page, articles, 'ART-COFFEE-250', 'product_articles')
@@ -446,4 +440,8 @@ async function shot(page: Page, name: string) {
   if (!shots) return
   mkdirSync(shots, { recursive: true })
   await page.screenshot({ path: join(shots, name) })
+}
+
+async function expectNoFloatingNotice(page: Page) {
+  await expect(page.locator('[data-testid="inline-action-notice"]')).toHaveCount(0)
 }

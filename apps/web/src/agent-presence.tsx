@@ -2,7 +2,6 @@ import { useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Button } from './components/ui/button'
-import { publishInlineNotice } from './inline-notice'
 import {
   agentNoticeEvent,
   agentNoticeText,
@@ -46,10 +45,11 @@ function showAgentNotices(notices: AgentNotice[], onReview: (run: AgentRunSummar
       })
       continue
     }
-    publishInlineNotice({
-      message: notice.text,
+    toast(notice.text, {
+      id: notice.id,
       duration: 20000,
-      undo: { label: notice.actionLabel, onClick: open },
+      className: 'agent-notice-toast',
+      action: { label: notice.actionLabel, onClick: open },
     })
   }
 }

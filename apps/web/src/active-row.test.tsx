@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useEffect, useMemo, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import * as inlineNotice from './inline-notice'
+import * as shortcutTip from './shortcut-tip'
 import { CommandPalette } from './palette'
 import { ObjectTable, type PanesSession } from './panes'
 import { StructureTree } from './shell'
@@ -764,7 +764,7 @@ describe('palette entities', () => {
   })
 
   it('keeps the palette open when a layout command runs before the workspace is ready', async () => {
-    const message = vi.spyOn(inlineNotice, 'publishInlineNotice').mockImplementation(() => undefined)
+    const message = vi.spyOn(shortcutTip, 'announce').mockImplementation(() => undefined)
     const closed = vi.fn()
     const [queryClient] = [client()]
     render(
@@ -788,7 +788,7 @@ describe('palette entities', () => {
     fireEvent.change(input, { target: { value: 'Move left' } })
     await waitFor(() => expect(screen.getAllByRole('option', { name: /Move left/ }).length).toBeGreaterThan(0))
     fireEvent.keyDown(input, { key: 'Enter' })
-    expect(message).toHaveBeenCalledWith({ message: 'Opening when the workspace is ready…' })
+    expect(message).toHaveBeenCalledWith('Opening when the workspace is ready…')
     expect(closed).not.toHaveBeenCalled()
     expect(screen.getByTestId('command-palette')).toBeTruthy()
     message.mockRestore()

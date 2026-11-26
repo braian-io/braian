@@ -170,7 +170,7 @@ test('background runs show a count and Review results opens the tab', async ({ p
   await expect(page.getByTestId('agent-background-indicator')).toBeVisible()
   const review = page.getByRole('button', { name: 'Review results' }).first()
   await expect(review).toBeVisible({ timeout: 30_000 })
-  const notice = page.getByTestId('inline-action-notice')
+  const notice = page.locator('[data-sonner-toast]').filter({ hasText: 'Review results' }).first()
   await expect(notice).toBeVisible()
   await expectToastClearsLists(page, notice)
   await shot(page, 'agent-notification')

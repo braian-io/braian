@@ -44,7 +44,6 @@ import {
 import { valueListLabel } from './value-list-table-steps'
 import { registerModelTableDraft, tryChooseModelSelection } from './model-table-draft'
 import { buildAttributeCreateSteps, buildAttributeUpdateSteps } from './attribute-table-steps'
-import { publishInlineNotice } from './inline-notice'
 import { MODEL_RELOADED_EVENT } from './model-reload-banner'
 import { CreateDialog, requireText } from './create-dialog'
 import { onAttributeAction, type AttributeAction } from './attribute-actions'
@@ -242,6 +241,7 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
   const [pendingDetach, setPendingDetach] = useState<Set<string>>(() => new Set())
   const [pendingDelete, setPendingDelete] = useState<Set<string>>(() => new Set())
   const [message, setMessage] = useState('')
+  const [paneNotice, setPaneNotice] = useState<{ text: string; action?: { label: string; onClick: () => void } } | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [createName, setCreateName] = useState('')
   const [createKind, setCreateKind] = useState('text')
@@ -266,6 +266,7 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
   useEffect(() => {
     setFilter('')
     setMessage('')
+    setPaneNotice(null)
     setCreateOpen(false)
     setPendingKey(null)
     setActiveRowId(null)
@@ -301,10 +302,10 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
     setTypeHeaderPatch(restored.typeHeader ?? {})
     setPendingDetach(new Set(restored.pendingDetach))
     setPendingDelete(new Set(restored.pendingDelete))
-    if (restored.trimmed) publishInlineNotice({ message: copy.modelTableDraftRestoreTrimmed })
+    if (restored.trimmed) setPaneNotice({ text: copy.modelTableDraftRestoreTrimmed })
     for (const dropped of restored.droppedFields) {
-      publishInlineNotice({
-        message: copy.modelTableDraftRestoreFieldDropped(dropped.attributeKey, dropped.field),
+      setPaneNotice({
+        text: copy.modelTableDraftRestoreFieldDropped(dropped.attributeKey, dropped.field),
       })
     }
   }, [selectionKey, draftScope?.userId, draftScope?.workspaceId, selection, defs])
@@ -590,9 +591,9 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
     const onStorage = (event: StorageEvent) => {
       if (event.storageArea !== localStorage || event.key !== storageKey || !event.newValue) return
       if (!tableDirty()) return
-      publishInlineNotice({
-        message: copy.modelTableDraftRemoteChanged,
-        undo: {
+      setPaneNotice({
+        text: copy.modelTableDraftRemoteChanged,
+        action: {
           label: copy.loadRemoteDraft,
           onClick: () => {
             const stored = readModelTableDraftForKey(draftScope.userId, draftScope.workspaceId, selectionKey)
@@ -603,7 +604,8 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
             setTypeHeaderPatch(restored.typeHeader ?? {})
             setPendingDetach(new Set(restored.pendingDetach))
             setPendingDelete(new Set(restored.pendingDelete))
-            if (restored.trimmed) publishInlineNotice({ message: copy.modelTableDraftRestoreTrimmed })
+            if (restored.trimmed) setPaneNotice({ text: copy.modelTableDraftRestoreTrimmed })
+            else setPaneNotice(null)
           },
         },
       })
@@ -632,10 +634,10 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
       setTypeHeaderPatch(restored.typeHeader ?? {})
       setPendingDetach(new Set(restored.pendingDetach))
       setPendingDelete(new Set(restored.pendingDelete))
-      if (restored.trimmed) publishInlineNotice({ message: copy.modelTableDraftRestoreTrimmed })
+      if (restored.trimmed) setPaneNotice({ text: copy.modelTableDraftRestoreTrimmed })
       for (const dropped of restored.droppedFields) {
-        publishInlineNotice({
-          message: copy.modelTableDraftRestoreFieldDropped(dropped.attributeKey, dropped.field),
+        setPaneNotice({
+          text: copy.modelTableDraftRestoreFieldDropped(dropped.attributeKey, dropped.field),
         })
       }
     }
@@ -968,6 +970,24 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
       <div className="attr-title">
         <span>{title}</span>
       </div>
+      {paneNotice ? (
+        <p className="inline-hint model-pane-notice" role="status" data-testid="model-pane-notice">
+          {paneNotice.text}
+          {paneNotice.action ? (
+            <Button
+              type="button"
+              variant="ghost"
+              className="inline-hint-action"
+              data-testid="model-pane-notice-action"
+              onClick={() => {
+                paneNotice.action?.onClick()
+              }}
+            >
+              {paneNotice.action.label}
+            </Button>
+          ) : null}
+        </p>
+      ) : null}
       {selection.kind === 'type' ? (
         <>
           <TypeNameFields

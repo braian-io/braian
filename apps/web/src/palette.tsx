@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState, useSyncExternalStore, type KeyboardEvent 
 import { useQuery } from '@tanstack/react-query'
 import { Check } from 'lucide-react'
 import { MetaChip, type ChipTone } from './chips'
-import { publishInlineNotice } from './inline-notice'
 import { announce, takeShortcutTip } from './shortcut-tip'
 import { ApiError, api, operationId, textValue, type Json } from './api'
 import { reportWriteError } from './write-error'
@@ -627,7 +626,7 @@ export function CommandPalette({
 
   const blockUntilWorkspace = (commandId: string) => {
     if (workspaceReady || !needsWorkspace(commandId)) return false
-    publishInlineNotice({ message: copy.workspaceOpeningWhenReady })
+    announce(copy.workspaceOpeningWhenReady)
     return true
   }
 

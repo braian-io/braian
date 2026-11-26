@@ -6,8 +6,8 @@ import { linkCountNoun, linkEndLabel, type LinkHit } from './link-choices'
 import { LinkCreateDialog, type LinkEndpoint } from './link-create-dialog'
 import { dispatchLinkDrop, type LinkDropDetail } from './link-drag'
 import { LinkObjectPicker } from './link-object-picker'
-import { type CreatedLink, type LinkSubmitResult, type LinkWrite, submitLinks, undoCreatedLinks } from './link-write'
-import { publishInlineNotice } from './inline-notice'
+import { type LinkSubmitResult, type LinkWrite, submitLinks } from './link-write'
+import { linkSectionObjectId, publishLinkFeedback } from './link-feedback'
 import { reportWriteError } from './write-error'
 
 export { dispatchLinkDrop }
@@ -43,34 +43,27 @@ export function LinkDropHost() {
     void queryClient.invalidateQueries({ queryKey: ['object'] })
     void queryClient.invalidateQueries({ queryKey: ['objects'] })
   }
-  const undo = (links: CreatedLink[]) => {
-    void undoCreatedLinks(links).then((result) => {
-      refresh()
-      if (result.kept.length > 0) {
-        const names = result.kept.map((link) => link.label).filter(Boolean).join(', ')
-        publishInlineNotice({
-          message: copy.undoKept
-            .replace('{done}', String(result.undone.length))
-            .replace('{total}', String(links.length))
-            .replace('{name}', names || result.kept.map((link) => link.id).join(', ')),
-          error: true,
-          duration: 8000,
-        })
-      }
-      if (result.failed.length > 0) reportWriteError(new Error(result.failed[0]?.message || copy.validation))
-    })
-  }
-  const noteSaved = (result: LinkSubmitResult, detail: LinkDropDetail) => {
+  const noteSaved = (result: LinkSubmitResult, detail: LinkDropDetail, linkType?: string) => {
     const saved = result.created.map((item) => ({ ...item, label: peerLabel(detail, item.body) }))
     if (saved.length === 0) return
     refresh()
     const message = result.outcome === 'proposed'
       ? copy.linkedFiled.replace('{linked}', String(saved.length)).replace('{filed}', String(result.filed))
       : linkedMessage(detail.source, detail.targets, saved.length, defs.data)
-    publishInlineNotice({
-      message,
-      duration: 8000,
-      undo: { label: copy.undo, onClick: () => undo(saved) },
+    const first = saved[0]!
+    const sectionObjectId = linkSectionObjectId(detail, first.body)
+    const tableObjectIds = [...new Set([
+      ...detail.targets.map((item) => item.id),
+      detail.source.id,
+      sectionObjectId,
+    ])]
+    publishLinkFeedback({
+      sectionObjectId,
+      linkType: linkType ?? first.body.type,
+      direction: detail.preferred?.direction,
+      peerKeys: saved.map((item) => item.label).filter(Boolean),
+      hint: message,
+      tableObjectIds,
     })
   }
   if (picking && !drop) {
@@ -108,13 +101,23 @@ export function LinkDropHost() {
           values: request.values,
         })))
         if (result.outcome === 'created' || result.outcome === 'partial' || result.outcome === 'proposed') {
-          noteSaved(result, drop)
+          noteSaved(result, drop, requests[0]?.type)
         }
         return result
       }}
       onReplaced={() => {
         refresh()
-        publishInlineNotice({ message: copy.linkReplaced })
+        const sectionObjectId = drop.preferred?.direction
+          ? drop.source.id
+          : drop.targets[0]?.id ?? drop.source.id
+        publishLinkFeedback({
+          sectionObjectId,
+          linkType: drop.preferred?.linkType,
+          direction: drop.preferred?.direction,
+          peerKeys: drop.targets.map((item) => item.key || item.name || item.id),
+          hint: copy.linkReplaced,
+          tableObjectIds: [drop.source.id, ...drop.targets.map((item) => item.id)],
+        })
       }}
     />
   )

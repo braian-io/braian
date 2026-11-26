@@ -16,6 +16,11 @@ async function openProducts(page: Page) {
   await expect(mainTable(page)).toBeVisible()
 }
 
+async function expectNoFloatingNotice(page: Page) {
+  await expect(page.locator('[data-testid="inline-action-notice"]')).toHaveCount(0)
+  await expect(page.locator('[data-sonner-toast]')).toHaveCount(0)
+}
+
 function rowByName(page: Page, name: RegExp | string) {
   return mainTable(page).getByTestId('object-row').filter({ hasText: name }).first()
 }
@@ -48,7 +53,7 @@ test.describe('no success toasts', () => {
           timeout: 30_000,
         })
         .toBe(edited)
-      await expect(page.locator('[data-sonner-toast]')).toHaveCount(0)
+      await expectNoFloatingNotice(page)
     } finally {
       const current = rowByName(page, new RegExp(`${original}|${edited}`))
       if (await current.count()) {
@@ -86,7 +91,40 @@ test.describe('no success toasts', () => {
     expect((await created).ok()).toBeTruthy()
     await expect(dialog).toBeHidden()
     await expect(mainTable(page).getByTestId('object-row').filter({ hasText: number })).toBeVisible({ timeout: 60_000 })
-    await expect(page.locator('[data-sonner-toast]')).toHaveCount(0)
+    await expectNoFloatingNotice(page)
+  })
+
+  test('linking shows in-pane feedback without a floating notice', async ({ page }) => {
+    test.setTimeout(120_000)
+    await login(page)
+    await page.locator('nav.tabs').getByRole('button', { name: /^Articles/ }).click()
+    const articles = mainTable(page, 'Articles')
+    await expect(articles.getByTestId('object-row').first()).toBeVisible()
+    const article = articles.getByTestId('object-row').filter({ hasText: 'ART-OAT-1L' }).first()
+    await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
+    const products = mainTable(page)
+    await expect(products.getByTestId('object-row').first()).toBeVisible()
+    const product = products.getByTestId('object-row').filter({ hasText: 'PROD-COFFEE' }).first()
+    await article.dragTo(product)
+    const dialog = page.getByTestId('link-create-dialog')
+    await expect(dialog).toBeVisible()
+    await dialog.getByTestId('link-create-confirm').click()
+    await expect(dialog).toBeHidden()
+    await expectNoFloatingNotice(page)
+    await product.click()
+    const linked = page.getByTestId('link-row').filter({ hasText: 'ART-OAT-1L' })
+    try {
+      await expect(page.getByTestId('link-section-feedback')).toContainText('Linked')
+      await expect(linked).toBeVisible()
+    } finally {
+      if (await linked.count()) {
+        await linked.click({ button: 'right' })
+        const menu = page.getByTestId('context-menu')
+        if (await menu.getByRole('menuitem', { name: 'Remove link' }).count()) {
+          await menu.getByRole('menuitem', { name: 'Remove link' }).click()
+        }
+      }
+    }
   })
 
   test('deleting an object closes the dialog without a success toast', async ({ page }) => {
@@ -115,7 +153,7 @@ test.describe('no success toasts', () => {
       await dialog.getByTestId('confirm-delete-object').click()
       await expect(dialog).toBeHidden({ timeout: 30_000 })
       await expect(row).toHaveCount(0)
-      await expect(page.locator('[data-sonner-toast]')).toHaveCount(0)
+      await expectNoFloatingNotice(page)
     } finally {
       await page.request.delete(`/v1/objects/${id}`).catch(() => undefined)
     }

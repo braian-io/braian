@@ -6,14 +6,6 @@ import { api } from './api'
 import { copy } from './i18n'
 import { LinkSections } from './link-section'
 
-const inlineNotices = vi.hoisted(() => [] as Array<{ message: string; undo?: { label: string; onClick: () => void } }>)
-
-vi.mock('./inline-notice', () => ({
-  publishInlineNotice: (detail: { message: string; undo?: { label: string; onClick: () => void } }) => {
-    inlineNotices.push(detail)
-  },
-}))
-
 const defs = {
   types: [
     {
@@ -82,13 +74,10 @@ async function removeFocusedLink() {
 }
 
 const del = vi.spyOn(api, 'delete')
-const post = vi.spyOn(api, 'post')
 
 beforeEach(() => {
   vi.clearAllMocks()
-  inlineNotices.splice(0, inlineNotices.length)
   del.mockResolvedValue({} as never)
-  post.mockResolvedValue({} as never)
 })
 
 afterEach(() => {
@@ -96,7 +85,7 @@ afterEach(() => {
 })
 
 describe('LinkSections removal', () => {
-  it('shows inline Undo after removing a link without values and recreates it with its sort order', async () => {
+  it('removes a link without values without a success notice', async () => {
     renderLinks(link({ sort_order: '3' }))
 
     await removeFocusedLink()
@@ -104,24 +93,7 @@ describe('LinkSections removal', () => {
     await waitFor(() => {
       expect(del).toHaveBeenCalledWith('/v1/links/{id}', { params: { path: { id: 'link-1' } } })
     })
-    await waitFor(() => expect(inlineNotices.length).toBe(1))
-    const notice = inlineNotices[0]!
-    expect(notice.message).toBe('Link removed')
-    expect(notice.undo?.label).toBe('Undo')
-
-    await act(async () => {
-      notice.undo?.onClick()
-    })
-
-    await waitFor(() => expect(post).toHaveBeenCalledTimes(1))
-    expect(post).toHaveBeenCalledWith('/v1/links', {
-      body: {
-        type: 'related',
-        from_id: 'object-1',
-        to_id: 'peer-1',
-        values: { sort_order: { value: '3' } },
-      },
-    })
+    expect(screen.queryByTestId('link-section-feedback')).toBeNull()
   })
 
   it('confirms a link with values using a plain danger confirm and no text input', async () => {
@@ -166,7 +138,7 @@ describe('LinkSections removal', () => {
     await waitFor(() => expect(document.activeElement).toBe(row))
   })
 
-  it('refreshes both endpoints, peer lists and history on remove and on Undo', async () => {
+  it('refreshes both endpoints, peer lists and history on remove', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const invalidate = vi.spyOn(client, 'invalidateQueries')
     renderLinks(link({ sort_order: '3' }), client)
@@ -179,19 +151,6 @@ describe('LinkSections removal', () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['peer-links'] })
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['link-search'] })
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['history', 'object-1'] })
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['history', 'peer-1'] })
-
-    const notice = inlineNotices[0]!
-    invalidate.mockClear()
-
-    await act(async () => {
-      notice.undo?.onClick()
-    })
-
-    await waitFor(() => expect(post).toHaveBeenCalledTimes(1))
-    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['object', 'peer-1'] }))
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['objects'] })
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['peer-links'] })
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['history', 'peer-1'] })
   })
 })

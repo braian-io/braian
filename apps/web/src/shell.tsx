@@ -29,8 +29,7 @@ import { SearchRefresh } from './live-refresh'
 import { Button } from './components/ui/button'
 import { Input } from './components/ui/input'
 import { Toaster } from './components/ui/sonner'
-import { InlineNoticeHost } from './inline-notice-host'
-import { publishInlineNotice } from './inline-notice'
+import { announce } from './shortcut-tip'
 import { workspaceDisplayName } from './demo-labels'
 import { WorkspaceDock } from './dock'
 import { flashObject } from './flash'
@@ -2236,7 +2235,7 @@ export function Shell() {
     const surfaceNow = workspaceRef.current
     const docNow = docRef.current
     if (!surfaceNow || !docNow) {
-      publishInlineNotice({ message: copy.workspaceOpeningWhenReady })
+      announce(copy.workspaceOpeningWhenReady)
       return
     }
     const defs = queryClient.getQueryData<Json>(['definitions'])
@@ -2337,7 +2336,7 @@ export function Shell() {
     if (!surfaceNow || !docNow) {
       // Notion 112: palette already closes on select — queue until doc+workspace paint.
       queueOpenTypeView(typeId)
-      publishInlineNotice({ message: copy.workspaceOpeningWhenReady })
+      announce(copy.workspaceOpeningWhenReady)
       return
     }
     clearQueuedOpenTypeView()
@@ -2739,7 +2738,6 @@ export function Shell() {
       <DeleteObjectsHost />
       <ImportScreen />
       {help ? <HelpDialog onClose={() => setHelp(false)} placeholder={commandPlaceholder(typeCatalog)} /> : null}
-      <InlineNoticeHost />
       <Toaster theme={theme} />
     </div>
   )
