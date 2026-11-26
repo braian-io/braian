@@ -495,25 +495,44 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
     return () => window.removeEventListener('braian-model-table-draft-discard', onDiscard)
   }, [])
 
-  const saveAttributeRow = async (row: AttributeTableRow) => {
-    const original = allAttributeRows.find((item) => item.id === row.id)
-    if (!original) {
-      const created = buildCreateSteps(row)
-      if (created.length === 0) return
-      await commitModelSteps(queryClient, created)
-      setDraftRows((current) => dropSavedDraftRow(current, row.id, row))
-      return
-    }
-    const effective = applyDraftPatchesToRow(original, draftPatchesRef.current[row.id])
-    const steps = buildUpdateSteps(original, { ...effective, ...row })
-    if (steps.length === 0) return
-    await commitModelSteps(queryClient, steps)
+  const rowSaves = useRef(new Map<string, Promise<void>>())
+  const clearSavedRow = (row: AttributeTableRow) => {
     setDraftRows((current) => dropSavedDraftRow(current, row.id, row))
     setDraftPatches((current) => {
       if (!(row.id in current)) return current
       const next = { ...current }
       delete next[row.id]
       return next
+    })
+  }
+  const saveAttributeRow = (row: AttributeTableRow) => {
+    const prior = rowSaves.current.get(row.id) ?? Promise.resolve()
+    // The second toggle can run before the first commit's refetch. Diff against
+    // definitions after the previous save, or the revert looks like a no-op and
+    // the first value sticks.
+    const run = prior.catch(() => undefined).then(async () => {
+      const defsNow = queryClient.getQueryData<Json>(['definitions']) ?? defs
+      const fresh = attributeRows(defsNow, getModelSelection(), uiLanguage).map((item) => detailRow(defsNow, item))
+      const original = fresh.find((item) => item.id === row.id)
+      if (!original) {
+        const created = buildCreateSteps(row)
+        if (created.length === 0) return
+        await commitModelSteps(queryClient, created)
+        clearSavedRow(row)
+        return
+      }
+      const effective = applyDraftPatchesToRow(original, draftPatchesRef.current[row.id])
+      const steps = buildUpdateSteps(original, { ...effective, ...row })
+      if (steps.length === 0) {
+        clearSavedRow(row)
+        return
+      }
+      await commitModelSteps(queryClient, steps)
+      clearSavedRow(row)
+    })
+    rowSaves.current.set(row.id, run)
+    return run.finally(() => {
+      if (rowSaves.current.get(row.id) === run) rowSaves.current.delete(row.id)
     })
   }
   const saveAttributeRowRef = useRef(saveAttributeRow)
@@ -1104,6 +1123,15 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
   )
 }
 
+/** Clicks this close together are one gesture. The e2e burst includes an 80ms gap. */
+const ALLOWED_TREES_BURST_MS = 400
+
+function sameStructureSet(left: string[], right: string[]) {
+  if (left.length !== right.length) return false
+  const have = new Set(right)
+  return left.every((id) => have.has(id))
+}
+
 function AllowedTrees({
   defs,
   typeKey,
@@ -1115,14 +1143,37 @@ function AllowedTrees({
 }) {
   const raw = ((defs?.types as Json[]) ?? []).find((item) => String(item.key) === typeKey)
   const base = Array.isArray(raw?.structures) ? raw.structures.map((id) => String(id)) : []
-  const selected = new Set(base)
+  const baseRef = useRef(base)
+  baseRef.current = base
+  // The box shows the gesture immediately. Review opens only after the burst
+  // settles, so a second click still hits the checkbox instead of the dialog.
+  const [burst, setBurst] = useState<string[] | null>(null)
+  const burstRef = useRef<string[] | null>(null)
+  const burstTimer = useRef<number | null>(null)
+  const selected = new Set(burst ?? base)
   const structures = ((defs?.structures as Json[]) ?? [])
   const [focus, setFocus] = useState(false)
+  const clearBurst = () => {
+    if (burstTimer.current) window.clearTimeout(burstTimer.current)
+    burstTimer.current = null
+    burstRef.current = null
+    setBurst(null)
+  }
   useEffect(() => {
     const open = () => setFocus(true)
     window.addEventListener('braian-allowed-trees', open)
-    return () => window.removeEventListener('braian-allowed-trees', open)
+    window.addEventListener('braian-model-table-draft-discard', clearBurst)
+    window.addEventListener('braian-structures-review-cancel', clearBurst)
+    return () => {
+      window.removeEventListener('braian-allowed-trees', open)
+      window.removeEventListener('braian-model-table-draft-discard', clearBurst)
+      window.removeEventListener('braian-structures-review-cancel', clearBurst)
+      if (burstTimer.current) window.clearTimeout(burstTimer.current)
+    }
   }, [])
+  useEffect(() => {
+    if (burst && sameStructureSet(burst, base)) clearBurst()
+  }, [base, burst])
   return (
     <fieldset className="type-names" data-testid="allowed-trees">
       <legend title={copy.allowedTreesHint}>{copy.allowedTrees.replace('…', '')}</legend>
@@ -1141,15 +1192,30 @@ function AllowedTrees({
               onChange={(event) => {
                 noteAllowedTreesFocus(event.currentTarget)
                 onError('')
-                const next = new Set(selected)
-                if (event.target.checked) next.add(id)
-                else next.delete(id)
-                void stageModel('model.set_structures', { type_key: typeKey, structures: [...next] })
-                  .then(() => requestReview())
-                  .catch((reason: unknown) => {
-                    if (reason instanceof StructuresCancelled) return
-                    onError(errorText(reason))
-                  })
+                const current = new Set(burstRef.current ?? baseRef.current)
+                if (event.target.checked) current.add(id)
+                else current.delete(id)
+                const next = [...current]
+                burstRef.current = next
+                setBurst(next)
+                if (burstTimer.current) window.clearTimeout(burstTimer.current)
+                burstTimer.current = window.setTimeout(() => {
+                  burstTimer.current = null
+                  const final = burstRef.current
+                  if (!final || sameStructureSet(final, baseRef.current)) {
+                    burstRef.current = null
+                    setBurst(null)
+                    return
+                  }
+                  void stageModel('model.set_structures', { type_key: typeKey, structures: final })
+                    .then(() => requestReview())
+                    .catch((reason: unknown) => {
+                      if (reason instanceof StructuresCancelled) return
+                      burstRef.current = null
+                      setBurst(null)
+                      onError(errorText(reason))
+                    })
+                }, ALLOWED_TREES_BURST_MS)
               }}
             />
             {label}

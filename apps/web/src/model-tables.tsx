@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, textValue, type Json } from './api'
 import { CreateDialog, requireText } from './create-dialog'
@@ -274,8 +274,16 @@ export function LinkTypesTable({ draftScope }: { draftScope?: ModelTableDraftSco
     [],
   )
 
+  const hydratedDraft = useRef('')
   useEffect(() => {
     if (!draftScope?.userId || !draftScope.workspaceId) return
+    const scope = `${draftScope.userId}:${draftScope.workspaceId}`
+    // Hydrate once. Repeating this on every definitions refetch put a save
+    // that had just landed back into the table, which opened the leave dialog
+    // over the next cell edit.
+    if (hydratedDraft.current === scope) return
+    if (serverRows.length === 0) return
+    hydratedDraft.current = scope
     const storedDraft = readStoredLinkTypesTableDraft(draftScope.userId, draftScope.workspaceId)
     if (!storedDraft) return
     const { draftRows: restored } = restoreLinkTypesTableDraft(storedDraft, serverRows)

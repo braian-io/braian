@@ -408,6 +408,7 @@ export function ModelDraftHost() {
   }
   const cancelReview = () => {
     reviewToken.current += 1
+    if (typeof window !== 'undefined') window.dispatchEvent(new Event('braian-structures-review-cancel'))
     setReview(false)
     setReviewCreated([])
     setReviewLoading(false)

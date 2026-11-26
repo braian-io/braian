@@ -74,6 +74,10 @@ export function clearStoredLinkTypesTableDraft(userId: string, workspaceId: stri
   store.removeItem(linkTypesTableDraftKey(userId, workspaceId))
 }
 
+function sameLinkRow(left: LinkTypeRow, right: LinkTypeRow) {
+  return PATCHABLE_LINK_TYPE_FIELDS.every((field) => left[field] === right[field])
+}
+
 function isLinkRow(value: unknown): value is LinkTypeRow {
   if (!value || typeof value !== 'object') return false
   if (isLinkPatch(value)) return false
@@ -117,11 +121,15 @@ export function restoreLinkTypesTableDraft(
     if (!server) continue
     if (isLinkPatch(value)) {
       const merged: LinkTypeTableDraftPatches[string] = { ...value.changes, ...(value.keyChange ? { __key: value.keyChange } : {}) }
+      const draft = applyLinkTypePatches(server, merged)
+      // The save already landed. Restoring it would look like a failed edit.
+      if (sameLinkRow(draft, server)) continue
       patches[id] = merged
-      draftRows[id] = applyLinkTypePatches(server, merged)
+      draftRows[id] = draft
       continue
     }
     if (isLinkRow(value)) {
+      if (sameLinkRow(value, server)) continue
       draftRows[id] = value
       continue
     }

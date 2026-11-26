@@ -289,6 +289,19 @@ describe('type attributes table', () => {
     expect((await screen.findByTestId('impact-error')).textContent).toBe('impact failed')
   })
 
+  it('treats two clicks in a burst as no allowed-trees change', async () => {
+    chooseModelSelection({ kind: 'type', typeKey: 'recipe' })
+    render(<Host />)
+    const trees = await screen.findByTestId('allowed-trees')
+    const checkbox = within(trees).getByRole('checkbox', { name: 'Food' }) as HTMLInputElement
+    fireEvent.click(checkbox)
+    fireEvent.click(checkbox)
+    await new Promise((resolve) => window.setTimeout(resolve, 500))
+    expect(stageModel).not.toHaveBeenCalled()
+    expect(requestReview).not.toHaveBeenCalled()
+    expect(checkbox.checked).toBe(false)
+  })
+
   it('stages allowed trees for review on the click, without a table Save', async () => {
     chooseModelSelection({ kind: 'type', typeKey: 'recipe' })
     render(<Host />)
@@ -342,7 +355,7 @@ describe('type attributes table', () => {
     const checkbox = within(trees).getByRole('checkbox', { name: 'Food' }) as HTMLInputElement
     fireEvent.click(checkbox)
     await waitFor(() => expect(stageModel).toHaveBeenCalled())
-    expect(checkbox.checked).toBe(false)
+    expect(checkbox.checked).toBe(true)
     window.dispatchEvent(new Event('braian-model-table-draft-discard'))
     await waitFor(() => {
       const current = within(trees).getByRole('checkbox', { name: 'Food' }) as HTMLInputElement

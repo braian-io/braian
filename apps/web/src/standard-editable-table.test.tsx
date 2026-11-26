@@ -710,4 +710,50 @@ describe('semantic no-op drafts', () => {
     fireEvent.click(screen.getByTestId('active-checkbox'))
     expect(onDraft.mock.calls.at(-1)?.[0]).toEqual({})
   })
+
+  it('saves a checkbox that toggles back while the first save is in flight', async () => {
+    type BoolRow = { id: string; active: boolean }
+    const boolColumns: Array<StandardColumn<BoolRow>> = [{
+      id: 'active',
+      header: 'Active',
+      type: 'boolean',
+      display: 'checkbox',
+      cellTestId: () => 'active-checkbox',
+      read: (row) => row.active,
+      write: (row, value) => ({ ...row, active: value === 'true' }),
+    }]
+    let release: () => void = () => {}
+    const first = new Promise<void>((resolve) => { release = resolve })
+    const saveCell = vi.fn((row: BoolRow) => (row.active ? first : Promise.resolve()))
+    const onDraft = vi.fn()
+    const base = { id: '1', active: false }
+    const { rerender } = render(
+      <StandardEditableTable
+        columns={boolColumns}
+        rows={[base]}
+        draftRows={{}}
+        onDraftRowsChange={onDraft}
+        saveCell={saveCell}
+        editable
+      />,
+    )
+    fireEvent.click(screen.getByTestId('active-checkbox'))
+    await waitFor(() => expect(saveCell).toHaveBeenCalledTimes(1))
+    expect(saveCell.mock.calls[0]?.[0].active).toBe(true)
+    const drafted = onDraft.mock.calls.at(-1)?.[0] as Record<string, BoolRow>
+    rerender(
+      <StandardEditableTable
+        columns={boolColumns}
+        rows={[base]}
+        draftRows={drafted}
+        onDraftRowsChange={onDraft}
+        saveCell={saveCell}
+        editable
+      />,
+    )
+    fireEvent.click(screen.getByTestId('active-checkbox'))
+    await waitFor(() => expect(saveCell).toHaveBeenCalledTimes(2))
+    expect(saveCell.mock.calls[1]?.[0].active).toBe(false)
+    release()
+  })
 })

@@ -40,6 +40,22 @@ describe('link type draft persistence', () => {
     expect(applyLinkTypePatches(server, { fromCardinality: { base: 'many', value: 'one' } }).fromCardinality).toBe('one')
   })
 
+  it('drops a patch the server already has', () => {
+    const stored = {
+      v: 1 as const,
+      draftRows: {
+        product_suppliers: {
+          patch: true as const,
+          id: 'product_suppliers',
+          key: 'product_suppliers',
+          changes: { fromLabel: { base: 'Suppliers', value: 'Suppliers' } },
+        },
+      },
+    }
+    const { draftRows } = restoreLinkTypesTableDraft(stored, [server])
+    expect(draftRows.product_suppliers).toBeUndefined()
+  })
+
   it('serializes only changed fields', () => {
     const edited = { ...server, toLabel: 'Catalog' }
     expect(serializeLinkTypeDraftRow(server, edited)).toMatchObject({

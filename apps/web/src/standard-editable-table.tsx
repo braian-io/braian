@@ -268,6 +268,7 @@ export function StandardEditableTable<T extends { id: string }>({
   const [editError, setEditError] = useState('')
   const [cellSave, setCellSave] = useState<Record<string, { state: 'saving' | 'saved' | 'error'; message?: string }>>({})
   const saveTimers = useRef<Record<string, number>>({})
+  const savesInFlight = useRef(new Map<string, number>())
   const [internalActiveRowId, setInternalActiveRowId] = useState<string | null>(null)
   const [reorderOrder, setReorderOrder] = useState<string[] | null>(null)
   const inputRef = useRef<HTMLInputElement | HTMLSelectElement | null>(null)
@@ -296,11 +297,16 @@ export function StandardEditableTable<T extends { id: string }>({
   }
   const runSave = (row: T, columnId: string) => {
     if (!saveCell) return
+    savesInFlight.current.set(row.id, (savesInFlight.current.get(row.id) ?? 0) + 1)
     noteSave(row.id, columnId, 'saving')
     void saveCell(row, columnId).then(() => {
       noteSave(row.id, columnId, 'saved')
     }).catch((reason: unknown) => {
       noteSave(row.id, columnId, 'error', writeErrorMessage(reason) ?? copy.validation)
+    }).finally(() => {
+      const left = (savesInFlight.current.get(row.id) ?? 1) - 1
+      if (left <= 0) savesInFlight.current.delete(row.id)
+      else savesInFlight.current.set(row.id, left)
     })
   }
   const controlled = activeRowIdProp !== undefined
@@ -378,6 +384,15 @@ export function StandardEditableTable<T extends { id: string }>({
       if (!onDraftRowsChange && !saveCell) return
       const base = rows.find((row) => row.id === rowId)
       if (base && sameRow(next, base)) {
+        // The value is back where the server was when this render started.
+        // A save of the opposite value may still be in flight; dropping the
+        // follow-up would let that save land and leave the cell on the value
+        // the person just toggled away from.
+        if (columnId && (savesInFlight.current.get(rowId) ?? 0) > 0) {
+          if (onDraftRowsChange) onDraftRowsChange(keepRowOrder({ ...draftRows, [rowId]: next }))
+          runSave(next, columnId)
+          return
+        }
         if (onDraftRowsChange && rowId in draftRows) {
           const without = { ...draftRows }
           delete without[rowId]
