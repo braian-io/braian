@@ -51,3 +51,123 @@ export function assortmentChipActive(item: Json, ctx: AssortmentChipContext): bo
   if (!wantGroup && wantLabels && wantLabels === ctx.activeLabelFilter && (!ctx.activeGroup || !ctx.groupFilterApplies)) return true
   return false
 }
+
+export type SelectionApplyMode = 'follow' | 'peer' | 'explicit-all'
+
+export type SelectionPatch = {
+  filter: ''
+  selectionFilter: string
+  labelFilter: string
+  selectionId: string
+  /** Table-local group. Null clears a previous pin. */
+  localGroup: string | null
+  /**
+   * Workspace group write. Absent means leave the global group alone
+   * (peer, explicit All, or a locked workspace).
+   */
+  globalGroup?: string | null
+}
+
+export type SelectionApplyPlan =
+  | { action: 'ignore' }
+  | { action: 'clear'; globalGroup?: null }
+  | { action: 'leave-all'; patch: SelectionPatch }
+  | { action: 'apply'; patch: SelectionPatch }
+
+/**
+ * Chip inputs for one table. A local group pin is part of the query even when
+ * session.group is not (peer source, explicit All, or a locked workspace).
+ */
+export function selectionChipContext(input: {
+  sessionGroup: string | null
+  activeLabelFilter: string
+  activeSelectionFilter: string
+  activeSelectionId: string
+  activeFilter: string
+  sessionGroupApplies: boolean
+  localGroup: string | null
+  defs?: Json
+}): AssortmentChipContext {
+  return {
+    activeGroup: input.localGroup ?? (input.sessionGroupApplies ? input.sessionGroup : null),
+    activeLabelFilter: input.activeLabelFilter,
+    activeSelectionFilter: input.activeSelectionFilter,
+    activeSelectionId: input.activeSelectionId,
+    activeFilter: input.activeFilter,
+    groupFilterApplies: input.localGroup != null || input.sessionGroupApplies,
+    defs: input.defs,
+  }
+}
+
+/**
+ * One decision for a saved-selection click and for a selection applied from
+ * another view. Callers commit the patch; they do not branch on their own.
+ */
+export function planSelectionApply(input: {
+  item: Json
+  ctx: AssortmentChipContext
+  mode: SelectionApplyMode
+  locked: boolean
+}): SelectionApplyPlan {
+  if (assortmentChipActive(input.item, input.ctx)) {
+    return input.locked ? { action: 'clear' } : { action: 'clear', globalGroup: null }
+  }
+  const parts = selectionParts(input.item, input.ctx.defs)
+  const groupOnly = isGroupOnlyManualSelection(parts.query)
+  if (groupOnly && input.mode === 'peer') return { action: 'ignore' }
+  if (groupOnly && input.mode === 'explicit-all') {
+    if (input.locked) return { action: 'ignore' }
+    return {
+      action: 'leave-all',
+      patch: {
+        filter: '',
+        selectionFilter: parts.selectionFilter,
+        labelFilter: parts.labelFilter,
+        selectionId: parts.selectionId,
+        localGroup: null,
+        globalGroup: parts.group,
+      },
+    }
+  }
+  const pinLocally = input.mode !== 'follow' || input.locked
+  if (pinLocally && manualSelectionHasGroup(parts.query)) {
+    return {
+      action: 'apply',
+      patch: {
+        filter: '',
+        selectionFilter: parts.selectionFilter,
+        labelFilter: parts.labelFilter,
+        selectionId: parts.selectionId,
+        localGroup: parts.group,
+      },
+    }
+  }
+  return {
+    action: 'apply',
+    patch: {
+      filter: '',
+      selectionFilter: parts.selectionFilter,
+      labelFilter: parts.labelFilter,
+      selectionId: parts.selectionId,
+      localGroup: null,
+      ...(input.locked ? {} : { globalGroup: parts.group }),
+    },
+  }
+}
+
+function selectionParts(item: Json, defs?: Json) {
+  const query = (item.query as Json) ?? {}
+  const dynamicFilter = selectionFilterText(query)
+  const emptyManual = !dynamicFilter && isEmptyManualQuery(query)
+  const rawGroup = (query as { group?: unknown }).group
+  const group = !dynamicFilter && !emptyManual && typeof rawGroup === 'string' && rawGroup
+    ? rawGroup
+    : null
+  return {
+    query,
+    selectionId: String(item.id ?? ''),
+    selectionFilter: dynamicFilter || (emptyManual ? EMPTY_MANUAL_FILTER : ''),
+    labelFilter: dynamicFilter || emptyManual ? '' : labelSearchFilter(query, defs),
+    group,
+  }
+}
