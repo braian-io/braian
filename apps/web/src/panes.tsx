@@ -91,17 +91,13 @@ import {
   draftBaseVersion,
   draftEditorSeed,
   editBaseVersion,
-  getDetailDraftOwner,
   getObjectDraftSnapshot,
   objectDraftCells,
   overlayValues,
   paintObjectCell,
-  proposalCellsForTableBar,
   reviewCapabilities,
   roleCanWrite,
-  setDetailDraftOwner,
   stageObjectCell,
-  subscribeDetailDraftOwner,
   subscribeObjectDrafts,
 } from './object-draft'
 import { CellDiff, ObjectDraftBar, UnmappedDraftLinks } from './object-draft-bar'
@@ -2213,28 +2209,24 @@ export function ObjectTable({
   }
   const visibleRows = groupBy ? groupedRows : [...byIndex.values()]
   const visibleIds = new Set(visibleRows.map((row) => row.id))
-  const detailOwner = useSyncExternalStore(subscribeDetailDraftOwner, getDetailDraftOwner, getDetailDraftOwner)
   // A Detail edit stays on the Detail bar. This table only saves cells staged here.
+  // A proposal has no staging pane, so both panes can review it.
   const tableObjectIds = [...new Set(
     drafts.cells.filter((cell) => cell.surface == null || cell.surface === 'table').map((cell) => cell.objectId),
   )].filter((id) => visibleIds.has(id))
-  const visibleProposalUpdates = [...openProposals.byObject.entries()]
+  const visibleProposalCells = [...openProposals.byObject.entries()]
     .filter(([objectId]) => visibleIds.has(objectId))
     .flatMap(([, cells]) => cells)
     .filter((cell) => cell.op === 'update')
-  // A proposal for the object open in Detail uses that pane's bar, not a second one here.
-  const tableProposals = proposalCellsForTableBar(visibleProposalUpdates, detailOwner)
-  const draftElsewhere = new Set([
-    ...drafts.cells.filter((cell) => cell.surface === 'detail').map((cell) => cell.objectId),
-    ...tableProposals.elsewhere,
-  ])
+  const draftElsewhere = new Set(
+    drafts.cells.filter((cell) => cell.surface === 'detail').map((cell) => cell.objectId),
+  )
   const tableVersions: Record<string, number> = {}
   const tableMeta: Record<string, { key: string; type: string }> = {}
   for (const row of visibleRows) {
     tableVersions[row.id] = Number(row.version ?? 0)
     tableMeta[row.id] = { key: row.key, type: row.type }
   }
-  const visibleProposalCells = tableProposals.bar
   const proposalObjectIds = [...new Set(visibleProposalCells.map((cell) => cell.objectId))]
   const tableReview = reviewCapabilities({
     principal: me.data?.kind === 'agent' ? 'agent' : 'human',
@@ -3173,15 +3165,6 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   useEffect(() => {
     if (detailLoadFailed && session.objectId) clearObjectNavReplace(session.objectId)
   }, [detailLoadFailed, session.objectId])
-  useEffect(() => {
-    const id = session.objectId
-    if (!id) {
-      setDetailDraftOwner(null)
-      return
-    }
-    setDetailDraftOwner(id)
-    return () => setDetailDraftOwner(null)
-  }, [session.objectId])
   useEffect(() => {
     if (!session.objectId || !object.data) return
     const stored = (object.data.values as Json) ?? {}

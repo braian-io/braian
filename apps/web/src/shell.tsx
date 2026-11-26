@@ -1033,32 +1033,46 @@ export function Shell() {
         return
       }
       const hinted = { id: detail?.typeId, key: detail?.typeKey }
-      void (async () => {
-        const defsNow = () => queryClient.getQueryData<Json>(['definitions'])
-        let body = queryClient.getQueryData<Json>(['object', objectId])
-        let type = draftTypeRef(body, hinted, typeNames(defsNow()))
-        if (!type) {
-          try {
-            body = await api.get('/v1/objects/{id}', { params: { path: { id: objectId } } })
-            queryClient.setQueryData(['object', objectId], body)
-            type = draftTypeRef(body, hinted, typeNames(defsNow()))
-          } catch (reason) {
-            reportWriteError(reason)
-          }
-        }
-        const surfaceNow = workspaceRef.current
-        const docNow = docRef.current
-        if (!surfaceNow || !docNow || !type) return
+      const focusMatchedTable = (
+        surfaceNow: NonNullable<typeof workspaceRef.current>,
+        docNow: NonNullable<typeof docRef.current>,
+        type: { id: string; key: string },
+      ) => {
         const openIds = layoutViews(docNow.layout)
         const match = objectTableForTypeToken(viewRows(surfaceNow.views), type, openIds)
-        if (match) {
+        if (match && openIds.includes(match.id)) {
           focusTable(match.id, objectId)
-          return
+          return true
         }
-        const typeId = type.id || typeNames(defsNow()).find((item) => item.key === type?.key)?.id
-        if (typeId) {
+        if (match) {
           holdObject(objectId)
-          openTypeViewRef.current(typeId)
+          applyRef.current('ui.open_view', { id: match.id })
+          dispatchUi('ui.select', { id: objectId, view: match.id })
+          return true
+        }
+        const typeId = type.id || typeNames(queryClient.getQueryData<Json>(['definitions'])).find((item) => item.key === type.key)?.id
+        if (!typeId) return false
+        holdObject(objectId)
+        openTypeViewRef.current(typeId)
+        return true
+      }
+      const defsNow = () => queryClient.getQueryData<Json>(['definitions'])
+      const cached = queryClient.getQueryData<Json>(['object', objectId])
+      const known = draftTypeRef(cached, hinted, typeNames(defsNow()))
+      // Focus before the click returns when the type is already known. A later
+      // layout change lands during the dock animation and covers Detail's Save.
+      if (known && focusMatchedTable(surface, current, known)) return
+      void (async () => {
+        try {
+          const body = await api.get('/v1/objects/{id}', { params: { path: { id: objectId } } })
+          queryClient.setQueryData(['object', objectId], body)
+          const type = draftTypeRef(body, hinted, typeNames(defsNow()))
+          const surfaceNow = workspaceRef.current
+          const docNow = docRef.current
+          if (!surfaceNow || !docNow || !type) return
+          focusMatchedTable(surfaceNow, docNow, type)
+        } catch (reason) {
+          reportWriteError(reason)
         }
       })()
     }

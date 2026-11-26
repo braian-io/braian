@@ -44,45 +44,9 @@ type Snapshot = {
 let state: Snapshot = { cells: [], committed: {} }
 const listeners = new Set<() => void>()
 
-/** Detail is mounted on this object, so its proposal bar lives there. */
-let detailOwnerId: string | null = null
-const ownerListeners = new Set<() => void>()
-
 export function resetObjectDrafts(): void {
   state = { cells: [], committed: {} }
-  detailOwnerId = null
   for (const listener of listeners) listener()
-  for (const listener of ownerListeners) listener()
-}
-
-export function subscribeDetailDraftOwner(listener: () => void): () => void {
-  ownerListeners.add(listener)
-  return () => ownerListeners.delete(listener)
-}
-
-export function getDetailDraftOwner(): string | null {
-  return detailOwnerId
-}
-
-export function setDetailDraftOwner(id: string | null): void {
-  if (detailOwnerId === id) return
-  detailOwnerId = id
-  for (const listener of ownerListeners) listener()
-}
-
-/** Proposal cells for the object open in Detail stay on that bar. The table marks the row. */
-export function proposalCellsForTableBar<T extends { objectId: string }>(
-  cells: readonly T[],
-  detailOwner: string | null,
-): { bar: T[]; elsewhere: string[] } {
-  if (!detailOwner) return { bar: [...cells], elsewhere: [] }
-  const bar: T[] = []
-  const elsewhere: string[] = []
-  for (const cell of cells) {
-    if (cell.objectId === detailOwner) elsewhere.push(cell.objectId)
-    else bar.push(cell)
-  }
-  return { bar, elsewhere }
 }
 
 export function subscribeObjectDrafts(listener: () => void): () => void {
