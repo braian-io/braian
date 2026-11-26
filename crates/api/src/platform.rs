@@ -7545,9 +7545,19 @@ pub(crate) struct StateBody {
     /// RFC3339 `updated_at` this edit was based on.
     /// JSON `null` means the client saw no saved layout.
     /// Omit the field for a last-write-wins save.
-    #[serde(default)]
+    /// `Option`'s own deserializer treats JSON null as absent, so a present
+    /// null is wrapped back into `Some(None)` before the outer option sees it.
+    #[serde(default, deserialize_with = "deserialize_present_option")]
     #[schema(value_type = Option<String>)]
     expected_updated_at: Option<Option<String>>,
+}
+
+fn deserialize_present_option<'de, T, D>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    T: serde::Deserialize<'de>,
+    D: serde::Deserializer<'de>,
+{
+    Ok(Some(Option::deserialize(deserializer)?))
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -7707,6 +7717,22 @@ mod tests {
     use tokio::net::TcpListener;
 
     use super::*;
+
+    #[test]
+    fn expected_updated_at_null_is_not_an_omitted_field() {
+        let absent: StateBody = serde_json::from_str(r#"{"document":{}}"#).unwrap();
+        assert!(absent.expected_updated_at.is_none());
+        let empty: StateBody =
+            serde_json::from_str(r#"{"document":{},"expected_updated_at":null}"#).unwrap();
+        assert!(matches!(empty.expected_updated_at, Some(None)));
+        let stamped: StateBody =
+            serde_json::from_str(r#"{"document":{},"expected_updated_at":"2026-01-01T00:00:00Z"}"#)
+                .unwrap();
+        assert!(matches!(
+            stamped.expected_updated_at,
+            Some(Some(ref value)) if value == "2026-01-01T00:00:00Z"
+        ));
+    }
 
     #[test]
     fn search_hides_a_link_type_even_when_the_index_returns_it() {
