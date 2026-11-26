@@ -145,7 +145,9 @@ import { splitDetailKeys } from './detail-fields'
 import { DetailFieldDraftHost, type DetailFieldDraftHandle } from './detail-field-draft'
 import { DetailNumberMeasureField } from './detail-number-measure-field'
 import { beginLinkDrag, dispatchLinkDrop, endLinkDrag, linkDragActive, linkDragContains, linkDragLabel, linkDragMime, linkDragObjects, linkDragPayload, linkDropDecision, readLinkDrag, setLinkDragHint } from './link-drag'
-import { EMPTY_MANUAL_FILTER, labelCodes, publishSelectionLabels, SELECTION_APPLIED_EVENT, selectionMatchesType } from './assortment-filter'
+import { EMPTY_MANUAL_FILTER, isHandPickedQuery, labelCodes, memberIdFilter, memberIdsOf, publishSelectionLabels, SELECTION_APPLIED_EVENT, selectionKind, selectionMatchesType } from './assortment-filter'
+import { selectionDropHandlers } from './selection-picker'
+import { SELECTION_MEMBERS_EVENT, finishSelectionDrop, saveSelectionMembers, selectionDragActive, setMemberError, memberErrorSnapshot, subscribeMemberError, type SelectionMembersDetail } from './selection-members'
 import { appendPathFilter, objectTableFilter } from './table-filter'
 import { assortmentChipActive, planSelectionApply, selectionChipContext, type AssortmentChipContext, type SelectionApplyMode } from './table-filters'
 import { dispatchUi, onUi } from './ui-bus'
@@ -447,6 +449,13 @@ export function ObjectTable({
   const selectionRows = (assortments.data?.assortments ?? []).filter((item) =>
     selectionMatchesType(item, typeKey, bound?.id ?? ''),
   )
+  const activeManual = selectionRows.find((item) => String(item.id) === activeSelectionId)
+  const activeManualSelectionId = activeManual
+    && selectionKind(activeManual.kind) !== 'dynamic'
+    && (memberIdsOf(activeManual).length > 0 || isHandPickedQuery(activeManual.query))
+    ? String(activeManual.id)
+    : ''
+  const memberError = useSyncExternalStore(subscribeMemberError, memberErrorSnapshot, memberErrorSnapshot)
   useEffect(() => {
     if (!activeSelectionId || !assortments.isSuccess) return
     if (selectionRows.some((item) => String(item.id) === activeSelectionId)) return
@@ -527,6 +536,7 @@ export function ObjectTable({
       ? (peerNode ? peerNodeFilter(peerNode) : peerIdsFilter([]))
       : (peerIds.isSuccess ? peerIdsFilter(peerIds.data) : peerIdsFilter([]))
     : ''
+  const handPicked = selectionFilter.startsWith('id:=[') || selectionFilter === EMPTY_MANUAL_FILTER
   const selectionMode: SelectionApplyMode = peerSource ? 'peer' : explicitAll ? 'explicit-all' : 'follow'
   const chipContext = selectionChipContext({
     sessionGroup: session.group,
@@ -538,7 +548,7 @@ export function ObjectTable({
     localGroup,
     defs: defs.data,
   })
-  const filterBy = [objectTableFilter(typeKey, chipContext.groupFilterApplies ? chipContext.activeGroup : null, defs.data), peerFilter, selectionFilter, labelFilter, ...pathFilters]
+  const filterBy = [objectTableFilter(typeKey, !handPicked && chipContext.groupFilterApplies ? chipContext.activeGroup : null, defs.data), peerFilter, selectionFilter, labelFilter, ...pathFilters]
     .filter(Boolean)
     .join(' && ')
   const enableGroupAssortmentFilter = useCallback(async () => {
@@ -584,6 +594,18 @@ export function ObjectTable({
     setLocalGroup(patch.localGroup)
     if (patch.globalGroup !== undefined && !workspace.locked) session.setGroup(patch.globalGroup)
   }
+  useEffect(() => {
+    const onMembers = (event: Event) => {
+      const detail = (event as CustomEvent<SelectionMembersDetail>).detail
+      if (!detail?.id || detail.id !== activeSelectionId) return
+      setSelectionFilter(memberIdFilter(detail.memberIds))
+      setLabelFilter('')
+      setLocalGroup(null)
+      if (!workspace.locked) session.setGroup(null)
+    }
+    window.addEventListener(SELECTION_MEMBERS_EVENT, onMembers)
+    return () => window.removeEventListener(SELECTION_MEMBERS_EVENT, onMembers)
+  }, [activeSelectionId, session, workspace.locked])
   // Click and a selection broadcast from another view share this commit.
   const applySavedSelection = async (item: Json) => {
     const plan = planSelectionApply({
@@ -1292,6 +1314,7 @@ export function ObjectTable({
         columnHeader: column ? columnHeader(column) : undefined,
         hiddenColumns,
         typeKey: session.listType ?? undefined,
+        manualSelectionId: activeManualSelectionId || undefined,
         viewId: view.id,
         columnPrefsOverride: hasColumnOverride,
         objects: chosen.flatMap((id) => {
@@ -2250,6 +2273,26 @@ export function ObjectTable({
       onFilterChange={setFilter}
       onFilterFocus={() => { searchFocusedRef.current = true }}
       onFilterBlur={() => { searchFocusedRef.current = false }}
+      onDragOver={(event) => {
+        if (!activeManualSelectionId || !selectionDragActive(event.dataTransfer.types)) return
+        const node = event.target
+        if (node instanceof Element && node.closest('[data-testid="object-row"]')) return
+        event.preventDefault()
+        event.stopPropagation()
+        event.dataTransfer.dropEffect = 'copy'
+      }}
+      onDrop={(event) => {
+        if (!activeManualSelectionId || !selectionDragActive(event.dataTransfer.types)) return
+        const node = event.target
+        if (node instanceof Element && node.closest('[data-testid="object-row"]')) return
+        event.preventDefault()
+        event.stopPropagation()
+        const ids = finishSelectionDrop(event.dataTransfer)
+        if (ids.length === 0) return
+        void saveSelectionMembers(queryClient, activeManualSelectionId, ids, 'add').catch((reason: unknown) => {
+          setMemberError(activeManualSelectionId, writeErrorMessage(reason) ?? copy.validation)
+        })
+      }}
     >
       <ObjectDraftBar
         count={draftCount}
@@ -2883,7 +2926,14 @@ function TableFilters({
     setGroupBy('')
     onClear()
   }
+  const queryClient = useQueryClient()
   const assortmentActive = (item: Json) => assortmentChipActive(item, chipContext)
+  const memberError = useSyncExternalStore(subscribeMemberError, memberErrorSnapshot, memberErrorSnapshot)
+  const addDropped = (selectionId: string, ids: string[]) => {
+    void saveSelectionMembers(queryClient, selectionId, ids, 'add').catch((reason: unknown) => {
+      setMemberError(selectionId, writeErrorMessage(reason) ?? copy.validation)
+    })
+  }
   const selectionOn = Boolean(
     (chipContext.groupFilterApplies && chipContext.activeGroup)
     || chipContext.activeLabelFilter
@@ -2894,19 +2944,28 @@ function TableFilters({
       <Button type="button" variant="ghost" className={!selectionOn && groupBy === '' ? 'filter-chip on' : 'filter-chip'} onClick={clear}>{copy.all}</Button>
       <Button type="button" variant="ghost" className={groupBy === 'type_key' ? 'filter-chip on' : 'filter-chip'} onClick={() => setGroupBy(groupBy === 'type_key' ? '' : 'type_key')}>{copy.type}</Button>
       <Button type="button" variant="ghost" className={groupBy === 'a_status' ? 'filter-chip on' : 'filter-chip'} onClick={() => setGroupBy(groupBy === 'a_status' ? '' : 'a_status')}>{copy.status}</Button>
-      {assortments.map((item) => (
-        <Button
-          key={String(item.id)}
-          type="button"
-          variant="ghost"
-          className={assortmentActive(item) ? 'filter-chip on' : 'filter-chip'}
-          data-testid="assortment"
-          aria-pressed={assortmentActive(item)}
-          onClick={() => { onAssortment(item) }}
-        >
-          {assortmentDisplayName(String(item.name))}
-        </Button>
-      ))}
+      {assortments.map((item) => {
+        const id = String(item.id)
+        const manual = selectionKind(item.kind) !== 'dynamic'
+        return (
+          <Button
+            key={id}
+            type="button"
+            variant="ghost"
+            className={assortmentActive(item) ? 'filter-chip on' : 'filter-chip'}
+            data-testid="assortment"
+            data-member-count={memberIdsOf(item).length}
+            aria-pressed={assortmentActive(item)}
+            onClick={() => { onAssortment(item) }}
+            {...selectionDropHandlers(manual, id, (ids) => addDropped(id, ids))}
+          >
+            {assortmentDisplayName(String(item.name))}
+          </Button>
+        )
+      })}
+      {memberError.message && assortments.some((item) => String(item.id) === memberError.selectionId) ? (
+        <p className="error" data-testid="selection-member-error" role="alert">{memberError.message}</p>
+      ) : null}
     </>
   )
 }

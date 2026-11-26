@@ -86,6 +86,8 @@ describe('row context menu', () => {
   })
 
   it('labels Open from the clicked row type', () => {
+    expect(menu('product').titles).toContain('Add to selection…')
+    expect(menu('product').titles).not.toContain('Remove from selection')
     expect(menu('product').titles).toContain('Open Product')
     expect(menu('article').titles).toContain('Open Article')
     expect(menu('article').titles).not.toContain('Open Product')

@@ -185,11 +185,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Members of a dynamic selection, re-evaluated through the search path. */
+        /** Members of a selection. Dynamic selections are re-evaluated through search. Manual selections return the objects added by hand. */
         get: operations["assortment_members"];
         put?: never;
-        post?: never;
-        delete?: never;
+        /** Add objects to a manual selection. A dynamic selection is rejected. */
+        post: operations["add_assortment_members"];
+        /** Remove objects from a manual selection. A dynamic selection is rejected. */
+        delete: operations["remove_assortment_members"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1959,15 +1961,26 @@ export interface components {
         AssortmentList: {
             assortments: components["schemas"]["AssortmentRow"][];
         };
+        AssortmentMemberIds: {
+            /** Format: int32 */
+            found: number;
+            member_ids: string[];
+        };
         AssortmentMembers: {
             /** Format: int32 */
             found: number;
+            member_ids: string[];
             members: components["schemas"]["SearchHit"][];
+        };
+        AssortmentMembersBody: {
+            object_ids: string[];
         };
         AssortmentRow: {
             /** Format: uuid */
             id: string;
             kind: string;
+            /** @description Objects added by hand. Empty when the selection still uses a group or label filter. */
+            member_ids: string[];
             name: string;
             query: components["schemas"]["FreeObject"];
             type?: string | null;
@@ -3913,6 +3926,78 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssortmentMembers"];
+                };
+            };
+            /** @description Missing or unknown token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    add_assortment_members: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Selection id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssortmentMembersBody"];
+            };
+        };
+        responses: {
+            /** @description Objects now in the selection */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssortmentMemberIds"];
+                };
+            };
+            /** @description Missing or unknown token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    remove_assortment_members: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Selection id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssortmentMembersBody"];
+            };
+        };
+        responses: {
+            /** @description Objects still in the selection */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssortmentMemberIds"];
                 };
             };
             /** @description Missing or unknown token */
