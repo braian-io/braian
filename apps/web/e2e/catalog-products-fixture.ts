@@ -74,7 +74,8 @@ export async function setProductsViewCatalogOverride(page: Page, catalogId: stri
       if (nextCatalogId) {
         state.catalogOverride = { catalogId: nextCatalogId }
       } else {
-        delete state.catalogOverride
+        // A missing key is left as stored. Null removes catalogOverride.
+        state.catalogOverride = null
       }
       const save = await fetch('/v1/views', {
         method: 'POST',

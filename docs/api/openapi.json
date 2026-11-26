@@ -6804,7 +6804,7 @@
         "tags": [
           "platform"
         ],
-        "summary": "Create or update a view, including table state",
+        "summary": "Create or update a view. State merges per top-level key.",
         "operationId": "save_view",
         "requestBody": {
           "content": {
@@ -6818,17 +6818,27 @@
         },
         "responses": {
           "200": {
-            "description": "Saved view id",
+            "description": "Saved view id and updated_at",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/IdBody"
+                  "$ref": "#/components/schemas/SavedView"
                 }
               }
             }
           },
           "401": {
             "description": "Missing or unknown token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The view changed since expected_updated_at",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -12387,6 +12397,24 @@
           }
         }
       },
+      "SavedView": {
+        "type": "object",
+        "description": "`POST /v1/views` receipt. `updated_at` is the clock the next write must send back.",
+        "required": [
+          "id",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "updated_at": {
+            "type": "string",
+            "description": "RFC3339 time of this save. Send it back as `expected_updated_at`."
+          }
+        }
+      },
       "SearchGroup": {
         "type": "object",
         "required": [
@@ -13088,6 +13116,13 @@
           "title"
         ],
         "properties": {
+          "expected_updated_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "RFC3339 `updated_at` this edit was based on.\nJSON `null` means the client saw no saved view.\nOmit the field to merge per key without a version check."
+          },
           "id": {
             "type": [
               "string",
@@ -13114,7 +13149,8 @@
                 "type": "null"
               },
               {
-                "$ref": "#/components/schemas/FreeObject"
+                "$ref": "#/components/schemas/FreeObject",
+                "description": "Top-level keys replace those keys in the stored view.\nA JSON null removes that key. Keys left out stay as stored."
               }
             ]
           },
@@ -13419,7 +13455,8 @@
           "title",
           "pane",
           "position",
-          "state"
+          "state",
+          "updated_at"
         ],
         "properties": {
           "id": {
@@ -13441,6 +13478,10 @@
           },
           "type": {
             "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "description": "RFC3339 time of the last saved view state."
           }
         }
       }

@@ -100,6 +100,14 @@ pub struct IdBody {
     pub id: Uuid,
 }
 
+/// `POST /v1/views` receipt. `updated_at` is the clock the next write must send back.
+#[derive(Serialize, ToSchema)]
+pub struct SavedView {
+    pub id: Uuid,
+    /// RFC3339 time of this save. Send it back as `expected_updated_at`.
+    pub updated_at: String,
+}
+
 #[derive(Serialize, ToSchema)]
 pub struct SessionUser {
     pub email: String,
@@ -342,6 +350,8 @@ pub struct WorkspaceView {
     pub pane: String,
     pub position: i32,
     pub state: FreeObject,
+    /// RFC3339 time of the last saved view state.
+    pub updated_at: String,
 }
 
 #[derive(Serialize, ToSchema)]

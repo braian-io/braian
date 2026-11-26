@@ -19,9 +19,9 @@ use braian_model::{AttributeId, AttributeKind, DefinitionSet, Object, ObjectId, 
 use braian_search::SearchQuery;
 use braian_store::{
     Actor, BatchKind, HistoryEntry, ObjectOp, ObjectProjection, ProposalLock, ProposalRow,
-    ProposalWrite, Store, WorkspaceStateWrite, WriteReceipt,
+    ProposalWrite, Store, ViewWrite, WorkspaceStateWrite, WriteReceipt,
 };
-use chrono::{DateTime, Utc};
+use chrono::DateTime;
 use futures::stream;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
@@ -2998,23 +2998,7 @@ async fn put_workspace_state(
         ));
     }
     let environment = layout_environment(body.environment.as_deref());
-    let expected = match body.expected_updated_at {
-        None => None,
-        Some(None) => Some(None),
-        Some(Some(raw)) => {
-            if DateTime::parse_from_rfc3339(&raw)
-                .map(|stamp| stamp.with_timezone(&Utc))
-                .is_err()
-            {
-                return Err(Problem::new(
-                    StatusCode::BAD_REQUEST,
-                    "expected_updated_at",
-                    "expected_updated_at must be an RFC3339 timestamp",
-                ));
-            }
-            Some(Some(raw))
-        }
-    };
+    let expected = parse_expected_updated_at(body.expected_updated_at)?;
     let written = state
         .store
         .put_workspace_state(owner, &environment, id, &body.document, expected)
@@ -3185,7 +3169,10 @@ async fn save_view(
             "layout is locked",
         ));
     }
-    let mut view_state = body.state.unwrap_or(json!({}));
+    let mut view_state = match body.state {
+        Some(Value::Object(map)) => Value::Object(map),
+        _ => json!({}),
+    };
     if let Ok(cached) = state.models.get(&state.store).await {
         braian_model::translate_view_state(&mut view_state, &cached.defs);
         braian_model::sanitize_view_table_prefs(&body.r#type, &mut view_state, &cached.defs)
@@ -3197,10 +3184,13 @@ async fn save_view(
                 )
             })?;
     }
-    braian_model::strip_ephemeral_table_search(&body.r#type, &mut view_state);
-    state
+    // Do not invent a `table` key. A catalog-only patch must not replace the
+    // stored table. Filter text is still dropped when the patch carries `table`.
+    strip_view_state_patch(&body.r#type, &mut view_state);
+    let expected = parse_expected_updated_at(body.expected_updated_at)?;
+    let written = state
         .store
-        .save_view(
+        .merge_view(
             id,
             body.workspace_id,
             &body.r#type,
@@ -3208,10 +3198,57 @@ async fn save_view(
             &body.pane.unwrap_or_else(|| "main".into()),
             body.position.unwrap_or(0),
             &view_state,
+            expected,
         )
         .await
         .map_err(store_status)?;
-    Ok(Json(json!({ "id": id })))
+    let ViewWrite::Saved(updated) = written else {
+        return Err(Problem::new(
+            StatusCode::CONFLICT,
+            "stale_view",
+            "the view changed since expected_updated_at",
+        ));
+    };
+    Ok(Json(json!({
+        "id": id,
+        "updated_at": updated.to_rfc3339(),
+    })))
+}
+
+/// `None` is an omitted field. `Some(None)` is a present JSON null ("I saw no row").
+fn parse_expected_updated_at(
+    value: Option<Option<String>>,
+) -> Result<Option<Option<String>>, Problem> {
+    match value {
+        None => Ok(None),
+        Some(None) => Ok(Some(None)),
+        Some(Some(raw)) => {
+            if DateTime::parse_from_rfc3339(&raw).is_err() {
+                return Err(Problem::new(
+                    StatusCode::BAD_REQUEST,
+                    "expected_updated_at",
+                    "expected_updated_at must be an RFC3339 timestamp",
+                ));
+            }
+            Ok(Some(Some(raw)))
+        }
+    }
+}
+
+/// Drop ephemeral search from a view-state patch without creating keys the
+/// client did not send. `strip_ephemeral_table_search` inserts `table` when it
+/// is missing, which would replace a stored table during a per-key merge.
+fn strip_view_state_patch(view_type: &str, state: &mut Value) {
+    if view_type != "object_table" && view_type != "table" {
+        return;
+    }
+    let Some(object) = state.as_object_mut() else {
+        return;
+    };
+    object.remove("filter");
+    if let Some(table) = object.get_mut("table").and_then(Value::as_object_mut) {
+        table.insert("filter".into(), Value::String(String::new()));
+    }
 }
 
 async fn list_view_types(
@@ -7798,8 +7835,17 @@ pub(crate) struct ViewBody {
     title: String,
     pane: Option<String>,
     position: Option<i32>,
+    /// Top-level keys replace those keys in the stored view.
+    /// A JSON null removes that key. Keys left out stay as stored.
     #[schema(value_type = Option<crate::http_schema::FreeObject>)]
     state: Option<Value>,
+    /// RFC3339 `updated_at` this edit was based on.
+    /// JSON `null` means the client saw no saved view.
+    /// Omit the field to merge per key without a version check.
+    // `Option` reads JSON null as absent. The helper wraps a present null as `Some(None)`.
+    #[serde(default, deserialize_with = "deserialize_present_option")]
+    #[schema(value_type = Option<String>)]
+    expected_updated_at: Option<Option<String>>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -7956,6 +8002,19 @@ mod tests {
             stamped.expected_updated_at,
             Some(Some(ref value)) if value == "2026-01-01T00:00:00Z"
         ));
+    }
+
+    #[test]
+    fn view_expected_updated_at_null_is_not_an_omitted_field() {
+        let absent: ViewBody =
+            serde_json::from_str(r#"{"workspace_id":"018f2000-0000-7000-8000-000000000003","type":"graph","title":"Graph"}"#)
+                .unwrap();
+        assert!(absent.expected_updated_at.is_none());
+        let empty: ViewBody = serde_json::from_str(
+            r#"{"workspace_id":"018f2000-0000-7000-8000-000000000003","type":"graph","title":"Graph","expected_updated_at":null}"#,
+        )
+        .unwrap();
+        assert!(matches!(empty.expected_updated_at, Some(None)));
     }
 
     #[test]

@@ -97,6 +97,7 @@ import { healAgentDockLayout } from './agent-layout-migrate'
 import { decideAgentToggle } from './agent-chat-toggle'
 import { captureAgentOpener, consumeAgentFocusRelease, restoreAgentFocus, type AgentFocusRequest } from './agent-focus'
 import { finishLayoutSave, noteLayoutEdit, saveVersionedLayout } from './layout-save'
+import { createViewKeySaver, saveViewChange, viewStateRecord } from './view-state-save'
 import { acknowledgeWriteError } from './write-status'
 import { healDataModelWorkspace, isDataModelWorkspace, isKnownViewType, layoutHasMissingViews, migrateLegacyModelViews } from './model-workspace-migrate'
 import { ModelRevisionReloadBanner, emitModelLiveEvent } from './model-reload-banner'
@@ -159,7 +160,7 @@ import {
   ProposalListView,
 } from './panes'
 
-type View = { id: string; type: string; title: string; pane?: string; position?: number; state: Json }
+type View = { id: string; type: string; title: string; pane?: string; position?: number; state: Json; updated_at?: string | null }
 type ListedWorkspace = { id: string; name: string; locked?: boolean; share_token?: string | null; layout?: Json | null; owner_id?: string }
 type Workspace = { id: string; name: string; locked: boolean; share_token?: string | null; layout: Json; owner_id?: string; catalog?: { catalogId?: string } | null; views?: View[] | null }
 
@@ -527,7 +528,10 @@ export function Shell() {
 
   const workspace = useQuery({
     queryKey: ['workspace', workspaceId],
-    queryFn: () => api.get('/v1/workspaces/{id}', { params: { path: { id: workspaceId ?? '' } } }),
+    queryFn: async (): Promise<Workspace> => {
+      const loaded = await api.get('/v1/workspaces/{id}', { params: { path: { id: workspaceId ?? '' } } })
+      return loaded as Workspace
+    },
     enabled: Boolean(workspaceId),
   })
   const { settled: objectFetchSettled } = useObjectLand(objectId)
@@ -851,6 +855,79 @@ export function Shell() {
   })
   const workspaceRef = useRef(workspace.data)
   workspaceRef.current = workspace.data
+  const refetchView = async (workspaceId: string, viewId: string) => {
+    const fresh = await api.get('/v1/workspaces/{id}', { params: { path: { id: workspaceId } } })
+    const found = viewRows(fresh.views).find((view) => view.id === viewId)
+    return { state: viewStateRecord(found?.state), updated_at: found?.updated_at ?? null }
+  }
+  const mergeViewRef = useRef<(view: View, workspaceId: string, next: Json, previous?: View) => Promise<void>>(async () => {})
+  mergeViewRef.current = async (view, workspaceId, next, previous) => {
+    await saveViewChange({
+      id: view.id,
+      workspaceId,
+      type: view.type,
+      title: view.title,
+      pane: view.pane ?? 'center',
+      position: view.position ?? 0,
+      baseState: viewStateRecord(previous?.state ?? view.state),
+      nextState: viewStateRecord(next),
+      updatedAt: previous?.updated_at ?? view.updated_at,
+      previous: previous
+        ? {
+            type: previous.type,
+            title: previous.title,
+            pane: previous.pane ?? 'center',
+            position: previous.position ?? 0,
+          }
+        : undefined,
+      post: (body) => api.post('/v1/views', {
+        body: {
+          id: body.id,
+          workspace_id: body.workspace_id,
+          type: body.type,
+          title: body.title,
+          pane: body.pane,
+          position: body.position,
+          state: freeObject(body.state),
+          ...(body.expected_updated_at !== undefined ? { expected_updated_at: body.expected_updated_at } : {}),
+        },
+      }),
+      refetch: () => refetchView(workspaceId, view.id),
+      isConflict: (error) => error instanceof ApiError && error.status === 409,
+      onConflict: () => acknowledgeWriteError(409),
+    })
+  }
+  const viewKeySaver = useRef<ReturnType<typeof createViewKeySaver> | null>(null)
+  if (!viewKeySaver.current) {
+    viewKeySaver.current = createViewKeySaver({
+      post: (body) => api.post('/v1/views', {
+        body: {
+          id: body.id,
+          workspace_id: body.workspace_id,
+          type: body.type,
+          title: body.title,
+          pane: body.pane,
+          position: body.position,
+          state: freeObject(body.state),
+          ...(body.expected_updated_at !== undefined ? { expected_updated_at: body.expected_updated_at } : {}),
+        },
+      }),
+      refetch: (viewId) => refetchView(workspaceRef.current?.id ?? '', viewId),
+      isConflict: (error) => error instanceof ApiError && error.status === 409,
+      onConflict: () => acknowledgeWriteError(409),
+      onError: (error) => reportWriteError(error),
+      onSaved: (viewId, updatedAt) => {
+        const surface = workspaceRef.current
+        if (!surface) return
+        const views = viewRows(surface.views).map((view) => (
+          view.id === viewId ? { ...view, updated_at: updatedAt } : view
+        ))
+        const next = { ...surface, views }
+        workspaceRef.current = next
+        queryClient.setQueryData(['workspace', surface.id], next)
+      },
+    })
+  }
 
   useEffect(() => {
     const surface = workspace.data
@@ -929,6 +1006,8 @@ export function Shell() {
           const state = freeObject({ ...found.state, catalogOverride: { catalogId } })
           delete (state as { catalog?: unknown }).catalog
           const updated: View = { ...found, state }
+          // Legacy `catalog` is removed with a null so the merge drops it.
+          // Only these keys are sent; a fast switch keeps the latest of each.
           const nextViews = viewRows(surfaceNow.views).map((view) =>
             view.id === found.id
               ? {
@@ -947,19 +1026,15 @@ export function Shell() {
           const nextSurface = { ...surfaceNow, views: nextViews }
           workspaceRef.current = nextSurface
           queryClient.setQueryData(['workspace', surfaceNow.id], nextSurface)
-          void api.post('/v1/views', {
-            body: {
-              id: found.id,
-              workspace_id: surfaceNow.id,
-              type: found.type,
-              title: found.title,
-              pane: found.pane ?? 'center',
-              position: found.position ?? 0,
-              state,
-            },
-          }).then(() => queryClient.invalidateQueries({ queryKey: ['workspace', surfaceNow.id] })).catch((reason: unknown) => {
-            reportWriteError(reason)
-          })
+          viewKeySaver.current?.schedule({
+            id: found.id,
+            workspaceId: surfaceNow.id,
+            type: found.type,
+            title: found.title,
+            pane: found.pane ?? 'center',
+            position: found.position ?? 0,
+            updatedAt: found.updated_at,
+          }, { catalogOverride: { catalogId }, catalog: null })
           return
         }
         // Catalog is the explicit change. Send the shared layout, not a healed
@@ -1524,17 +1599,7 @@ export function Shell() {
           found = created
         } else {
           const updated: View = { ...found, state: freeObject({ ...found.state, list_key: key }), title }
-          await api.post('/v1/views', {
-            body: {
-              id: updated.id,
-              workspace_id: surfaceNow.id,
-              type: updated.type,
-              title,
-              pane: updated.pane ?? 'right',
-              position: updated.position ?? 0,
-              state: freeObject(updated.state),
-            },
-          })
+          await mergeViewRef.current({ ...found, title }, surfaceNow.id, updated.state, found)
           views = views.map((view) => (view.id === found!.id ? updated : view))
           found = updated
         }
@@ -1652,7 +1717,16 @@ export function Shell() {
     healPendingFor.current = current.id
     setLayoutHealPending(true)
     void persistWorkspaceMigration(current, patch, {
-      postView: (body) => api.post('/v1/views', { body }),
+      postView: async (body) => {
+        const existing = viewRows(workspaceRef.current?.views).find((view) => view.id === body.id)
+        if (!existing) return api.post('/v1/views', { body })
+        await mergeViewRef.current(
+          { ...existing, type: body.type, title: body.title, pane: body.pane, position: body.position },
+          body.workspace_id,
+          body.state,
+          existing,
+        )
+      },
       postWorkspace: (body) => api.post('/v1/workspaces', { body }),
       putPersonalLayout: async (layout) => {
         if (serverHasPersonal) return
@@ -2073,17 +2147,7 @@ export function Shell() {
     if (!target) return
     const nextState = applyTypeSource(target.state, type)
     const updated: View = { ...target, state: freeObject(nextState) }
-    await api.post('/v1/views', {
-      body: {
-        id: updated.id,
-        workspace_id: surfaceNow.id,
-        type: updated.type,
-        title: updated.title,
-        pane: updated.pane ?? 'center',
-        position: updated.position ?? 0,
-        state: freeObject(updated.state),
-      },
-    })
+    await mergeViewRef.current(target, surfaceNow.id, nextState)
     views = views.map((view) => (view.id === updated.id ? updated : view))
     const nextSurface = {
       ...surfaceNow,
@@ -2143,17 +2207,7 @@ export function Shell() {
       : undefined
     const nextState = applyPeerSource(target.state, source.id, kind, linkType || fallback)
     const updated: View = { ...target, state: freeObject(nextState) }
-    await api.post('/v1/views', {
-      body: {
-        id: updated.id,
-        workspace_id: surfaceNow.id,
-        type: updated.type,
-        title: updated.title,
-        pane: updated.pane ?? 'center',
-        position: updated.position ?? 0,
-        state: freeObject(updated.state),
-      },
-    })
+    await mergeViewRef.current(target, surfaceNow.id, nextState)
     views = views.map((view) => (view.id === updated.id ? updated : view))
     const nextSurface = {
       ...surfaceNow,
@@ -2458,17 +2512,7 @@ export function Shell() {
         }
         if (tree && structureTreeViewNeedsBackfill(tree, structureKey, defs)) {
           const state = freeObject(mergeStructureTreeViewState(tree, structureKey, defs))
-          await api.post('/v1/views', {
-            body: {
-              id: tree.id,
-              workspace_id: surfaceNow.id,
-              type: tree.type,
-              title: tree.title,
-              pane: tree.pane ?? 'center',
-              position: tree.position ?? 0,
-              state,
-            },
-          })
+          await mergeViewRef.current(tree, surfaceNow.id, state)
           const updated: View = { ...tree, state }
           tree = updated
           views = views.map((view) => (view.id === updated.id ? updated : view))
