@@ -3682,8 +3682,44 @@ async fn manual_selection_members_reject_a_dynamic_selection_and_the_wrong_type(
         Some(&format!(r#"{{"object_ids":["{first_id}"]}}"#)),
     )
     .await;
-    assert_eq!(status, StatusCode::FORBIDDEN, "{agent}");
-    assert_eq!(agent["code"], "needs_approval", "{agent}");
+    assert_eq!(status, StatusCode::ACCEPTED, "{agent}");
+    assert_eq!(agent["needs_approval"], true, "{agent}");
+    assert_eq!(agent["source"], "agent", "{agent}");
+    assert!(
+        agent["title"]
+            .as_str()
+            .unwrap_or("")
+            .contains("Hand picked"),
+        "{agent}"
+    );
+    let proposal_id = agent["proposal_id"].as_str().expect("proposal");
+    let (status, _, pending) = call(
+        &app,
+        "GET",
+        &format!("/v1/proposals/{proposal_id}"),
+        None,
+        &headers,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{pending}");
+    assert_eq!(pending["status"], "open", "{pending}");
+    assert_eq!(pending["rows"][0]["status"], "pending", "{pending}");
+    let (status, _, untouched) = call(
+        &app,
+        "GET",
+        &format!("/v1/assortments/{id}"),
+        None,
+        &headers,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{untouched}");
+    assert_eq!(
+        untouched["member_ids"].as_array().unwrap().len(),
+        0,
+        "{untouched}"
+    );
 
     let (status, _, added) = call(
         &app,
@@ -3757,6 +3793,246 @@ async fn manual_selection_members_reject_a_dynamic_selection_and_the_wrong_type(
         rule_remove["detail"], "only a manual selection can add or remove objects",
         "{rule_remove}"
     );
+}
+
+#[tokio::test]
+async fn an_agent_membership_change_is_a_proposal_until_a_person_approves_it() {
+    let (db, app) = app().await;
+    let headers = [("content-type", "application/json")];
+    let (status, _, first) = call(
+        &app,
+        "POST",
+        "/v1/objects",
+        Some(HUMAN),
+        &headers,
+        Some(
+            r#"{"type":"item","groups":{"assortment":"root"},"values":{"sku":"PROP-1","name":{"sv":"Cheddar","en-GB":"Cheddar"}}}"#,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{first}");
+    let first_id = first["id"].as_str().unwrap();
+    let (status, _, second) = call(
+        &app,
+        "POST",
+        "/v1/objects",
+        Some(HUMAN),
+        &headers,
+        Some(
+            r#"{"type":"item","groups":{"assortment":"root"},"values":{"sku":"PROP-2","name":{"sv":"Brie","en-GB":"Brie"}}}"#,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{second}");
+    let second_id = second["id"].as_str().unwrap();
+    let cookie = selection_cookie(&db, &app, "member-proposal@braian.local").await;
+    let signed = [
+        ("cookie", cookie.as_str()),
+        ("content-type", "application/json"),
+    ];
+    let (status, _, saved) = call(
+        &app,
+        "POST",
+        "/v1/assortments",
+        None,
+        &signed,
+        Some(r#"{"name":"Summer cheese","type":"item","kind":"manual","query":{}}"#),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{saved}");
+    let id = saved["id"].as_str().unwrap();
+
+    let (status, _, proposed) = call(
+        &app,
+        "POST",
+        &format!("/v1/assortments/{id}/members"),
+        Some(AGENT),
+        &headers,
+        Some(&format!(
+            r#"{{"object_ids":["{first_id}","{second_id}","{first_id}"]}}"#
+        )),
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{proposed}");
+    assert_eq!(proposed["needs_approval"], true, "{proposed}");
+    assert_eq!(proposed["source"], "agent", "{proposed}");
+    let title = proposed["title"].as_str().unwrap();
+    assert!(title.contains("Summer cheese"), "{title}");
+    assert!(title.contains("Cheddar"), "{title}");
+    assert!(title.contains("Brie"), "{title}");
+    assert!(title.starts_with("Add "), "{title}");
+    let proposal_id = proposed["proposal_id"].as_str().unwrap();
+
+    let (status, _, before) = call(
+        &app,
+        "GET",
+        &format!("/v1/assortments/{id}"),
+        None,
+        &signed,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{before}");
+    assert_eq!(
+        before["member_ids"].as_array().unwrap().len(),
+        0,
+        "{before}"
+    );
+
+    let (status, _, stored) = call(
+        &app,
+        "GET",
+        &format!("/v1/proposals/{proposal_id}"),
+        None,
+        &signed,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{stored}");
+    assert_eq!(stored["title"], title, "{stored}");
+    assert_eq!(stored["rows"][0]["patch"]["op"], "add_members", "{stored}");
+    assert_eq!(stored["rows"][0]["object_key"], title, "{stored}");
+
+    let (status, _, accepted) = call(
+        &app,
+        "POST",
+        &format!("/v1/proposals/{proposal_id}/accept"),
+        None,
+        &signed,
+        Some("{}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{accepted}");
+    let (status, _, added) = call(
+        &app,
+        "GET",
+        &format!("/v1/assortments/{id}"),
+        None,
+        &signed,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{added}");
+    assert_eq!(added["member_ids"].as_array().unwrap().len(), 2, "{added}");
+    assert_eq!(added["query"]["hand"], true, "{added}");
+
+    let (status, _, again) = call(
+        &app,
+        "POST",
+        &format!("/v1/proposals/{proposal_id}/accept"),
+        None,
+        &signed,
+        Some("{}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{again}");
+    let (status, _, once) = call(
+        &app,
+        "GET",
+        &format!("/v1/assortments/{id}"),
+        None,
+        &signed,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{once}");
+    assert_eq!(once["member_ids"].as_array().unwrap().len(), 2, "{once}");
+
+    let (status, _, removal) = call(
+        &app,
+        "DELETE",
+        &format!("/v1/assortments/{id}/members"),
+        Some(AGENT),
+        &headers,
+        Some(&format!(r#"{{"object_ids":["{second_id}"]}}"#)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{removal}");
+    let removal_title = removal["title"].as_str().unwrap();
+    assert!(removal_title.starts_with("Remove "), "{removal_title}");
+    assert!(removal_title.contains("Brie"), "{removal_title}");
+    assert!(removal_title.contains("Summer cheese"), "{removal_title}");
+    let removal_id = removal["proposal_id"].as_str().unwrap();
+    let (status, _, still) = call(
+        &app,
+        "GET",
+        &format!("/v1/assortments/{id}"),
+        None,
+        &signed,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{still}");
+    assert_eq!(still["member_ids"].as_array().unwrap().len(), 2, "{still}");
+
+    let (status, _, _) = call(
+        &app,
+        "POST",
+        &format!("/v1/proposals/{removal_id}/discard"),
+        None,
+        &signed,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _, kept) = call(
+        &app,
+        "GET",
+        &format!("/v1/assortments/{id}"),
+        None,
+        &signed,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{kept}");
+    assert_eq!(kept["member_ids"].as_array().unwrap().len(), 2, "{kept}");
+
+    let (status, _, via_tool) = call(
+        &app,
+        "POST",
+        "/v1/operations/assortment.remove_members",
+        Some(AGENT),
+        &headers,
+        Some(&format!(r#"{{"id":"{id}","object_ids":["{first_id}"]}}"#)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{via_tool}");
+    assert_eq!(via_tool["needs_approval"], true, "{via_tool}");
+    let tool_id = via_tool["proposal_id"].as_str().unwrap();
+    let (status, _, applied) = call(
+        &app,
+        "POST",
+        &format!("/v1/proposals/{tool_id}/accept"),
+        None,
+        &signed,
+        Some("{}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{applied}");
+    let (status, _, left) = call(
+        &app,
+        "GET",
+        &format!("/v1/assortments/{id}"),
+        None,
+        &signed,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{left}");
+    assert_eq!(left["member_ids"].as_array().unwrap().len(), 1, "{left}");
+    assert_eq!(left["member_ids"][0], second_id, "{left}");
+
+    let (status, _, human) = call(
+        &app,
+        "DELETE",
+        &format!("/v1/assortments/{id}/members"),
+        None,
+        &signed,
+        Some(&format!(r#"{{"object_ids":["{second_id}"]}}"#)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{human}");
+    assert_eq!(human["found"], 0, "{human}");
 }
 
 #[tokio::test]

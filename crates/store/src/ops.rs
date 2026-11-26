@@ -45,6 +45,13 @@ pub enum ProposalWrite {
     AssortmentDelete {
         id: Uuid,
     },
+    /// Add or remove hand-picked objects. `add` also marks the selection as
+    /// hand-filled when it still carries a rule. Repeating an id changes nothing.
+    AssortmentMembers {
+        id: Uuid,
+        add: bool,
+        object_ids: Vec<Uuid>,
+    },
     Definitions {
         defs: DefinitionSet,
         purge: Box<braian_model::DataPurge>,
@@ -983,6 +990,61 @@ impl Store {
                     &[&id, &name, &query],
                 )
                 .await?;
+                WriteReceipt {
+                    batch_id: BatchId::from_uuid(Uuid::nil()),
+                    last_seq: 0,
+                    versions: Vec::new(),
+                }
+            }
+            ProposalWrite::AssortmentMembers {
+                id,
+                add,
+                object_ids,
+            } => {
+                let kind: Option<String> = tx
+                    .query_opt(
+                        "SELECT kind FROM assortments WHERE id = $1 AND deleted_at IS NULL",
+                        &[&id],
+                    )
+                    .await?
+                    .map(|row| row.get(0));
+                if kind.as_deref() != Some("manual") {
+                    return Err(Error::Data(
+                        "only a manual selection can add or remove objects".into(),
+                    ));
+                }
+                if add {
+                    if !object_ids.is_empty() {
+                        tx.execute(
+                            "INSERT INTO assortment_members (assortment_id, object_id)
+                             SELECT $1, object_id FROM unnest($2::uuid[]) AS object_id
+                             ON CONFLICT (assortment_id, object_id) DO NOTHING",
+                            &[&id, &object_ids],
+                        )
+                        .await?;
+                    }
+                    // Same hand-only rewrite a direct add performs, in this transaction.
+                    tx.execute(
+                        "UPDATE assortments
+                         SET query = '{\"hand\": true}'::jsonb
+                         WHERE id = $1
+                           AND NOT (
+                             COALESCE(query->>'hand', '') = 'true'
+                             AND NOT (query ? 'group')
+                             AND NOT (query ? 'labels')
+                             AND NOT (query ? 'filter')
+                           )",
+                        &[&id],
+                    )
+                    .await?;
+                } else if !object_ids.is_empty() {
+                    tx.execute(
+                        "DELETE FROM assortment_members
+                         WHERE assortment_id = $1 AND object_id = ANY($2::uuid[])",
+                        &[&id, &object_ids],
+                    )
+                    .await?;
+                }
                 WriteReceipt {
                     batch_id: BatchId::from_uuid(Uuid::nil()),
                     last_seq: 0,

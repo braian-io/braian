@@ -188,9 +188,9 @@ export interface paths {
         /** Members of a selection. Dynamic selections are re-evaluated through search. Manual selections return the objects added by hand. */
         get: operations["assortment_members"];
         put?: never;
-        /** Add objects to a manual selection. A dynamic selection is rejected. */
+        /** Add objects to a manual selection. A dynamic selection is rejected. An agent or import files a proposal and changes nothing. */
         post: operations["add_assortment_members"];
-        /** Remove objects from a manual selection. A dynamic selection is rejected. */
+        /** Remove objects from a manual selection. A dynamic selection is rejected. An agent or import files a proposal and changes nothing. */
         delete: operations["remove_assortment_members"];
         options?: never;
         head?: never;
@@ -3988,6 +3988,15 @@ export interface operations {
                     "application/json": components["schemas"]["AssortmentMemberIds"];
                 };
             };
+            /** @description Filed as a suggestion. An agent or import does not change the selection. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Suggestion"];
+                };
+            };
             /** @description Missing or unknown token */
             401: {
                 headers: {
@@ -4022,6 +4031,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssortmentMemberIds"];
+                };
+            };
+            /** @description Filed as a suggestion. An agent or import does not change the selection. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Suggestion"];
                 };
             };
             /** @description Missing or unknown token */
