@@ -294,7 +294,10 @@ Action labels and muted labels stay readable in both themes:
   that stays at or above 4.5:1 on both the surface and the panel backgrounds.
 
 The rules apply to the visible labels, not only to token values: hovering Save,
-Discard, Delete, or Discard all must not lower the contrast below 4.5:1.
+Discard, Delete, or Discard all must not lower the contrast below 4.5:1. The Detail
+delete icon uses the lighter danger text token at rest and, in the light theme, the
+filled danger hover colour on its tinted hover background so the composited contrast
+stays at or above 4.5:1.
 
 ## Related
 
