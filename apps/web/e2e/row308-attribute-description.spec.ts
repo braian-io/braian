@@ -96,7 +96,14 @@ test.describe('attribute description (row 308)', () => {
     await expect(reloaded.locator('[data-key="brand"]').locator('[data-column="description"]')).toContainText(helpText)
 
     await openProductDetail(page)
-    await expect(page.getByTestId('detail-field-desc-brand')).toContainText(helpText)
+    const brandLabel = page.getByTestId('object-detail').locator('.field').filter({
+      has: page.locator('label', { hasText: /^Brand\b/ }),
+    }).locator('label').first()
+    const brandTip = page.getByTestId('detail-field-desc-brand')
+    await expect(brandTip).not.toBeVisible()
+    await brandLabel.hover()
+    await expect(brandTip).toBeVisible({ timeout: 5_000 })
+    await expect(brandTip).toContainText(helpText)
 
     const clearedTable = await openProductAttributes(page)
     await clearedTable.getByTestId('quick-filter').fill('brand')

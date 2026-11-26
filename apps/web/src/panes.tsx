@@ -35,6 +35,7 @@ import { batchGetObjects } from './batch'
 import { MetaChip, optionLabel, statusTone, typeLabel } from './chips'
 import { BulkWriteConfirm } from './bulk-write'
 import { Button } from './components/ui/button'
+import { AttributeFieldLabel } from './attribute-field-label'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './components/ui/tooltip'
 import { Dialog, DialogContent } from './components/ui/dialog'
 import { Slider } from './components/ui/slider'
@@ -2977,6 +2978,7 @@ function NewObject({
     autoFocus: field.key === 'number',
     options: field.options,
     multiline: field.multiline,
+    fieldDescription: field.fieldDescription,
   })
   const fields = fieldGroups.primary.map(dialogField)
   if (showType) {
@@ -3401,12 +3403,9 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
     return (
       <div key={key} className={owner ? 'field locked' : 'field'} data-testid={owner ? 'locked-field' : undefined}>
         <div className="field-label-line">
-          <label>{fieldLabel}{owner ? ` · ${copy.ownedBy} ${owner}` : ''}</label>
-          {fieldDescription ? (
-            <span className="detail-field-help" data-testid={`detail-field-desc-${key}`} title={fieldDescription}>
-              {fieldDescription}
-            </span>
-          ) : null}
+          <AttributeFieldLabel description={fieldDescription} descTestId={`detail-field-desc-${key}`}>
+            {fieldLabel}{owner ? ` · ${copy.ownedBy} ${owner}` : ''}
+          </AttributeFieldLabel>
         </div>
         <div className={controlClass} data-testid={`detail-field-control-${key}`}>
           {!fieldKnownInPreview(key) ? (
