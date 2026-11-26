@@ -47,8 +47,8 @@ import {
   takeQueuedOpenTypeView,
 } from './open-type-view-queue'
 import { copy } from './i18n'
-import { agentDockShare, applyLayoutCommand, focusView, migrateLayout, views as layoutViews, type LayoutDoc, type Place } from './layout'
-import { cloneObjectTableView, objectTableTemplateForType, objectTableViewForType } from './open-type-view'
+import { agentDockShare, applyLayoutCommand, findTabs, focusView, migrateLayout, views as layoutViews, type LayoutDoc, type Place } from './layout'
+import { cloneObjectTableView, draftTypeRef, objectTableForTypeToken, objectTableTemplateForType, objectTableViewForType } from './open-type-view'
 import { ConsequenceHost } from './consequence'
 import { ModelDraftHost } from './model-draft-ui'
 import { ModelTableBeforeUnload } from './model-table-beforeunload'
@@ -253,6 +253,8 @@ export function Shell() {
   const [workspaceId, setWorkspaceId] = useState<string | null>(null)
   const [group, setGroup] = useState<string | null>(null)
   const [objectId, setObjectId] = useState<string | null>(null)
+  /** One-shot object to keep when opening a draft switches the active list. */
+  const detailHoldRef = useRef<string | null>(null)
   const [objectAllowDeleted, setObjectAllowDeleted] = useState(false)
   const [listType, setListType] = useState<string | null>(null)
   const [proposalId, setProposalId] = useState<string | null>(null)
@@ -549,6 +551,7 @@ export function Shell() {
     detailListViews,
     Boolean(doc && workspace.data && workspace.data.id === workspaceId),
     setObjectId,
+    detailHoldRef,
   )
   const feedbackEnabled = me.data?.feedback === true
   const urlCatalogId = workspaceCatalogRef(workspace.data)?.catalogId || MASTER_CATALOG_ID
@@ -988,19 +991,43 @@ export function Shell() {
   }, [queryClient])
 
   useEffect(() => {
+    const holdObject = (id: string) => {
+      detailHoldRef.current = id
+    }
+    const focusTable = (viewId: string, objectId: string) => {
+      const current = docRef.current
+      if (!current) return
+      const open = layoutViews(current.layout).includes(viewId)
+      if (open) {
+        const next = focusView(current, viewId)
+        if (next.focus !== current.focus) holdObject(objectId)
+        if (next !== current) {
+          docRef.current = next
+          setDoc(next)
+        }
+      } else {
+        holdObject(objectId)
+        applyRef.current('ui.open_view', { id: viewId })
+      }
+      dispatchUi('ui.select', { id: objectId, view: viewId })
+    }
     const onOpen = (event: Event) => {
-      const detail = (event as CustomEvent<{ objectId?: string | null; viewType?: string }>).detail
-      if (detail?.objectId) setObjectId(detail.objectId)
-      const surface = workspace.data
+      const detail = (event as CustomEvent<{ objectId?: string | null; viewType?: string; typeKey?: string; typeId?: string }>).detail
+      const objectId = detail?.objectId ?? null
+      if (objectId) {
+        setObjectAllowDeleted(false)
+        setObjectId(objectId)
+      }
+      const surface = workspaceRef.current
       const current = docRef.current
       if (!surface || !current) return
       const wanted = detail?.viewType || 'object_table'
       const rows = viewRows(surface.views)
-      const view = rows.find((item) => item.type === wanted) ?? rows.find((item) => item.type === 'object_table')
-      if (!view) return
       // A selection draft lives in the Selections view, so re-open it if the
       // user closed the tab. Other draft links only focus a view already open.
       if (wanted === 'assortment_list') {
+        const view = rows.find((item) => item.type === 'assortment_list')
+        if (!view) return
         // Re-open the tab if it was closed. If it is already open, skip
         // ui.open_view: that focuses the pane on the next frame and steals
         // the name field in the selection draft.
@@ -1011,11 +1038,58 @@ export function Shell() {
         }
         return
       }
-      setDoc(focusView(current, view.id))
+      if (wanted !== 'object_table' || !objectId) {
+        const view = rows.find((item) => item.type === wanted) ?? rows.find((item) => item.type === 'object_table')
+        if (view) setDoc(focusView(current, view.id))
+        return
+      }
+      const hinted = { id: detail?.typeId, key: detail?.typeKey }
+      const focusMatchedTable = (
+        surfaceNow: NonNullable<typeof workspaceRef.current>,
+        docNow: NonNullable<typeof docRef.current>,
+        type: { id: string; key: string },
+      ) => {
+        const openIds = layoutViews(docNow.layout)
+        const match = objectTableForTypeToken(viewRows(surfaceNow.views), type, openIds)
+        if (match && openIds.includes(match.id)) {
+          focusTable(match.id, objectId)
+          return true
+        }
+        if (match) {
+          holdObject(objectId)
+          applyRef.current('ui.open_view', { id: match.id })
+          dispatchUi('ui.select', { id: objectId, view: match.id })
+          return true
+        }
+        const typeId = type.id || typeNames(queryClient.getQueryData<Json>(['definitions'])).find((item) => item.key === type.key)?.id
+        if (!typeId) return false
+        holdObject(objectId)
+        openTypeViewRef.current(typeId)
+        return true
+      }
+      const defsNow = () => queryClient.getQueryData<Json>(['definitions'])
+      const cached = queryClient.getQueryData<Json>(['object', objectId])
+      const known = draftTypeRef(cached, hinted, typeNames(defsNow()))
+      // Focus before the click returns when the type is already known. A later
+      // layout change lands during the dock animation and covers Detail's Save.
+      if (known && focusMatchedTable(surface, current, known)) return
+      void (async () => {
+        try {
+          const body = await api.get('/v1/objects/{id}', { params: { path: { id: objectId } } })
+          queryClient.setQueryData(['object', objectId], body)
+          const type = draftTypeRef(body, hinted, typeNames(defsNow()))
+          const surfaceNow = workspaceRef.current
+          const docNow = docRef.current
+          if (!surfaceNow || !docNow || !type) return
+          focusMatchedTable(surfaceNow, docNow, type)
+        } catch (reason) {
+          reportWriteError(reason)
+        }
+      })()
     }
     window.addEventListener('braian-open-draft', onOpen)
     return () => window.removeEventListener('braian-open-draft', onOpen)
-  }, [workspace.data])
+  }, [queryClient])
 
   useEffect(() => {
     const onOpen = (event: Event) => {
@@ -2150,11 +2224,18 @@ export function Shell() {
       const current = docRef.current
       if (!current) return
       if (layoutViews(current.layout).includes(found.id)) {
-        let next = current
-        if (current.focus !== found.id) next = { ...current, focus: found.id }
-        if (next !== current) commitDoc(next)
-        window.dispatchEvent(new CustomEvent('braian-focus-agent-input', { detail: { runId: run.id } }))
-        return
+        const pane = findTabs(current.layout, found.id)
+        const sharesPane = Boolean(pane && pane.views.some((id) => id !== found.id))
+        // An agent that already has its own dock pane only takes focus.
+        // One sitting in another tab group is pulled out below, without
+        // reordering the tabs it leaves behind.
+        if (!sharesPane) {
+          let next = current
+          if (current.focus !== found.id) next = { ...current, focus: found.id }
+          if (next !== current) commitDoc(next)
+          window.dispatchEvent(new CustomEvent('braian-focus-agent-input', { detail: { runId: run.id } }))
+          return
+        }
       }
       const result = applyLayoutCommand(
         current,

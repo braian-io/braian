@@ -39,6 +39,8 @@ export function useDetailFollow(
   viewList: readonly DetailFollowView[],
   ready: boolean,
   setObjectId: (update: (current: string | null) => string | null) => void,
+  /** Set before a draft open that changes the active list. Consumed once. */
+  holdRef?: { current: string | null },
 ) {
   const previousList = useRef<string | null>(null)
   const boundList = useRef<string | null>(null)
@@ -53,9 +55,23 @@ export function useDetailFollow(
       boundList.current = null
       return
     }
-    if (boundList.current === listId) return
+    const held = holdRef?.current ?? null
+    if (boundList.current === listId) {
+      // The open did not switch lists. Drop the hold so the next switch follows that list.
+      if (held && holdRef) holdRef.current = null
+      return
+    }
+    const previousBound = boundList.current
     boundList.current = listId
-    setObjectId((current) => detailForSelection(current, readSelection(listId)))
-  }, [listId, setObjectId])
+    if (holdRef) holdRef.current = null
+    setObjectId((current) => {
+      if (held) return held
+      const selection = readSelection(listId)
+      // Reload restores the object from the address before the table has a row.
+      // Keep it on the first bind. Switching to a list with no row still clears.
+      if (previousBound == null && current && selection.length === 0) return current
+      return detailForSelection(current, selection)
+    })
+  }, [listId, doc, setObjectId, holdRef])
   return listId
 }

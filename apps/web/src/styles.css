@@ -984,6 +984,8 @@ button.agent-bg-indicator strong { font-variant-numeric: tabular-nums; }
 .pane-body > .table-wrap,
 .pane-body > .graph-wrap,
 .pane-body > .detail-form { overflow: hidden; }
+/* Basis 0 so a tall Detail form fills the pane instead of growing past it and clipping Save. */
+.pane-body > .detail-form { flex: 1 1 0; }
 .pane-body:has(> .table-wrap[data-testid='agents-table']) {
   overflow: auto;
 }
@@ -1467,7 +1469,7 @@ button.filter-chip:hover:not(.on) {
 .form, .detail-form { display: flex; flex-direction: column; gap: var(--space-2); }
 .detail-form { min-width: 0; width: 100%; }
 .detail-scroll {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-height: 0;
   min-width: 0;
   overflow-x: hidden;
@@ -1482,9 +1484,12 @@ button.filter-chip:hover:not(.on) {
 .detail-title-row {
   display: flex;
   align-items: flex-start;
+  flex-wrap: nowrap;
   gap: var(--space-2);
   min-width: 0;
 }
+.detail-title-row > button { flex: none; white-space: nowrap; }
+.detail-form > .draft-bar { position: relative; z-index: 2; flex: 0 0 auto; }
 .detail-title-row .detail-title { flex: 1 1 auto; min-width: 0; }
 .detail-title-row .detail-delete { flex: none; margin-top: var(--space-0_5); }
 .icon-btn.icon-danger:hover,

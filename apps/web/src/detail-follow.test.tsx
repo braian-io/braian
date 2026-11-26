@@ -94,6 +94,30 @@ describe('activeListOf', () => {
   })
 })
 
+describe('restored object', () => {
+  it('keeps a restored object when the first list has no selection', () => {
+    render(<Harness current={doc('products')} />)
+    expect(screen.getByTestId('detail').textContent).toBe('old')
+  })
+
+  it('keeps a held object across one list change, then follows the next list', async () => {
+    publishSelection('products', [{ id: 'old', key: 'OLD', name: 'Old', type: 'product' }])
+    publishSelection('articles', [{ id: 'new', key: 'NEW', name: 'New', type: 'article' }])
+    const hold = { current: 'kept' }
+    function Held({ current }: { current: DetailFollowDoc }) {
+      const [objectId, setObjectId] = useState<string | null>('old')
+      useDetailFollow(current, viewList, true, setObjectId, hold)
+      return <div data-testid="detail">{objectId ?? 'empty'}</div>
+    }
+    const view = render(<Held current={doc('products')} />)
+    await waitFor(() => expect(screen.getByTestId('detail').textContent).toBe('kept'))
+    expect(hold.current).toBeNull()
+
+    view.rerender(<Held current={doc('articles')} />)
+    await waitFor(() => expect(screen.getByTestId('detail').textContent).toBe('new'))
+  })
+})
+
 describe('detailForSelection', () => {
   it('keeps a row that belongs to the list and otherwise picks its first row', () => {
     const selection = [{ id: 'new', key: 'NEW', name: 'New', type: 'article' }]
