@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api } from './api'
 import { copy } from './i18n'
 import { filterIntegerInput, linkFieldErrors, linkFieldValues, type LinkField } from './link-choices'
@@ -23,6 +23,10 @@ export function LinkInlineCell({
   const [draft, setDraft] = useState(value)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    setDraft(value)
+  }, [value])
 
   const commit = () => {
     if (saving || draft === value) return
