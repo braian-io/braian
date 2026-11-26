@@ -15,6 +15,7 @@ import { dynamicSelectionFilter, emitSavedSelection, requestDeleteSelection, req
 import { workspaceDisplayName } from './demo-labels'
 import { suggestedTitle } from './field-diff'
 import { copy, uiLanguage } from './i18n'
+import { requestOpenImportMappings } from './import/open-mappings'
 import { structureCaption } from './graph-scene'
 import { chordForCommand } from './shortcuts'
 import { mergeFrecency, readFrecency, touch, writeFrecency } from './frecency'
@@ -1234,6 +1235,11 @@ export function CommandPalette({
       onClose()
       return
     }
+    if (id === 'import:mappings') {
+      requestOpenImportMappings()
+      onClose()
+      return
+    }
     if (id === 'object:delete') {
       if (viewingAgentRunId()) return
       requestDeleteObjects(deleteIds)
@@ -1707,6 +1713,7 @@ function buildCatalog(
       })),
     newFromTemplateRootItem(),
     { id: 'import:file', group: 'views', title: copy.importFile, subtitle: 'Drop an Excel or CSV file' },
+    { id: 'import:mappings', group: 'views', title: copy.importMappings, subtitle: 'Saved column mappings', keywords: ['import', 'mapping', 'saved', 'columns'] },
     ...(!views.some((view) => view.type === 'attribute_definitions')
       ? [{
           id: 'goto:attribute-definitions',

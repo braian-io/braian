@@ -79,6 +79,9 @@ pub struct Proposal {
     pub type_choice: ChoiceProposal,
     pub id_column: ChoiceProposal,
     pub columns: Vec<ColumnProposal>,
+    /// Saved mapping that produced these columns, when one was applied.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub saved_mapping: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -825,16 +828,24 @@ pub async fn propose<D: Decider>(
         .unwrap_or_default();
     let mut drafts = deterministic_columns(headers, &targets, &units);
     for line in manual {
-        if let Some(draft) = drafts.iter_mut().find(|draft| draft.col == line.col)
-            && (line.target == "unmapped" || targets.iter().any(|target| target.id == line.target))
-        {
-            draft.target = line.target.clone();
-            draft.confidence = 1.0;
-            draft.source = "manual".into();
-            draft.reason = None;
-            draft.pinned = true;
-            draft.alternatives.clear();
-        }
+        let Some(draft) = drafts.iter_mut().find(|draft| draft.col == line.col) else {
+            continue;
+        };
+        // A saved mapping stores the attribute id. The picker and the column map use `type:sku`.
+        let target = if line.target == "unmapped" {
+            line.target.clone()
+        } else {
+            match find_target(&targets, &line.target) {
+                Some(target) => target.id.clone(),
+                None => continue,
+            }
+        };
+        draft.target = target;
+        draft.confidence = 1.0;
+        draft.source = "manual".into();
+        draft.reason = None;
+        draft.pinned = true;
+        draft.alternatives.clear();
     }
     let need_columns = drafts
         .iter()
@@ -909,6 +920,7 @@ pub async fn propose<D: Decider>(
             type_choice,
             id_column: id_choice,
             columns,
+            saved_mapping: None,
         },
         Value::Array(usage),
     )

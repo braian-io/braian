@@ -237,6 +237,7 @@ use utoipa::OpenApi;
         crate::platform::FrecencyBody,
         crate::import::SheetBody,
         crate::import::RemapBody,
+        crate::import::ApplySavedBody,
         crate::import::ColumnBody,
         crate::model_draft::DraftBody,
         crate::model_draft::SaveBody,
