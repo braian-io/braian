@@ -11,7 +11,7 @@ describe('model table layout guard', () => {
     expect(isTypeAttributesDockView({ id: 'v2', type: 'data_model', state: { mode: 'tree' }, title: 'Structures' })).toBe(false)
   })
 
-  it('ignores a focus change that keeps the Type attributes table mounted', () => {
+  it('requires a guard when focus leaves Type attributes even if it stays mounted', () => {
     registerModelTableDraft({
       dirty: () => true,
       discard: () => undefined,
@@ -24,7 +24,7 @@ describe('model table layout guard', () => {
     const layout = splitPair('horizontal', 0.5, tabGroup(['types']), tabGroup(['attrs']))
     const before = { id: 'ws', title: 'Data model', layout, focus: 'attrs' }
     const after = { ...before, focus: 'types' }
-    expect(layoutLeavesTypeAttributes(views, before, after)).toBe(false)
+    expect(layoutLeavesTypeAttributes(views, before, after)).toBe(true)
   })
 
   it('requires a guard when the Type attributes tab unmounts', () => {

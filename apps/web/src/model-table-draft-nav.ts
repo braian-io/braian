@@ -47,6 +47,10 @@ export function layoutLeavesTypeAttributes(
   if (!modelTableDraftDirty()) return false
   const attributeViews = new Set(dockViews.filter(isTypeAttributesDockView).map((view) => view.id))
   if (attributeViews.size === 0) return false
+  const beforeFocus = before.focus
+  if (beforeFocus && attributeViews.has(beforeFocus) && after.focus !== beforeFocus) {
+    return true
+  }
   const beforeShown = shownLayoutViewIds(before).filter((id) => attributeViews.has(id))
   if (beforeShown.length === 0) return false
   const afterShown = new Set(shownLayoutViewIds(after))
