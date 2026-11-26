@@ -2,15 +2,22 @@ export type OpenProposal = {
   id: string
   operation?: string
   rollback?: { targetSeq: number }
+  /** Catalog key the proposal was filed in. Master stays unscoped. */
+  catalog?: string
 }
 
 type Listener = (proposal: OpenProposal) => void
 
 const listeners = new Set<Listener>()
 
-export function publishProposal(id: string, operation?: string, rollback?: { targetSeq: number }) {
+export function publishProposal(
+  id: string,
+  operation?: string,
+  rollback?: { targetSeq: number },
+  catalog?: string,
+) {
   if (!id) return
-  for (const listen of listeners) listen({ id, operation, rollback })
+  for (const listen of listeners) listen({ id, operation, rollback, catalog })
 }
 
 export function onProposal(listen: Listener) {

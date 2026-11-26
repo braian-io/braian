@@ -458,7 +458,7 @@ fn registry() -> &'static [Operation] {
             name: "catalog.cleanup",
             title: "Soft-delete every object in a source catalog",
             permission: Role::Editor,
-            needs_approval: false,
+            needs_approval: true,
             params: &[],
         },
         Operation {
@@ -1139,9 +1139,9 @@ const AGENT_UI_EXCLUDED: &[&str] = &[];
 /// Operations an agent must not be offered and must not run.
 ///
 /// `accept_proposal` is a person's save. Most other names delete data or a
-/// definition that data hangs on. `merge.run` and `catalog.cleanup` write the
-/// master or wipe a source catalog; a person runs those. `propose` rejects
-/// the delete steps too.
+/// definition that data hangs on. `merge.run` writes the master. `catalog.cleanup`
+/// files a proposal that wipes a source catalog once a person approves it.
+/// `propose` rejects the delete steps too.
 const AGENT_COMMIT_EXCLUDED: &[&str] = &[
     "accept_proposal",
     "discard_proposal",
@@ -5300,6 +5300,56 @@ fn applied_row(receipt: &braian_store::WriteReceipt) -> AppliedRow {
     }
 }
 
+async fn apply_object_delete(
+    state: &AppState,
+    identity: &Identity,
+    proposal_id: Uuid,
+    row_id: Uuid,
+    row: &Value,
+    claim: Uuid,
+) -> Result<Option<AppliedRow>, Problem> {
+    let object_id = row
+        .get("object_id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            Problem::new(
+                StatusCode::BAD_REQUEST,
+                "missing_id",
+                "name the object to delete",
+            )
+        })?;
+    let id =
+        ObjectId::from_uuid(Uuid::parse_str(object_id).map_err(|error| {
+            Problem::new(StatusCode::BAD_REQUEST, "invalid_id", error.to_string())
+        })?);
+    let base = row
+        .get("base_version")
+        .and_then(Value::as_i64)
+        .and_then(|version| u64::try_from(version).ok());
+    let Some(receipt) = finish_row(
+        state,
+        identity,
+        proposal_id,
+        row_id,
+        "accepted",
+        ProposalWrite::Objects {
+            ops: vec![braian_store::ObjectOp::Delete {
+                id,
+                base_version: base,
+            }],
+            expect_version: base.map(|version| (id, version)),
+        },
+        claim,
+    )
+    .await?
+    else {
+        return Ok(None);
+    };
+    state.emit(json!({ "seq": receipt.last_seq, "op": "delete", "object_id": id.as_uuid() }));
+    state.index_after_commit(id.as_uuid(), receipt.last_seq);
+    Ok(Some(applied_row(&receipt)))
+}
+
 async fn apply_row(
     state: &AppState,
     identity: &Identity,
@@ -5331,6 +5381,14 @@ async fn apply_row(
         return accept_legacy_relation(state, identity, proposal_id, row_id, row, to, &kind, claim)
             .await
             .map(|seq| seq.map(|seq| AppliedRow { seq, version: None }));
+    }
+    if row
+        .get("patch")
+        .and_then(|patch| patch.get("op"))
+        .and_then(Value::as_str)
+        == Some("delete")
+    {
+        return apply_object_delete(state, identity, proposal_id, row_id, row, claim).await;
     }
     let cached = state.models.get(&state.store).await?;
     let patch_body = row.get("patch").cloned().unwrap_or(json!({}));
@@ -6618,26 +6676,7 @@ pub(crate) async fn run_operation(
             actor.source = "merge".into();
             crate::merge::apply_profile(&state.store, &actor, key, name == "merge.dry_run").await
         }
-        "catalog.cleanup" => {
-            let key = args.get("key").and_then(Value::as_str).unwrap_or("");
-            let catalog = state
-                .store
-                .require_catalog(key)
-                .await
-                .map_err(store_status)?;
-            if catalog.kind != braian_store::CatalogKind::Source {
-                return Err(Problem::new(
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    "not_a_source",
-                    "cleanup removes objects from a source catalog",
-                ));
-            }
-            let scoped = state.store.with_catalog(catalog.id);
-            let mut actor = identity.actor.clone();
-            actor.source = "cleanup".into();
-            let removed = crate::catalogs::cleanup_objects(&scoped, &actor, &catalog.key).await?;
-            Ok(json!({ "removed": removed }))
-        }
+        "catalog.cleanup" => propose_catalog_cleanup(state, identity, args).await,
         "model.list_attribute_definitions" => crate::attribute_catalog::list(state).await,
         "list_attribute_paths" => {
             let token = args
@@ -7147,6 +7186,29 @@ fn invalid_base_version() -> Problem {
     )
 }
 
+async fn propose_catalog_cleanup(
+    state: &AppState,
+    identity: &Identity,
+    args: &Value,
+) -> Result<Value, Problem> {
+    let key = args.get("key").and_then(Value::as_str).unwrap_or("");
+    let catalog = state
+        .store
+        .require_catalog(key)
+        .await
+        .map_err(store_status)?;
+    if catalog.kind != braian_store::CatalogKind::Source {
+        return Err(Problem::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "not_a_source",
+            "cleanup removes objects from a source catalog",
+        ));
+    }
+    let mut scoped = state.clone();
+    scoped.store = state.store.with_catalog(catalog.id);
+    crate::catalogs::propose_cleanup(&scoped, identity).await
+}
+
 async fn propose_operation(
     state: &AppState,
     identity: &Identity,
@@ -7179,6 +7241,7 @@ async fn propose_operation(
         name if name.starts_with("model.") => {
             crate::model_proposal::propose(state, identity, name, args).await
         }
+        "catalog.cleanup" => propose_catalog_cleanup(state, identity, args).await,
         "assortment.save" => propose_assortment(state, identity, args).await,
         "assortment.update" => propose_assortment_update(state, identity, args).await,
         "assortment.delete" => propose_assortment_delete(state, identity, args).await,
