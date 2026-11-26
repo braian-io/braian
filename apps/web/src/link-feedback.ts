@@ -33,14 +33,11 @@ export function publishLinkFeedback(detail: LinkFeedbackDetail) {
   for (const id of detail.tableObjectIds ?? []) flashObject(id)
 }
 
-/** Pick which endpoint owns the link list the user dropped onto. */
+/** Object whose detail link list should show row highlight and section hint. */
 export function linkSectionObjectId(
   drop: { source: { id: string }; targets: Array<{ id: string }>; preferred?: { linkType: string; direction: 'out' | 'in' } },
-  body: { from_id: string; to_id: string },
+  _body: { from_id: string; to_id: string },
 ): string {
-  if (drop.preferred) return drop.source.id
-  const targetIds = new Set(drop.targets.map((item) => item.id))
-  if (targetIds.has(body.from_id)) return body.from_id
-  if (targetIds.has(body.to_id)) return body.to_id
-  return drop.targets[0]?.id ?? drop.source.id
+  // Row drop and Detail-section drop both set `source` to the anchor object the user dropped onto.
+  return drop.source.id
 }
