@@ -109,16 +109,30 @@ export type ViewChange = {
   nextState: ViewState
   /** Undefined when this client has not seen `updated_at` yet. */
   updatedAt: string | null | undefined
+  /**
+   * Identity before this edit. A title, type, pane, or position change still
+   * POSTs when no state key changed, so a rename is not dropped.
+   */
+  previous?: { type: string; title: string; pane: string; position: number }
   post: (body: ViewPostBody) => Promise<{ updated_at: string }>
   refetch: () => Promise<{ state: ViewState; updated_at: string | null }>
   isConflict: (error: unknown) => boolean
   onConflict?: () => void
 }
 
-/** Save the keys that differ. An empty diff does not POST. */
+function metadataChanged(input: ViewChange) {
+  const previous = input.previous
+  if (!previous) return false
+  return previous.type !== input.type
+    || previous.title !== input.title
+    || previous.pane !== input.pane
+    || previous.position !== input.position
+}
+
+/** Save the keys that differ. An empty diff does not POST unless the title or placement changed. */
 export async function saveViewChange(input: ViewChange): Promise<{ state: ViewState; updated_at: string | null }> {
   const pending = viewStatePatch(input.baseState, input.nextState)
-  if (Object.keys(pending).length === 0) {
+  if (Object.keys(pending).length === 0 && !metadataChanged(input)) {
     return { state: input.nextState, updated_at: input.updatedAt ?? null }
   }
   let expected = input.updatedAt

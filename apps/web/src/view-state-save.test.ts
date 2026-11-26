@@ -125,6 +125,31 @@ describe('saveVersionedViewKeys', () => {
     expect(saved.state.table).toEqual(base.table)
     expect(saved.updated_at).toBe('2026-11-26T08:00:00Z')
   })
+
+  it('posts a title change even when no state key changed', async () => {
+    const post = vi.fn().mockResolvedValue({ updated_at: '2026-11-26T08:00:00Z' })
+    await saveViewChange({
+      id: 'view-1',
+      workspaceId: 'workspace-1',
+      type: 'data_model',
+      title: 'Type attributes',
+      pane: 'center',
+      position: 0,
+      baseState: { mode: 'classes' },
+      nextState: { mode: 'classes' },
+      updatedAt: '2026-11-26T07:00:00Z',
+      previous: { type: 'data_model', title: 'Attributes', pane: 'center', position: 0 },
+      post,
+      refetch: async () => ({ state: { mode: 'classes' }, updated_at: '2026-11-26T07:00:00Z' }),
+      isConflict: () => false,
+    })
+    expect(post).toHaveBeenCalledOnce()
+    expect(post.mock.calls[0][0]).toMatchObject({
+      title: 'Type attributes',
+      state: {},
+      expected_updated_at: '2026-11-26T07:00:00Z',
+    })
+  })
 })
 
 describe('createViewKeySaver', () => {

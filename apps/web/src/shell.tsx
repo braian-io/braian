@@ -857,8 +857,8 @@ export function Shell() {
     const found = viewRows(fresh.views).find((view) => view.id === viewId)
     return { state: viewStateRecord(found?.state), updated_at: found?.updated_at ?? null }
   }
-  const mergeViewRef = useRef<(view: View, workspaceId: string, next: Json) => Promise<void>>(async () => {})
-  mergeViewRef.current = async (view, workspaceId, next) => {
+  const mergeViewRef = useRef<(view: View, workspaceId: string, next: Json, previous?: View) => Promise<void>>(async () => {})
+  mergeViewRef.current = async (view, workspaceId, next, previous) => {
     await saveViewChange({
       id: view.id,
       workspaceId,
@@ -866,9 +866,17 @@ export function Shell() {
       title: view.title,
       pane: view.pane ?? 'center',
       position: view.position ?? 0,
-      baseState: viewStateRecord(view.state),
+      baseState: viewStateRecord(previous?.state ?? view.state),
       nextState: viewStateRecord(next),
-      updatedAt: view.updated_at,
+      updatedAt: previous?.updated_at ?? view.updated_at,
+      previous: previous
+        ? {
+            type: previous.type,
+            title: previous.title,
+            pane: previous.pane ?? 'center',
+            position: previous.position ?? 0,
+          }
+        : undefined,
       post: (body) => api.post('/v1/views', {
         body: {
           id: body.id,
@@ -1517,7 +1525,7 @@ export function Shell() {
           found = created
         } else {
           const updated: View = { ...found, state: freeObject({ ...found.state, list_key: key }), title }
-          await mergeViewRef.current({ ...found, title }, surfaceNow.id, updated.state)
+          await mergeViewRef.current({ ...found, title }, surfaceNow.id, updated.state, found)
           views = views.map((view) => (view.id === found!.id ? updated : view))
           found = updated
         }
@@ -1642,6 +1650,7 @@ export function Shell() {
           { ...existing, type: body.type, title: body.title, pane: body.pane, position: body.position },
           body.workspace_id,
           body.state,
+          existing,
         )
       },
       postWorkspace: (body) => api.post('/v1/workspaces', { body }),
