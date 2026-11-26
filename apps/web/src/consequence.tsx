@@ -10,6 +10,7 @@ import { formatCount } from './format'
 import { describeModelSteps } from './model-step-text'
 import { affectedLabel, typeNames } from './type-labels'
 import { onProposal } from './proposal-bus'
+import { inCatalog } from './catalog-scope'
 import {
   discardRestoreOnDismiss,
   isRollbackProposal,
@@ -73,6 +74,7 @@ function loadingTitle(operation: string | undefined): string {
 export function ConsequenceHost({ session }: { session: HostSession }) {
   const queryClient = useQueryClient()
   const [id, setId] = useState<string | null>(null)
+  const [catalog, setCatalog] = useState<string | undefined>()
   const [operation, setOperation] = useState<string | undefined>()
   const [rollbackSeq, setRollbackSeq] = useState<number | undefined>()
   const [error, setError] = useState('')
@@ -86,6 +88,7 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
     const target = opener.current
     opener.current = null
     setRollbackSeq(undefined)
+    setCatalog(undefined)
     setId(null)
     if (target?.isConnected) queueMicrotask(() => target.focus())
   }
@@ -95,12 +98,18 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
     dismissWithoutDiscard.current = false
     setOperation(proposal.operation)
     setRollbackSeq(proposal.rollback?.targetSeq)
+    setCatalog(proposal.catalog)
     setId(proposal.id)
   }), [])
-  const defs = useQuery({ queryKey: ['definitions'], queryFn: () => api.get('/v1/definitions'), staleTime: 60_000 })
+  const scope = <T,>(fn: () => Promise<T>) => (catalog ? inCatalog(catalog, fn) : fn())
+  const defs = useQuery({
+    queryKey: catalog ? ['definitions', catalog] : ['definitions'],
+    queryFn: () => scope(() => api.get('/v1/definitions')),
+    staleTime: 60_000,
+  })
   const proposal = useQuery({
-    queryKey: ['proposal', id],
-    queryFn: () => api.get('/v1/proposals/{id}', { params: { path: { id: id ?? '' } } }),
+    queryKey: ['proposal', id, catalog ?? ''],
+    queryFn: () => scope(() => api.get('/v1/proposals/{id}', { params: { path: { id: id ?? '' } } })),
     enabled: Boolean(id),
   })
   const body = proposal.data
@@ -109,13 +118,13 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
   const objectId = String(objectRow?.object_id ?? '')
   const isRollback = isRollbackProposal(body?.source) || operation === 'rollback'
   const object = useQuery({
-    queryKey: ['object', objectId],
-    queryFn: () => api.get('/v1/objects/{id}', { params: { path: { id: objectId } } }),
+    queryKey: ['object', objectId, catalog ?? ''],
+    queryFn: () => scope(() => api.get('/v1/objects/{id}', { params: { path: { id: objectId } } })),
     enabled: Boolean(id) && isRollback && Boolean(objectId),
   })
   const history = useQuery({
-    queryKey: ['history', objectId],
-    queryFn: () => api.get('/v1/objects/{id}/changes', { params: { path: { id: objectId } } }),
+    queryKey: ['history', objectId, catalog ?? ''],
+    queryFn: () => scope(() => api.get('/v1/objects/{id}/changes', { params: { path: { id: objectId } } })),
     enabled: Boolean(id) && isRollback && Boolean(objectId),
   })
   const consequence = (body?.consequence as Json | undefined) ?? {}
@@ -220,7 +229,7 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
     if (!id || discardPending.current || busy) return
     discardPending.current = true
     setBusy(true)
-    void api.post('/v1/proposals/{id}/discard', { params: { path: { id: id } } })
+    void scope(() => api.post('/v1/proposals/{id}/discard', { params: { path: { id: id } } }))
       .then(() => {
         session.push(copy.cancel)
         void queryClient.invalidateQueries({ queryKey: ['proposals'] })
@@ -243,7 +252,7 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
   }
   const confirm = () => {
     setBusy(true)
-    void api.post('/v1/proposals/{id}/accept', { params: { path: { id: id } }, body: {} })
+    void scope(() => api.post('/v1/proposals/{id}/accept', { params: { path: { id: id } }, body: {} }))
       .then((result) => {
         const failed = failureLines(result)
         if (failed.length > 0) {

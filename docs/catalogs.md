@@ -61,9 +61,16 @@ The header `x-import-snapshot: true` marks an import session as a snapshot.
 On save, keys of that type that are missing from the file are soft-deleted in
 the same catalog. The default is a delta.
 
-`POST /v1/catalogs/{key}/infer` writes a model draft of attributes that are
-not already in the catalog. `POST /v1/catalogs/{key}/cleanup` soft-deletes
-every object in a source catalog and does not propagate into the master.
+`POST /v1/catalogs` stages a catalog on the caller's model draft (or files a
+proposal when the caller is not a person). The catalog row is written when
+that draft is saved or the proposal is approved. A catalog key is set on
+create. Changing it later, including the master key, is rejected with
+`catalog_key_locked`.
+
+`POST /v1/catalogs/{key}/infer` files a proposal of attributes that are not
+already in the catalog. `POST /v1/catalogs/{key}/cleanup` files a proposal
+that soft-deletes every object in a source catalog and does not propagate
+into the master. Neither route writes until the proposal is approved.
 
 ## Demo
 
