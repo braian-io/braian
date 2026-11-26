@@ -29,7 +29,7 @@ export function BulkWriteConfirm({
         <div className="dialog-actions">
           <Button type="button" variant="ghost" onClick={onCancel}>{copy.cancel}</Button>
           <Button type="button" variant="danger" data-testid="bulk-write-confirm-button" onClick={onConfirm}>
-            {copy.confirm}
+            {copy.save}
           </Button>
         </div>
       </DialogContent>

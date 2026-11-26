@@ -10,7 +10,7 @@ describe('bulk write confirm', () => {
     expect(bulkWriteImpact('status', 3)).toBe('This changes status on 3 objects')
   })
 
-  it('does not write before the danger confirm button is used', () => {
+  it('does not write before Save is used', () => {
     const onConfirm = vi.fn()
     const onCancel = vi.fn()
     render(
@@ -25,7 +25,8 @@ describe('bulk write confirm', () => {
     expect(onConfirm).not.toHaveBeenCalled()
     expect(onCancel).toHaveBeenCalledTimes(1)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+    expect(screen.queryByRole('button', { name: 'Confirm' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     expect(onConfirm).toHaveBeenCalledTimes(1)
   })
 })
