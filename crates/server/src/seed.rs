@@ -437,6 +437,29 @@ fn merge_temperature_units(defs: &mut DefinitionSet) -> bool {
     changed
 }
 
+/// Runs on API startup, including after autodeploy. Adds only missing temperature
+/// unit codes. Does nothing when the database has no definitions yet (the seed
+/// installs the catalog, which already contains the family) and does not bump
+/// the revision when every code is already stored.
+pub(crate) async fn ensure_temperature_on_startup(store: &Store) -> anyhow::Result<()> {
+    let defs = match store.definition_set().await {
+        Ok(defs) => defs,
+        Err(Error::NoDefinitions) => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    // The system principal is created on connect. Repeat it so a startup that
+    // has to write still has an actor if that row is missing.
+    store.ensure_system_principal().await?;
+    let actor = Actor {
+        actor: braian_store::SYSTEM_PRINCIPAL,
+        on_behalf_of: None,
+        kind: BatchKind::Bulk,
+        source: "temperature-units".into(),
+    };
+    ensure_temperature_family(store, &actor, defs).await?;
+    Ok(())
+}
+
 /// Idempotent on a database that already has definitions. Does not reset the model.
 async fn ensure_temperature_family(
     store: &Store,
@@ -2749,6 +2772,11 @@ mod tests {
             .await
             .expect("quiet");
         assert_eq!(quiet.model_revision, restored.model_revision);
+        ensure_temperature_on_startup(store).await.expect("startup");
+        assert_eq!(
+            store.definition_set().await.expect("defs").model_revision,
+            quiet.model_revision
+        );
     }
 
     /// First seed on an empty database creates "Accept ART-CHED-400".

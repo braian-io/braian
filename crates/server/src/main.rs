@@ -148,6 +148,11 @@ async fn prepare(seed_first: bool) -> anyhow::Result<(AppState, SocketAddr)> {
     if seed_first && let Err(error) = seed::run(&store, search.as_ref()).await {
         tracing::error!(%error, "seed failed; continuing startup");
     }
+    // Autodeploy restarts this process. `api` does not run the demo seed, and
+    // `all` only reaches the temperature step when that seed gets this far.
+    // Missing C/F/K codes are added here either way. An existing unit is left
+    // as stored, and a second start does not write a new revision.
+    seed::ensure_temperature_on_startup(&store).await?;
     let identities = match std::env::var("BRAIAN_DEV_TOKENS") {
         Ok(raw) if !raw.trim().is_empty() => braian_api::identities(&store, &raw).await?,
         _ => Vec::new(),
