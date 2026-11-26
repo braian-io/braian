@@ -130,7 +130,7 @@ describe('link create dialog validation', () => {
       <LinkCreateDialog source={source} target={target} defs={defs} onClose={() => undefined} onConfirm={onConfirm} />,
     )
     const field = screen.getByTestId('link-field-sort_order') as HTMLInputElement
-    expect(field.inputMode).toBe('decimal')
+    expect(field.inputMode).toBe('numeric')
     expect(field.getAttribute('data-kind')).toBe('number')
     fireEvent.change(field, { target: { value: 'test' } })
     fireEvent.click(screen.getByTestId('link-create-confirm'))

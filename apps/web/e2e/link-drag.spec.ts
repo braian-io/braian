@@ -171,7 +171,7 @@ test('a non-numeric sort order stops at its field without writing', async ({ pag
   const dialog = page.getByTestId('link-create-dialog')
   await expect(dialog).toBeVisible()
   const field = dialog.getByTestId('link-field-sort_order')
-  await expect(field).toHaveAttribute('inputmode', 'decimal')
+  await expect(field).toHaveAttribute('inputmode', 'numeric')
   await expect(field).toHaveAttribute('data-kind', 'number')
   await field.fill('test')
   const fieldError = dialog.getByTestId('link-field-error-sort_order')

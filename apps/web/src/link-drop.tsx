@@ -42,6 +42,7 @@ export function LinkDropHost() {
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ['object'] })
     void queryClient.invalidateQueries({ queryKey: ['objects'] })
+    void queryClient.invalidateQueries({ queryKey: ['trash'] })
   }
   const noteSaved = (result: LinkSubmitResult, detail: LinkDropDetail, linkType?: string) => {
     const saved = result.created.map((item) => ({ ...item, label: peerLabel(detail, item.body) }))

@@ -862,6 +862,48 @@ button.agent-approve:disabled:hover {
 }
 .detail-section-skeleton { height: 3.5rem; margin: var(--space-1) 0; }
 .detail-link-skeleton { margin: var(--space-1) 0 var(--space-2); max-width: 70%; }
+
+.link-row-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.link-row-peer {
+  min-width: 8rem;
+}
+
+.link-inline-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+}
+
+.link-inline-label {
+  color: var(--fg-muted);
+}
+
+.link-inline-input {
+  width: 4.5rem;
+  padding: 0.15rem 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.link-inline-error {
+  font-size: var(--text-xs);
+}
+
+.link-edit-action {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+}
 .agent-failed, .agent-fetch-error { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); min-width: 0; max-width: 100%; }
 .agent-failed p, .agent-fetch-error p { margin: 0; max-width: 100%; overflow-wrap: anywhere; }
 .agent-failed button, .agent-fetch-error button { max-width: 100%; }

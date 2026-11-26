@@ -30,6 +30,7 @@ type TestLink = {
   peer_type: string
   has_values: boolean
   sort_order?: string | number | null
+  version?: number
 }
 
 function link(overrides: Partial<TestLink> = {}): TestLink {
@@ -40,6 +41,7 @@ function link(overrides: Partial<TestLink> = {}): TestLink {
     peer_name: 'Mature cheddar',
     peer_type: 'article',
     has_values: false,
+    version: 2,
     ...overrides,
   }
 }
@@ -138,7 +140,7 @@ describe('LinkSections removal', () => {
     await waitFor(() => expect(document.activeElement).toBe(row))
   })
 
-  it('refreshes both endpoints, peer lists and history on remove', async () => {
+  it('refreshes both endpoints, peer lists, history and trash on remove', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const invalidate = vi.spyOn(client, 'invalidateQueries')
     renderLinks(link({ sort_order: '3' }), client)
@@ -152,5 +154,12 @@ describe('LinkSections removal', () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['link-search'] })
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['history', 'object-1'] })
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['history', 'peer-1'] })
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['trash'] })
+  })
+
+  it('opens edit link attributes from the row action', async () => {
+    renderLinks(link())
+    fireEvent.click(screen.getByTestId('link-edit-attributes'))
+    expect(await screen.findByTestId('link-edit-dialog')).toBeTruthy()
   })
 })

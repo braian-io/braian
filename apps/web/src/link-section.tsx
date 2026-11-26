@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { Pencil } from 'lucide-react'
 import { api, textValue, type Json } from './api'
 import { LINK_FEEDBACK_EVENT, pendingLinkFeedback, type LinkFeedbackDetail } from './link-feedback'
 import { Button } from './components/ui/button'
@@ -10,6 +11,9 @@ import { openSharedContextMenu, prefersNativeContextMenu } from './shared-contex
 import { registerCommandRunner } from './command-registry'
 import { reportWriteError, writeErrorMessage } from './write-error'
 import { LinkAddFlow, type LinkAddRequest } from './link-add'
+import { LinkEditDialog } from './link-edit-dialog'
+import { LinkInlineCell } from './link-inline-cell'
+import { linkTypeFields } from './link-choices'
 import { dispatchLinkDrop, endLinkDrag, linkDragActive, linkDragMime, linkDragPayload, linkDropDecision, linkDropFromSection, readLinkDrag, setLinkDragHint } from './link-drag'
 
 type LinkItem = {
@@ -20,6 +24,7 @@ type LinkItem = {
   peer_type: string
   has_values: boolean
   sort_order?: string | number | null
+  version?: number
   values?: Json
 }
 
@@ -73,8 +78,6 @@ export function LinkSections({
   const [request, setRequest] = useState<LinkAddRequest | null>(null)
   const [dropKey, setDropKey] = useState<string | null>(null)
   const [denyKey, setDenyKey] = useState<string | null>(null)
-  const [confirm, setConfirm] = useState<Removal | null>(null)
-  const [confirmError, setConfirmError] = useState('')
   const [sectionHints, setSectionHints] = useState<Record<string, string>>({})
   const [justLinkedPeers, setJustLinkedPeers] = useState<Set<string>>(() => new Set())
   const feedbackTimers = useRef<number[]>([])
@@ -131,6 +134,9 @@ export function LinkSections({
     if (detail) applyLinkFeedback(detail)
   }, [objectId, links, bodyLoading])
   const opener = useRef<HTMLElement | null>(null)
+  const [confirm, setConfirm] = useState<Removal | null>(null)
+  const [confirmError, setConfirmError] = useState('')
+  const [editing, setEditing] = useState<{ link: LinkItem; section: LinkSide } | null>(null)
   const onOpenRef = useRef(onOpen)
   onOpenRef.current = onOpen
   const sectionsRef = useRef(sections)
@@ -147,6 +153,10 @@ export function LinkSections({
     if (peerId) void queryClient.invalidateQueries({ queryKey: ['history', peerId] })
     void queryClient.invalidateQueries({ queryKey: ['graph', objectId] })
     if (peerId) void queryClient.invalidateQueries({ queryKey: ['graph', peerId] })
+    void queryClient.invalidateQueries({ queryKey: ['trash'] })
+  }
+  const openEdit = (link: LinkItem, section: LinkSide) => {
+    setEditing({ link, section })
   }
   const remove = (link: LinkItem, section: LinkSide) => {
     const removal = removalFor(link, section, objectId)
@@ -191,7 +201,9 @@ export function LinkSections({
   useEffect(() => {
     const stops = [
       registerCommandRunner('link:edit', (target) => {
-        if (target.linkId) onOpenRef.current(String(target.linkId))
+        if (!target.linkId) return
+        const found = locate(sectionsRef.current, String(target.linkId))
+        if (found) openEdit(found.link, found.section)
       }),
       registerCommandRunner('link:remove', (target) => {
         if (!target.linkId) return
@@ -304,10 +316,13 @@ export function LinkSections({
           {bodyLoading && section.links.length === 0 ? (
             <span className="detail-link-skeleton" data-testid="detail-link-skeleton" aria-busy="true" />
           ) : null}
-          {section.links.map((link) => (
+          {section.links.map((link) => {
+            const fields = linkTypeFields(defs, section.link_type)
+            const version = Number(link.version)
+            return (
             <div
               key={link.id}
-              className="row"
+              className="row link-row-line"
               role="row"
               tabIndex={0}
               data-testid="link-row"
@@ -337,9 +352,40 @@ export function LinkSections({
                 }
               }}
             >
-              <span>{link.peer_key}</span>
+              <span className="link-row-peer">{link.peer_key}</span>
+              {fields.map((field) => {
+                const current = linkDraftValue(link, field.key)
+                if (field.kind !== 'number' && field.kind !== 'range') return null
+                if (!Number.isFinite(version) || version <= 0) return null
+                return (
+                  <LinkInlineCell
+                    key={field.key}
+                    linkId={link.id}
+                    version={version}
+                    field={field}
+                    value={current}
+                    linkType={section.link_type}
+                    onSaved={() => refresh(link.peer_id)}
+                  />
+                )
+              })}
+              <Button
+                type="button"
+                variant="ghost"
+                className="link-edit-action"
+                data-testid="link-edit-attributes"
+                aria-label={copy.editLink}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  openEdit(link, section)
+                }}
+              >
+                <Pencil aria-hidden="true" size={14} />
+                <span>{copy.editLink}</span>
+              </Button>
             </div>
-          ))}
+            )
+          })}
           <Button
             type="button"
             variant="default"
@@ -388,8 +434,27 @@ export function LinkSections({
           </DialogContent>
         </Dialog>
       ) : null}
+      {editing ? (
+        <LinkEditDialog
+          link={editing.link}
+          linkType={editing.section.link_type}
+          defs={defs}
+          onClose={() => setEditing(null)}
+          onSaved={() => refresh(editing.link.peer_id)}
+        />
+      ) : null}
     </>
   )
+}
+
+function linkDraftValue(link: LinkItem, key: string) {
+  const fromValues = (link.values as Record<string, unknown> | undefined)?.[key]
+  const picked = fromValues ?? (key === 'sort_order' ? link.sort_order : undefined)
+  if (picked == null) return ''
+  if (typeof picked === 'object' && picked !== null && 'value' in picked) {
+    return String((picked as { value?: unknown }).value ?? '')
+  }
+  return String(picked)
 }
 
 function pointerStillInside(event: DragEvent<HTMLElement>) {

@@ -183,12 +183,13 @@ Links between objects are edited on the object's `Detail` view:
 - A cardinality conflict is explained inside the dialog, so the status bar does not
   show a raw save failure for it.
 - Select a link row and press `Ctrl+Enter` for the link menu, which contains `Edit link
-  attributes` and `Remove link`.
+  attributes` and `Remove link`. The row also has a visible `Edit link attributes` action.
+  Numeric link attributes such as `Sort order` can be edited inline on the row.
 - In an object table you can also drag a row onto another table to create a link.
 
 Create a link from the detail pane's link section, by dragging a row onto it, or from
 a node in the graph. Remove a link from the link section; if it has values the app
-asks first and offers undo.
+asks first. Deleted links move to Trash and can be restored from there.
 
 ## Versioned definitions
 
