@@ -71,10 +71,9 @@ test.describe('detail field description tooltip and language tag alignment', () 
       await expect(ingredientsTip).toBeVisible({ timeout: 5_000 })
       await expect(ingredientsTip).toHaveText(ingredientsHelp)
 
-      const nameField = detail.locator('.field').filter({
-        has: detail.locator('label', { hasText: /^Name\b/ }),
-      }).first()
-      await expect(nameField).toBeVisible()
+      const nameControl = detail.getByTestId('detail-field-control-name')
+      await expect(nameControl).toBeVisible()
+      const nameField = nameControl.locator('xpath=ancestor::div[contains(@class,"field")][1]')
       const langRow = nameField.locator('.lang-row').first()
       const langTag = langRow.locator('.lang-tag').first()
       const value = langRow.locator('input').first()
