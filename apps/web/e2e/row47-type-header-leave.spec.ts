@@ -34,6 +34,25 @@ test.describe('row 47 type header draft and leave guard', () => {
     }
   })
 
+  test('Object types pane tab shows leave dialog and Cancel keeps the draft', async ({ page }) => {
+    test.setTimeout(180_000)
+    await login(page)
+    const table = await openTypeAttributes(page, 'product')
+    const typeKey = page.getByTestId('type-key-product')
+    await typeKey.fill('product_row47_leave')
+    await expect(table.getByTestId('review-and-save')).toBeVisible()
+    const objectTypesTab = page.locator('.pane-tab', { hasText: 'Object types' }).first().locator('.pane-tab-open')
+    await expect(objectTypesTab).toBeVisible()
+    await objectTypesTab.click()
+    const dialog = page.getByTestId('model-table-leave-dialog')
+    await expect(dialog).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(dialog).toHaveCount(0)
+    await expect(typeKey).toHaveValue('product_row47_leave')
+    await expect(table.getByTestId('review-and-save')).toBeVisible()
+    await expect(page.getByTestId('attribute-table')).toBeVisible()
+  })
+
   test('review workspace switch shows leave dialog', async ({ page }) => {
     test.setTimeout(180_000)
     await login(page)
