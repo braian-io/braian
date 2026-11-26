@@ -76,6 +76,28 @@ export type VersionedViewKeys = {
   refetch: () => Promise<{ state: ViewState; updated_at: string | null }>
   isConflict: (error: unknown) => boolean
   onConflict?: () => void
+  /**
+   * When set, saves of this view run one at a time. Two callers can each
+   * spend their single conflict retry on the same version; the loser would
+   * drop its keys. The queue lets the later caller refetch after the earlier
+   * one has committed, still retrying at most once.
+   */
+  viewId?: string
+}
+
+const viewSaveTail = new Map<string, Promise<void>>()
+
+function afterPreviousViewSave<T>(viewId: string, run: () => Promise<T>): Promise<T> {
+  const previous = viewSaveTail.get(viewId) ?? Promise.resolve()
+  const result = previous.then(run, run)
+  viewSaveTail.set(
+    viewId,
+    result.then(
+      () => undefined,
+      () => undefined,
+    ),
+  )
+  return result
 }
 
 /**
@@ -83,6 +105,13 @@ export type VersionedViewKeys = {
  * A stale write is a conflict: refetch, keep those keys, and retry once.
  */
 export async function saveVersionedViewKeys(
+  input: VersionedViewKeys,
+): Promise<{ updated_at: string; pending: ViewState }> {
+  if (input.viewId) return afterPreviousViewSave(input.viewId, () => postVersionedViewKeys(input))
+  return postVersionedViewKeys(input)
+}
+
+async function postVersionedViewKeys(
   input: VersionedViewKeys,
 ): Promise<{ updated_at: string; pending: ViewState }> {
   try {
@@ -140,6 +169,7 @@ export async function saveViewChange(input: ViewChange): Promise<{ state: ViewSt
     expected = (await input.refetch()).updated_at
   }
   const saved = await saveVersionedViewKeys({
+    viewId: input.id,
     baseUpdatedAt: expected,
     pending,
     latestPending: () => pending,
@@ -236,6 +266,7 @@ export function createViewKeySaver(options: {
         slot.knownVersion = true
       }
       const saved = await saveVersionedViewKeys({
+        viewId: id,
         baseUpdatedAt: slot.baseUpdatedAt,
         pending: patch,
         latestPending: () => ({ ...patch, ...slot.patch }),
