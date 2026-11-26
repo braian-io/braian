@@ -7302,6 +7302,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "The layout changed since expected_updated_at",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -12367,6 +12377,13 @@
               "string",
               "null"
             ]
+          },
+          "expected_updated_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "RFC3339 `updated_at` this edit was based on.\nJSON `null` means the client saw no saved layout.\nOmit the field for a last-write-wins save."
           }
         }
       },

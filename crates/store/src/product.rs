@@ -75,6 +75,13 @@ fn usage_attribute_id(text: String) -> Option<Uuid> {
     Uuid::parse_str(&text).ok()
 }
 
+/// Result of saving a personal layout. `Stale` means the client's `expected_updated_at` lost the race.
+#[derive(Debug)]
+pub enum WorkspaceStateWrite {
+    Saved(DateTime<Utc>),
+    Stale,
+}
+
 impl Store {
     pub async fn model_draft(
         &self,
@@ -617,6 +624,26 @@ impl Store {
         environment: &str,
         workspace_id: Uuid,
         document: &Value,
+        expected_updated_at: Option<Option<String>>,
+    ) -> Result<WorkspaceStateWrite, Error> {
+        // Absent expected_updated_at keeps the older last-write-wins save.
+        // A present value is the updated_at the client based this edit on.
+        let Some(expected) = expected_updated_at else {
+            return self
+                .put_workspace_state_unversioned(user_id, environment, workspace_id, document)
+                .await
+                .map(WorkspaceStateWrite::Saved);
+        };
+        self.put_workspace_state_versioned(user_id, environment, workspace_id, document, expected)
+            .await
+    }
+
+    async fn put_workspace_state_unversioned(
+        &self,
+        user_id: Uuid,
+        environment: &str,
+        workspace_id: Uuid,
+        document: &Value,
     ) -> Result<DateTime<Utc>, Error> {
         let client = self.checkout().await?;
         // clientSavedAt is a client clock. A layout save that left the browser
@@ -646,6 +673,71 @@ impl Store {
             )
             .await?;
         Ok(current.get(0))
+    }
+
+    async fn put_workspace_state_versioned(
+        &self,
+        user_id: Uuid,
+        environment: &str,
+        workspace_id: Uuid,
+        document: &Value,
+        expected_updated_at: Option<String>,
+    ) -> Result<WorkspaceStateWrite, Error> {
+        let mut client = self.checkout().await?;
+        let tx = client.transaction().await?;
+        let current = tx
+            .query_opt(
+                "SELECT document, updated_at FROM workspace_states
+                 WHERE user_id = $1 AND environment = $2 AND workspace_id = $3
+                 FOR UPDATE",
+                &[&user_id, &environment, &workspace_id],
+            )
+            .await?;
+        let write = match current {
+            None => {
+                let inserted = tx
+                    .query_opt(
+                        "INSERT INTO workspace_states (user_id, environment, workspace_id, document, updated_at)
+                         VALUES ($1, $2, $3, $4, now())
+                         ON CONFLICT (user_id, environment, workspace_id) DO NOTHING
+                         RETURNING updated_at",
+                        &[&user_id, &environment, &workspace_id, document],
+                    )
+                    .await?;
+                match inserted {
+                    Some(row) => WorkspaceStateWrite::Saved(row.get(0)),
+                    None => WorkspaceStateWrite::Stale,
+                }
+            }
+            Some(row) => {
+                let stored: DateTime<Utc> = row.get(1);
+                // Compare in process. Casting the parameter to timestamptz makes
+                // Postgres expect a binary timestamp, and the text the client sent
+                // then fails to serialize.
+                let matches = expected_updated_at
+                    .as_deref()
+                    .and_then(|raw| DateTime::parse_from_rfc3339(raw).ok())
+                    .is_some_and(|stamp| {
+                        stamp.with_timezone(&Utc).timestamp_micros() == stored.timestamp_micros()
+                    });
+                if !matches {
+                    WorkspaceStateWrite::Stale
+                } else {
+                    let updated = tx
+                        .query_one(
+                            "UPDATE workspace_states
+                             SET document = $4, updated_at = now()
+                             WHERE user_id = $1 AND environment = $2 AND workspace_id = $3
+                             RETURNING updated_at",
+                            &[&user_id, &environment, &workspace_id, document],
+                        )
+                        .await?;
+                    WorkspaceStateWrite::Saved(updated.get(0))
+                }
+            }
+        };
+        tx.commit().await?;
+        Ok(write)
     }
 
     pub async fn delete_workspace_state(

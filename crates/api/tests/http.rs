@@ -1242,6 +1242,156 @@ async fn personal_layout_round_trips_and_layout_commands_are_ui() {
 }
 
 #[tokio::test]
+async fn personal_layout_put_rejects_a_stale_version_and_keeps_the_newer_document() {
+    let (db, app) = app().await;
+    let hash = braian_api::hash_password("secret-layout-version").unwrap();
+    let user = db
+        .store()
+        .create_user(
+            "layout-version@braian.local",
+            &hash,
+            "admin",
+            "Layout version",
+        )
+        .await
+        .unwrap();
+    let id = uuid::Uuid::now_v7();
+    db.store()
+        .save_workspace(
+            id,
+            user.id,
+            "Layout version",
+            false,
+            None,
+            &json!({ "type": "tabs", "views": ["v1"], "active": 0 }),
+        )
+        .await
+        .unwrap();
+    let (status, headers, logged) = call(
+        &app,
+        "POST",
+        "/v1/login",
+        None,
+        &[("content-type", "application/json")],
+        Some(r#"{"email":"layout-version@braian.local","password":"secret-layout-version"}"#),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{logged}");
+    let cookie = headers
+        .get("set-cookie")
+        .and_then(|value| value.split(';').next())
+        .unwrap()
+        .to_owned();
+    let document = |focus: &str| {
+        json!({
+            "environment": "default",
+            "expected_updated_at": null,
+            "document": {
+                "id": id,
+                "title": "Layout version",
+                "layout": { "type": "tabs", "views": ["v1"], "active": 0 },
+                "focus": focus
+            }
+        })
+    };
+    let (status, _, created) = call(
+        &app,
+        "PUT",
+        &format!("/v1/workspaces/{id}/state"),
+        None,
+        &[("cookie", &cookie), ("content-type", "application/json")],
+        Some(&serde_json::to_string(&document("v1")).unwrap()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    let version = created["updated_at"].as_str().unwrap().to_owned();
+    let newer = json!({
+        "environment": "default",
+        "expected_updated_at": version,
+        "document": {
+            "id": id,
+            "title": "Layout version",
+            "layout": { "type": "tabs", "views": ["v1", "graph"], "active": 1 },
+            "focus": "graph",
+            "clientSavedAt": 1
+        }
+    });
+    let (status, _, saved) = call(
+        &app,
+        "PUT",
+        &format!("/v1/workspaces/{id}/state"),
+        None,
+        &[("cookie", &cookie), ("content-type", "application/json")],
+        Some(&serde_json::to_string(&newer).unwrap()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{saved}");
+    let next = saved["updated_at"].as_str().unwrap().to_owned();
+    assert_ne!(next, version);
+    let stale = json!({
+        "environment": "default",
+        "expected_updated_at": version,
+        "document": {
+            "id": id,
+            "title": "Layout version",
+            "layout": { "type": "tabs", "views": ["v1"], "active": 0 },
+            "focus": "stale",
+            "clientSavedAt": 9_999_999_999_i64
+        }
+    });
+    let (status, _, conflict) = call(
+        &app,
+        "PUT",
+        &format!("/v1/workspaces/{id}/state"),
+        None,
+        &[("cookie", &cookie), ("content-type", "application/json")],
+        Some(&serde_json::to_string(&stale).unwrap()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{conflict}");
+    assert_eq!(conflict["code"], "stale_layout");
+    let (status, _, loaded) = call(
+        &app,
+        "GET",
+        &format!("/v1/workspaces/{id}/state?environment=default"),
+        None,
+        &[("cookie", &cookie)],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{loaded}");
+    assert_eq!(loaded["document"]["focus"], "graph");
+    assert_eq!(loaded["document"]["layout"]["views"][1], "graph");
+    assert_eq!(loaded["updated_at"], next);
+    let missing = json!({
+        "environment": "default",
+        "expected_updated_at": null,
+        "document": { "focus": "clobber" }
+    });
+    let (status, _, again) = call(
+        &app,
+        "PUT",
+        &format!("/v1/workspaces/{id}/state"),
+        None,
+        &[("cookie", &cookie), ("content-type", "application/json")],
+        Some(&serde_json::to_string(&missing).unwrap()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{again}");
+    let (status, _, bad) = call(
+        &app,
+        "PUT",
+        &format!("/v1/workspaces/{id}/state"),
+        None,
+        &[("cookie", &cookie), ("content-type", "application/json")],
+        Some(r#"{"document":{"focus":"x"},"expected_updated_at":"not-a-timestamp"}"#),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{bad}");
+    assert_eq!(bad["code"], "expected_updated_at");
+}
+
+#[tokio::test]
 async fn batch_get_defaults_to_heads_and_can_project_fields() {
     let (_db, app) = app().await;
     let mut ids = Vec::new();

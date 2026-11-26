@@ -47,8 +47,11 @@ test('agent keyboard shortcuts', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 })
   await login(page)
   const products = mainTable(page, 'Products')
-  await products.getByTestId('object-row').first().click()
-  const prompt = `describe layout ${Date.now().toString().slice(-5)}`
+  const row = products.getByTestId('object-row').first()
+  await row.click()
+  const objectId = ((await row.getAttribute('id')) ?? '').replace('object-row-', '')
+  const target = `key name ${Date.now().toString().slice(-5)}`
+  const prompt = `byt namn på den här produkten till ${target}`
   try {
     await openAgentAsk(page, prompt)
     const view = agent(page)
@@ -76,12 +79,11 @@ test('agent keyboard shortcuts', async ({ page }) => {
     const afterLink = agent(page)
     await expect(afterLink.getByTestId('agent-status')).toHaveAttribute('data-status', 'done', { timeout: 60_000 })
     const result = afterLink.getByTestId('agent-result-link').first()
-    if (await result.isVisible().catch(() => false)) {
-      await result.click({ timeout: 15_000 })
-      await expect(products.getByTestId('object-row').first()).toBeFocused().catch(() => undefined)
-      await page.keyboard.press('Control+j')
-      await expect(agent(page)).toHaveCount(0)
-    }
+    await expect(result).toBeVisible()
+    await result.click()
+    await expect(products.locator(`[id="object-row-${objectId}"] [data-column="name"]`)).toContainText(target, { timeout: 30_000 })
+    await page.keyboard.press('Control+j')
+    await expect(agent(page)).toHaveCount(0)
 
     const reopened = await ensureAgentOpen(page)
     const input = reopened.getByTestId('agent-follow-up')
