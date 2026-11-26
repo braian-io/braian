@@ -147,6 +147,30 @@ function groupLabel(group: Json): string {
   return labelOf(group.labels) || String(group.key ?? group.id ?? '')
 }
 
+function groupsByRef(groups: Json[]): Map<string, Json> {
+  const out = new Map<string, Json>()
+  for (const group of groups) {
+    out.set(String(group.id), group)
+    const key = group.key
+    if (key != null && String(key)) out.set(String(key), group)
+  }
+  return out
+}
+
+/** Display path from structure root through parent groups, e.g. `Food › Beverages › Juice`. */
+export function groupSourcePath(structure: Json, groups: Json[], group: Json): string {
+  const byRef = groupsByRef(groups)
+  const structureLabel = labelOf(structure.labels) || String(structure.key ?? structure.id ?? '')
+  const chain: string[] = []
+  let current: Json | undefined = group
+  while (current) {
+    chain.unshift(groupLabel(current))
+    const parentRef: unknown = current.parent
+    current = parentRef != null ? byRef.get(String(parentRef)) : undefined
+  }
+  return [structureLabel, ...chain].filter(Boolean).join(' › ')
+}
+
 /**
  * Same walk as `attributes_for_type` in crates/model/src/path.rs:
  * own attributes, then every group in each allowed structure, then legacy
@@ -176,7 +200,7 @@ function attributesForType(defs: DefsJson, typeObj: Json): SourcedAttribute[] {
     if (allowedIds && !allowedIds.has(String(structure.id))) continue
     const groups = (structure.groups as Json[] | undefined) ?? []
     for (const group of groups) {
-      const source = groupLabel(group)
+      const source = groupSourcePath(structure, groups, group)
       for (const id of (group.attributes as unknown[] | undefined) ?? []) add(id, source)
       // Older revisions may still nest class lists under the group.
       for (const cls of (group.classes as Json[] | undefined) ?? []) {
@@ -188,7 +212,7 @@ function attributesForType(defs: DefsJson, typeObj: Json): SourcedAttribute[] {
         (item) => String(item.id) === String(cls.group) || String(item.key) === String(cls.group),
       )
       if (!group) continue
-      const source = groupLabel(group)
+      const source = groupSourcePath(structure, groups, group)
       for (const id of (cls.attributes as unknown[] | undefined) ?? []) add(id, source)
     }
   }
@@ -289,7 +313,7 @@ export function leafAttributeKey(fieldId: string): string {
   return fieldId
 }
 
-export { attrByKey, typeByKey, factorsForFamily, labelOf }
+export { attrByKey, typeByKey, factorsForFamily, labelOf, unitsForFamily }
 
 /** Merge pathless system view columns (type, version) into the Fields › list as ordinary fields. */
 export function withSystemViewFields(

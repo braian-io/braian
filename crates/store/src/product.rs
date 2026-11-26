@@ -1,7 +1,9 @@
 //! Tables that sit on the log: people, workspaces, jobs, proposals, relations.
 
+use std::collections::BTreeMap;
+
 use chrono::{DateTime, Utc};
-use serde_json::Value;
+use serde_json::{Value, json};
 use tokio_postgres::types::ToSql;
 use uuid::Uuid;
 
@@ -73,6 +75,49 @@ pub struct AttributeUsageCount {
 
 fn usage_attribute_id(text: String) -> Option<Uuid> {
     Uuid::parse_str(&text).ok()
+}
+
+/// Result of saving a personal layout. `Stale` means the client's `expected_updated_at` lost the race.
+#[derive(Debug)]
+pub enum WorkspaceStateWrite {
+    Saved(DateTime<Utc>),
+    Stale,
+}
+
+/// Result of saving a view. `Stale` means the client's `expected_updated_at` lost the race.
+#[derive(Debug)]
+pub enum ViewWrite {
+    Saved(DateTime<Utc>),
+    Stale,
+}
+
+/// Compare an RFC3339 `updated_at` with the stored clock.
+///
+/// Done in process on purpose. Binding the text as `timestamptz` makes Postgres
+/// expect a binary timestamp, and the string the client sent then fails to serialize.
+pub fn same_updated_at(expected: Option<&str>, stored: DateTime<Utc>) -> bool {
+    expected
+        .and_then(|raw| DateTime::parse_from_rfc3339(raw).ok())
+        .is_some_and(|stamp| {
+            stamp.with_timezone(&Utc).timestamp_micros() == stored.timestamp_micros()
+        })
+}
+
+/// Replace top-level keys from `patch`. A JSON null removes that key.
+/// Keys absent from `patch` stay as stored. A non-object patch changes nothing.
+pub fn merge_view_state(current: &Value, patch: &Value) -> Value {
+    let mut merged = current.as_object().cloned().unwrap_or_default();
+    let Some(patch) = patch.as_object() else {
+        return Value::Object(merged);
+    };
+    for (key, value) in patch {
+        if value.is_null() {
+            merged.remove(key);
+        } else {
+            merged.insert(key.clone(), value.clone());
+        }
+    }
+    Value::Object(merged)
 }
 
 impl Store {
@@ -548,7 +593,7 @@ impl Store {
         let mut body = workspace_json(&row);
         let views = client
             .query(
-                "SELECT id, type_key, title, pane, position, state FROM views
+                "SELECT id, type_key, title, pane, position, state, updated_at FROM views
                  WHERE workspace_id = $1 AND deleted_at IS NULL ORDER BY pane, position",
                 &[&id],
             )
@@ -563,6 +608,7 @@ impl Store {
                     "pane": view.get::<_, String>("pane"),
                     "position": view.get::<_, i32>("position"),
                     "state": view.get::<_, Value>("state"),
+                    "updated_at": view.get::<_, DateTime<Utc>>("updated_at").to_rfc3339(),
                 })
             })
             .collect::<Vec<_>>();
@@ -617,6 +663,26 @@ impl Store {
         environment: &str,
         workspace_id: Uuid,
         document: &Value,
+        expected_updated_at: Option<Option<String>>,
+    ) -> Result<WorkspaceStateWrite, Error> {
+        // Absent expected_updated_at keeps the older last-write-wins save.
+        // A present value is the updated_at the client based this edit on.
+        let Some(expected) = expected_updated_at else {
+            return self
+                .put_workspace_state_unversioned(user_id, environment, workspace_id, document)
+                .await
+                .map(WorkspaceStateWrite::Saved);
+        };
+        self.put_workspace_state_versioned(user_id, environment, workspace_id, document, expected)
+            .await
+    }
+
+    async fn put_workspace_state_unversioned(
+        &self,
+        user_id: Uuid,
+        environment: &str,
+        workspace_id: Uuid,
+        document: &Value,
     ) -> Result<DateTime<Utc>, Error> {
         let client = self.checkout().await?;
         // clientSavedAt is a client clock. A layout save that left the browser
@@ -646,6 +712,66 @@ impl Store {
             )
             .await?;
         Ok(current.get(0))
+    }
+
+    async fn put_workspace_state_versioned(
+        &self,
+        user_id: Uuid,
+        environment: &str,
+        workspace_id: Uuid,
+        document: &Value,
+        expected_updated_at: Option<String>,
+    ) -> Result<WorkspaceStateWrite, Error> {
+        let mut client = self.checkout().await?;
+        let tx = client.transaction().await?;
+        let current = tx
+            .query_opt(
+                "SELECT document, updated_at FROM workspace_states
+                 WHERE user_id = $1 AND environment = $2 AND workspace_id = $3
+                 FOR UPDATE",
+                &[&user_id, &environment, &workspace_id],
+            )
+            .await?;
+        let write = match current {
+            None => {
+                let inserted = tx
+                    .query_opt(
+                        "INSERT INTO workspace_states (user_id, environment, workspace_id, document, updated_at)
+                         VALUES ($1, $2, $3, $4, now())
+                         ON CONFLICT (user_id, environment, workspace_id) DO NOTHING
+                         RETURNING updated_at",
+                        &[&user_id, &environment, &workspace_id, document],
+                    )
+                    .await?;
+                match inserted {
+                    Some(row) => WorkspaceStateWrite::Saved(row.get(0)),
+                    None => WorkspaceStateWrite::Stale,
+                }
+            }
+            Some(row) => {
+                let stored: DateTime<Utc> = row.get(1);
+                // Compare in process. Casting the parameter to timestamptz makes
+                // Postgres expect a binary timestamp, and the text the client sent
+                // then fails to serialize.
+                let matches = same_updated_at(expected_updated_at.as_deref(), stored);
+                if !matches {
+                    WorkspaceStateWrite::Stale
+                } else {
+                    let updated = tx
+                        .query_one(
+                            "UPDATE workspace_states
+                             SET document = $4, updated_at = now()
+                             WHERE user_id = $1 AND environment = $2 AND workspace_id = $3
+                             RETURNING updated_at",
+                            &[&user_id, &environment, &workspace_id, document],
+                        )
+                        .await?;
+                    WorkspaceStateWrite::Saved(updated.get(0))
+                }
+            }
+        };
+        tx.commit().await?;
+        Ok(write)
     }
 
     pub async fn delete_workspace_state(
@@ -778,11 +904,11 @@ impl Store {
         let client = self.checkout().await?;
         client
             .execute(
-                "INSERT INTO views (id, workspace_id, type_key, title, pane, position, state)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7)
+                "INSERT INTO views (id, workspace_id, type_key, title, pane, position, state, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, now())
                  ON CONFLICT (id) DO UPDATE SET workspace_id = EXCLUDED.workspace_id,
                    title = EXCLUDED.title, pane = EXCLUDED.pane, position = EXCLUDED.position,
-                   state = EXCLUDED.state, type_key = EXCLUDED.type_key",
+                   state = EXCLUDED.state, type_key = EXCLUDED.type_key, updated_at = now()",
                 &[
                     &id,
                     &workspace_id,
@@ -795,6 +921,84 @@ impl Store {
             )
             .await?;
         Ok(())
+    }
+
+    /// Merge `patch` into the stored view state and bump `updated_at`.
+    ///
+    /// Absent `expected_updated_at` merges without a version check.
+    /// `Some(None)` means the client saw no row. A present timestamp must match
+    /// the stored clock; otherwise the write is [`ViewWrite::Stale`] and nothing changes.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn merge_view(
+        &self,
+        id: Uuid,
+        workspace_id: Uuid,
+        type_key: &str,
+        title: &str,
+        pane: &str,
+        position: i32,
+        patch: &Value,
+        expected_updated_at: Option<Option<String>>,
+    ) -> Result<ViewWrite, Error> {
+        let mut client = self.checkout().await?;
+        let tx = client.transaction().await?;
+        let mut expected = expected_updated_at;
+        let mut attempts = 0;
+        let write = loop {
+            attempts += 1;
+            if attempts > 2 {
+                break ViewWrite::Stale;
+            }
+            let current = tx
+                .query_opt(
+                    "SELECT state, updated_at FROM views WHERE id = $1 FOR UPDATE",
+                    &[&id],
+                )
+                .await?;
+            if let Some(row) = current {
+                break apply_view_merge(
+                    &tx,
+                    id,
+                    workspace_id,
+                    type_key,
+                    title,
+                    pane,
+                    position,
+                    patch,
+                    expected,
+                    &row,
+                )
+                .await?;
+            }
+            let initial = merge_view_state(&json!({}), patch);
+            let inserted = tx
+                .query_opt(
+                    "INSERT INTO views (id, workspace_id, type_key, title, pane, position, state, updated_at)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+                     ON CONFLICT (id) DO NOTHING
+                     RETURNING updated_at",
+                    &[
+                        &id,
+                        &workspace_id,
+                        &type_key,
+                        &title,
+                        &pane,
+                        &position,
+                        &initial,
+                    ],
+                )
+                .await?;
+            if let Some(row) = inserted {
+                break ViewWrite::Saved(row.get(0));
+            }
+            // The row appeared between the lock and the insert.
+            if expected.is_some() {
+                break ViewWrite::Stale;
+            }
+            expected = None;
+        };
+        tx.commit().await?;
+        Ok(write)
     }
 
     /// Stored view document, without the seed template.
@@ -814,7 +1018,7 @@ impl Store {
         let client = self.checkout().await?;
         client
             .execute(
-                "UPDATE views SET state = $2 WHERE id = $1 AND deleted_at IS NULL",
+                "UPDATE views SET state = $2, updated_at = now() WHERE id = $1 AND deleted_at IS NULL",
                 &[&id, state],
             )
             .await?;
@@ -965,31 +1169,142 @@ impl Store {
     }
 
     pub async fn list_assortments(&self, type_id: Option<Uuid>) -> Result<Vec<Value>, Error> {
-        let client = self.checkout().await?;
-        let rows = client
-            .query(
-                "SELECT id, name, type_id, kind, query FROM assortments
-                 WHERE deleted_at IS NULL AND ($1::uuid IS NULL OR type_id = $1)
-                 ORDER BY name",
-                &[&type_id],
-            )
-            .await?;
-        Ok(rows.iter().map(assortment_json).collect())
+        let values = {
+            let client = self.checkout().await?;
+            let rows = client
+                .query(
+                    "SELECT id, name, type_id, kind, query FROM assortments
+                     WHERE deleted_at IS NULL AND ($1::uuid IS NULL OR type_id = $1)
+                     ORDER BY name",
+                    &[&type_id],
+                )
+                .await?;
+            rows.iter().map(assortment_json).collect()
+        };
+        self.attach_member_ids(values).await
     }
 
     pub async fn assortment(&self, id: Uuid) -> Result<Option<Value>, Error> {
-        let client = self.checkout().await?;
-        let Some(row) = client
-            .query_opt(
-                "SELECT id, name, type_id, kind, query FROM assortments
-                 WHERE id = $1 AND deleted_at IS NULL",
-                &[&id],
-            )
-            .await?
-        else {
+        let found = {
+            let client = self.checkout().await?;
+            client
+                .query_opt(
+                    "SELECT id, name, type_id, kind, query FROM assortments
+                     WHERE id = $1 AND deleted_at IS NULL",
+                    &[&id],
+                )
+                .await?
+                .map(|row| assortment_json(&row))
+        };
+        let Some(mut value) = found else {
             return Ok(None);
         };
-        Ok(Some(assortment_json(&row)))
+        let members = self.assortment_member_ids(id).await?;
+        value["member_ids"] = json!(members);
+        Ok(Some(value))
+    }
+
+    /// Live objects in a manual selection, in the order they were added.
+    pub async fn assortment_member_ids(&self, assortment_id: Uuid) -> Result<Vec<Uuid>, Error> {
+        let client = self.checkout().await?;
+        let rows = client
+            .query(
+                "SELECT m.object_id
+                 FROM assortment_members m
+                 JOIN objects o ON o.id = m.object_id
+                 WHERE m.assortment_id = $1 AND o.deleted_at IS NULL
+                 ORDER BY m.added_at, m.object_id",
+                &[&assortment_id],
+            )
+            .await?;
+        Ok(rows.iter().map(|row| row.get(0)).collect())
+    }
+
+    /// Adds objects. A repeated id is a no-op.
+    pub async fn add_assortment_members(
+        &self,
+        assortment_id: Uuid,
+        object_ids: &[Uuid],
+    ) -> Result<(), Error> {
+        if object_ids.is_empty() {
+            return Ok(());
+        }
+        let client = self.checkout().await?;
+        client
+            .execute(
+                "INSERT INTO assortment_members (assortment_id, object_id)
+                 SELECT $1, object_id FROM unnest($2::uuid[]) AS object_id
+                 ON CONFLICT (assortment_id, object_id) DO NOTHING",
+                &[&assortment_id, &object_ids],
+            )
+            .await?;
+        Ok(())
+    }
+
+    /// Removes objects. An id that is not a member is a no-op.
+    pub async fn remove_assortment_members(
+        &self,
+        assortment_id: Uuid,
+        object_ids: &[Uuid],
+    ) -> Result<(), Error> {
+        if object_ids.is_empty() {
+            return Ok(());
+        }
+        let client = self.checkout().await?;
+        client
+            .execute(
+                "DELETE FROM assortment_members
+                 WHERE assortment_id = $1 AND object_id = ANY($2)",
+                &[&assortment_id, &object_ids],
+            )
+            .await?;
+        Ok(())
+    }
+
+    async fn assortment_member_map(
+        &self,
+        assortment_ids: &[Uuid],
+    ) -> Result<BTreeMap<Uuid, Vec<Uuid>>, Error> {
+        if assortment_ids.is_empty() {
+            return Ok(BTreeMap::new());
+        }
+        let client = self.checkout().await?;
+        let rows = client
+            .query(
+                "SELECT m.assortment_id, m.object_id
+                 FROM assortment_members m
+                 JOIN objects o ON o.id = m.object_id
+                 WHERE m.assortment_id = ANY($1) AND o.deleted_at IS NULL
+                 ORDER BY m.assortment_id, m.added_at, m.object_id",
+                &[&assortment_ids],
+            )
+            .await?;
+        let mut map: BTreeMap<Uuid, Vec<Uuid>> = BTreeMap::new();
+        for row in rows {
+            map.entry(row.get(0)).or_default().push(row.get(1));
+        }
+        Ok(map)
+    }
+
+    async fn attach_member_ids(&self, mut rows: Vec<Value>) -> Result<Vec<Value>, Error> {
+        let ids = rows
+            .iter()
+            .filter_map(|row| {
+                row.get("id")
+                    .and_then(Value::as_str)
+                    .and_then(|text| Uuid::parse_str(text).ok())
+            })
+            .collect::<Vec<_>>();
+        let map = self.assortment_member_map(&ids).await?;
+        for row in &mut rows {
+            let id = row
+                .get("id")
+                .and_then(Value::as_str)
+                .and_then(|text| Uuid::parse_str(text).ok());
+            let members = id.and_then(|id| map.get(&id)).cloned().unwrap_or_default();
+            row["member_ids"] = json!(members);
+        }
+        Ok(rows)
     }
 
     /// Views, job types and webhooks that reference this selection.
@@ -2525,14 +2840,79 @@ fn job_json(row: &tokio_postgres::Row) -> Value {
     })
 }
 
+#[allow(clippy::too_many_arguments)]
+async fn apply_view_merge(
+    tx: &impl deadpool_postgres::GenericClient,
+    id: Uuid,
+    workspace_id: Uuid,
+    type_key: &str,
+    title: &str,
+    pane: &str,
+    position: i32,
+    patch: &Value,
+    expected_updated_at: Option<Option<String>>,
+    row: &tokio_postgres::Row,
+) -> Result<ViewWrite, Error> {
+    let stored_state: Value = row.get(0);
+    let stored_at: DateTime<Utc> = row.get(1);
+    if let Some(expected) = expected_updated_at
+        && !same_updated_at(expected.as_deref(), stored_at)
+    {
+        return Ok(ViewWrite::Stale);
+    }
+    let merged = merge_view_state(&stored_state, patch);
+    let updated = tx
+        .query_one(
+            "UPDATE views
+             SET workspace_id = $2, type_key = $3, title = $4, pane = $5, position = $6,
+                 state = $7, updated_at = now()
+             WHERE id = $1
+             RETURNING updated_at",
+            &[
+                &id,
+                &workspace_id,
+                &type_key,
+                &title,
+                &pane,
+                &position,
+                &merged,
+            ],
+        )
+        .await?;
+    Ok(ViewWrite::Saved(updated.get(0)))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::like_contains;
+    use chrono::{DateTime, Utc};
+    use serde_json::json;
+
+    use super::{like_contains, merge_view_state, same_updated_at};
 
     #[test]
     fn key_search_escapes_like_metacharacters() {
         assert_eq!(like_contains("tent"), "%tent%");
         assert_eq!(like_contains("100%_"), "%100\\%\\_%");
         assert_eq!(like_contains("a\\b"), "%a\\\\b%");
+    }
+
+    #[test]
+    fn view_state_merge_replaces_sent_keys_and_drops_null() {
+        let merged = merge_view_state(
+            &json!({"alpha": 1, "beta": {"n": 1}, "gamma": true}),
+            &json!({"beta": {"n": 2}, "gamma": null, "delta": 4}),
+        );
+        assert_eq!(merged, json!({"alpha": 1, "beta": {"n": 2}, "delta": 4}));
+    }
+
+    #[test]
+    fn updated_at_matches_by_microsecond() {
+        let stored = DateTime::parse_from_rfc3339("2026-11-26T10:00:00.123456Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        assert!(same_updated_at(Some("2026-11-26T10:00:00.123456Z"), stored));
+        assert!(!same_updated_at(None, stored));
+        assert!(!same_updated_at(Some("not-a-timestamp"), stored));
+        assert!(!same_updated_at(Some("2026-11-26T10:00:00Z"), stored));
     }
 }

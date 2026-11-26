@@ -1,29 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
-import { expectToastClearsLists, mainTable, setTheme } from './ui'
-
-async function showProducts(page: Page) {
-  await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
-  await page.locator('.pane-tab[data-view-type="object_table"]').filter({ hasText: /^Products/ }).first().click()
-  await expect(mainTable(page).getByTestId('object-row').first()).toBeVisible({ timeout: 60_000 })
-}
-
-async function resetProductsLayout(page: Page) {
-  await page.evaluate(() => sessionStorage.setItem('braian.layout.suppressFlush', '1'))
-  const listed = await page.request.get('/v1/workspaces')
-  const body = (await listed.json()) as { workspaces: Array<{ id: string; name: string }> }
-  const workspace = body.workspaces.find((item) => item.name === 'Products')
-  const me = await page.request.get('/v1/me')
-  const userId = ((await me.json()) as { user_id?: string }).user_id
-  if (userId && workspace) {
-    await page.evaluate((key) => localStorage.removeItem(key), `braian.layout.${userId}.default.${workspace.id}`)
-    await page.request.delete(`/v1/workspaces/${workspace.id}/state?environment=default`)
-  }
-  await page.reload()
-  await expect(page.locator('nav.tabs')).toBeVisible({ timeout: 60_000 })
-  await page.evaluate(() => sessionStorage.removeItem('braian.layout.suppressFlush'))
-  await showProducts(page)
-}
+import { agentPaneTab, agentSessionView, agentTitleStubHint, expectToastClearsLists, mainTable, resetProductsLayout, setTheme, showProducts } from './ui'
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -43,19 +20,18 @@ async function ask(page: Page, prompt: string) {
 }
 
 function agentTab(page: Page, title: string) {
-  const exact = new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`)
-  return page.locator('.pane-tab[data-view-type="agent"]').filter({ hasText: exact }).last()
+  return agentPaneTab(page, title)
 }
 
 function agentView(page: Page, title: string) {
-  return page.getByTestId('agent-view').filter({ has: page.getByRole('heading', { level: 2, name: title, exact: true }) }).last()
+  return agentSessionView(page, title)
 }
 
 async function closeAgentTab(page: Page, title: string) {
-  const exact = new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`)
-  const tabs = page.locator('.pane-tab[data-view-type="agent"]').filter({ hasText: exact })
+  const tab = agentPaneTab(page, title)
+  const escaped = agentTitleStubHint(title).replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  const tabs = page.locator(`.pane-tab[data-view-type="agent"][title*="${escaped}"]`)
   const before = await tabs.count()
-  const tab = tabs.last()
   await tab.hover()
   await tab.getByRole('button', { name: 'Close tab' }).click()
   await expect(tabs).toHaveCount(before - 1)
@@ -194,9 +170,9 @@ test('background runs show a count and Review results opens the tab', async ({ p
   await expect(page.getByTestId('agent-background-indicator')).toBeVisible()
   const review = page.getByRole('button', { name: 'Review results' }).first()
   await expect(review).toBeVisible({ timeout: 30_000 })
-  const toastBox = page.locator('[data-sonner-toast]').first()
-  await expect(toastBox).toBeVisible()
-  await expectToastClearsLists(page, toastBox)
+  const notice = page.locator('[data-sonner-toast]').filter({ hasText: 'Review results' }).first()
+  await expect(notice).toBeVisible()
+  await expectToastClearsLists(page, notice)
   await shot(page, 'agent-notification')
   await review.click()
   await expect(page.locator('.pane-tab[data-view-type="agent"]').first()).toBeVisible()
@@ -212,7 +188,7 @@ test('waiting survives reload and the agent area stays status and navigation onl
   const view = agentView(page, title)
   await expect(view.getByTestId('agent-status')).toHaveAttribute('data-status', 'waiting', { timeout: 30_000 })
   await expect(view.getByTestId('agent-status')).toHaveText('Waiting for you')
-  await expect(view.getByTestId('agent-question')).toHaveCount(0)
+  await expect(view.getByTestId('agent-question')).toBeVisible()
   await view.getByTestId('agent-mode').click()
   await expect(view).toHaveAttribute('data-mode', 'background')
   const waitingToast = page.locator('[data-sonner-toast]').filter({ hasText: 'waiting for you' })
@@ -225,7 +201,7 @@ test('waiting survives reload and the agent area stays status and navigation onl
   await agentTab(page, title).click()
   const restored = agentView(page, title)
   await expect(restored.getByTestId('agent-status')).toHaveText('Waiting for you')
-  await expect(restored.getByTestId('agent-question')).toHaveCount(0)
+  await expect(restored.getByTestId('agent-question')).toBeVisible()
   await expect(restored).toHaveAttribute('data-mode', 'background')
   await expect(restored.getByRole('button', { name: 'Bring to front' })).toHaveCount(0)
   const runId = await restored.getAttribute('data-run')
@@ -241,10 +217,9 @@ test('waiting survives reload and the agent area stays status and navigation onl
   await closeAgentTab(page, title)
   await answer.click()
   await expect(agentTab(page, title)).toBeVisible()
-  await expect(agentView(page, title).getByTestId('agent-question')).toHaveCount(0)
+  await expect(agentView(page, title).getByTestId('agent-question')).toBeVisible()
   await expect(agentView(page, title)).toHaveAttribute('data-mode', 'foreground')
-  await expect(agentView(page, title).getByTestId('agent-follow-up')).toHaveCount(0)
-  await expect(agentView(page, title).getByTestId('agent-open-draft')).toBeVisible()
+  await expect(agentView(page, title).getByTestId('agent-follow-up')).toBeVisible()
   await expectTabStartVisible(page, title)
   await shot(page, 'agent-waiting')
   await expect(agentView(page, title).getByTestId('agent-status')).toHaveAttribute('data-status', 'waiting')
@@ -252,13 +227,14 @@ test('waiting survives reload and the agent area stays status and navigation onl
   await showProducts(page)
   await agentTab(page, title).click()
   await expect(agentView(page, title).getByTestId('agent-status')).toHaveAttribute('data-status', 'waiting')
-  await expect(agentView(page, title).getByTestId('agent-question')).toHaveCount(0)
+  await expect(agentView(page, title).getByTestId('agent-question')).toBeVisible()
 })
 
 test('Ctrl+K lists agents and Enter opens the tab', async ({ page }) => {
   test.setTimeout(120_000)
   await login(page)
   const title = 'ask me before the palette lists it'
+  const sessionName = agentTitleStubHint(title)
   await ask(page, title)
   await expect(agentView(page, title).getByTestId('agent-status')).toHaveAttribute('data-status', 'waiting', { timeout: 30_000 })
   await closeAgentTab(page, title)
@@ -272,7 +248,8 @@ test('Ctrl+K lists agents and Enter opens the tab', async ({ page }) => {
   await expect(page.getByTestId('palette-crumb')).toContainText('Agents ›')
   await expect(page.getByTestId('palette-input')).toHaveAttribute('placeholder', 'Search agents…')
   await page.getByTestId('palette-input').fill('palette lists')
-  await expect(palette.locator('.hit.on')).toContainText(title)
+  await expect.poll(async () => palette.locator('.hit.on').count()).toBeGreaterThan(0)
+  await expect(palette.locator('.hit.on')).toContainText(sessionName)
   if (process.env.BRAIAN_AGENT_SHOTS) {
     const dir = process.env.BRAIAN_AGENT_SHOTS
     const theme = (await page.locator('html').getAttribute('data-theme')) === 'light' ? 'light' : 'dark'
@@ -284,13 +261,20 @@ test('Ctrl+K lists agents and Enter opens the tab', async ({ page }) => {
     await page.getByTestId('palette-input').fill('Agents')
     await page.keyboard.press('Enter')
     await page.getByTestId('palette-input').fill('palette lists')
-    await expect(page.getByTestId('command-palette').locator('.hit.on')).toContainText(title)
+    await expect(page.getByTestId('command-palette').locator('.hit.on')).toContainText(sessionName)
     await page.screenshot({ path: `${dir}/agent-palette-${other}.png` })
   }
   await page.keyboard.press('Enter')
   await expect(palette).toHaveCount(0)
   await expect(agentTab(page, title)).toBeVisible()
-  await expect(agentView(page, title).getByTestId('agent-question')).toHaveCount(0)
+  await expect(agentView(page, title).getByTestId('agent-question')).toBeVisible()
+  await page.keyboard.press('Control+k')
+  await page.getByTestId('palette-input').fill('Agents table')
+  await page.keyboard.press('Enter')
+  const agentsPane = page.locator('section.pane').filter({ has: page.getByTestId('agents-table') })
+  await expect(agentsPane).toBeVisible({ timeout: 30_000 })
+  await agentsPane.locator('.search-field input').fill('palette lists')
+  await expect(agentsPane.getByTestId('agent-table-row').filter({ hasText: sessionName })).toBeVisible()
 })
 
 test('a long active tab keeps its start visible in a crowded strip', async ({ page }) => {
@@ -301,14 +285,14 @@ test('a long active tab keeps its start visible in a crowded strip', async ({ pa
     'ask me before the neighbor tab stays fully readable',
     'ask me before the active name begins at the left',
   ]
-  const tabFor = (prefix: string) => page.locator('.pane-tab[data-view-type="agent"]').filter({ hasText: prefix }).last()
+  const tabFor = (sessionTitle: string) => agentPaneTab(page, sessionTitle)
   for (const title of titles) {
     await ask(page, title)
     await expect(page.getByTestId('command-palette')).toHaveCount(0)
-    await expect(tabFor(title.slice(0, 24))).toBeAttached()
-    await expect(page.getByTestId('agent-open-draft').last()).toBeVisible()
+    await expect(tabFor(title)).toBeAttached()
+    await expect(agentView(page, title).getByTestId('agent-follow-up')).toBeVisible()
   }
-  const active = titles[2].slice(0, 24)
+  const active = titles[2]
   await tabFor(active).click({ force: true })
   const tab = tabFor(active)
   const strip = tab.locator('xpath=ancestor::div[contains(@class,"pane-tab-list")]')
@@ -347,7 +331,7 @@ test('a long active tab keeps its start visible in a crowded strip', async ({ pa
   ])
   expect(overflow).toBe(true)
   expect(tabLeft).toBeLessThanOrEqual(stripLeft + 8)
-  expect(truncated).toBe(true)
+  expect(truncated).toBe(false)
   const cut = await page.locator('.pane-tab-list').evaluateAll((lists) => lists.flatMap((list) => {
     const view = list.getBoundingClientRect()
     return [...list.querySelectorAll<HTMLElement>('[data-tab]')].flatMap((item) => {
@@ -370,6 +354,10 @@ test('a long active tab keeps its start visible in a crowded strip', async ({ pa
       await page.evaluate((key) => localStorage.removeItem(key), `braian.layout.${userId}.default.${workspace.id}`)
       await page.request.delete(`/v1/workspaces/${workspace.id}/state?environment=default`)
     }
+    await page.reload()
+    await expect(page.locator('nav.tabs')).toBeVisible({ timeout: 60_000 })
+    await page.evaluate(() => sessionStorage.removeItem('braian.layout.suppressFlush'))
+    await showProducts(page)
   }
 })
 
@@ -378,6 +366,7 @@ test('the agents table lists status, proposals and updated time, and Enter opens
   await login(page)
   await resetProductsLayout(page)
   const title = 'ask me before the agents table'
+  const sessionName = agentTitleStubHint(title)
   await ask(page, title)
   await expect(agentView(page, title).getByTestId('agent-status')).toHaveAttribute('data-status', 'waiting', { timeout: 30_000 })
   await page.keyboard.press('Control+k')
@@ -390,7 +379,7 @@ test('the agents table lists status, proposals and updated time, and Enter opens
   await expect(table.getByRole('columnheader', { name: 'Status' })).toBeVisible()
   await expect(table.getByRole('columnheader', { name: 'Proposals' })).toBeVisible()
   await expect(table.getByRole('columnheader', { name: 'Updated' })).toBeVisible()
-  const row = table.getByTestId('agent-table-row').filter({ hasText: title }).first()
+  const row = table.getByTestId('agent-table-row').filter({ hasText: sessionName }).first()
   await expect(row).toContainText('Waiting')
   await expect(row).toContainText('0')
   await expect(row).toContainText(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}/)

@@ -16,6 +16,7 @@ export type LinkField = {
   kind: string
   form: string
   languageDependent: boolean
+  integer: boolean
   options: Array<{ code: string; label: string }>
   units: string[]
 }
@@ -262,15 +263,48 @@ export function linkPickerRows(input: {
     .map((entry) => entry.item)
 }
 
+const integerPattern = /^-?\d+$/
+
+export function filterIntegerInput(value: string) {
+  if (value === '' || value === '-') return value
+  const negative = value.startsWith('-')
+  const digits = value.replace(/[^\d]/g, '')
+  return negative ? `-${digits}` : digits
+}
+
 export function linkFieldErrors(fields: LinkField[], draft: Record<string, string>): Record<string, string> {
   const errors: Record<string, string> = {}
   for (const field of fields) {
     if (field.kind !== 'number' && field.kind !== 'range') continue
     const raw = (draft[field.key] ?? '').trim()
     if (!raw) continue
+    if (field.integer) {
+      if (!integerPattern.test(raw)) errors[field.key] = copy.linkFieldNumber
+      continue
+    }
     if (!Number.isFinite(Number(raw))) errors[field.key] = copy.linkFieldNumber
   }
   return errors
+}
+
+export function linkTypeFields(defs: Json | undefined, linkTypeKey: string): LinkField[] {
+  const item = ((defs?.types as Json[]) ?? []).find((row) => row.kind === 'link' && String(row.key ?? '') === linkTypeKey)
+  return item ? fieldsFor(defs, item) : []
+}
+
+export function linkDraftFromItem(fields: LinkField[], link: { sort_order?: string | number | null; values?: Json }) {
+  const draft: Record<string, string> = {}
+  const values = (link.values as Record<string, unknown> | undefined) ?? {}
+  for (const field of fields) {
+    const picked = values[field.key] ?? (field.key === 'sort_order' ? link.sort_order : undefined)
+    if (picked == null || picked === '') continue
+    if (typeof picked === 'object' && picked !== null && 'value' in picked) {
+      draft[field.key] = String((picked as { value?: unknown }).value ?? '')
+    } else {
+      draft[field.key] = String(picked)
+    }
+  }
+  return draft
 }
 
 export function linkConstrainedType(
@@ -347,6 +381,7 @@ function fieldsFor(defs: Json | undefined, linkType: Json): LinkField[] {
       kind: type,
       form: String(kind.form ?? ''),
       languageDependent: Boolean(attribute.language_dependent),
+      integer: type === 'number' && Boolean(kind.integer),
       options: optionsFor(lists, listKey),
       units: unitsFor(families, familyId),
     })

@@ -104,6 +104,7 @@ async function enterOn(page: Page, rowTestId: string) {
 
 async function toggleBrand(page: Page) {
   await openFieldsPalette(page)
+  await page.getByTestId('fields-mode-input').fill('brand')
   await enterOn(page, 'fields-row-brand')
   await page.keyboard.press('Escape')
   await expect(page.getByTestId('fields-mode')).toHaveCount(0)
@@ -270,7 +271,9 @@ test.describe('column prefs reset', () => {
 
     const dock = page.getByTestId('dock')
     if (await dock.getAttribute('data-zoom')) {
-      await page.getByTestId('pane-maximize').click()
+      const zoomed = page.locator('section.pane').first()
+      await zoomed.hover()
+      await zoomed.getByTestId('pane-maximize').click()
       await expect(dock).toHaveAttribute('data-zoom', '')
     }
 
@@ -281,7 +284,9 @@ test.describe('column prefs reset', () => {
     expect(detailFocus).toBeTruthy()
     expect(detailFocus).not.toBe(viewId)
 
-    await paneWithTab(page, 'Products').getByTestId('pane-maximize').click()
+    const productsPane = paneWithTab(page, 'Products')
+    await productsPane.hover()
+    await productsPane.getByTestId('pane-maximize').click()
     await expect(dock).toHaveAttribute('data-zoom', viewId)
     await expect(dock).toHaveAttribute('data-focus', detailFocus ?? '')
     await expect(page.locator('section.pane')).toHaveCount(1)
@@ -317,7 +322,8 @@ test.describe('column prefs reset', () => {
     expect(((await prefs.json()) as { document?: unknown }).document).toBeNull()
 
     if ((await dock.getAttribute('data-zoom')) === viewId) {
-      await page.getByTestId('pane-maximize').click()
+      await productsPane.hover()
+      await productsPane.getByTestId('pane-maximize').click()
       await expect(dock).toHaveAttribute('data-zoom', '')
     }
   })

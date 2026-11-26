@@ -1,17 +1,21 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, textValue, type Json } from './api'
 import { Button } from './components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
 import { writeErrorMessage } from './write-error'
-import { formatCount, formatTimestamp } from './format'
+import { formatTimestamp } from './format'
+import { unsavedChangeLabel } from './object-draft-bar'
 import { copy, uiLanguage } from './i18n'
 import { attributeKey } from './model-view'
 import {
+  allowedTreesFocusTarget,
   onDraftChange,
   onStructuresLockChange,
   cancelStructuresStage,
   clearStagedStructures,
+  discardModelTableDraft,
   lockedStructuresType,
   releaseStructuresLock,
   removeDraftSteps,
@@ -25,7 +29,9 @@ import {
 } from './model-stage'
 import { describeModelSteps } from './model-step-text'
 import { registerModelDefinitions } from './model-selection'
+import { flushModelTableDraftToStaged } from './model-table-draft'
 import { StateNote } from './states'
+import { beginOwnModelSave, endOwnModelSave } from './model-revision-watch'
 
 export type DraftSaveGate = 'idle' | 'direct' | 'confirm' | 'blocked'
 
@@ -34,12 +40,22 @@ function asRecord(value: unknown): Json | undefined {
   return value as Json
 }
 
-/** Allowed trees are reviewed even when the change is not destructive. */
+function forcesReview(step: unknown): boolean {
+  const record = asRecord(step)
+  const op = record?.op
+  if (op === 'set_structures' || op === 'update_value_list' || op === 'reorder_attributes') {
+    return true
+  }
+  // A group attach is a model change. A type attach stays a direct save.
+  return op === 'attach_attribute' && Boolean(record?.structure) && Boolean(record?.group)
+}
+
+/** Model changes that are reviewed even when they are not destructive. */
 export function draftHasForcedReview(body: Json | null | undefined): boolean {
   if (!body) return false
   const steps = body.steps
   if (!Array.isArray(steps)) return false
-  return steps.some((step) => asRecord(step)?.op === 'set_structures')
+  return steps.some(forcesReview)
 }
 
 /** Preview error, `consequence.destructive`, and the allowed-tree operation. */
@@ -66,7 +82,9 @@ function confirmLead(body: Json): string {
   const lines = (body.lines as string[] | undefined) ?? (consequence?.lines as string[] | undefined) ?? []
   // A forced allowed-tree review has nothing to delete; allowedTreesSentence
   // names the changed trees. Never fall back to the server's raw-key line.
-  if (draftHasForcedReview(body) && consequence?.destructive !== true) {
+  const steps = Array.isArray(body.steps) ? body.steps : []
+  const structures = steps.some((step) => asRecord(step)?.op === 'set_structures')
+  if (structures && consequence?.destructive !== true) {
     return copy.allowedTrees.replace('…', '')
   }
   const sentence = String(consequence?.sentence ?? '')
@@ -233,6 +251,13 @@ export function ModelDraftHost() {
   const patching = useRef(false)
   const pendingReverts = useRef(new Map<number, PendingRevert>())
   const rememberOpener = () => {
+    // Allowed-trees edits are decided from the table Save button. Return focus
+    // to the checkbox the user toggled, which is where they were working.
+    const checkbox = allowedTreesFocusTarget()
+    if (checkbox && (lockedStructuresType() || structuresStageInFlight())) {
+      opener.current = checkbox
+      return
+    }
     // The loading shell opens on the same click. Keep the real opener (the
     // checkbox) when it was captured before that dialog mounted.
     if (opener.current) return
@@ -347,6 +372,7 @@ export function ModelDraftHost() {
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ['model-draft'] })
     void queryClient.invalidateQueries({ queryKey: ['definitions'] })
+    void queryClient.invalidateQueries({ queryKey: ['catalogs'] })
   }
   // Cancel removes only the steps this dialog created, so other draft work survives.
   // The cached draft is reverted first; the server call follows. On failure the
@@ -387,6 +413,9 @@ export function ModelDraftHost() {
     setReviewLoading(false)
     setError('')
     const staging = cancelStructuresStage()
+    // Flush discards the table draft only after the POST returns. Cancel during
+    // that POST has to drop the local patch now, or the checkbox stays checked.
+    if (staging) discardModelTableDraft()
     if (saving.current) {
       // A save loop is already running and holds the staged record. Revert it
       // now so the checkbox and the count respond to Cancel immediately.
@@ -426,6 +455,13 @@ export function ModelDraftHost() {
     setError('')
     let posted = ''
     try {
+      const flushed = await flushModelTableDraftToStaged()
+      if (!flushed) {
+        if (token === reviewToken.current) {
+          setReviewLoading(false)
+        }
+        return
+      }
       do {
         again.current = false
         // A second stage can land while this loop is running. Collect it rather
@@ -454,7 +490,14 @@ export function ModelDraftHost() {
         if (gate !== 'direct' || !body) continue
         const change = JSON.stringify(body.steps ?? body.updated_at ?? body.count)
         if (change === posted) break
-        await api.post('/v1/model/draft/save', { body: draftSaveBody(body) })
+        beginOwnModelSave()
+        try {
+          const saved = await api.post('/v1/model/draft/save', { body: draftSaveBody(body) }) as Json
+          endOwnModelSave(typeof saved.model_revision === 'number' ? saved.model_revision : undefined)
+        } catch (reason) {
+          endOwnModelSave(undefined)
+          throw reason
+        }
         posted = change
         setReview(false)
         setReviewCreated([])
@@ -519,7 +562,7 @@ export function ModelDraftHost() {
     <>
       {count > 0 ? (
         <div className="draft-bar" data-testid="unsaved-changes" role="status">
-          <span>{formatCount(count)} {copy.unsavedChanges}</span>
+          <span>{unsavedChangeLabel(count)}</span>
           {draft.data?.updated_at ? <time dateTime={String(draft.data.updated_at)}>{formatTimestamp(draft.data.updated_at)}</time> : null}
           {conflict ? <span>{copy.draftConflict} {draft.data?.updated_at ? formatTimestamp(draft.data.updated_at) : ''}</span> : null}
           {conflict ? (
@@ -567,6 +610,7 @@ export function ModelDraftHost() {
             opener.current = null
             refresh()
           }}
+          invalidateWorkspaces={() => { void queryClient.invalidateQueries({ queryKey: ['workspaces'] }) }}
         />
       ) : null}
       {dialog ? <CreateDialog kind={dialog} onClose={() => setDialog(null)} /> : null}
@@ -580,12 +624,14 @@ function ReviewDialog({
   onClose,
   onRevert,
   onSaved,
+  invalidateWorkspaces,
 }: {
   body: Json
   created: StagedStructures[]
   onClose: () => void
   onRevert: (created: StagedStructures[]) => void
   onSaved: () => void
+  invalidateWorkspaces: () => void
 }) {
   const blocked = draftSaveGate(body) === 'blocked'
   const destructive = asRecord(body.consequence)?.destructive === true
@@ -610,9 +656,17 @@ function ReviewDialog({
     saving.current = true
     setBusy(true)
     setError('')
+    beginOwnModelSave()
     void api.post('/v1/model/draft/save', { body: draftSaveBody(body) })
-      .then(() => onSaved())
+      .then((saved) => {
+        const revision = typeof (saved as Json).model_revision === 'number' ? (saved as Json).model_revision as number : undefined
+        endOwnModelSave(revision)
+        const steps = (body.steps as Json[] | undefined) ?? []
+        if (steps.some((step) => step.op === 'delete_type')) invalidateWorkspaces()
+        onSaved()
+      })
       .catch((reason: unknown) => {
+        endOwnModelSave(undefined)
         const message = writeErrorMessage(reason)
         if (message) setError(message)
       })
@@ -705,12 +759,26 @@ function CreateDialog({ kind, onClose }: { kind: DialogKind; onClose: () => void
   const [extra, setExtra] = useState('')
   const [fromType, setFromType] = useState('')
   const [toType, setToType] = useState('')
+  const [fromLabel, setFromLabel] = useState('')
+  const [toLabel, setToLabel] = useState('')
+  const [fromCardinality, setFromCardinality] = useState('many')
+  const [toCardinality, setToCardinality] = useState('many')
   const [error, setError] = useState('')
   const defs = useQuery({ queryKey: ['definitions'], queryFn: () => api.get('/v1/definitions'), enabled: kind === 'link' })
-  const entities = ((defs.data?.types as Json[] | undefined) ?? [])
-    .filter((item) => item.kind !== 'link')
-    .map((item) => String(item.key ?? ''))
-    .filter(Boolean)
+  const entities = useMemo(
+    () => ((defs.data?.types as Json[] | undefined) ?? [])
+      .filter((item) => item.kind !== 'link')
+      .map((item) => String(item.key ?? ''))
+      .filter(Boolean),
+    [defs.data?.types],
+  )
+  const cardinalityOptions = useMemo(
+    () => [
+      { value: 'one', label: copy.cardinalityOne },
+      { value: 'many', label: copy.cardinalityMany },
+    ],
+    [],
+  )
   useEffect(() => {
     if (kind !== 'link') return
     if (!fromType && entities[0]) setFromType(entities[0])
@@ -723,6 +791,8 @@ function CreateDialog({ kind, onClose }: { kind: DialogKind; onClose: () => void
     if (!key) return
     const side = attributeKey(name)
     if (kind === 'link') setModelFocus({ kind: 'type', key })
+    const forward = fromLabel.trim() || name
+    const reverse = toLabel.trim() || name
     const work = kind === 'link'
       ? stageModel('model.create_link_type', {
           key,
@@ -730,12 +800,12 @@ function CreateDialog({ kind, onClose }: { kind: DialogKind; onClose: () => void
           from_types: [fromType],
           to_types: [toType],
           from_key: side,
-          from_label: name,
+          from_label: forward,
           to_key: `${side}_to`,
-          to_label: name,
-          from_cardinality: 'many',
-          to_cardinality: 'many',
-          attributes: extra.split(',').map((item) => attributeKey(item)).filter(Boolean),
+          to_label: reverse,
+          from_cardinality: fromCardinality,
+          to_cardinality: toCardinality,
+          attributes: [],
         })
       : kind === 'type'
       ? stageModel('model.create_type', { key, label: name })
@@ -783,19 +853,55 @@ function CreateDialog({ kind, onClose }: { kind: DialogKind; onClose: () => void
             <>
               <label className="model-field">
                 {copy.fromType}
-                <select data-testid="link-type-from" aria-label={copy.fromType} value={fromType} onChange={(event) => setFromType(event.target.value)}>
-                  {entities.map((key) => <option key={key} value={key}>{key}</option>)}
-                </select>
+                <Select value={fromType || undefined} onValueChange={setFromType}>
+                  <SelectTrigger data-testid="link-type-from" aria-label={copy.fromType}>
+                    <SelectValue placeholder={copy.pick} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {entities.map((key) => <SelectItem key={key} value={key}>{key}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </label>
               <label className="model-field">
                 {copy.toType}
-                <select data-testid="link-type-to" aria-label={copy.toType} value={toType} onChange={(event) => setToType(event.target.value)}>
-                  {entities.map((key) => <option key={key} value={key}>{key}</option>)}
-                </select>
+                <Select value={toType || undefined} onValueChange={setToType}>
+                  <SelectTrigger data-testid="link-type-to" aria-label={copy.toType}>
+                    <SelectValue placeholder={copy.pick} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {entities.map((key) => <SelectItem key={key} value={key}>{key}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </label>
               <label className="model-field">
-                {copy.linkAttribute}
-                <input data-testid="link-type-attribute" aria-label={copy.linkAttribute} value={extra} onChange={(event) => setExtra(event.target.value)} />
+                {copy.linkForwardLabel}
+                <input data-testid="link-type-from-label" aria-label={copy.linkForwardLabel} value={fromLabel} onChange={(event) => setFromLabel(event.target.value)} />
+              </label>
+              <label className="model-field">
+                {copy.linkReverseLabel}
+                <input data-testid="link-type-to-label" aria-label={copy.linkReverseLabel} value={toLabel} onChange={(event) => setToLabel(event.target.value)} />
+              </label>
+              <label className="model-field">
+                {`${copy.fromType} ${copy.cardinality}`}
+                <Select value={fromCardinality} onValueChange={setFromCardinality}>
+                  <SelectTrigger data-testid="link-type-from-cardinality" aria-label={`${copy.fromType} ${copy.cardinality}`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {cardinalityOptions.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </label>
+              <label className="model-field">
+                {`${copy.toType} ${copy.cardinality}`}
+                <Select value={toCardinality} onValueChange={setToCardinality}>
+                  <SelectTrigger data-testid="link-type-to-cardinality" aria-label={`${copy.toType} ${copy.cardinality}`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {cardinalityOptions.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </label>
             </>
           ) : null}

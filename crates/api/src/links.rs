@@ -10,7 +10,7 @@ use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use braian_model::{ModelChange, Object, ObjectId, ObjectPatch, Uuid};
-use braian_store::{Error, LinkView, ObjectOp, StoredObject};
+use braian_store::{Error, LinkView, ObjectOp, ObjectProjection, StoredObject};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use utoipa::ToSchema;
@@ -106,9 +106,21 @@ pub struct LinkItem {
     pub peer_key: String,
     pub peer_type: String,
     pub has_values: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sort_order: Option<String>,
+    pub version: u64,
 }
 
-pub fn sides(defs: &braian_model::DefinitionSet, views: &[LinkView]) -> Vec<LinkSide> {
+pub fn sides(
+    defs: &braian_model::DefinitionSet,
+    views: &[LinkView],
+    objects: &BTreeMap<ObjectId, StoredObject>,
+) -> Vec<LinkSide> {
+    let sort_id = defs
+        .attributes
+        .iter()
+        .find(|item| item.key == "sort_order")
+        .map(|item| item.id);
     let mut order = Vec::new();
     let mut grouped: BTreeMap<(String, bool), Vec<LinkItem>> = BTreeMap::new();
     for view in views {
@@ -117,12 +129,20 @@ pub fn sides(defs: &braian_model::DefinitionSet, views: &[LinkView]) -> Vec<Link
         if entry.is_empty() {
             order.push((key, view.outgoing, view.link_type_id));
         }
+        let stored = objects.get(&view.id);
+        let sort_order = stored.and_then(|item| {
+            sort_id
+                .and_then(|id| item.object.values.get(&id))
+                .and_then(link_scalar)
+        });
         entry.push(LinkItem {
             id: view.id.as_uuid(),
             peer_id: view.peer_id.as_uuid(),
             peer_key: view.peer_key.clone(),
             peer_type: type_key(defs, view.peer_type_id),
             has_values: view.has_values,
+            sort_order,
+            version: stored.map(|item| item.version).unwrap_or(0),
         });
     }
     order
@@ -159,7 +179,38 @@ pub async fn load_sides(
     id: ObjectId,
 ) -> Result<Vec<LinkSide>, Problem> {
     let views = state.store.links_for(id).await.map_err(store_status)?;
-    Ok(sides(defs, &views))
+    let ids: Vec<ObjectId> = views.iter().map(|view| view.id).collect();
+    let objects = if ids.is_empty() {
+        BTreeMap::new()
+    } else {
+        let projection = ObjectProjection {
+            groups: false,
+            values: true,
+            parts: None,
+        };
+        state
+            .store
+            .get_objects_projected(&ids, &projection)
+            .await
+            .map_err(store_status)?
+            .into_iter()
+            .map(|item| (item.object.id, item))
+            .collect()
+    };
+    Ok(sides(defs, &views, &objects))
+}
+
+fn link_scalar(value: &Value) -> Option<String> {
+    match value {
+        Value::String(text) => Some(text.clone()),
+        Value::Number(number) => number
+            .as_i64()
+            .map(|item| item.to_string())
+            .or_else(|| Some(number.to_string())),
+        Value::Object(map) => map.get("value").and_then(link_scalar),
+        Value::Bool(flag) => Some(flag.to_string()),
+        _ => None,
+    }
 }
 
 #[utoipa::path(
@@ -284,7 +335,7 @@ pub async fn patch_link(
     let base = require_if_match(&headers)?;
     let id = ObjectId::from_uuid(id);
     let cached = state.models.get(&state.store).await?;
-    let stored = load_object(&state, id).await?;
+    let stored = load_object(&state, id, false).await?;
     let patch = patch_from_wire(&cached.model, &cached.defs, &body.values, &BTreeMap::new())?;
     let report = cached.model.validate_patch(&stored.object, &patch);
     if !report.errors.is_empty() {
@@ -377,7 +428,7 @@ pub async fn delete_link(
     }
     let id = ObjectId::from_uuid(id);
     if query.dry_run {
-        let _stored = load_object(&state, id).await?;
+        let _stored = load_object(&state, id, false).await?;
         let report = ConsequenceReport {
             objects: 1,
             links: 1,

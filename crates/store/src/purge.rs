@@ -112,6 +112,9 @@ pub async fn apply(
     if !purge.unplace_groups.is_empty() {
         last = last.max(unplace(tx, actor, batch, purge).await?);
     }
+    if !purge.delete_type_workspace_tokens.is_empty() {
+        last = last.max(delete_type_workspaces(tx, &purge.delete_type_workspace_tokens).await?);
+    }
     if !purge.delete_types.is_empty() {
         last = last.max(delete_types(tx, actor, batch, purge).await?);
     }
@@ -417,6 +420,29 @@ async fn unplace(
         last = last.max(seq);
     }
     Ok(last)
+}
+
+/// Soft-deletes canonical type workspaces. Personal copies keep their tokens.
+async fn delete_type_workspaces(tx: &Transaction<'_>, tokens: &[String]) -> Result<i64, Error> {
+    let rows = tx
+        .query(
+            "UPDATE workspaces SET deleted_at = now()
+             WHERE share_token = ANY($1) AND deleted_at IS NULL
+             RETURNING id, deleted_at",
+            &[&tokens],
+        )
+        .await?;
+    for row in rows {
+        let id: Uuid = row.get(0);
+        let deleted_at: chrono::DateTime<chrono::Utc> = row.get(1);
+        tx.execute(
+            "UPDATE views SET deleted_at = $2
+             WHERE workspace_id = $1 AND deleted_at IS NULL",
+            &[&id, &deleted_at],
+        )
+        .await?;
+    }
+    Ok(0)
 }
 
 async fn delete_types(

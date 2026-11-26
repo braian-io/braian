@@ -16,6 +16,8 @@ pub struct TrashRow {
     pub kind: &'static str,
     pub id: Uuid,
     pub label: String,
+    pub number: String,
+    pub type_key: String,
     pub deleted_at: DateTime<Utc>,
 }
 
@@ -27,19 +29,61 @@ impl Store {
 
         let objects = client
             .query(
-                "SELECT id, COALESCE(NULLIF(key, ''), id::text) AS label, deleted_at
-                 FROM objects
-                 WHERE catalog_id = braian_catalog() AND deleted_at IS NOT NULL
-                 ORDER BY deleted_at DESC
+                "SELECT o.id, o.deleted_at,
+                        COALESCE(NULLIF(btrim(o.key), ''), '') AS object_key,
+                        COALESCE(
+                          NULLIF(v.values #>> '{number}', ''),
+                          NULLIF(v.values #>> '{number,en}', ''),
+                          ''
+                        ) AS value_number,
+                        COALESCE(
+                          NULLIF(v.values #>> '{name,en}', ''),
+                          NULLIF(v.values #>> '{name,sv}', ''),
+                          NULLIF(v.values #>> '{name,de}', ''),
+                          NULLIF(v.values #>> '{name}', ''),
+                          ''
+                        ) AS value_name,
+                        COALESCE(NULLIF(btrim(src.key), ''), '') AS from_key,
+                        COALESCE(NULLIF(btrim(tgt.key), ''), '') AS to_key
+                 FROM objects o
+                 LEFT JOIN object_values v ON v.object_id = o.id AND v.is_latest
+                 LEFT JOIN links l ON l.object_id = o.id
+                 LEFT JOIN objects src ON src.id = l.from_id
+                 LEFT JOIN objects tgt ON tgt.id = l.to_id
+                 WHERE o.catalog_id = braian_catalog() AND o.deleted_at IS NOT NULL
+                 ORDER BY o.deleted_at DESC
                  LIMIT $1",
                 &[&PAGE],
             )
             .await?;
         for row in objects {
+            let object_key: String = row.get("object_key");
+            let value_number: String = row.get("value_number");
+            let value_name: String = row.get("value_name");
+            let number = if !object_key.is_empty() {
+                object_key.clone()
+            } else {
+                value_number
+            };
+            let mut label = value_name;
+            if label.is_empty() {
+                let from_key: String = row.get("from_key");
+                let to_key: String = row.get("to_key");
+                if !from_key.is_empty() && !to_key.is_empty() {
+                    label = format!("{from_key} → {to_key}");
+                } else if !from_key.is_empty() || !to_key.is_empty() {
+                    label = format!("{from_key}{to_key}");
+                }
+            }
+            if label.is_empty() && !number.is_empty() {
+                label = number.clone();
+            }
             items.push(TrashRow {
                 kind: "object",
                 id: row.get("id"),
-                label: row.get("label"),
+                label,
+                number,
+                type_key: String::new(),
                 deleted_at: row.get("deleted_at"),
             });
         }
@@ -61,6 +105,8 @@ impl Store {
                     kind: "workspace",
                     id: row.get("id"),
                     label: row.get("label"),
+                    number: String::new(),
+                    type_key: String::new(),
                     deleted_at: row.get("deleted_at"),
                 });
             }
@@ -81,6 +127,8 @@ impl Store {
                     kind: "view",
                     id: row.get("id"),
                     label: row.get("label"),
+                    number: String::new(),
+                    type_key: String::new(),
                     deleted_at: row.get("deleted_at"),
                 });
             }
@@ -149,6 +197,8 @@ impl Store {
                 kind: "merge_link",
                 id: row.get("id"),
                 label: row.get("label"),
+                number: String::new(),
+                type_key: String::new(),
                 deleted_at: row.get("deleted_at"),
             });
         }
@@ -373,6 +423,105 @@ impl Store {
         Ok(())
     }
 
+    /// Permanently removes one soft-deleted row. Fails when the row is missing or not deleted.
+    pub async fn purge_trash(&self, kind: &str, id: Uuid) -> Result<(), Error> {
+        match kind {
+            "object" => self.purge_deleted_object(id).await,
+            "workspace" => purge_row(self, "workspaces", id, "That workspace was not found.").await,
+            "view" => purge_row(self, "views", id, "That view was not found.").await,
+            "assortment" => {
+                purge_row(self, "assortments", id, "That selection was not found.").await
+            }
+            "import_mapping" => {
+                purge_row(
+                    self,
+                    "import_mappings",
+                    id,
+                    "That import mapping was not found.",
+                )
+                .await
+            }
+            "catalog" => self.purge_deleted_catalog(id).await,
+            "merge_profile" => {
+                purge_row(
+                    self,
+                    "merge_profiles",
+                    id,
+                    "That merge profile was not found.",
+                )
+                .await
+            }
+            "merge_link" => {
+                purge_row(self, "merge_links", id, "That merge link was not found.").await
+            }
+            _ => Err(Error::UnknownEntity(format!("unknown trash kind {kind}"))),
+        }
+    }
+
+    async fn purge_deleted_object(&self, id: Uuid) -> Result<(), Error> {
+        let mut client = self.checkout().await?;
+        let tx = client.transaction().await?;
+        let row = tx
+            .query_opt(
+                "SELECT deleted_at FROM objects WHERE id = $1 AND catalog_id = braian_catalog() FOR UPDATE",
+                &[&id],
+            )
+            .await?;
+        let Some(row) = row else {
+            return Err(Error::UnknownEntity("That object was not found.".into()));
+        };
+        let deleted_at: Option<DateTime<Utc>> = row.get(0);
+        if deleted_at.is_none() {
+            return Err(Error::RestoreBlocked(
+                "This object is not in the trash.".into(),
+            ));
+        }
+        tx.execute(
+            "DELETE FROM merge_links WHERE source_object_id = $1 OR master_object_id = $1",
+            &[&id],
+        )
+        .await?;
+        tx.execute(
+            "DELETE FROM links WHERE object_id = $1 OR from_id = $1 OR to_id = $1",
+            &[&id],
+        )
+        .await?;
+        tx.execute("DELETE FROM object_values WHERE object_id = $1", &[&id])
+            .await?;
+        tx.execute("DELETE FROM object_structures WHERE object_id = $1", &[&id])
+            .await?;
+        let removed = tx
+            .execute("DELETE FROM objects WHERE id = $1", &[&id])
+            .await?;
+        if removed == 0 {
+            return Err(Error::UnknownEntity("That object was not found.".into()));
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn purge_deleted_catalog(&self, id: Uuid) -> Result<(), Error> {
+        let mut client = self.checkout().await?;
+        let tx = client.transaction().await?;
+        let row = tx
+            .query_opt(
+                "SELECT deleted_at FROM catalogs WHERE id = $1 FOR UPDATE",
+                &[&id],
+            )
+            .await?;
+        let Some(row) = row else {
+            return Err(Error::UnknownEntity("That catalog was not found.".into()));
+        };
+        if row.get::<_, Option<DateTime<Utc>>>(0).is_none() {
+            return Err(Error::RestoreBlocked(
+                "This catalog is not in the trash.".into(),
+            ));
+        }
+        crate::retention::purge_catalog_contents(&tx, id).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
     pub async fn restore_merge_link(&self, id: Uuid) -> Result<(), Error> {
         let mut client = self.checkout().await?;
         let tx = client.transaction().await?;
@@ -436,9 +585,36 @@ fn push_simple(items: &mut Vec<TrashRow>, kind: &'static str, rows: &[tokio_post
             kind,
             id: row.get("id"),
             label: row.get("label"),
+            number: String::new(),
+            type_key: String::new(),
             deleted_at: row.get("deleted_at"),
         });
     }
+}
+
+async fn purge_row(store: &Store, table: &str, id: Uuid, missing: &str) -> Result<(), Error> {
+    let client = store.checkout().await?;
+    let row = client
+        .query_opt(
+            &format!("SELECT deleted_at FROM {table} WHERE id = $1"),
+            &[&id],
+        )
+        .await?;
+    let Some(row) = row else {
+        return Err(Error::UnknownEntity(missing.into()));
+    };
+    if row.get::<_, Option<DateTime<Utc>>>(0).is_none() {
+        return Err(Error::RestoreBlocked(
+            "This row is not in the trash.".into(),
+        ));
+    }
+    let removed = client
+        .execute(&format!("DELETE FROM {table} WHERE id = $1"), &[&id])
+        .await?;
+    if removed == 0 {
+        return Err(Error::UnknownEntity(missing.into()));
+    }
+    Ok(())
 }
 
 async fn restore_simple(

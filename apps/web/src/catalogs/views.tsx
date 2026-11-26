@@ -1,12 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCatalogsQuery } from '../catalog-list'
 import { useState, type ReactNode } from 'react'
-import { Sparkles, Trash2 } from 'lucide-react'
+import { Trash2 } from 'lucide-react'
+import { CatalogsTable } from './catalogs-table'
 import { copy, uiLanguage } from '../i18n'
 import { ApiError, api, type Json } from '../api'
 import { Button } from '../components/ui/button'
 import { Dialog, DialogContent, DialogTitle } from '../components/ui/dialog'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip'
 import { linkHitFromDocument, type LinkHit } from '../link-choices'
 import { messageFromErrorBody, writeErrorMessage } from '../write-error'
 
@@ -110,108 +110,9 @@ function mergeModeLabel(mode: string) {
 }
 
 export function CatalogsView() {
-  const queryClient = useQueryClient()
-  const catalogs = useCatalogsQuery()
-  const [key, setKey] = useState('')
-  const [name, setName] = useState('')
-  const [editable, setEditable] = useState(true)
-  const [error, setError] = useState('')
-  const create = useMutation({
-    mutationFn: () => sendJson('/v1/catalogs', { key, name: name || key, kind: 'source', editable }),
-    onSuccess: () => {
-      setKey('')
-      setName('')
-      setError('')
-      void queryClient.invalidateQueries({ queryKey: ['catalogs'] })
-    },
-    onError: (reason: unknown) => setError(failedWrite(reason, copy.catalogCreateFailed)),
-  })
-  const infer = useMutation({
-    mutationFn: (catalog: string) => sendJson(`/v1/catalogs/${catalog}/infer`, { headers: [] }),
-    onError: (reason: unknown) => setError(failedWrite(reason, copy.inferModelFailed)),
-  })
-  const cleanup = useMutation({
-    mutationFn: (catalog: string) => sendJson(`/v1/catalogs/${catalog}/cleanup`, {}),
-    onError: (reason: unknown) => setError(failedWrite(reason, copy.cleanupCatalogFailed)),
-  })
   return (
     <div className="catalog-admin" data-testid="catalogs-view">
-      <h2>{copy.catalogs}</h2>
-      <ul>
-        {(catalogs.data ?? []).map((row) => {
-          const catalogKey = row.key || row.id || ''
-          return (
-          <li key={catalogKey}>
-            <strong>{row.name}</strong> <span>{row.key}</span> <span>{row.kind}</span>
-            {row.kind === 'source' && catalogKey ? (
-              <span className="catalog-list-actions">
-                <TooltipProvider delayDuration={400} disableHoverableContent>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="icon"
-                        size="icon"
-                        aria-label={copy.inferModel}
-                        data-testid={`infer-${catalogKey}`}
-                        onClick={() => infer.mutate(catalogKey)}
-                      >
-                        <Sparkles aria-hidden="true" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>{copy.inferModelHelp}</TooltipContent>
-                  </Tooltip>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="icon"
-                        size="icon"
-                        aria-label={copy.cleanupCatalog}
-                        data-testid={`cleanup-${catalogKey}`}
-                        onClick={() => cleanup.mutate(catalogKey)}
-                      >
-                        <Trash2 aria-hidden="true" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>{copy.cleanupCatalogHelp}</TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </span>
-            ) : null}
-          </li>
-          )
-        })}
-      </ul>
-      <form
-        onSubmit={(event) => {
-          event.preventDefault()
-          create.mutate()
-        }}
-      >
-        <h3>{copy.newCatalog}</h3>
-        <CatalogField id="catalog-key" label={copy.catalogKey} help={copy.catalogKeyHint}>
-          <input id="catalog-key" data-testid="catalog-key" value={key} onChange={(event) => setKey(event.target.value)} placeholder="sap" />
-        </CatalogField>
-        <CatalogField id="catalog-name" label={copy.catalogName} help={copy.catalogNameHint}>
-          <input id="catalog-name" data-testid="catalog-name" value={name} onChange={(event) => setName(event.target.value)} placeholder="SAP ERP" />
-        </CatalogField>
-        <div className="catalog-field">
-          <label className="catalog-check" htmlFor="catalog-editable">
-            <input
-              id="catalog-editable"
-              type="checkbox"
-              checked={editable}
-              onChange={(event) => setEditable(event.target.checked)}
-            />
-            {copy.catalogEditable}
-          </label>
-          <p className="catalog-field-help">{copy.catalogEditableHint}</p>
-        </div>
-        <Button type="submit" variant="primary">{copy.save}</Button>
-      </form>
-      {error ? <p className="error">{error}</p> : null}
-      {infer.data ? <p data-testid="infer-result">{JSON.stringify(infer.data)}</p> : null}
+      <CatalogsTable />
     </div>
   )
 }

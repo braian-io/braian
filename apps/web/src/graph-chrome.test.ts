@@ -424,6 +424,16 @@ describe('fitting measured captions', () => {
     ).toBe('none')
     for (const event of ['fullscreen', 'resize', 'sheet'] as const) {
       expect(
+        requestSystemFit({ ...complete, event, namesPending: true }),
+        `${event} waits for the same resolved names as event A`,
+      ).toBe('none')
+      expect(
+        requestSystemFit({ ...complete, event, namesPending: true, moved: true }),
+        `${event} still remaps a user camera while names resolve`,
+      ).toBe('remap')
+    }
+    for (const event of ['fullscreen', 'resize', 'sheet'] as const) {
+      expect(
         requestSystemFit({ ...complete, event, baselineFrozen: true }),
         `${event} still works after settle (Close full size is B+C+D)`,
       ).toBe('fit')

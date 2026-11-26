@@ -99,7 +99,20 @@ export function normalize(node: Node): Node {
   const kept: Array<{ child: Node; ratio: number }> = []
   node.children.forEach((child, index) => {
     const next = normalize(child)
-    if (views(next).length === 0) return
+    if (views(next).length === 0) {
+      // Keep the agent-dock shell so catalog panes do not remount when the agent closes.
+      if (
+        node.dir === 'horizontal'
+        && node.children.length === 2
+        && index === 1
+        && child.type === 'tabs'
+        && node.children[0]?.type === 'split'
+        && views(node.children[0]).length > 0
+      ) {
+        kept.push({ child: next, ratio: 0 })
+      }
+      return
+    }
     const ratio = node.ratios[index]
     kept.push({ child: next, ratio: typeof ratio === 'number' && ratio > 0 && Number.isFinite(ratio) ? ratio : 0 })
   })
@@ -179,6 +192,28 @@ export function dockEdge(node: Node, view: string, zone: Zone, share = 0.3): Nod
     ratios: lead ? [portion, other] : [other, portion],
     children: lead ? [fresh, rest] : [rest, fresh],
   }
+}
+
+const AGENT_DOCK_LEAD = 0.08
+
+/** Narrow the agent share when a wide catalog would start to the right of the default dock line. */
+export function agentDockShare(
+  layout: Node,
+  preferred = 0.3,
+  viewTypes?: ReadonlyMap<string, string>,
+): number {
+  const all = leaves(layout)
+  const detailLefts = viewTypes
+    ? all
+        .filter((leaf) => leaf.views.some((id) => viewTypes.get(id) === 'object_detail'))
+        .map((leaf) => leaf.rect.x)
+    : []
+  const catalogLeft = detailLefts.length > 0
+    ? Math.max(...detailLefts)
+    : Math.max(0, ...all.map((leaf) => leaf.rect.x))
+  if (!Number.isFinite(catalogLeft)) return preferred
+  const maxShare = roundRatio(1 - catalogLeft - AGENT_DOCK_LEAD)
+  return clamp(Math.min(preferred, maxShare), 0.08, 0.45)
 }
 
 /** Move boundary `index` to absolute fraction `position` inside that split. Only the two neighbours change, and each stays at least 0.04. */
@@ -281,6 +316,61 @@ export function setTabIndex(node: Node, view: string, index: number): Node {
   return { ...node, children: node.children.map((child) => setTabIndex(child, view, index)) }
 }
 
+/** Root-level horizontal split with an empty right tab group left after closing the agent. */
+export function agentDockShellSlot(node: Node, path: number[] = []): { path: number[]; childIndex: number } | null {
+  if (node.type !== 'split' || node.dir !== 'horizontal' || node.children.length !== 2) {
+    if (node.type !== 'split') return null
+    for (let index = 0; index < node.children.length; index += 1) {
+      const found = agentDockShellSlot(node.children[index], [...path, index])
+      if (found) return found
+    }
+    return null
+  }
+  const right = node.children[1]
+  if (right.type === 'tabs' && right.views.length === 0) return { path, childIndex: 1 }
+  return null
+}
+
+export function openAgentInDockShell(layout: Node, view: string, share: number): Node | null {
+  const slot = agentDockShellSlot(layout)
+  if (!slot) return null
+  const split = nodeAt(layout, slot.path)
+  if (!split || split.type !== 'split') return null
+  const right = split.children[slot.childIndex]
+  if (!right || right.type !== 'tabs') return null
+  const portion = roundRatio(clamp(Number.isFinite(share) ? share : 0.3, 0.08, 0.45))
+  const catalogShare = roundRatio(1 - portion)
+  const nextSplit: SplitNode = {
+    ...split,
+    ratios: [catalogShare, portion],
+    children: split.children.map((child, index) =>
+      index === slot.childIndex ? addTab(right, view) : child,
+    ),
+  }
+  return replaceAt(layout, slot.path, nextSplit)
+}
+
+function placeAgentEdgeView(
+  doc: LayoutDoc,
+  view: string,
+  share: number,
+  catalog: ReadonlyArray<{ id: string; type: string }> = [],
+): LayoutDoc {
+  const reused = openAgentInDockShell(doc.layout, view, share)
+  if (reused) return { ...doc, layout: activate(reused, view), focus: view }
+  // A second run joins the agent pane that is already open. A new edge pane
+  // would mount two Reply fields at once.
+  const open = views(doc.layout)
+  const host = catalog.find((row) => row.type === 'agent' && row.id !== view && open.includes(row.id))?.id
+  if (host) {
+    const layout = open.includes(view)
+      ? moveView(doc.layout, view, host, 'center')
+      : insert(doc.layout, host, view, 'center')
+    return { ...doc, layout: activate(layout, view), focus: view }
+  }
+  return placeView(doc, view, { zone: 'right', dock: 'edge', share })
+}
+
 export function placeView(doc: LayoutDoc, view: string, place: Place = {}): LayoutDoc {
   let layout = doc.layout
   if (place.dock === 'edge') {
@@ -372,6 +462,10 @@ export type CommandResult = {
   doc: LayoutDoc
   handled: boolean
   summary?: string
+}
+
+function catalogTypes(catalog: Array<{ id: string; type?: string }>): Map<string, string> {
+  return new Map(catalog.map((view) => [view.id, view.type ?? '']))
 }
 
 const layoutCommandNames = new Set([
@@ -472,7 +566,13 @@ export function applyLayoutCommand(
   const token = args.view ?? args.entity ?? args.id ?? args.title
   const view = resolveView(token, catalog)
   if (!view) return { doc, handled: true }
+  const opened = catalog.find((row) => row.id === view)
+  const agentView = opened?.type === 'agent'
   if (name === 'ui.open_view' && args.zone == null && args.place == null && !ctx.place) {
+    if (agentView) {
+      const share = agentDockShare(doc.layout, 0.3, catalogTypes(catalog))
+      return { doc: placeAgentEdgeView(doc, view, share, catalog), handled: true }
+    }
     return { doc: ensureInLayout(doc, view, typeof args.target === 'string' ? args.target : undefined), handled: true }
   }
   const fromArgs = placeFrom(args)
@@ -482,6 +582,15 @@ export function applyLayoutCommand(
     dock: fromArgs.dock ?? ctx.place?.dock,
     share: fromArgs.share ?? ctx.place?.share,
     tabIndex: fromArgs.tabIndex ?? ctx.place?.tabIndex,
+  }
+  if (agentView && (name === 'open_view' || name === 'ui.open_view' || name === 'ui.place')) {
+    place.zone = 'right'
+    place.dock = 'edge'
+    place.share = place.share ?? agentDockShare(doc.layout, 0.3, catalogTypes(catalog))
+    return {
+      doc: placeAgentEdgeView(doc, view, place.share ?? agentDockShare(doc.layout, 0.3, catalogTypes(catalog)), catalog),
+      handled: true,
+    }
   }
   if ((name === 'open_view' || name === 'ui.place') && !place.zone && place.dock !== 'edge') place.zone = 'right'
   return { doc: placeView(doc, view, place), handled: true }

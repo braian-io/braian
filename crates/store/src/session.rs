@@ -509,9 +509,11 @@ pub async fn drop_database(client: &tokio_postgres::Client, name: &str) -> Resul
             .batch_execute(&format!("SELECT pg_drop_replication_slot('{slot_name}')"))
             .await;
     }
-    let _ = client.batch_execute("SET statement_timeout = '3s'").await;
+    // FORCE disconnects backends and drops the catalog without waiting on
+    // lingering sessions. A timed DROP flakes on large braian_demo catalogs
+    // under CI load (see load job demo-2). Scripts use the same FORCE form.
     client
-        .batch_execute(&format!("DROP DATABASE IF EXISTS {name}"))
+        .batch_execute(&format!("DROP DATABASE IF EXISTS {name} WITH (FORCE)"))
         .await?;
     Ok(())
 }

@@ -93,6 +93,16 @@ type StructuresStage = {
 }
 
 let structuresStage: StructuresStage | null = null
+let allowedTreesFocus: HTMLElement | null = null
+
+/** Last allowed-trees checkbox the user touched, so review Cancel/Escape can return there. */
+export function noteAllowedTreesFocus(node: HTMLElement | null) {
+  allowedTreesFocus = node
+}
+
+export function allowedTreesFocusTarget(): HTMLElement | null {
+  return allowedTreesFocus?.isConnected ? allowedTreesFocus : null
+}
 
 /** True while a set_structures request is on its way and can still be cancelled. */
 export function structuresStageInFlight(): boolean {
@@ -252,7 +262,21 @@ export async function stageModel(name: string, args: Json = {}) {
 
 /** Raw steps collected in the draft. Deletes use this because the operation cannot. */
 export async function stageModelSteps(steps: Array<{ op: string } & Record<string, unknown>>) {
+  if (steps.some((step) => step.op === 'set_structures')) dispatch('braian-review-pending')
   const draft = await api.post('/v1/model/draft/steps', { body: { steps } })
+  for (const step of steps) {
+    if (step.op !== 'set_structures') continue
+    const args: Json = {
+      type_key: step.type_key,
+      structures: step.structures,
+    }
+    const record = rememberStructures(draft, 'model.set_structures', args)
+    if (!record) continue
+    stagedStructures = [...stagedStructures.filter((item) => item.typeKey !== record.typeKey), record]
+    const token = nextStructuresToken++
+    structuresLock = { token, typeKey: record.typeKey }
+    emitStructuresLock()
+  }
   emitDraft()
   return draft
 }
@@ -273,9 +297,17 @@ export function openModelDialog(kind: 'type' | 'list' | 'family' | 'tree' | 'lin
 }
 
 export function requestReview() {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new Event('braian-review-pending'))
   window.dispatchEvent(new Event('braian-review-save'))
 }
 
 export function requestDiscardDraft() {
   window.dispatchEvent(new Event('braian-discard-draft'))
+}
+
+/** Drop the attribute-table draft while a structures save is still posting. */
+export function discardModelTableDraft() {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new Event('braian-model-table-draft-discard'))
 }

@@ -1,21 +1,44 @@
-import { isValidElement, useMemo, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
+import { isValidElement, useMemo, useEffect, useLayoutEffect, useCallback, useRef, useState, useSyncExternalStore, type CSSProperties, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
+import { flushSync } from 'react-dom'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { History as HistoryIcon } from 'lucide-react'
+import { History as HistoryIcon, Trash2 } from 'lucide-react'
 import { ApiError, api, catalogName, failureLines, freeObject, jsonRecord, recordNumber, recordTitle, searchQuery, textValue, type Json } from './api'
 import { AutoResizeTextarea } from './auto-resize-textarea'
 import { messageFromErrorBody, reportWriteError, writeErrorMessage } from './write-error'
+import { acknowledgeWriteError } from './write-status'
+import { saveVersionedViewKeys, saveViewChange, viewStateRecord, type ViewState } from './view-state-save'
 import { catalogKeyOf, inCatalog, workspaceCatalogRef } from './catalog-scope'
 import { useCatalogIdToKey } from './catalog-list'
 import { CreateDialog, requireText, type CreateDialogField } from './create-dialog'
 import { createObjectFields, createObjectFieldValues } from './create-object-fields'
 import { newObjectBody } from './new-object'
-import { attributeByKey, indexSort, readIndexed, sortKeyForColumnId } from './index-fields'
-import { cellEditShouldPatch, cellEditValuesBody, isEditingCell, isEditableColumn, resolveCellEditInitial, valueListKeyForColumn, columnBaseKey } from './cell-edit'
+import { attributeByKey, headerSortState, indexSort, readIndexed, sortKeyForColumnId } from './index-fields'
+import { coerceTableGroupBy, coerceTableSort } from './table-prefs-coerce'
+import {
+  cellEditShouldPatch,
+  cellEditValuesBody,
+  commitMeasureEdit,
+  inlineMeasureEditContext,
+  isEditingCell,
+  isEditableColumn,
+  measureEditInitialDraft,
+  measureEditContext,
+  measureEditProposedText,
+  measureEditShouldPatch,
+  measureEditStoredValue,
+  resolveCellEditInitial,
+  valueListKeyForColumn,
+  columnBaseKey,
+  type MeasureEditDraft,
+} from './cell-edit'
+import { MeasureCellEditor } from './measure-cell-editor'
 import { batchGetObjects } from './batch'
 import { MetaChip, optionLabel, statusTone, typeLabel } from './chips'
 import { BulkWriteConfirm } from './bulk-write'
 import { Button } from './components/ui/button'
+import { AttributeFieldLabel } from './attribute-field-label'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './components/ui/tooltip'
 import { Dialog, DialogContent } from './components/ui/dialog'
 import { Slider } from './components/ui/slider'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select'
@@ -25,7 +48,7 @@ import { onFlash } from './flash'
 import { GraphMap } from './graph-map'
 import { exportPayload, runExport, saveWorkbook } from './export'
 import { diffLines, historyWho, isCreate, proposedValues, relativeTime, sourceLabel, suggestionLines, valuesFromKept, type DiffLine } from './field-diff'
-import { formatCount, formatMeasure, formatTimestamp } from './format'
+import { formatCount, formatMeasure, formatMeasureEditNumber, formatMeasureStorageNumber, formatTimestamp, parseDecimalInput } from './format'
 import { PathMenu, type ListedPath } from './path-picker'
 import { publishFieldsHost } from './fields-host'
 import { fieldCatalogForType, withSystemViewFields } from './fields/catalog'
@@ -44,33 +67,54 @@ import { EMPTY_CELL } from './fields/qualifiers'
 import { columnPrefsHasOverride, fetchColumnPrefs, isHopPath, orderHiddenToDocument, ensureSystemColumns,
   prefsToOrderHidden, saveColumnPrefsKeepalive, type ColumnPrefsDocument, type SystemViewColumn } from './column-prefs'
 import { columnPrefsMutationKey, columnPrefsQueryKey, resetColumnPrefs, useSaveColumnPrefs } from './column-prefs-mutation'
-import { createTablePrefsSaver, type TablePrefsSnapshot } from './table-prefs-save'
+import { createTablePrefsSaver, tablePrefsBody, type TablePrefsSnapshot } from './table-prefs-save'
 import { readPathFromDoc, summarizePathValues } from './path-cell'
 import { cellPathValues, fetchPathValues } from './path-values'
 import { applyObjectWrite, currentSearchWaitSeq, reconcileObjectWrite } from './object-write'
+import { clearObjectGone, markObjectGone, objectFetchQueryOptions, objectGone, objectQueryGone } from './object-gone'
+import {
+  buildListPreviewFromRow,
+  isListPreview,
+  loadObjectDetail,
+  objectQueryStaleTime,
+  OBJECT_NAV_DEBOUNCE_MS,
+  OBJECT_PREFETCH_RADIUS,
+  prefetchObjectDetails,
+  seedObjectListPreview,
+} from './object-list-preview'
+import { commitImmediateTableNavLand, scheduleDebouncedTableNavLand } from './object-table-nav'
+import { scrollObjectTableActiveColumn } from './object-table-column-scroll'
+import { scrollObjectTableActiveRow, type ObjectTableRowScrollDirection } from './object-table-row-scroll'
+import { clearObjectNavReplace, markObjectNavReplace } from './object-nav-signal'
+import { useObjectLand } from './use-object-land'
 import {
   discardObjectDraft,
   displayOf,
   draftBaseVersion,
   draftEditorSeed,
   editBaseVersion,
+  getDetailDraftOwner,
   getObjectDraftSnapshot,
   objectDraftCells,
   overlayValues,
   paintObjectCell,
+  proposalCellsForTableBar,
   reviewCapabilities,
   roleCanWrite,
+  setDetailDraftOwner,
   stageObjectCell,
+  subscribeDetailDraftOwner,
   subscribeObjectDrafts,
 } from './object-draft'
 import { CellDiff, ObjectDraftBar, UnmappedDraftLinks } from './object-draft-bar'
-import { draftSavePlan, isDraftSaveInFlight, runDraftDiscard, runDraftSave } from './object-draft-save'
+import { getSelectionBarActive, subscribeSelectionDraft } from './selection-draft'
+import { acceptProposal, draftSavePlan, isDraftSaveInFlight, runDraftDiscard, runDraftSave } from './object-draft-save'
 import { useObjectDraftSaving } from './use-object-draft-saving'
 import { useOpenObjectProposals } from './use-open-proposals'
 import { shouldHoldTablePaint, shouldRefreshTableSnapshot } from './table-live-paint'
 import { searchPeerArticles, type PeerPickOption } from './peer-search'
 import { linkedPeerIds } from './peer-source'
-import { isExplicitAllSource, peerEmptyState, peerIdsFilter, peerNodeFilter, peerSourceOf } from './view-source'
+import { clearExplicitAllSource, isExplicitAllSource, peerEmptyState, peerIdsFilter, peerNodeFilter, peerSourceOf } from './view-source'
 import { FieldDiff } from './field-diff-view'
 import { proposeInAgentSession } from './agent-runs'
 import { viewingAgentRunId } from './agent-session'
@@ -105,11 +149,16 @@ import { classSections } from './class-sections'
 import { LinkSections } from './link-section'
 import { DetailMeta } from './detail-meta'
 import { splitDetailKeys } from './detail-fields'
+import { DetailFieldDraftHost, type DetailFieldDraftHandle } from './detail-field-draft'
+import { DetailNumberMeasureField } from './detail-number-measure-field'
 import { beginLinkDrag, dispatchLinkDrop, endLinkDrag, linkDragActive, linkDragContains, linkDragLabel, linkDragMime, linkDragObjects, linkDragPayload, linkDropDecision, readLinkDrag, setLinkDragHint } from './link-drag'
-import { EMPTY_MANUAL_FILTER, groupKeyOf, isEmptyManualQuery, labelCodes, labelSearchFilter, publishSelectionLabels, SELECTION_APPLIED_EVENT, selectionFilterText, selectionMatchesType } from './assortment-filter'
+import { EMPTY_MANUAL_FILTER, isHandPickedQuery, labelCodes, memberIdFilter, memberIdsOf, publishSelectionLabels, SELECTION_APPLIED_EVENT, selectionKind, selectionMatchesType } from './assortment-filter'
+import { selectionDropHandlers } from './selection-picker'
+import { SELECTION_MEMBERS_EVENT, finishSelectionDrop, saveSelectionMembers, selectionDragActive, setMemberError, memberErrorSnapshot, subscribeMemberError, type SelectionMembersDetail } from './selection-members'
 import { appendPathFilter, objectTableFilter } from './table-filter'
+import { assortmentChipActive, planSelectionApply, selectionChipContext, type AssortmentChipContext, type SelectionApplyMode } from './table-filters'
 import { dispatchUi, onUi } from './ui-bus'
-import { columnMoveAppliesTo } from './column-move'
+import { columnMoveAppliesTo, uiCommandAppliesToView } from './column-move'
 import {
   EMPTY_SELECTION,
   enrichSelection,
@@ -127,6 +176,7 @@ import {
 export type PanesSession = {
   group: string | null
   objectId: string | null
+  objectAllowDeleted?: boolean
   proposalId: string | null
   language: string
   listType?: string | null
@@ -144,6 +194,7 @@ export type PanesView = {
   pane?: string
   position?: number
   state: Json
+  updated_at?: string | null
 }
 
 export type PanesWorkspace = {
@@ -174,12 +225,13 @@ function orderBase(current: string[]) {
 /** Saved table prefs to apply when the view mounts. The free-text quick filter is
  * never restored from the view row (row 242): a query saved earlier must not hide
  * rows when the view is opened again. */
-export function savedTable(view: PanesView) {
+export function savedTable(view: PanesView, defs?: Json) {
   const table = (view.state.table as Json | undefined) ?? {}
+  const sort = table.sort ?? 'a_number:asc'
   return {
     filter: '',
-    sort: String(table.sort ?? 'a_number:asc'),
-    groupBy: String(table.groupBy ?? ''),
+    sort: coerceTableSort(sort, defs),
+    groupBy: coerceTableGroupBy(table.groupBy, defs),
     order: Array.isArray(table.order) ? table.order.map(String) : columns.map((column) => column.id),
     sizes: (table.sizes as Record<string, number> | undefined) ?? {},
   }
@@ -215,6 +267,8 @@ export function ObjectTable({
   const [selectionFilter, setSelectionFilter] = useState('')
   const [activeSelectionId, setActiveSelectionId] = useState('')
   const [labelFilter, setLabelFilter] = useState('')
+  // Group half of a selection that must not move the workspace group.
+  const [localGroup, setLocalGroup] = useState<string | null>(null)
   const [pathFilters, setPathFilters] = useState<string[]>([])
   const [exportPaths, setExportPaths] = useState<Array<{ id: string; header: string }>>([])
   const [picker, setPicker] = useState<null | 'filter' | 'export' | { text: string; label: string }>(null)
@@ -235,8 +289,7 @@ export function ObjectTable({
   const [hidden, setHidden] = useState<string[]>([])
   const [prefsReady, setPrefsReady] = useState(false)
   const [prefsLoadFailed, setPrefsLoadFailed] = useState(false)
-  // Single focused row. Click and arrows move it; only Enter/Space/click commit
-  // it as a selection, and Detail follows the selection, not this index.
+  // Single focused row. Arrows move focus and selection together; Detail follows at once.
   const [active, setActive] = useState(-1)
   const [createOpen, setCreateOpen] = useState(false)
   const [pendingSelectId, setPendingSelectId] = useState<string | null>(null)
@@ -245,15 +298,28 @@ export function ObjectTable({
   const [moving, setMoving] = useState<string | null>(null)
   const [massConfirm, setMassConfirm] = useState(false)
   const [flashId, setFlashId] = useState('')
+  const [tableSaveError, setTableSaveError] = useState('')
+  const [filterSetupError, setFilterSetupError] = useState('')
   const [editingCell, setEditingCell] = useState<{ rowId: string; columnId: string } | null>(null)
   const [editingDraft, setEditingDraft] = useState('')
+  const [editingMeasureDraft, setEditingMeasureDraft] = useState<MeasureEditDraft | null>(null)
+  const [editingMeasureError, setEditingMeasureError] = useState<'empty' | 'invalid' | null>(null)
+  const editingMeasureRef = useRef<MeasureEditDraft | null>(null)
   const editingOriginalRef = useRef('')
   const skipBlurCommitRef = useRef(false)
   const drafts = useSyncExternalStore(subscribeObjectDrafts, getObjectDraftSnapshot, getObjectDraftSnapshot)
+  const selectionOwnsSave = useSyncExternalStore(subscribeSelectionDraft, getSelectionBarActive, getSelectionBarActive)
   const draftSaving = useObjectDraftSaving()
   const openProposals = useOpenObjectProposals()
   const queryClient = useQueryClient()
+  const objectNavTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** Object id when the current arrow burst started. Returning to it drops a pending URL replace. */
+  const navBurstOrigin = useRef<string | null | undefined>(undefined)
+  const pendingFollowIndex = useRef<number | null>(null)
+  const activeScrollDir = useRef<ObjectTableRowScrollDirection>('nearest')
   const parent = useRef<HTMLDivElement>(null)
+  /** Remote ui.filter must not stomp text the user is entering locally. */
+  const searchFocusedRef = useRef(false)
   const prefsApplied = useRef(false)
   /** dataUpdatedAt we last applied; re-apply when invalidate lands a newer fetch. */
   const prefsAppliedAt = useRef(0)
@@ -298,7 +364,9 @@ export function ObjectTable({
     )
   }
 
-  const virtualizerRef = useRef<{ scrollToIndex: (index: number) => void }>({ scrollToIndex: () => {} })
+  const virtualizerRef = useRef<{
+    scrollToIndex: (index: number, options?: { align?: 'start' | 'center' | 'end' | 'auto' }) => void
+  }>({ scrollToIndex: () => {} })
   const locateRef = useRef<(id: string) => number>(() => -1)
   const selectTries = useRef(0)
   useEffect(() => onFlash(setFlashId), [])
@@ -312,17 +380,48 @@ export function ObjectTable({
     view,
     workspaceId: workspace.id,
     table: { sort, groupBy, sizes },
+    updatedAt: view.updated_at,
   })
   latestTableSave.current = {
     view,
     workspaceId: workspace.id,
     table: { sort, groupBy, sizes },
+    updatedAt: view.updated_at,
   }
   const tableSaver = useRef<ReturnType<typeof createTablePrefsSaver> | null>(null)
   if (!tableSaver.current) {
-    tableSaver.current = createTablePrefsSaver((body, signal) =>
-      api.post('/v1/views', { body, signal }),
-    )
+    tableSaver.current = createTablePrefsSaver(async (body, signal) => {
+      const post = (patch: ViewState, expected: string | null | undefined) =>
+        api.post('/v1/views', {
+          body: {
+            id: body.id,
+            workspace_id: body.workspace_id,
+            type: body.type,
+            title: body.title,
+            pane: body.pane,
+            position: body.position,
+            state: freeObject(patch),
+            ...(expected !== undefined ? { expected_updated_at: expected } : {}),
+          },
+          signal,
+        })
+      if (body.expected_updated_at === undefined) return post(viewStateRecord(body.state), undefined)
+      return saveVersionedViewKeys({
+        baseUpdatedAt: body.expected_updated_at,
+        pending: viewStateRecord(body.state),
+        latestPending: () => viewStateRecord(tablePrefsBody(latestTableSave.current).state),
+        post,
+        refetch: async () => {
+          const snapshot = latestTableSave.current
+          const fresh = await api.get('/v1/workspaces/{id}', { params: { path: { id: snapshot.workspaceId } } })
+          const found = fresh.views?.find((item) => item.id === snapshot.view.id)
+          if (found?.updated_at) latestTableSave.current = { ...latestTableSave.current, updatedAt: found.updated_at }
+          return { state: viewStateRecord(found?.state), updated_at: found?.updated_at ?? null }
+        },
+        isConflict: (error) => error instanceof ApiError && error.status === 409,
+        onConflict: () => acknowledgeWriteError(409),
+      })
+    })
   }
 
   useEffect(() => {
@@ -359,6 +458,14 @@ export function ObjectTable({
     queryFn: () => inCatalog(catalogKey, () => api.get('/v1/definitions')),
     enabled: catalogReady,
   })
+  // Align restored view-row sort tokens with Typesense fields once definitions load.
+  useEffect(() => {
+    if (!defs.data) return
+    const coercedSort = coerceTableSort(sort, defs.data)
+    if (coercedSort !== sort) setSort(coercedSort)
+    const coercedGroup = coerceTableGroupBy(groupBy, defs.data)
+    if (coercedGroup !== groupBy) setGroupBy(coercedGroup)
+  }, [defs.data, sort, groupBy])
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey) return
@@ -384,6 +491,13 @@ export function ObjectTable({
   const selectionRows = (assortments.data?.assortments ?? []).filter((item) =>
     selectionMatchesType(item, typeKey, bound?.id ?? ''),
   )
+  const activeManual = selectionRows.find((item) => String(item.id) === activeSelectionId)
+  const activeManualSelectionId = activeManual
+    && selectionKind(activeManual.kind) !== 'dynamic'
+    && (memberIdsOf(activeManual).length > 0 || isHandPickedQuery(activeManual.query))
+    ? String(activeManual.id)
+    : ''
+  const memberError = useSyncExternalStore(subscribeMemberError, memberErrorSnapshot, memberErrorSnapshot)
   useEffect(() => {
     if (!activeSelectionId || !assortments.isSuccess) return
     if (selectionRows.some((item) => String(item.id) === activeSelectionId)) return
@@ -393,9 +507,10 @@ export function ObjectTable({
     setFilter('')
     setQueryText('')
     setSelectionFilter('')
-    session.setGroup(null)
+    setLocalGroup(null)
+    if (!workspace.locked) session.setGroup(null)
     setLabelFilter('')
-  }, [activeSelectionId, assortments.isSuccess, selectionRows, session])
+  }, [activeSelectionId, assortments.isSuccess, selectionRows, session, workspace.locked])
   useEffect(() => {
     session.setListType?.(typeKey || null)
   }, [session, typeKey])
@@ -409,26 +524,15 @@ export function ObjectTable({
   useEffect(() => {
     publishSelectionLabels(labelCodes(labelFilter.split(' && ').map((part) => part.replace(/^a_[A-Za-z0-9_]+:=/, ''))))
   }, [labelFilter])
-  useEffect(() => {
-    const onApply = (event: Event) => {
-      const item = (event as CustomEvent<Json>).detail
-      if (!item || !selectionMatchesType(item, typeKey, bound?.id ?? '')) return
-      const query = (item.query as Json) ?? {}
-      const dynamicFilter = selectionFilterText(query)
-      const emptyManual = !dynamicFilter && isEmptyManualQuery(query)
-      setActiveSelectionId(String(item.id ?? ''))
-      setFilter('')
-      setSelectionFilter(dynamicFilter || (emptyManual ? EMPTY_MANUAL_FILTER : ''))
-      session.setGroup(dynamicFilter || emptyManual ? null : query.group ? String(query.group) : null)
-      setLabelFilter(dynamicFilter || emptyManual ? '' : labelSearchFilter(query, defs.data))
-    }
-    window.addEventListener(SELECTION_APPLIED_EVENT, onApply)
-    return () => window.removeEventListener(SELECTION_APPLIED_EVENT, onApply)
-  }, [session, typeKey, bound?.id, defs.data])
   // A peer source replaces the global group filter: the view follows the other
   // view's row/node, not whatever group happens to be selected in the tree.
   const peerSource = peerSourceOf(view.state)
   const explicitAll = isExplicitAllSource(view.state)
+  const groupFilterApplies = !peerSource && !explicitAll
+  const peerKey = peerSource ? `${peerSource.viewId}:${peerSource.selection}:${peerSource.linkType ?? ''}` : ''
+  useEffect(() => {
+    if (peerKey) setActiveSelectionId('')
+  }, [peerKey])
   const peerSourceView = peerSource
     ? ((workspace.views as PanesView[] | null | undefined) ?? []).find((item) => item.id === peerSource.viewId)
     : undefined
@@ -474,9 +578,137 @@ export function ObjectTable({
       ? (peerNode ? peerNodeFilter(peerNode) : peerIdsFilter([]))
       : (peerIds.isSuccess ? peerIdsFilter(peerIds.data) : peerIdsFilter([]))
     : ''
-  const filterBy = [objectTableFilter(typeKey, peerSource || explicitAll ? null : session.group, defs.data), peerFilter, selectionFilter, labelFilter, ...pathFilters]
+  const handPicked = selectionFilter.startsWith('id:=[') || selectionFilter === EMPTY_MANUAL_FILTER
+  const selectionMode: SelectionApplyMode = peerSource ? 'peer' : explicitAll ? 'explicit-all' : 'follow'
+  const chipContext = selectionChipContext({
+    sessionGroup: session.group,
+    activeLabelFilter: labelFilter,
+    activeSelectionFilter: selectionFilter,
+    activeSelectionId,
+    activeFilter: filter,
+    sessionGroupApplies: groupFilterApplies,
+    localGroup,
+    defs: defs.data,
+  })
+  const filterBy = [objectTableFilter(typeKey, !handPicked && chipContext.groupFilterApplies ? chipContext.activeGroup : null, defs.data), peerFilter, selectionFilter, labelFilter, ...pathFilters]
     .filter(Boolean)
     .join(' && ')
+  const enableGroupAssortmentFilter = useCallback(async () => {
+    if (!explicitAll || workspace.locked) return
+    const prevState = view.state
+    const nextState = clearExplicitAllSource(view.state)
+    const surface = queryClient.getQueryData<Json>(['workspace', workspace.id])
+    if (surface && typeof surface === 'object' && !Array.isArray(surface)) {
+      const views = (surface.views as Json[] | undefined) ?? []
+      queryClient.setQueryData(['workspace', workspace.id], {
+        ...surface,
+        views: views.map((item) => (String(item.id) === view.id ? { ...item, state: nextState } : item)),
+      })
+    }
+    try {
+      await saveViewChange({
+        id: view.id,
+        workspaceId: workspace.id,
+        type: view.type,
+        title: view.title,
+        pane: view.pane ?? 'center',
+        position: view.position ?? 0,
+        baseState: viewStateRecord(prevState),
+        nextState: viewStateRecord(nextState),
+        updatedAt: view.updated_at,
+        post: (body) => api.post('/v1/views', {
+          body: {
+            id: body.id,
+            workspace_id: body.workspace_id,
+            type: body.type,
+            title: body.title,
+            pane: body.pane,
+            position: body.position,
+            state: freeObject(body.state),
+            ...(body.expected_updated_at !== undefined ? { expected_updated_at: body.expected_updated_at } : {}),
+          },
+        }),
+        refetch: async () => {
+          const fresh = await api.get('/v1/workspaces/{id}', { params: { path: { id: workspace.id } } })
+          const found = fresh.views?.find((item) => item.id === view.id)
+          return { state: viewStateRecord(found?.state), updated_at: found?.updated_at ?? null }
+        },
+        isConflict: (error) => error instanceof ApiError && error.status === 409,
+        onConflict: () => acknowledgeWriteError(409),
+      })
+    } catch (reason) {
+      if (surface && typeof surface === 'object' && !Array.isArray(surface)) {
+        const views = (surface.views as Json[] | undefined) ?? []
+        queryClient.setQueryData(['workspace', workspace.id], {
+          ...surface,
+          views: views.map((item) => (String(item.id) === view.id ? { ...item, state: prevState } : item)),
+        })
+      }
+      const message = writeErrorMessage(reason) ?? copy.saveFailed
+      setFilterSetupError(message)
+      throw reason
+    }
+  }, [explicitAll, workspace.id, workspace.locked, view, queryClient])
+  const commitSelection = (patch: { filter: string; selectionFilter: string; labelFilter: string; selectionId: string; localGroup: string | null; globalGroup?: string | null }) => {
+    setFilter(patch.filter)
+    setSelectionFilter(patch.selectionFilter)
+    setLabelFilter(patch.labelFilter)
+    setActiveSelectionId(patch.selectionId)
+    setLocalGroup(patch.localGroup)
+    if (patch.globalGroup !== undefined && !workspace.locked) session.setGroup(patch.globalGroup)
+  }
+  useEffect(() => {
+    const onMembers = (event: Event) => {
+      const detail = (event as CustomEvent<SelectionMembersDetail>).detail
+      if (!detail?.id || detail.id !== activeSelectionId) return
+      setSelectionFilter(memberIdFilter(detail.memberIds))
+      setLabelFilter('')
+      setLocalGroup(null)
+      if (!workspace.locked) session.setGroup(null)
+    }
+    window.addEventListener(SELECTION_MEMBERS_EVENT, onMembers)
+    return () => window.removeEventListener(SELECTION_MEMBERS_EVENT, onMembers)
+  }, [activeSelectionId, session, workspace.locked])
+  // Click and a selection broadcast from another view share this commit.
+  const applySavedSelection = async (item: Json) => {
+    const plan = planSelectionApply({
+      item,
+      ctx: chipContext,
+      mode: selectionMode,
+      locked: Boolean(workspace.locked),
+    })
+    if (plan.action === 'ignore') return
+    if (plan.action === 'clear') {
+      setFilterSetupError('')
+      commitSelection({
+        filter: '',
+        selectionFilter: '',
+        labelFilter: '',
+        selectionId: '',
+        localGroup: null,
+        ...(plan.globalGroup !== undefined ? { globalGroup: plan.globalGroup } : {}),
+      })
+      return
+    }
+    if (plan.action === 'leave-all') {
+      try {
+        await enableGroupAssortmentFilter()
+      } catch {
+        return
+      }
+    }
+    setFilterSetupError('')
+    commitSelection(plan.patch)
+  }
+  useEffect(() => {
+    const onApply = (event: Event) => {
+      const item = (event as CustomEvent<Json>).detail
+      if (!item || !selectionMatchesType(item, typeKey, bound?.id ?? '')) return
+      void applySavedSelection(item)
+    }
+    window.addEventListener(SELECTION_APPLIED_EVENT, onApply)
+    return () => window.removeEventListener(SELECTION_APPLIED_EVENT, onApply)
+  }, [applySavedSelection, typeKey, bound?.id])
   const attributePaths = useQuery({
     queryKey: ['attribute-paths', typeKey],
     queryFn: () =>
@@ -641,6 +873,9 @@ export function ObjectTable({
     getScrollElement: () => parent.current,
     estimateSize: () => 28,
     overscan: 16,
+    // The sticky header is in normal flow ahead of the virtual rows, so item
+    // offsets already start below it. Padding here would hide an extra row
+    // and make ArrowUp jump past the top edge.
   })
   const visible = virtualizer.getVirtualItems()
   const start = visible[0]?.index ?? 0
@@ -763,10 +998,9 @@ export function ObjectTable({
         ? { id: row.id, key: row.key, name: row.name, type: row.type, version: row.version }
         : { id, key: '', name: '', type: '', version: '' }
     }
-    // Publish the rows the user actually selected. Keyboard focus alone is not
-    // a selection; Detail and peer panes follow `selected`, never `activeRow`.
+    // Publish committed selections. Detail and peer panes follow `selected`.
     const marked = scopeChanged ? [] : selected.map(described)
-    publishTable(view.id, [queryText, filterBy].filter(Boolean).join(' '), sort, filterBy)
+    publishTable(view.id, [queryText, filterBy].filter(Boolean).join(' '), sort, filterBy, queryText)
     publishSelection(view.id, marked)
   }, [peerScope, selected, queryText, filterBy, sort, view.id, knownStamp])
 
@@ -901,10 +1135,22 @@ export function ObjectTable({
       resetColumnsToDefault()
       return
     }
-    if (event.name === 'ui.filter') setFilter(String(args.q ?? args.text ?? args.filter ?? ''))
-    if (event.name === 'ui.group') setGroupBy(String(args.group ?? args.by ?? ''))
-    if (event.name === 'ui.sort' && args.sort) setSort(String(args.sort))
+    if (event.name === 'ui.filter') {
+      if (!uiCommandAppliesToView(args, view.id)) return
+      if (searchFocusedRef.current) return
+      setFilter(String(args.q ?? args.text ?? args.filter ?? ''))
+    }
+    if (event.name === 'ui.group') {
+      if (!uiCommandAppliesToView(args, view.id)) return
+      setGroupBy(String(args.group ?? args.by ?? ''))
+    }
+    if (event.name === 'ui.sort' && args.sort) {
+      if (!uiCommandAppliesToView(args, view.id)) return
+      setSort(String(args.sort))
+    }
     if (event.name === 'ui.select' && args.id) {
+      const target = String(args.view ?? '')
+      if (target && target !== view.id) return
       const id = String(args.id)
       session.setObjectId(id)
       setSelected([id])
@@ -976,10 +1222,12 @@ export function ObjectTable({
     }
   }, [])
 
+  const followRowImpl = useRef<(row: ObjRow, index: number, fetch: 'immediate' | 'debounced') => void>(() => undefined)
+
   const applySelection = (row: ObjRow, index: number, anchor: number, extend: boolean) => {
-    session.setObjectId(row.id)
     if (!extend) {
       setSelected([row.id])
+      followRowImpl.current(row, index, 'immediate')
       return
     }
     const [start, end] = anchor < index ? [anchor, index] : [index, Math.max(anchor, 0)]
@@ -989,29 +1237,55 @@ export function ObjectTable({
       if (item) ids.push(item.id)
     }
     setSelected(ids.length > 0 ? ids : [row.id])
+    // Shift+Arrow extends the range and lands on the same debounced fetch as a plain arrow.
+    followRowImpl.current(row, index, 'debounced')
   }
 
   // Keep the focused row in view. A virtualized row may mount a frame later;
   // scrolling active is independent of committing a selection.
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (active < 0) return
-    if (groupBy) {
-      const row = rowAt(active)
-      if (row) document.getElementById(objectRowId(row.id))?.scrollIntoView({ block: 'nearest' })
-    } else {
-      virtualizerRef.current.scrollToIndex(active)
+    const grid = parent.current
+    const direction = activeScrollDir.current
+    activeScrollDir.current = 'nearest'
+    if (!groupBy) {
+      // Nearest/minimal virtualizer scroll; edge-aware nudge stays in scrollObjectTableActiveRow.
+      virtualizerRef.current.scrollToIndex(active, { align: 'auto' })
     }
+    scrollObjectTableActiveRow(grid, direction)
+    const frame = requestAnimationFrame(() => {
+      scrollObjectTableActiveRow(parent.current, direction)
+    })
+    return () => cancelAnimationFrame(frame)
   }, [active, groupBy])
+
+  const visibleColumnsKey = shown.join('\0')
+  useLayoutEffect(() => {
+    if (active < 0 || !cellColumn) return
+    scrollObjectTableActiveColumn(parent.current)
+  }, [active, activeColumn, cellColumn, visibleColumnsKey])
+
+  const noteActiveScrollDir = (nextIndex: number) => {
+    if (active < 0 || nextIndex === active) activeScrollDir.current = 'nearest'
+    else activeScrollDir.current = nextIndex > active ? 'down' : 'up'
+  }
 
   const moveActive = (next: number, extend: boolean) => {
     if (listCount <= 0) return
     const clamped = Math.max(0, Math.min(listCount - 1, next))
+    noteActiveScrollDir(clamped)
     setActive(clamped)
     const row = rowAt(clamped)
-    if (!row) return
-    // Shift+Arrow is an explicit range extension, so it also commits a selection.
-    // Plain navigation only moves focus and must not touch Detail or peer panes.
+    if (!row) {
+      if (!extend) pendingFollowIndex.current = clamped
+      return
+    }
+    pendingFollowIndex.current = null
     if (extend) applySelection(row, clamped, active, extend)
+    else {
+      setSelected([row.id])
+      if (row.id !== session.objectId) followRowImpl.current(row, clamped, 'debounced')
+    }
   }
 
   const focusGrid = () => {
@@ -1076,11 +1350,11 @@ export function ObjectTable({
     setActive(index)
     const row = rowAt(index)
     if (!row) return
-    session.setObjectId(row.id)
     if (event.shiftKey) setSelected((current) => (current.includes(row.id) ? current : [...current, row.id]))
     else if (event.metaKey || event.ctrlKey) {
       setSelected((current) => (current.includes(row.id) ? current.filter((id) => id !== row.id) : [...current, row.id]))
     } else setSelected([row.id])
+    followRowImpl.current(row, index, 'immediate')
   }
 
   const onRowMenu = (index: number, x: number, y: number, column: string) => {
@@ -1088,8 +1362,8 @@ export function ObjectTable({
     if (column) activateColumn(column)
     const row = rowAt(index)
     if (!row) return
-    session.setObjectId(row.id)
     setSelected((current) => (current.includes(row.id) ? current : [row.id]))
+    followRowImpl.current(row, index, 'immediate')
     const context = column ? 'cell' : 'row'
     const hiddenColumns = all
       .filter((id) => hidden.includes(id))
@@ -1106,7 +1380,8 @@ export function ObjectTable({
         column: column || undefined,
         columnHeader: column ? columnHeader(column) : undefined,
         hiddenColumns,
-        typeKey: session.listType ?? undefined,
+        typeKey: typeKey || row.type || session.listType || undefined,
+        manualSelectionId: activeManualSelectionId || undefined,
         viewId: view.id,
         columnPrefsOverride: hasColumnOverride,
         objects: chosen.flatMap((id) => {
@@ -1265,7 +1540,10 @@ export function ObjectTable({
       event.preventDefault()
       const at = shown.indexOf(cellColumn)
       const next = shown[Math.max(0, Math.min(shown.length - 1, at + (event.key === 'ArrowRight' ? 1 : -1)))]
-      if (next) activateColumn(next)
+      if (next && next !== cellColumn) {
+        flushSync(() => activateColumn(next))
+        scrollObjectTableActiveColumn(parent.current)
+      }
       return
     }
     if (!['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End', 'Enter', ' ', 'Escape'].includes(event.key)) return
@@ -1274,10 +1552,18 @@ export function ObjectTable({
     }
     event.preventDefault()
     if (event.key === 'Enter' || event.key === ' ') {
-      // Enter and Space commit the focused row as the selection. Focus alone
-      // (arrows, Home/End, Tab) never selects.
       const row = rowAt(active)
-      if (row) applySelection(row, active, active, false)
+      if (!row) return
+      if (selected.length > 1) {
+        applySelection(row, active, active, false)
+        return
+      }
+      if (event.key === 'Enter') {
+        const owned = row.id === session.objectId ? new Set(Object.keys(ownersForRow)) : undefined
+        if (isEditableColumn(cellColumn, owned)) beginCellEdit(row, cellColumn)
+        return
+      }
+      applySelection(row, active, active, false)
       return
     }
     const next = event.key === 'ArrowDown'
@@ -1291,6 +1577,8 @@ export function ObjectTable({
             : event.key === 'Home'
               ? 0
               : listCount - 1
+    if (event.key === 'Home') activeScrollDir.current = 'up'
+    else if (event.key === 'End') activeScrollDir.current = 'down'
     moveActive(next, event.shiftKey)
   }
 
@@ -1371,6 +1659,52 @@ export function ObjectTable({
   const paintPathValues = tableBusy ? painted.pathValues : pathValues.data
   const rowAtPainted = (index: number) =>
     groupBy ? painted.groupedRows[index] : painted.byIndex.get(index)
+  const previewPathValuesRef = useRef(paintPathValues?.values)
+  previewPathValuesRef.current = paintPathValues?.values
+  followRowImpl.current = (row, index, fetch) => {
+    const previousId = session.objectId
+    seedObjectListPreview(
+      queryClient,
+      buildListPreviewFromRow(row, defs.data, session.language, previewPathValuesRef.current?.[row.id]),
+    )
+    session.setObjectId(row.id)
+    if (fetch === 'immediate') {
+      // A click or Enter/Space is its own history step.
+      clearObjectNavReplace()
+    } else if (row.id !== previousId) {
+      if (navBurstOrigin.current === undefined) navBurstOrigin.current = previousId
+      // A → B → A inside one debounce never writes a URL, so the mark must not linger.
+      if (navBurstOrigin.current != null && row.id === navBurstOrigin.current) clearObjectNavReplace()
+      else markObjectNavReplace(row.id)
+    }
+    const runFetches = () => {
+      navBurstOrigin.current = undefined
+      const ids: string[] = []
+      for (let cursor = index - OBJECT_PREFETCH_RADIUS; cursor <= index + OBJECT_PREFETCH_RADIUS; cursor += 1) {
+        const item = rowAt(cursor)
+        if (item) ids.push(item.id)
+      }
+      prefetchObjectDetails(queryClient, ids)
+    }
+    if (fetch === 'immediate') {
+      commitImmediateTableNavLand(objectNavTimer, row.id, runFetches)
+      return
+    }
+    scheduleDebouncedTableNavLand(objectNavTimer, OBJECT_NAV_DEBOUNCE_MS, row.id, runFetches)
+  }
+  useEffect(() => () => {
+    if (objectNavTimer.current) clearTimeout(objectNavTimer.current)
+  }, [])
+  // PageDown/End can land on an index before its page is in memory.
+  useEffect(() => {
+    const index = pendingFollowIndex.current
+    if (index == null || index < 0) return
+    const row = rowAt(index)
+    if (!row) return
+    pendingFollowIndex.current = null
+    setSelected([row.id])
+    followRowImpl.current(row, index, 'debounced')
+  }, [knownStamp, groupedRows.length, found])
   const cellDisplayText = (row: ObjRow, id: string) => {
     const apiPath = parseColumnId(id).path
     if (columnNeedsPathValues(id)) {
@@ -1381,11 +1715,48 @@ export function ObjectTable({
   }
 
   const commitCellEdit = (row: ObjRow, columnId: string, nextText: string) => {
+    const measureCtx = inlineMeasureEditContext(columnId, row.doc, defs.data)
+    const measureDraft = editingMeasureRef.current ?? editingMeasureDraft
+    if (measureCtx && measureDraft) {
+      const result = commitMeasureEdit(measureCtx, measureDraft)
+      if (!result.ok) {
+        setEditingMeasureError(result.reason)
+        skipBlurCommitRef.current = true
+        return
+      }
+      // Prevent the input's blur (fired on unmount after Enter) from double-PATCHing.
+      skipBlurCommitRef.current = true
+      setEditingCell(null)
+      setEditingMeasureDraft(null)
+      editingMeasureRef.current = null
+      setEditingMeasureError(null)
+      const original = editingOriginalRef.current
+      if (result.unchanged) return
+      const attrKey = columnBaseKey(columnId)
+      stageObjectCell({
+        objectId: row.id,
+        attribute: attrKey,
+        columnId,
+        baseVersion: editBaseVersion(row.id, Number(row.version ?? 0)),
+        originalText: original,
+        proposedText: result.proposedText,
+        value: result.stored,
+        surface: 'table',
+      })
+      return
+    }
     // Prevent the input's blur (fired on unmount after Enter) from double-PATCHing.
     skipBlurCommitRef.current = true
     setEditingCell(null)
+    setEditingMeasureDraft(null)
+    editingMeasureRef.current = null
+    setEditingMeasureError(null)
     const original = editingOriginalRef.current
-    if (!cellEditShouldPatch(original, nextText)) return
+    const legacyMeasureCtx = measureEditContext(columnId, row.doc, defs.data)
+    const shouldPatch = legacyMeasureCtx
+      ? measureEditShouldPatch(legacyMeasureCtx, nextText)
+      : cellEditShouldPatch(original, nextText)
+    if (!shouldPatch) return
     const path = parseColumnId(columnId).path
     const langMatch = path.includes('@') ? path.split('@') : null
     const attrKey = (langMatch ? langMatch[0]! : path).split('.')[0] ?? path
@@ -1393,17 +1764,28 @@ export function ObjectTable({
     const attr = attributeByKey(defs.data, attrKey)
     const languageDependent = Boolean(attr?.language_dependent)
     const cellLanguage = language ?? (languageDependent ? uiLanguage : undefined)
-    const bodyValues: Json = cellEditValuesBody({
-      attrKey,
-      nextText,
-      columnLanguage: cellLanguage,
-      languageDependent,
-      uiLanguage,
-    })
-    const fragment = bodyValues[attrKey]
-    const value = cellLanguage && fragment && typeof fragment === 'object'
-      ? (fragment as Json)[cellLanguage]
-      : fragment
+    let value: unknown
+    let proposedText = nextText
+    let bodyValues: Json
+    if (legacyMeasureCtx) {
+      const stored = measureEditStoredValue(legacyMeasureCtx, nextText)
+      if (!stored) return
+      value = stored
+      proposedText = measureEditProposedText(legacyMeasureCtx, nextText)
+      bodyValues = { [attrKey]: stored }
+    } else {
+      bodyValues = cellEditValuesBody({
+        attrKey,
+        nextText,
+        columnLanguage: cellLanguage,
+        languageDependent,
+        uiLanguage,
+      })
+      const fragment = bodyValues[attrKey]
+      value = cellLanguage && fragment && typeof fragment === 'object'
+        ? (fragment as Json)[cellLanguage]
+        : fragment
+    }
     // Enter stages the shared draft. Save writes it. A refetch must not be the write.
     stageObjectCell({
       objectId: row.id,
@@ -1412,8 +1794,9 @@ export function ObjectTable({
       language: cellLanguage,
       baseVersion: editBaseVersion(row.id, Number(row.version ?? 0)),
       originalText: original,
-      proposedText: nextText,
+      proposedText,
       value,
+      surface: 'table',
     })
   }
 
@@ -1421,6 +1804,19 @@ export function ObjectTable({
     skipBlurCommitRef.current = true
     setEditingCell(null)
     setEditingDraft('')
+    setEditingMeasureDraft(null)
+    editingMeasureRef.current = null
+    setEditingMeasureError(null)
+  }
+  const endCellEdit = () => {
+    cancelCellEdit()
+    focusGrid()
+  }
+
+  const syncMeasureDraft = (draft: MeasureEditDraft) => {
+    editingMeasureRef.current = draft
+    setEditingMeasureDraft(draft)
+    setEditingMeasureError(null)
   }
 
   /** Open the inline editor from row / path-values data — never from a loading placeholder. */
@@ -1477,9 +1873,20 @@ export function ObjectTable({
       formatPathValues: (values) => summarizePathValues(values).text,
     })
     if (!initial.ok) return
+    const measureCtx = inlineMeasureEditContext(column, row.doc, defs.data)
+    if (measureCtx) {
+      editingOriginalRef.current = initial.text
+      skipBlurCommitRef.current = false
+      setEditingDraft('')
+      syncMeasureDraft(measureEditInitialDraft(measureCtx))
+      setEditingCell({ rowId: row.id, columnId: column })
+      return
+    }
     editingOriginalRef.current = initial.text
     skipBlurCommitRef.current = false
     setEditingDraft(initial.text)
+    setEditingMeasureDraft(null)
+    editingMeasureRef.current = null
     setEditingCell({ rowId: row.id, columnId: column })
   }
 
@@ -1518,6 +1925,39 @@ export function ObjectTable({
 
   const cell = (row: ObjRow, id: string) => {
     if (editingCell && editingCell.rowId === row.id && editingCell.columnId === id) {
+      const measureCtx = inlineMeasureEditContext(id, row.doc, defs.data)
+      const measureDraft = editingMeasureDraft ?? editingMeasureRef.current
+      if (measureCtx && measureDraft) {
+        return (
+          <MeasureCellEditor
+            columnId={id}
+            valueText={measureDraft.valueText}
+            unit={measureDraft.unit}
+            unitLocked={measureCtx.unitLocked}
+            unitOptions={measureCtx.unitOptions}
+            invalid={editingMeasureError != null}
+            onValueTextChange={(valueText) =>
+              syncMeasureDraft({ ...(editingMeasureRef.current ?? measureDraft), valueText })
+            }
+            onUnitChange={(unit) => {
+              skipBlurCommitRef.current = true
+              syncMeasureDraft({ ...(editingMeasureRef.current ?? measureDraft), unit })
+            }}
+            onUnitSelectorOpen={() => {
+              skipBlurCommitRef.current = true
+            }}
+            onValueBlur={() => {
+              if (skipBlurCommitRef.current) {
+                skipBlurCommitRef.current = false
+                return
+              }
+              commitCellEdit(row, id, '')
+            }}
+            onCommit={() => commitCellEdit(row, id, '')}
+            onCancel={endCellEdit}
+          />
+        )
+      }
       const listKey = valueListKeyForColumn(id, defs.data)
       if (listKey) {
         const lists = (defs.data?.value_lists as Json[] | undefined) ?? []
@@ -1544,7 +1984,7 @@ export function ObjectTable({
                     skipBlurCommitRef.current = false
                     return
                   }
-                  cancelCellEdit()
+                  endCellEdit()
                 }, 0)
               }}
             >
@@ -1590,10 +2030,11 @@ export function ObjectTable({
             if (event.key === 'Enter') {
               event.preventDefault()
               commitCellEdit(row, id, editingDraft)
+              focusGrid()
             }
             if (event.key === 'Escape') {
               event.preventDefault()
-              cancelCellEdit()
+              endCellEdit()
             }
           }}
           onClick={(event) => event.stopPropagation()}
@@ -1856,25 +2297,35 @@ export function ObjectTable({
   }
   const visibleRows = groupBy ? groupedRows : [...byIndex.values()]
   const visibleIds = new Set(visibleRows.map((row) => row.id))
-  const tableObjectIds = [...new Set(drafts.cells.map((cell) => cell.objectId))]
-    .filter((id) => visibleIds.has(id))
+  const detailOwner = useSyncExternalStore(subscribeDetailDraftOwner, getDetailDraftOwner, getDetailDraftOwner)
+  // A Detail edit stays on the Detail bar. This table only saves cells staged here.
+  const tableObjectIds = [...new Set(
+    drafts.cells.filter((cell) => cell.surface == null || cell.surface === 'table').map((cell) => cell.objectId),
+  )].filter((id) => visibleIds.has(id))
+  const visibleProposalUpdates = [...openProposals.byObject.entries()]
+    .filter(([objectId]) => visibleIds.has(objectId))
+    .flatMap(([, cells]) => cells)
+    .filter((cell) => cell.op === 'update')
+  // One proposal bar: Detail's, when Detail is open on that object.
+  const tableProposals = proposalCellsForTableBar(visibleProposalUpdates, detailOwner)
+  const draftElsewhere = new Set([
+    ...drafts.cells.filter((cell) => cell.surface === 'detail').map((cell) => cell.objectId),
+    ...tableProposals.elsewhere,
+  ])
   const tableVersions: Record<string, number> = {}
   const tableMeta: Record<string, { key: string; type: string }> = {}
   for (const row of visibleRows) {
     tableVersions[row.id] = Number(row.version ?? 0)
     tableMeta[row.id] = { key: row.key, type: row.type }
   }
-  const visibleProposalCells = [...openProposals.byObject.entries()]
-    .filter(([objectId]) => visibleIds.has(objectId))
-    .flatMap(([, cells]) => cells)
-    .filter((cell) => cell.op === 'update')
+  const visibleProposalCells = tableProposals.bar
   const proposalObjectIds = [...new Set(visibleProposalCells.map((cell) => cell.objectId))]
   const tableReview = reviewCapabilities({
     principal: me.data?.kind === 'agent' ? 'agent' : 'human',
     viaAgent: false,
     open: true,
     stale: tableObjectIds.some((id) => {
-      const base = draftBaseVersion(id)
+      const base = draftBaseVersion(id, 'table')
       return base != null && tableVersions[id] != null && tableVersions[id] !== base
     }) || (tableObjectIds.length === 0 && visibleProposalCells.some((cell) => cell.stale)),
     conflict: tableObjectIds.length === 0 && visibleProposalCells.some((cell) => cell.conflict),
@@ -1892,7 +2343,30 @@ export function ObjectTable({
       rowCount={prefsReady && probe.isFetched ? (groupBy ? groups.reduce((sum, group) => sum + group.found, 0) : found) : undefined}
       filterValue={filter}
       onFilterChange={setFilter}
+      onFilterFocus={() => { searchFocusedRef.current = true }}
+      onFilterBlur={() => { searchFocusedRef.current = false }}
+      onDragOver={(event) => {
+        if (!activeManualSelectionId || !selectionDragActive(event.dataTransfer.types)) return
+        const node = event.target
+        if (node instanceof Element && node.closest('[data-testid="object-row"]')) return
+        event.preventDefault()
+        event.stopPropagation()
+        event.dataTransfer.dropEffect = 'copy'
+      }}
+      onDrop={(event) => {
+        if (!activeManualSelectionId || !selectionDragActive(event.dataTransfer.types)) return
+        const node = event.target
+        if (node instanceof Element && node.closest('[data-testid="object-row"]')) return
+        event.preventDefault()
+        event.stopPropagation()
+        const ids = finishSelectionDrop(event.dataTransfer)
+        if (ids.length === 0) return
+        void saveSelectionMembers(queryClient, activeManualSelectionId, ids, 'add').catch((reason: unknown) => {
+          setMemberError(activeManualSelectionId, writeErrorMessage(reason) ?? copy.validation)
+        })
+      }}
     >
+      {selectionOwnsSave ? null : (
       <ObjectDraftBar
         count={draftCount}
         canSave={tableReview.canSave}
@@ -1910,13 +2384,18 @@ export function ObjectTable({
             proposals: visibleProposalCells,
             meta: tableMeta,
             scope: [...visibleIds],
+            surface: 'table',
           })
           void runDraftSave(plan, queryClient, viewingAgentRunId() ?? '').then((reason) => {
             if (isDraftSaveInFlight(reason)) return
-            if (reason) reportWriteError(new Error(reason))
-            else session.push(copy.saved)
+            if (reason) setTableSaveError(reason)
+            else {
+              setTableSaveError('')
+              session.push(copy.saved)
+            }
           })
         }}
+        saveError={tableSaveError}
         onDiscard={() => {
           void runDraftDiscard({
             objectIds: [...visibleIds],
@@ -1924,13 +2403,15 @@ export function ObjectTable({
             membership: openProposals.membership,
             principal: me.data?.kind === 'agent' ? 'agent' : 'human',
             viaAgent: false,
+            surface: 'table',
           }).then((reason) => {
-            if (reason) reportWriteError(new Error(reason))
+            if (reason) setTableSaveError(reason)
             void queryClient.invalidateQueries({ queryKey: ['proposals'] })
             void queryClient.invalidateQueries({ queryKey: ['proposal'] })
           })
         }}
       />
+      )}
       <UnmappedDraftLinks proposals={openProposals.unmapped} />
       {peerSource && peerSourceView ? (
         <p className="table-source" data-testid="peer-linked-to">
@@ -1973,19 +2454,25 @@ export function ObjectTable({
         <TableFilters
           groupBy={groupBy}
           setGroupBy={setGroupBy}
-          setFilter={setFilter}
-          setGroup={session.setGroup}
-          setLabelFilter={setLabelFilter}
-          setSelectionFilter={setSelectionFilter}
-          activeGroup={session.group}
-          activeLabelFilter={labelFilter}
-          activeSelectionFilter={selectionFilter}
-          activeSelectionId={activeSelectionId}
-          setActiveSelectionId={setActiveSelectionId}
-          activeFilter={filter}
+          chipContext={chipContext}
           assortments={selectionRows}
-          defs={defs.data}
+          onAssortment={(item) => { void applySavedSelection(item) }}
+          onClear={() => {
+            commitSelection({
+              filter: '',
+              selectionFilter: '',
+              labelFilter: '',
+              selectionId: '',
+              localGroup: null,
+              ...(workspace.locked ? {} : { globalGroup: null }),
+            })
+          }}
         />
+        {filterSetupError ? (
+          <span className="error" role="alert" data-testid="filter-setup-error" title={filterSetupError}>
+            {filterSetupError}
+          </span>
+        ) : null}
       </div>
       {pathFilters.length > 0 ? (
         <div className="toolbar path-filter-chips" data-testid="path-filter-chips">
@@ -2039,20 +2526,15 @@ export function ObjectTable({
                     header={column.header}
                     sortable={Boolean(column.sort)}
                     active={activeColumn === id}
-                    sortState={
-                      column.sort && sort === `${column.sort}:asc`
-                        ? 'asc'
-                        : column.sort && sort === `${column.sort}:desc`
-                          ? 'desc'
-                          : false
-                    }
+                    sortState={headerSortState(sort, column.sort, defs.data)}
                     onActivate={() => activateColumn(id)}
                     onSort={() => {
                       if (!column.sort) return
                       // Three states (TanStack enableSortingRemoval equivalent):
                       // none → asc → desc → none.
-                      if (sort === `${column.sort}:asc`) setSort(`${column.sort}:desc`)
-                      else if (sort === `${column.sort}:desc`) setSort('')
+                      const state = headerSortState(sort, column.sort, defs.data)
+                      if (state === 'asc') setSort(`${column.sort}:desc`)
+                      else if (state === 'desc') setSort('')
                       else setSort(`${column.sort}:asc`)
                     }}
                     onContextMenu={(event) => onHeaderMenu(id, event)}
@@ -2121,6 +2603,7 @@ export function ObjectTable({
                         }}
                         onFocusGrid={focusGrid}
                         linkDrop={linkDropId === row.id}
+                        draftElsewhere={draftElsewhere.has(row.id)}
                         onLinkDragStart={onLinkDragStart}
                         onLinkDragOver={onLinkDragOver}
                         onLinkDragLeave={onLinkDragLeave}
@@ -2160,6 +2643,7 @@ export function ObjectTable({
                   }}
                   onFocusGrid={focusGrid}
                   linkDrop={linkDropId === row.id}
+                  draftElsewhere={draftElsewhere.has(row.id)}
                   onLinkDragStart={onLinkDragStart}
                   onLinkDragOver={onLinkDragOver}
                   onLinkDragLeave={onLinkDragLeave}
@@ -2381,6 +2865,7 @@ function Row({
   onFocusGrid,
   onCellDoubleClick,
   linkDrop,
+  draftElsewhere = false,
   onLinkDragStart,
   onLinkDragOver,
   onLinkDragLeave,
@@ -2402,6 +2887,8 @@ function Row({
   onFocusGrid: () => void
   onCellDoubleClick?: (row: ObjRow, column: string) => void
   linkDrop?: boolean
+  /** The row has a draft staged in Detail. This table does not offer Save for it. */
+  draftElsewhere?: boolean
   onLinkDragStart?: (row: ObjRow, event: ReactDragEvent<HTMLDivElement>) => void
   onLinkDragOver?: (row: ObjRow, event: ReactDragEvent<HTMLDivElement>) => void
   onLinkDragLeave?: (row: ObjRow) => void
@@ -2419,6 +2906,7 @@ function Row({
       role="row"
       aria-selected={isSelected}
       data-testid="object-row"
+      data-draft-elsewhere={draftElsewhere ? 'true' : undefined}
       data-link-drop={linkDrop ? 'true' : undefined}
       data-index={index}
       draggable
@@ -2505,109 +2993,62 @@ async function loadPage(q: string, filter: string, sort: string, groupBy: string
 function TableFilters({
   groupBy,
   setGroupBy,
-  setFilter,
-  setGroup,
-  setLabelFilter,
-  setSelectionFilter,
-  activeGroup,
-  activeLabelFilter,
-  activeSelectionFilter,
-  activeSelectionId,
-  setActiveSelectionId,
-  activeFilter,
+  chipContext,
   assortments,
-  defs,
+  onAssortment,
+  onClear,
 }: {
   groupBy: string
   setGroupBy: (value: string) => void
-  setFilter: (value: string) => void
-  setGroup: (value: string | null) => void
-  setLabelFilter: (value: string) => void
-  setSelectionFilter: (value: string) => void
-  activeGroup: string | null
-  activeLabelFilter: string
-  activeSelectionFilter: string
-  activeSelectionId: string
-  setActiveSelectionId: (value: string) => void
-  activeFilter: string
+  chipContext: AssortmentChipContext
   assortments: Json[]
-  defs?: Json
+  onAssortment: (item: Json) => void
+  onClear: () => void
 }) {
   const clear = () => {
     setGroupBy('')
-    setFilter('')
-    setGroup(null)
-    setLabelFilter('')
-    setSelectionFilter('')
-    setActiveSelectionId('')
+    onClear()
   }
-  const applyAssortment = (item: Json) => {
-    const query = (item.query as Json) ?? {}
-    const dynamicFilter = selectionFilterText(query)
-    const emptyManual = !dynamicFilter && isEmptyManualQuery(query)
-    const nextGroup = query.group ? String(query.group) : null
-    const nextLabels = labelSearchFilter(query, defs)
-    // Toggle off when the same selection is already active.
-    const same = dynamicFilter
-      ? dynamicFilter === activeSelectionFilter
-      : emptyManual
-        ? activeSelectionFilter === EMPTY_MANUAL_FILTER
-        : (nextGroup ?? '') === (activeGroup ?? '') && nextLabels === activeLabelFilter && !activeSelectionFilter
-    if (same) {
-      setGroup(null)
-      setLabelFilter('')
-      setSelectionFilter('')
-      setFilter('')
-      setActiveSelectionId('')
-      return
-    }
-    setFilter('')
-    setActiveSelectionId(String(item.id ?? ''))
-    if (emptyManual) {
-      setSelectionFilter(EMPTY_MANUAL_FILTER)
-      setGroup(null)
-      setLabelFilter('')
-      return
-    }
-    setSelectionFilter(dynamicFilter)
-    setGroup(dynamicFilter ? null : nextGroup)
-    setLabelFilter(dynamicFilter ? '' : nextLabels)
+  const queryClient = useQueryClient()
+  const assortmentActive = (item: Json) => assortmentChipActive(item, chipContext)
+  const memberError = useSyncExternalStore(subscribeMemberError, memberErrorSnapshot, memberErrorSnapshot)
+  const addDropped = (selectionId: string, ids: string[]) => {
+    void saveSelectionMembers(queryClient, selectionId, ids, 'add').catch((reason: unknown) => {
+      setMemberError(selectionId, writeErrorMessage(reason) ?? copy.validation)
+    })
   }
-  const assortmentActive = (item: Json) => {
-    const query = (item.query as Json) ?? {}
-    const dynamicFilter = selectionFilterText(query)
-    if (dynamicFilter) return dynamicFilter === activeSelectionFilter || dynamicFilter === activeFilter
-    if (!dynamicFilter && isEmptyManualQuery(query)) return activeSelectionFilter === EMPTY_MANUAL_FILTER
-    if (activeSelectionFilter) return false
-    const wantGroup = query.group ? String(query.group) : ''
-    const wantLabels = labelSearchFilter(query, defs)
-    if (wantGroup && activeGroup) {
-      const a = groupKeyOf(wantGroup, defs)
-      const b = groupKeyOf(activeGroup, defs)
-      if (a === b || wantGroup === activeGroup) return wantLabels === activeLabelFilter
-    }
-    if (!wantGroup && wantLabels && wantLabels === activeLabelFilter && !activeGroup) return true
-    return Boolean(activeSelectionId && String(item.id ?? '') === activeSelectionId)
-  }
-  const selectionOn = Boolean(activeGroup || activeLabelFilter || activeSelectionFilter)
+  const selectionOn = Boolean(
+    (chipContext.groupFilterApplies && chipContext.activeGroup)
+    || chipContext.activeLabelFilter
+    || chipContext.activeSelectionFilter,
+  )
   return (
     <>
       <Button type="button" variant="ghost" className={!selectionOn && groupBy === '' ? 'filter-chip on' : 'filter-chip'} onClick={clear}>{copy.all}</Button>
       <Button type="button" variant="ghost" className={groupBy === 'type_key' ? 'filter-chip on' : 'filter-chip'} onClick={() => setGroupBy(groupBy === 'type_key' ? '' : 'type_key')}>{copy.type}</Button>
       <Button type="button" variant="ghost" className={groupBy === 'a_status' ? 'filter-chip on' : 'filter-chip'} onClick={() => setGroupBy(groupBy === 'a_status' ? '' : 'a_status')}>{copy.status}</Button>
-      {assortments.map((item) => (
-        <Button
-          key={String(item.id)}
-          type="button"
-          variant="ghost"
-          className={assortmentActive(item) ? 'filter-chip on' : 'filter-chip'}
-          data-testid="assortment"
-          aria-pressed={assortmentActive(item)}
-          onClick={() => applyAssortment(item)}
-        >
-          {assortmentDisplayName(String(item.name))}
-        </Button>
-      ))}
+      {assortments.map((item) => {
+        const id = String(item.id)
+        const manual = selectionKind(item.kind) !== 'dynamic'
+        return (
+          <Button
+            key={id}
+            type="button"
+            variant="ghost"
+            className={assortmentActive(item) ? 'filter-chip on' : 'filter-chip'}
+            data-testid="assortment"
+            data-member-count={memberIdsOf(item).length}
+            aria-pressed={assortmentActive(item)}
+            onClick={() => { onAssortment(item) }}
+            {...selectionDropHandlers(manual, id, (ids) => addDropped(id, ids))}
+          >
+            {assortmentDisplayName(String(item.name))}
+          </Button>
+        )
+      })}
+      {memberError.message && assortments.some((item) => String(item.id) === memberError.selectionId) ? (
+        <p className="error" data-testid="selection-member-error" role="alert">{memberError.message}</p>
+      ) : null}
     </>
   )
 }
@@ -2667,6 +3108,7 @@ function NewObject({
     autoFocus: field.key === 'number',
     options: field.options,
     multiline: field.multiline,
+    fieldDescription: field.fieldDescription,
   })
   const fields = fieldGroups.primary.map(dialogField)
   if (showType) {
@@ -2776,37 +3218,55 @@ export function ClassAttributes({ session }: { session: PanesSession }) {
   )
 }
 
-/** A soft-deleted object is gone from reads, not a broken graph or validation. */
-function objectGone(error: unknown) {
-  return error instanceof ApiError && error.status === 410
-}
-
 export function ObjectDetail({ session }: { session: PanesSession }) {
   const queryClient = useQueryClient()
-  const object = useQuery({
-    queryKey: ['object', session.objectId],
-    queryFn: async () => {
-      const id = session.objectId ?? ''
-      return reconcileObjectWrite(id, await api.get('/v1/objects/{id}', { params: { path: { id } } }))
-    },
-    enabled: Boolean(session.objectId),
+  const objectId = session.objectId ?? ''
+  const { settled: objectFetchSettled } = useObjectLand(session.objectId)
+  const allowDeleted = session.objectAllowDeleted === true
+  const objectGoneState = !allowDeleted && objectQueryGone(queryClient, session.objectId)
+  const objectQueryKey = allowDeleted
+    ? (['object', session.objectId, 'deleted'] as const)
+    : (['object', session.objectId] as const)
+  const previewCached = allowDeleted
+    ? queryClient.getQueryData<Json>(objectQueryKey)
+    : queryClient.getQueryData<Json>(['object', session.objectId])
+  const object = useQuery<Json, Error>({
+    queryKey: objectQueryKey,
+    queryFn: ({ signal }) => loadObjectDetail(queryClient, session.objectId ?? '', signal, allowDeleted),
+    enabled: Boolean(session.objectId) && !objectGoneState && objectFetchSettled,
+    placeholderData: () => allowDeleted
+      ? queryClient.getQueryData<Json>(objectQueryKey)
+      : queryClient.getQueryData<Json>(['object', session.objectId]),
+    ...objectFetchQueryOptions(),
+    staleTime: objectQueryStaleTime(previewCached),
   })
   const provenance = useQuery({
-    queryKey: ['object-origin', session.objectId],
-    queryFn: async () => {
-      const response = await fetch(`/v1/objects/${session.objectId}?include=owners,origin`, { credentials: 'include' })
-      if (!response.ok) return { owners: {} as Record<string, string>, origin: null as Json | null }
+    queryKey: allowDeleted
+      ? ['object-origin', session.objectId, 'deleted']
+      : ['object-origin', session.objectId],
+    queryFn: async ({ signal }) => {
+      const allowQuery = allowDeleted ? '&allow_deleted=true' : ''
+      const response = await fetch(`/v1/objects/${session.objectId}?include=owners,origin${allowQuery}`, {
+        credentials: 'include',
+        signal,
+      })
+      if (!response.ok) {
+        const body = await response.json().catch(() => null)
+        throw new Error(typeof body?.detail === 'string' ? body.detail : `HTTP ${response.status}`)
+      }
       return response.json() as Promise<{ owners?: Record<string, string>; origin?: Json | null }>
     },
-    enabled: Boolean(session.objectId),
+    enabled: Boolean(session.objectId) && !objectGoneState && objectFetchSettled,
+    ...objectFetchQueryOptions(),
   })
   const defs = useQuery({ queryKey: ['definitions'], queryFn: () => api.get('/v1/definitions') })
   const suggestions = useQuery({
     queryKey: ['proposals', 'detail', session.objectId],
     queryFn: () => api.get('/v1/proposals', { params: { query: { status: 'open', limit: 200 } } }),
-    enabled: Boolean(session.objectId),
+    enabled: Boolean(session.objectId) && !objectGoneState && objectFetchSettled,
   })
   const drafts = useSyncExternalStore(subscribeObjectDrafts, getObjectDraftSnapshot, getObjectDraftSnapshot)
+  const selectionOwnsSave = useSyncExternalStore(subscribeSelectionDraft, getSelectionBarActive, getSelectionBarActive)
   const draftSaving = useObjectDraftSaving()
   const openProposals = useOpenObjectProposals()
   const me = useQuery({ queryKey: ['me'], queryFn: () => api.get('/v1/me'), retry: false })
@@ -2814,6 +3274,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   const [flashId, setFlashId] = useState('')
   const [showMoreFields, setShowMoreFields] = useState(false)
   const formRef = useRef<HTMLFormElement | null>(null)
+  const fieldDraftRef = useRef<DetailFieldDraftHandle | null>(null)
   useLayoutEffect(() => {
     const form = formRef.current
     if (!form) return
@@ -2833,6 +3294,26 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
     setError('')
     setShowMoreFields(false)
   }, [session.objectId])
+  const detailLoadFailed = Boolean(
+    session.objectId
+    && objectFetchSettled
+    && (
+      provenance.isError
+      || (object.isError && (!object.data || isListPreview(object.data)))
+    ),
+  )
+  useEffect(() => {
+    if (detailLoadFailed && session.objectId) clearObjectNavReplace(session.objectId)
+  }, [detailLoadFailed, session.objectId])
+  useEffect(() => {
+    const id = session.objectId
+    if (!id) {
+      setDetailDraftOwner(null)
+      return
+    }
+    setDetailDraftOwner(id)
+    return () => setDetailDraftOwner(null)
+  }, [session.objectId])
   useEffect(() => {
     if (!session.objectId || !object.data) return
     const stored = (object.data.values as Json) ?? {}
@@ -2851,16 +3332,58 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
         <p>{emptyDetail(typeNames(defs.data, uiLanguage), session.listType)}</p>
         <ul>
           <li><kbd>↑</kbd><kbd>↓</kbd> {copy.detailKeysMove}</li>
-          <li><kbd>Enter</kbd> {copy.detailKeysOpen}</li>
+          <li><kbd>Enter</kbd> / <kbd>Space</kbd> {copy.detailKeysOpen}</li>
           <li><kbd>Ctrl</kbd><kbd>K</kbd> {copy.detailKeysPalette}</li>
         </ul>
       </div>
     )
   }
-  if (objectGone(object.error)) return <StateNote tone="empty" title={copy.objectDeleted} detail={copy.objectDeletedHint} testId="detail-deleted" />
-  if (object.isError) return <StateNote tone="error" title={copy.graphError} detail={copy.validation} testId="detail-error" />
-  if (!object.data || !session.objectId) return <StateNote tone="loading" title={copy.loading} />
-  const objectId = session.objectId
+  if (!allowDeleted && (objectGone(object.error) || objectGoneState)) {
+    return <StateNote tone="empty" title={copy.objectDeleted} detail={copy.objectDeletedHint} testId="detail-deleted" />
+  }
+  const refetchDetail = () => {
+    void queryClient.invalidateQueries({ queryKey: objectQueryKey })
+    void queryClient.invalidateQueries({ queryKey: ['object-origin', session.objectId] })
+    void queryClient.invalidateQueries({ queryKey: ['proposals', 'detail', session.objectId] })
+  }
+  const detailRetrying = object.isFetching || provenance.isFetching
+  const detailFetchRetry = (
+    <Button
+      type="button"
+      variant="primary"
+      data-testid="detail-fetch-retry"
+      aria-busy={detailRetrying}
+      disabled={detailRetrying}
+      onClick={() => refetchDetail()}
+    >
+      {detailRetrying ? copy.loading : copy.agentRetry}
+    </Button>
+  )
+  if (provenance.isError && objectFetchSettled) {
+    return (
+      <StateNote
+        tone="error"
+        title={copy.detailLoadFailed}
+        detail={provenance.error instanceof Error ? provenance.error.message : copy.validation}
+        testId="detail-error"
+        action={detailFetchRetry}
+      />
+    )
+  }
+  if (object.isError && objectFetchSettled && (!object.data || isListPreview(object.data))) {
+    return (
+      <StateNote
+        tone="error"
+        title={copy.detailLoadFailed}
+        detail={object.error instanceof Error ? object.error.message : copy.validation}
+        testId="detail-error"
+        action={detailFetchRetry}
+      />
+    )
+  }
+  if (!object.data || !session.objectId) return <StateNote tone="loading" title={copy.loading} testId="detail-loading" />
+  const objectPreview = isListPreview(object.data)
+  const editingReady = !objectPreview
   const serverValues = (object.data.values as Json) ?? {}
   const serverVersion = Number(object.data.version ?? 0)
   const values = overlayValues(objectId, serverValues, serverVersion)
@@ -2870,6 +3393,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   const label = recordNumber(serverValues) || String(object.data.id ?? '')
   const suggestionCount = suggestionIndex(suggestions.data).get(objectId) ?? 0
   const localCells = drafts.cells.filter((cell) => cell.objectId === objectId)
+  const detailCells = localCells.filter((cell) => cell.surface == null || cell.surface === 'detail')
   // Delete/create/model rows have no ordinary value cell. They stay visible in
   // the proposal review link instead of being accepted from a hidden diff.
   const proposalCells = (openProposals.byObject.get(objectId) ?? []).filter((cell) => cell.op === 'update')
@@ -2894,6 +3418,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
     return value
   }
   const stageField = (key: string, next: unknown) => {
+    if (!editingReady) return
     const attribute = attributes.find((item) => item.key === key)
     const baseVersion = editBaseVersion(objectId, serverVersion)
     const before = values[key]
@@ -2920,6 +3445,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
           originalText: displayOf(beforeRecord[language]),
           proposedText: displayOf(afterRecord[language]),
           value: afterRecord[language],
+          surface: 'detail',
         })
       }
       return
@@ -2933,20 +3459,23 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       originalText: displayOf(before),
       proposedText: displayOf(next),
       value: next,
+      surface: 'detail',
     })
   }
   const detailReview = reviewCapabilities({
     principal: me.data?.kind === 'agent' ? 'agent' : 'human',
     viaAgent: false,
     open: true,
-    stale: (draftBaseVersion(objectId) != null && draftBaseVersion(objectId) !== serverVersion)
-      || (localCells.length === 0 && proposalCells.some((cell) => cell.stale)),
-    conflict: localCells.length === 0 && proposalCells.some((cell) => cell.conflict),
+    stale: (draftBaseVersion(objectId, 'detail') != null && draftBaseVersion(objectId, 'detail') !== serverVersion)
+      || (detailCells.length === 0 && proposalCells.some((cell) => cell.stale)),
+    conflict: detailCells.length === 0 && proposalCells.some((cell) => cell.conflict),
     // A failed save is displayed as its own error and must not block retry.
     validationErrors: [],
     roleCanWrite: me.data ? roleCanWrite(me.data.role) : true,
   })
   const save = () => {
+    if (!editingReady) return
+    if (!fieldDraftRef.current?.flush()) return
     setError('')
     const plan = draftSavePlan({
       objectIds: [objectId],
@@ -2958,6 +3487,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       proposals: proposalCells,
       meta: { [objectId]: { key: label, type: String(object.data?.type ?? '') } },
       scope: [objectId],
+      surface: 'detail',
     })
     void runDraftSave(plan, queryClient, viewingAgentRunId() ?? '').then((reason) => {
       if (isDraftSaveInFlight(reason)) return
@@ -2975,7 +3505,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   const number = recordNumber(values)
   const name = recordTitle(values, uiLanguage)
   const inAgentSession = Boolean(viewingAgentRunId())
-  const dirty = localCells.length > 0 || proposalCells.length > 0
+  const dirty = detailCells.length > 0 || proposalCells.length > 0
   const typeDef = ((defs.data?.types as Json[]) ?? []).find((item) => item.key === object.data?.type)
   const typeIds = new Set(((typeDef?.attributes as unknown[]) ?? []).map(String))
   const fileKeys = attributes
@@ -2984,15 +3514,28 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   const proposalKeys = proposalCells
     .map((cell) => cell.attribute)
     .filter((attribute) => attribute !== '$delete')
-  const valueKeys = [...new Set([...Object.keys(values), ...proposalKeys, ...fileKeys])]
+  const typeAttributeKeys = objectPreview
+    ? attributes
+      .filter((item) => typeIds.has(String(item.id)))
+      .map((item) => String(item.key ?? ''))
+      .filter(Boolean)
+    : []
+  const valueKeys = [...new Set([...Object.keys(values), ...typeAttributeKeys, ...proposalKeys, ...fileKeys])]
   const { primaryKeys, moreKeys } = splitDetailKeys(defs.data, valueKeys)
   const visibleKeys = showMoreFields ? [...primaryKeys, ...moreKeys] : primaryKeys
   const owners = provenance.data?.owners ?? {}
   const origin = provenance.data?.origin
+  const previewValues = (object.data.values as Json) ?? {}
+  const fieldKnownInPreview = (key: string) => {
+    if (!objectPreview) return true
+    if (key === 'number' || key === 'name' || key === 'status') return true
+    return Object.prototype.hasOwnProperty.call(previewValues, key)
+  }
   const renderField = (key: string) => {
     const attribute = attributes.find((item) => item.key === key)
     const kind = (attribute?.kind as Json) ?? {}
     const fieldLabel = textValue((attribute?.labels as Json) ?? key, uiLanguage) || key
+    const fieldDescription = typeof attribute?.description === 'string' ? attribute.description.trim() : ''
     const owner = owners[key]
     const localKeyCells = localCells.filter((cell) => cell.attribute === key)
     const proposalKeyCells = proposalCells.filter((cell) => cell.attribute === key)
@@ -3003,9 +3546,17 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
         : 'control'
     return (
       <div key={key} className={owner ? 'field locked' : 'field'} data-testid={owner ? 'locked-field' : undefined}>
-        <label>{fieldLabel}{owner ? ` · ${copy.ownedBy} ${owner}` : ''}</label>
-        <div className={controlClass}>
+        <div className="field-label-line">
+          <AttributeFieldLabel description={fieldDescription} descTestId={`detail-field-desc-${key}`}>
+            {fieldLabel}{owner ? ` · ${copy.ownedBy} ${owner}` : ''}
+          </AttributeFieldLabel>
+        </div>
+        <div className={controlClass} data-testid={`detail-field-control-${key}`}>
+          {!fieldKnownInPreview(key) ? (
+            <span className="detail-field-skeleton" data-testid="detail-field-skeleton" data-field={key} aria-busy="true" />
+          ) : (
           <Editor
+            fieldKey={key}
             kind={String(kind.type ?? 'text')}
             form={String(kind.form ?? '')}
             multiple={Boolean(attribute?.multiple)}
@@ -3014,9 +3565,10 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
             value={fieldDisplayValue(key)}
             options={optionsFor(lists, String(kind.list ?? ''))}
             units={unitsFor(families, String(kind.unit_family ?? ''))}
-            readOnly={Boolean(owner)}
+            readOnly={Boolean(owner) || !editingReady}
             onChange={(next) => stageField(key, next)}
           />
+          )}
           {proposalKeyCells.map((cell) => (
             <div key={cell.id} className="pending-field" data-testid="pending-field" data-field={key} data-stale={cell.stale ? 'true' : 'false'}>
               <span className="pending-chip" data-testid={cell.stale ? 'pending-stale' : 'pending-chip'}>{cell.stale ? copy.proposalStale : copy.pending}</span>
@@ -3038,6 +3590,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       ref={formRef}
       className={flashId === session.objectId ? 'detail-form form flash' : 'detail-form form'}
       data-testid="object-detail"
+      data-detail-ready={editingReady ? 'true' : 'false'}
       onSubmit={(event) => {
         // Enter in a Detail field stages nothing and never saves.
         event.preventDefault()
@@ -3045,6 +3598,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       onKeyDown={(event) => {
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
           event.preventDefault()
+          event.stopPropagation()
           save()
           return
         }
@@ -3056,6 +3610,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
         const index = fields.indexOf(target)
         if (event.key === 'Escape') {
           if (target.closest('[role="listbox"]')) return
+          fieldDraftRef.current?.discard()
           discardObjectDraft(session.objectId ?? '')
           return
         }
@@ -3065,28 +3620,76 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
         fields[Math.max(0, Math.min(fields.length - 1, next))]?.focus()
       }}
     >
+      <DetailFieldDraftHost ref={fieldDraftRef}>
       <div className="detail-scroll">
         <header className="detail-head">
-          <div className="detail-title">
-            <strong title={name || number}>{name || number}</strong>
-            {number ? <span className="detail-id">{number}</span> : null}
+          <div className="detail-title-row">
+            <div className="detail-title">
+              <strong title={name || number}>{name || number}</strong>
+              {number ? <span className="detail-id">{number}</span> : null}
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              data-testid="open-draft-in-table"
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('braian-open-draft', {
+                  detail: {
+                    objectId: session.objectId,
+                    typeKey: String(object.data?.type ?? ''),
+                    viewType: 'object_table',
+                  },
+                }))
+              }}
+            >
+              {copy.openDraftInTable}
+            </Button>
+            {allowDeleted ? (
+              <Button
+                type="button"
+                variant="primary"
+                data-testid="trash-detail-restore"
+                onClick={() => {
+                  void api.post('/v1/trash/{kind}/{id}/undelete', {
+                    params: { path: { kind: 'object', id: objectId } },
+                  }).then(() => {
+                    clearObjectGone(queryClient, objectId)
+                    void queryClient.invalidateQueries()
+                  }).catch((reason: unknown) => reportWriteError(reason))
+                }}
+              >
+                {copy.trashRestore}
+              </Button>
+            ) : inAgentSession ? null : (
+              <TooltipProvider delayDuration={400} disableHoverableContent>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="icon"
+                      size="icon"
+                      className="detail-delete icon-danger"
+                      data-testid="delete-object-detail"
+                      aria-label={copy.delete}
+                      disabled={!editingReady}
+                      onClick={() => requestDeleteObjects([objectId])}
+                    >
+                      <Trash2 aria-hidden="true" size={14} />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{copy.delete}</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
           </div>
+          {objectPreview ? (
+            <p className="detail-section-skeleton" data-testid="detail-meta-skeleton" aria-busy="true" />
+          ) : (
           <DetailMeta
             createdAt={typeof object.data.created_at === 'string' ? object.data.created_at : ''}
             updatedAt={typeof object.data.updated_at === 'string' ? object.data.updated_at : ''}
             updatedBy={object.data.updated_by}
           />
-          {inAgentSession ? null : (
-            <div className="detail-actions">
-              <Button
-                type="button"
-                variant="danger"
-                data-testid="delete-object-detail"
-                onClick={() => requestDeleteObjects([objectId])}
-              >
-                {copy.delete}
-              </Button>
-            </div>
           )}
           <div className="field-chips">
             <MetaChip>{typeLabel(defs.data, String(object.data.type), uiLanguage)}</MetaChip>
@@ -3105,6 +3708,7 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
           defs={defs.data}
           defsLoading={defs.isLoading}
           links={(object.data.links as never) ?? []}
+          bodyLoading={objectPreview}
           onOpen={(id) => session.setObjectId(id)}
         />
         {fieldSections(visibleKeys).map((section) => (
@@ -3127,23 +3731,26 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
         ) : null}
         {error ? <p className="error" data-testid="detail-error">{error}</p> : null}
       </div>
+      </DetailFieldDraftHost>
       <UnmappedDraftLinks proposals={openProposals.unmapped} />
-      {dirty ? (
+      {dirty && !selectionOwnsSave ? (
         <ObjectDraftBar
-          count={localCells.length + (proposalCells.length > 0 ? 1 : 0)}
-          canSave={detailReview.canSave}
-          canDiscard={detailReview.canDiscard}
+          count={detailCells.length + (proposalCells.length > 0 ? 1 : 0)}
+          canSave={detailReview.canSave && editingReady}
+          canDiscard={detailReview.canDiscard && editingReady}
           saveReason={detailReview.saveReason}
           discardReason={detailReview.discardReason}
           pending={draftSaving}
           onSave={save}
           onDiscard={() => {
+            fieldDraftRef.current?.discard()
             void runDraftDiscard({
               objectIds: [objectId],
               proposals: proposalCells,
               membership: openProposals.membership,
               principal: me.data?.kind === 'agent' ? 'agent' : 'human',
               viaAgent: false,
+              surface: 'detail',
             }).then((reason) => {
               if (reason) setError(reason)
               void queryClient.invalidateQueries({ queryKey: ['proposals'] })
@@ -3196,6 +3803,7 @@ function modelLanguages(defs: Json | undefined): string[] {
 }
 
 function Editor({
+  fieldKey,
   kind,
   form,
   value,
@@ -3207,6 +3815,7 @@ function Editor({
   onChange,
   readOnly = false,
 }: {
+  fieldKey: string
   kind: string
   form: string
   multiple: boolean
@@ -3310,13 +3919,7 @@ function Editor({
     )
   }
   if (kind === 'number') {
-    const record = (value && typeof value === 'object' ? value : { value }) as Json
-    return (
-      <span className="measure">
-        <input data-field="true" value={textValue(record.value)} title={textValue(record.value)} onChange={(event) => onChange({ ...record, value: event.target.value })} />
-        <UnitSuffix units={units} value={String(record.unit ?? units[0] ?? '')} onChange={(unit) => onChange({ ...record, unit })} />
-      </span>
-    )
+    return <DetailNumberMeasureField fieldKey={fieldKey} value={value} units={units} onChange={onChange} />
   }
   if (form === 'long' || (typeof value === 'string' && value.length > 80)) {
     return <AutoResizeTextarea data-field="true" value={textValue(value)} onChange={(event) => onChange(event.target.value)} />
@@ -3445,6 +4048,8 @@ function ObjectRefField({ value, onChange }: { value: unknown; onChange: (value:
 }
 
 export function GraphView({ session, view }: { session: PanesSession; view?: PanesView }) {
+  const queryClient = useQueryClient()
+  const objectGoneState = objectQueryGone(queryClient, session.objectId)
   const modelSource = String(view?.state?.source ?? '') === 'data_model'
   const defs = useQuery({ queryKey: ['definitions'], queryFn: () => api.get('/v1/definitions') })
   const stats = useQuery({
@@ -3455,12 +4060,22 @@ export function GraphView({ session, view }: { session: PanesSession; view?: Pan
   const graph = useQuery({
     queryKey: ['graph', session.objectId],
     queryFn: () => api.get('/v1/objects/{id}/graph', { params: { path: { id: session.objectId ?? '' } } }),
-    enabled: Boolean(session.objectId) && !modelSource,
+    enabled: Boolean(session.objectId) && !modelSource && !objectGoneState,
+    ...objectFetchQueryOptions(),
   })
   const object = useQuery({
     queryKey: ['object', session.objectId],
-    queryFn: () => api.get('/v1/objects/{id}', { params: { path: { id: session.objectId ?? '' } } }),
-    enabled: Boolean(session.objectId) && !modelSource,
+    queryFn: async () => {
+      const id = session.objectId ?? ''
+      try {
+        return await api.get('/v1/objects/{id}', { params: { path: { id } } })
+      } catch (reason) {
+        if (objectGone(reason)) markObjectGone(queryClient, id)
+        throw reason
+      }
+    },
+    enabled: Boolean(session.objectId) && !modelSource && !objectGoneState,
+    ...objectFetchQueryOptions(),
   })
   if (modelSource) {
     if (defs.isError || stats.isError) return <StateNote tone="error" title={copy.graphError} testId="graph" />
@@ -3468,7 +4083,9 @@ export function GraphView({ session, view }: { session: PanesSession; view?: Pan
     return <GraphMap key="data-model" defs={defs.data} model={{ defs: defs.data, stats: stats.data }} />
   }
   if (!session.objectId) return <StateNote tone="empty" title={emptyGraph(typeNames(defs.data, uiLanguage), session.listType)} testId="graph" />
-  if (objectGone(object.error)) return <StateNote tone="empty" title={copy.objectDeleted} detail={copy.objectDeletedHint} testId="graph" />
+  if (objectGone(object.error) || objectGoneState) {
+    return <StateNote tone="empty" title={copy.objectDeleted} detail={copy.objectDeletedHint} testId="graph" />
+  }
   if (graph.isError || object.isError) return <StateNote tone="error" title={copy.graphError} testId="graph" />
   if (!graph.data || !object.data) return <StateNote tone="loading" title={copy.graphLoading} testId="graph" />
   return (
@@ -3501,12 +4118,17 @@ export function HistoryView({ session }: { session: PanesSession }) {
     enabled: Boolean(session.objectId && current && travel),
   })
   const rollback = useMutation({
-    mutationFn: (at: number) =>
-      api.post('/v1/objects/{id}/rollback', { params: { path: { id: session.objectId ?? '' } }, body: { seq: at } }),
-    onSuccess: (proposal) => {
+    mutationFn: async (at: number) => {
+      const proposal = await api.post('/v1/objects/{id}/rollback', {
+        params: { path: { id: session.objectId ?? '' } },
+        body: { seq: at },
+      })
+      return { proposal, at }
+    },
+    onSuccess: ({ proposal, at }) => {
       const id = String(proposal.id)
-      // Same as assortment / model proposes: open the review dialog so Confirm applies it.
-      publishProposal(id)
+      // Same as assortment / model proposes: open the review dialog so Save applies it.
+      publishProposal(id, 'rollback', { targetSeq: at })
       session.setProposalId(id)
       session.push(copy.proposed)
     },
@@ -3792,7 +4414,7 @@ export function ProposalView({ session }: { session: PanesSession }) {
   const loadingObjects = loaded.some((query) => query.isLoading)
   const accept = useMutation({
     mutationFn: (body: { rows: string[]; patches: Record<string, Json> }) =>
-      api.post('/v1/proposals/{id}/accept', { params: { path: { id: session.proposalId ?? '' } }, body: body }),
+      acceptProposal(session.proposalId ?? '', body),
     onSuccess: (result) => {
       const failed = failureLines(result)
       session.push(failed.length > 0 ? String(failed[0]?.detail ?? copy.validation) : copy.saved)
@@ -3882,6 +4504,7 @@ export function ProposalView({ session }: { session: PanesSession }) {
           status={proposal.data?.status}
           rows={rows}
           loading={proposalLoading}
+          stale={proposalStale && hasPendingRows}
           saveDisabled={loadingObjects || accept.isPending || discard.isPending || proposalStale || !hasPendingRows}
           discardDisabled={discardDisabled}
           saveVariant={hasPendingRows ? 'primary' : 'default'}
@@ -4012,6 +4635,24 @@ function SuggestionCard({
         {' '}
         <MetaChip tone={statusTone(String(row.status))}>{String(row.status)}</MetaChip>
         {row.conflict ? ` · ${copy.conflict}` : ''}
+        {!model && row.object_id ? (
+          <Button
+            type="button"
+            variant="ghost"
+            data-testid="open-draft-in-table"
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent('braian-open-draft', {
+                detail: {
+                  objectId: String(row.object_id),
+                  typeKey: String(row.type_key ?? ''),
+                  viewType: 'object_table',
+                },
+              }))
+            }}
+          >
+            {copy.openDraftInTable}
+          </Button>
+        ) : null}
       </h3>
       {lines.map((line) => {
         const id = `${String(row.id)}:${line.id}`

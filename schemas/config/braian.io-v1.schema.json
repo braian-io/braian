@@ -108,6 +108,12 @@
         {
           "type": "object",
           "properties": {
+            "defaultUnit": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "integer": {
               "type": "boolean"
             },
@@ -144,6 +150,12 @@
         {
           "type": "object",
           "properties": {
+            "defaultUnit": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "type": {
               "type": "string",
               "const": "range"
@@ -838,6 +850,20 @@
         },
         "factor": {
           "description": "Multiplier into the base unit, as a decimal string.",
+          "type": "string"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "offset": {
+          "description": "Offset in the base unit after scaling, as a decimal string.",
+          "type": "string"
+        },
+        "symbol": {
+          "description": "Display symbol. Defaults to the code when omitted.",
           "type": "string"
         }
       },

@@ -37,7 +37,7 @@ delete operation. A single object is soft-deleted into Trash; it disappears from
 tables and search after the indexer catches up. There is no extra Save step.
 
 If Detail or Graph is still looking at that object, it shows an honest deleted state
-(`This object is deleted. Restore it from Trash to see it here again.`) rather than a
+(`This object was deleted. Restore it from Trash to see it here again.`) rather than a
 graph or validation error such as `The graph could not be loaded. Validation stopped
 the save.`
 
@@ -51,6 +51,14 @@ restriction covers removing links, accepting or discarding a proposal, running a
 merge and wiping a catalog. A person makes every one of those changes.
 
 ## Trash and restore
+
+Open **Trash** from the user menu. It is a standard table view (not a dialog) with
+columns for number, name, type, and deleted time. Deleted link objects show a readable
+name (endpoint numbers), never a raw UUID.
+
+**Restore** is available from the row context menu, Ctrl+K, and from Detail when you
+open a deleted object from Trash. **Delete permanently** removes an item from Trash
+with a confirmation dialog; it cannot be undone (`POST /v1/trash/{kind}/{id}/purge`).
 
 Deleted objects appear in **Trash**. **Restore** (the button keeps that label) brings
 the object back and, in the same transaction, restores the link rows and link objects

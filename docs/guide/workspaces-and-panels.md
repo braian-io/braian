@@ -43,6 +43,14 @@ does not move the view into the focused pane, and it does not close or replace t
 structure tree or the graph. Use it to bring an open view back into focus; it never
 creates a copy. The list leaves out old agent-run tabs, so it only offers real views.
 
+## Open a structure tree from the palette
+
+Press `Ctrl+K`, choose `Open structure ›`, and pick a structure by label or key.
+`Enter` opens its tree in the focused pane (or beside Detail when Detail is focused,
+so Detail stays visible). `Ctrl+Enter` opens it in a new pane to the right. Braian
+reuses an existing `structure_tree` view when the view state carries the same
+structure key or id; it never matches only on title.
+
 ## Add a view
 
 There are two places to add a view to the focused pane:
@@ -94,6 +102,16 @@ show`; add a view from the palette to fill it again.
 
 ## Detail and the table share space
 
+Arrow keys in an object table select the row and open Detail from the list data right
+away. Fast arrowing still updates the highlight and a list preview on every step; only
+the network load for the full object (body, owners, proposals) is debounced to the row
+you land on. The landed row and up to three neighbors on each side are prefetched so
+normal up/down movement stays instant without one request per key repeat. Fields and
+links that are not in the list preview show skeletons until the full object arrives;
+Save stays off until then. If the full object cannot be loaded, Detail shows a clear
+error with **Retry** instead of endless skeletons; arrowing to another row clears the
+error and tries again.
+
 When an object table and a Detail view sit side by side, the table keeps a usable
 minimum width. The split never shrinks it down to a single column, so the Name column
 stays readable while you work in Detail. The Detail pane takes the rest of the space
@@ -108,6 +126,10 @@ it.
 Measured number fields start at the compact width and grow with the field when the
 pane has room, so a longer number stays readable. The same shared layout and theme
 tokens apply in light and dark theme.
+
+When the open object is deleted, Detail shows a calm empty state (`This object was
+deleted.`) with no fields and no Save/Discard bar, rather than a graph or validation
+error.
 
 ## Select fields
 
@@ -127,16 +149,35 @@ The picker lists:
   offers the class-list fields so existing models keep them.
 
 A group or class attribute can be added as a column even when not every row has a
-value. In the picker, those fields show the group name as a source hint, and
-typing the group name finds them. Linked fields are listed one hop away and stay
+value. In the picker, each field keeps its type label, and group-sourced fields
+also show the full group path (for example `Food › Beverages › Coffee & tea`) as
+muted secondary text. Typing any segment of that path, such as `beverages` or
+`snacks`, finds the field. Linked fields are listed one hop away and stay
 read-only.
+
+The same catalog appears on every object type that is allowed to use the
+structure. On **Articles**, `Select fields` therefore lists food-tree group
+attributes such as Fat content and Caffeine even though a row may not carry a
+value for them yet. The picker only chooses which columns may appear; values are
+never inherited from the group tree.
 
 A measured number field can be added as the combined column, as separate value and
 unit columns, or as all three. The separate columns are labelled `Name (value)` and
 `Name (unit)`; the value column shows only the number and the unit column only the
 unit code. The separate value and unit columns are display-only. A display unit
 chosen on the combined column only changes how the number is shown there, and leaves
-the value and unit columns alone.
+the value and unit columns alone. Converted numbers are rounded for display (at most
+two decimal places, trailing zeros omitted) in the table and in the Detail panel.
+The stored value and unit are unchanged when you edit or save.
+
+Unit labels keep conventional casing in column titles and cells, for example `kJ`,
+`kcal`, `g`, and `mg`. A column titled `Energy (kJ)` shows values converted to
+kilojoules when that display unit is selected.
+
+In the field list, `Enter` with an empty filter still drills into fields that have
+further steps (language, unit, links). It does not toggle simple columns, so the
+first row (such as Number) is not turned off by accident. To add or remove a simple
+field, type in the filter and press `Enter`, or click its checkbox.
 
 ## Switching workspaces
 
@@ -147,7 +188,8 @@ slot. A click on a tab does the same.
 
 ## Create a workspace
 
-New workspaces come from templates. Press `Ctrl+K` and choose `New from template`:
+New workspaces come from templates. Press `Ctrl+K` and choose `New from template`, or click
+the **+** button after the last workspace tab in the top bar (tooltip: **New workspace**):
 
 - `Data model` creates a workspace for structures, object types, link types, value
   lists, units, and attribute definitions.
@@ -173,16 +215,22 @@ cannot be deleted.
 - An unlocked workspace also saves its canonical layout for everyone. A locked or
   shared workspace keeps layout edits personal.
 - Sorting, grouping and column widths are saved on the view row and therefore
-  shared in the workspace. Column order and hidden columns are personal preferences.
+  shared in the workspace. After a page reload, the table keeps the same sort
+  and the column header shows the matching arrow. Column order and hidden columns
+  are personal preferences.
   `Reset to default` in the column menu or `Ctrl+K` clears that personal override and
   restores the view's default columns.
 - The free-text search in the table toolbar (the quick filter) is not saved as a view
   preference. Closing and opening the view again, or reloading the page, starts with
   an empty search box and the full table. While the view stays open, the search stays
-  until you clear it: clear the search box, or press `Clear search` in the empty state
-  when the query matches nothing. The empty state names the query. Press `/` to focus
-  the quick filter.
-- An object selection is not part of the saved view state.
+  in this browser tab only: another session or user does not see it, and the server
+  never keeps a toolbar search on the shared view row. While you type, remote UI
+  commands cannot replace the search text. Clear it with the search box, or press
+  `Clear search` in the empty state when the query matches nothing. The empty state
+  names the query. Press `/` to focus the quick filter.
+- An object selection is not part of the saved view state. The address still
+  names the open object. After a reload, Detail and History show that object
+  again without picking the row in the table.
 
 The layout is saved automatically per workspace and per user. Local changes are
 painted immediately, and the workspace document is saved shortly after you stop
@@ -195,8 +243,11 @@ the change stream; there is no manual refresh.
 
 ## Review and save
 
-An object table and a Detail view share the same Save/Discard draft bar. Both act on
-the same unsaved cells, so an edit made in one view is visible in the other.
+An object table and a Detail view share the unsaved cells, so an edit made in one
+view is visible in the other. The Save/Discard bar appears only in the pane where
+the edit was made. The other pane may mark the row, and it does not show a second
+Save. A proposal is a draft too (Pending, then Discard or Save). Its bar is in
+Detail while Detail is open on that object, and in the table otherwise.
 
 A Save that fails on the server or in transport is shown as an error. It is not a
 field-validation error, so the draft stays valid and Save is still available: fix the
@@ -205,17 +256,20 @@ save succeeds, or when you switch to another object. Real field-validation error
 still block Save until the value is corrected.
 
 While a save request is in flight, Save reads `Saving…` and both Save and Discard are
-disabled. A second click cannot run another save, so it never reports `Saved` when
-nothing was saved. When the request finishes, the bar returns to Save and Discard, or
-disappears if the draft is gone.
+disabled in that pane. A second click cannot run another save, so it never reports
+`Saved` when nothing was saved. When the request finishes, the bar returns to Save
+and Discard, or disappears if the draft is gone.
 
 ## Review proposals
 
 When a proposal is open and has pending rows, `Save all` is the primary action. It
 paints as the filled accent button with full opacity; it never looks grey or disabled.
 `Discard all` is the secondary danger action. It keeps its danger treatment so you can
-recognise it, but it does not dominate `Save all`. The command palette uses the same
-`Save all` / `Discard all` hierarchy and order as the Review view.
+recognise it, but it does not dominate `Save all`.
+
+When a proposal is already accepted or discarded, both bulk actions are inactive.
+They stay keyboard-focusable and expose the explanation via `aria-describedby` and the
+button `title`, not only as a hover tooltip on the wrapper.
 
 Discarding a server proposal asks for confirmation first. The dialog shows the
 proposal name and the consequence: the proposal's consequence lines when it has them,

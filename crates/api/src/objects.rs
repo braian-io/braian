@@ -142,6 +142,7 @@ pub struct ChangeResponse {
 #[derive(Debug, Deserialize)]
 pub(crate) struct IncludeQuery {
     pub(crate) include: Option<String>,
+    pub(crate) allow_deleted: Option<bool>,
 }
 
 #[utoipa::path(
@@ -235,7 +236,8 @@ pub async fn create_object(
     tag = "objects",
     params(
         ("id" = Uuid, Path, description = "Object id"),
-        ("include" = Option<String>, Query, description = "Pass `inapplicable` to include values that no longer apply")
+        ("include" = Option<String>, Query, description = "Pass `inapplicable` to include values that no longer apply"),
+        ("allow_deleted" = Option<bool>, Query, description = "When true, returns a soft-deleted object for Trash detail")
     ),
     responses(
         (status = 200, description = "Object", body = ObjectResponse),
@@ -252,7 +254,7 @@ pub async fn get_object(
 ) -> Result<Response, Problem> {
     let cached = state.models.get(&state.store).await?;
     let id = ObjectId::from_uuid(id);
-    let stored = load_object(&state, id).await?;
+    let stored = load_object(&state, id, query.allow_deleted == Some(true)).await?;
     let seq = state.store.latest_seq(id).await.map_err(store_status)?;
     Ok(object_response(
         &state,
@@ -358,7 +360,7 @@ pub async fn patch_object(
     let id = ObjectId::from_uuid(id);
     for _ in 0..3 {
         let cached = state.models.get(&state.store).await?;
-        let stored = load_object(&state, id).await?;
+        let stored = load_object(&state, id, false).await?;
         let patch = patch_from_wire(&cached.model, &cached.defs, &body.values, &body.groups)?;
         let report = cached.model.validate_patch(&stored.object, &patch);
         if !report.errors.is_empty() && !source_accepts_invalid(&state).await {
@@ -478,7 +480,7 @@ pub async fn delete_object(
     }
     let id = ObjectId::from_uuid(id);
     if query.dry_run {
-        let stored = load_object(&state, id).await?;
+        let stored = load_object(&state, id, false).await?;
         // A cascade-deleted link is a link, not another object: count the
         // object itself and the live link rows it takes with it.
         let (links, _link_objects) = state
@@ -848,9 +850,15 @@ async fn catalog_is_editable(
     ))
 }
 
-pub(crate) async fn load_object(state: &AppState, id: ObjectId) -> Result<StoredObject, Problem> {
+pub(crate) async fn load_object(
+    state: &AppState,
+    id: ObjectId,
+    allow_deleted: bool,
+) -> Result<StoredObject, Problem> {
     match state.store.get_object(id).await.map_err(store_status)? {
-        Some(stored) if stored.deleted_at.is_some() => Err(store_status(Error::Deleted(id))),
+        Some(stored) if stored.deleted_at.is_some() && !allow_deleted => {
+            Err(store_status(Error::Deleted(id)))
+        }
         Some(stored) => Ok(stored),
         None => Err(store_status(Error::NotFound(id))),
     }

@@ -100,6 +100,14 @@ pub struct IdBody {
     pub id: Uuid,
 }
 
+/// `POST /v1/views` receipt. `updated_at` is the clock the next write must send back.
+#[derive(Serialize, ToSchema)]
+pub struct SavedView {
+    pub id: Uuid,
+    /// RFC3339 time of this save. Send it back as `expected_updated_at`.
+    pub updated_at: String,
+}
+
 #[derive(Serialize, ToSchema)]
 pub struct SessionUser {
     pub email: String,
@@ -212,6 +220,8 @@ pub struct AgentRunSummary {
     pub proposal_count: i32,
     /// The question shown while status is `waiting`.
     pub question: Option<String>,
+    /// First user message in the session.
+    pub first_message: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -258,6 +268,7 @@ pub struct AgentRunDetail {
     pub finished_at: Option<String>,
     pub proposal_count: i32,
     pub question: Option<String>,
+    pub first_message: Option<String>,
     pub messages: Vec<AgentMessageView>,
     pub proposals: Vec<AgentProposalView>,
 }
@@ -339,6 +350,8 @@ pub struct WorkspaceView {
     pub pane: String,
     pub position: i32,
     pub state: FreeObject,
+    /// RFC3339 time of the last saved view state.
+    pub updated_at: String,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -393,6 +406,8 @@ pub struct AssortmentRow {
     pub type_id: Uuid,
     pub kind: String,
     pub query: FreeObject,
+    /// Objects added by hand. Empty when the selection still uses a group or label filter.
+    pub member_ids: Vec<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "type")]
     pub object_type: Option<String>,
@@ -427,6 +442,13 @@ pub struct AssortmentUsageWebhook {
 #[derive(Serialize, ToSchema)]
 pub struct AssortmentMembers {
     pub members: Vec<SearchHit>,
+    pub found: u32,
+    pub member_ids: Vec<Uuid>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct AssortmentMemberIds {
+    pub member_ids: Vec<Uuid>,
     pub found: u32,
 }
 
@@ -855,6 +877,15 @@ pub struct SavedMappingView {
     pub headers: JsonValue,
     pub columns: JsonValue,
     pub empty_clears: bool,
+    pub id_header: Option<String>,
+    pub header_signature: String,
+    /// Display name of the person who saved the mapping.
+    pub created_by: String,
+    pub created_by_id: Uuid,
+    pub created_at: String,
+    pub updated_at: String,
+    /// True when this caller may rename or delete the mapping.
+    pub can_edit: bool,
 }
 
 #[derive(Serialize, ToSchema)]

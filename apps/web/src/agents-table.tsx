@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useLayoutEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { agentStatusLabel, agentStatusTone, listAgentRuns, requestOpenAgent, sortAgentRuns, type AgentRunSummary } from './agent-runs'
+import { agentRunSearchHaystack, agentStatusLabel, agentStatusTone, listAgentRuns, requestOpenAgent, sortAgentRuns, type AgentRunSummary } from './agent-runs'
 import { MetaChip } from './chips'
 import { formatTimestamp } from './format'
 import { copy } from './i18n'
@@ -50,6 +50,13 @@ export function AgentsTable() {
     { id: 'updated', header: copy.agentColumnUpdated, type: 'readonly', width: 148, read: (row) => row.updated },
   ]
   const error = list.isError ? (list.error instanceof Error ? list.error.message : copy.agentsEmpty) : ''
+  useLayoutEffect(() => {
+    const root = document.querySelector<HTMLElement>('[data-testid="agents-table"]')
+    if (!root) return
+    const pane = root.closest<HTMLElement>('.pane-body')
+    if (pane) pane.scrollTop = 0
+    root.querySelector<HTMLElement>('.standard-grid-head')?.scrollIntoView({ block: 'nearest', inline: 'start' })
+  }, [list.isPending, list.data, filter])
   return (
     <StandardEditableTable
       testId="agents-table"
@@ -60,6 +67,7 @@ export function AgentsTable() {
       emptyLabel={copy.agentsEmpty}
       filterValue={filter}
       onFilterChange={setFilter}
+      rowFilterText={(row) => agentRunSearchHaystack(row.run)}
       onActivateRow={(row) => requestOpenAgent(row.run)}
       getRowTestId={() => 'agent-table-row'}
       belowBar={error ? <p className="error" role="alert" data-testid="agents-table-error">{error}</p> : null}

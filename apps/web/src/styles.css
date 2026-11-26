@@ -84,6 +84,9 @@
   --purple: var(--accent);
   --purple-bg: var(--accent-dim);
   --shadow: var(--shadow-md);
+  /* Fixed overlays (full-size graph) portalled to document.body use these inset anchors. */
+  --app-chrome-top: 40px;
+  --app-chrome-bottom: 24px;
   font-family: var(--font-sans);
   font-feature-settings: "cv11", "ss01";
   font-size: var(--text-base);
@@ -373,6 +376,14 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
   padding: 0 var(--space-2_5);
   color: var(--muted);
 }
+.tab-new {
+  flex: none;
+  width: 30px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
 .tab.active, .pane-tab.active {
   background: var(--bg);
   color: var(--text);
@@ -408,6 +419,7 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
 .pane.focused .pane-tab.active {
   background: var(--accent-dim);
   color: var(--text);
+  border-radius: var(--r-md) var(--r-md) 0 0;
 }
 /* Hover is weaker than the selected tab's dim fill. */
 .pane-tab:hover:not(.active) {
@@ -430,7 +442,12 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
 .icon-btn:hover { background: var(--accent-dim); color: var(--text); }
 
 .workspace { position: relative; z-index: 0; min-height: 0; min-width: 0; overflow: hidden; }
-.dock-root { position: absolute; inset: 6px; min-width: 0; min-height: 0; }
+.dock-root {
+  position: absolute;
+  inset: 6px;
+  min-width: 0;
+  min-height: 0;
+}
 .dock-root > .split, .dock-root > .pane { width: 100%; height: 100%; }
 .split { min-height: 0; min-width: 0; width: 100%; height: 100%; display: flex; align-items: stretch; }
 .split.horizontal { flex-direction: row; }
@@ -450,6 +467,35 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
 @container detail-split (min-width: 640px) {
   .split-cell:has(.pane-tab[data-view-type='object_table'].active):not(:has(.split)) {
     min-width: 440px;
+  }
+}
+/* Edge-docked agent chat: catalog and agent share the dock width via flex splits. */
+.dock-root > .split.horizontal[data-agent-dock='true'] > .split-cell {
+  transition: flex-basis var(--dur) var(--ease), width var(--dur) var(--ease), max-width var(--dur) var(--ease);
+}
+.dock-root > .split.horizontal[data-tree-pinned='true'] > .split-cell {
+  transition: flex-basis var(--dur) var(--ease), width var(--dur) var(--ease), max-width var(--dur) var(--ease);
+}
+/* The tree column is pinned to a measured pixel width; animating it would slide Products. */
+.dock-root > .split.horizontal[data-tree-pinned='true'] > .split-cell:first-child {
+  transition: none;
+}
+.dock-root > .split.horizontal.split-agent-dock > .split-cell:first-child:has([data-testid='agents-table']) {
+  overflow: auto;
+}
+/* With the agent docked, drop the table floor on nested Detail splits so Detail can keep width. */
+.dock-root > .split.horizontal[data-agent-dock='true'] .split[data-has-detail='true'] {
+  container-type: normal;
+  container-name: none;
+}
+.dock-root > .split.horizontal[data-agent-dock='true'] .split[data-has-detail='true']
+  > .split-cell:has(.pane-tab[data-view-type='object_table'].active):not(:has(.split)) {
+  min-width: 0;
+}
+@media (min-width: 1360px) {
+  .dock-root > .split.horizontal[data-agent-dock='true'] .split
+    > .split-cell:has(.pane-tab[data-view-type='object_detail'].active):not(:has(.split)) {
+    min-width: 360px;
   }
 }
 /* A table that shares its split with a direct Detail pane gives way to it. */
@@ -512,6 +558,11 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
   padding: 0 var(--space-1_5);
   background: var(--surface);
   overflow: hidden;
+  pointer-events: none;
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+}
+.pane-tabs > * {
+  pointer-events: auto;
 }
 .pane-tab-list {
   display: flex;
@@ -525,7 +576,7 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
   overflow-anchor: none;
   scrollbar-width: none;
   position: relative;
-  z-index: 1;
+  z-index: 2;
 }
 .pane-tab-list::-webkit-scrollbar { display: none; }
 .pane-tab-pad { flex: none; width: 0; }
@@ -596,9 +647,18 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
   flex: 0 0 auto;
   gap: var(--space-0_5);
   min-width: 0;
+  position: relative;
+  z-index: 1;
+  visibility: hidden;
   opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur) var(--ease);
 }
-.pane:hover .pane-chrome, .pane.focused .pane-chrome, .pane-chrome:focus-within { opacity: 1; }
+.pane:hover .pane-chrome, .pane.focused .pane-chrome, .pane-chrome:focus-within {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+}
 .pane-chrome .icon-btn { width: 22px; padding: 0; justify-content: center; }
 .catalog-admin { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); overflow: auto; }
 .catalog-admin input, .catalog-admin select, .catalog-admin textarea { font: inherit; }
@@ -607,6 +667,9 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
 .catalog-field { display: flex; flex-direction: column; gap: var(--space-1); }
 .catalog-field > label { color: var(--text-2); font-size: var(--text-md); font-weight: 500; }
 .catalog-field-help { margin: 0; color: var(--muted); font-size: var(--text-sm); line-height: 1.4; }
+.field-label-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1); }
+.field-label-line > label { min-width: 0; cursor: default; }
+.field-label-line > label[tabindex='0'] { cursor: help; }
 .catalog-check { display: inline-flex; align-items: center; gap: var(--space-1_5); color: var(--text-2); font-size: var(--text-md); }
 .catalog-list-actions { display: inline-flex; align-items: center; gap: var(--space-0_5); margin-left: var(--space-1); vertical-align: middle; }
 .catalog-form-actions { display: flex; align-items: center; gap: var(--space-1_5); flex-wrap: wrap; }
@@ -687,11 +750,46 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
   color: var(--muted);
   align-self: center;
 }
-.agent-view { display: flex; flex-direction: column; gap: var(--space-3); }
-.agent-view-head { display: flex; align-items: center; gap: var(--space-1_5); flex-wrap: nowrap; min-width: 0; }
-.agent-view-head h2 { margin: 0; font-size: var(--text-lg); font-weight: 600; min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.agent-view-head time { color: var(--muted); font-size: var(--text-md); margin-left: auto; flex: none; }
-.agent-head-actions { display: flex; align-items: center; gap: var(--space-0_5); flex: none; }
+.agent-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: 0;
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+  flex: 1 1 auto;
+}
+.pane-body > .agent-view {
+  overflow: hidden;
+}
+.agent-view-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    'title title title'
+    'status actions time';
+  align-items: center;
+  gap: var(--space-1) var(--space-1_5);
+  min-width: 0;
+}
+.agent-view-head h2 {
+  grid-area: title;
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.agent-view-head .meta-chip { grid-area: status; }
+.agent-view-head time { grid-area: time; color: var(--muted); font-size: var(--text-md); justify-self: end; flex: none; }
+.agent-head-actions { grid-area: actions; display: flex; align-items: center; gap: var(--space-0_5); flex: none; justify-self: end; }
 .agent-view-head .agent-action { flex: none; justify-content: center; padding: 0; width: 28px; }
 button.agent-mode {
   appearance: none;
@@ -702,8 +800,41 @@ button.agent-mode {
   opacity: 1;
 }
 button.agent-mode:hover:not(:disabled) { background: var(--hover); }
-.agent-log { display: flex; flex-direction: column; gap: var(--space-1_5); }
+.agent-log {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1_5);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
 .agent-line { margin: 0; }
+.agent-chat-user {
+  margin: 0 0 0 auto;
+  max-width: 92%;
+  padding: var(--space-1_5) var(--space-2);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.agent-chat-assistant {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-0_5);
+  max-width: 100%;
+}
+.agent-result-link {
+  padding: 0;
+  min-height: 0;
+  min-width: 0;
+  max-width: 100%;
+  height: auto;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: start;
+  font-size: inherit;
+}
 .agent-proposal { border: 0; border-top: 1px solid var(--border); border-radius: 0; padding: var(--space-2_5) 0 0; display: flex; flex-direction: column; gap: var(--space-2); }
 .agent-proposal header { display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; }
 .agent-approve { background: var(--accent); color: #fff; }
@@ -721,10 +852,69 @@ button.agent-approve:disabled:hover {
 .agent-skeleton i:first-child { width: 42%; height: 16px; }
 .agent-skeleton i:nth-child(2) { width: 88%; }
 .agent-skeleton i:nth-child(3) { width: 70%; }
-.agent-failed, .agent-fetch-error { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
-.agent-failed p, .agent-fetch-error p { margin: 0; }
-.agent-follow { display: flex; gap: var(--space-2); align-items: center; }
-.agent-follow input { flex: 1 1 auto; }
+.detail-field-skeleton,
+.detail-link-skeleton,
+.detail-section-skeleton {
+  display: block;
+  height: 2rem;
+  border-radius: var(--r-sm);
+  background: linear-gradient(90deg, var(--surface) 0%, var(--surface-2, var(--surface)) 50%, var(--surface) 100%);
+}
+.detail-section-skeleton { height: 3.5rem; margin: var(--space-1) 0; }
+.detail-link-skeleton { margin: var(--space-1) 0 var(--space-2); max-width: 70%; }
+
+.link-row-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.link-row-peer {
+  min-width: 8rem;
+}
+
+.link-inline-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+}
+
+.link-inline-label {
+  color: var(--fg-muted);
+}
+
+.link-inline-input {
+  width: 4.5rem;
+  padding: 0.15rem 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.link-inline-error {
+  font-size: var(--text-xs);
+}
+
+.link-edit-action {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+}
+.agent-failed, .agent-fetch-error { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); min-width: 0; max-width: 100%; }
+.agent-failed p, .agent-fetch-error p { margin: 0; max-width: 100%; overflow-wrap: anywhere; }
+.agent-failed button, .agent-fetch-error button { max-width: 100%; }
+.agent-follow { display: flex; gap: var(--space-2); align-items: flex-end; flex: none; min-width: 0; max-width: 100%; }
+.agent-follow-input,
+.agent-follow input { flex: 1 1 auto; width: 100%; min-width: 0; max-width: 100%; min-height: 2.6rem; max-height: 9rem; resize: vertical; }
+.agent-follow-input:focus-visible,
+.agent-follow textarea:focus-visible {
+  outline: none;
+  box-shadow: var(--inset), 0 0 0 2px var(--accent);
+}
 .agent-follow .agent-action { flex: none; justify-content: center; width: 28px; padding: 0; }
 /* Disabled Send next to "Agent is working…" must look inactive; keep --muted for contrast checks. */
 .agent-follow .agent-action:disabled,
@@ -836,6 +1026,27 @@ button.agent-bg-indicator strong { font-variant-numeric: tabular-nums; }
 .pane-body > .table-wrap,
 .pane-body > .graph-wrap,
 .pane-body > .detail-form { overflow: hidden; }
+/* Basis 0 so a tall Detail form fills the pane instead of growing past it and clipping Save. */
+.pane-body > .detail-form { flex: 1 1 0; }
+.pane-body:has(> .table-wrap[data-testid='agents-table']) {
+  overflow: auto;
+}
+.pane-body > .table-wrap[data-testid='agents-table'] {
+  overflow-x: visible;
+  overflow-y: visible;
+}
+.dock-root > .split.horizontal.split-agent-dock .pane:has([data-testid='agents-table']) .pane-body {
+  overflow: auto;
+}
+.dock-root > .split.horizontal.split-agent-dock:has([data-testid='agents-table']) > .split-cell:first-child {
+  overflow: auto;
+  contain: none;
+}
+.dock-root > .split.horizontal.split-agent-dock .pane:has([data-testid='agents-table']) .standard-grid,
+.dock-root > .split.horizontal.split-agent-dock .pane:has([data-testid='agents-table']) .table-wrap {
+  overflow: visible;
+  min-height: 0;
+}
 .dock-preview {
   position: absolute;
   z-index: 4;
@@ -848,6 +1059,8 @@ button.agent-bg-indicator strong { font-variant-numeric: tabular-nums; }
   pointer-events: none;
   transition: left var(--dur) var(--ease), top var(--dur) var(--ease), width var(--dur) var(--ease), height var(--dur) var(--ease);
 }
+/* The zone under the pointer is the preview. Animating from the previous zone leaves a box the hit test has already left. */
+.dock-root.dragging .dock-preview { transition: none; }
 .dock-preview span {
   justify-self: center;
   align-self: center;
@@ -908,7 +1121,9 @@ button.agent-bg-indicator strong { font-variant-numeric: tabular-nums; }
 .link-type-line { margin: 0; color: var(--accent-hover); font-size: var(--text-base); font-weight: 600; }
 select.link-type-line { width: 100%; font-weight: 600; }
 @media (prefers-reduced-motion: reduce) {
-  .dock-preview, .split-divider > span { transition: none; }
+  .dock-preview, .split-divider > span,
+  .dock-root > .split.horizontal[data-agent-dock='true'] > .split-cell,
+  .dock-root > .split.horizontal[data-tree-pinned='true'] > .split-cell { transition: none; }
 }
 
 .bottom-bar { display: flex; align-items: center; gap: var(--space-3); min-width: 0; margin: 0 var(--space-1_5) var(--space-0_5); }
@@ -921,14 +1136,21 @@ select.link-type-line { width: 100%; font-weight: 600; }
 .status-bar-action:hover { color: var(--text); }
 .draft-bar {
   display: flex;
-  gap: var(--space-3);
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
   align-items: center;
-  margin: 0 var(--space-1_5) var(--space-1_5);
+  margin: 0 0 var(--space-1_5);
   padding: var(--space-1_5) var(--space-2_5);
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   background: var(--panel);
   border-radius: var(--r-lg);
   box-shadow: var(--inset);
 }
+.draft-bar > span:first-child { flex: 1 1 8rem; min-width: 0; }
+.draft-bar .btn { flex: none; }
+.model-reload-bar { color: var(--text-2); }
 
 .standard-table-bar {
   display: flex;
@@ -1182,6 +1404,7 @@ button.filter-chip:hover:not(.on) {
   box-shadow: inset 3px 0 0 var(--accent);
 }
 .row.picked { box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 55%, transparent); }
+.row[data-draft-elsewhere='true'] { outline: 1px solid color-mix(in srgb, var(--accent) 50%, transparent); outline-offset: -1px; }
 .row:hover:not(.selected) { background: var(--hover); }
 /* Draft is signalled by the save bar. An amber fill behind a field would read as a second focus state. */
 .draft-user { background: transparent; border-radius: 0; }
@@ -1288,7 +1511,7 @@ button.filter-chip:hover:not(.on) {
 .form, .detail-form { display: flex; flex-direction: column; gap: var(--space-2); }
 .detail-form { min-width: 0; width: 100%; }
 .detail-scroll {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-height: 0;
   min-width: 0;
   overflow-x: hidden;
@@ -1300,7 +1523,22 @@ button.filter-chip:hover:not(.on) {
 }
 .field { scroll-margin-bottom: var(--space-3); }
 .detail-head { display: flex; flex-direction: column; gap: var(--space-1_5); padding: var(--space-0_5) var(--space-0_5) 0; }
-.detail-actions { display: flex; gap: var(--space-1); }
+.detail-title-row {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: nowrap;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.detail-title-row > button { flex: none; white-space: nowrap; }
+.detail-form > .draft-bar { position: relative; z-index: 2; flex: 0 0 auto; }
+.detail-title-row .detail-title { flex: 1 1 auto; min-width: 0; }
+.detail-title-row .detail-delete { flex: none; margin-top: var(--space-0_5); }
+.icon-btn.icon-danger:hover,
+.icon-btn.icon-danger:focus-visible {
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+  color: var(--danger);
+}
 .detail-title { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; flex-wrap: wrap; }
 .detail-title strong { font-size: var(--text-2xl); font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
 .detail-id { flex: none; color: var(--muted); font-size: var(--text-md); font-variant-numeric: tabular-nums; }
@@ -1328,13 +1566,15 @@ button.filter-chip:hover:not(.on) {
   box-shadow: var(--inset);
 }
 .field { display: grid; grid-template-columns: 120px minmax(0, 1fr); column-gap: var(--space-2_5); align-items: start; }
-.field > label { color: var(--muted); font-size: var(--text-md); text-align: left; padding-top: var(--space-1_5); }
+.field > label,
+.field-label-line > label { color: var(--muted); font-size: var(--text-md); text-align: left; padding-top: var(--space-1_5); }
 /* Field labels sit above their values when the measured Detail form is too narrow for both. */
 .detail-form[data-narrow='true'] .field {
   grid-template-columns: minmax(0, 1fr);
   row-gap: var(--space-1);
 }
-.detail-form[data-narrow='true'] .field > label { padding-top: 0; }
+.detail-form[data-narrow='true'] .field > label,
+.detail-form[data-narrow='true'] .field-label-line > label { padding-top: 0; }
 .control { min-width: 0; border-radius: var(--r-md); }
 .control input:not([type='checkbox']), .control select, .control textarea, .control .select-trigger { width: 100%; }
 .field-card input,
@@ -1371,13 +1611,13 @@ button.filter-chip:hover:not(.on) {
   border: 0;
   box-shadow: none;
 }
-.lang-row:has(textarea) { align-items: flex-start; }
 .lang-tag {
   display: inline-flex;
   flex: none;
   align-items: center;
   align-self: center;
   width: 2.25em;
+  height: 30px;
   margin: 0;
   padding: 0;
   background: transparent;
@@ -1386,11 +1626,12 @@ button.filter-chip:hover:not(.on) {
   color: var(--text-2);
   font-size: var(--text-sm);
   font-weight: 600;
-  line-height: 1;
+  line-height: 30px;
   text-transform: lowercase;
 }
 .lang-row:has(textarea) .lang-tag {
   align-self: flex-start;
+  height: auto;
   padding-top: var(--space-1_5);
   line-height: 1.4;
 }
@@ -1443,6 +1684,25 @@ button.filter-chip:hover:not(.on) {
 }
 /* The editor already carries an accent border. Its focus lives there, inside the cell. */
 .cell-editor:focus-visible { outline: none; }
+.cell-editor-invalid {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--danger) 55%, transparent);
+}
+.cell-measure-editor {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+  min-width: 0;
+}
+.cell-measure-editor .cell-editor {
+  flex: 1 1 auto;
+  min-width: 2.5rem;
+}
+.cell-measure-editor .cell-editor-unit,
+.cell-measure-editor .cell-editor-unit-trigger {
+  flex: 0 0 auto;
+}
 .meta-chip {
   display: inline-flex;
   align-items: center;
@@ -1907,13 +2167,15 @@ canvas.graph.panning { cursor: grabbing; }
 .menu button[data-highlighted], .menu-item[data-highlighted] { background: var(--accent-dim); }
 /* Focus and highlight move together here, so the fill is the only mark.
    Legacy menus without a highlighted item keep the global focus ring. */
-.menu:has([data-highlighted]) button:focus-visible,
-.menu:has([data-highlighted]) .menu-item:focus-visible { outline: none; }
-/* The account menu is arrow-navigated: the highlighted item is the focused
-   item, so it keeps the same 2px accent ring as other keyboard-focused
-   controls even when the browser does not match :focus-visible for arrow
-   navigation. The ring sits inside the item so the menu edge never clips it. */
-.menu.user-menu-content .menu-item[data-highlighted] {
+.menu:has([data-highlighted]) button:focus-visible:not([data-highlighted]),
+.menu:has([data-highlighted]) .menu-item:focus-visible:not([data-highlighted]) { outline: none; }
+/* Arrow-navigated menus mark the active item with data-highlighted. It is also
+   the focused item, so it keeps the same 2px accent ring as other
+   keyboard-focused controls even when the browser does not match
+   :focus-visible for arrow navigation. The ring sits inside the item so the
+   menu edge never clips it. */
+.menu button[data-highlighted],
+.menu .menu-item[data-highlighted] {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
@@ -2100,6 +2362,12 @@ canvas.graph.panning { cursor: grabbing; }
 .hit.disabled:hover, .hit[data-disabled='true']:hover { background: transparent; }
 .hit.ask { z-index: 1; background: var(--raised); border-top: 1px solid var(--border); flex: none; }
 .hit small { display: block; color: var(--muted); font-size: var(--text-sm); font-weight: 400; }
+.hit .hit-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.25;
+}
 .hit .hit-title { font-size: var(--text-base); }
 .hit kbd, .menu kbd { margin-left: auto; }
 .palette .hit.ask:not(.on) { color: var(--text-2); }
@@ -2242,6 +2510,17 @@ kbd {
   padding: var(--space-1) var(--space-2);
   font-size: var(--text-md);
   box-shadow: var(--shadow-md);
+}
+.inline-hint {
+  margin: 0;
+  padding: 0 var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+.inline-hint-action { min-height: auto; margin-left: var(--space-1); padding: 0 var(--space-1); font-size: var(--text-sm); }
+[data-testid="link-row"][data-just-linked="true"] {
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+  animation: flash 600ms var(--ease);
 }
 [data-sonner-toaster] { pointer-events: none; }
 /* Sit in the gutter before the detail pane, above the status bar, so a finish toast does not cover Detail. */
@@ -2471,8 +2750,11 @@ kbd {
 [data-testid='proposal'] > label { display: flex; gap: var(--space-2); align-items: center; }
 .graph-full {
   position: fixed;
-  inset: 16px;
   z-index: 35;
+  left: var(--space-4);
+  right: var(--space-4);
+  top: calc(var(--app-chrome-top) + var(--space-2));
+  bottom: calc(var(--app-chrome-bottom) + var(--space-2));
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--r-xl);
@@ -2481,6 +2763,24 @@ kbd {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  min-height: 0;
+}
+/* Full-size graph escapes the pane scrollport. Keep the overlay below the app chrome
+   and let fixed descendants paint without clipping. */
+body[data-graph-full-open] .workspace,
+body[data-graph-full-open] .dock-root,
+body[data-graph-full-open] .split,
+body[data-graph-full-open] .split-cell,
+body[data-graph-full-open] .pane:has([data-testid='graph-full']),
+body[data-graph-full-open] .pane:has([data-testid='graph-full']) .pane-body,
+body[data-graph-full-open] .pane-body:has([data-testid='graph-full']) {
+  overflow: visible;
+}
+body[data-graph-full-open] .pane-body > .graph-wrap.graph-full {
+  overflow: visible;
+}
+body[data-graph-full-open] .workspace {
+  z-index: 36;
 }
 .model-tree:focus-visible { outline: 2px solid var(--accent); border-radius: var(--r-md); }
 button, .pane-tab, .hit, .class-row, .attr-card {
@@ -2992,6 +3292,9 @@ html[data-theme-switching] *::after {
 .import-cell.error { box-shadow: inset 0 0 0 1px var(--danger); background: color-mix(in srgb, var(--danger) 16%, transparent); border-radius: var(--r-sm); }
 .import-popover { position: fixed; right: 24px; bottom: 72px; z-index: 2; min-width: 220px; justify-items: stretch; }
 .import-confirm { position: fixed; inset: 0; margin: auto; height: max-content; z-index: 82; translate: none; }
+/* The import screen covers the app. Its save dialog has to sit above that screen. */
+.overlay:has(+ [data-testid='import-save-mapping-dialog']) { z-index: 91; }
+[data-testid='import-save-mapping-dialog'] { z-index: 92; }
 .class-attributes { display: flex; flex-direction: column; gap: 14px; padding: var(--space-3) 14px; min-height: 0; }
 .class-section h3 { margin: 0 0 var(--space-1); font-size: var(--text-md); font-weight: 600; }
 .class-attr { display: flex; justify-content: space-between; gap: var(--space-2); padding: 5px 0; border-bottom: 1px solid var(--line); font-size: var(--text-md); }
@@ -3162,7 +3465,10 @@ button.primary[aria-disabled='true'] {
 [data-testid='agents-table'] .standard-grid-row:nth-child(even):not(.on) {
   background: color-mix(in srgb, var(--surface) 72%, var(--panel));
 }
-[data-testid='agents-table'] .standard-grid-cell[data-column='name'] { flex: 1 1 auto; }
+[data-testid='agents-table'] .standard-grid-cell[data-column='name'] {
+  flex: 1 1 10rem;
+  min-width: 6rem;
+}
 .standard-grid-row.draft { background: color-mix(in oklab, var(--warn, #c90) 10%, transparent); }
 .standard-grid-row.read-only { color: var(--muted); opacity: 0.7; }
 .standard-grid-reorder,
@@ -3198,14 +3504,37 @@ button.primary[aria-disabled='true'] {
 }
 .standard-grid-cell.truncate { max-width: 280px; }
 .standard-grid-cell.column-head { font-weight: 500; }
+/* Inline editors align with read-only text: no nested box inside the selected row. */
+.standard-grid-cell-editing,
+.standard-grid-cell-editing:focus-visible {
+  outline: none;
+}
+.standard-grid-cell-editing:has(:focus-visible) {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
 .standard-grid-cell input:not([type='checkbox']),
 .standard-grid-cell select {
   width: 100%;
-  height: 26px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  padding: 0 var(--space-1_5);
-  background: var(--panel);
+  min-width: 0;
+  height: auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+}
+.standard-grid-cell input:not([type='checkbox']):focus,
+.standard-grid-cell input:not([type='checkbox']):focus-visible,
+.standard-grid-cell select:focus,
+.standard-grid-cell select:focus-visible {
+  outline: none;
+  box-shadow: none;
+  background: transparent;
 }
 .standard-grid-cell-bool {
   display: flex;
@@ -3306,6 +3635,8 @@ button.primary[aria-disabled='true'] {
   min-width: 180px;
 }
 [data-testid='attribute-table'] .standard-grid-cell[data-column='key'] { min-width: 120px; }
+[data-testid='attribute-table'] .standard-grid-cell[data-column='description'],
+[data-testid='attribute-definitions-chrome'] .standard-grid-cell[data-column='description'] { min-width: 140px; }
 [data-testid='attribute-table'] .standard-grid-cell[data-column='kind'] { min-width: 96px; }
 [data-testid='attribute-table'] .standard-grid-cell[data-column='unit'] { min-width: 88px; }
 [data-testid='attribute-table'] .standard-grid-cell[data-column='from'] { min-width: 140px; }
@@ -3318,9 +3649,77 @@ button.primary[aria-disabled='true'] {
   width: 84px;
 }
 [data-testid='attribute-table'] .standard-grid-cell[data-column='languages'],
-[data-testid='attribute-table'] .standard-grid-cell[data-column='searchable'] {
+[data-testid='attribute-table'] .standard-grid-cell[data-column='searchable'],
+[data-testid='attribute-table'] .standard-grid-cell[data-column='multiple'],
+[data-testid='attribute-table'] .standard-grid-cell[data-column='filterable'],
+[data-testid='attribute-table'] .standard-grid-cell[data-column='sortable'],
+[data-testid='attribute-table'] .standard-grid-cell[data-column='integer'],
+[data-testid='attribute-table'] .standard-grid-cell[data-column='media'] {
   flex: 0 0 92px;
   width: 92px;
+}
+[data-testid='attribute-table'] .standard-grid-cell[data-column='min'],
+[data-testid='attribute-table'] .standard-grid-cell[data-column='max'] {
+  flex: 0 0 72px;
+  width: 72px;
+}
+[data-testid='attribute-table'] .standard-grid-cell[data-column='maxLength'] {
+  flex: 0 0 92px;
+  width: 92px;
+}
+[data-testid='attribute-table'] .standard-grid-cell[data-column='textForm'] {
+  flex: 0 0 108px;
+  width: 108px;
+}
+[data-testid='attribute-table'] .standard-grid-cell[data-column='valueList'] {
+  flex: 0 0 120px;
+  width: 120px;
+  min-width: 120px;
+}
+.standard-grid-cell[data-disabled='true']:not(.standard-grid-cell-bool) {
+  cursor: default;
+}
+.standard-cell-editor-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  width: 100%;
+}
+.standard-grid-cell .standard-cell-editor-stack {
+  gap: 0;
+}
+.cell-edit-error {
+  color: var(--danger, #c62828);
+  font-size: var(--text-xs, 11px);
+  line-height: 1.2;
+}
+.standard-grid-cell .standard-cell-select-trigger,
+.standard-grid-cell .standard-cell-select-trigger.select-trigger {
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  gap: var(--space-1);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  justify-content: flex-start;
+}
+.standard-grid-cell .standard-cell-select-trigger:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+.standard-cell-select-trigger {
+  width: 100%;
+  min-width: 0;
 }
 
 .column-header-btn {

@@ -165,8 +165,13 @@ test('an allowed-tree toggle reviews before it saves, and Cancel discards only t
       await route.continue()
     })
     await checkbox.click()
-    await expect(page.getByTestId('review-loading')).toBeVisible({ timeout: 5_000 })
+    await expect(table.getByTestId('review-and-save')).toBeVisible()
     await expect(page.getByTestId('review-dialog')).toHaveCount(0)
+    expect(savePosts).toBe(0)
+    expect(await productStructures(page)).toEqual(fixture.baseline)
+
+    await table.getByTestId('review-and-save').click()
+    await expect(page.getByTestId('review-loading')).toBeVisible({ timeout: 5_000 })
     await page.screenshot({ path: `${shots}/row129-05-review-loading.png` })
 
     const dialog = page.getByTestId('review-dialog')
@@ -229,10 +234,15 @@ test('an allowed-tree toggle reviews before it saves, and Cancel discards only t
 
     await page.reload()
     await expect(page.getByTestId('dock')).toBeVisible()
-    await openProductAttributes(page)
+    const reloadedTable = await openProductAttributes(page)
     const cancelCheckbox = page.getByTestId('allowed-trees').getByRole('checkbox', { name: fixture.label })
+    if (await cancelCheckbox.isChecked()) {
+      await cancelCheckbox.click()
+    }
     await expect(cancelCheckbox).not.toBeChecked()
     await cancelCheckbox.click()
+    await expect(reloadedTable.getByTestId('review-and-save')).toBeVisible()
+    await reloadedTable.getByTestId('review-and-save').click()
     const cancelDialog = page.getByTestId('review-dialog')
     await expect(cancelDialog).toBeVisible({ timeout: 15_000 })
     await cancelDialog.getByRole('button', { name: 'Cancel' }).click()
@@ -247,6 +257,9 @@ test('an allowed-tree toggle reviews before it saves, and Cancel discards only t
     const saveCheckbox = page.getByTestId('allowed-trees').getByRole('checkbox', { name: fixture.label })
     await expect(saveCheckbox).not.toBeChecked()
     await saveCheckbox.click()
+    const saveTable = page.getByTestId('attribute-table')
+    await expect(saveTable.getByTestId('review-and-save')).toBeVisible()
+    await saveTable.getByTestId('review-and-save').click()
     const again = page.getByTestId('review-dialog')
     await expect(again).toBeVisible({ timeout: 15_000 })
     const save = page.waitForResponse((response) =>
@@ -266,6 +279,9 @@ test('an allowed-tree toggle reviews before it saves, and Cancel discards only t
     await page.screenshot({ path: `${shots}/row129-04-after-save-reload.png` })
 
     await keptCheckbox.click()
+    const restoreTable = page.getByTestId('attribute-table')
+    await expect(restoreTable.getByTestId('review-and-save')).toBeVisible()
+    await restoreTable.getByTestId('review-and-save').click()
     const restore = page.getByTestId('review-dialog')
     await expect(restore).toBeVisible({ timeout: 15_000 })
     const restoreSave = page.waitForResponse((response) =>
@@ -314,7 +330,10 @@ test('Cancel reverts only the allowed-tree step and keeps unrelated draft work',
 
     await openProductAttributes(page)
     const checkbox = page.getByTestId('allowed-trees').getByRole('checkbox', { name: fixture.label })
+    const unrelatedTable = page.getByTestId('attribute-table')
     await checkbox.click()
+    await expect(unrelatedTable.getByTestId('review-and-save')).toBeVisible()
+    await unrelatedTable.getByTestId('review-and-save').click()
     const dialog = page.getByTestId('review-dialog')
     await expect(dialog).toBeVisible({ timeout: 15_000 })
     await expect(page.getByTestId('review-save')).toBeDisabled()

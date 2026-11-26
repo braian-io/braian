@@ -142,6 +142,40 @@ describe('review dialog', () => {
     expect(draftHasForcedReview(draft)).toBe(false)
     expect(draftSaveGate(destructive)).toBe('confirm')
     expect(draftHasForcedReview(destructive)).toBe(false)
+    expect(draftHasForcedReview({
+      count: 1,
+      steps: [{ op: 'update_value_list', key: 'status', options: [] }],
+    })).toBe(true)
+    expect(draftSaveGate({
+      count: 1,
+      conflict: false,
+      steps: [{ op: 'update_value_list', key: 'status', options: [] }],
+    })).toBe('confirm')
+    expect(draftHasForcedReview({
+      count: 1,
+      steps: [{ op: 'reorder_attributes', structure: 'food', group: 'yoghurt', attributes: ['b', 'a'] }],
+    })).toBe(true)
+    expect(draftSaveGate({
+      count: 1,
+      conflict: false,
+      steps: [{ op: 'reorder_attributes', structure: 'food', group: 'yoghurt', attributes: ['b', 'a'] }],
+    })).toBe('confirm')
+    expect(draftSaveGate({
+      count: 1,
+      conflict: false,
+      steps: [
+        { op: 'create_attribute', key: 'row47' },
+        { op: 'attach_attribute', attribute: 'row47', structure: 'food', group: 'yoghurt' },
+      ],
+    })).toBe('confirm')
+    expect(draftHasForcedReview({
+      count: 1,
+      steps: [{ op: 'attach_attribute', attribute: 'brand', type_key: 'product' }],
+    })).toBe(false)
+    expect(draftHasForcedReview({
+      count: 1,
+      steps: [{ op: 'rename_type_key', key: 'product', new_key: 'product_row47_saved' }],
+    })).toBe(false)
   })
 
   it('describes an allowed-tree change with display names and a Review change title', async () => {

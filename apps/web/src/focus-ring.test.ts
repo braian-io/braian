@@ -35,10 +35,12 @@ describe('focus ring', () => {
     }
   })
 
-  it('does not hide keyboard focus on rows or the user menu', () => {
+  it('does not hide keyboard focus on rows or arrow-navigated menu items', () => {
     expect(css).not.toMatch(/(?<!\.grid:focus-visible:has\(\.active-cell\) )\.row:focus(?:-visible)?[^{]*\{[^}]*outline:\s*none/)
     expect(css).not.toMatch(/\.standard-grid-row[^{]*:focus[^{]*\{[^}]*outline:\s*none/)
-    expect(css).not.toMatch(/\.user-menu-content \.menu-item\s*\{[^}]*outline:\s*none/)
+    expect(css).toMatch(
+      /\.menu button\[data-highlighted\],\s*\.menu \.menu-item\[data-highlighted\]\s*\{[^}]*outline:\s*2px solid var\(--accent\)[^}]*outline-offset:\s*-2px/,
+    )
   })
 
   it('does not stack a row ring on the active cell when the grid has keyboard focus', () => {

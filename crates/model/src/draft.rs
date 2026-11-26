@@ -207,6 +207,7 @@ mod tests {
                 id: AttributeId::from_uuid(Uuid::from_u128(1)),
                 key: "name".into(),
                 labels: Default::default(),
+                description: None,
                 language_dependent: false,
                 multiple: false,
                 required: true,

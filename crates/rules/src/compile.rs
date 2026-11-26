@@ -49,7 +49,7 @@ pub(crate) struct GroupInfo {
 
 #[derive(Debug, Clone)]
 struct UnitInfo {
-    factors: HashMap<String, rust_decimal::Decimal>,
+    affine: HashMap<String, (rust_decimal::Decimal, rust_decimal::Decimal)>,
 }
 
 /// Indexes built from a [`DefinitionSet`].
@@ -250,12 +250,12 @@ impl CompiledModel {
         self.groups.get(&group_id)
     }
 
-    pub(crate) fn unit_factor(
+    pub(crate) fn unit_affine(
         &self,
         family: UnitFamilyId,
         unit: &str,
-    ) -> Option<rust_decimal::Decimal> {
-        self.units.get(&family)?.factors.get(unit).copied()
+    ) -> Option<(rust_decimal::Decimal, rust_decimal::Decimal)> {
+        self.units.get(&family)?.affine.get(unit).copied()
     }
 
     pub(crate) fn has_structure(&self, id: StructureId) -> bool {
@@ -360,12 +360,12 @@ fn index(defs: &DefinitionSet) -> CompiledModel {
         .unit_families
         .iter()
         .map(|family| {
-            let factors = family
+            let affine = family
                 .units
                 .iter()
-                .map(|unit| (unit.code.clone(), unit.factor))
+                .map(|unit| (unit.code.clone(), (unit.factor, unit.offset)))
                 .collect::<HashMap<_, _>>();
-            (family.id, UnitInfo { factors })
+            (family.id, UnitInfo { affine })
         })
         .collect();
 
@@ -425,7 +425,7 @@ fn check(defs: &DefinitionSet, errors: &mut Vec<DefinitionError>) {
         unique_key(&mut family_keys, &family.key, "unit family", errors);
         family_ids.insert(family.id);
         let mut codes = HashSet::new();
-        let mut base_factors = 0usize;
+        let mut affine_bases = 0usize;
         for unit in &family.units {
             if unit.code.is_empty() {
                 errors.push(error(format!(
@@ -444,20 +444,22 @@ fn check(defs: &DefinitionSet, errors: &mut Vec<DefinitionError>) {
                     unit.code, family.key
                 )));
             }
-            if unit.factor == rust_decimal::Decimal::ONE {
-                base_factors += 1;
+            if unit.factor == rust_decimal::Decimal::ONE
+                && unit.offset == rust_decimal::Decimal::ZERO
+            {
+                affine_bases += 1;
             }
         }
         let base = family
             .units
             .iter()
             .find(|unit| unit.code == family.base_unit);
-        if base.is_none()
-            || base_factors != 1
-            || base.is_some_and(|unit| unit.factor != rust_decimal::Decimal::ONE)
-        {
+        let base_ok = base.is_some_and(|unit| {
+            unit.factor == rust_decimal::Decimal::ONE && unit.offset == rust_decimal::Decimal::ZERO
+        });
+        if !base_ok || affine_bases != 1 {
             errors.push(error(format!(
-                "unit family {} must have exactly one base unit {} with factor 1",
+                "unit family {} must have exactly one base unit {} with factor 1 and offset 0",
                 family.key, family.base_unit
             )));
         }
@@ -476,9 +478,8 @@ fn check(defs: &DefinitionSet, errors: &mut Vec<DefinitionError>) {
             )));
         }
         let unit_family = match &attribute.kind {
-            AttributeKind::Number { unit_family, .. } | AttributeKind::Range { unit_family } => {
-                *unit_family
-            }
+            AttributeKind::Number { unit_family, .. }
+            | AttributeKind::Range { unit_family, .. } => *unit_family,
             _ => None,
         };
         if let Some(family) = unit_family
@@ -488,6 +489,24 @@ fn check(defs: &DefinitionSet, errors: &mut Vec<DefinitionError>) {
                 "attribute {} references unknown unit family {family}",
                 attribute.key
             )));
+        }
+        if let Some(default_unit) = attribute.kind.default_unit() {
+            let Some(family_id) = unit_family else {
+                errors.push(error(format!(
+                    "attribute {} sets default unit {} without a unit family",
+                    attribute.key, default_unit
+                )));
+                continue;
+            };
+            let Some(family) = defs.unit_families.iter().find(|item| item.id == family_id) else {
+                continue;
+            };
+            if !family.units.iter().any(|unit| unit.code == default_unit) {
+                errors.push(error(format!(
+                    "attribute {} default unit {default_unit} is not in family {}",
+                    attribute.key, family.key
+                )));
+            }
         }
         if let AttributeKind::Number { min, max, .. } = &attribute.kind
             && let (Some(min), Some(max)) = (min, max)
@@ -800,6 +819,7 @@ mod tests {
             id: AttributeId::from_uuid(id(n)),
             key: key.to_owned(),
             labels: BTreeMap::new(),
+            description: None,
             language_dependent: false,
             multiple: false,
             required: false,
@@ -976,10 +996,7 @@ mod tests {
             key: "mass".to_owned(),
             dimension: Some("mass".to_owned()),
             base_unit: "kg".to_owned(),
-            units: vec![Unit {
-                code: "g".to_owned(),
-                factor: Decimal::new(1, 3),
-            }],
+            units: vec![Unit::with_factor("g", Decimal::new(1, 3))],
         });
         let errors = CompiledModel::compile(&defs).unwrap_err();
         assert!(
@@ -996,6 +1013,7 @@ mod tests {
             id: AttributeId::from_uuid(id(30)),
             key: "color".to_owned(),
             labels: BTreeMap::new(),
+            description: None,
             language_dependent: false,
             multiple: false,
             required: false,
@@ -1047,14 +1065,8 @@ mod tests {
             dimension: Some("mass".to_owned()),
             base_unit: "kg".to_owned(),
             units: vec![
-                Unit {
-                    code: "kg".to_owned(),
-                    factor: Decimal::ONE,
-                },
-                Unit {
-                    code: "g".to_owned(),
-                    factor: Decimal::new(1, 3),
-                },
+                Unit::with_factor("kg", Decimal::ONE),
+                Unit::with_factor("g", Decimal::new(1, 3)),
             ],
         });
         let weight = AttributeId::from_uuid(id(21));
@@ -1062,12 +1074,14 @@ mod tests {
             id: weight,
             key: "weight".to_owned(),
             labels: BTreeMap::new(),
+            description: None,
             language_dependent: false,
             multiple: false,
             required: false,
             show_by_default: true,
             kind: AttributeKind::Number {
                 unit_family: Some(family),
+                default_unit: None,
                 min: Some(Decimal::ZERO),
                 max: Some(Decimal::from(10)),
                 integer: false,
@@ -1100,6 +1114,111 @@ mod tests {
         let errors = model.validate(&object);
         assert_eq!(errors.len(), 1);
         assert_eq!(errors[0].code, ErrorCode::AboveMax);
+    }
+
+    #[test]
+    fn affine_temperature_converts_between_celsius_and_fahrenheit() {
+        let factor = Decimal::from(5) / Decimal::from(9);
+        let offset = Decimal::from(-160) / Decimal::from(9);
+        let mut defs = minimal();
+        let family = UnitFamilyId::from_uuid(id(25));
+        defs.unit_families.push(UnitFamily {
+            id: family,
+            key: "temperature".to_owned(),
+            dimension: Some("temperature".to_owned()),
+            base_unit: "celsius".to_owned(),
+            units: vec![
+                Unit::with_factor("celsius", Decimal::ONE),
+                Unit {
+                    code: "fahrenheit".to_owned(),
+                    factor,
+                    offset,
+                    symbol: "°F".to_owned(),
+                    labels: BTreeMap::new(),
+                },
+            ],
+        });
+        let temperature = AttributeId::from_uuid(id(26));
+        defs.attributes.push(Attribute {
+            id: temperature,
+            key: "temperature".to_owned(),
+            labels: BTreeMap::new(),
+            description: None,
+            language_dependent: false,
+            multiple: false,
+            required: false,
+            show_by_default: true,
+            kind: AttributeKind::Number {
+                unit_family: Some(family),
+                default_unit: Some("celsius".to_owned()),
+                min: None,
+                max: None,
+                integer: false,
+            },
+            index: IndexFlags::default(),
+        });
+        let model = CompiledModel::compile(&defs).unwrap();
+        assert_eq!(
+            model
+                .normalize(
+                    temperature,
+                    &NumberValue {
+                        value: Decimal::ZERO,
+                        unit: Some("celsius".into()),
+                    },
+                )
+                .unwrap(),
+            Decimal::ZERO
+        );
+        assert_eq!(
+            model
+                .normalize(
+                    temperature,
+                    &NumberValue {
+                        value: Decimal::from(32),
+                        unit: Some("fahrenheit".into()),
+                    },
+                )
+                .unwrap()
+                .trunc_with_scale(12),
+            Decimal::ZERO,
+        );
+        assert_eq!(
+            model
+                .normalize(
+                    temperature,
+                    &NumberValue {
+                        value: Decimal::from(212),
+                        unit: Some("fahrenheit".into()),
+                    },
+                )
+                .unwrap()
+                .trunc_with_scale(12),
+            Decimal::from(100)
+        );
+    }
+
+    #[test]
+    fn loads_unit_families_without_offset_or_symbol() {
+        let json = r#"{
+            "model_revision": 1,
+            "languages": ["en"],
+            "unit_families": [{
+                "id": "018f0000-0000-7000-8000-000000000020",
+                "key": "mass",
+                "base_unit": "kg",
+                "units": [
+                    {"code": "kg", "factor": "1"},
+                    {"code": "g", "factor": "0.001"}
+                ]
+            }],
+            "attributes": [],
+            "types": [],
+            "structures": []
+        }"#;
+        let defs: DefinitionSet = serde_json::from_str(json).expect("legacy units");
+        assert_eq!(defs.unit_families[0].units[1].offset, Decimal::ZERO);
+        CompiledModel::compile(&defs).expect("legacy family compiles");
     }
 
     #[test]
@@ -1194,10 +1313,7 @@ mod tests {
             key: "length".to_owned(),
             dimension: Some("length".to_owned()),
             base_unit: "mm".to_owned(),
-            units: vec![Unit {
-                code: "mm".to_owned(),
-                factor: Decimal::ONE,
-            }],
+            units: vec![Unit::with_factor("mm", Decimal::ONE)],
         });
         let count = AttributeId::from_uuid(id(21));
         let span = AttributeId::from_uuid(id(22));
@@ -1206,12 +1322,14 @@ mod tests {
             id: count,
             key: "count".to_owned(),
             labels: BTreeMap::new(),
+            description: None,
             language_dependent: false,
             multiple: false,
             required: false,
             show_by_default: true,
             kind: AttributeKind::Number {
                 unit_family: None,
+                default_unit: None,
                 min: None,
                 max: None,
                 integer: true,
@@ -1222,12 +1340,14 @@ mod tests {
             id: span,
             key: "span".to_owned(),
             labels: BTreeMap::new(),
+            description: None,
             language_dependent: false,
             multiple: false,
             required: false,
             show_by_default: true,
             kind: AttributeKind::Range {
                 unit_family: Some(family),
+                default_unit: None,
             },
             index: IndexFlags::default(),
         });
@@ -1235,6 +1355,7 @@ mod tests {
             id: link,
             key: "replaces".to_owned(),
             labels: BTreeMap::new(),
+            description: None,
             language_dependent: false,
             multiple: false,
             required: false,

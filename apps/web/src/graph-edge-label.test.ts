@@ -83,6 +83,17 @@ describe('edge label placement', () => {
     expect(distanceToBox(nodes[0]!, labelBox(point))).toBeGreaterThanOrEqual(30)
   })
 
+  it('steps clear of a band of nodes that covers the nearby offsets', () => {
+    const nodes = []
+    for (let x = 0; x <= 200; x += 16) {
+      for (let y = -90; y <= 90; y += 16) nodes.push({ x, y, radius: 18 })
+    }
+    const point = placeEdgeLabel(from, control, to, size, nodes)
+    const box = labelBox(point)
+    const covered = nodes.some((node) => distanceToBox(node, box) < node.radius)
+    expect(covered).toBe(false)
+  })
+
   it('moves away from a node caption covering the default mid', () => {
     const defaultPoint = curvePoint(from, control, to, 0.68)
     const caption = { x: defaultPoint.x - 40, y: defaultPoint.y - 8, width: 80, height: 16 }
@@ -117,8 +128,10 @@ describe('edge label placement', () => {
     // named caption by moving onto a disc, so the preferred box is illegal;
     // the fallback must still paint the label over the name instead.
     const nodes: EdgeLabelNode[] = []
-    for (let x = -100; x <= 300; x += 4) {
-      for (let y = -100; y <= 100; y += 4) nodes.push({ x, y, radius: 2 })
+    // Covers every candidate, including the further offsets added so a dense
+    // cluster can still step clear. A gap here would make the aside slot legal.
+    for (let x = -160; x <= 360; x += 4) {
+      for (let y = -180; y <= 180; y += 4) nodes.push({ x, y, radius: 2 })
     }
     const placement = placeEdgeLabelWithFallback({
       from,
@@ -148,7 +161,7 @@ describe('edge label placement', () => {
   })
 
   it('still paints an active label when every slot covers a name; the caption hides (K5)', () => {
-    const everything = { id: 'article', priority: 5, x: -50, y: -100, width: 300, height: 200 }
+    const everything = { id: 'article', priority: 5, x: -80, y: -180, width: 400, height: 360 }
     const point = placeEdgeLabel(from, control, to, size, [], [], [everything])
     expect(Number.isFinite(point.x) && Number.isFinite(point.y), 'the label is still painted').toBe(true)
     const box = labelBox(point)

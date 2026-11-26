@@ -216,11 +216,12 @@ test.describe('palette drill-in, recent order, and global commands', () => {
     await expect(page.getByTestId('ai-badge')).toHaveCount(0)
     await page.keyboard.press('Control+j')
     await expect(palette).toHaveCount(0)
-    const agentTab = page.locator('.pane-tab[data-view-type="agent"]').filter({ hasText: 'how many products' })
+    const agentTab = page.locator('.pane-tab[data-view-type="agent"][title*="how many products"]')
     await expect(agentTab).toBeVisible({ timeout: 30_000 })
     await agentTab.click()
     await expect(page.getByTestId('agent-view').filter({ hasText: 'how many products' })).toContainText('how many products')
-    await expect(page.getByTestId('agent-answer')).toHaveCount(0, { timeout: 30_000 })
+    await expect(page.getByTestId('agent-follow-up')).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByTestId('object-row').first()).toBeVisible()
     await page.locator('.pane-tab[data-view-type="object_table"]').first().click()
     await expect(page.getByTestId('object-row').first()).toBeVisible()
   })
@@ -301,7 +302,7 @@ test.describe('palette drill-in, recent order, and global commands', () => {
 
     await page.keyboard.press('Control+j')
     await expect(page.getByTestId('command-palette')).toHaveCount(0)
-    const agentTab = page.locator('.pane-tab[data-view-type="agent"]').filter({ hasText: 'zzzzqqqqnomatch' })
+    const agentTab = page.locator('.pane-tab[data-view-type="agent"][title*="zzzzqqqqnomatch"]')
     await expect(agentTab).toBeVisible()
     await agentTab.click()
     await expect(page.getByTestId('agent-view').filter({ hasText: 'zzzzqqqqnomatch' })).toBeVisible()
@@ -317,9 +318,7 @@ test.describe('palette drill-in, recent order, and global commands', () => {
     await expect(palette).toHaveCount(0)
     // An earlier test can leave its own agent tab behind; the run started here
     // is the one the shell focuses and appends last.
-    const agentTab = page.locator('.pane-tab[data-view-type="agent"].active')
-      .filter({ hasText: 'how many products' })
-      .last()
+    const agentTab = page.locator('.pane-tab[data-view-type="agent"].active[title*="how many products"]').last()
     await expect(agentTab).toBeVisible({ timeout: 30_000 })
 
     // Leave the agent tab focused and wait for the layout save, so the next

@@ -6,10 +6,11 @@ these pages; if a claim is not here, it does not belong there yet. It walks thro
 the daily flows rather than the internals.
 
 - [Getting started](/docs/getting-started) — run Braian locally, sign in and open the demo workspace.
-- [Workspaces and panels](/docs/workspaces-and-panels) — tiled views, layouts and sharing.
+- [Workspaces and panels](/docs/workspaces-and-panels) — tiled views, layouts, Select fields, and unit display.
 - [Object types and relations](/docs/object-types-and-relations) — the model, attributes and link types.
 - [Data sources](/docs/data-sources) — make a view follow a type, a linked object or a structure node.
 - [Command palette and shortcuts](/docs/command-palette-and-shortcuts) — Ctrl+K, the agent and the keyboard.
+- [Agent chat](/docs/agent-chat) — Ctrl+J, the docked chat pane, follow-ups and drafts.
 - [Deleting and restore](/docs/deleting-and-restore) — four delete entry points, confirm counts and Trash.
 - [Graph](/docs/graph) — the object graph and the model graph.
 - [Feedback](/docs/feedback) — in-app reports when an operator enables them.

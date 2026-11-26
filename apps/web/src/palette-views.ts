@@ -13,7 +13,9 @@ export function viewPaletteRows(views: SavedView[], types: TypeName[], openTypeK
         title: displayViewTitle(view, types, openTypeKey),
         subtitle: 'Open view',
         entity: true,
-        keywords: [view.type, view.title],
+        keywords: view.type === 'structure_tree'
+          ? [view.type, view.title, 'tree', 'structure']
+          : [view.type, view.title],
       })),
   ])
 }

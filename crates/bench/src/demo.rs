@@ -9,7 +9,7 @@ pub async fn run(database_url: &str, tier: Tier, count: usize, seed: u64) -> any
     let mut admin_config = admin::parse_config(database_url)?;
     admin_config.dbname("postgres");
     let admin = PgConn::connect(admin_config).await?;
-    admin::drop_database(&admin.client, database).await.ok();
+    admin::drop_database(&admin.client, database).await?;
     admin::create_database(&admin.client, database).await?;
     drop(admin);
 

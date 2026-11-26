@@ -12,7 +12,8 @@ import {
   type DeleteObjectRequest,
 } from './delete-objects'
 import { copy } from './i18n'
-import { writeErrorMessage } from './write-error'
+import { clearObjectGone, markObjectGone } from './object-gone'
+import { reportWriteError, writeErrorMessage } from './write-error'
 
 type Loaded = { counts: DeleteCounts }
 
@@ -79,26 +80,36 @@ export function DeleteObjectsHost() {
     setBusy(true)
     setError('')
     void (async () => {
+      const deleted = [...request.ids]
+      const skip = new Set(deleted)
       let failed = false
-      for (const id of request.ids) {
+      for (const id of deleted) {
         try {
           await api.delete('/v1/objects/{id}', { params: { path: { id } } })
+          markObjectGone(queryClient, id)
         } catch (reason) {
           setError(writeErrorMessage(reason) ?? copy.deleteObjectFailed)
           failed = true
           break
         }
       }
+      const invalidateObjectReads = () =>
+        queryClient.invalidateQueries({
+          queryKey: ['object'],
+          predicate: (query) => !skip.has(String(query.queryKey[1] ?? '')),
+        })
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['objects'] }),
-        queryClient.invalidateQueries({ queryKey: ['object'] }),
+        invalidateObjectReads(),
         queryClient.invalidateQueries({ queryKey: ['search'] }),
         queryClient.invalidateQueries({ queryKey: ['palette'] }),
         queryClient.invalidateQueries({ queryKey: ['trash'] }),
         queryClient.invalidateQueries({ queryKey: ['links'] }),
       ])
       setBusy(false)
-      if (!failed) setRequest(null)
+      if (!failed) {
+        setRequest(null)
+      }
     })()
   }
 

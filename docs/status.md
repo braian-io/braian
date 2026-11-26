@@ -1,3 +1,18 @@
+# Status 2026-11-24
+
+## Row 291 — CI flakes on agent dock hit-test and demo-2 drop (branch `cursor/ci-flake-fixes-f91c`)
+
+- **E2E:** `review-and-save` uses `disabled:pointer-events-none` (`button.tsx`). While Detail
+  still shows a list preview (`data-detail-ready="false"`) or Save is disabled, `elementFromPoint`
+  hits the element behind the bar, so the strict hit assertion flakes. `agent-chat-dock.spec.ts`
+  now waits for `data-detail-ready`, the draft bar, and enabled Save/Discard, then polls the same
+  hit check (no assertion weakened).
+- **Load:** `drop_database` set `statement_timeout = 3s` on a plain `DROP DATABASE`. A large
+  `braian_demo` catalog after demo-2 can exceed that under CI I/O; demo-2 also ignored drop
+  failures. Drop now uses `WITH (FORCE)` (same as `scripts/e2e.mjs`) and propagates errors.
+- **Bevis:** demo-2 light 100k × 10 → 10/10; `agent-chat-dock` 1920-test × 20 isolerade e2e → 20/20
+  (head `1e94878`, cloud-agent-miljö).
+
 # Status 2026-11-14
 
 ## Row 243 — graph camera fit after F5 and closed full size (in progress, not merged)

@@ -57,8 +57,17 @@ function row(id: string, status: string) {
   }
 }
 
-function disabled(testId: string) {
-  return (screen.getByTestId(testId) as HTMLButtonElement).disabled
+/** Browser activation: Enter clicks on keydown, Space clicks on keyup, unless prevented. */
+function pressKey(button: HTMLElement, key: 'Enter' | ' ') {
+  const down = fireEvent.keyDown(button, { key })
+  if (down !== false && key === 'Enter') fireEvent.click(button)
+  const up = fireEvent.keyUp(button, { key })
+  if (down !== false && up !== false && key === ' ') fireEvent.click(button)
+}
+
+function inactive(testId: string) {
+  const el = screen.getByTestId(testId) as HTMLButtonElement
+  return el.disabled || el.getAttribute('aria-disabled') === 'true'
 }
 
 function opacity(testId: string) {
@@ -144,8 +153,8 @@ function installActionButtonStyles() {
 }
 
 async function expectClosedActions(reason: string) {
-  expect(disabled('save-all')).toBe(true)
-  expect(disabled('discard-all')).toBe(true)
+  expect(inactive('save-all')).toBe(true)
+  expect(inactive('discard-all')).toBe(true)
   expect(opacity('save-all')).toBe(0.8)
   expect(opacity('discard-all')).toBe(0.8)
   await waitFor(() =>
@@ -181,7 +190,7 @@ describe('closed proposal bulk actions', () => {
     proposal = { id: 'p1', title: 'Accepted', status: 'accepted', rows: [row('r1', 'accepted')] }
     render(<Host />)
     await screen.findByTestId('save-all')
-    await waitFor(() => expect(disabled('discard-all')).toBe(true))
+    await waitFor(() => expect(inactive('discard-all')).toBe(true))
     await expectClosedActions(copy.proposalAlreadyAccepted)
   })
 
@@ -189,7 +198,7 @@ describe('closed proposal bulk actions', () => {
     proposal = { id: 'p1', title: 'Discarded', status: 'discarded', rows: [row('r1', 'rejected')] }
     render(<Host />)
     await screen.findByTestId('save-all')
-    await waitFor(() => expect(disabled('discard-all')).toBe(true))
+    await waitFor(() => expect(inactive('discard-all')).toBe(true))
     await expectClosedActions(copy.proposalAlreadyDiscarded)
   })
 
@@ -202,7 +211,7 @@ describe('closed proposal bulk actions', () => {
     }
     render(<Host />)
     await screen.findByTestId('save-all')
-    await waitFor(() => expect(disabled('discard-all')).toBe(true))
+    await waitFor(() => expect(inactive('discard-all')).toBe(true))
     await expectClosedActions(copy.proposalAlreadyClosed)
   })
 
@@ -221,8 +230,8 @@ describe('closed proposal bulk actions', () => {
     render(<Host />)
     const loading = await screen.findByTestId('proposal-actions-loading')
     expect(loading.textContent).toBe(copy.loadingProposal)
-    expect(disabled('save-all')).toBe(true)
-    expect(disabled('discard-all')).toBe(true)
+    expect(inactive('save-all')).toBe(true)
+    expect(inactive('discard-all')).toBe(true)
     expect(screen.queryByTestId('proposal-actions-reason')).toBeNull()
     expect(screen.getByTestId('proposal-actions').getAttribute('title')).toBeNull()
     expect(screen.queryByText(copy.proposalAlreadyClosed)).toBeNull()
@@ -237,8 +246,8 @@ describe('closed proposal bulk actions', () => {
     proposal = { id: 'p1', title: 'Open', status: 'open', rows: [row('r1', 'pending')] }
     render(<Host />)
     await screen.findByTestId('save-all')
-    await waitFor(() => expect(disabled('save-all')).toBe(false))
-    expect(disabled('discard-all')).toBe(false)
+    await waitFor(() => expect(inactive('save-all')).toBe(false))
+    expect(inactive('discard-all')).toBe(false)
     expect(opacity('save-all')).toBe(1)
     expect(opacity('discard-all')).toBe(1)
     expect(screen.queryByTestId('proposal-actions-reason')).toBeNull()
@@ -251,34 +260,11 @@ describe('closed proposal bulk actions', () => {
     expect(screen.getByTestId('save-all').className).not.toContain('btn-raised')
   })
 
-  it('makes Save all primary and Discard all secondary danger in the Ctrl+K preview', () => {
-    render(
-      <ProposalBulkActions
-        status="open"
-        rows={[row('r1', 'pending')]}
-        saveDisabled={false}
-        discardDisabled={false}
-        saveVariant="primary"
-        saveTestId="palette-save-all"
-        discardTestId="palette-discard-all"
-        onSave={() => undefined}
-        onDiscard={() => undefined}
-      />,
-    )
-    expect(screen.getByTestId('palette-save-all').className, 'palette Save all uses the same primary rule').toContain('btn-accent')
-    expect(screen.getByTestId('palette-save-all').className).not.toContain('btn-raised')
-    expect(screen.getByTestId('palette-discard-all').className, 'palette Discard all stays secondary danger').toContain('btn-danger')
-    expect(disabled('palette-save-all')).toBe(false)
-    expect(disabled('palette-discard-all')).toBe(false)
-    expect(opacity('palette-save-all')).toBe(1)
-    expect(opacity('palette-discard-all')).toBe(1)
-  })
-
   it('confirms before discarding and shows the proposal name without consequence lines', async () => {
     proposal = { id: 'p1', title: 'Agent draft', status: 'open', rows: [row('r1', 'pending')] }
     render(<Host />)
     await screen.findByTestId('discard-all')
-    await waitFor(() => expect(disabled('discard-all')).toBe(false))
+    await waitFor(() => expect(inactive('discard-all')).toBe(false))
     mock.methods.post.mockClear()
 
     fireEvent.click(screen.getByTestId('discard-all'))
@@ -313,7 +299,7 @@ describe('closed proposal bulk actions', () => {
     }
     render(<Host />)
     await screen.findByTestId('discard-all')
-    await waitFor(() => expect(disabled('discard-all')).toBe(false))
+    await waitFor(() => expect(inactive('discard-all')).toBe(false))
     fireEvent.click(screen.getByTestId('discard-all'))
     const dialog = await screen.findByTestId('discard-all-confirm')
     expect(within(dialog).getByTestId('discard-all-proposal').textContent).toBe('Agent draft')
@@ -357,51 +343,78 @@ describe('closed proposal bulk actions', () => {
     }
   })
 
-  it('uses the same disabled look and explanation in the Ctrl+K proposal preview', async () => {
+  it('does not call save or discard on click, Enter, or Space when aria-disabled', () => {
+    const onSave = vi.fn()
+    const onDiscard = vi.fn()
     render(
       <ProposalBulkActions
-        rows={[row('r1', 'accepted'), row('r2', 'rejected')]}
+        status="accepted"
+        rows={[row('r1', 'accepted')]}
         saveDisabled
         discardDisabled
-        discardFirst
-        saveTestId="palette-save-all"
-        discardTestId="palette-discard-all"
-        reasonTestId="palette-proposal-reason"
-        onSave={() => undefined}
-        onDiscard={() => undefined}
+        onSave={onSave}
+        onDiscard={onDiscard}
       />,
     )
-    expect(opacity('palette-save-all')).toBe(0.8)
-    expect(opacity('palette-discard-all')).toBe(0.8)
-    await waitFor(() => expect(paint('palette-discard-all')).toEqual(paint('palette-save-all')))
-    const explanation = screen.getByTestId('palette-proposal-reason')
-    expect(explanation.textContent).toBe(copy.proposalAlreadyClosed)
-    expect(screen.getByTestId('palette-save-all').getAttribute('aria-describedby')).toBe(explanation.id)
-    expect(screen.getByTestId('palette-discard-all').getAttribute('aria-describedby')).toBe(explanation.id)
-    expect(screen.getByTestId('proposal-actions').getAttribute('title')).toBe(copy.proposalAlreadyClosed)
+    for (const testId of ['save-all', 'discard-all']) {
+      const button = screen.getByTestId(testId)
+      expect(button.getAttribute('aria-disabled')).toBe('true')
+      fireEvent.click(button)
+      pressKey(button, 'Enter')
+      pressKey(button, ' ')
+    }
+    expect(onSave).not.toHaveBeenCalled()
+    expect(onDiscard).not.toHaveBeenCalled()
   })
 
-  it('shows a loading state in the Ctrl+K preview when the status is unknown', () => {
+  it('explains an inactive Save all on a stale open proposal and still discards', () => {
+    const onSave = vi.fn()
+    const onDiscard = vi.fn()
     render(
       <ProposalBulkActions
-        rows={[]}
-        loading
+        status="open"
+        rows={[row('r1', 'pending')]}
+        stale
+        saveDisabled
+        discardDisabled={false}
+        onSave={onSave}
+        onDiscard={onDiscard}
+      />,
+    )
+    const save = screen.getByTestId('save-all')
+    expect(save.getAttribute('aria-disabled')).toBe('true')
+    expect(save.getAttribute('title')).toBe(copy.agentStaleApprove)
+    expect(screen.getByTestId('proposal-actions-reason').textContent).toBe(copy.agentStaleApprove)
+    expect(save.getAttribute('aria-describedby')).toBe(screen.getByTestId('proposal-actions-reason').id)
+    fireEvent.click(save)
+    pressKey(save, 'Enter')
+    pressKey(save, ' ')
+    expect(onSave).not.toHaveBeenCalled()
+    const discard = screen.getByTestId('discard-all')
+    expect(discard.hasAttribute('disabled')).toBe(false)
+    expect(discard.getAttribute('aria-disabled')).toBeNull()
+    expect(discard.getAttribute('aria-describedby')).toBeNull()
+    fireEvent.click(discard)
+    expect(onDiscard).toHaveBeenCalledTimes(1)
+  })
+
+  it('exposes the closed explanation when a disabled bulk action receives focus', async () => {
+    render(
+      <ProposalBulkActions
+        status="accepted"
+        rows={[row('r1', 'accepted')]}
         saveDisabled
         discardDisabled
-        discardFirst
-        saveVariant="primary"
-        saveTestId="palette-save-all"
-        discardTestId="palette-discard-all"
-        reasonTestId="palette-proposal-reason"
-        loadingTestId="palette-proposal-loading"
         onSave={() => undefined}
         onDiscard={() => undefined}
       />,
     )
-    expect(screen.getByTestId('palette-proposal-loading').textContent).toBe(copy.loadingProposal)
-    expect(screen.queryByTestId('palette-proposal-reason')).toBeNull()
-    expect(screen.getByTestId('proposal-actions').getAttribute('title')).toBeNull()
-    expect(disabled('palette-save-all')).toBe(true)
-    expect(disabled('palette-discard-all')).toBe(true)
+    const save = screen.getByTestId('save-all')
+    expect(save.getAttribute('aria-disabled')).toBe('true')
+    fireEvent.focus(save)
+    const explanation = screen.getByTestId('proposal-actions-reason')
+    expect(save.getAttribute('aria-describedby')).toBe(explanation.id)
+    expect(save.getAttribute('title')).toBe(copy.proposalAlreadyAccepted)
+    expect(explanation.textContent).toBe(copy.proposalAlreadyAccepted)
   })
 })

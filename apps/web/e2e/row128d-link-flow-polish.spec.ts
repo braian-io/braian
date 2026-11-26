@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { demoCredentials } from './demo'
-import { mainTable, paneWithTab } from './ui'
+import { mainTable, paneWithTab, waitDetailReady } from './ui'
 
 const shots = process.env.BRAIAN_ROW128D_SHOTS
   ? resolve(process.env.BRAIAN_ROW128D_SHOTS)
@@ -50,8 +50,8 @@ async function openObjectDetail(page: Page, item: { title: string; key: string }
     const detailTab = page.locator('.pane-tab[data-view-type="object_detail"]:visible').first()
     if ((await detailTab.count()) > 0) await detailTab.click()
   }
-  await expect(detail).toBeVisible()
   await expect(detail).toContainText(item.key)
+  await waitDetailReady(page, detail)
 }
 
 async function nodeMarker(page: Page, id: string) {
@@ -130,9 +130,14 @@ async function openSectionPicker(page: Page, section: string) {
 }
 
 async function chooseSupplier(page: Page, supplier = NORTHMILL) {
-  await page.getByTestId('link-search').fill(supplier.key)
-  const option = page.getByTestId('link-picker').getByRole('option').filter({ hasText: supplier.key }).first()
-  await expect(option).toBeVisible()
+  const picker = page.getByTestId('link-picker')
+  await expect(picker).toBeVisible()
+  const search = picker.getByTestId('link-search')
+  const option = picker.getByRole('option').filter({ hasText: supplier.key }).first()
+  await expect(async () => {
+    await search.fill(supplier.key)
+    await expect(option).toBeVisible()
+  }).toPass({ timeout: 15_000 })
   await option.click()
   const dialog = page.getByTestId('link-create-dialog')
   await expect(dialog).toBeVisible()
@@ -151,7 +156,7 @@ async function expectWideDialog(page: Page, dialog: Locator) {
   expect(await dialog.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
   const ends = dialog.getByTestId('link-ends')
   expect(await ends.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
-  for (const name of ['Cancel', 'Confirm']) {
+  for (const name of ['Cancel', 'Save']) {
     const button = dialog.getByRole('button', { name, exact: true })
     await expect(button).toBeVisible()
     const buttonBox = await button.boundingBox()
@@ -195,10 +200,15 @@ test('Detail and Graph create dialogs are wide enough to confirm without forcing
   await expectWideDialog(page, detailDialog)
   await shot(page, 'detail-dialog-wide')
   await confirmAndCleanup(page, detailDialog)
+  // API delete does not run the app's query invalidation; reload so the graph picker
+  // does not treat the removed supplier as still linked.
+  await page.reload()
+  await expect(page.getByTestId('workspace')).toBeVisible({ timeout: 60_000 })
 
   await openObjectGraph(page, PRODUCT)
   const { menu } = await openNodeMenu(page, PRODUCT.id)
   await menu.getByRole('menuitem', { name: 'Link Suppliers…', exact: true }).click()
+  await expect(page.getByTestId('link-picker')).toBeVisible()
   const graphDialog = await chooseSupplier(page)
   await expectWideDialog(page, graphDialog)
   await shot(page, 'graph-dialog-wide')

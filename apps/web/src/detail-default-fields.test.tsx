@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Json } from './api'
 import { resetObjectWriteState } from './object-write'
+import { TooltipProvider } from './components/ui/tooltip'
 import { ObjectDetail, type PanesSession } from './panes'
 
 const mock = vi.hoisted(() => {
@@ -56,9 +57,11 @@ function Host() {
     push: () => undefined,
   }
   return (
-    <QueryClientProvider client={client}>
-      <ObjectDetail session={session} />
-    </QueryClientProvider>
+    <TooltipProvider>
+      <QueryClientProvider client={client}>
+        <ObjectDetail session={session} />
+      </QueryClientProvider>
+    </TooltipProvider>
   )
 }
 
@@ -91,6 +94,26 @@ describe('Detail default fields', () => {
 
     expect(await screen.findByText('Hidden')).toBeTruthy()
     expect(screen.getByText('Show fewer fields')).toBeTruthy()
+  })
+
+  it('shows attribute description in a label tooltip, not in the layout', async () => {
+    const withHelp = {
+      ...defs,
+      attributes: (defs.attributes as Json[]).map((item) => (
+        item.key === 'visible' ? { ...item, description: 'Short product summary' } : item
+      )),
+    }
+    mock.use((path: string) => (path === '/v1/definitions' ? Promise.resolve(withHelp) : detailApi(path)))
+    render(<Host />)
+
+    const label = await screen.findByText('Visible')
+    expect(screen.queryByTestId('detail-field-desc-visible')).toBeNull()
+    expect(label.getAttribute('title')).toBe('Short product summary')
+    expect(label.getAttribute('aria-describedby')).toBeTruthy()
+    fireEvent.mouseEnter(label)
+    fireEvent.focus(label)
+    const help = screen.getByTestId('detail-field-desc-visible')
+    expect(help.textContent).toBe('Short product summary')
   })
 
   it('has no Show more control when every field is shown by default', async () => {

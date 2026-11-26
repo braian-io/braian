@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState, useSyncExternalStore, type KeyboardEvent 
 import { useQuery } from '@tanstack/react-query'
 import { Check } from 'lucide-react'
 import { MetaChip, type ChipTone } from './chips'
-import { toast } from 'sonner'
 import { announce, takeShortcutTip } from './shortcut-tip'
 import { ApiError, api, operationId, textValue, type Json } from './api'
 import { reportWriteError } from './write-error'
@@ -13,19 +12,29 @@ import { Command, CommandInput, CommandItem, CommandList } from './components/ui
 import { Kbd } from './components/ui/kbd'
 import { dynamicSelectionFilter, emitSavedSelection, requestDeleteSelection, requestEditSelection, requestNewSelection, selectionMatchesType } from './assortment-filter'
 import { workspaceDisplayName } from './demo-labels'
-import { sourceLabel, suggestedTitle } from './field-diff'
+import { suggestedTitle } from './field-diff'
 import { copy, uiLanguage } from './i18n'
+import { requestOpenImportMappings } from './import/open-mappings'
 import { structureCaption } from './graph-scene'
 import { chordForCommand } from './shortcuts'
 import { mergeFrecency, readFrecency, touch, writeFrecency } from './frecency'
 import { withModelCommand } from './model-command'
-import { activeAfterQuery, filterPaletteRows, frecencyId, groupOrder, groupTitle, markedTitle, readPaletteMemory, rememberPaletteItem, rememberRecent, resultAnnouncement, selectedObjectId, sublistPlaceholder, visibleRows, withRecent, type PaletteItem } from './palette-model'
+import { activeAfterQuery, filterPaletteRows, frecencyId, groupOrder, groupTitle, markedTitle, readPaletteMemory, rememberPaletteItem, rememberRecent, resolveActiveAfterQuery, resultAnnouncement, selectedObjectId, sublistPlaceholder, visibleRows, withRecent, type PaletteItem } from './palette-model'
 import { argumentBreadcrumb, isObjectParam, objectTypeFilter, paletteKeyEffect, placeTargetId, tabHint, type PaletteFrame } from './palette-core'
+import { resetPaletteListScroll, scrollPaletteActiveItem } from './palette-list-scroll'
 import { argumentCommands, type OperationRecord } from './palette-operations'
 import { objectPaletteRows } from './palette-objects'
 import { viewPaletteRows } from './palette-views'
 import { workspacePaletteRows } from './palette-workspaces'
 import { addViewRootItem, addViewSubmenuRows, isAddViewRoot, parseAddViewChoice } from './palette-add-view'
+import {
+  isOpenStructureSubmenuFrame,
+  isOpenStructureRoot,
+  OPEN_STRUCTURE_EMPTY_MESSAGE,
+  openStructureRootItem,
+  openStructureSubmenuRows,
+  parseOpenStructureChoice,
+} from './palette-open-structure'
 import {
   isSelectSourceRoot,
   parseSelectSourceChoice,
@@ -50,9 +59,8 @@ import {
   switchCatalogSubmenuRows,
 } from './palette-switch-catalog'
 import { useCatalogsQuery } from './catalog-list'
+import { catalogDeleteAvailable, catalogSelection, subscribeCatalogSelection } from './catalog-selection'
 import { MASTER_CATALOG_ID } from './catalog-ref'
-import { ProposalBulkActions } from './proposal-actions'
-import { DiscardProposalDialog } from './discard-proposal-dialog'
 import { publishProposal } from './proposal-bus'
 import { modelFocus, openModelDialog, requestDiscardDraft, requestReview, stageModel } from './model-stage'
 import { isStandardAttribute, queueViewType, requestAttributeAction } from './attribute-actions'
@@ -72,6 +80,7 @@ import {
   readColumns,
   readSelection,
   readTreeNode,
+  readTrashActive,
   readUiContext,
   subscribeUiSelections,
   uiSelectionVersion,
@@ -95,23 +104,12 @@ type SessionLike = {
   push: (line: string) => void
   openWorkspace: (id: string) => void
   openTypeView?: (typeId: string) => void
+  openStructureView?: (structureKey: string, placement?: { zone: 'center' | 'right'; target?: string }) => void
   workspaceId?: string | null
 }
 
 type Turn = { role: 'user' | 'assistant'; text: string }
 type Step = { id: string; text: string; state: 'run' | 'done' }
-type ProposalPreview = {
-  id: string
-  title: string
-  status?: string
-  rows: Json[]
-  lines: string[]
-  source?: string
-  actor_name?: unknown
-  behalf_name?: unknown
-  error?: string
-}
-
 
 /** True when the key event targets the palette query field (caret / selection). */
 function isPaletteQueryInput(target: EventTarget | null): boolean {
@@ -130,6 +128,7 @@ export function CommandPalette({
   focusViewId,
   sourceTargetViewId,
   onPrepareAddView,
+  onPrepareOpenStructure,
   startAddView,
   startSelectSource,
   startNewFromTemplate,
@@ -156,6 +155,7 @@ export function CommandPalette({
   /** Dock menu target. Keeps the picker on that view even when another pane has focus. */
   sourceTargetViewId?: string | null
   onPrepareAddView?: () => void
+  onPrepareOpenStructure?: () => void
   startAddView?: boolean
   startSelectSource?: boolean
   startNewFromTemplate?: boolean
@@ -199,11 +199,6 @@ export function CommandPalette({
   const [steps, setSteps] = useState<Step[]>([])
   const [answer, setAnswer] = useState('')
   const [running, setRunning] = useState(false)
-  const [proposal, setProposal] = useState<ProposalPreview | null>(null)
-  const [confirmDiscardProposal, setConfirmDiscardProposal] = useState(false)
-  useEffect(() => {
-    setConfirmDiscardProposal(false)
-  }, [proposal?.id])
   const [editing, setEditing] = useState<number | null>(null)
   const [debouncedQuery, setDebouncedQuery] = useState(query)
   useEffect(() => {
@@ -243,6 +238,7 @@ export function CommandPalette({
     queryKey: ['operations'],
     queryFn: () => api.get('/v1/operations'),
     staleTime: 60_000,
+    placeholderData: (previous) => previous,
   })
   const remoteFrecency = useQuery({
     queryKey: ['frecency'],
@@ -287,6 +283,7 @@ export function CommandPalette({
   const selectedKey = String(selectedObject.data?.type ?? '')
   // Live selections in other views become peer sources (Notion 103 PR 2).
   const selectionVersion = useSyncExternalStore(subscribeUiSelections, uiSelectionVersion, uiSelectionVersion)
+  const catalogPick = useSyncExternalStore(subscribeCatalogSelection, catalogSelection, catalogSelection)
   // Delete follows the focused table's marked rows, else the object open in Detail.
   const deleteIds = (() => {
     const marked = focusViewId ? readSelection(focusViewId).map((row) => row.id) : []
@@ -465,6 +462,11 @@ export function CommandPalette({
       { id: 'model:new-list', group: 'model' as const, title: copy.newValueList, subtitle: copy.dataModel, keywords: ['create', 'list', 'option'] },
       { id: 'model:new-family', group: 'model' as const, title: copy.newUnitFamily, subtitle: copy.dataModel, keywords: ['create', 'unit'] },
       { id: 'model:new-tree', group: 'model' as const, title: copy.newTree, subtitle: copy.dataModel, keywords: ['create', 'structure', 'tree'] },
+      { id: 'catalog:new', group: 'model' as const, title: copy.newCatalog, subtitle: copy.catalogs, keywords: ['catalog', 'source', 'create'] },
+      { id: 'catalog:rename', group: 'model' as const, title: copy.renameCatalog, subtitle: copy.catalogs, keywords: ['catalog', 'rename', 'name'] },
+      ...(catalogDeleteAvailable(catalogPick)
+        ? [{ id: 'catalog:delete', group: 'model' as const, title: copy.deleteCatalog, subtitle: copy.catalogs, keywords: ['catalog', 'delete', 'remove', 'source'] }]
+        : []),
       { id: 'model:review', group: 'model' as const, title: copy.reviewAndSave, subtitle: copy.dataModel, keywords: ['draft', 'save'], kbd: 'Ctrl+S' },
       { id: 'model:discard', group: 'model' as const, title: copy.discardDraft, subtitle: copy.dataModel, keywords: ['draft'] },
       { id: 'model:undo', group: 'model' as const, title: copy.undoModel, subtitle: copy.dataModel, keywords: ['undo'] },
@@ -488,7 +490,7 @@ export function CommandPalette({
           ]),
       { id: 'attr:new', group: 'model' as const, title: copy.newAttribute, subtitle: copy.attributeDefinitions, keywords: ['attribute', 'create'] },
     ],
-    [workspaces, views, session.group, types, selectedKey, suggestionTotal, feedbackEnabled, theme, moveColumns, moveTarget, defs.data, operationRecords, focusViewId, deleteIds.join(',')],
+    [workspaces, views, session.group, types, selectedKey, suggestionTotal, feedbackEnabled, theme, moveColumns, moveTarget, defs.data, operationRecords, focusViewId, deleteIds.join(','), selectionVersion, catalogPick],
   )
   const hits: PaletteItem[] = objectPaletteRows((found.data?.hits as Json[] | undefined) ?? [], defs.data)
   useEffect(() => {
@@ -556,19 +558,65 @@ export function CommandPalette({
   const activeRow = active == null ? undefined : rows[active]
   const queryMatchId = !query.trim() || stack.length > 0
     ? ''
-    : rows[activeAfterQuery(rows, query) ?? -1]?.id ?? ''
+    : rows[resolveActiveAfterQuery(rows, query) ?? -1]?.id ?? ''
 
-  useEffect(() => {
-    if (mode !== 'list' || stack.length > 0 || !query.trim()) return
-    setActive(activeAfterQuery(rows, query))
-  }, [query, mode, stack.length, queryMatchId])
+  const paletteListRef = useRef<HTMLDivElement>(null)
+  const paletteScrollList = useRef(false)
+  const paletteStackScroll = useRef(false)
+  const paletteActiveFromPointer = useRef(false)
+  const filterScrollQuery = useRef('')
+  useLayoutEffect(() => {
+    if (mode !== 'list' || stack.length > 0) return
+    if (!query.trim()) {
+      if (filterScrollQuery.current !== '') filterScrollQuery.current = ''
+      return
+    }
+    const pick = resolveActiveAfterQuery(rows, query)
+    const queryChanged = filterScrollQuery.current !== query
+    if (queryChanged) {
+      filterScrollQuery.current = query
+      paletteScrollList.current = true
+      setActive(pick)
+      return
+    }
+    if (active == null && pick != null) {
+      paletteScrollList.current = true
+      setActive(pick)
+    }
+  }, [query, mode, stack.length, queryMatchId, active])
   useEffect(() => {
     if (mode !== 'list' || stack.length === 0 || !query.trim()) return
+    paletteScrollList.current = true
     setActive(0)
   }, [query, mode, stack.length])
+  const openStructurePlacementRef = useRef<'center' | 'right'>('center')
   useEffect(() => {
-    document.querySelector<HTMLElement>('#palette-list .hit.on')?.scrollIntoView({ block: 'nearest' })
-  }, [active, rows.length])
+    paletteStackScroll.current = true
+  }, [stack.length])
+  useLayoutEffect(() => {
+    if (mode !== 'list') return
+    const list = paletteListRef.current
+    resetPaletteListScroll(list)
+    // cmdk measures the new rows after this layout pass.
+    const frame = requestAnimationFrame(() => {
+      scrollPaletteActiveItem(paletteListRef.current)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [stack.length, mode])
+  useLayoutEffect(() => {
+    if (mode !== 'list') return
+    if (paletteActiveFromPointer.current) {
+      paletteActiveFromPointer.current = false
+      paletteScrollList.current = false
+      paletteStackScroll.current = false
+      return
+    }
+    const shouldScroll = paletteScrollList.current || paletteStackScroll.current
+    paletteScrollList.current = false
+    paletteStackScroll.current = false
+    if (!shouldScroll) return
+    scrollPaletteActiveItem(paletteListRef.current)
+  }, [active, rows.length, stack.length, queryMatchId, mode])
 
   const needsWorkspace = (commandId: string) =>
     commandId.startsWith('view:')
@@ -582,7 +630,7 @@ export function CommandPalette({
 
   const blockUntilWorkspace = (commandId: string) => {
     if (workspaceReady || !needsWorkspace(commandId)) return false
-    toast.message(copy.workspaceOpeningWhenReady)
+    announce(copy.workspaceOpeningWhenReady)
     return true
   }
 
@@ -696,6 +744,26 @@ export function CommandPalette({
       }])
       setQuery('')
       setActive(0)
+      return
+    }
+    if (isOpenStructureRoot(id)) {
+      onPrepareOpenStructure?.()
+      setStack((current) => [...current, {
+        label: item.title,
+        rows: openStructureSubmenuRows(defs.data),
+      }])
+      setQuery('')
+      setActive(0)
+      return
+    }
+    const structureKey = parseOpenStructureChoice(id)
+    if (structureKey) {
+      session.openStructureView?.(structureKey, {
+        zone: openStructurePlacementRef.current,
+        target: focusViewId || undefined,
+      })
+      openStructurePlacementRef.current = 'center'
+      onClose()
       return
     }
     if (isNewFromTemplateRoot(id)) {
@@ -931,8 +999,10 @@ export function CommandPalette({
       return
     }
     if (id === 'selection:save-filter') {
-      const filter = readUiContext().filterExpression
-      if (!filter) {
+      const snapshot = readUiContext()
+      const filter = snapshot.filterExpression
+      const q = snapshot.q.trim()
+      if (!filter && !q) {
         session.push(copy.saveFilterNeeds)
         onClose()
         return
@@ -941,6 +1011,7 @@ export function CommandPalette({
       requestNewSelection({
         kind: 'dynamic',
         query: dynamicSelectionFilter(filter, type),
+        q,
         type,
       })
       onClose()
@@ -1028,6 +1099,11 @@ export function CommandPalette({
       onClose()
       return
     }
+    if (id === 'catalog:new' || id === 'catalog:rename' || id === 'catalog:delete' || id === 'catalog:infer' || id === 'catalog:cleanup') {
+      void runCommand(id)
+      onClose()
+      return
+    }
     if (id === 'model:rename-key' || id === 'attr:rename-key') {
       if (requestAttributeAction('rename-key')) {
         onClose()
@@ -1069,7 +1145,6 @@ export function CommandPalette({
     if (item.shortcut) {
       const tip = takeShortcutTip(item.sourceId ?? item.id, item.shortcut, item.subtitle || item.title)
       if (tip) {
-        toast(tip)
         announce(tip)
       }
     }
@@ -1158,6 +1233,11 @@ export function CommandPalette({
     }
     if (id === 'import:file') {
       window.dispatchEvent(new Event('braian-import-open'))
+      onClose()
+      return
+    }
+    if (id === 'import:mappings') {
+      requestOpenImportMappings()
       onClose()
       return
     }
@@ -1259,6 +1339,16 @@ export function CommandPalette({
     }
   }
 
+  useEffect(() => {
+    const onAsk = () => {
+      const live = inputRef.current?.value ?? ''
+      if (live.trim()) void ask(live)
+      else setMode('ai')
+    }
+    window.addEventListener('braian-palette-ask', onAsk)
+    return () => window.removeEventListener('braian-palette-ask', onAsk)
+  }, [ask])
+
   const openActions = (item: PaletteItem | undefined) => {
     if (!item) return
     const actions = secondaryOf(item)
@@ -1287,6 +1377,7 @@ export function CommandPalette({
             entity: secondaryOf(row).length > 0,
             ask: row.group === 'ask' || row.id === 'ask',
             disabled: row.disabled,
+            openStructure: Boolean(parseOpenStructureChoice(row.sourceId ?? row.id)),
           }
         : undefined,
     })
@@ -1302,24 +1393,33 @@ export function CommandPalette({
       return
     }
     if (effect.type === 'back') {
+      paletteScrollList.current = true
       setStack((current) => current.slice(0, -1))
       setActive(null)
       return
     }
     if (effect.type === 'ask') {
-      if (query.trim()) void ask(query)
+      // The document shortcut already asked (and preventDefault) when it saw Ctrl+J.
+      if (event.defaultPrevented) return
+      const live = inputRef.current?.value ?? query
+      if (live.trim()) void ask(live)
       else setMode('ai')
       return
     }
     if (effect.type === 'actions') {
+      paletteScrollList.current = true
       openActions(rows[effect.index])
       return
     }
     if (effect.type === 'activate') {
       const item = rows[effect.index]
+      if (item && parseOpenStructureChoice(item.sourceId ?? item.id)) {
+        openStructurePlacementRef.current = event.ctrlKey || event.metaKey ? 'right' : 'center'
+      }
       if (item) run(item)
       return
     }
+    if (effect.type === 'move') paletteScrollList.current = true
     setActive(effect.index)
   }
 
@@ -1352,6 +1452,11 @@ export function CommandPalette({
   const askRow = rows.find((row) => row.group === 'ask')
   const resultCount = rows.filter((row) => row.group !== 'ask' && row.id !== 'ask').length
   const showEmpty = mode === 'list' && query.trim().length > 0 && resultCount === 0
+  const showOpenStructureEmpty = mode === 'list'
+    && !query.trim()
+    && stack.length > 0
+    && isOpenStructureSubmenuFrame(stack[stack.length - 1]?.label ?? '')
+    && resultCount === 0
   const placeholder = mode === 'ai'
     ? copy.askAi
     : topFrame
@@ -1435,8 +1540,10 @@ export function CommandPalette({
             value={query}
             placeholder={placeholder}
             onValueChange={(value) => {
+              if (value.trim() && mode === 'list') paletteScrollList.current = true
               setQuery(value)
-              setActive(value.trim() ? (stack.length > 0 ? 0 : null) : 0)
+              if (stack.length > 0) setActive(value.trim() ? 0 : 0)
+              else if (!value.trim()) setActive(0)
             }}
           />
           {mode === 'ai' ? (
@@ -1464,55 +1571,14 @@ export function CommandPalette({
               </ol>
             ) : null}
             {answer ? <p className="ai-answer" data-testid="ai-answer">{renderAgentAnswer(answer)}</p> : null}
-            {proposal ? (
-              <div data-testid="palette-proposal">
-                <strong>{proposal.title}</strong>
-                {proposal.source ? <span className="meta-chip neutral" data-testid="source-badge">{sourceLabel(proposal)}</span> : null}
-                <p>{proposal.rows.length} rows</p>
-                {proposal.lines.length > 0 ? (
-                  <ul className="proposal-tree">
-                    {proposal.lines.map((line) => (
-                      <li key={line}>{line}</li>
-                    ))}
-                  </ul>
-                ) : null}
-                {proposal.rows.slice(0, 3).map((row) => (
-                  <p key={String(row.id)}>{String(row.object_key ?? row.object_id ?? '')}</p>
-                ))}
-                {proposal.error ? <p className="error">{proposal.error}</p> : null}
-                <div className="toolbar">
-                  <ProposalBulkActions
-                    status={proposal.status}
-                    rows={proposal.rows}
-                    loading={!proposal.status}
-                    saveDisabled={!proposal.rows.some((row) => row.status === 'pending')}
-                    discardDisabled={!proposal.rows.some((row) => row.status === 'pending')}
-                    saveVariant={proposal.rows.some((row) => row.status === 'pending') ? 'primary' : 'default'}
-                    saveTestId="palette-save-all"
-                    discardTestId="palette-discard-all"
-                    reasonTestId="palette-proposal-reason"
-                    loadingTestId="palette-proposal-loading"
-                    onDiscard={() => setConfirmDiscardProposal(true)}
-                    onSave={() => void api.post('/v1/proposals/{id}/accept', { params: { path: { id: proposal.id } }, body: {} }).then(() => { session.setProposalId(proposal.id); setProposal(null); session.push(copy.saved) })}
-                  />
-                </div>
-                <DiscardProposalDialog
-                  open={confirmDiscardProposal}
-                  title={proposal.title}
-                  lines={proposal.lines}
-                  onCancel={() => setConfirmDiscardProposal(false)}
-                  onConfirm={() => {
-                    setConfirmDiscardProposal(false)
-                    void api.post('/v1/proposals/{id}/discard', { params: { path: { id: proposal.id } } }).then(() => setProposal(null))
-                  }}
-                />
-              </div>
-            ) : null}
           </div>
         ) : (
-            <CommandList id="palette-list" role="listbox">
+            <CommandList ref={paletteListRef} id="palette-list" data-testid="palette-list" role="listbox">
               {showEmpty ? (
                 <p className="palette-empty" data-testid="palette-empty">No results for &quot;{query.trim()}&quot;</p>
+              ) : null}
+              {showOpenStructureEmpty ? (
+                <p className="palette-empty" data-testid="palette-open-structure-empty">{OPEN_STRUCTURE_EMPTY_MESSAGE}</p>
               ) : null}
               {groups.map((group) => (
                 <div key={group.name} className="palette-group">
@@ -1530,7 +1596,10 @@ export function CommandPalette({
                         className={`${index === selected ? 'hit on' : 'hit'}${row.group === 'ask' ? ' ask' : ''}${row.disabled ? ' disabled' : ''}`}
                         disabled={row.disabled}
                         aria-disabled={row.disabled ? true : undefined}
-                        onPointerDown={() => setActive(index)}
+                        onPointerDown={() => {
+                          paletteActiveFromPointer.current = true
+                          setActive(index)
+                        }}
                         onSelect={() => run(row)}
                       >
                         <span className="hit-copy">
@@ -1560,7 +1629,10 @@ export function CommandPalette({
             role="option"
             aria-selected={rows.indexOf(askRow) === selected}
             className={rows.indexOf(askRow) === selected ? 'hit on ask' : 'hit ask'}
-            onPointerDown={() => setActive(rows.indexOf(askRow))}
+            onPointerDown={() => {
+              paletteActiveFromPointer.current = true
+              setActive(rows.indexOf(askRow))
+            }}
             onSelect={() => run(askRow)}
           >
             <span className="hit-copy">
@@ -1608,6 +1680,7 @@ function buildCatalog(
   focusViewId?: string | null,
 ): PaletteItem[] {
   const focused = focusViewId ? views.find((view) => view.id === focusViewId) : undefined
+  const trashActive = focused?.type === 'trash' ? readTrashActive() : null
   const showSelectSource = !focused || focused.type === 'object_table'
   const items: PaletteItem[] = [
     ...(suggestions > 0
@@ -1635,9 +1708,13 @@ function buildCatalog(
         group: 'views' as const,
         title: displayViewTitle(view, types, openTypeKey),
         subtitle: 'Open view',
+        ...(view.type === 'structure_tree'
+          ? { keywords: [view.type, view.title, 'tree', 'structure'] as string[] }
+          : {}),
       })),
     newFromTemplateRootItem(),
     { id: 'import:file', group: 'views', title: copy.importFile, subtitle: 'Drop an Excel or CSV file' },
+    { id: 'import:mappings', group: 'views', title: copy.importMappings, subtitle: 'Saved column mappings', keywords: ['import', 'mapping', 'saved', 'columns'] },
     ...(!views.some((view) => view.type === 'attribute_definitions')
       ? [{
           id: 'goto:attribute-definitions',
@@ -1649,11 +1726,18 @@ function buildCatalog(
       : []),
     { id: 'model:rename-key', group: 'model', title: copy.renameKey, subtitle: 'Change a key. External integrations that use the old key will stop working', keywords: ['rename', 'key', 'attribute'] },
     { id: 'model:allowed-trees', group: 'model', title: copy.allowedTrees, subtitle: 'Choose the trees a type may use', keywords: ['tree', 'structure', 'type'] },
-    ...registryPaletteRows({ theme, target: { feedbackEnabled } }),
+    ...registryPaletteRows({
+      theme,
+      target: {
+        feedbackEnabled,
+        ...(trashActive ? { trashKind: trashActive.kind, trashLabel: trashActive.name } : {}),
+      },
+    }),
     ...registryLayoutFocusPaletteRows(),
     { id: 'layout:reset_layout', group: 'views', title: 'Reset layout', subtitle: 'Restore the saved workspace layout' },
     { id: 'workspace:delete', group: 'views', title: 'Delete workspace', subtitle: 'Remove the active workspace and its layout', keywords: ['delete', 'remove', 'workspace'] },
     addViewRootItem(),
+    openStructureRootItem(),
     ...(showSelectSource ? [selectSourceRootItem()] : []),
   ]
   if (feedbackEnabled) {

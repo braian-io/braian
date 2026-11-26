@@ -13,6 +13,8 @@ export type UiContextSnapshot = {
   filter: string
   /** Typesense filter expression the focused table sends with its search. */
   filterExpression: string
+  /** Free-text search (`q`) the focused table sends with its search. */
+  q: string
   sort: string
   columns: UiColumn[]
   /** Header the user last clicked in the focused table (for Move column left/right). */
@@ -34,7 +36,7 @@ const blankFrame = (): Frame => ({ workspace: null, panes: [], focused: null, la
 let frame: Frame = blankFrame()
 let markedId: string | null = null
 let markedObject: SelectedObject | null = null
-const tables = new Map<string, { filter: string; sort: string; filterExpression: string }>()
+const tables = new Map<string, { filter: string; sort: string; filterExpression: string; q: string }>()
 const tableColumns = new Map<string, UiColumn[]>()
 const columnPrefsOverrides = new Map<string, boolean>()
 const activeColumns = new Map<string, string>()
@@ -45,6 +47,8 @@ const enriched = new Map<string, SelectedObject>()
 /** Selected tree node in one view, used as a live peer source (Notion 103 PR 2). */
 export type TreeNodeSelection = { structureId: string; structureKey: string; groupKey: string }
 const treeNodes = new Map<string, TreeNodeSelection>()
+export type TrashActiveRow = { kind: string; id: string; name: string }
+let trashActive: TrashActiveRow | null = null
 export const EMPTY_SELECTION: SelectedObject[] = []
 const selectionListeners = new Set<() => void>()
 let selectionVersion = 0
@@ -87,6 +91,7 @@ export function resetUiContext() {
   selections.clear()
   enriched.clear()
   treeNodes.clear()
+  trashActive = null
   bumpSelection()
 }
 
@@ -117,8 +122,8 @@ export function readMarkedSelection(): SelectedObject | null {
   return markedObject
 }
 
-export function publishTable(viewId: string, filter: string, sort: string, filterExpression = '') {
-  tables.set(viewId, { filter, sort, filterExpression })
+export function publishTable(viewId: string, filter: string, sort: string, filterExpression = '', q = '') {
+  tables.set(viewId, { filter, sort, filterExpression, q })
 }
 
 export function publishColumns(viewId: string, columns: UiColumn[]) {
@@ -240,10 +245,21 @@ export function readUiContext(): UiContextSnapshot {
     selection,
     filter: table?.filter ?? '',
     filterExpression: table?.filterExpression ?? '',
+    q: table?.q ?? '',
     sort: table?.sort ?? '',
     columns: columns.map((column) => ({ ...column })),
     activeColumn,
     columnPrefsOverride,
     language: frame.language || 'en',
   }
+}
+
+/** Active row in the Trash table for Ctrl+K command targets. */
+export function publishTrashActive(row: TrashActiveRow | null) {
+  trashActive = row
+  bumpSelection()
+}
+
+export function readTrashActive(): TrashActiveRow | null {
+  return trashActive
 }

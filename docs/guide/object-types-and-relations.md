@@ -83,8 +83,24 @@ The attribute types offered in the UI are:
 - `File`
 
 The table lets you edit the name, key, type, unit, required flag, show-by-default
-flag, languages, and searchable flag. The row menu adds `Multiple`, `Filterable`,
-`Sortable`, `Remove from this type`, and `Delete attribute everywhere…`.
+flag, languages, and searchable flag. Drag a row or use Alt+ArrowUp/Down (and the
+move controls) to change attribute order; the new order is staged until you save.
+Group attributes use the same reordering. Value-list options in **List values** use
+the same pattern and stage an `update_value_list` step with the ordered options.
+
+The type name, key and **Allowed trees** checkboxes in the Type attributes header
+follow the same local table draft as the attribute rows, so they are discarded,
+restored and saved together and covered by the leave dialog.
+
+Extra columns carry the attribute rules:
+`Multiple`, `Filterable`, and `Sortable`; for numbers `Min`, `Max`, and
+`Integer`; for text `Max length` and `Text form` (short or long); for file
+attributes `Media`; and for value-list attributes the linked `Value list`. Cells
+that do not apply to the row’s type stay blank. Standard attributes keep their
+rule columns read-only. The type column is read-only while the attribute already
+has values on objects (the same usage count as **Used in** on Attribute
+definitions). The row menu keeps `Remove from this type` and
+`Delete attribute everywhere…`.
 
 `Attribute definitions` is the shared attribute library across the model. It lists
 `Name`, `Key`, `Type`, `Unit`, `Value lists`, `Flags`, and `Used in`, and its actions
@@ -98,6 +114,24 @@ values of the selected value list.
 Most type, attribute, link, value-list, and unit edits are collected in a draft. The
 model bar shows `N unsaved changes` with `Save` and `Discard draft`. Press `Ctrl+S` to
 open the save review for the draft.
+
+Edits in the type-attributes table are also kept in the browser (per user and workspace)
+until you save or discard them. Only fields you actually changed are restored after a
+reload; if the model changed on the server in the meantime, conflicting fields are
+dropped with a notice instead of overwriting the newer values. A trimmed local draft
+(such as a create row whose key now exists on the server) shows a short toast when it
+is restored.
+
+In that table, `Save` stages the pending attribute edits the same way as elsewhere in
+the model workspace and opens the review flow when one is needed. While the table draft
+is dirty, closing or reloading the browser tab triggers the browser's unsaved-changes
+warning. Switching to another type or workspace opens a dialog with `Save`, `Discard`,
+and `Cancel`; `Escape` or the close control dismiss the dialog and keep the draft.
+The same guard applies when you open the Review workspace, switch workspace from an
+agent command, or land on a neighbour workspace after deleting the current one.
+If another browser tab writes the same draft key while this tab still has unsaved
+edits, a non-blocking notice offers to load that copy instead of overwriting
+silently.
 
 Language tags are stored as given: `sv` and `sv-SE` are different values. Value lists
 have stable option codes with labels per language. A unit belongs to a unit family
@@ -118,11 +152,18 @@ plus the row that points from one object to another. The link object can have it
 attribute values. Link objects are keyless and are not listed as normal rows.
 
 Create one from the `Link types` table with `New link type`, or from `Ctrl+K` and `New
-link type`. The dialog asks for `Name`, `From type`, and `To type`; new link types
-start as many-to-many. Cardinality and link attributes are part of the model document
-that Braian loads, but the current dialog does not expose them; it creates a
-many-to-many link type without extra link attributes. Link-type administration lives
-in the model workspace's Link types table.
+link type`. The dialog asks for the link type `Name`, one `From type` and one
+`To type`, a forward and reverse label for each direction, and the cardinality
+(`One` or `Many`) on each side. You can change the same fields later in the
+`Link types` table columns. Pick a link type row and edit its link attributes in
+the `Type attributes` pane, the same way as for object types.
+
+Saving runs through the model draft and the usual review flow. Braian blocks changes
+that would break data already in the database: tightening cardinality to `One` when an
+object already has several links of that type on that side, or narrowing the allowed
+from/to types when existing links would no longer be valid. The review dialog shows the
+blocking message and lists up to twenty offending objects (with more counted after
+that); nothing is saved until the conflict is resolved.
 
 ## Add and remove links
 
@@ -142,12 +183,13 @@ Links between objects are edited on the object's `Detail` view:
 - A cardinality conflict is explained inside the dialog, so the status bar does not
   show a raw save failure for it.
 - Select a link row and press `Ctrl+Enter` for the link menu, which contains `Edit link
-  attributes` and `Remove link`.
+  attributes` and `Remove link`. The row also has a visible `Edit link attributes` action.
+  Numeric link attributes such as `Sort order` can be edited inline on the row.
 - In an object table you can also drag a row onto another table to create a link.
 
 Create a link from the detail pane's link section, by dragging a row onto it, or from
 a node in the graph. Remove a link from the link section; if it has values the app
-asks first and offers undo.
+asks first. Deleted links move to Trash and can be restored from there.
 
 ## Versioned definitions
 

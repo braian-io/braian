@@ -3,7 +3,7 @@
 use axum::http::StatusCode;
 use braian_model::{
     ApplyError, ChangeImpact, DefinitionSet, ModelChange, StructureErrorCode, apply_all,
-    change_needs_reindex, deletes_data, interpret, preview,
+    deletes_data, draft_needs_reindex, interpret, preview,
 };
 use braian_rules::CompiledModel;
 use braian_store::{Error, ProposalRow, ProposalWrite};
@@ -36,7 +36,22 @@ pub async fn propose_with_defs(
     defs: &DefinitionSet,
 ) -> Result<Value, Problem> {
     let changes = changes_from(name, args, defs)?;
+    file_model_proposal(state, identity, changes, defs, None, args).await
+}
+
+/// One model proposal. Nothing is written until the proposal is accepted.
+pub(crate) async fn file_model_proposal(
+    state: &AppState,
+    identity: &Identity,
+    changes: Vec<ModelChange>,
+    defs: &DefinitionSet,
+    title: Option<&str>,
+    args: &Value,
+) -> Result<Value, Problem> {
     for change in &changes {
+        if let ModelChange::UpsertCatalog { catalog } = change {
+            reject_catalog_key_change(state, catalog).await?;
+        }
         crate::structures::guard_model_change(state, &identity.actor, change, false).await?;
     }
     if changes.is_empty() {
@@ -51,7 +66,10 @@ pub async fn propose_with_defs(
     }
     let (after, impact) = preview(defs, &changes).map_err(model_status)?;
     CompiledModel::compile(&after).map_err(Problem::definitions)?;
-    let title = title_for(args, &impact.lines);
+    let title = title
+        .map(str::to_owned)
+        .filter(|text| !text.is_empty())
+        .unwrap_or_else(|| title_for(args, &impact.lines));
     let source = match identity.kind {
         braian_store::PrincipalKind::Agent => "agent",
         braian_store::PrincipalKind::Integration => "import",
@@ -193,6 +211,7 @@ pub async fn apply_row(
             Err(error) => return Err(store_status(error)),
         };
         let current = defs.model_revision;
+        let before = defs.clone();
         let purge = braian_model::purge_for(&defs, std::slice::from_ref(&change));
         apply_all(&mut defs, std::slice::from_ref(&change)).map_err(model_status)?;
         defs.model_revision = current + 1;
@@ -214,7 +233,7 @@ pub async fn apply_row(
         {
             Ok(Some(receipt)) => {
                 state.models.invalidate().await;
-                if change_needs_reindex(&change) {
+                if draft_needs_reindex(&before, std::slice::from_ref(&change)) {
                     state.store.request_reindex().await.map_err(store_status)?;
                 }
                 state.emit(json!({
@@ -327,31 +346,62 @@ fn ownership_references_profile(key: &str, attributes: &[String]) -> Problem {
     )
 }
 
+/// The catalog this step updates, looked up by the new key or `renamed_from`.
+async fn stored_catalog(
+    state: &AppState,
+    catalog: &braian_model::Catalog,
+) -> Result<Option<braian_store::CatalogRecord>, Problem> {
+    match state
+        .store
+        .catalog_by_key(&catalog.key)
+        .await
+        .map_err(store_status)?
+    {
+        Some(found) => Ok(Some(found)),
+        None => match catalog.renamed_from.as_deref() {
+            Some(old) => state.store.catalog_by_key(old).await.map_err(store_status),
+            None => Ok(None),
+        },
+    }
+}
+
+/// A catalog key is assigned when the catalog is created. After that the key
+/// stays, including on the master catalog.
+pub(crate) async fn reject_catalog_key_change(
+    state: &AppState,
+    catalog: &braian_model::Catalog,
+) -> Result<(), Problem> {
+    let Some(found) = stored_catalog(state, catalog).await? else {
+        return Ok(());
+    };
+    if found.key == catalog.key {
+        return Ok(());
+    }
+    if found.kind == braian_store::CatalogKind::Master {
+        return Err(Problem::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "catalog_key_locked",
+            "The master catalog key cannot be changed.",
+        ));
+    }
+    Err(Problem::new(
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "catalog_key_locked",
+        "Catalog key cannot be changed after creation.",
+    ))
+}
+
 /// Catalogs, merge profiles and ownership live outside the definition set.
 /// Their keys resolve to ids just before the row commits.
-async fn reference_write(
+pub(crate) async fn reference_write(
     state: &AppState,
     proposal_id: Uuid,
     change: &ModelChange,
 ) -> Result<Option<ProposalWrite>, Problem> {
     match change {
         ModelChange::UpsertCatalog { catalog } => {
-            let existing = match state
-                .store
-                .catalog_by_key(&catalog.key)
-                .await
-                .map_err(store_status)?
-            {
-                Some(found) => Some(found),
-                None => match catalog.renamed_from.as_deref() {
-                    Some(old) => state
-                        .store
-                        .catalog_by_key(old)
-                        .await
-                        .map_err(store_status)?,
-                    None => None,
-                },
-            };
+            reject_catalog_key_change(state, catalog).await?;
+            let existing = stored_catalog(state, catalog).await?;
             let kind = match catalog.kind {
                 braian_model::CatalogKind::Master => "master",
                 braian_model::CatalogKind::Source => "source",
@@ -697,6 +747,7 @@ pub(crate) fn changes_from(
                 .and_then(Value::as_str)
                 .unwrap_or("")
                 .to_owned(),
+            description: optional_str(args, "description"),
             kind: args
                 .get("kind")
                 .and_then(Value::as_str)
@@ -735,13 +786,13 @@ pub(crate) fn changes_from(
         }]),
         "model.attach_attribute" => Ok(vec![ModelChange::AttachAttribute {
             attribute: required_str(args, "attribute")?,
-            type_key: optional_str(args, "type"),
+            type_key: optional_str(args, "type").or_else(|| optional_str(args, "type_key")),
             structure: optional_str(args, "structure"),
             group: optional_str(args, "group"),
         }]),
         "model.detach_attribute" => Ok(vec![ModelChange::DetachAttribute {
             attribute: required_str(args, "attribute")?,
-            type_key: optional_str(args, "type"),
+            type_key: optional_str(args, "type").or_else(|| optional_str(args, "type_key")),
             structure: optional_str(args, "structure"),
             group: optional_str(args, "group"),
         }]),
@@ -756,6 +807,11 @@ pub(crate) fn changes_from(
         "model.update_attribute" => Ok(vec![ModelChange::UpdateAttribute {
             key: required_str(args, "key")?,
             label: optional_str(args, "label"),
+            description: optional_str(args, "description"),
+            clear_description: args
+                .get("clear_description")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
             kind: optional_str(args, "kind"),
             unit: optional_str(args, "unit"),
             clear_unit: args
@@ -927,12 +983,23 @@ pub(crate) fn changes_from(
                 None
             },
         }]),
-        "model.create_unit_family" => Ok(vec![ModelChange::CreateUnitFamily {
-            key: required_str(args, "key")?,
-            dimension: optional_str(args, "dimension"),
-            base_unit: required_str(args, "base_unit")?,
-            units: unit_specs(args),
-        }]),
+        "model.create_unit_family" => {
+            let key = required_str(args, "key")?;
+            let units = unit_specs(args);
+            // A family created earlier in this draft is already in `defs` when the
+            // caller plans against the draft preview. Creating it again adds the
+            // new unit instead of storing a no-op create.
+            if braian_model::refs::unit_family_id(defs, &key).is_ok() {
+                Ok(vec![extend_unit_family(defs, &key, units)?])
+            } else {
+                Ok(vec![ModelChange::CreateUnitFamily {
+                    key,
+                    dimension: optional_str(args, "dimension"),
+                    base_unit: required_str(args, "base_unit")?,
+                    units,
+                }])
+            }
+        }
         "model.update_unit_family" => Ok(vec![ModelChange::UpdateUnitFamily {
             key: required_str(args, "key")?,
             dimension: optional_str(args, "dimension"),
@@ -947,6 +1014,49 @@ pub(crate) fn changes_from(
                 None
             },
         }]),
+        "model.add_unit" => Ok(vec![update_family_units(
+            defs,
+            &required_str(args, "unit_family")?,
+            None,
+            |specs| {
+                specs.push(braian_model::UnitSpec {
+                    code: required_str(args, "code")?,
+                    factor: optional_str(args, "factor").unwrap_or_else(|| "1".into()),
+                    offset: optional_str(args, "offset").unwrap_or_default(),
+                    symbol: optional_str(args, "symbol").unwrap_or_default(),
+                    label: optional_str(args, "label").unwrap_or_default(),
+                });
+                Ok(())
+            },
+        )?]),
+        "model.update_unit" => Ok(vec![update_family_units(
+            defs,
+            &required_str(args, "unit_family")?,
+            optional_str(args, "base_unit"),
+            |specs| {
+                let unit = required_str(args, "unit")?;
+                let row = specs
+                    .iter_mut()
+                    .find(|item| item.code == unit)
+                    .ok_or_else(|| bad(format!("unknown unit {unit}")))?;
+                if let Some(factor) = optional_str(args, "factor") {
+                    row.factor = factor;
+                }
+                if let Some(offset) = optional_str(args, "offset") {
+                    row.offset = offset;
+                }
+                if let Some(symbol) = optional_str(args, "symbol") {
+                    row.symbol = symbol;
+                }
+                if let Some(label) = optional_str(args, "label") {
+                    row.label = label;
+                }
+                if let Some(code) = optional_str(args, "new_code") {
+                    row.code = code;
+                }
+                Ok(())
+            },
+        )?]),
         "model.update_structure" => Ok(vec![ModelChange::RenameStructure {
             structure: required_str(args, "structure")?,
             label: required_str(args, "label")?,
@@ -1026,6 +1136,11 @@ fn bounds_from(args: &Value) -> braian_model::AttributeBounds {
             .and_then(Value::as_bool)
             .unwrap_or(false),
         unit_family: optional_str(args, "unit_family"),
+        default_unit: optional_str(args, "default_unit"),
+        clear_default_unit: args
+            .get("clear_default_unit")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
     }
 }
 
@@ -1072,6 +1187,74 @@ fn named_options(args: &Value, key: &str) -> Vec<braian_model::NamedOption> {
         .unwrap_or_default()
 }
 
+fn extend_unit_family(
+    defs: &DefinitionSet,
+    family_key: &str,
+    incoming: Vec<braian_model::UnitSpec>,
+) -> Result<ModelChange, Problem> {
+    let mut added = false;
+    update_family_units(defs, family_key, None, |specs| {
+        for unit in incoming {
+            if specs
+                .iter()
+                .any(|item| item.code.eq_ignore_ascii_case(&unit.code))
+            {
+                continue;
+            }
+            specs.push(unit);
+            added = true;
+        }
+        if !added {
+            return Err(Problem::new(
+                StatusCode::BAD_REQUEST,
+                "model",
+                "unit already exists",
+            ));
+        }
+        Ok(())
+    })
+}
+
+fn update_family_units(
+    defs: &DefinitionSet,
+    family_key: &str,
+    base_unit: Option<String>,
+    edit: impl FnOnce(&mut Vec<braian_model::UnitSpec>) -> Result<(), Problem>,
+) -> Result<ModelChange, Problem> {
+    let id = braian_model::refs::unit_family_id(defs, family_key)
+        .map_err(|error| Problem::new(StatusCode::BAD_REQUEST, "model", error))?;
+    let family = defs
+        .unit_families
+        .iter()
+        .find(|item| item.id == id)
+        .ok_or_else(|| {
+            Problem::new(
+                StatusCode::NOT_FOUND,
+                "model",
+                format!("unknown unit family {family_key}"),
+            )
+        })?;
+    let mut specs = family
+        .units
+        .iter()
+        .map(|unit| braian_model::UnitSpec {
+            code: unit.code.clone(),
+            factor: unit.factor.to_string(),
+            offset: unit.offset.to_string(),
+            symbol: unit.symbol.clone(),
+            label: unit.labels.values().next().cloned().unwrap_or_default(),
+        })
+        .collect::<Vec<_>>();
+    edit(&mut specs)?;
+    Ok(ModelChange::UpdateUnitFamily {
+        key: family.key.clone(),
+        dimension: None,
+        clear_dimension: false,
+        base_unit,
+        units: Some(specs),
+    })
+}
+
 fn unit_specs(args: &Value) -> Vec<braian_model::UnitSpec> {
     args.get("units")
         .and_then(Value::as_array)
@@ -1086,6 +1269,21 @@ fn unit_specs(args: &Value) -> Vec<braian_model::UnitSpec> {
                             .get("factor")
                             .and_then(Value::as_str)
                             .unwrap_or("1")
+                            .to_owned(),
+                        offset: item
+                            .get("offset")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_owned(),
+                        symbol: item
+                            .get("symbol")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_owned(),
+                        label: item
+                            .get("label")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
                             .to_owned(),
                     })
                 })

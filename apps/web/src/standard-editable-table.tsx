@@ -23,6 +23,7 @@ import type { CommandTarget, MenuContext } from './command-registry'
 import { openSharedContextMenu, prefersNativeContextMenu } from './shared-context-menu'
 import { Button } from './components/ui/button'
 import { Checkbox } from './components/ui/checkbox'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select'
 import { StandardTableChrome } from './standard-table'
 import { copy } from './i18n'
 import { reportWriteError } from './write-error'
@@ -33,11 +34,19 @@ export type StandardColumnType = 'text' | 'number' | 'boolean' | 'date' | 'datet
 export type StandardColumn<T> = {
   id: string
   header: string
+  /** Header cell title (column tooltip); defaults to header. */
+  headerTitle?: string
   width?: number | string
   type?: StandardColumnType
   editable?: boolean
   /** Options for enum columns. */
   options?: Array<{ value: string; label: string }>
+  /** When true, enum cells edit with the themed Select instead of a native select. */
+  enumSelect?: boolean
+  /** Return an error message to keep the value in the editor; nothing is staged until it passes. */
+  validate?: (value: string) => string | undefined
+  /** When true, the cell is visibly empty and cannot be edited. */
+  hideCell?: (row: T) => boolean
   read: (row: T) => string | number | boolean | null | undefined
   write?: (row: T, value: string) => T
   /** Render display cell; defaults to String(read(row)). Use 'checkbox' for a toggleable boolean. */
@@ -65,6 +74,8 @@ export type StandardEditableTableProps<T extends { id: string }> = {
   newRowLabel?: string
   /** Persist all drafts (same as Ctrl+S). */
   onReviewAndSave?: () => void | Promise<void>
+  /** When set, controls the Save button instead of local draft rows alone. */
+  reviewVisible?: boolean
   /** Called when a row is activated (click / Enter on non-edit). */
   onActivateRow?: (row: T) => void
   /**
@@ -74,6 +85,8 @@ export type StandardEditableTableProps<T extends { id: string }> = {
   activeRowId?: string | null
   filterValue?: string
   onFilterChange?: (value: string) => void
+  /** Extra text matched by the toolbar filter, for values not shown in a column. */
+  rowFilterText?: (row: T) => string
   filterOnKeyDown?: (event: ReactKeyboardEvent<HTMLInputElement>) => void
   testId?: string
   /** Enable inline editing (Enter / F2). Off for product object table. */
@@ -217,10 +230,12 @@ export function StandardEditableTable<T extends { id: string }>({
   onNewRow,
   newRowLabel = copy.newRow,
   onReviewAndSave,
+  reviewVisible: reviewVisibleProp,
   onActivateRow,
   activeRowId: activeRowIdProp,
   filterValue,
   onFilterChange,
+  rowFilterText,
   filterOnKeyDown,
   testId = 'standard-editable-table',
   editable = true,
@@ -241,12 +256,14 @@ export function StandardEditableTable<T extends { id: string }>({
 }: StandardEditableTableProps<T>) {
   const [editing, setEditing] = useState<EditCell | null>(null)
   const [editValue, setEditValue] = useState('')
+  const [editError, setEditError] = useState('')
   const [internalActiveRowId, setInternalActiveRowId] = useState<string | null>(null)
   const [reorderOrder, setReorderOrder] = useState<string[] | null>(null)
   const inputRef = useRef<HTMLInputElement | HTMLSelectElement | null>(null)
   const gridRef = useRef<HTMLDivElement | null>(null)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
   const dirty = Object.keys(draftRows).length > 0
+  const reviewVisible = reviewVisibleProp ?? dirty
   const controlled = activeRowIdProp !== undefined
   const activeRowId = controlled ? activeRowIdProp : internalActiveRowId
   const canReorder = Boolean(reorderable && onDraftRowsChange)
@@ -286,10 +303,12 @@ export function StandardEditableTable<T extends { id: string }>({
   const filtered = useMemo(() => {
     const needle = (filterValue ?? '').trim().toLowerCase()
     if (!needle) return merged
-    return merged.filter((row) =>
-      columns.some((column) => String(column.read(row) ?? '').toLowerCase().includes(needle)),
-    )
-  }, [merged, filterValue, columns])
+    return merged.filter((row) => {
+      const extra = rowFilterText?.(row) ?? ''
+      if (extra.toLowerCase().includes(needle)) return true
+      return columns.some((column) => String(column.read(row) ?? '').toLowerCase().includes(needle))
+    })
+  }, [merged, filterValue, columns, rowFilterText])
 
   useEffect(() => {
     if (editing) inputRef.current?.focus()
@@ -336,6 +355,7 @@ export function StandardEditableTable<T extends { id: string }>({
   const rowReadOnly = (row: T) => Boolean(rowFlags?.(row)?.readOnly)
 
   const columnEditable = (row: T, column: StandardColumn<T>) => {
+    if (column.hideCell?.(row)) return false
     if (rowReadOnly(row)) return false
     if (!editable || column.editable === false || column.type === 'readonly' || !column.write) return false
     if (canEdit && !canEdit(row, column)) return false
@@ -399,6 +419,7 @@ export function StandardEditableTable<T extends { id: string }>({
     setEditing({ rowId: row.id, columnId: column.id })
     const raw = column.read(row)
     setEditValue(raw === null || raw === undefined ? '' : String(raw))
+    setEditError('')
   }
 
   useEffect(() => {
@@ -418,13 +439,28 @@ export function StandardEditableTable<T extends { id: string }>({
     if (!editing) return
     const row = merged.find((item) => item.id === editing.rowId)
     const column = columns.find((item) => item.id === editing.columnId)
+    if (!row || !column?.write) {
+      setEditing(null)
+      setEditError('')
+      return
+    }
+    if (column.validate) {
+      const message = column.validate(editValue)
+      if (message) {
+        setEditError(message)
+        return
+      }
+    }
     setEditing(null)
-    if (!row || !column?.write) return
+    setEditError('')
     const next = column.write(row, editValue)
     patchRow(row.id, next)
   }
 
-  const cancelEdit = () => setEditing(null)
+  const cancelEdit = () => {
+    setEditing(null)
+    setEditError('')
+  }
 
   const editableColumnsFor = (row: T) => columns.filter((column) => columnEditable(row, column))
 
@@ -485,7 +521,7 @@ export function StandardEditableTable<T extends { id: string }>({
     if (!editable || !onReviewAndSave) return
     const onKey = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's') return
-      if (!dirty) return
+      if (!reviewVisible) return
       event.preventDefault()
       void Promise.resolve(onReviewAndSave()).catch((reason: unknown) => {
         reportWriteError(reason)
@@ -493,7 +529,7 @@ export function StandardEditableTable<T extends { id: string }>({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [editable, dirty, onReviewAndSave])
+  }, [editable, reviewVisible, onReviewAndSave])
 
   const resolveContext = (row: T | null): MenuContext | null => {
     if (!menuContext) return null
@@ -587,17 +623,31 @@ export function StandardEditableTable<T extends { id: string }>({
       onKeyDown: (event) => onRowKey(event, row),
     }
     const cells = columns.map((column) => {
+      if (column.hideCell?.(row)) {
+        return (
+          <div
+            key={column.id}
+            className="standard-grid-cell"
+            role="gridcell"
+            data-column={column.id}
+            data-disabled="true"
+            style={column.width ? { width: column.width, flex: 'none', minWidth: column.width } : undefined}
+          />
+        )
+      }
       const isEditing = editing?.rowId === row.id && editing.columnId === column.id
       const raw = column.read(row)
       const readText = raw === null || raw === undefined ? '' : String(raw)
       const cellTitle = column.title?.(row) || readText
       const cellTestId = column.cellTestId?.(row)
       const boolCell = column.display === 'checkbox'
-      const editableBool = boolCell && columnEditable(row, column)
+      const editableCell = columnEditable(row, column)
+      const editableBool = boolCell && editableCell
       const cellClass = [
         'standard-grid-cell',
         column.truncate ? 'truncate' : '',
         boolCell ? 'standard-grid-cell-bool' : '',
+        isEditing ? 'standard-grid-cell-editing' : '',
       ]
         .filter(Boolean)
         .join(' ')
@@ -607,40 +657,70 @@ export function StandardEditableTable<T extends { id: string }>({
           className={cellClass}
           role="gridcell"
           data-column={column.id}
-          data-disabled={boolCell && !editableBool ? 'true' : undefined}
+          data-disabled={!editableCell ? 'true' : undefined}
           style={column.width ? { width: column.width, flex: 'none', minWidth: column.width } : undefined}
           title={isEditing ? undefined : cellTitle || undefined}
           onDoubleClick={() => beginEdit(row, column)}
         >
           {isEditing ? (
-            column.type === 'enum' && column.options ? (
-              <select
-                ref={(node) => {
-                  inputRef.current = node
-                }}
-                data-testid={cellTestId ?? 'standard-cell-editor'}
-                value={editValue}
-                onChange={(event) => setEditValue(event.target.value)}
-                onBlur={commitEdit}
-                onKeyDown={(event) => {
-                  if (event.key === 'Escape') {
-                    event.preventDefault()
-                    cancelEdit()
-                  } else if (event.key === 'Enter') {
-                    event.preventDefault()
-                    commitEdit()
-                  } else if (event.key === 'Tab') {
-                    event.preventDefault()
-                    moveEdit(row, column, event.shiftKey ? -1 : 1)
-                  }
-                }}
-              >
-                {column.options.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+            column.type === 'enum' && column.options && column.enumSelect ? (
+              <div className="standard-cell-editor-stack">
+                <Select
+                  value={editValue || undefined}
+                  onValueChange={(value) => {
+                    setEditValue(value)
+                    setEditError('')
+                    if (!column.write) return
+                    patchRow(row.id, column.write(row, value))
+                    setEditing(null)
+                  }}
+                >
+                  <SelectTrigger
+                    data-testid={cellTestId ?? 'standard-cell-editor'}
+                    aria-label={column.header}
+                    className="standard-cell-select-trigger"
+                  >
+                    <SelectValue placeholder={copy.noValue} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {column.options.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {editError ? <span className="cell-edit-error">{editError}</span> : null}
+              </div>
+            ) : column.type === 'enum' && column.options ? (
+              <div className="standard-cell-editor-stack">
+                <select
+                  ref={(node) => {
+                    inputRef.current = node
+                  }}
+                  data-testid={cellTestId ?? 'standard-cell-editor'}
+                  value={editValue}
+                  onChange={(event) => setEditValue(event.target.value)}
+                  onBlur={commitEdit}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') {
+                      event.preventDefault()
+                      cancelEdit()
+                    } else if (event.key === 'Enter') {
+                      event.preventDefault()
+                      commitEdit()
+                    } else if (event.key === 'Tab') {
+                      event.preventDefault()
+                      moveEdit(row, column, event.shiftKey ? -1 : 1)
+                    }
+                  }}
+                >
+                  {column.options.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                {editError ? <span className="cell-edit-error">{editError}</span> : null}
+              </div>
             ) : column.type === 'boolean' ? (
               <input
                 ref={(node) => {
@@ -667,28 +747,38 @@ export function StandardEditableTable<T extends { id: string }>({
                 }}
               />
             ) : (
-              <input
-                ref={(node) => {
-                  inputRef.current = node
-                }}
-                data-testid={cellTestId ?? 'standard-cell-editor'}
-                type={column.type === 'number' ? 'number' : column.type === 'date' ? 'date' : column.type === 'datetime' ? 'datetime-local' : 'text'}
-                value={editValue}
-                onChange={(event) => setEditValue(event.target.value)}
-                onBlur={commitEdit}
-                onKeyDown={(event) => {
-                  if (event.key === 'Escape') {
-                    event.preventDefault()
-                    cancelEdit()
-                  } else if (event.key === 'Enter') {
-                    event.preventDefault()
+              <div className="standard-cell-editor-stack">
+                <input
+                  ref={(node) => {
+                    inputRef.current = node
+                  }}
+                  data-testid={cellTestId ?? 'standard-cell-editor'}
+                  aria-label={column.header}
+                  type={column.type === 'number' ? 'number' : column.type === 'date' ? 'date' : column.type === 'datetime' ? 'datetime-local' : 'text'}
+                  value={editValue}
+                  onChange={(event) => {
+                    setEditValue(event.target.value)
+                    if (editError) setEditError('')
+                  }}
+                  onBlur={() => {
+                    if (column.validate?.(editValue)) return
                     commitEdit()
-                  } else if (event.key === 'Tab') {
-                    event.preventDefault()
-                    moveEdit(row, column, event.shiftKey ? -1 : 1)
-                  }
-                }}
-              />
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') {
+                      event.preventDefault()
+                      cancelEdit()
+                    } else if (event.key === 'Enter') {
+                      event.preventDefault()
+                      commitEdit()
+                    } else if (event.key === 'Tab') {
+                      event.preventDefault()
+                      moveEdit(row, column, event.shiftKey ? -1 : 1)
+                    }
+                  }}
+                />
+                {editError ? <span className="cell-edit-error">{editError}</span> : null}
+              </div>
             )
           ) : column.display === 'checkbox' ? (
             <Checkbox
@@ -713,7 +803,7 @@ export function StandardEditableTable<T extends { id: string }>({
           ) : column.type === 'boolean' ? (
             <span data-testid={cellTestId}>{raw === true ? copy.yes : '—'}</span>
           ) : (
-            <span data-testid={cellTestId}>{readText || '—'}</span>
+            <span data-testid={cellTestId}>{readText || (column.display ? '' : '—')}</span>
           )}
         </div>
       )
@@ -749,7 +839,7 @@ export function StandardEditableTable<T extends { id: string }>({
       filterValue={filterValue}
       onFilterChange={onFilterChange}
       filterOnKeyDown={filterOnKeyDown}
-      reviewVisible={editable && dirty}
+      reviewVisible={editable && reviewVisible}
       onReview={onReview}
     >
       {belowBar}
@@ -769,7 +859,7 @@ export function StandardEditableTable<T extends { id: string }>({
               className={column.truncate ? 'standard-grid-cell column-head truncate' : 'standard-grid-cell column-head'}
               role="columnheader"
               data-column={column.id}
-              title={column.header}
+              title={column.headerTitle ?? column.header}
               style={column.width ? { width: column.width, flex: 'none', minWidth: column.width } : undefined}
             >
               {column.header}

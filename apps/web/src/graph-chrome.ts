@@ -158,8 +158,12 @@ export function requestSystemFit(input: {
   if (input.event === 'sheet' && input.placement !== 'sheet') return 'none'
   if (input.event === 'initial') {
     if (input.baselineFrozen) return 'none'
-    if (input.loadEnded === false || input.namesPending === true) return 'none'
+    if (input.loadEnded === false) return 'none'
   }
+  // A fit (F5, Close full size, resize, first sheet) waits for the same resolved
+  // names. An earlier pass would measure a different node set than the settled
+  // frame and land on a different zoom. A user camera is still remapped.
+  if (input.namesPending === true && !input.moved) return 'none'
   return input.moved ? 'remap' : 'fit'
 }
 

@@ -1,12 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
-import { mainTable, setTheme } from './ui'
-
-async function showProducts(page: Page) {
-  await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
-  await page.locator('.pane-tab[data-view-type="object_table"]').filter({ hasText: /^Products/ }).first().click()
-  await expect(mainTable(page).getByTestId('object-row').first()).toBeVisible({ timeout: 60_000 })
-}
+import { agentPaneTab, agentSessionView, mainTable, openAgentDraftInTable, resetProductsLayout, setTheme, showProducts } from './ui'
 
 async function login(page: Page) {
   const demo = demoCredentials()
@@ -15,7 +9,7 @@ async function login(page: Page) {
   await page.getByTestId('password').fill(demo.password)
   await page.getByRole('button', { name: 'Sign in' }).click()
   await expect(page.locator('nav.tabs')).toBeVisible({ timeout: 60_000 })
-  await showProducts(page)
+  await resetProductsLayout(page)
 }
 
 async function displayedName(cell: Locator): Promise<string> {
@@ -68,13 +62,12 @@ async function ask(page: Page, prompt: string) {
   await page.keyboard.press('Control+j')
 }
 
-function agentTab(page: Page, title: string) {
-  const exact = new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`)
-  return page.locator('.pane-tab[data-view-type="agent"]').filter({ hasText: exact }).last()
+function agentTab(page: Page, sessionTitle?: string) {
+  return agentPaneTab(page, sessionTitle)
 }
 
 function agentView(page: Page, title: string) {
-  return page.getByTestId('agent-view').filter({ has: page.getByRole('heading', { level: 2, name: title, exact: true }) }).last()
+  return agentSessionView(page, title)
 }
 
 test('the agent tab opens and the rest of the app stays usable', async ({ page }) => {
@@ -97,7 +90,7 @@ test('the agent tab opens and the rest of the app stays usable', async ({ page }
   await expect(page.getByTestId('object-detail')).toBeVisible()
   await tab.click()
   await expect(view.getByTestId('agent-status')).toHaveAttribute('data-status', 'done', { timeout: 30_000 })
-  await expect(view.getByTestId('agent-answer')).toHaveCount(0)
+  await expect(view.getByTestId('agent-follow-up')).toBeVisible()
 })
 
 test('the agent tab and its status survive a reload without chat history', async ({ page }) => {
@@ -107,14 +100,14 @@ test('the agent tab and its status survive a reload without chat history', async
   await ask(page, title)
   const view = agentView(page, title)
   await expect(view).toContainText(title)
-  await expect(view.getByTestId('agent-answer')).toHaveCount(0, { timeout: 30_000 })
+  await expect(view.getByTestId('agent-chat-user')).toContainText(title, { timeout: 30_000 })
   await page.reload()
   await showProducts(page)
   const tab = agentTab(page, title)
   await expect(tab).toBeVisible()
   await tab.click()
   await expect(agentView(page, title)).toContainText(title)
-  await expect(agentView(page, title).getByTestId('agent-answer')).toHaveCount(0)
+  await expect(agentView(page, title).getByTestId('agent-chat-user')).toContainText(title)
 })
 
 test('a user edit marks the agent proposal stale', async ({ page }) => {
@@ -127,7 +120,7 @@ test('a user edit marks the agent proposal stale', async ({ page }) => {
   const title = 'propose a new name'
   await ask(page, title)
   const view = agentView(page, title)
-  await expect(view.getByTestId('agent-open-draft')).toBeVisible({ timeout: 30_000 })
+  await expect(view.getByTestId('agent-result-link').first()).toBeVisible({ timeout: 30_000 })
   await expect(view.getByTestId('agent-proposal')).toHaveCount(0)
   await page.locator('.pane-tab[data-view-type="object_table"]').first().click()
   const edited = `${original} edited`
@@ -142,12 +135,17 @@ test('a user edit marks the agent proposal stale', async ({ page }) => {
   await page.getByTestId('review-and-save').first().click()
   await agentTab(page, title).click()
   await expect(view.getByTestId('agent-proposal')).toHaveCount(0)
-  await expect(view.getByTestId('agent-follow-up')).toHaveCount(0)
+  await expect(view.getByTestId('agent-follow-up')).toBeVisible()
   const reason = view.getByTestId('agent-stale-reason')
   await expect(reason).toContainText(edited, { timeout: 30_000 })
   await expect(reason).toContainText(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}/)
-  await view.getByTestId('agent-open-draft').click()
-  await expect(page.getByTestId('review-and-save').first()).toBeDisabled()
+  await openAgentDraftInTable(page, view)
+  // Row 57: one Discard/Save bar, in the pane being edited. Detail is open on
+  // this object, so the stale proposal's bar is there and the products table
+  // has none. A linked table can still show its own object's bar.
+  await expect(mainTable(page).getByTestId('object-draft-bar')).toHaveCount(0)
+  const detailSave = page.getByTestId('object-detail').getByTestId('review-and-save')
+  await expect(detailSave).toBeDisabled()
   await nameCell.dblclick()
   await page.getByTestId('cell-editor-name').fill(original)
   await page.getByTestId('cell-editor-name').press('Enter')
@@ -155,8 +153,9 @@ test('a user edit marks the agent proposal stale', async ({ page }) => {
   await expect(page.getByTestId('cell-editor-name')).toHaveCount(0)
   // Let the revert save land, then remove the stale proposal so the rest of
   // this file starts from the seed name again.
-  await expect(page.getByTestId('review-and-save').first()).toBeDisabled({ timeout: 30_000 })
-  await page.getByTestId('discard-draft').first().click()
+  await expect(mainTable(page).getByTestId('object-draft-bar')).toHaveCount(0)
+  await expect(detailSave).toBeDisabled({ timeout: 30_000 })
+  await page.getByTestId('object-detail').getByTestId('discard-draft').click()
   await expect(nameCell.getByTestId('cell-diff')).toHaveCount(0, { timeout: 30_000 })
   await expect(nameCell).toContainText(original)
 })
@@ -171,8 +170,8 @@ test('the proposal card shows the object and the field diff', async ({ page }) =
   await ask(page, title)
   const view = agentView(page, title)
   await expect(view.getByTestId('agent-proposal')).toHaveCount(0)
-  await expect(view.getByTestId('agent-open-draft')).toBeVisible({ timeout: 30_000 })
-  await view.getByTestId('agent-open-draft').click()
+  await expect(view.getByTestId('agent-result-link').first()).toBeVisible({ timeout: 30_000 })
+  await openAgentDraftInTable(page, view)
   const diff = row.locator('[data-column="name"]').getByTestId('cell-diff')
   await expect(diff).toContainText(original, { timeout: 30_000 })
   await expect(diff).toContainText('Agent draft')
@@ -187,10 +186,12 @@ test('approving toasts the change, records who approved it, and undo restores th
   const title = 'propose a new name for approve'
   await ask(page, title)
   const view = agentView(page, title)
-  await expect(view.getByTestId('agent-open-draft')).toBeVisible({ timeout: 30_000 })
-  await view.getByTestId('agent-open-draft').click()
+  await expect(view.getByTestId('agent-result-link').first()).toBeVisible({ timeout: 30_000 })
+  await openAgentDraftInTable(page, view)
   await expect(row.locator('[data-column="name"]').getByTestId('cell-diff')).toContainText('Agent draft', { timeout: 30_000 })
-  await page.getByTestId('review-and-save').first().click()
+  // Row 57: Detail is open, so Save is the Detail bar. The products table has none.
+  await expect(mainTable(page).getByTestId('object-draft-bar')).toHaveCount(0)
+  await page.getByTestId('object-detail').getByTestId('review-and-save').click()
   await expect(row.locator('[data-column="name"]').first()).toContainText('Agent draft', { timeout: 30_000 })
 })
 
@@ -203,10 +204,14 @@ test('undo after a later edit does not overwrite the name', async ({ page }) => 
   const title = 'propose a new name before a later edit'
   await ask(page, title)
   const view = agentView(page, title)
-  await expect(view.getByTestId('agent-open-draft')).toBeVisible({ timeout: 30_000 })
-  await view.getByTestId('agent-open-draft').click()
-  await page.getByTestId('review-and-save').first().click()
-  await page.locator('.pane-tab[data-view-type="object_table"]').first().click()
+  await expect(view.getByTestId('agent-result-link').first()).toBeVisible({ timeout: 30_000 })
+  await openAgentDraftInTable(page, view)
+  // Row 57: Detail is open, so Save is the Detail bar. The products table has none.
+  await expect(mainTable(page).getByTestId('object-draft-bar')).toHaveCount(0)
+  const review = page.getByTestId('object-detail').getByTestId('review-and-save')
+  await expect(review).toBeEnabled({ timeout: 30_000 })
+  await review.click()
+  await showProducts(page)
   const later = `${original} later`
   const nameCell = row.locator('[data-column="name"]').first()
   await expect(nameCell).toContainText('Agent draft', { timeout: 30_000 })
@@ -217,7 +222,9 @@ test('undo after a later edit does not overwrite the name', async ({ page }) => 
   await editor.press('Enter')
   await expect(page.getByTestId('cell-editor-name')).toHaveCount(0)
   await expect(nameCell).toContainText(later)
-  await page.getByTestId('review-and-save').first().click()
+  const saveLater = page.getByTestId('review-and-save').first()
+  await expect(saveLater).toBeEnabled({ timeout: 30_000 })
+  await saveLater.click()
   await expect(nameCell).toContainText(later, { timeout: 30_000 })
 })
 
@@ -230,10 +237,12 @@ test('rejecting toasts the field and leaves the name unchanged', async ({ page }
   const title = 'propose a new name for reject'
   await ask(page, title)
   const view = agentView(page, title)
-  await expect(view.getByTestId('agent-open-draft')).toBeVisible({ timeout: 30_000 })
-  await view.getByTestId('agent-open-draft').click()
+  await expect(view.getByTestId('agent-result-link').first()).toBeVisible({ timeout: 30_000 })
+  await openAgentDraftInTable(page, view)
   await expect(row.locator('[data-column="name"]').getByTestId('cell-diff')).toContainText('Agent draft', { timeout: 30_000 })
-  await page.getByTestId('discard-draft').first().click()
+  // Row 57: Detail is open, so Discard is the Detail bar. The products table has none.
+  await expect(mainTable(page).getByTestId('object-draft-bar')).toHaveCount(0)
+  await page.getByTestId('object-detail').getByTestId('discard-draft').click()
   await expect(row.locator('[data-column="name"]').first()).toContainText(original)
   await expect(view.getByTestId('agent-proposal')).toHaveCount(0)
 })
@@ -241,10 +250,10 @@ test('rejecting toasts the field and leaves the name unchanged', async ({ page }
 test('a failed fetch can be retried and a missing run cannot', async ({ page }) => {
   test.setTimeout(120_000)
   await login(page)
-  let failed = false
-  await page.route(/\/v1\/agent\/runs\/[0-9a-f-]{36}$/, async (route) => {
-    if (route.request().method() === 'GET' && !failed) {
-      failed = true
+  let allowRunFetch = false
+  const runDetail = /\/v1\/agent\/runs\/[^/]+$/
+  await page.route(runDetail, async (route) => {
+    if (route.request().method() === 'GET' && !allowRunFetch) {
       await route.fulfill({
         status: 500,
         contentType: 'application/json',
@@ -255,12 +264,15 @@ test('a failed fetch can be retried and a missing run cannot', async ({ page }) 
     await route.continue()
   })
   await ask(page, 'hold the run briefly')
-  const busy = page.getByTestId('agent-fetch-error')
+  await expect(page.getByTestId('command-palette')).toHaveCount(0)
+  const view = agentView(page, 'hold the run briefly')
+  const busy = view.getByTestId('agent-fetch-error')
   await expect(busy).toContainText('the store is busy')
-  await busy.getByTestId('agent-retry').click()
-  await expect(agentView(page, 'hold the run briefly').getByTestId('agent-status')).toBeVisible({ timeout: 30_000 })
-  await page.unroute(/\/v1\/agent\/runs\/[0-9a-f-]{36}$/)
-  await page.route(/\/v1\/agent\/runs\/[0-9a-f-]{36}$/, async (route) => {
+  allowRunFetch = true
+  await busy.getByTestId('agent-retry').click({ timeout: 15_000 })
+  await expect(view.getByTestId('agent-status')).toBeVisible({ timeout: 30_000 })
+  await page.unroute(runDetail)
+  await page.route(runDetail, async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({
         status: 404,
@@ -272,8 +284,10 @@ test('a failed fetch can be retried and a missing run cannot', async ({ page }) 
     await route.continue()
   })
   await ask(page, 'hold the run missing')
-  await expect(page.getByTestId('agent-missing').first()).toBeVisible({ timeout: 30_000 })
-  await expect(page.getByTestId('agent-retry')).toHaveCount(0)
+  const missing = agentView(page, 'hold the run missing')
+  await expect(missing.getByTestId('agent-missing')).toBeVisible({ timeout: 30_000 })
+  await expect(missing.getByTestId('agent-retry')).toHaveCount(0)
+  await page.unroute(runDetail)
 })
 
 test('a failed run shows a cleaned error and try again', async ({ page }) => {
@@ -287,7 +301,7 @@ test('a failed run shows a cleaned error and try again', async ({ page }) => {
   await expect(failure).toContainText('The model request failed. Try again, or check the AI settings.')
   await expect(failure).not.toContainText('openai')
   await expect(failure).not.toContainText('status 500')
-  await failure.getByTestId('agent-try-again').click()
+  await failure.getByTestId('agent-try-again').click({ timeout: 15_000 })
   await expect(view.getByTestId('agent-status')).toHaveAttribute('data-status', 'working')
 })
 
@@ -298,17 +312,18 @@ test('escape inside the agent tab does not close it', async ({ page }) => {
   await ask(page, title)
   const tab = agentTab(page, title)
   await expect(tab).toBeVisible()
-  const openDraft = agentView(page, title).getByTestId('agent-open-draft')
-  await expect(openDraft).toBeVisible({ timeout: 30_000 })
-  await openDraft.focus()
+  const followUp = agentView(page, title).getByTestId('agent-follow-up')
+  await expect(followUp).toBeVisible({ timeout: 30_000 })
+  await followUp.focus({ timeout: 15_000 })
   await page.keyboard.press('Escape')
   await expect(tab).toBeVisible()
   await expect(agentView(page, title)).toBeVisible()
 })
 
-test('an agent tab in another workspace is announced', async ({ page }) => {
+test('agent tabs from another workspace stay hidden', async ({ page }) => {
   test.setTimeout(120_000)
   await login(page)
+  try {
   await page.route('**/v1/agent/runs', async (route) => {
     const url = new URL(route.request().url())
     if (route.request().method() !== 'GET' || url.pathname !== '/v1/agent/runs') {
@@ -351,8 +366,13 @@ test('an agent tab in another workspace is announced', async ({ page }) => {
     }
   })
   await page.reload()
-  await expect(page.locator('[data-sonner-toast]')).toContainText('another workspace', { timeout: 60_000 })
-  await expect(page.locator('.pane-tab', { hasText: 'agent in another workspace' })).toHaveCount(0)
+  await showProducts(page)
+  await expect(page.locator('.pane-tab[data-view-type="agent"][title*="agent in another workspace"]')).toHaveCount(0)
+  await expect(page.locator('[data-sonner-toast]')).toHaveCount(0)
+  } finally {
+    await page.unroute('**/v1/agent/runs').catch(() => undefined)
+    await resetProductsLayout(page).catch(() => undefined)
+  }
 })
 
 test('screenshots of the agent tab in dark and light', async ({ page }) => {
@@ -389,14 +409,16 @@ test('screenshots of the agent tab in dark and light', async ({ page }) => {
   await page.screenshot({ path: `${dir}/agent-skeleton-light.png`, fullPage: true })
   releaseSkeleton()
   const view = agentView(page, 'propose a new name for the selected product')
-  await expect(view.getByTestId('agent-open-draft')).toBeVisible({ timeout: 30_000 })
-  await view.getByTestId('agent-open-draft').click()
+  await expect(view.getByTestId('agent-result-link').first()).toBeVisible({ timeout: 30_000 })
+  await openAgentDraftInTable(page, view)
   await expect(row.locator('[data-column="name"]').getByTestId('cell-diff')).toContainText('Agent draft', { timeout: 30_000 })
   await setTheme(page, 'dark')
   await page.screenshot({ path: `${dir}/agent-diff-dark.png`, fullPage: true })
   await setTheme(page, 'light')
   await page.screenshot({ path: `${dir}/agent-diff-light.png`, fullPage: true })
-  await page.getByTestId('review-and-save').first().click()
+  // Row 57: Detail is open, so Save is the Detail bar. The products table has none.
+  await expect(mainTable(page).getByTestId('object-draft-bar')).toHaveCount(0)
+  await page.getByTestId('object-detail').getByTestId('review-and-save').click()
   await setTheme(page, 'dark')
   await page.screenshot({ path: `${dir}/agent-approved-dark.png`, fullPage: true })
   await setTheme(page, 'light')
@@ -406,7 +428,7 @@ test('screenshots of the agent tab in dark and light', async ({ page }) => {
   const staleTitle = 'propose a new name after the edit'
   await ask(page, staleTitle)
   const stale = agentView(page, staleTitle)
-  await expect(stale.getByTestId('agent-open-draft')).toBeVisible({ timeout: 30_000 })
+  await expect(stale.getByTestId('agent-result-link').first()).toBeVisible({ timeout: 30_000 })
   await page.locator('.pane-tab[data-view-type="object_table"]').first().click()
   const nameCell = row.locator('[data-column="name"]').first()
   await nameCell.dblclick()

@@ -50,6 +50,7 @@ pub use ops::{ProposalLock, ProposalWrite};
 pub use pressure::InteractiveGuard;
 pub use product::{
     AssortmentUsage, AttributeUsageCount, DiscardReport, HistoryEntry, ProposalRow, UserRecord,
+    ViewWrite, WorkspaceStateWrite,
 };
 pub use retention::{PurgeCounts, RETENTION_DAYS};
 pub use scan::{EXPORT_CHUNK, ExportObject, ExportOrder, ExportScan};
@@ -61,6 +62,7 @@ pub use workspace_templates::WorkspaceTemplateRecord;
 pub mod admin {
     pub use crate::session::{PgConn, create_database, drop_database, parse_config};
 }
+pub use links::LinkViolator;
 pub use types::{
     BulkReport, BulkRowError, ChangeRow, LinkView, ObjectAudit, ObjectOp, ObjectProjection,
     PrincipalRecord, StoredObject, WriteReceipt,

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { Maximize2, Minimize2, MoreHorizontal, X } from 'lucide-react'
 import { ViewGlyph } from './chips'
@@ -6,6 +6,8 @@ import { Button } from './components/ui/button'
 import { Kbd } from './components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './components/ui/tooltip'
 import { viewDisplayTitle } from './demo-labels'
+import { layoutCommandLeavesTypeAttributes, layoutLeavesTypeAttributes } from './model-table-draft-nav'
+import { tryModelTableLeave } from './model-table-draft'
 import { looksLikeRawViewId } from './model-workspace-migrate'
 import { copy } from './i18n'
 import { openSharedContextMenu, prefersNativeContextMenu } from './shared-context-menu'
@@ -28,7 +30,18 @@ import {
   type Zone,
 } from './layout'
 
-export type DockView = { id: string; title: string; type: string; state?: { catalog?: string; prompt?: string }; sourceLabel?: string; prompt?: string }
+export type DockView = {
+  id: string
+  title: string
+  type: string
+  state?: { catalog?: string; prompt?: string }
+  sourceLabel?: string
+  /** Peer source is active; one click on the label returns to all-of-type. */
+  sourceLabelClearable?: boolean
+  /** Accessible name for clearing a peer source (destination All …, not the live peer label). */
+  sourceLabelClearAriaLabel?: string
+  prompt?: string
+}
 
 type Hover =
   | { kind: 'edge'; zone: Exclude<Zone, 'center'> }
@@ -50,6 +63,7 @@ export function WorkspaceDock({
   onChange,
   renderView,
   onAddView,
+  onSourceLabelClear,
   agentViews = [],
 }: {
   doc: LayoutDoc
@@ -57,10 +71,14 @@ export function WorkspaceDock({
   onChange: (doc: LayoutDoc) => void
   renderView: (view: DockView) => ReactNode
   onAddView: (target: string) => void
+  onSourceLabelClear?: (viewId: string) => void
   /** View ids an agent is working in. The pane picks up one left-edge marker. */
   agentViews?: string[]
 }) {
   const rootRef = useRef<HTMLDivElement>(null)
+  /** Full-dock structure-tree width for pinning while the agent dock is open. */
+  const treePinRef = useRef<TreePin | null>(null)
+  const [measuredTreePin, setMeasuredTreePin] = useState<TreePin | null>(null)
   const docRef = useRef(doc)
   const changeRef = useRef(onChange)
   const viewsRef = useRef(viewList)
@@ -70,15 +88,32 @@ export function WorkspaceDock({
   const agentViewSet = new Set(agentViews)
   const [drag, setDrag] = useState<Drag | null>(null)
   const dragRef = useRef<Drag | null>(null)
+  const objectTypesTabFocusRef = useRef(false)
   // View chrome menus open through the shared command registry.
 
   const commit = (next: LayoutDoc) => {
-    docRef.current = next
-    changeRef.current(next)
+    const apply = () => {
+      docRef.current = next
+      changeRef.current(next)
+    }
+    const objectTypesTabFocus = objectTypesTabFocusRef.current
+    objectTypesTabFocusRef.current = false
+    if (layoutLeavesTypeAttributes(viewsRef.current, docRef.current, next, { objectTypesTabFocus })) {
+      tryModelTableLeave(apply)
+      return
+    }
+    apply()
   }
   const run = (name: string, args: Record<string, unknown> = {}) => {
-    const result = applyLayoutCommand(docRef.current, name, args, { views: asRefs(viewsRef.current) })
-    if (result.handled) commit(result.doc)
+    const execute = () => {
+      const result = applyLayoutCommand(docRef.current, name, args, { views: asRefs(viewsRef.current) })
+      if (result.handled) commit(result.doc)
+    }
+    if (layoutCommandLeavesTypeAttributes(viewsRef.current, docRef.current, name, args)) {
+      tryModelTableLeave(execute)
+      return
+    }
+    execute()
   }
 
   useEffect(() => {
@@ -95,12 +130,42 @@ export function WorkspaceDock({
   }, [drag])
 
   const open = views(doc.layout)
+  const viewTypes = new Map(viewList.map((view) => [view.id, view.type]))
+  const catalogRatio =
+    doc.layout.type === 'split' && splitLocksAgentDock(doc.layout, viewTypes)
+      ? doc.layout.ratios[0] ?? 1
+      : null
+  useLayoutEffect(() => {
+    const root = rootRef.current
+    if (!root) return
+    const measure = () => {
+      const layout = docRef.current.layout
+      const types = new Map(viewsRef.current.map((view) => [view.id, view.type]))
+      const dockCatalogRatio = catalogRatio ?? agentDockCatalogRatio(layout)
+      const next = measureStructureTreePin(layout, types, root)
+      if (!next) return
+      const scaled =
+        catalogRatio != null && treePinRef.current
+          ? treePinRef.current
+          : dockCatalogRatio != null
+            ? catalogRatioToFullDockPin(next, dockCatalogRatio)
+            : next
+      treePinRef.current = scaled
+      setMeasuredTreePin(scaled)
+    }
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => measure())
+    observer.observe(root)
+    return () => observer.disconnect()
+  }, [catalogRatio, doc.layout])
   const zoomHost = doc.zoom ? leaves(doc.layout).find((leaf) => leaf.views.includes(doc.zoom ?? '')) : undefined
   const zoomed = zoomHost && doc.zoom ? { ...zoomHost, views: [doc.zoom], active: 0 } : undefined
   const shared: Frame = {
     doc,
       viewList,
       agentViews: agentViewSet,
+      agentTreePin: catalogRatio != null ? measuredTreePin : null,
       drag,
     docRef,
     rootRef,
@@ -108,6 +173,7 @@ export function WorkspaceDock({
     commit,
     run,
     onAddView,
+    onSourceLabelClear,
     onMenu: ({ x, y, view }) => {
       const viewType = viewList.find((item) => item.id === view)?.type ?? ''
       openSharedContextMenu({
@@ -119,6 +185,9 @@ export function WorkspaceDock({
     },
     onDrag: setDrag,
     renderView,
+    markObjectTypesTabFocus: () => {
+      objectTypesTabFocusRef.current = true
+    },
   }
 
   return (
@@ -134,7 +203,7 @@ export function WorkspaceDock({
         .join('|')}
     >
       {open.length === 0 ? (
-        <section className="pane" data-pane="empty">
+        <section className="pane" data-pane="empty" tabIndex={-1}>
           <div className="pane-tabs" />
           <div className="pane-body">{copy.empty}</div>
         </section>
@@ -182,23 +251,118 @@ type Frame = {
   commit: (doc: LayoutDoc) => void
   run: (name: string, args?: Record<string, unknown>) => void
   onAddView: (target: string) => void
+  onSourceLabelClear?: (viewId: string) => void
   onMenu: (menu: { x: number; y: number; view: string }) => void
   onDrag: (drag: Drag | null) => void
   renderView: (view: DockView) => ReactNode
   agentViews: Set<string>
+  markObjectTypesTabFocus: () => void
+  /** Pixel width of the structure tree measured before this dock opened. */
+  agentTreePin: TreePin | null
 }
 
-function SplitNode({ frame, node, path }: { frame: Frame; node: Node; path: number[] }) {
+export type TreePin = { width: number; ratio: number }
+
+/** Tree width measured inside the shrunk catalog column maps to full-dock pixels. */
+export function catalogRatioToFullDockPin(pin: TreePin, catalogRatio: number | null): TreePin {
+  if (catalogRatio == null || !(catalogRatio > 0) || catalogRatio >= 0.999) return pin
+  return { width: pin.width / catalogRatio, ratio: pin.ratio }
+}
+
+/**
+ * Width to lock the structure-tree column to once the agent dock is open.
+ * `pin.width` is the leaf's rendered width before the dock opened (flex shrink
+ * included). Scaling by the live ratio keeps a divider drag in proportion.
+ */
+function pinnedTreeWidthPx(pin: TreePin | null, ratio: number): number | null {
+  if (!pin || !(pin.width > 0) || !(pin.ratio > 0) || !(ratio > 0)) return null
+  return Math.round((pin.width * ratio) / pin.ratio)
+}
+
+function splitRatioAt(layout: Node, leafPath: number[]): number | null {
+  const index = leafPath[leafPath.length - 1]
+  if (index == null) return null
+  let node: Node = layout
+  for (const step of leafPath.slice(0, -1)) {
+    if (node.type !== 'split') return null
+    const next = node.children[step]
+    if (!next) return null
+    node = next
+  }
+  if (node.type !== 'split') return null
+  const ratio = node.ratios[index]
+  return typeof ratio === 'number' && Number.isFinite(ratio) && ratio > 0 ? ratio : null
+}
+
+/** The structure-tree leaf's split cell, in pixels, from the layout before the agent dock opens. */
+function measureStructureTreePin(layout: Node, viewTypes: Map<string, string>, root: HTMLElement): TreePin | null {
+  const leaf = leaves(layout).find((item) => item.views.some((id) => viewTypes.get(id) === 'structure_tree'))
+  if (!leaf || leaf.path.length === 0) return null
+  const tab = root.querySelector<HTMLElement>(".pane-tab[data-view-type='structure_tree']")
+  const cell = tab?.closest('section.pane')?.parentElement
+  if (!(cell instanceof HTMLElement) || !cell.classList.contains('split-cell')) return null
+  const width = cell.getBoundingClientRect().width
+  if (!(width > 0)) return null
+  const ratio = splitRatioAt(layout, leaf.path)
+  if (ratio == null || !(ratio > 0)) return null
+  return { width, ratio }
+}
+
+/** Left-hand catalog share when the root split reserves a right-hand tab column (agent or empty shell). */
+export function agentDockCatalogRatio(layout: Node): number | null {
+  if (layout.type !== 'split' || layout.dir !== 'horizontal' || layout.children.length !== 2) return null
+  const right = layout.children[1]
+  if (right?.type !== 'tabs') return null
+  const ratio = layout.ratios[0]
+  return typeof ratio === 'number' && Number.isFinite(ratio) && ratio > 0 && ratio < 0.999 ? ratio : null
+}
+
+/** A horizontal agent dock must not let the Detail flex rules resize the left subtree. */
+function splitLocksAgentDock(node: Extract<Node, { type: 'split' }>, viewTypes: Map<string, string>) {
+  if (node.dir !== 'horizontal' || node.children.length !== 2) return false
+  return node.children.some(
+    (child) => child.type === 'tabs' && child.views.some((id) => viewTypes.get(id) === 'agent'),
+  )
+}
+
+function childIsStructureTree(child: Node, viewTypes: Map<string, string>) {
+  return child.type === 'tabs' && child.views.some((id) => viewTypes.get(id) === 'structure_tree')
+}
+
+/** Pin the Food/structure tree so catalog shrink only narrows Products and Detail. */
+function splitPinsTreeInAgentDock(
+  inAgentDock: boolean,
+  node: Extract<Node, { type: 'split' }>,
+  viewTypes: Map<string, string>,
+) {
+  if (!inAgentDock || node.dir !== 'horizontal' || node.children.length !== 2) return false
+  return childIsStructureTree(node.children[0], viewTypes)
+}
+
+function SplitNode({ frame, node, path, inAgentDock = false }: { frame: Frame; node: Node; path: number[]; inAgentDock?: boolean }) {
   if (node.type !== 'split') {
     const leaf = leaves(node)[0]
     if (!leaf) return null
     return <Pane frame={frame} leaf={{ ...leaf, path }} />
   }
   const viewTypes = new Map(frame.viewList.map((view) => [view.id, view.type]))
-  const hasDetail = views(node).some((id) => viewTypes.get(id) === 'object_detail')
+  const lockRatios = splitLocksAgentDock(node, viewTypes)
+  // Same rule as main: a split that contains Detail anywhere can shrink so the
+  // table floor (440px once the split is at least 640px) holds and Detail
+  // gives way. The agent-dock wrapper also contains Detail, but marking it
+  // would make the whole dock the container and floor nested tables against it.
+  const hasDetail = !lockRatios && views(node).some((id) => viewTypes.get(id) === 'object_detail')
   const gaps = Math.max(0, node.children.length - 1) * 6
+  const subtreeInAgentDock = inAgentDock || lockRatios
+  const pinTree = splitPinsTreeInAgentDock(subtreeInAgentDock && !lockRatios, node, viewTypes)
   return (
-    <div className={`split ${node.dir}`} data-path={path.join('.') || 'root'} data-has-detail={hasDetail ? 'true' : undefined}>
+    <div
+      className={lockRatios ? `split ${node.dir} split-agent-dock` : `split ${node.dir}`}
+      data-path={path.join('.') || 'root'}
+      data-has-detail={hasDetail ? 'true' : undefined}
+      data-agent-dock={lockRatios ? 'true' : undefined}
+      data-tree-pinned={pinTree ? 'true' : undefined}
+    >
       {node.children.map((child, index) => (
         <SplitChild
           key={cellKey(path, index, child)}
@@ -209,6 +373,9 @@ function SplitNode({ frame, node, path }: { frame: Frame; node: Node; path: numb
           path={path}
           gaps={gaps}
           hasDetail={hasDetail}
+          inAgentDock={subtreeInAgentDock}
+          pinTree={pinTree}
+          pinTreeRatio={node.ratios[0] ?? 0}
         />
       ))}
     </div>
@@ -223,6 +390,9 @@ function SplitChild({
   path,
   gaps,
   hasDetail,
+  inAgentDock,
+  pinTree,
+  pinTreeRatio,
 }: {
   frame: Frame
   node: Extract<Node, { type: 'split' }>
@@ -231,15 +401,53 @@ function SplitChild({
   path: number[]
   gaps: number
   hasDetail: boolean
+  inAgentDock: boolean
+  pinTree: boolean
+  pinTreeRatio: number
 }) {
-  const basis = `calc((100% - ${gaps}px) * ${node.ratios[index] ?? 0})`
+  const ratio = node.ratios[index] ?? 0
+  const basis = `calc((100% - ${gaps}px) * ${ratio})`
+  const flex = hasDetail ? '0 1' : '0 0'
+  const pinnedPx = pinTree && index === 0 ? pinnedTreeWidthPx(frame.agentTreePin, pinTreeRatio) : null
+  const closedAgentShell =
+    child.type === 'tabs'
+    && views(child).length === 0
+    && index === 1
+    && node.dir === 'horizontal'
+    && node.children.length === 2
+    && node.children[0]?.type === 'split'
+  const cellStyle: CSSProperties = closedAgentShell
+    ? {
+        flex: '0 0 0px',
+        width: 0,
+        minWidth: 0,
+        maxWidth: 0,
+        overflow: 'hidden',
+        pointerEvents: 'none',
+      }
+    : pinnedPx != null
+      ? {
+          flex: `0 0 ${pinnedPx}px`,
+          width: `${pinnedPx}px`,
+          minWidth: `${pinnedPx}px`,
+          maxWidth: `${pinnedPx}px`,
+        }
+      : pinTree && index === 1 && frame.agentTreePin
+        ? { flex: '1 1 0', minWidth: 0 }
+        : { flex: `${flex} ${basis}` }
   return (
     <>
       {index > 0 ? (
-        <Divider frame={frame} dir={node.dir} index={index - 1} path={path} count={node.children.length} />
+        <Divider
+          frame={frame}
+          dir={node.dir}
+          index={index - 1}
+          path={path}
+          count={node.children.length}
+        />
       ) : null}
-      <div className="split-cell" style={{ flex: `${hasDetail ? '0 1' : '0 0'} ${basis}` }}>
-        <SplitNode frame={frame} node={child} path={[...path, index]} />
+      <div className="split-cell" style={cellStyle}>
+        <SplitNode frame={frame} node={child} path={[...path, index]} inAgentDock={inAgentDock} />
       </div>
     </>
   )
@@ -251,12 +459,14 @@ function Divider({
   index,
   path,
   count,
+  dockedLeft,
 }: {
   frame: Frame
   dir: 'horizontal' | 'vertical'
   index: number
   path: number[]
   count: number
+  dockedLeft?: string
 }) {
   const [active, setActive] = useState(false)
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -290,6 +500,7 @@ function Divider({
       data-active={active ? 'true' : 'false'}
       role="separator"
       aria-orientation={dir === 'horizontal' ? 'vertical' : 'horizontal'}
+      style={dockedLeft ? { position: 'absolute', left: dockedLeft, top: 0, bottom: 0, margin: 0 } : undefined}
       onPointerDown={onPointerDown}
     >
       <span />
@@ -425,6 +636,8 @@ function Pane({ frame, leaf }: { frame: Frame; leaf: Leaf }) {
                           return
                         }
                         if (frame.docRef.current.zoom) return
+                        const opening = frame.viewList.find((view) => view.id === id)
+                        if (opening?.type === 'object_types') frame.markObjectTypesTabFocus()
                         frame.commit(activateDoc(frame.docRef.current, id))
                         if (pendingActive.current) window.clearTimeout(pendingActive.current.timer)
                         const timer = window.setTimeout(() => {
@@ -488,8 +701,24 @@ function Pane({ frame, leaf }: { frame: Frame; leaf: Leaf }) {
           <div className="pane-tab-pad" aria-hidden="true" />
         </div>
         {(() => {
-          const label = frame.viewList.find((view) => view.id === activeId)?.sourceLabel
-          if (!label) return null
+          const meta = frame.viewList.find((view) => view.id === activeId)
+          const label = meta?.sourceLabel
+          if (!label || !activeId) return null
+          if (meta?.sourceLabelClearable && frame.onSourceLabelClear) {
+            return (
+              <Button
+                type="button"
+                variant="ghost"
+                className="pane-source"
+                data-testid="view-source-label"
+                title={label}
+                aria-label={meta.sourceLabelClearAriaLabel ?? copy.clearViewSource.replace('{label}', label)}
+                onClick={() => frame.onSourceLabelClear?.(activeId)}
+              >
+                {label}
+              </Button>
+            )
+          }
           return (
             <span className="pane-source" data-testid="view-source-label" title={label}>
               {label}
@@ -648,5 +877,7 @@ function asRefs(list: DockView[]): ViewRef[] {
 }
 
 function cellKey(path: number[], index: number, node: Node) {
-  return `${path.join('.')}:${index}:${views(node).join(',')}`
+  const ids = views(node)
+  if (ids.length > 0) return ids.slice().sort().join('+')
+  return `${path.join('.')}:${index}:empty`
 }

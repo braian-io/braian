@@ -26,14 +26,13 @@ import {
   labelPriority,
   legendEntries,
   mergeScene,
-  NAMED_CAPTION_PRIORITY,
   nodeMark,
   nodeRadius,
   parseTypedId,
   placedObjectNamesPending,
   placedSceneNodes,
   searchDocuments,
-  labelRectsOverlap,
+  NAMED_CAPTION_PRIORITY,
   visibleCaptionIds,
   visibleLabelIds,
   type KnownObject,
@@ -69,15 +68,8 @@ import {
   type SystemFitEvent,
 } from './graph-chrome'
 import { buildModelScene, expandModelType, mergeModelScene } from './graph-model-scene'
-import {
-  curvePoint,
-  edgeLabelMode,
-  placeEdgeLabel,
-  placeEdgeLabelWithFallback,
-  type EdgeLabelBox,
-  type EdgeLabelNode,
-} from './graph-edge-label'
-import { chooseModelSelection } from './model-selection'
+import { curvePoint, edgeLabelMode, placeEdgeLabelWithFallback, type EdgeLabelBox, type EdgeLabelNode } from './graph-edge-label'
+import { tryChooseModelSelection } from './model-table-draft'
 import { openObjectLabel } from './type-labels'
 import { copy, uiLanguage } from './i18n'
 import { linkChoices } from './link-section'
@@ -661,6 +653,8 @@ export function GraphMap({
   const requestSystemFitRef = useRef<(event: SystemFitEvent) => void>(() => {})
   const fitSchedulerRef = useRef<FitScheduler | null>(null)
   const paneSettleRef = useRef(createPaneSettleGate())
+  // System fits (F5, Close full size, resize, first sheet) share one measured
+  // frame. A later timer for the same frame must not apply a second camera.
   if (fitSchedulerRef.current === null) {
     fitSchedulerRef.current = createFitScheduler((event) => runSystemFitRef.current(event))
   }
@@ -673,7 +667,7 @@ export function GraphMap({
     setSheet((mode) => (mode === 'dismissed' || mode === 'chip' ? 'compact' : mode))
     if (!modelMode) return
     const node = scene.nodes.find((item) => item.id === id)
-    if (node?.kind === 'type' && node.typeKey) chooseModelSelection({ kind: 'type', typeKey: node.typeKey })
+    if (node?.kind === 'type' && node.typeKey) tryChooseModelSelection({ kind: 'type', typeKey: node.typeKey })
   }
   pinRef.current = setPinTick
 
@@ -1024,6 +1018,7 @@ export function GraphMap({
 
     const publish = (shown: Set<string>) => {
       const rect = canvas.getBoundingClientRect()
+      const graphRoot = canvas.closest('.graph-wrap') ?? document
       const next: Record<string, Marker> = {}
       const highlight = highlightedIds()
       const current = selectedRef.current
@@ -1071,7 +1066,9 @@ export function GraphMap({
           shown: shown.has(node.id),
         }
         next[node.id] = marker
-        const button = document.querySelector<HTMLElement>(`[data-node-id="${CSS.escape(node.id)}"]`)
+        const button = graphRoot.querySelector<HTMLElement>(
+          `[data-testid="graph-nodes"] [data-node-id="${CSS.escape(node.id)}"]`,
+        )
         if (button) {
           button.setAttribute('data-x', String(marker.x))
           button.setAttribute('data-y', String(marker.y))
@@ -1296,17 +1293,6 @@ export function GraphMap({
       const captionObstacles: EdgeLabelBox[] = captionBoxes
         .filter((box) => labels.has(box.id))
         .map((box) => ({ x: box.left, y: box.top, width: box.right - box.left, height: box.bottom - box.top }))
-      // An active edge label may use a hidden value chip's space, but it moves
-      // aside from a shown object/type/active name when a legal slot exists.
-      // It is never dropped for a name: if every slot covers one, the label is
-      // still painted and `visibleCaptionIds` hides that caption below (K5).
-      const namedCaptionObstacles: EdgeLabelBox[] = captionBoxes
-        .filter(
-          (box) =>
-            labels.has(box.id) &&
-            (box.priority >= NAMED_CAPTION_PRIORITY || box.kind === 'structure' || box.kind === 'group'),
-        )
-        .map((box) => ({ x: box.left, y: box.top, width: box.right - box.left, height: box.bottom - box.top }))
       context.font = '11px "Inter Variable", Inter, sans-serif'
       labelCandidates
         .slice()
@@ -1318,77 +1304,30 @@ export function GraphMap({
           const widthText = context.measureText(link.label).width
           const boxW = widthText + 12
           const boxH = 16
-          let mid: { x: number; y: number }
-          let box: EdgeLabelBox
-          if (protectCaptions) {
-            const placement = placeEdgeLabelWithFallback(
-              activeEndpoint
-                ? {
-                    from: geometry.from,
-                    control: geometry.control,
-                    to: geometry.to,
-                    size: { width: boxW, height: boxH },
-                    nodes: labelNodes,
-                    placed: placedEdgeLabels,
-                    preferred: [],
-                    fallback: [],
-                    active: true,
-                  }
-                : {
-                    from: geometry.from,
-                    control: geometry.control,
-                    to: geometry.to,
-                    size: { width: boxW, height: boxH },
-                    nodes: labelNodes,
-                    placed: placedEdgeLabels,
-                    preferred: captionObstacles,
-                    fallback: captionObstacles,
-                    active: false,
-                  },
+          // Prefer a slot clear of shown names. An active label that cannot
+          // find one still paints (the caption yields below) instead of
+          // disappearing to spare Food or Product.
+          const namedCaptionObstacles: EdgeLabelBox[] = captionBoxes
+            .filter(
+              (box) =>
+                labels.has(box.id) &&
+                (box.priority >= NAMED_CAPTION_PRIORITY || box.kind === 'structure' || box.kind === 'group'),
             )
-            if (placement.dropped) return
-            mid = placement.point
-            box = placement.box
-            const edgeRect = { left: box.x, top: box.y, right: box.x + box.width, bottom: box.y + box.height }
-            for (const cap of captionBoxes) {
-              if (!protectCaptions.has(cap.id) || !labels.has(cap.id)) continue
-              if (
-                labelRectsOverlap(edgeRect, {
-                  left: cap.left,
-                  top: cap.top,
-                  right: cap.right,
-                  bottom: cap.bottom,
-                })
-              ) {
-                return
-              }
-            }
-          } else {
-            const placeWide = (avoid: EdgeLabelBox[]) => {
-              const point = placeEdgeLabel(
-                geometry.from,
-                geometry.control,
-                geometry.to,
-                { width: boxW, height: boxH },
-                labelNodes,
-                placedEdgeLabels,
-                avoid,
-              )
-              return {
-                point,
-                box: { x: point.x - boxW / 2, y: point.y - boxH / 2, width: boxW, height: boxH },
-              }
-            }
-            let wide = placeWide(activeEndpoint ? [] : captionObstacles)
-            if (activeEndpoint) {
-              const blockers = placedEdgeLabels.filter((other) => boxOverlap(wide.box, other) > 0)
-              if (blockers.length > 0) wide = placeWide([...namedCaptionObstacles, ...blockers])
-            }
-            mid = wide.point
-            box = wide.box
-            if (placedEdgeLabels.some((other) => boxOverlap(box, other) > 0)) return
-            if (labelNodes.some((node) => discOverlap(box, node) > 0)) return
-          }
+            .map((box) => ({ x: box.left, y: box.top, width: box.right - box.left, height: box.bottom - box.top }))
+          const placement = placeEdgeLabelWithFallback({
+            from: geometry.from,
+            control: geometry.control,
+            to: geometry.to,
+            size: { width: boxW, height: boxH },
+            nodes: labelNodes,
+            placed: placedEdgeLabels,
+            preferred: activeEndpoint ? namedCaptionObstacles : captionObstacles,
+            fallback: activeEndpoint ? [] : captionObstacles,
+            active: activeEndpoint,
+          })
+          if (placement.dropped) return
+          const mid = placement.point
+          const box = placement.box
           if (typeKey) placedLabelTypes.add(typeKey)
           placedEdgeLabels.push(box)
           drawnEdges.add(link.id)
@@ -1413,31 +1352,32 @@ export function GraphMap({
         })
       // Edge labels win the space they need; a caption that would sit under one
       // is hidden instead of stacking on top of it.
+      const edgeLabelBoxes = placedEdgeLabels.map((box) => ({
+        left: box.x,
+        top: box.y,
+        right: box.x + box.width,
+        bottom: box.y + box.height,
+      }))
       const shownCaptionIds = protectCaptions
         ? visibleCaptionIds(captionBoxes, transform.k, {
             paneWidth: width,
-            edgeLabels: placedEdgeLabels.map((box) => ({
-              left: box.x,
-              top: box.y,
-              right: box.x + box.width,
-              bottom: box.y + box.height,
-            })),
+            edgeLabels: edgeLabelBoxes,
             protectCaptionIds: protectCaptions,
           })
-        : (() => {
-            const shown = new Set(labels)
-            for (const cap of captionBoxes) {
-              if (!shown.has(cap.id)) continue
-              const captionBox = {
-                x: cap.left,
-                y: cap.top,
-                width: cap.right - cap.left,
-                height: cap.bottom - cap.top,
-              }
-              if (placedEdgeLabels.some((other) => boxOverlap(captionBox, other) > 0)) shown.delete(cap.id)
-            }
-            return shown
-          })()
+        : new Set(labels)
+      // A relation label that could not step clear owns the pixels. Hide the
+      // caption under it, including a protected Food/group name, so the two
+      // never stack. When a clear slot existed the caption stays.
+      for (const cap of captionBoxes) {
+        if (!shownCaptionIds.has(cap.id)) continue
+        const captionBox = {
+          x: cap.left,
+          y: cap.top,
+          width: cap.right - cap.left,
+          height: cap.bottom - cap.top,
+        }
+        if (placedEdgeLabels.some((other) => boxOverlap(captionBox, other) > 0)) shownCaptionIds.delete(cap.id)
+      }
       for (const { node, point, radius } of placedNodes) {
         const emphasized = !hover || highlight.has(node.id)
         const fill = colors.fill[node.kind]
@@ -1487,7 +1427,7 @@ export function GraphMap({
         const placedIds = new Set(placedNodes.map(({ node }) => node.id))
         // Clear stale `true` flags too: a node that leaves the placed set (or
         // was hidden) must not keep advertising an old caption box.
-        for (const button of graphRoot.querySelectorAll<HTMLElement>('[data-node-id]')) {
+        for (const button of graphRoot.querySelectorAll<HTMLElement>('[data-testid="graph-nodes"] [data-node-id]')) {
           const id = button.getAttribute('data-node-id') ?? ''
           button.setAttribute(
             'data-label-shown',
@@ -1537,11 +1477,6 @@ export function GraphMap({
           }
         })
         .filter((item): item is NonNullable<typeof item> => item != null)
-      if (!initialSettledRef.current) {
-        extents.push(
-          ...pendingPeerFitExtents(sceneRef.current, focusKeyRef.current, sim.nodes(), captionWidthForScene),
-        )
-      }
       context.restore()
       const frame = currentFrame()
       // Do not claim the chrome is measured while the open bottom sheet has no
@@ -1567,7 +1502,9 @@ export function GraphMap({
       const camera = fitCameraWithLabels({
         frame,
         nodes: extents,
-        minScale: narrowSheet ? 0.08 : 0.1,
+        // Wide panes keep the 0.35 floor so relation labels still clear the
+        // discs. A narrow sheet may go lower so a long caption fits the frame.
+        minScale: narrowSheet ? 0.08 : 0.35,
       })
       if (!camera) return false
       transform.k = camera.k
@@ -2045,6 +1982,14 @@ export function GraphMap({
   }, [])
 
   useEffect(() => {
+    if (!full) return
+    document.body.dataset.graphFullOpen = 'true'
+    return () => {
+      delete document.body.dataset.graphFullOpen
+    }
+  }, [full])
+
+  useEffect(() => {
     // Nodes and captions that resolve after the first paint (a reload, F5)
     // still get an idle refit while the initial load settles. After that the
     // id baseline is frozen so add-link / expand growth never idle-fits, even
@@ -2156,8 +2101,11 @@ export function GraphMap({
         !layoutReady(),
     })
     if (action === 'none') return
-    if (action === 'remap') apiRef.current.remap()
-    else apiRef.current.fit()
+    if (action === 'remap') {
+      apiRef.current.remap()
+      return
+    }
+    apiRef.current.fit()
   }
   requestSystemFitRef.current = (event) => {
     // The settled bottom-sheet box and narrow full-size toggle must fit on the
@@ -2243,6 +2191,20 @@ export function GraphMap({
       sheetRef.current,
       placementRef.current,
     )
+    // Markers published on the first fullscreen frame are not the settled
+    // camera: the scheduler's later pass measures the side card. Hold the
+    // settled flag until that pass has run so a menu reads one position.
+    const canvas = canvasRef.current
+    if (canvas && !movedRef.current) {
+      canvas.dataset.settled = 'false'
+      canvas.dataset.settling = 'true'
+    }
+    const releaseSettled = window.setTimeout(() => {
+      const node = canvasRef.current
+      if (!node || node.dataset.settling !== 'true') return
+      node.dataset.settled = 'true'
+      node.dataset.settling = 'false'
+    }, 360)
     if (closing && narrowSheet && !movedRef.current) {
       sheetStableRef.current = false
       chromeMeasuredRef.current = false
@@ -2256,9 +2218,10 @@ export function GraphMap({
         requestSystemFitRef.current('sheet')
       }
       requestAnimationFrame(finish)
-      return
+      return () => window.clearTimeout(releaseSettled)
     }
     requestSystemFitRef.current('fullscreen')
+    return () => window.clearTimeout(releaseSettled)
   }, [full])
 
   useEffect(() => {
@@ -2367,6 +2330,23 @@ export function GraphMap({
   const pinned = Boolean(
     pinTick >= 0 && simRef.current?.nodes().some((node) => node.id === selected && node.fx != null && node.fy != null),
   )
+  useLayoutEffect(() => {
+    // Selecting a node grows the inspector. Ask for the same measured-frame fit
+    // as F5 and Close full size; the gate waits until that frame is complete
+    // instead of fitting the pre-sheet box.
+    if (movedRef.current) return
+    const inspector = inspectorRef.current
+    if (!inspector) return
+    const box = inspector.getBoundingClientRect()
+    if (box.width < 2 || box.height < 2) return
+    if (
+      deferInitialFitForSheet(densityRef.current, selectedRef.current, sheetRef.current, placementRef.current)
+    ) {
+      requestSystemFitRef.current('sheet')
+      return
+    }
+    requestSystemFitRef.current(initialSettledRef.current ? 'resize' : 'initial')
+  }, [selected, showProperties, pinned, placement, chrome.maxHeightPx])
   const shown = placed.nodes.filter((node) => !isLegendHidden(hidden, node))
   const shownFocus = focused || menuFocusRef.current
   const focusedNode = shownFocus ? shown.find((node) => node.id === shownFocus) : undefined
@@ -2452,6 +2432,10 @@ export function GraphMap({
 
   const onKey = (event: ReactKeyboardEvent<HTMLCanvasElement>) => {
     if (event.key === 'Escape') {
+      if (full) {
+        setFull(false)
+        return
+      }
       if (density === 'narrow' && sheet !== 'dismissed' && selected) {
         setSheet('dismissed')
         return
@@ -2483,6 +2467,10 @@ export function GraphMap({
 
   const onStageKey = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'Escape' || event.target === canvasRef.current) return
+    if (full) {
+      setFull(false)
+      return
+    }
     if (density !== 'narrow' || sheet === 'dismissed' || !selected) return
     setSheet('dismissed')
   }

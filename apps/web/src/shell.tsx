@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { objectKeyFromValues } from './url-public'
 import { urlObjectTypeKey, useReadableUrl } from './use-readable-url'
@@ -6,17 +6,22 @@ import { ImportMappingsView } from './import/mappings-view'
 import { CatalogsView, MergeProfilesView, MergeRunsView, OwnershipView } from './catalogs/views'
 import { flushSync } from 'react-dom'
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, ChevronRight, File, Folder, FolderOpen } from 'lucide-react'
+import { ChevronDown, ChevronRight, File, Folder, FolderOpen, Plus } from 'lucide-react'
 import { StatusBar, useOnline } from './status-bar'
 import { isConnected, type LiveState } from './status-message'
-import { TrashDialog } from './trash-dialog'
+import { TrashTable } from './trash-table'
+import { openTrashTableEvent, requestOpenTrashTable } from './trash-runs'
+import { openImportMappingsEvent } from './import/open-mappings'
 import { DeleteObjectsHost } from './delete-objects-dialog'
 import { requestDeleteObjects } from './delete-objects'
 import { UserMenu } from './user-menu'
 import { CatalogSelector } from './catalog-selector'
-import { api, freeObject, jsonRecord, keepaliveJsonPut, operationId, recordTitle, textValue, type Json } from './api'
+import { ApiError, api, freeObject, jsonRecord, keepaliveJsonPut, operationId, recordTitle, textValue, type Json } from './api'
 import { AssortmentList, SelectionHost } from './assortments'
-import { humanizeLive, objectIdFromLive } from './activity'
+import { humanizeLive, liveOperation, objectIdFromLive } from './activity'
+import { isListPreview, loadObjectDetail, objectQueryStaleTime } from './object-list-preview'
+import { clearObjectGone, markObjectGone, objectFetchQueryOptions } from './object-gone'
+import { useObjectLand } from './use-object-land'
 import { ImportScreen } from './import/view'
 import { dropImportFiles, onImportLive, openImport, resumeImport, setImportDrag } from './import/controller'
 import { importRefreshesObjects, isFileDrag } from './import/model'
@@ -24,6 +29,7 @@ import { SearchRefresh } from './live-refresh'
 import { Button } from './components/ui/button'
 import { Input } from './components/ui/input'
 import { Toaster } from './components/ui/sonner'
+import { announce } from './shortcut-tip'
 import { workspaceDisplayName } from './demo-labels'
 import { WorkspaceDock } from './dock'
 import { flashObject } from './flash'
@@ -42,10 +48,15 @@ import {
   takeQueuedOpenTypeView,
 } from './open-type-view-queue'
 import { copy } from './i18n'
-import { applyLayoutCommand, focusView, migrateLayout, views as layoutViews, type LayoutDoc, type Place } from './layout'
-import { cloneObjectTableView, objectTableTemplateForType, objectTableViewForType } from './open-type-view'
+import { agentDockShare, applyLayoutCommand, findTabs, focusView, migrateLayout, views as layoutViews, type LayoutDoc, type Place } from './layout'
+import { cloneObjectTableView, draftTypeRef, objectTableForTypeToken, objectTableTemplateForType, objectTableViewForType } from './open-type-view'
 import { ConsequenceHost } from './consequence'
 import { ModelDraftHost } from './model-draft-ui'
+import { ModelTableBeforeUnload } from './model-table-beforeunload'
+import { layoutCommandLeavesTypeAttributes, layoutLeavesTypeAttributes } from './model-table-draft-nav'
+import { ModelTableLeaveDialog } from './model-table-leave-dialog'
+import { tryModelTableLeave } from './model-table-draft'
+import { clearModelTableDraftsForWorkspace, pruneModelTableDraftStorage } from './model-table-draft-storage'
 import { stageModel } from './model-stage'
 import { AttributeDefinitions } from './attribute-definitions'
 import { ModelTableView } from './model-tables'
@@ -60,9 +71,10 @@ import { prepareFeedbackCapture, type FeedbackCapture } from './feedback'
 import { AgentPresence } from './agent-presence'
 import { AgentView } from './agent-view'
 import { AgentsTable } from './agents-table'
-import { agentRunPrompt, agentRunsForWorkspace, agentTabTitle, backToMySessionEvent, listAgentRuns, openAgentEvent, openAgentsTableEvent, patchAgentRun, requestBackToMySession, showAgentSessionEvent, takeOverAgentRun, type AgentMessage, type AgentRunSummary } from './agent-runs'
-import { agentSessionLayout, controllingAgentRuns, holdLayoutFlush, layoutFlushHeld, agentMarkerViewIds, setViewingAgentRun, subscribeViewingAgent, viewingAgentRunId } from './agent-session'
+import { agentDockTabSessionLabel, agentRunPrompt, agentRunsForWorkspace, agentRunsToRestoreInLayout, backToMySessionEvent, listAgentRuns, openAgentEvent, openAgentsTableEvent, patchAgentRun, requestBackToMySession, showAgentSessionEvent, takeOverAgentRun, type AgentMessage, type AgentRunSummary } from './agent-runs'
+import { agentSessionLayout, controllingAgentRuns, holdLayoutFlush, layoutFlushHeld, layoutSaveBlocked, agentMarkerViewIds, setViewingAgentRun, subscribeViewingAgent, viewingAgentRunId } from './agent-session'
 import { CommandPalette } from './palette'
+import { focusAfterMenuTab } from './menu-keyboard'
 import { SharedContextMenuHost, prefersNativeContextMenu } from './shared-context-menu'
 import { StateNote } from './states'
 import { requestNewSelection } from './assortment-filter'
@@ -82,7 +94,15 @@ import {
   resolveActiveWorkspaceId,
   writeActiveWorkspaceId,
 } from './active-workspace'
-import { healDataModelWorkspace, isKnownViewType, layoutHasMissingViews, migrateLegacyModelViews } from './model-workspace-migrate'
+import { healAgentDockLayout } from './agent-layout-migrate'
+import { decideAgentToggle } from './agent-chat-toggle'
+import { captureAgentOpener, consumeAgentFocusRelease, restoreAgentFocus, type AgentFocusRequest } from './agent-focus'
+import { finishLayoutSave, noteLayoutEdit, saveVersionedLayout } from './layout-save'
+import { createViewKeySaver, saveViewChange, viewStateRecord } from './view-state-save'
+import { acknowledgeWriteError } from './write-status'
+import { healDataModelWorkspace, isDataModelWorkspace, isKnownViewType, layoutHasMissingViews, migrateLegacyModelViews } from './model-workspace-migrate'
+import { ModelRevisionReloadBanner, emitModelLiveEvent } from './model-reload-banner'
+import { isModelLiveEvent, modelRevisionFromDefinitions } from './model-revision-watch'
 import { persistWorkspaceMigration } from './workspace-migration-persist'
 import { commandPlaceholder, displayViewTitle, migrateSavedWorkspace, singularOf, typeNames, typeOfView } from './type-labels'
 import {
@@ -93,6 +113,15 @@ import {
   peerSourceOf,
   viewSourceLabel,
 } from './view-source'
+import { objectTablesToAutoLinkToTree } from './structure-tree-link'
+import {
+  findStructureTreeView,
+  mergeStructureTreeViewState,
+  resolveStructureOpenTarget,
+  structureTreeViewNeedsBackfill,
+  structureTreeViewState,
+  structureTreeViewTitle,
+} from './structure-tree-view'
 import { useDetailFollow } from './detail-follow'
 import { MASTER_CATALOG_ID } from './catalog-ref'
 import { workspaceCatalogRef } from './catalog-scope'
@@ -132,12 +161,17 @@ import {
   ProposalListView,
 } from './panes'
 
-type View = { id: string; type: string; title: string; pane?: string; position?: number; state: Json }
+type View = { id: string; type: string; title: string; pane?: string; position?: number; state: Json; updated_at?: string | null }
 type ListedWorkspace = { id: string; name: string; locked?: boolean; share_token?: string | null; layout?: Json | null; owner_id?: string }
 type Workspace = { id: string; name: string; locked: boolean; share_token?: string | null; layout: Json; owner_id?: string; catalog?: { catalogId?: string } | null; views?: View[] | null }
 
 function viewRows<T>(views: readonly T[] | null | undefined): T[] {
   return views ? [...views] : []
+}
+
+function agentRunIdFromView(views: View[], viewId: string): string {
+  const view = views.find((item) => item.id === viewId)
+  return String(view?.state?.run_id ?? '')
 }
 type Me = {
   email?: string
@@ -155,6 +189,9 @@ type Session = {
   activity: string[]
   setGroup: (value: string | null) => void
   setObjectId: (value: string | null) => void
+  objectAllowDeleted: boolean
+  setObjectAllowDeleted: (value: boolean) => void
+  openTrashObject: (id: string) => void
   setProposalId: (value: string | null) => void
   listType: string | null
   workspaceType?: string
@@ -162,7 +199,9 @@ type Session = {
   push: (line: string) => void
   openWorkspace: (id: string) => void
   openTypeView: (typeId: string) => void
+  openStructureView: (structureKey: string, placement?: { zone: 'center' | 'right'; target?: string }) => void
   workspaceId: string | null
+  userId: string
 }
 
 function readStore<T>(key: string, fallback: T): T {
@@ -216,6 +255,9 @@ export function Shell() {
   const [workspaceId, setWorkspaceId] = useState<string | null>(null)
   const [group, setGroup] = useState<string | null>(null)
   const [objectId, setObjectId] = useState<string | null>(null)
+  /** One-shot object to keep when opening a draft switches the active list. */
+  const detailHoldRef = useRef<string | null>(null)
+  const [objectAllowDeleted, setObjectAllowDeleted] = useState(false)
   const [listType, setListType] = useState<string | null>(null)
   const [proposalId, setProposalId] = useState<string | null>(null)
   const [logText, setLogText] = useState('')
@@ -268,24 +310,40 @@ export function Shell() {
   const [configFiles, setConfigFiles] = useState<File[] | null>(null)
   const [help, setHelp] = useState(false)
   const [tabMenu, setTabMenu] = useState<{ x: number; y: number; id: string } | null>(null)
+  const tabMenuTriggerRef = useRef<HTMLButtonElement | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string } | null>(null)
-  const [trashOpen, setTrashOpen] = useState(false)
   const [deleteError, setDeleteError] = useState('')
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [doc, setDoc] = useState<LayoutDoc | null>(null)
   // Gate dock paint while a dangling/incomplete Data model layout is healed in one pass.
   const [layoutHealPending, setLayoutHealPending] = useState(false)
+  // Server personal document for the workspace currently being healed. Null until
+  // GET /v1/workspaces/{id}/state returns. Heal must not decide from localStorage alone.
+  const [personalGate, setPersonalGate] = useState<{ workspaceId: string; document: LayoutDoc | null } | null>(null)
   const docRef = useRef<LayoutDoc | null>(null)
   const healPendingFor = useRef<string | null>(null)
   const dirtyRef = useRef(false)
+  // Set only from an explicit layout edit (commitDoc). Automatic heal sets dirtyRef
+  // for the personal PUT and leaves this false, so the debounce cannot POST shared.
+  const sharedLayoutDirtyRef = useRef(false)
   const saveGen = useRef(0)
+  const layoutSaveGate = useRef({ inflight: false, trailing: false })
+  const layoutBaseUpdatedAt = useRef<string | null>(null)
+  const layoutBaseDoc = useRef<LayoutDoc | null>(null)
+  const layoutVersioned = useRef(false)
+  const layoutBaseReady = useRef(false)
+  const [layoutSaveKick, setLayoutSaveKick] = useState(0)
+  const agentFocusRestoreRef = useRef<AgentFocusRequest | null>(null)
   const canonicalRef = useRef<LayoutDoc['layout'] | undefined>(undefined)
   const placeOverride = useRef<Place | undefined>(undefined)
   const loadedFor = useRef('')
   const applyRef = useRef<(name: string, args: Record<string, unknown>) => void>(() => {})
   const openTypeViewRef = useRef<(typeId: string) => void>(() => {})
+  const openStructureViewRef = useRef<(structureKey: string, placement?: { zone: 'center' | 'right'; target?: string }) => void>(() => {})
   const openAgentRunRef = useRef<(run: { id: string; title: string; view_id?: string | null; tab_open?: boolean; messages?: AgentMessage[] }) => void>(() => {})
   const openAgentsTableRef = useRef<() => void>(() => {})
+  const openTrashTableRef = useRef<() => void>(() => {})
+  const openImportMappingsRef = useRef<() => void>(() => {})
   const showAgentSessionRef = useRef<(run: AgentRunSummary) => void>(() => {})
   const backToMineRef = useRef<() => void>(() => {})
   const mineDocRef = useRef<LayoutDoc | null>(null)
@@ -293,6 +351,17 @@ export function Shell() {
   const restoredAgents = useRef<string | null>(null)
   const applyViewTypeSourceRef = useRef<(typeId: string, viewId?: string) => Promise<void>>(async () => undefined)
   const applyViewPeerSourceRef = useRef<(peerViewId: string, viewId?: string, linkType?: string) => Promise<void>>(async () => undefined)
+  const autoLinkStructureTreeRef = useRef<(treeViewId: string) => Promise<void>>(async () => undefined)
+  const openLayoutViewsRef = useRef<string[]>([])
+  useEffect(() => {
+    openLayoutViewsRef.current = []
+  }, [workspaceId])
+  useEffect(() => {
+    if (!doc) return
+    if (openLayoutViewsRef.current.length === 0) {
+      openLayoutViewsRef.current = layoutViews(doc.layout)
+    }
+  }, [doc])
   const migratedRef = useRef(new Set<string>())
   const ensuredTypes = useRef(new Set<string>())
   const workspaceIdRef = useRef<string | null>(null)
@@ -398,6 +467,20 @@ export function Shell() {
   workspaceIdRef.current = workspaceId
   workspacesRef.current = workspaces.data?.workspaces ?? []
 
+  const requestWorkspaceChange = useCallback((id: string) => {
+    if (!id || id === workspaceIdRef.current) return
+    tryModelTableLeave(() => setWorkspaceId(id))
+  }, [])
+
+  useEffect(() => {
+    const userId = me.data?.user_id
+    // An empty workspace set means "not loaded yet", not "this user has none".
+    // Pruning then deletes every valid table draft (row 421).
+    if (!userId || typeof localStorage === 'undefined' || !defs.data || !workspaces.data) return
+    const workspaceIds = new Set((workspaces.data?.workspaces ?? []).map((item) => item.id))
+    pruneModelTableDraftStorage(userId, workspaceIds, defs.data)
+  }, [me.data?.user_id, workspaces.data, defs.data])
+
   const orderedWorkspaces = useMemo(
     () => orderWorkspaces(workspaces.data?.workspaces ?? [], typeNames(defs.data)),
     [workspaces.data, defs.data],
@@ -415,6 +498,14 @@ export function Shell() {
     if (!user || !workspaceId) return
     writeActiveWorkspaceId(user, workspaceId)
   }, [workspaceId, me.data?.user_id])
+
+  useEffect(() => {
+    const types = typeNames(defs.data)
+    const keys = new Set(types.map((type) => type.key))
+    for (const key of ensuredTypes.current) {
+      if (!keys.has(key)) ensuredTypes.current.delete(key)
+    }
+  }, [defs.data])
 
   useEffect(() => {
     const rows = workspaces.data?.workspaces
@@ -438,13 +529,21 @@ export function Shell() {
 
   const workspace = useQuery({
     queryKey: ['workspace', workspaceId],
-    queryFn: () => api.get('/v1/workspaces/{id}', { params: { path: { id: workspaceId ?? '' } } }),
+    queryFn: async (): Promise<Workspace> => {
+      const loaded = await api.get('/v1/workspaces/{id}', { params: { path: { id: workspaceId ?? '' } } })
+      return loaded as Workspace
+    },
     enabled: Boolean(workspaceId),
   })
-  const opened = useQuery({
+  const { settled: objectFetchSettled } = useObjectLand(objectId)
+  const openedPreview = queryClient.getQueryData(['object', objectId])
+  const opened = useQuery<Json, Error>({
     queryKey: ['object', objectId],
-    queryFn: () => api.get('/v1/objects/{id}', { params: { path: { id: objectId ?? '' } } }),
-    enabled: Boolean(objectId),
+    queryFn: ({ signal }) => loadObjectDetail(queryClient, objectId ?? '', signal),
+    enabled: Boolean(objectId) && objectFetchSettled && !objectAllowDeleted,
+    placeholderData: () => queryClient.getQueryData<Json>(['object', objectId]),
+    ...objectFetchQueryOptions(),
+    staleTime: objectQueryStaleTime(openedPreview),
   })
   const detailListViews = useMemo(
     () => viewRows(workspace.data?.views).map((view) => ({ id: view.id, type: view.type })),
@@ -457,6 +556,7 @@ export function Shell() {
     detailListViews,
     Boolean(doc && workspace.data && workspace.data.id === workspaceId),
     setObjectId,
+    detailHoldRef,
   )
   const feedbackEnabled = me.data?.feedback === true
   const urlCatalogId = workspaceCatalogRef(workspace.data)?.catalogId || MASTER_CATALOG_ID
@@ -493,11 +593,16 @@ export function Shell() {
     viewTypeKey: (id) => urlObjectTypeKey(id, null, urlViews),
     objectId,
     objectKey,
-    objectLoaded: Boolean(objectId && opened.isSuccess && opened.data?.id === objectId),
+    objectLoaded: Boolean(
+      objectId
+      && opened.isSuccess
+      && opened.data?.id === objectId
+      && !isListPreview(opened.data),
+    ),
     navigate: (next) => {
       void navigate({ to: '/', search: next.search, replace: next.replace })
     },
-    applyWorkspace: (id) => setWorkspaceId(id),
+    applyWorkspace: (id) => requestWorkspaceChange(id),
     applyCatalog: (id) => {
       window.dispatchEvent(new CustomEvent('braian-set-catalog', {
         detail: { scope: 'workspace', catalogId: id },
@@ -527,10 +632,34 @@ export function Shell() {
         setTheme(themeRef.current === 'dark' ? 'light' : 'dark')
       }),
       registerCommandRunner('agent:open', () => {
+        captureAgentOpener()
         setFieldsEditColumnId(null)
         setPaletteStartAddView(false)
         setPaletteSourceTargetViewId(null)
         setPaletteStartNewFromTemplate(false)
+        const current = docRef.current
+        const surface = workspaceRef.current
+        if (current && surface && !paletteModeRef.current) {
+          const rows = viewRows(surface.views)
+          const catalog = rows.map((view) => ({ id: view.id, title: view.title, type: view.type }))
+          const agents = catalog.filter((view) => view.type === 'agent')
+          const openIds = layoutViews(current.layout)
+          const decision = decideAgentToggle(openIds, agents)
+          if (decision.kind === 'close') {
+            for (const id of decision.viewIds) {
+              applyRef.current('close_view', { view: id })
+            }
+            return
+          }
+          if (decision.kind === 'reopen-hidden') {
+            const view = rows.find((item) => item.id === decision.viewId)
+            const runId = view ? agentRunIdFromView(rows, view.id) : ''
+            if (view && runId) {
+              openAgentRunRef.current({ id: runId, title: view.title, view_id: view.id, tab_open: true })
+              return
+            }
+          }
+        }
         setPaletteMode('ai')
         setPaletteEpoch((value) => value + 1)
       }),
@@ -676,15 +805,21 @@ export function Shell() {
         void queryClient.invalidateQueries({ queryKey: ['objects'] })
         void queryClient.invalidateQueries({ queryKey: ['path-values'] })
       },
-      (id) => {
+      (id, raw) => {
+        if (liveOperation(raw) === 'delete') {
+          markObjectGone(queryClient, id)
+          return
+        }
         void queryClient.invalidateQueries({ queryKey: ['object', id] })
         void queryClient.invalidateQueries({ queryKey: ['object-ref', id] })
         void queryClient.invalidateQueries({ queryKey: ['history', id] })
       },
+      queryClient,
     )
     source.onopen = () => setLiveState('open')
     source.onmessage = (event) => {
       setLiveState('message')
+      if (isModelLiveEvent(event.data)) emitModelLiveEvent(event.data)
       const id = objectIdFromLive(event.data)
       if (id) flashObject(id)
       onImportLive(event.data)
@@ -721,6 +856,79 @@ export function Shell() {
   })
   const workspaceRef = useRef(workspace.data)
   workspaceRef.current = workspace.data
+  const refetchView = async (workspaceId: string, viewId: string) => {
+    const fresh = await api.get('/v1/workspaces/{id}', { params: { path: { id: workspaceId } } })
+    const found = viewRows(fresh.views).find((view) => view.id === viewId)
+    return { state: viewStateRecord(found?.state), updated_at: found?.updated_at ?? null }
+  }
+  const mergeViewRef = useRef<(view: View, workspaceId: string, next: Json, previous?: View) => Promise<void>>(async () => {})
+  mergeViewRef.current = async (view, workspaceId, next, previous) => {
+    await saveViewChange({
+      id: view.id,
+      workspaceId,
+      type: view.type,
+      title: view.title,
+      pane: view.pane ?? 'center',
+      position: view.position ?? 0,
+      baseState: viewStateRecord(previous?.state ?? view.state),
+      nextState: viewStateRecord(next),
+      updatedAt: previous?.updated_at ?? view.updated_at,
+      previous: previous
+        ? {
+            type: previous.type,
+            title: previous.title,
+            pane: previous.pane ?? 'center',
+            position: previous.position ?? 0,
+          }
+        : undefined,
+      post: (body) => api.post('/v1/views', {
+        body: {
+          id: body.id,
+          workspace_id: body.workspace_id,
+          type: body.type,
+          title: body.title,
+          pane: body.pane,
+          position: body.position,
+          state: freeObject(body.state),
+          ...(body.expected_updated_at !== undefined ? { expected_updated_at: body.expected_updated_at } : {}),
+        },
+      }),
+      refetch: () => refetchView(workspaceId, view.id),
+      isConflict: (error) => error instanceof ApiError && error.status === 409,
+      onConflict: () => acknowledgeWriteError(409),
+    })
+  }
+  const viewKeySaver = useRef<ReturnType<typeof createViewKeySaver> | null>(null)
+  if (!viewKeySaver.current) {
+    viewKeySaver.current = createViewKeySaver({
+      post: (body) => api.post('/v1/views', {
+        body: {
+          id: body.id,
+          workspace_id: body.workspace_id,
+          type: body.type,
+          title: body.title,
+          pane: body.pane,
+          position: body.position,
+          state: freeObject(body.state),
+          ...(body.expected_updated_at !== undefined ? { expected_updated_at: body.expected_updated_at } : {}),
+        },
+      }),
+      refetch: (viewId) => refetchView(workspaceRef.current?.id ?? '', viewId),
+      isConflict: (error) => error instanceof ApiError && error.status === 409,
+      onConflict: () => acknowledgeWriteError(409),
+      onError: (error) => reportWriteError(error),
+      onSaved: (viewId, updatedAt) => {
+        const surface = workspaceRef.current
+        if (!surface) return
+        const views = viewRows(surface.views).map((view) => (
+          view.id === viewId ? { ...view, updated_at: updatedAt } : view
+        ))
+        const next = { ...surface, views }
+        workspaceRef.current = next
+        queryClient.setQueryData(['workspace', surface.id], next)
+      },
+    })
+  }
 
   useEffect(() => {
     const surface = workspace.data
@@ -729,9 +937,12 @@ export function Shell() {
     restoredAgents.current = surface.id
     void listAgentRuns()
       .then((runs) => {
-        const { here, elsewhere } = agentRunsForWorkspace(runs, surface.id)
-        if (elsewhere.length > 0) toast.message(copy.agentOpenElsewhere)
-        for (const run of here) openAgentRunRef.current(run)
+        const openViewIds = layoutViews(doc.layout)
+        const { restore, stale } = agentRunsToRestoreInLayout(runs, surface.id, openViewIds)
+        for (const run of stale) {
+          void patchAgentRun(run.id, { tab_open: false }).catch((reason: unknown) => reportWriteError(reason))
+        }
+        for (const run of restore) openAgentRunRef.current(run)
       })
       .catch((reason: unknown) => reportWriteError(reason))
   }, [workspace.data, doc, userId])
@@ -742,6 +953,8 @@ export function Shell() {
       if (run?.id) openAgentRunRef.current(run)
     }
     const onTable = () => openAgentsTableRef.current()
+    const onTrash = () => openTrashTableRef.current()
+    const onImportMappings = () => openImportMappingsRef.current()
     const onShow = (event: Event) => {
       const run = (event as CustomEvent<AgentRunSummary>).detail
       if (run?.id) showAgentSessionRef.current(run)
@@ -749,11 +962,15 @@ export function Shell() {
     const onBack = () => backToMineRef.current()
     window.addEventListener(openAgentEvent, onRun)
     window.addEventListener(openAgentsTableEvent, onTable)
+    window.addEventListener(openTrashTableEvent, onTrash)
+    window.addEventListener(openImportMappingsEvent, onImportMappings)
     window.addEventListener(showAgentSessionEvent, onShow)
     window.addEventListener(backToMySessionEvent, onBack)
     return () => {
       window.removeEventListener(openAgentEvent, onRun)
       window.removeEventListener(openAgentsTableEvent, onTable)
+      window.removeEventListener(openTrashTableEvent, onTrash)
+      window.removeEventListener(openImportMappingsEvent, onImportMappings)
       window.removeEventListener(showAgentSessionEvent, onShow)
       window.removeEventListener(backToMySessionEvent, onBack)
     }
@@ -789,28 +1006,48 @@ export function Shell() {
           if (!found) return
           const state = freeObject({ ...found.state, catalogOverride: { catalogId } })
           delete (state as { catalog?: unknown }).catalog
-          void api.post('/v1/views', {
-            body: {
-              id: found.id,
-              workspace_id: surfaceNow.id,
-              type: found.type,
-              title: found.title,
-              pane: found.pane ?? 'center',
-              position: found.position ?? 0,
-              state,
-            },
-          }).then(() => queryClient.invalidateQueries({ queryKey: ['workspace', surfaceNow.id] })).catch((reason: unknown) => {
-            reportWriteError(reason)
-          })
+          const updated: View = { ...found, state }
+          // Legacy `catalog` is removed with a null so the merge drops it.
+          // Only these keys are sent; a fast switch keeps the latest of each.
+          const nextViews = viewRows(surfaceNow.views).map((view) =>
+            view.id === found.id
+              ? {
+                  ...updated,
+                  pane: updated.pane ?? 'center',
+                  position: updated.position ?? 0,
+                  state,
+                }
+              : {
+                  ...view,
+                  pane: view.pane ?? 'center',
+                  position: view.position ?? 0,
+                  state: freeObject(view.state),
+                },
+          )
+          const nextSurface = { ...surfaceNow, views: nextViews }
+          workspaceRef.current = nextSurface
+          queryClient.setQueryData(['workspace', surfaceNow.id], nextSurface)
+          viewKeySaver.current?.schedule({
+            id: found.id,
+            workspaceId: surfaceNow.id,
+            type: found.type,
+            title: found.title,
+            pane: found.pane ?? 'center',
+            position: found.position ?? 0,
+            updatedAt: found.updated_at,
+          }, { catalogOverride: { catalogId }, catalog: null })
           return
         }
+        // Catalog is the explicit change. Send the shared layout, not a healed
+        // personal document that may be sitting on the painted doc.
+        const sharedLayout = canonicalRef.current ?? surfaceNow.layout ?? { tabs: [] }
         void api.post('/v1/workspaces', {
           body: {
             id: surfaceNow.id,
             name: surfaceNow.name,
             locked: surfaceNow.locked,
             share_token: surfaceNow.share_token ?? undefined,
-            layout: surfaceNow.layout ?? {},
+            layout: freeObject(sharedLayout as object),
             catalog: { catalogId },
           },
         }).then(() => {
@@ -830,19 +1067,43 @@ export function Shell() {
   }, [queryClient])
 
   useEffect(() => {
+    const holdObject = (id: string) => {
+      detailHoldRef.current = id
+    }
+    const focusTable = (viewId: string, objectId: string) => {
+      const current = docRef.current
+      if (!current) return
+      const open = layoutViews(current.layout).includes(viewId)
+      if (open) {
+        const next = focusView(current, viewId)
+        if (next.focus !== current.focus) holdObject(objectId)
+        if (next !== current) {
+          docRef.current = next
+          setDoc(next)
+        }
+      } else {
+        holdObject(objectId)
+        applyRef.current('ui.open_view', { id: viewId })
+      }
+      dispatchUi('ui.select', { id: objectId, view: viewId })
+    }
     const onOpen = (event: Event) => {
-      const detail = (event as CustomEvent<{ objectId?: string | null; viewType?: string }>).detail
-      if (detail?.objectId) setObjectId(detail.objectId)
-      const surface = workspace.data
+      const detail = (event as CustomEvent<{ objectId?: string | null; viewType?: string; typeKey?: string; typeId?: string }>).detail
+      const objectId = detail?.objectId ?? null
+      if (objectId) {
+        setObjectAllowDeleted(false)
+        setObjectId(objectId)
+      }
+      const surface = workspaceRef.current
       const current = docRef.current
       if (!surface || !current) return
       const wanted = detail?.viewType || 'object_table'
       const rows = viewRows(surface.views)
-      const view = rows.find((item) => item.type === wanted) ?? rows.find((item) => item.type === 'object_table')
-      if (!view) return
       // A selection draft lives in the Selections view, so re-open it if the
       // user closed the tab. Other draft links only focus a view already open.
       if (wanted === 'assortment_list') {
+        const view = rows.find((item) => item.type === 'assortment_list')
+        if (!view) return
         // Re-open the tab if it was closed. If it is already open, skip
         // ui.open_view: that focuses the pane on the next frame and steals
         // the name field in the selection draft.
@@ -853,11 +1114,58 @@ export function Shell() {
         }
         return
       }
-      setDoc(focusView(current, view.id))
+      if (wanted !== 'object_table' || !objectId) {
+        const view = rows.find((item) => item.type === wanted) ?? rows.find((item) => item.type === 'object_table')
+        if (view) setDoc(focusView(current, view.id))
+        return
+      }
+      const hinted = { id: detail?.typeId, key: detail?.typeKey }
+      const focusMatchedTable = (
+        surfaceNow: NonNullable<typeof workspaceRef.current>,
+        docNow: NonNullable<typeof docRef.current>,
+        type: { id: string; key: string },
+      ) => {
+        const openIds = layoutViews(docNow.layout)
+        const match = objectTableForTypeToken(viewRows(surfaceNow.views), type, openIds)
+        if (match && openIds.includes(match.id)) {
+          focusTable(match.id, objectId)
+          return true
+        }
+        if (match) {
+          holdObject(objectId)
+          applyRef.current('ui.open_view', { id: match.id })
+          dispatchUi('ui.select', { id: objectId, view: match.id })
+          return true
+        }
+        const typeId = type.id || typeNames(queryClient.getQueryData<Json>(['definitions'])).find((item) => item.key === type.key)?.id
+        if (!typeId) return false
+        holdObject(objectId)
+        openTypeViewRef.current(typeId)
+        return true
+      }
+      const defsNow = () => queryClient.getQueryData<Json>(['definitions'])
+      const cached = queryClient.getQueryData<Json>(['object', objectId])
+      const known = draftTypeRef(cached, hinted, typeNames(defsNow()))
+      // Focus before the click returns when the type is already known. A later
+      // layout change lands during the dock animation and covers Detail's Save.
+      if (known && focusMatchedTable(surface, current, known)) return
+      void (async () => {
+        try {
+          const body = await api.get('/v1/objects/{id}', { params: { path: { id: objectId } } })
+          queryClient.setQueryData(['object', objectId], body)
+          const type = draftTypeRef(body, hinted, typeNames(defsNow()))
+          const surfaceNow = workspaceRef.current
+          const docNow = docRef.current
+          if (!surfaceNow || !docNow || !type) return
+          focusMatchedTable(surfaceNow, docNow, type)
+        } catch (reason) {
+          reportWriteError(reason)
+        }
+      })()
     }
     window.addEventListener('braian-open-draft', onOpen)
     return () => window.removeEventListener('braian-open-draft', onOpen)
-  }, [workspace.data])
+  }, [queryClient])
 
   useEffect(() => {
     const onOpen = (event: Event) => {
@@ -865,11 +1173,11 @@ export function Shell() {
       if (!proposalId) return
       setProposalId(proposalId)
       const review = orderedWorkspaces.find((workspace) => workspace.share_token === 'braian-review')
-      if (review) setWorkspaceId(review.id)
+      if (review) requestWorkspaceChange(review.id)
     }
     window.addEventListener('braian-open-proposal', onOpen)
     return () => window.removeEventListener('braian-open-proposal', onOpen)
-  }, [orderedWorkspaces])
+  }, [orderedWorkspaces, requestWorkspaceChange])
 
   useEffect(() => {
     if (workspace.data && workspace.data.id === workspaceId) {
@@ -886,61 +1194,94 @@ export function Shell() {
     const key = layoutStorageKey(userId, workspaceId)
     const canonical = canonicalDoc(current)
     canonicalRef.current = canonical.layout
-    const local = readLayoutStore(key)
-    const painted = local ? migrateDoc(local.document) : canonical
-    const listed = viewRows(current.views)
-    // Heal against the layout we would paint (local/personal), not only the server
-    // workspace layout — otherwise a healed server + stale personal doc keeps
-    // Unavailable tabs across reloads without re-entering heal.
-    const pendingHeal = healDataModelWorkspace(current, listed, painted.layout).changed
-      || healDataModelWorkspace(current, listed, canonical.layout).changed
+    sharedLayoutDirtyRef.current = false
     dirtyRef.current = false
-    if (pendingHeal) {
-      // Force the heal effect to run even if a prior no-op marked this id.
+    layoutSaveGate.current = { inflight: false, trailing: false }
+    layoutBaseUpdatedAt.current = null
+    layoutBaseDoc.current = null
+    layoutVersioned.current = false
+    layoutBaseReady.current = false
+    const local = readLayoutStore(key)
+    const listed = viewRows(current.views)
+    // Paint local or the shared layout first. A dangling or incomplete model
+    // layout stays behind the heal gate until the personal-state GET decides,
+    // so ghost panes never flash as Unavailable.
+    const provisional = local ? migrateDoc(local.document) : canonical
+    const holdForHeal =
+      layoutHasMissingViews(provisional.layout, listed)
+      || healDataModelWorkspace(current, listed, provisional.layout).changed
+    if (holdForHeal) {
       migratedRef.current.delete(current.id)
       healPendingFor.current = current.id
       setLayoutHealPending(true)
       docRef.current = null
       setDoc(null)
-      return
+    } else {
+      docRef.current = provisional
+      setDoc(provisional)
     }
-    healPendingFor.current = null
-    setLayoutHealPending(false)
-    docRef.current = painted
-    setDoc(painted)
+    setPersonalGate(null)
     let cancelled = false
     void api.get('/v1/workspaces/{id}/state', { params: { path: { id: workspaceId }, query: { environment: LAYOUT_ENVIRONMENT } } })
       .then((server) => {
-        if (cancelled || dirtyRef.current || loadedFor.current !== stamp) return
-        if (healPendingFor.current === current.id) return
+        if (cancelled || loadedFor.current !== stamp) return
+        const serverDoc = server.document ? migrateDoc(server.document) : null
+        const serverHasPersonal = Boolean(server.document)
+        setPersonalGate({ workspaceId, document: serverDoc })
+        // An explicit edit landed while the personal document was in flight.
+        if (sharedLayoutDirtyRef.current) return
         const fresh = readLayoutStore(key)
-        const next = reconcileLayout(fresh, server, canonical)
-        if (
-          layoutHasMissingViews(next.layout, listed)
-          || healDataModelWorkspace(current, listed, next.layout).changed
-        ) {
-          // Stale personal state still references missing views — let heal rebuild once.
-          healPendingFor.current = current.id
-          setLayoutHealPending(true)
-          docRef.current = null
-          setDoc(null)
-          migratedRef.current.delete(current.id)
-          return
+        let next = reconcileLayout(fresh, server, canonical)
+        if (!serverHasPersonal) {
+          const agentInline = healAgentDockLayout(next.layout, listed, next.focus)
+          if (agentInline.changed && agentInline.layout) {
+            next = { ...next, layout: agentInline.layout }
+            // Personal create only. sharedLayoutDirtyRef stays false.
+            dirtyRef.current = true
+            saveGen.current += 1
+            migratedRef.current.delete(current.id)
+          }
+          if (
+            layoutHasMissingViews(next.layout, listed)
+            || healDataModelWorkspace(current, listed, next.layout).changed
+          ) {
+            migratedRef.current.delete(current.id)
+            healPendingFor.current = current.id
+            setLayoutHealPending(true)
+            docRef.current = null
+            setDoc(null)
+            return
+          }
         }
         const serverAt = server.updated_at ? Date.parse(server.updated_at) : 0
-        const serverDoc = server.document ? migrateDoc(server.document) : null
         const diverged = Boolean(
           fresh && fresh.savedAt > serverAt && (!serverDoc || JSON.stringify(next) !== JSON.stringify(serverDoc)),
         )
         docRef.current = next
-        dirtyRef.current = diverged
-        if (diverged) saveGen.current += 1
+        if (diverged) {
+          dirtyRef.current = true
+          sharedLayoutDirtyRef.current = true
+          saveGen.current += 1
+        }
+        healPendingFor.current = null
+        setLayoutHealPending(false)
         setDoc(next)
-        writeLayoutStore(key, next)
+        // A normalized copy of an existing personal document must not become a
+        // newer local edit that the next load writes back over the server.
+        const sameAsServer = Boolean(serverDoc && JSON.stringify(next) === JSON.stringify(serverDoc))
+        if (!serverHasPersonal || sameAsServer || diverged) writeLayoutStore(key, next)
+        layoutBaseUpdatedAt.current = server.updated_at ?? null
+        layoutBaseDoc.current = serverDoc
+        layoutVersioned.current = true
+        layoutBaseReady.current = true
+        if (dirtyRef.current) setLayoutSaveKick((value) => value + 1)
       })
       .catch((reason: unknown) => {
         // A missing personal layout is a 200 with a null document. Anything else
         // leaves the local copy on screen, and the user still needs the reason.
+        layoutVersioned.current = false
+        layoutBaseReady.current = true
+        if (dirtyRef.current) setLayoutSaveKick((value) => value + 1)
         reportWriteError(reason)
       })
     return () => {
@@ -949,48 +1290,118 @@ export function Shell() {
   }, [workspaceId, userId, workspace.data?.id])
 
   useEffect(() => {
+    const request = agentFocusRestoreRef.current
+    if (!request) return
+    agentFocusRestoreRef.current = null
+    restoreAgentFocus(request)
+  }, [doc])
+
+  useEffect(() => {
     if (layoutFlushHeld()) return
     if (!doc || !dirtyRef.current || !workspaceId || !userId) return
+    if (!layoutBaseReady.current) return
+    if (layoutSaveGate.current.inflight) {
+      layoutSaveGate.current = noteLayoutEdit(layoutSaveGate.current)
+      return
+    }
     const gen = saveGen.current
     const timer = window.setTimeout(() => {
+      // Checked at fire time. The flag is set without a re-render, so the
+      // effect cleanup does not cancel this timer before a delete + reload.
+      if (layoutSaveBlocked()) return
       const current = docRef.current
       const ws = workspaceRef.current
       if (!current || !ws || ws.id !== workspaceId || saveGen.current !== gen) return
-      void api.put('/v1/workspaces/{id}/state', {
-        params: { path: { id: workspaceId } },
-        body: { environment: LAYOUT_ENVIRONMENT, document: stampedLayout(current) },
-      }).then(() => {
-        if (saveGen.current === gen) dirtyRef.current = false
-      }).catch((reason: unknown) => {
-        reportWriteError(reason)
-      })
-      if (!editsArePersonal(ws)) {
-        void api.post('/v1/workspaces', { body: {
-            id: ws.id,
-            name: ws.name,
-            locked: ws.locked,
-            share_token: ws.share_token,
-            layout: current.layout,
-          } }).then(() => {
-          canonicalRef.current = current.layout
-        }).catch((reason: unknown) => {
-          reportWriteError(reason)
+      if (layoutSaveGate.current.inflight) {
+        layoutSaveGate.current = noteLayoutEdit(layoutSaveGate.current)
+        return
+      }
+      layoutSaveGate.current = { inflight: true, trailing: false }
+      const versioned = layoutVersioned.current
+      const putLayout = (document: LayoutDoc, expectedUpdatedAt: string | null) => {
+        const body: {
+          environment: string
+          document: { [key: string]: unknown }
+          expected_updated_at?: string | null
+        } = {
+          environment: LAYOUT_ENVIRONMENT,
+          document: stampedLayout(document),
+        }
+        if (versioned) body.expected_updated_at = expectedUpdatedAt
+        return api.put('/v1/workspaces/{id}/state', {
+          params: { path: { id: workspaceId } },
+          body,
         })
       }
+      const persist = versioned
+        ? saveVersionedLayout({
+            baseUpdatedAt: layoutBaseUpdatedAt.current,
+            baseDocument: layoutBaseDoc.current,
+            localDocument: current,
+            latest: () => docRef.current ?? current,
+            put: putLayout,
+            refetch: async () => {
+              const fresh = await api.get('/v1/workspaces/{id}/state', {
+                params: { path: { id: workspaceId }, query: { environment: LAYOUT_ENVIRONMENT } },
+              })
+              return {
+                document: fresh.document ? migrateDoc(fresh.document) : null,
+                updated_at: fresh.updated_at ?? null,
+              }
+            },
+            isConflict: (error) => error instanceof ApiError && error.status === 409,
+            onConflict: () => acknowledgeWriteError(409),
+          })
+        : putLayout(current, null).then((saved) => ({ document: current, updated_at: saved.updated_at }))
+      void persist.then((saved) => {
+        layoutBaseUpdatedAt.current = saved.updated_at
+        layoutBaseDoc.current = saved.document
+        layoutVersioned.current = true
+        if (saveGen.current === gen) dirtyRef.current = false
+        else layoutSaveGate.current = noteLayoutEdit({ ...layoutSaveGate.current, inflight: true })
+        // Healed and other automatic layouts stay on the personal PUT above.
+        // Shared POST is only an explicit layout edit on an unlocked private workspace.
+        if (sharedLayoutDirtyRef.current && !editsArePersonal(ws) && saveGen.current === gen) {
+          void api.post('/v1/workspaces', { body: {
+              id: ws.id,
+              name: ws.name,
+              locked: ws.locked,
+              share_token: ws.share_token,
+              layout: saved.document.layout,
+            } }).then(() => {
+            if (saveGen.current !== gen) return
+            sharedLayoutDirtyRef.current = false
+            canonicalRef.current = saved.document.layout
+          }).catch((reason: unknown) => {
+            reportWriteError(reason)
+          })
+        }
+      }).catch((reason: unknown) => {
+        reportWriteError(reason)
+      }).finally(() => {
+        const finished = finishLayoutSave(layoutSaveGate.current)
+        layoutSaveGate.current = finished.gate
+        if (finished.again && dirtyRef.current) setLayoutSaveKick((value) => value + 1)
+      })
     }, 700)
     return () => window.clearTimeout(timer)
-  }, [doc, workspaceId, userId])
+  }, [doc, workspaceId, userId, layoutSaveKick])
 
   useEffect(() => {
     const flush = () => {
-      if (layoutFlushHeld()) return
-      if (sessionStorage.getItem('braian.layout.suppressFlush') === '1') return
+      if (layoutSaveBlocked()) return
       const current = docRef.current
       if (!dirtyRef.current || !current || !workspaceId) return
-      keepaliveJsonPut(`/v1/workspaces/${workspaceId}/state`, {
+      const body: {
+        environment: string
+        document: { [key: string]: unknown }
+        expected_updated_at?: string | null
+      } = {
         environment: LAYOUT_ENVIRONMENT,
         document: stampedLayout(current),
-      })
+      }
+      if (layoutVersioned.current) body.expected_updated_at = layoutBaseUpdatedAt.current
+      keepaliveJsonPut(`/v1/workspaces/${workspaceId}/state`, body)
     }
     const onHide = () => {
       if (document.visibilityState === 'hidden') flush()
@@ -1005,12 +1416,30 @@ export function Shell() {
     }
   }, [workspaceId])
 
+  useEffect(() => {
+    if (!tabMenu) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' && event.key !== 'Tab') return
+      event.preventDefault()
+      event.stopPropagation()
+      const trigger = tabMenuTriggerRef.current
+      setTabMenu(null)
+      tabMenuTriggerRef.current = null
+      if (!trigger?.isConnected) return
+      if (event.key === 'Tab') focusAfterMenuTab(trigger, event.shiftKey)
+      else trigger.focus({ preventScroll: true })
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [tabMenu])
+
   useShortcutBindings({
     openPalette: () => {
       // Ctrl+K does nothing while the command list is already open.
       // Fields mode is still the palette, and Ctrl+K there returns to the root list.
       const open = document.querySelector('[data-testid="command-palette"]')
       if (open && open.getAttribute('data-fields-mode') !== 'true') return
+      captureAgentOpener()
       // Remount at list root (clears Fields › / stack left from Select fields ›) and
       // focus synchronously so the first typed character is not dropped.
       flushSync(() => {
@@ -1024,7 +1453,15 @@ export function Shell() {
       })
       document.querySelector<HTMLInputElement>('[data-testid="palette-input"]')?.focus()
     },
-    openAi: () => { void runCommand('agent:open') },
+    openAi: () => {
+      // Ctrl+J while the palette is open asks with the query, even if a pane
+      // stole focus and the key never reached the palette input.
+      if (paletteModeRef.current) {
+        window.dispatchEvent(new Event('braian-palette-ask'))
+        return
+      }
+      void runCommand('agent:open')
+    },
     saveReview: () => window.dispatchEvent(new Event('braian-review-save')),
     openFeedback: feedbackEnabled ? openFeedback : undefined,
     openHelp: () => setHelp(true),
@@ -1034,7 +1471,7 @@ export function Shell() {
     },
     openWorkspaceAt: (index) => {
       const id = orderWorkspaces(workspaces.data?.workspaces ?? [], typeNames(defs.data))[index]?.id
-      if (id) setWorkspaceId(id)
+      if (id) requestWorkspaceChange(id)
     },
     focusPane: (direction) => applyRef.current('focus', { direction }),
     moveView: (direction) => {
@@ -1061,7 +1498,8 @@ export function Shell() {
 
 
   useEffect(() => {
-    publishMarked(objectId, opened.data?.type ?? null)
+    const type = opened.data?.type
+    publishMarked(objectId, type == null ? null : String(type))
   }, [objectId, opened.data?.type])
 
   useEffect(() => {
@@ -1162,17 +1600,7 @@ export function Shell() {
           found = created
         } else {
           const updated: View = { ...found, state: freeObject({ ...found.state, list_key: key }), title }
-          await api.post('/v1/views', {
-            body: {
-              id: updated.id,
-              workspace_id: surfaceNow.id,
-              type: updated.type,
-              title,
-              pane: updated.pane ?? 'right',
-              position: updated.position ?? 0,
-              state: freeObject(updated.state),
-            },
-          })
+          await mergeViewRef.current({ ...found, title }, surfaceNow.id, updated.state, found)
           views = views.map((view) => (view.id === found!.id ? updated : view))
           found = updated
         }
@@ -1219,7 +1647,7 @@ export function Shell() {
           }))
         }
       }
-      if (event.name === 'ui.open_workspace' && typeof event.args.id === 'string') setWorkspaceId(event.args.id)
+      if (event.name === 'ui.open_workspace' && typeof event.args.id === 'string') requestWorkspaceChange(event.args.id)
       if (event.name === 'ui.open_changes') applyRef.current('ui.open_view', { title: 'Changes', zone: 'center' })
       if (event.name === 'ui.open_template' && typeof event.args.id === 'string') {
         void openWorkspaceAfterRefetch(
@@ -1235,25 +1663,49 @@ export function Shell() {
   useEffect(() => {
     const current = workspace.data
     if (!current || !defs.data || migratedRef.current.has(current.id)) return
+    if (!userId || !personalGate || personalGate.workspaceId !== current.id) return
+    const serverDoc = personalGate.document
+    const serverHasPersonal = Boolean(serverDoc)
     const types = typeNames(defs.data)
     const objectPatch =
       types.length > 0
         ? migrateSavedWorkspace(current, viewRows(current.views), types)
         : { changed: false as const, name: undefined, views: [] as Array<{ id: string; title: string; state: Json; type?: string }> }
     const listed = viewRows(current.views)
-    const key = userId ? layoutStorageKey(userId, current.id) : ''
-    const local = key ? readLayoutStore(key) : null
-    // Prefer the layout the user would see (local/personal), then server canonical.
-    const paintedLayout = local ? migrateDoc(local.document).layout : migrateLayout(current.layout)
-    const modelFromPainted = healDataModelWorkspace(current, listed, paintedLayout)
-    const modelFromServer = healDataModelWorkspace(current, listed, migrateLayout(current.layout))
-    const modelPatch = modelFromPainted.changed ? modelFromPainted : modelFromServer
+    const key = layoutStorageKey(userId, current.id)
+    const local = readLayoutStore(key)
+    // Personal layout is the server document when this device has no local copy.
+    const paintedDoc = local ? migrateDoc(local.document) : serverDoc
+    const hasPersonalLayout = Boolean(paintedDoc)
+    const paintedLayout = paintedDoc ? paintedDoc.layout : migrateLayout(current.layout)
+    const paintedFocus = paintedDoc?.focus
+    const agentFromPainted = healAgentDockLayout(paintedLayout, listed, paintedFocus)
+    let layoutForPainted =
+      agentFromPainted.changed && agentFromPainted.layout ? agentFromPainted.layout : paintedLayout
+    const serverLayout = migrateLayout(current.layout)
+    const agentFromServer = healAgentDockLayout(serverLayout, listed)
+    const layoutForServer =
+      agentFromServer.changed && agentFromServer.layout ? agentFromServer.layout : serverLayout
+    const modelFromPainted = healDataModelWorkspace(current, listed, layoutForPainted)
+    const modelFromServer = healDataModelWorkspace(current, listed, layoutForServer)
+    const modelPatch = modelFromPainted.changed
+      ? modelFromPainted
+      : hasPersonalLayout
+        ? { changed: false, views: [], create: [], layout: undefined, removed: [] as string[] }
+        : modelFromServer
+    const agentLayout = agentFromPainted.layout ?? (hasPersonalLayout ? undefined : agentFromServer.layout)
+    // An existing personal server document is never replaced by a heal.
+    const layout = serverHasPersonal ? undefined : (modelPatch.layout ?? agentLayout)
     const patch = {
-      changed: objectPatch.changed || modelPatch.changed,
+      changed:
+        objectPatch.changed
+        || modelPatch.views.length > 0
+        || (modelPatch.create?.length ?? 0) > 0
+        || Boolean(layout),
       name: objectPatch.name,
       views: [...objectPatch.views, ...modelPatch.views],
       create: modelPatch.create,
-      layout: modelPatch.layout,
+      layout,
     }
     migratedRef.current.add(current.id)
     if (!patch.changed) {
@@ -1266,8 +1718,66 @@ export function Shell() {
     healPendingFor.current = current.id
     setLayoutHealPending(true)
     void persistWorkspaceMigration(current, patch, {
-      postView: (body) => api.post('/v1/views', { body }),
+      postView: async (body) => {
+        const existing = viewRows(workspaceRef.current?.views).find((view) => view.id === body.id)
+        if (!existing) return api.post('/v1/views', { body })
+        await mergeViewRef.current(
+          { ...existing, type: body.type, title: body.title, pane: body.pane, position: body.position },
+          body.workspace_id,
+          body.state,
+          existing,
+        )
+      },
       postWorkspace: (body) => api.post('/v1/workspaces', { body }),
+      putPersonalLayout: async (layout) => {
+        if (serverHasPersonal) return
+        const next = canonicalDoc({
+          id: current.id,
+          name: patch.name ?? current.name,
+          layout,
+          owner_id: current.owner_id,
+        })
+        writeLayoutStore(key, next)
+        docRef.current = next
+        dirtyRef.current = false
+        sharedLayoutDirtyRef.current = false
+        setDoc(next)
+        loadedFor.current = `${userId}:${current.id}`
+        const saved = layoutVersioned.current
+          ? await saveVersionedLayout({
+              baseUpdatedAt: layoutBaseUpdatedAt.current,
+              baseDocument: layoutBaseDoc.current,
+              localDocument: next,
+              latest: () => (docRef.current?.id === next.id ? docRef.current : next),
+              put: (document, expectedUpdatedAt) => api.put('/v1/workspaces/{id}/state', {
+                params: { path: { id: current.id } },
+                body: {
+                  environment: LAYOUT_ENVIRONMENT,
+                  document: stampedLayout(document),
+                  expected_updated_at: expectedUpdatedAt,
+                },
+              }),
+              refetch: async () => {
+                const fresh = await api.get('/v1/workspaces/{id}/state', {
+                  params: { path: { id: current.id }, query: { environment: LAYOUT_ENVIRONMENT } },
+                })
+                return {
+                  document: fresh.document ? migrateDoc(fresh.document) : null,
+                  updated_at: fresh.updated_at ?? null,
+                }
+              },
+              isConflict: (error) => error instanceof ApiError && error.status === 409,
+              onConflict: () => acknowledgeWriteError(409),
+            })
+          : await api.put('/v1/workspaces/{id}/state', {
+              params: { path: { id: current.id } },
+              body: { environment: LAYOUT_ENVIRONMENT, document: stampedLayout(next) },
+            }).then((row) => ({ document: next, updated_at: row.updated_at }))
+        layoutBaseUpdatedAt.current = saved.updated_at
+        layoutBaseDoc.current = saved.document
+        layoutVersioned.current = true
+        layoutBaseReady.current = true
+      },
       freeObject,
     })
       .then(async () => {
@@ -1304,39 +1814,16 @@ export function Shell() {
           } as typeof listed[number])
         }
         const nextViews = [...byId.values()]
-        const nextLayout = freeObject(
-          (patch.layout && typeof patch.layout === 'object' ? patch.layout : current.layout) as object,
-        )
+        // Keep the shared layout. A healed layout is personal state only, so a
+        // catalog switch cannot POST it back onto the workspace row.
         const nextWorkspace = {
           ...current,
           name: patch.name ?? current.name,
-          layout: nextLayout,
+          layout: current.layout,
           views: nextViews,
         }
         queryClient.setQueryData(['workspace', current.id], nextWorkspace)
         workspaceRef.current = nextWorkspace
-        if (patch.layout) {
-          const next = canonicalDoc({
-            id: current.id,
-            name: patch.name ?? current.name,
-            layout: patch.layout,
-            owner_id: current.owner_id,
-          })
-          if (userId) writeLayoutStore(layoutStorageKey(userId, current.id), next)
-          docRef.current = next
-          dirtyRef.current = false
-          setDoc(next)
-          canonicalRef.current = next.layout
-          if (userId) {
-            loadedFor.current = `${userId}:${current.id}`
-            void api.put('/v1/workspaces/{id}/state', {
-              params: { path: { id: current.id } },
-              body: { environment: LAYOUT_ENVIRONMENT, document: stampedLayout(next) },
-            }).catch((reason: unknown) => {
-              reportWriteError(reason)
-            })
-          }
-        }
         healPendingFor.current = null
         setLayoutHealPending(false)
         await queryClient.invalidateQueries({ queryKey: ['workspace', current.id] })
@@ -1353,24 +1840,36 @@ export function Shell() {
         docRef.current = fallback
         setDoc(fallback)
       })
-  }, [workspace.data, defs.data, queryClient, userId])
+  }, [workspace.data, defs.data, queryClient, userId, personalGate])
 
   const session: Session = {
     group,
     objectId,
+    objectAllowDeleted,
     proposalId,
     language: 'en',
     activity: [],
     listType,
     workspaceType: typeKeyFromShare(workspace.data?.share_token),
     setGroup,
-    setObjectId,
+    setObjectId: (value) => {
+      setObjectAllowDeleted(false)
+      setObjectId(value)
+    },
+    setObjectAllowDeleted,
+    openTrashObject: (id) => {
+      clearObjectGone(queryClient, id)
+      setObjectAllowDeleted(true)
+      setObjectId(id)
+    },
     setListType,
     setProposalId,
     push,
-    openWorkspace: setWorkspaceId,
+    openWorkspace: requestWorkspaceChange,
     openTypeView: (typeId) => openTypeViewRef.current(typeId),
+    openStructureView: (structureKey, placement) => openStructureViewRef.current(structureKey, placement),
     workspaceId,
+    userId,
   }
 
   useProposalFocus(
@@ -1382,7 +1881,7 @@ export function Shell() {
   const openConfigReview = (id: string) => {
     const review = orderedWorkspaces.find((workspace) => workspace.share_token === 'braian-review')
     setProposalId(id)
-    if (review) setWorkspaceId(review.id)
+    if (review) requestWorkspaceChange(review.id)
     setConfigFiles(null)
   }
 
@@ -1413,11 +1912,10 @@ export function Shell() {
     setDeleteError('')
     try {
       await api.delete('/v1/workspaces/{id}', { params: { path: { id } } })
+      if (userId) clearModelTableDraftsForWorkspace(userId, id)
       await queryClient.invalidateQueries({ queryKey: ['workspaces'] })
       queryClient.removeQueries({ queryKey: ['workspace', id] })
-      if (workspaceId === id) {
-        if (neighbor) setWorkspaceId(neighbor)
-      }
+      if (workspaceId === id && neighbor) requestWorkspaceChange(neighbor)
       push(copy.deleteWorkspace)
       setDeleteConfirm(null)
       setTabMenu(null)
@@ -1512,20 +2010,47 @@ export function Shell() {
     setDoc(mine)
   }
 
-  const commitDoc = (next: LayoutDoc) => {
+  const applyLayoutDoc = (next: LayoutDoc) => {
     if (!workspaceId || !user.user_id) return
+    const prevOpen = openLayoutViewsRef.current
+    const nextOpen = layoutViews(next.layout)
+    const addedTrees = nextOpen.filter((id) => {
+      if (prevOpen.includes(id)) return false
+      const view = viewRows(workspaceRef.current?.views ?? []).find((item) => item.id === id)
+      return view?.type === 'structure_tree'
+    })
     if (layoutFlushHeld()) {
       docRef.current = next
       setDoc(next)
+      openLayoutViewsRef.current = nextOpen
+      for (const treeId of addedTrees) void autoLinkStructureTreeRef.current(treeId)
       return
     }
     docRef.current = next
     dirtyRef.current = true
+    sharedLayoutDirtyRef.current = true
     saveGen.current += 1
     writeLayoutStore(layoutStorageKey(user.user_id, workspaceId), next)
     setDoc(next)
+    openLayoutViewsRef.current = nextOpen
+    for (const treeId of addedTrees) void autoLinkStructureTreeRef.current(treeId)
+  }
+  const commitDoc = (next: LayoutDoc) => {
+    const current = docRef.current
+    const dockViews = viewRows(workspaceRef.current?.views ?? []).map((view) => ({
+      id: view.id,
+      type: view.type,
+      title: view.title,
+      state: view.state as Record<string, unknown> | undefined,
+    }))
+    if (current && layoutLeavesTypeAttributes(dockViews, current, next)) {
+      tryModelTableLeave(() => applyLayoutDoc(next))
+      return
+    }
+    applyLayoutDoc(next)
   }
   applyRef.current = (name, args) => {
+    const releasingAgent = name === 'focus' && args.direction === 'left' && consumeAgentFocusRelease()
     const current = docRef.current
     if (!current || !workspace.data) return
     let nextArgs = args
@@ -1540,25 +2065,53 @@ export function Shell() {
         delete nextArgs.id
       }
     }
-    const place = name === 'open_view' || name === 'ui.open_view' || name === 'ui.place' ? placeOverride.current : undefined
-    if (name === 'close_view') {
-      const closing = typeof args.view === 'string' ? args.view : typeof args.id === 'string' ? args.id : current.focus
-      const closingView = viewRows(workspace.data.views).find((view) => view.id === closing)
-      const runId = closingView?.type === 'agent' ? String(closingView.state.run_id ?? '') : ''
-      if (runId) void patchAgentRun(runId, { tab_open: false }).catch((reason: unknown) => reportWriteError(reason))
-    }
-    const result = applyLayoutCommand(current, name, nextArgs, {
-      views: viewRows(workspace.data.views).map((view) => ({ id: view.id, title: view.title, type: view.type })),
-      canonical: canonicalRef.current,
-      place,
-    })
-    if (result.handled && result.doc !== current) commitDoc(result.doc)
-    const focus = result.doc.focus
-    if (focus) {
-      requestAnimationFrame(() => {
-        document.querySelector<HTMLElement>(`[data-pane="${CSS.escape(focus)}"]`)?.focus()
+    const dockViews = viewRows(workspace.data.views).map((view) => ({
+      id: view.id,
+      type: view.type,
+      title: view.title,
+      state: view.state as Record<string, unknown> | undefined,
+    }))
+    const runLayout = () => {
+      const place = name === 'open_view' || name === 'ui.open_view' || name === 'ui.place' ? placeOverride.current : undefined
+      const closing = name === 'close_view'
+        ? (typeof args.view === 'string' ? args.view : typeof args.id === 'string' ? args.id : current.focus)
+        : null
+      const closingView = closing ? viewRows(workspace.data?.views).find((view) => view.id === closing) : undefined
+      if (closingView?.type === 'agent') {
+        const runId = String(closingView.state.run_id ?? '')
+        if (runId) void patchAgentRun(runId, { tab_open: false }).catch((reason: unknown) => reportWriteError(reason))
+      }
+      const result = applyLayoutCommand(current, name, nextArgs, {
+        views: viewRows(workspace.data.views).map((view) => ({ id: view.id, title: view.title, type: view.type })),
+        canonical: canonicalRef.current,
+        place,
       })
+      if (result.handled && result.doc !== current) commitDoc(result.doc)
+      const focus = result.doc.focus
+      const closingAgent = closingView?.type === 'agent'
+      if (releasingAgent || closingAgent) {
+        const leftPaneId = releasingAgent && result.doc.focus !== current.focus ? (result.doc.focus ?? null) : null
+        const request = { leftPaneId, preferredPaneId: focus && focus !== closing ? focus : null }
+        if (result.handled && result.doc !== current) agentFocusRestoreRef.current = request
+        else requestAnimationFrame(() => restoreAgentFocus(request))
+      } else if (focus) {
+        requestAnimationFrame(() => {
+          const active = document.activeElement
+          // A layout commit while the palette or a field is focused must not
+          // take the caret. Ctrl+J is delivered to the focused node.
+          if (
+            active instanceof HTMLElement
+            && active.closest('[data-testid="command-palette"], input, textarea, select')
+          ) return
+          document.querySelector<HTMLElement>(`[data-pane="${CSS.escape(focus)}"]`)?.focus()
+        })
+      }
     }
+    if (layoutCommandLeavesTypeAttributes(dockViews, current, name, nextArgs)) {
+      tryModelTableLeave(runLayout)
+      return
+    }
+    runLayout()
   }
   const typeCatalog = typeNames(defs.data)
   const openTypeKey = String(opened.data?.type ?? '')
@@ -1594,18 +2147,8 @@ export function Shell() {
       ?? views.find((view) => view.type === 'object_table')
     if (!target) return
     const nextState = applyTypeSource(target.state, type)
-    const updated: View = { ...target, title: type.plural, state: freeObject(nextState) }
-    await api.post('/v1/views', {
-      body: {
-        id: updated.id,
-        workspace_id: surfaceNow.id,
-        type: updated.type,
-        title: updated.title,
-        pane: updated.pane ?? 'center',
-        position: updated.position ?? 0,
-        state: freeObject(updated.state),
-      },
-    })
+    const updated: View = { ...target, state: freeObject(nextState) }
+    await mergeViewRef.current(target, surfaceNow.id, nextState)
     views = views.map((view) => (view.id === updated.id ? updated : view))
     const nextSurface = {
       ...surfaceNow,
@@ -1618,6 +2161,24 @@ export function Shell() {
     }
     workspaceRef.current = nextSurface
     queryClient.setQueryData(['workspace', surfaceNow.id], nextSurface)
+    } catch (reason) {
+      reportWriteError(reason)
+    }
+  }
+
+  autoLinkStructureTreeRef.current = async (treeViewId: string) => {
+    try {
+      const surfaceNow = workspaceRef.current
+      const docNow = docRef.current
+      if (!surfaceNow || surfaceNow.locked || !docNow) return
+      const defs = queryClient.getQueryData<Json>(['definitions'])
+      const types = typeNames(defs)
+      const openIds = layoutViews(docNow.layout)
+      const views = viewRows(surfaceNow.views)
+      const targets = objectTablesToAutoLinkToTree(treeViewId, views, types, openIds, defs)
+      for (const targetId of targets) {
+        await applyViewPeerSourceRef.current(treeViewId, targetId)
+      }
     } catch (reason) {
       reportWriteError(reason)
     }
@@ -1647,17 +2208,7 @@ export function Shell() {
       : undefined
     const nextState = applyPeerSource(target.state, source.id, kind, linkType || fallback)
     const updated: View = { ...target, state: freeObject(nextState) }
-    await api.post('/v1/views', {
-      body: {
-        id: updated.id,
-        workspace_id: surfaceNow.id,
-        type: updated.type,
-        title: updated.title,
-        pane: updated.pane ?? 'center',
-        position: updated.position ?? 0,
-        state: freeObject(updated.state),
-      },
-    })
+    await mergeViewRef.current(target, surfaceNow.id, nextState)
     views = views.map((view) => (view.id === updated.id ? updated : view))
     const nextSurface = {
       ...surfaceNow,
@@ -1677,6 +2228,7 @@ export function Shell() {
 
   openAgentRunRef.current = (run) => {
     void (async () => {
+      queryClient.removeQueries({ queryKey: ['agent-run', run.id] })
       const surfaceNow = workspaceRef.current
       const docNow = docRef.current
       if (!surfaceNow || !docNow) return
@@ -1685,7 +2237,7 @@ export function Shell() {
       if (!found) {
         const id = crypto.randomUUID()
         const prompt = agentRunPrompt(run)
-        const title = agentTabTitle(prompt) || copy.agent
+        const title = copy.agent
         found = {
           id,
           type: 'agent',
@@ -1726,13 +2278,41 @@ export function Shell() {
       }
       const current = docRef.current
       if (!current) return
-      if (layoutViews(current.layout).includes(found.id)) return
-      const result = applyLayoutCommand(current, 'ui.open_view', { id: found.id, zone: 'center' }, {
-        views: views.map((view) => ({ id: view.id, title: view.title, type: view.type })),
-        canonical: canonicalRef.current,
-        place: placeOverride.current,
-      })
+      if (layoutViews(current.layout).includes(found.id)) {
+        const pane = findTabs(current.layout, found.id)
+        const sharesPane = Boolean(pane && pane.views.some((id) => id !== found.id))
+        // An agent that already has its own dock pane only takes focus.
+        // One sitting in another tab group is pulled out below, without
+        // reordering the tabs it leaves behind.
+        if (!sharesPane) {
+          let next = current
+          if (current.focus !== found.id) next = { ...current, focus: found.id }
+          if (next !== current) commitDoc(next)
+          window.dispatchEvent(new CustomEvent('braian-focus-agent-input', { detail: { runId: run.id } }))
+          return
+        }
+      }
+      const result = applyLayoutCommand(
+        current,
+        'ui.open_view',
+        {
+          id: found.id,
+          zone: 'right',
+          dock: 'edge',
+          share: agentDockShare(
+            current.layout,
+            0.3,
+            new Map(views.map((view) => [view.id, view.type])),
+          ),
+        },
+        {
+          views: views.map((view) => ({ id: view.id, title: view.title, type: view.type })),
+          canonical: canonicalRef.current,
+          place: placeOverride.current,
+        },
+      )
       if (result.handled && result.doc !== current) commitDoc(result.doc)
+      window.dispatchEvent(new CustomEvent('braian-focus-agent-input', { detail: { runId: run.id } }))
     })().catch((reason: unknown) => reportWriteError(reason))
   }
 
@@ -1794,13 +2374,222 @@ export function Shell() {
     })().catch((reason: unknown) => reportWriteError(reason))
   }
 
+  openImportMappingsRef.current = () => {
+    void queryClient.invalidateQueries({ queryKey: ['import-mappings'] })
+    void (async () => {
+      const surfaceNow = workspaceRef.current
+      const docNow = docRef.current
+      if (!surfaceNow || !docNow) return
+      let views: View[] = viewRows(surfaceNow.views)
+      let found = views.find((view) => view.type === 'import_mappings')
+      if (!found) {
+        const id = crypto.randomUUID()
+        found = {
+          id,
+          type: 'import_mappings',
+          title: copy.importMappings,
+          pane: 'center',
+          position: views.length,
+          state: {},
+        }
+        await api.post('/v1/views', {
+          body: {
+            id,
+            workspace_id: surfaceNow.id,
+            type: found.type,
+            title: found.title,
+            pane: 'center',
+            position: views.length,
+            state: {},
+          },
+        })
+        views = [...views, found]
+        const nextSurface = {
+          ...surfaceNow,
+          views: views.map((view) => ({
+            ...view,
+            pane: view.pane ?? 'center',
+            position: view.position ?? 0,
+            state: freeObject(view.state),
+          })),
+        }
+        workspaceRef.current = nextSurface
+        queryClient.setQueryData(['workspace', surfaceNow.id], nextSurface)
+      }
+      const current = docRef.current
+      if (!current || !found) return
+      const open = layoutViews(current.layout).includes(found.id)
+      const result = applyLayoutCommand(
+        current,
+        'ui.open_view',
+        open ? { id: found.id } : { id: found.id, zone: 'center' },
+        {
+          views: views.map((view) => ({ id: view.id, title: view.title, type: view.type })),
+          canonical: canonicalRef.current,
+          place: placeOverride.current,
+        },
+      )
+      if (result.handled && result.doc !== current) commitDoc(result.doc)
+    })().catch((reason: unknown) => reportWriteError(reason))
+  }
+
+  openTrashTableRef.current = () => {
+    void queryClient.invalidateQueries({ queryKey: ['trash'] })
+    void (async () => {
+      const surfaceNow = workspaceRef.current
+      const docNow = docRef.current
+      if (!surfaceNow || !docNow) return
+      let views: View[] = viewRows(surfaceNow.views)
+      let found = views.find((view) => view.type === 'trash')
+      if (!found) {
+        const id = crypto.randomUUID()
+        found = {
+          id,
+          type: 'trash',
+          title: copy.trash,
+          pane: 'center',
+          position: views.length,
+          state: {},
+        }
+        await api.post('/v1/views', {
+          body: {
+            id,
+            workspace_id: surfaceNow.id,
+            type: found.type,
+            title: found.title,
+            pane: 'center',
+            position: views.length,
+            state: {},
+          },
+        })
+        views = [...views, found]
+        const nextSurface = {
+          ...surfaceNow,
+          views: views.map((view) => ({
+            ...view,
+            pane: view.pane ?? 'center',
+            position: view.position ?? 0,
+            state: freeObject(view.state),
+          })),
+        }
+        workspaceRef.current = nextSurface
+        queryClient.setQueryData(['workspace', surfaceNow.id], nextSurface)
+      }
+      const current = docRef.current
+      if (!current || !found) return
+      const open = layoutViews(current.layout).includes(found.id)
+      // Tab onto the object table so Detail stays mounted for Restore.
+      const anchor = views.find((view) => view.type === 'object_table')
+      const result = applyLayoutCommand(
+        current,
+        'ui.open_view',
+        open ? { id: found.id } : { id: found.id, target: anchor?.id, zone: 'center' },
+        {
+          views: views.map((view) => ({ id: view.id, title: view.title, type: view.type })),
+          canonical: canonicalRef.current,
+          place: placeOverride.current,
+        },
+      )
+      if (result.handled && result.doc !== current) commitDoc(result.doc)
+    })().catch((reason: unknown) => reportWriteError(reason))
+  }
+
+  openStructureViewRef.current = (structureKey: string, placement: { zone: 'center' | 'right'; target?: string } = { zone: 'center' }) => {
+    const surfaceNow = workspaceRef.current
+    const docNow = docRef.current
+    if (!surfaceNow || !docNow) {
+      announce(copy.workspaceOpeningWhenReady)
+      return
+    }
+    const defs = queryClient.getQueryData<Json>(['definitions'])
+    void (async () => {
+      try {
+        let views: View[] = viewRows(surfaceNow.views)
+        const matched = findStructureTreeView(views, structureKey, defs)
+        let tree = matched ? views.find((view) => view.id === matched.id) : undefined
+        if (!tree && surfaceNow.locked) {
+          toast.error(copy.layoutLocked)
+          return
+        }
+        if (tree && structureTreeViewNeedsBackfill(tree, structureKey, defs)) {
+          const state = freeObject(mergeStructureTreeViewState(tree, structureKey, defs))
+          await mergeViewRef.current(tree, surfaceNow.id, state)
+          const updated: View = { ...tree, state }
+          tree = updated
+          views = views.map((view) => (view.id === updated.id ? updated : view))
+        }
+        if (!tree) {
+          const id = crypto.randomUUID()
+          const title = structureTreeViewTitle(structureKey, defs)
+          const created: View = {
+            id,
+            type: 'structure_tree',
+            title,
+            pane: 'center',
+            position: views.length,
+            state: freeObject(structureTreeViewState(structureKey, defs)),
+          }
+          await api.post('/v1/views', {
+            body: {
+              id: created.id,
+              workspace_id: surfaceNow.id,
+              type: created.type,
+              title: created.title,
+              pane: 'center',
+              position: views.length,
+              state: freeObject(created.state),
+            },
+          })
+          views = [...views, created]
+          tree = created
+        }
+        const nextSurface = {
+          ...surfaceNow,
+          views: views.map((view) => ({
+            ...view,
+            pane: view.pane ?? 'center',
+            position: view.position ?? 0,
+            state: freeObject(view.state),
+          })),
+        }
+        workspaceRef.current = nextSurface
+        queryClient.setQueryData(['workspace', surfaceNow.id], nextSurface)
+        const current = docRef.current
+        if (!current || !tree) return
+        const openIds = layoutViews(current.layout)
+        const target = resolveStructureOpenTarget(
+          views,
+          placement.target ?? current.focus,
+          openIds,
+          placement.zone,
+        )
+        placeOverride.current = placement.zone === 'right'
+          ? { zone: 'right', ...(target ? { target } : {}) }
+          : { target, zone: 'center' }
+        const result = applyLayoutCommand(current, 'ui.open_view', {
+          id: tree.id,
+          zone: placement.zone,
+          ...(target ? { target } : {}),
+        }, {
+          views: views.map((view) => ({ id: view.id, title: view.title, type: view.type })),
+          canonical: canonicalRef.current,
+          place: placeOverride.current,
+        })
+        placeOverride.current = undefined
+        if (result.handled && result.doc !== current) commitDoc(result.doc)
+      } catch (reason) {
+        reportWriteError(reason)
+      }
+    })()
+  }
+
   openTypeViewRef.current = (typeId: string) => {
     const surfaceNow = workspaceRef.current
     const docNow = docRef.current
     if (!surfaceNow || !docNow) {
       // Notion 112: palette already closes on select — queue until doc+workspace paint.
       queueOpenTypeView(typeId)
-      toast.message(copy.workspaceOpeningWhenReady)
+      announce(copy.workspaceOpeningWhenReady)
       return
     }
     clearQueuedOpenTypeView()
@@ -1909,10 +2698,11 @@ export function Shell() {
             <button
               key={item.id}
               className={item.id === workspaceId ? 'tab active' : 'tab'}
-              onClick={() => setWorkspaceId(item.id)}
+              onClick={() => requestWorkspaceChange(item.id)}
               onContextMenu={(event) => {
                 if (prefersNativeContextMenu(event.target)) return
                 event.preventDefault()
+                tabMenuTriggerRef.current = event.currentTarget
                 setTabMenu({ x: event.clientX, y: event.clientY, id: item.id })
               }}
             >
@@ -1920,6 +2710,16 @@ export function Shell() {
               {index < 9 ? <span className="tab-index">{index + 1}</span> : null}
             </button>
           ))}
+          <button
+            type="button"
+            className="tab tab-new"
+            data-testid="workspace-new-button"
+            aria-label={copy.newWorkspaceButton}
+            title={copy.newWorkspaceButton}
+            onClick={() => { void runCommand('workspace:new') }}
+          >
+            <Plus size={14} aria-hidden="true" />
+          </button>
         </nav>
         <span className="spacer" />
         <AgentPresence
@@ -1946,7 +2746,7 @@ export function Shell() {
           connection={isConnected(online, liveState) ? 'online' : 'offline'}
           theme={theme}
           onToggleTheme={() => { void runCommand('theme:toggle') }}
-          onOpenTrash={() => setTrashOpen(true)}
+          onOpenTrash={() => requestOpenTrashTable()}
           onSignOut={() => { void runCommand('session:sign-out') }}
         />
       </header>
@@ -1980,15 +2780,27 @@ export function Shell() {
           <WorkspaceDock
             doc={doc}
             views={viewRows(surface.views).map((view) => {
-              const prompt = view.type === 'agent' ? String(view.state?.prompt ?? view.title) : undefined
+              const prompt = agentDockTabSessionLabel(view, agentRunList.data)
+              const bound = typeOfView(view, typeCatalog)
+              const peerActive = view.type === 'object_table' && Boolean(peerSourceOf(view.state))
+              const allOfType = bound?.plural ? copy.allOfType.replace('{type}', bound.plural) : ''
               return {
                 ...view,
-                title: prompt ? agentTabTitle(prompt) : displayViewTitle(view, typeCatalog, openTypeKey),
+                title: view.type === 'agent' ? copy.agent : displayViewTitle(view, typeCatalog, openTypeKey),
                 prompt,
                 sourceLabel: viewSourceLabel(view, typeCatalog, workspaceCatalogRef(surface), catalogNamesById, peerLabelFor(view)),
+                sourceLabelClearable: peerActive,
+                sourceLabelClearAriaLabel: peerActive && allOfType
+                  ? copy.clearViewSource.replace('{label}', allOfType)
+                  : undefined,
               }
             })}
             onChange={commitDoc}
+            onSourceLabelClear={(viewId) => {
+              const view = viewRows(surface.views).find((item) => item.id === viewId)
+              const bound = view ? typeOfView(view, typeCatalog) : undefined
+              if (bound?.id) void applyViewTypeSourceRef.current(bound.id, viewId)
+            }}
             agentViews={agentViews}
             renderView={(item) => {
               const full = viewRows(surface.views).find((view) => view.id === item.id)
@@ -2011,7 +2823,19 @@ export function Shell() {
         <pre className="activity" data-testid="activity-log" data-live={liveState}>{logText}</pre>
         <StatusBar online={online} live={liveState} locked={Boolean(workspace.data?.locked)} inert={agentControlled} />
       </div>
+      <ModelRevisionReloadBanner
+        enabled={Boolean(
+          workspace.data
+          && (
+            isDataModelWorkspace(workspace.data, viewRows(workspace.data.views))
+            || viewRows(workspace.data.views).some((view) => view.type === 'class_attributes')
+          ),
+        )}
+        loadedRevision={modelRevisionFromDefinitions(defs.data as Json | undefined)}
+      />
       <ModelDraftHost />
+      <ModelTableBeforeUnload />
+      <ModelTableLeaveDialog />
       <ConsequenceHost session={session} />
       <SharedContextMenuHost feedbackEnabled={feedbackEnabled} />
       {feedbackEnabled ? (
@@ -2072,6 +2896,10 @@ export function Shell() {
             const focus = docRef.current?.focus
             placeOverride.current = focus ? { target: focus, zone: 'center' } : { zone: 'center' }
           }}
+          onPrepareOpenStructure={() => {
+            const focus = docRef.current?.focus
+            placeOverride.current = focus ? { target: focus, zone: 'center' } : { zone: 'center' }
+          }}
           onClose={() => {
             placeOverride.current = undefined
             setPaletteStartAddView(false)
@@ -2093,7 +2921,12 @@ export function Shell() {
         />
       ) : null}
       {tabMenu ? (
-        <div className="menu" style={{ left: tabMenu.x, top: tabMenu.y }} data-testid="workspace-menu">
+        <div
+          className="menu"
+          style={{ left: tabMenu.x, top: tabMenu.y }}
+          data-testid="workspace-menu"
+          role="menu"
+        >
           {workspaces.data?.workspaces.filter((item) => item.id === tabMenu.id).map((item) => {
             const last = orderedWorkspaces.length <= 1
             const locked = Boolean(item.locked)
@@ -2155,7 +2988,6 @@ export function Shell() {
           </DialogContent>
         </Dialog>
       ) : null}
-      <TrashDialog open={trashOpen} onClose={() => setTrashOpen(false)} />
       <DeleteObjectsHost />
       <ImportScreen />
       {help ? <HelpDialog onClose={() => setHelp(false)} placeholder={commandPlaceholder(typeCatalog)} /> : null}
@@ -2225,12 +3057,23 @@ function ViewBody({ view, session, workspace }: { view: View; session: Session; 
   if (view.type === 'history') return <HistoryView session={session} />
   if (view.type === 'class_attributes') return <ClassAttributes session={session} />
   if (view.type === 'object_types' || view.type === 'link_types' || view.type === 'value_lists' || view.type === 'value_list_values' || view.type === 'units') {
-    return <ModelTableView view={view} />
+    return <ModelTableView view={view} draftScope={{ userId: session.userId, workspaceId: session.workspaceId ?? '' }} />
   }
-  if (view.type === 'data_model') return <DataModel view={view} />
+  if (view.type === 'data_model') {
+    return (
+      <DataModel
+        view={view}
+        draftScope={{ userId: session.userId, workspaceId: session.workspaceId ?? '' }}
+      />
+    )
+  }
   if (view.type === 'attribute_definitions') return <AttributeDefinitions />
-  if (view.type === 'agent') return <AgentView runId={String(view.state.run_id ?? '')} push={session.push} />
+  if (view.type === 'agent') {
+    const prompt = String(view.state?.prompt ?? '').trim()
+    return <AgentView runId={String(view.state.run_id ?? '')} title={prompt || view.title} push={session.push} />
+  }
   if (view.type === 'agents') return <AgentsTable />
+  if (view.type === 'trash') return <TrashTable onOpenObject={(id) => session.openTrashObject(id)} />
   if (view.type === 'proposal') return <ProposalView session={session} />
   if (view.type === 'proposal_list') return <ProposalListView session={session} />
   if (view.type === 'import_mappings') return <ImportMappingsView />
@@ -2273,7 +3116,11 @@ export function StructureTree({ session, view }: { session: Session; view: View 
   const [menu, setMenu] = useState<{ x: number; y: number; row: TreeEntry } | null>(null)
   const [editing, setEditing] = useState<{ row: TreeEntry; mode: 'rename' | 'child' | 'sibling' | 'key'; value: string } | null>(null)
   const [dropId, setDropId] = useState<string | null>(null)
-  const structures = (defs.data?.structures as Json[] | undefined) ?? []
+  const allStructures = (defs.data?.structures as Json[] | undefined) ?? []
+  const boundStructureKey = String(view.state?.structure_key ?? view.state?.structure ?? '').trim()
+  const structures = boundStructureKey
+    ? allStructures.filter((structure) => String(structure.key ?? '') === boundStructureKey)
+    : allStructures
   const typeKey = session.workspaceType || session.listType || ''
   const typeRow = ((defs.data?.types as Json[]) ?? []).find((item) => String(item.key) === typeKey)
   const allowedTrees = Array.isArray(typeRow?.structures) ? (typeRow.structures as unknown[]).map(String) : null

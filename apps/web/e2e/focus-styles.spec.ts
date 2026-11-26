@@ -558,7 +558,7 @@ test('Tab shows one keyboard ring on the user menu, tree and table', async ({ pa
         await page.keyboard.press('ArrowDown')
         await page.keyboard.press('ArrowRight')
         await expect.poll(() => grid.evaluate((element) => element.matches(':focus-visible'))).toBe(true)
-        const activeCell = table.locator('.row.active .cell.active-cell').first()
+        const activeCell = table.locator('.row.selected .cell.active-cell, .row.active .cell.active-cell').first()
         await expect(activeCell).toBeVisible()
         const value = await paint(activeCell)
         expectOneIndicator(value, 'tab table keyboard focus')
@@ -737,11 +737,12 @@ test('context menu keeps focus and highlight on one item', async ({ page }) => {
       const item = items.nth(index)
       const isMarked = await item.evaluate((element) => element.hasAttribute('data-highlighted'))
       const value = await paint(item)
-      expect(indicators(value).outline, `${label}: item ${index} outline`).toBe(false)
       if (isMarked) {
         marked.push(index)
+        expectOneIndicator(value, `${label}: item ${index} highlighted`)
         expect(value.backgroundColor, `${label}: item ${index} fill`).toBe(value.accentDim)
       } else {
+        expect(indicators(value).outline, `${label}: item ${index} outline`).toBe(false)
         expect(value.backgroundColor, `${label}: item ${index} background`).toBe('rgba(0, 0, 0, 0)')
       }
     }
@@ -1125,6 +1126,7 @@ test('user menu arrow-focused item shows the accent ring', async ({ page }) => {
   await expect
     .poll(async () => (await ringClip(item)).outline, {
       message: 'arrow-focused user menu item outline',
+      timeout: 30_000,
     })
     .not.toBe('none')
   const clip = await expectRingUnclipped(item, 'arrow-focused user menu item')

@@ -87,9 +87,9 @@ describe('measured value and unit catalog fields', () => {
 
   it('labels the demo Product fields with their group source', () => {
     const { fields } = catalogOf(demo)
-    expect(fields.get('fat_content')?.source).toBe('Dairy & eggs')
-    expect(fields.get('fat_content.value')?.source).toBe('Dairy & eggs')
-    expect(fields.get('fat_content.unit')?.source).toBe('Dairy & eggs')
+    expect(fields.get('fat_content')?.source).toBe('Food › Dairy & eggs')
+    expect(fields.get('fat_content.value')?.source).toBe('Food › Dairy & eggs')
+    expect(fields.get('fat_content.unit')?.source).toBe('Food › Dairy & eggs')
     expect(fields.has('cocoa_content.value')).toBe(false)
     expect(fields.has('cocoa_content.unit')).toBe(false)
   })

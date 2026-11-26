@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { MASTER_CATALOG_ID } from './catalog-ref'
 
-export type CatalogListRow = { id?: string; key?: string; name?: string; kind?: string }
+export type CatalogListRow = { id?: string; key?: string; name?: string; kind?: string; editable?: boolean }
 
 async function fetchCatalogs(): Promise<CatalogListRow[]> {
   const response = await fetch('/v1/catalogs', { credentials: 'include' })

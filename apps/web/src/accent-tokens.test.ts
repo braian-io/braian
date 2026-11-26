@@ -145,7 +145,7 @@ describe('row 240 contrast', () => {
         surfaceName,
       ).toBeGreaterThanOrEqual(4.5)
     }
-    expect(css).toMatch(/\.field > label\s*\{[^}]*color:\s*var\(--muted\)/)
+    expect(css).toMatch(/\.field-label-line > label\s*\{[^}]*color:\s*var\(--muted\)/)
     expect(css).toMatch(/\.head \.cell\.column-header-cell \.column-header-btn \{\s*color:\s*var\(--muted\)/)
   })
 })

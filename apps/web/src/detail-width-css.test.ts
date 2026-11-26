@@ -19,6 +19,30 @@ describe('Detail width layout (row 239)', () => {
     )
   })
 
+  it('lays out the agent dock with flex splits instead of overlaying the catalog', () => {
+    expect(css).not.toMatch(/split-catalog-frozen/)
+    expect(css).not.toMatch(/data-catalog-scale/)
+    expect(css).not.toMatch(/translateX\(18px\)/)
+    expect(css).not.toMatch(
+      /\.dock-root > \.split\.horizontal\.split-agent-dock\s*\{[^}]*position:\s*relative/,
+    )
+    expect(css).toMatch(
+      /\.dock-root > \.split\.horizontal\[data-agent-dock='true'\] \.split\[data-has-detail='true'\]\s*\{[^}]*container-type:\s*normal/,
+    )
+    expect(css).toMatch(
+      /@media \(min-width:\s*1360px\)\s*\{[\s\S]*?min-width:\s*360px/,
+    )
+    expect(css).toMatch(
+      /\.dock-root > \.split\.horizontal\[data-agent-dock='true'\] > \.split-cell\s*\{[^}]*transition:[^}]*var\(--dur\)/,
+    )
+    expect(css).toMatch(
+      /\.dock-root > \.split\.horizontal\[data-tree-pinned='true'\] > \.split-cell\s*\{[^}]*transition:/,
+    )
+    expect(css).toMatch(
+      /\.dock-root > \.split\.horizontal\[data-tree-pinned='true'\] > \.split-cell:first-child\s*\{[^}]*transition:\s*none/,
+    )
+  })
+
   it('does not floor a table beside a direct Detail pane', () => {
     expect(css).toMatch(
       /\.split:has\(> \.split-cell > \.pane \.pane-tab\[data-view-type='object_detail'\]\)\s*>\s*\.split-cell:has\(\.pane-tab\[data-view-type='object_table'\]\.active\):not\(:has\(\.split\)\)\s*\{[^}]*min-width:\s*0/,
@@ -29,6 +53,7 @@ describe('Detail width layout (row 239)', () => {
   })
 
   it('wraps a long Detail title instead of clipping it', () => {
+    expect(css).toMatch(/\.detail-title-row\s*\{[^}]*display:\s*flex/)
     expect(css).toMatch(/\.detail-title\s*\{[^}]*flex-wrap:\s*wrap/)
     expect(css).toMatch(/\.detail-title strong\s*\{[^}]*overflow-wrap:\s*anywhere/)
   })
@@ -50,7 +75,9 @@ describe('Detail width layout (row 239)', () => {
     expect(css).toMatch(
       /\.detail-form\[data-narrow='true'\] \.field\s*\{[^}]*row-gap:\s*var\(--space-1\)/,
     )
-    expect(css).toMatch(/\.detail-form\[data-narrow='true'\] \.field > label\s*\{[^}]*padding-top:\s*0/)
+    expect(css).toMatch(
+      /\.detail-form\[data-narrow='true'\] \.field-label-line > label\s*\{[^}]*padding-top:\s*0/,
+    )
     expect(css).not.toMatch(/@container detail-pane/)
   })
 

@@ -1,4 +1,12 @@
-import { useRef, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from 'react'
+import { isPaletteListTransitionKey, scrollPaletteActiveItem } from '../palette-list-scroll'
 import { Command, CommandInput, CommandList } from '../components/ui/command'
 import { Checkbox } from '../components/ui/checkbox'
 import { Kbd } from '../components/ui/kbd'
@@ -8,9 +16,13 @@ export type PickerRow = {
   id: string
   title: string
   subtitle?: string
+  /** Muted group path when the field comes from a structure group. */
+  path?: string
   /** Opens a deeper level (qualifier, language, unit). */
   drill?: boolean
   checked?: boolean
+  /** Unit options are single-choice (radio); other levels use checkboxes. */
+  input?: 'checkbox' | 'radio'
   run: () => void
 }
 
@@ -60,11 +72,35 @@ export function FieldPicker({
    * left over a row by a just-closed context menu must not override the keyboard.
    */
   const hoverArmed = useRef(false)
+  const keyboardScroll = useRef(false)
+  const levelScroll = useRef(false)
+  const activeFromPointer = useRef(false)
+  const listRef = useRef<HTMLDivElement>(null)
   const onPointerMove = (index: number) => {
     if (hoverArmed.current) return
     hoverArmed.current = true
+    activeFromPointer.current = true
     onActive(index)
   }
+
+  useEffect(() => {
+    levelScroll.current = true
+  }, [levelKey])
+
+  useLayoutEffect(() => {
+    if (activeFromPointer.current) {
+      activeFromPointer.current = false
+      keyboardScroll.current = false
+      levelScroll.current = false
+      return
+    }
+    const shouldScroll = keyboardScroll.current || levelScroll.current
+    keyboardScroll.current = false
+    levelScroll.current = false
+    if (!shouldScroll) return
+    scrollPaletteActiveItem(listRef.current)
+  }, [selected, levelKey, rows.length])
+
   return (
     <div className="palette" data-testid={root} data-picker-mode={mode} onMouseDown={onBackdrop}>
       <style>{`
@@ -81,6 +117,20 @@ export function FieldPicker({
           flex: none;
           pointer-events: none;
         }
+        [data-picker-mode] .fields-radio.check {
+          border-radius: 999px;
+        }
+        [data-picker-mode] .fields-radio[data-state='checked'] {
+          background: var(--surface);
+          box-shadow: var(--inset);
+          color: var(--accent);
+        }
+        [data-picker-mode] .fields-radio-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 999px;
+          background: currentColor;
+        }
       `}</style>
       <Command
         shouldFilter={false}
@@ -89,6 +139,7 @@ export function FieldPicker({
         onMouseDown={(event) => event.stopPropagation()}
         onKeyDownCapture={(event) => {
           hoverArmed.current = false
+          if (isPaletteListTransitionKey(event.key)) keyboardScroll.current = true
           onKeyDown(event)
         }}
       >
@@ -104,12 +155,13 @@ export function FieldPicker({
             value={query}
             placeholder={placeholder}
             onValueChange={(value) => {
+              if (value.trim()) keyboardScroll.current = true
               onQuery(value)
               onActive(0)
             }}
           />
         </div>
-        <CommandList id={`${root}-list`} data-testid={`${root}-list`}>
+        <CommandList ref={listRef} id={`${root}-list`} data-testid={`${root}-list`}>
           <div className="palette-group" role="listbox">
             {rows.map((row, index) => (
               <div
@@ -120,28 +172,47 @@ export function FieldPicker({
                 data-testid={`${testPrefix}-row-${row.id}`}
                 data-active={index === selected ? 'true' : undefined}
                 onMouseEnter={() => {
-                  if (hoverArmed.current) onActive(index)
+                  if (hoverArmed.current) {
+                    activeFromPointer.current = true
+                    onActive(index)
+                  }
                 }}
                 onMouseMove={() => onPointerMove(index)}
                 onClick={(event) => {
                   event.preventDefault()
                   event.stopPropagation()
+                  activeFromPointer.current = true
                   onActive(index)
                   row.run()
                 }}
               >
                 <span className="hit-copy">
                   <span className="hit-title">{row.title}</span>
-                  {row.subtitle ? <small>{row.subtitle}</small> : null}
+                  {row.subtitle ? <small className="hit-type">{row.subtitle}</small> : null}
+                  {row.path ? <small className="hit-path">{row.path}</small> : null}
                 </span>
-                <Checkbox
-                  className="fields-check"
-                  checked={Boolean(row.checked)}
-                  tabIndex={-1}
-                  data-testid={`${testPrefix}-check-${row.id}`}
-                  aria-label={row.checked ? (mode === 'single' ? copy.current : copy.shown) : mode === 'single' ? copy.notSelected : copy.hidden}
-                  onCheckedChange={() => {}}
-                />
+                {row.input === 'radio' ? (
+                  <span
+                    className="fields-check fields-radio check"
+                    data-choice="radio"
+                    data-state={row.checked ? 'checked' : 'unchecked'}
+                    data-testid={`${testPrefix}-check-${row.id}`}
+                    role="radio"
+                    aria-checked={Boolean(row.checked)}
+                    aria-label={row.checked ? copy.shown : copy.hidden}
+                  >
+                    {row.checked ? <span className="fields-radio-dot" aria-hidden="true" /> : null}
+                  </span>
+                ) : (
+                  <Checkbox
+                    className="fields-check"
+                    checked={Boolean(row.checked)}
+                    tabIndex={-1}
+                    data-testid={`${testPrefix}-check-${row.id}`}
+                    aria-label={row.checked ? (mode === 'single' ? copy.current : copy.shown) : mode === 'single' ? copy.notSelected : copy.hidden}
+                    onCheckedChange={() => {}}
+                  />
+                )}
                 {row.drill ? <span aria-hidden="true">›</span> : null}
               </div>
             ))}
