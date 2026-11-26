@@ -91,8 +91,10 @@ test('row 230 links polish: numeric sort order and edit link attributes entry po
     await expect(edit).toBeHidden()
     await expect(linkRow.getByTestId('link-inline-sort_order')).toHaveValue('5')
 
-    await linkRow.click({ button: 'right' })
-    await page.getByTestId('context-menu').getByRole('menuitem', { name: 'Edit link attributes' }).click()
+    await linkRow.locator('.link-row-peer').click({ button: 'right' })
+    const menu = page.getByTestId('context-menu')
+    await expect(menu).toBeVisible()
+    await menu.getByRole('menuitem', { name: 'Edit link attributes' }).click()
     await expect(page.getByTestId('link-edit-dialog')).toBeVisible()
     await page.getByTestId('link-edit-dialog').getByRole('button', { name: 'Cancel' }).click()
     await expect(page.getByTestId('link-edit-dialog')).toBeHidden()

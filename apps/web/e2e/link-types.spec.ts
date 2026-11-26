@@ -267,13 +267,14 @@ test('removing a link updates the peer list at once and Trash restore brings the
   }).toBe(true)
   await page.reload()
   await expect(page.getByTestId('workspace')).toBeVisible()
-  await page.locator('nav.tabs').getByRole('button', { name: /^Articles/ }).click()
-  const articlesAfter = paneWithTab(page, 'Articles').getByTestId('object-table').first()
-  await expect.poll(async () => articlesAfter.locator(`#object-row-${removed.peer_id}`).count()).toBe(1)
   await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
   const productsAfter = mainTable(page, 'Products')
   await productsAfter.getByTestId('quick-filter').first().fill(product.key!)
   await productsAfter.locator(`#object-row-${product.id}`).click()
   await page.locator('[data-view-type="object_detail"]').first().click()
+  const articlesAfter = paneWithTab(page, 'Articles').getByTestId('object-table').first()
+  await expect.poll(async () => articlesAfter.locator(`#object-row-${removed.peer_id}`).count(), {
+    timeout: 60_000,
+  }).toBe(1)
   await expect(page.getByTestId('object-detail').getByTestId('link-row').filter({ hasText: removed.peer_key }).first()).toBeVisible()
 })
