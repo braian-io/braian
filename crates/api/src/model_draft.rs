@@ -131,6 +131,50 @@ async fn load_draft(state: &AppState, user_id: Uuid) -> Result<Option<StoredDraf
     }))
 }
 
+/// Appends catalog and other model steps to the person's draft. Nothing is
+/// applied until Review saves the draft.
+pub(crate) async fn stage_changes(
+    state: &AppState,
+    identity: &Identity,
+    steps: Vec<ModelChange>,
+) -> Result<Value, Problem> {
+    for step in &steps {
+        if let ModelChange::UpsertCatalog { catalog } = step {
+            crate::model_proposal::reject_catalog_key_change(state, catalog).await?;
+        }
+    }
+    let user_id = require_person(state, identity).await?;
+    let current = state
+        .store
+        .model_revision()
+        .await
+        .map_err(store_status)?
+        .unwrap_or(0);
+    let loaded = load_draft(state, user_id).await?;
+    let mut draft = loaded
+        .as_ref()
+        .map(|row| row.draft.clone())
+        .unwrap_or_else(|| ModelDraft::new(current));
+    if draft.conflicts(current) && !steps.is_empty() {
+        return Err(conflict_problem(draft.base_revision, current));
+    }
+    for step in steps {
+        draft.add(step);
+    }
+    if draft.steps.is_empty() {
+        state
+            .store
+            .delete_model_draft(user_id)
+            .await
+            .map_err(store_status)?;
+        return draft_view(state, None, current, None).await;
+    }
+    let defs = state.store.definition_set().await.map_err(store_status)?;
+    preview(&defs, &draft.steps).map_err(model_status)?;
+    store_draft(state, user_id, &draft).await?;
+    draft_view(state, Some(&draft), current, Some(Utc::now())).await
+}
+
 async fn store_draft(state: &AppState, user_id: Uuid, draft: &ModelDraft) -> Result<(), Problem> {
     let steps = serde_json::to_value(&draft.steps).map_err(|error| {
         Problem::new(
@@ -267,6 +311,11 @@ async fn post_steps(
             .remove(index)
             .map_err(|message| Problem::new(StatusCode::BAD_REQUEST, "draft", message))?;
     } else {
+        for step in &steps {
+            if let ModelChange::UpsertCatalog { catalog } = step {
+                crate::model_proposal::reject_catalog_key_change(&state, catalog).await?;
+            }
+        }
         for step in steps {
             draft.add(step);
         }
@@ -417,6 +466,11 @@ pub(crate) async fn commit_steps(
         }
         let (mut after, impact) = preview(&defs, changes).map_err(model_status)?;
         CompiledModel::compile(&after).map_err(Problem::definitions)?;
+        for change in changes {
+            if let ModelChange::UpsertCatalog { catalog } = change {
+                crate::model_proposal::reject_catalog_key_change(state, catalog).await?;
+            }
+        }
         crate::link_type_validate::reject_blocked_link_type_changes(
             &state.store,
             &defs,

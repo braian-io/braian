@@ -4,11 +4,13 @@
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use braian_store::{CatalogId, CatalogKind};
+use braian_model::{AttributeBounds, ModelChange};
+use braian_store::{CatalogKind, ProposalRow};
 use serde::Deserialize;
+use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::auth::{Auth, Role};
+use crate::auth::{Auth, Identity, Role};
 use crate::platform::require;
 use crate::problem::{Problem, store_status};
 use crate::state::AppState;
@@ -60,16 +62,9 @@ pub async fn post_catalog(
     State(state): State<AppState>,
     Auth(identity): Auth,
     Json(body): Json<CreateCatalog>,
-) -> Result<(StatusCode, Json<serde_json::Value>), Problem> {
+) -> Result<(StatusCode, Json<Value>), Problem> {
     require(&identity, Role::Editor)?;
-    let kind = CatalogKind::parse(&body.kind).map_err(store_status)?;
-    if kind == CatalogKind::Master {
-        return Err(Problem::new(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "master_exists",
-            "the installation already has its master catalog",
-        ));
-    }
+    let requested = CatalogKind::parse(&body.kind).map_err(store_status)?;
     if !valid_key(&body.key) {
         return Err(Problem::new(
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -77,18 +72,70 @@ pub async fn post_catalog(
             "catalog key must be lowercase letters, digits and hyphens",
         ));
     }
-    let catalog = state
+    let existing = state
         .store
-        .create_catalog(
-            CatalogId::from_uuid(Uuid::now_v7()),
-            &body.key,
-            &body.name,
-            kind,
-            body.editable,
-        )
+        .catalog_by_key(&body.key)
         .await
         .map_err(store_status)?;
-    Ok((StatusCode::CREATED, Json(catalog.to_json())))
+    if requested == CatalogKind::Master
+        && existing.as_ref().map(|row| row.kind) != Some(CatalogKind::Master)
+    {
+        return Err(Problem::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "master_exists",
+            "the installation already has its master catalog",
+        ));
+    }
+    let kind = existing.as_ref().map(|row| row.kind).unwrap_or(requested);
+    let editable = if kind == CatalogKind::Master {
+        existing.as_ref().map(|row| row.editable).unwrap_or(false)
+    } else {
+        body.editable
+    };
+    let step = ModelChange::UpsertCatalog {
+        catalog: Box::new(braian_model::Catalog {
+            key: body.key.clone(),
+            renamed_from: None,
+            name: body.name.clone(),
+            kind: match kind {
+                CatalogKind::Master => braian_model::CatalogKind::Master,
+                CatalogKind::Source => braian_model::CatalogKind::Source,
+            },
+            editable,
+        }),
+    };
+    // The same path as the catalogs table: a person's draft, or a proposal
+    // when the caller is not a person. The catalog row is not written here.
+    if identity.kind == braian_store::PrincipalKind::Human {
+        let draft = crate::model_draft::stage_changes(&state, &identity, vec![step]).await?;
+        return Ok((
+            StatusCode::ACCEPTED,
+            Json(json!({
+                "applied": false,
+                "staged": true,
+                "draft": draft,
+            })),
+        ));
+    }
+    let defs = state.store.definition_set().await.map_err(store_status)?;
+    let proposed = crate::model_proposal::file_model_proposal(
+        &state,
+        &identity,
+        vec![step],
+        &defs,
+        Some(&format!("Save catalog {}", body.key)),
+        &json!({}),
+    )
+    .await?;
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(json!({
+            "applied": false,
+            "staged": false,
+            "proposal_id": proposed["proposal_id"],
+            "needs_approval": true,
+        })),
+    ))
 }
 
 #[derive(serde::Deserialize, Default)]
@@ -105,13 +152,13 @@ pub async fn infer_model(
     Json(body): Json<InferBody>,
 ) -> Result<Json<serde_json::Value>, Problem> {
     require(&identity, Role::Editor)?;
-    let Some(user_id) = identity.user_id else {
+    if identity.kind != braian_store::PrincipalKind::Human {
         return Err(Problem::new(
             StatusCode::FORBIDDEN,
             "human_required",
-            "a person saves the model draft",
+            "a person reviews inferred attributes",
         ));
-    };
+    }
     let known: std::collections::BTreeSet<String> = state
         .store
         .definition_set()
@@ -166,32 +213,67 @@ pub async fn infer_model(
         if known.contains(key) {
             continue;
         }
-        steps.push(serde_json::json!({
-            "op": "create_attribute",
-            "key": key,
-            "label": key,
-            "kind": infer_kind(values),
-        }));
+        steps.push(ModelChange::CreateAttribute {
+            key: key.clone(),
+            label: key.clone(),
+            description: None,
+            kind: infer_kind(values).to_owned(),
+            unit: None,
+            multiple: false,
+            languages: false,
+            required: false,
+            show_by_default: true,
+            searchable: false,
+            filterable: true,
+            sortable: false,
+            bounds: AttributeBounds::default(),
+        });
     }
-    state
-        .store
-        .put_model_draft(
-            user_id,
-            i64::try_from(revision).unwrap_or(0),
-            &serde_json::Value::Array(steps.clone()),
-        )
-        .await
-        .map_err(store_status)?;
-    Ok(Json(
-        serde_json::json!({ "steps": steps, "base_revision": revision }),
-    ))
+    if steps.is_empty() {
+        return Ok(Json(json!({
+            "applied": false,
+            "steps": [],
+            "proposal_id": Value::Null,
+            "base_revision": revision,
+        })));
+    }
+    let defs = state.store.definition_set().await.map_err(store_status)?;
+    let proposed = crate::model_proposal::file_model_proposal(
+        &state,
+        &identity,
+        steps,
+        &defs,
+        Some("Infer model"),
+        &json!({}),
+    )
+    .await?;
+    Ok(Json(json!({
+        "applied": false,
+        "needs_approval": true,
+        "proposal_id": proposed["proposal_id"],
+        "steps": proposed["rows"],
+        "base_revision": revision,
+    })))
 }
 
 pub async fn cleanup_catalog(
     State(state): State<AppState>,
     Auth(identity): Auth,
-) -> Result<Json<serde_json::Value>, Problem> {
+) -> Result<Json<Value>, Problem> {
     require(&identity, Role::Editor)?;
+    if identity.kind != braian_store::PrincipalKind::Human {
+        return Err(Problem::new(
+            StatusCode::FORBIDDEN,
+            "human_required",
+            "a person runs merge and catalog cleanup",
+        ));
+    }
+    propose_cleanup(&state, &identity).await.map(Json)
+}
+
+/// Files a proposal that soft-deletes every object in the scoped source catalog.
+/// The objects stay until the proposal is approved.
+pub async fn propose_cleanup(state: &AppState, identity: &Identity) -> Result<Value, Problem> {
     let catalog = state
         .store
         .catalog_by_id(state.store.catalog_id())
@@ -205,31 +287,57 @@ pub async fn cleanup_catalog(
             "cleanup removes objects from a source catalog",
         ));
     }
-    let mut actor = identity.actor.clone();
-    actor.source = "cleanup".into();
-    let removed = cleanup_objects(&state.store, &actor, &catalog.key).await?;
-    Ok(Json(serde_json::json!({ "removed": removed })))
-}
-
-pub async fn cleanup_objects(
-    store: &braian_store::Store,
-    actor: &braian_store::Actor,
-    catalog_key: &str,
-) -> Result<u64, Problem> {
-    let heads = store.list_object_heads(500).await.map_err(store_status)?;
-    let origin = serde_json::json!({ "cleanup": true, "catalog": catalog_key }).to_string();
-    let mut removed = 0u64;
-    for (id, _, _, version) in heads {
-        let op = braian_store::ObjectOp::Delete {
-            id: braian_model::ObjectId::from_uuid(id),
-            base_version: u64::try_from(version).ok(),
-        };
-        braian_store::scope_origin(origin.clone(), store.write_batch(actor, vec![op]))
-            .await
-            .map_err(store_status)?;
-        removed += 1;
+    let heads = state
+        .store
+        .list_object_heads(500)
+        .await
+        .map_err(store_status)?;
+    if heads.is_empty() {
+        return Ok(json!({
+            "applied": false,
+            "removed": 0,
+            "objects": 0,
+            "proposal_id": Value::Null,
+        }));
     }
-    Ok(removed)
+    let proposal_id = Uuid::now_v7();
+    let rows: Vec<ProposalRow> = heads
+        .iter()
+        .enumerate()
+        .map(|(index, (id, key, _, version))| ProposalRow {
+            id: Uuid::now_v7(),
+            object_id: Some(*id),
+            object_key: Some(key.clone()),
+            type_key: None,
+            base_version: Some(*version),
+            patch: json!({ "op": "delete" }),
+            status: "pending".into(),
+            conflict: false,
+            position: i32::try_from(index).unwrap_or(0),
+        })
+        .collect();
+    let title = format!("Clean up {}", catalog.key);
+    state
+        .store
+        .create_proposal(
+            proposal_id,
+            &title,
+            "user",
+            identity.actor.actor,
+            identity.actor.on_behalf_of,
+            false,
+            &rows,
+        )
+        .await
+        .map_err(store_status)?;
+    Ok(json!({
+        "applied": false,
+        "removed": 0,
+        "objects": rows.len(),
+        "needs_approval": true,
+        "proposal_id": proposal_id,
+        "title": title,
+    }))
 }
 
 fn attribute_key(raw: &str) -> Option<String> {
