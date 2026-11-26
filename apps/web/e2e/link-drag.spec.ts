@@ -48,10 +48,17 @@ test('dragging one row onto another table creates the link', async ({ page }) =>
   await page.getByTestId('user-menu-trash').click()
   const trash = page.getByTestId('trash-table-chrome')
   await expect(trash).toBeVisible()
-  const trashRow = trash.locator('[data-testid="trash-row"]').filter({ hasText: 'ART-OAT-1L' })
+  const trashRow = trash
+    .locator('[data-testid="trash-row"]')
+    .filter({ hasText: 'PROD-COFFEE' })
+    .filter({ hasText: 'ART-OAT-1L' })
   await expect(trashRow).toBeVisible()
   await trashRow.click()
   await page.getByTestId('trash-detail-restore').click()
+  await expect(trashRow).toHaveCount(0)
+  await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
+  await product.click()
+  await expect(page.getByTestId('object-detail')).toContainText('PROD-COFFEE')
   await expect(linkRow).toBeVisible()
 })
 

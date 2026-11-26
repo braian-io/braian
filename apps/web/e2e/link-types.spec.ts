@@ -208,7 +208,7 @@ async function productWithArticles(page: Page) {
   throw new Error('no product with two linked articles')
 }
 
-test('removing a link updates the peer list at once and Undo brings the row back', async ({ page }) => {
+test('removing a link updates the peer list at once and Trash restore brings the row back', async ({ page }) => {
   test.setTimeout(180_000)
   await login(page)
   const { product, articles: linked } = await productWithArticles(page)
@@ -250,12 +250,19 @@ test('removing a link updates the peer list at once and Undo brings the row back
   await page.getByTestId('user-menu-trash').click()
   const trash = page.getByTestId('trash-table-chrome')
   await expect(trash).toBeVisible()
-  const trashRow = trash.locator('[data-testid="trash-row"]').filter({ hasText: removed.peer_key })
+  const trashRow = trash
+    .locator('[data-testid="trash-row"]')
+    .filter({ hasText: product.key! })
+    .filter({ hasText: removed.peer_key })
   await expect(trashRow).toBeVisible()
   await trashRow.click()
   await page.getByTestId('trash-detail-restore').click()
   await expect(trashRow).toHaveCount(0)
+  await productsTab.click()
+  await expect(productsTab).toHaveClass(/active/)
   await products.getByTestId('quick-filter').first().fill(product.key!)
   await expect(productRow).toBeVisible()
-  await expect(linkRow).toBeVisible()
+  await productRow.click()
+  await expect(detail).toBeVisible()
+  await expect(detail.getByTestId('link-row').filter({ hasText: removed.peer_key }).first()).toBeVisible()
 })

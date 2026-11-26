@@ -53,10 +53,15 @@ test('row 230 links polish: numeric sort order and edit link attributes entry po
   try {
     const detail = await openProductDetail(page, productNumber)
     await detail.getByTestId('add-link').first().click()
-    const picker = page.getByTestId('link-object-picker')
+    const picker = page.getByTestId('link-picker')
     await expect(picker).toBeVisible()
-    await picker.getByTestId('link-search').fill(articleNumber)
-    await picker.getByTestId('link-hit').filter({ hasText: articleNumber }).first().click()
+    const search = picker.getByTestId('link-search')
+    const option = picker.getByRole('option').filter({ hasText: articleNumber }).first()
+    await expect(async () => {
+      await search.fill(articleNumber)
+      await expect(option).toBeVisible()
+    }).toPass({ timeout: 15_000 })
+    await option.click()
 
     const create = page.getByTestId('link-create-dialog')
     await expect(create).toBeVisible()
@@ -71,7 +76,7 @@ test('row 230 links polish: numeric sort order and edit link attributes entry po
 
     const linkRow = detail.getByTestId('link-row').filter({ hasText: articleNumber }).first()
     await expect(linkRow).toBeVisible()
-  await expect(linkRow.getByTestId('link-inline-sort_order')).toHaveValue('2')
+    await expect(linkRow.getByTestId('link-inline-sort_order')).toHaveValue('2')
 
     await linkRow.getByTestId('link-edit-attributes').click()
     const edit = page.getByTestId('link-edit-dialog')
