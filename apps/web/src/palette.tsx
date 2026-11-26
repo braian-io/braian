@@ -59,6 +59,7 @@ import {
   switchCatalogSubmenuRows,
 } from './palette-switch-catalog'
 import { useCatalogsQuery } from './catalog-list'
+import { catalogDeleteAvailable, catalogSelection, subscribeCatalogSelection } from './catalog-selection'
 import { MASTER_CATALOG_ID } from './catalog-ref'
 import { publishProposal } from './proposal-bus'
 import { modelFocus, openModelDialog, requestDiscardDraft, requestReview, stageModel } from './model-stage'
@@ -282,6 +283,7 @@ export function CommandPalette({
   const selectedKey = String(selectedObject.data?.type ?? '')
   // Live selections in other views become peer sources (Notion 103 PR 2).
   const selectionVersion = useSyncExternalStore(subscribeUiSelections, uiSelectionVersion, uiSelectionVersion)
+  const catalogPick = useSyncExternalStore(subscribeCatalogSelection, catalogSelection, catalogSelection)
   // Delete follows the focused table's marked rows, else the object open in Detail.
   const deleteIds = (() => {
     const marked = focusViewId ? readSelection(focusViewId).map((row) => row.id) : []
@@ -462,7 +464,9 @@ export function CommandPalette({
       { id: 'model:new-tree', group: 'model' as const, title: copy.newTree, subtitle: copy.dataModel, keywords: ['create', 'structure', 'tree'] },
       { id: 'catalog:new', group: 'model' as const, title: copy.newCatalog, subtitle: copy.catalogs, keywords: ['catalog', 'source', 'create'] },
       { id: 'catalog:rename', group: 'model' as const, title: copy.renameCatalog, subtitle: copy.catalogs, keywords: ['catalog', 'rename', 'name'] },
-      { id: 'catalog:delete', group: 'model' as const, title: copy.deleteCatalog, subtitle: copy.catalogs, keywords: ['catalog', 'delete', 'remove', 'source'] },
+      ...(catalogDeleteAvailable(catalogPick)
+        ? [{ id: 'catalog:delete', group: 'model' as const, title: copy.deleteCatalog, subtitle: copy.catalogs, keywords: ['catalog', 'delete', 'remove', 'source'] }]
+        : []),
       { id: 'model:review', group: 'model' as const, title: copy.reviewAndSave, subtitle: copy.dataModel, keywords: ['draft', 'save'], kbd: 'Ctrl+S' },
       { id: 'model:discard', group: 'model' as const, title: copy.discardDraft, subtitle: copy.dataModel, keywords: ['draft'] },
       { id: 'model:undo', group: 'model' as const, title: copy.undoModel, subtitle: copy.dataModel, keywords: ['undo'] },
@@ -486,7 +490,7 @@ export function CommandPalette({
           ]),
       { id: 'attr:new', group: 'model' as const, title: copy.newAttribute, subtitle: copy.attributeDefinitions, keywords: ['attribute', 'create'] },
     ],
-    [workspaces, views, session.group, types, selectedKey, suggestionTotal, feedbackEnabled, theme, moveColumns, moveTarget, defs.data, operationRecords, focusViewId, deleteIds.join(','), selectionVersion],
+    [workspaces, views, session.group, types, selectedKey, suggestionTotal, feedbackEnabled, theme, moveColumns, moveTarget, defs.data, operationRecords, focusViewId, deleteIds.join(','), selectionVersion, catalogPick],
   )
   const hits: PaletteItem[] = objectPaletteRows((found.data?.hits as Json[] | undefined) ?? [], defs.data)
   useEffect(() => {

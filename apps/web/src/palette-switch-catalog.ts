@@ -33,11 +33,14 @@ export function switchCatalogSubmenuRows(catalogs: CatalogOption[]): PaletteItem
   }))
 }
 
-/** Returns catalogId from a submenu choice id. */
+/** Returns catalogId from a submenu choice id. Command ids such as `catalog:delete` are not catalog rows. */
 export function parseSwitchCatalogChoice(id: string): string | null {
   if (!id.startsWith('catalog:') || id === SWITCH_CATALOG_ROOT_ID) return null
   const catalogId = id.slice('catalog:'.length)
-  return catalogId.length > 0 ? catalogId : null
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(catalogId)) {
+    return null
+  }
+  return catalogId
 }
 
 export type SwitchCatalogEventDetail =
