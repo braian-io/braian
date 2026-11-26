@@ -57,11 +57,16 @@ export function LinkDropHost() {
       detail.source.id,
       sectionObjectId,
     ])]
+    const peerKeys = [
+      ...saved.map((item) => item.label).filter(Boolean),
+      ...detail.targets.map((item) => item.key || item.name || '').filter(Boolean),
+      detail.source.key || detail.source.name || '',
+    ].filter((key, index, all) => key && all.indexOf(key) === index)
     publishLinkFeedback({
       sectionObjectId,
       linkType: linkType ?? first.body.type,
       direction: detail.preferred?.direction,
-      peerKeys: saved.map((item) => item.label).filter(Boolean),
+      peerKeys,
       hint: message,
       tableObjectIds,
     })

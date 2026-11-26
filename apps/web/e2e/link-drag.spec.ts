@@ -42,10 +42,10 @@ test('dragging one row onto another table creates the link', async ({ page }) =>
   await expect(page.getByTestId('object-detail')).toContainText('PROD-COFFEE')
   const linked = page.getByTestId('link-row').filter({ hasText: 'ART-OAT-1L' })
   await expect(linked).toBeVisible()
-  await expect
-    .poll(async () => await linked.getAttribute('data-just-linked'), { timeout: 30_000 })
-    .toBe('true')
   await expect(page.getByTestId('object-detail').getByTestId('link-section-feedback').first()).toContainText('Linked 1 article')
+  await expect
+    .poll(async () => await linked.getAttribute('data-just-linked'), { timeout: 15_000 })
+    .toBe('true')
   await shot(page, 'link-drag-feedback-dark.png')
   await linked.click({ button: 'right' })
   await page.getByTestId('context-menu').getByRole('menuitem', { name: 'Remove link' }).click()
@@ -310,10 +310,10 @@ test('the light theme shows the drag highlight, dialogs, and toast', async ({ pa
   await product.click()
   const linked = page.getByTestId('link-row').filter({ hasText: 'ART-CHED-400' })
   await expect(linked).toBeVisible()
-  await expect
-    .poll(async () => await linked.getAttribute('data-just-linked'), { timeout: 30_000 })
-    .toBe('true')
   await expect(page.getByTestId('object-detail').getByTestId('link-section-feedback').first()).toContainText('Linked 1 article')
+  await expect
+    .poll(async () => await linked.getAttribute('data-just-linked'), { timeout: 15_000 })
+    .toBe('true')
   await shot(page, 'link-drag-feedback-light.png')
   await linked.click({ button: 'right' })
   await page.getByTestId('context-menu').getByRole('menuitem', { name: 'Remove link' }).click()
