@@ -419,6 +419,7 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
 .pane.focused .pane-tab.active {
   background: var(--accent-dim);
   color: var(--text);
+  border-radius: var(--r-md) var(--r-md) 0 0;
 }
 /* Hover is weaker than the selected tab's dim fill. */
 .pane-tab:hover:not(.active) {
@@ -542,7 +543,7 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
   box-shadow: var(--inset);
   position: relative;
   isolation: isolate;
-  overflow: visible;
+  overflow: hidden;
 }
 /* The pane is a definite grid item, so a Detail pane can answer its own width query. */
 .pane:has(.detail-form) { container-type: inline-size; container-name: detail-pane; }
@@ -556,7 +557,7 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
   max-height: 32px;
   padding: 0 var(--space-1_5);
   background: var(--surface);
-  overflow: visible;
+  overflow: hidden;
   pointer-events: none;
   border-radius: var(--r-lg) var(--r-lg) 0 0;
 }
@@ -969,7 +970,6 @@ button.agent-bg-indicator strong { font-variant-numeric: tabular-nums; }
   padding: var(--space-2);
   display: flex;
   flex-direction: column;
-  border-radius: 0 0 var(--r-lg) var(--r-lg);
 }
 /* The view fills the pane under the fixed tab bar and is the one scrollport.
    Toolbar, graph canvas, and the detail save bar opt out and scroll an inner body instead. */
