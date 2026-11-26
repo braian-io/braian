@@ -149,9 +149,17 @@ The picker lists:
   offers the class-list fields so existing models keep them.
 
 A group or class attribute can be added as a column even when not every row has a
-value. In the picker, those fields show the group name as a source hint, and
-typing the group name finds them. Linked fields are listed one hop away and stay
+value. In the picker, each field keeps its type label, and group-sourced fields
+also show the full group path (for example `Food › Beverages › Coffee & tea`) as
+muted secondary text. Typing any segment of that path, such as `beverages` or
+`snacks`, finds the field. Linked fields are listed one hop away and stay
 read-only.
+
+The same catalog appears on every object type that is allowed to use the
+structure. On **Articles**, `Select fields` therefore lists food-tree group
+attributes such as Fat content and Caffeine even though a row may not carry a
+value for them yet. The picker only chooses which columns may appear; values are
+never inherited from the group tree.
 
 A measured number field can be added as the combined column, as separate value and
 unit columns, or as all three. The separate columns are labelled `Name (value)` and
