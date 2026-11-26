@@ -668,7 +668,8 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
 .catalog-field > label { color: var(--text-2); font-size: var(--text-md); font-weight: 500; }
 .catalog-field-help { margin: 0; color: var(--muted); font-size: var(--text-sm); line-height: 1.4; }
 .field-label-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1); }
-.detail-field-help { color: var(--muted); font-size: var(--text-sm); line-height: 1.35; font-weight: 400; max-width: 36rem; }
+.field-label-line > label { min-width: 0; cursor: default; }
+.field-label-line > label[tabindex='0'] { cursor: help; }
 .catalog-check { display: inline-flex; align-items: center; gap: var(--space-1_5); color: var(--text-2); font-size: var(--text-md); }
 .catalog-list-actions { display: inline-flex; align-items: center; gap: var(--space-0_5); margin-left: var(--space-1); vertical-align: middle; }
 .catalog-form-actions { display: flex; align-items: center; gap: var(--space-1_5); flex-wrap: wrap; }
@@ -1557,13 +1558,13 @@ button.filter-chip:hover:not(.on) {
   border: 0;
   box-shadow: none;
 }
-.lang-row:has(textarea) { align-items: flex-start; }
 .lang-tag {
   display: inline-flex;
   flex: none;
   align-items: center;
   align-self: center;
   width: 2.25em;
+  height: 30px;
   margin: 0;
   padding: 0;
   background: transparent;
@@ -1572,11 +1573,12 @@ button.filter-chip:hover:not(.on) {
   color: var(--text-2);
   font-size: var(--text-sm);
   font-weight: 600;
-  line-height: 1;
+  line-height: 30px;
   text-transform: lowercase;
 }
 .lang-row:has(textarea) .lang-tag {
   align-self: flex-start;
+  height: auto;
   padding-top: var(--space-1_5);
   line-height: 1.4;
 }
