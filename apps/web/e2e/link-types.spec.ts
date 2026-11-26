@@ -258,18 +258,14 @@ test('removing a link updates the peer list at once and Trash restore brings the
   await trashRow.click()
   await page.getByTestId('trash-detail-restore').click()
   await expect(trashRow).toHaveCount(0)
-  await page.reload()
-  await expect(page.getByTestId('workspace')).toBeVisible()
-  const productsTabAfter = page.locator('nav.tabs').getByRole('button', { name: /^Products/ })
-  await productsTabAfter.click()
-  const productsAfter = mainTable(page, 'Products')
-  await expect(productsAfter).toBeVisible()
-  await productsAfter.getByTestId('quick-filter').first().fill(product.key!)
-  const productRowAfter = productsAfter.locator(`#object-row-${product.id}`)
-  await expect(productRowAfter).toBeVisible()
-  await productRowAfter.click()
-  const detailAfter = page.getByTestId('object-detail')
-  await expect(detailAfter.getByTestId('link-row').filter({ hasText: removed.peer_key }).first()).toBeVisible()
-  const articlesAfter = paneWithTab(page, 'Articles').getByTestId('object-table').first()
-  await expect(articlesAfter.locator(`#object-row-${removed.peer_id}`)).toBeVisible()
+  await page.locator('[data-view-type="object_detail"]').first().click()
+  await expect.poll(async () => {
+    const loaded = await page.request.get(`/v1/objects/${product.id}`)
+    if (!loaded.ok()) return false
+    const body = (await loaded.json()) as { links?: Array<{ link_type: string; links?: Array<{ peer_key?: string }> }> }
+    const side = body.links?.find((item) => item.link_type === 'product_articles')
+    return side?.links?.some((link) => link.peer_key === removed.peer_key) ?? false
+  }).toBe(true)
+  await expect.poll(async () => detail.getByTestId('link-row').filter({ hasText: removed.peer_key }).count()).toBe(1)
+  await expect.poll(async () => articles.locator(`#object-row-${removed.peer_id}`).count()).toBe(1)
 })

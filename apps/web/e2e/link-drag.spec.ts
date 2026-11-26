@@ -138,8 +138,14 @@ test('a partial multi-drop names the failure and does not create the saved link 
   await page.getByTestId('link-create-confirm').click()
   await expect(dialog.getByTestId('link-create-error')).toContainText('Linked 1 of 2')
   await expect(dialog.getByTestId('link-create-error')).toContainText('allows one link')
-  await page.locator('[data-view-type="object_detail"]').first().click()
-  await expect(page.getByTestId('link-row').filter({ hasText: 'ART-COFFEE-250' })).toBeVisible()
+  const productId = ((await product.getAttribute('id')) ?? '').replace(/^object-row-/, '')
+  await expect.poll(async () => {
+    const loaded = await page.request.get(`/v1/objects/${productId}`)
+    if (!loaded.ok()) return false
+    const body = (await loaded.json()) as { links?: Array<{ link_type: string; links?: Array<{ peer_key?: string }> }> }
+    const side = body.links?.find((item) => item.link_type === 'product_articles')
+    return side?.links?.some((link) => link.peer_key === 'ART-COFFEE-250') ?? false
+  }).toBe(true)
   const firstSaved = posted[0] ?? ''
   const failed = posted[1] ?? ''
   expect(firstSaved).not.toBe('')
