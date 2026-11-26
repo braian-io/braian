@@ -11,6 +11,7 @@ use http_body_util::BodyExt;
 use serde_json::{Value, json};
 use tokio::sync::broadcast;
 use tower::ServiceExt;
+use uuid::Uuid;
 
 const TOKENS: &str = "ada:human:token-ada;bot:agent@ada:token-bot;feed:integration:token-import";
 const HUMAN: &str = "token-ada";
@@ -762,7 +763,244 @@ async fn a_saved_mapping_is_reused_for_the_same_headers() {
     let second = upload_csv(&app, "b.csv", "sku,name\nNEW-2,Table\n").await;
     let ready = until(&app, &second, &["ready"]).await;
     assert_eq!(ready["proposal"]["ai"], "saved: Items");
+    assert_eq!(ready["proposal"]["saved_mapping"], saved["id"]);
     assert!(ready["proposal"]["type"]["value"].is_string());
+
+    let (status, cleared) = call(
+        &app,
+        "POST",
+        &format!("/v1/imports/{second}/saved-mapping"),
+        HUMAN,
+        &[("content-type", "application/json")],
+        Some(json!({ "mapping_id": null }).to_string().into_bytes()),
+    )
+    .await;
+    assert!(status.is_success(), "{cleared}");
+    assert!(cleared["proposal"]["saved_mapping"].is_null());
+    assert_ne!(cleared["proposal"]["ai"], "saved: Items");
+
+    let (status, applied) = call(
+        &app,
+        "POST",
+        &format!("/v1/imports/{second}/saved-mapping"),
+        HUMAN,
+        &[("content-type", "application/json")],
+        Some(
+            json!({ "mapping_id": saved["id"] })
+                .to_string()
+                .into_bytes(),
+        ),
+    )
+    .await;
+    assert!(status.is_success(), "{applied}");
+    assert_eq!(applied["proposal"]["saved_mapping"], saved["id"]);
+    assert_eq!(applied["proposal"]["ai"], "saved: Items");
+    let columns = applied["proposal"]["columns"].as_array().unwrap();
+    assert!(
+        columns
+            .iter()
+            .any(|column| column["target"] == "type:sku" && column["source"] == "manual"),
+        "{applied}"
+    );
+
+    let other = upload_csv(&app, "c.csv", "only\nX\n").await;
+    until(&app, &other, &["ready"]).await;
+    let (status, rejected) = call(
+        &app,
+        "POST",
+        &format!("/v1/imports/{other}/saved-mapping"),
+        HUMAN,
+        &[("content-type", "application/json")],
+        Some(
+            json!({ "mapping_id": saved["id"] })
+                .to_string()
+                .into_bytes(),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{rejected}");
+    assert_eq!(rejected["code"], "headers_differ");
+}
+
+#[tokio::test]
+async fn only_the_creator_or_an_admin_can_change_a_saved_mapping() {
+    let (_db, _state, app, _live) = harness().await;
+    let hash = braian_api::hash_password("row118-secret").unwrap();
+    let _owner = _db
+        .store()
+        .create_user("row118-owner@braian.local", &hash, "editor", "Row Owner")
+        .await
+        .unwrap();
+    let _other = _db
+        .store()
+        .create_user("row118-other@braian.local", &hash, "editor", "Row Other")
+        .await
+        .unwrap();
+    let owner = login_cookie(&app, "row118-owner@braian.local", "row118-secret").await;
+    let other = login_cookie(&app, "row118-other@braian.local", "row118-secret").await;
+    let id = upload_csv_cookie(&app, &owner, "items.csv", "sku,name\nNEW-1,Chair\n").await;
+    until(&app, &id, &["ready"]).await;
+    put_mapping(&app, &id, true).await;
+    let (status, saved) = call_cookie(
+        &app,
+        "POST",
+        "/v1/import-mappings",
+        &owner,
+        Some(
+            json!({ "session_id": id, "name": "Owner items" })
+                .to_string()
+                .into_bytes(),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{saved}");
+    assert_eq!(saved["can_edit"], true);
+    assert_eq!(saved["created_by"], "Row Owner");
+    let mapping_id = saved["id"].as_str().unwrap();
+
+    let (status, listed) = call_cookie(&app, "GET", "/v1/import-mappings", &other, None).await;
+    assert_eq!(status, StatusCode::OK, "{listed}");
+    let row = listed["mappings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["id"] == mapping_id)
+        .expect("mapping");
+    assert_eq!(row["can_edit"], false);
+    assert_eq!(row["created_by"], "Row Owner");
+    assert_eq!(row["name"], "Owner items");
+    assert!(row["updated_at"].as_str().unwrap().contains('T'));
+    assert!(row["header_signature"].as_str().unwrap().contains("sku"));
+
+    let (status, denied) = call_cookie(
+        &app,
+        "PATCH",
+        &format!("/v1/import-mappings/{mapping_id}"),
+        &other,
+        Some(json!({ "name": "Taken" }).to_string().into_bytes()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{denied}");
+    assert_eq!(denied["code"], "forbidden");
+    let (status, denied) = call_cookie(
+        &app,
+        "DELETE",
+        &format!("/v1/import-mappings/{mapping_id}"),
+        &other,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{denied}");
+    assert_eq!(denied["code"], "forbidden");
+
+    let (status, renamed) = call_cookie(
+        &app,
+        "PATCH",
+        &format!("/v1/import-mappings/{mapping_id}"),
+        &owner,
+        Some(json!({ "name": "Owner renamed" }).to_string().into_bytes()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{renamed}");
+    let (status, after) = call_cookie(&app, "GET", "/v1/import-mappings", &owner, None).await;
+    assert_eq!(status, StatusCode::OK, "{after}");
+    let row = after["mappings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["id"] == mapping_id)
+        .expect("mapping");
+    assert_eq!(row["name"], "Owner renamed");
+    assert_eq!(row["can_edit"], true);
+
+    let (status, by_admin) = call(
+        &app,
+        "DELETE",
+        &format!("/v1/import-mappings/{mapping_id}"),
+        HUMAN,
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{by_admin}");
+    let (status, missing) = call(
+        &app,
+        "PATCH",
+        &format!("/v1/import-mappings/{}", Uuid::now_v7()),
+        HUMAN,
+        &[("content-type", "application/json")],
+        Some(json!({ "name": "Missing" }).to_string().into_bytes()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{missing}");
+}
+
+async fn login_cookie(app: &axum::Router, email: &str, password: &str) -> String {
+    let request = Request::builder()
+        .method("POST")
+        .uri("/v1/login")
+        .header("content-type", "application/json")
+        .body(Body::from(format!(
+            r#"{{"email":"{email}","password":"{password}"}}"#
+        )))
+        .unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    response
+        .headers()
+        .get("set-cookie")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(';').next())
+        .expect("session cookie")
+        .to_owned()
+}
+
+async fn call_cookie(
+    app: &axum::Router,
+    method: &str,
+    path: &str,
+    cookie: &str,
+    body: Option<Vec<u8>>,
+) -> (StatusCode, Value) {
+    let mut builder = Request::builder()
+        .method(method)
+        .uri(path)
+        .header("cookie", cookie);
+    if body.is_some() {
+        builder = builder.header("content-type", "application/json");
+    }
+    let request = builder
+        .body(match body {
+            Some(body) => Body::from(body),
+            None => Body::empty(),
+        })
+        .unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    let status = response.status();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let json = if bytes.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_slice(&bytes).unwrap_or_else(|_| json!(String::from_utf8_lossy(&bytes)))
+    };
+    (status, json)
+}
+
+async fn upload_csv_cookie(app: &axum::Router, cookie: &str, name: &str, body: &str) -> String {
+    let request = Request::builder()
+        .method("POST")
+        .uri("/v1/imports")
+        .header("cookie", cookie)
+        .header("content-type", "application/octet-stream")
+        .header("x-file-name", name)
+        .body(Body::from(body.as_bytes().to_vec()))
+        .unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    let status = response.status();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let uploaded: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    assert_eq!(status, StatusCode::CREATED, "{uploaded}");
+    uploaded["id"].as_str().unwrap().to_owned()
 }
 
 #[tokio::test]
