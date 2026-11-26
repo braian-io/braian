@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Check } from 'lucide-react'
-import { toast } from 'sonner'
+import { Pencil } from 'lucide-react'
 import { api, textValue, type Json } from './api'
 import { Button } from './components/ui/button'
 import { Dialog, DialogContent, DialogDescription } from './components/ui/dialog'
@@ -11,6 +10,9 @@ import { openSharedContextMenu, prefersNativeContextMenu } from './shared-contex
 import { registerCommandRunner } from './command-registry'
 import { reportWriteError, writeErrorMessage } from './write-error'
 import { LinkAddFlow, type LinkAddRequest } from './link-add'
+import { LinkEditDialog } from './link-edit-dialog'
+import { LinkInlineCell } from './link-inline-cell'
+import { linkTypeFields } from './link-choices'
 import { dispatchLinkDrop, endLinkDrag, linkDragActive, linkDragMime, linkDragPayload, linkDropDecision, linkDropFromSection, readLinkDrag, setLinkDragHint } from './link-drag'
 
 type LinkItem = {
@@ -21,6 +23,7 @@ type LinkItem = {
   peer_type: string
   has_values: boolean
   sort_order?: string | number | null
+  version?: number
   values?: Json
 }
 
@@ -85,6 +88,7 @@ export function LinkSections({
   const opener = useRef<HTMLElement | null>(null)
   const [confirm, setConfirm] = useState<Removal | null>(null)
   const [confirmError, setConfirmError] = useState('')
+  const [editing, setEditing] = useState<{ link: LinkItem; section: LinkSide } | null>(null)
   const sections = useMemo(() => sectionsFor(defs, typeKey, links), [defs, typeKey, links])
   const onOpenRef = useRef(onOpen)
   onOpenRef.current = onOpen
@@ -102,18 +106,10 @@ export function LinkSections({
     if (peerId) void queryClient.invalidateQueries({ queryKey: ['history', peerId] })
     void queryClient.invalidateQueries({ queryKey: ['graph', objectId] })
     if (peerId) void queryClient.invalidateQueries({ queryKey: ['graph', peerId] })
+    void queryClient.invalidateQueries({ queryKey: ['trash'] })
   }
-  const recreate = (removal: Removal) => {
-    const values: Json = removal.values
-      ? { ...removal.values }
-      : removal.sortOrder == null || removal.sortOrder === ''
-        ? {}
-        : { sort_order: typeof removal.sortOrder === 'object' ? removal.sortOrder : { value: String(removal.sortOrder) } }
-    void api.post('/v1/links', {
-      body: { type: removal.linkType, from_id: removal.fromId, to_id: removal.toId, values },
-    }).then(() => refresh(removal.peerId)).catch((reason: unknown) => {
-      reportWriteError(reason)
-    })
+  const openEdit = (link: LinkItem, section: LinkSide) => {
+    setEditing({ link, section })
   }
   const remove = (link: LinkItem, section: LinkSide) => {
     const removal = removalFor(link, section, objectId)
@@ -124,9 +120,6 @@ export function LinkSections({
     }
     void api.delete('/v1/links/{id}', { params: { path: { id: removal.id } } }).then(() => {
       refresh(removal.peerId)
-      toast(copy.linkRemoved, {
-        action: { label: copy.undo, onClick: () => recreate(removal) },
-      })
     }).catch((reason: unknown) => {
       reportWriteError(reason)
     })
@@ -138,9 +131,6 @@ export function LinkSections({
       setConfirm(null)
       setConfirmError('')
       refresh(removal.peerId)
-      toast(copy.linkRemoved, {
-        action: { label: copy.undo, onClick: () => recreate(removal) },
-      })
     }).catch((reason: unknown) => {
       const message = writeErrorMessage(reason)
       if (message) setConfirmError(message)
@@ -164,7 +154,9 @@ export function LinkSections({
   useEffect(() => {
     const stops = [
       registerCommandRunner('link:edit', (target) => {
-        if (target.linkId) onOpenRef.current(String(target.linkId))
+        if (!target.linkId) return
+        const found = locate(sectionsRef.current, String(target.linkId))
+        if (found) openEdit(found.link, found.section)
       }),
       registerCommandRunner('link:remove', (target) => {
         if (!target.linkId) return
@@ -271,10 +263,13 @@ export function LinkSections({
           {bodyLoading && section.links.length === 0 ? (
             <span className="detail-link-skeleton" data-testid="detail-link-skeleton" aria-busy="true" />
           ) : null}
-          {section.links.map((link) => (
+          {section.links.map((link) => {
+            const fields = linkTypeFields(defs, section.link_type)
+            const version = Number(link.version)
+            return (
             <div
               key={link.id}
-              className="row"
+              className="row link-row-line"
               role="row"
               tabIndex={0}
               data-testid="link-row"
@@ -299,9 +294,40 @@ export function LinkSections({
                 }
               }}
             >
-              <span>{link.peer_key}</span>
+              <span className="link-row-peer">{link.peer_key}</span>
+              {fields.map((field) => {
+                const current = linkDraftValue(link, field.key)
+                if (field.kind !== 'number' && field.kind !== 'range') return null
+                if (!Number.isFinite(version) || version <= 0) return null
+                return (
+                  <LinkInlineCell
+                    key={field.key}
+                    linkId={link.id}
+                    version={version}
+                    field={field}
+                    value={current}
+                    linkType={section.link_type}
+                    onSaved={() => refresh(link.peer_id)}
+                  />
+                )
+              })}
+              <Button
+                type="button"
+                variant="ghost"
+                className="link-edit-action"
+                data-testid="link-edit-attributes"
+                aria-label={copy.editLink}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  openEdit(link, section)
+                }}
+              >
+                <Pencil aria-hidden="true" size={14} />
+                <span>{copy.editLink}</span>
+              </Button>
             </div>
-          ))}
+            )
+          })}
           <Button
             type="button"
             variant="default"
@@ -350,8 +376,27 @@ export function LinkSections({
           </DialogContent>
         </Dialog>
       ) : null}
+      {editing ? (
+        <LinkEditDialog
+          link={editing.link}
+          linkType={editing.section.link_type}
+          defs={defs}
+          onClose={() => setEditing(null)}
+          onSaved={() => refresh(editing.link.peer_id)}
+        />
+      ) : null}
     </>
   )
+}
+
+function linkDraftValue(link: LinkItem, key: string) {
+  const fromValues = (link.values as Record<string, unknown> | undefined)?.[key]
+  const picked = fromValues ?? (key === 'sort_order' ? link.sort_order : undefined)
+  if (picked == null) return ''
+  if (typeof picked === 'object' && picked !== null && 'value' in picked) {
+    return String((picked as { value?: unknown }).value ?? '')
+  }
+  return String(picked)
 }
 
 function pointerStillInside(event: DragEvent<HTMLElement>) {

@@ -246,6 +246,16 @@ test('removing a link updates the peer list at once and Undo brings the row back
   }
 
   await expect(removedRow).toHaveCount(0)
-  await page.getByRole('button', { name: 'Undo' }).click()
-  await expect(removedRow).toBeVisible()
+  await page.getByTestId('user-menu').click()
+  await page.getByTestId('user-menu-trash').click()
+  const trash = page.getByTestId('trash-table-chrome')
+  await expect(trash).toBeVisible()
+  const trashRow = trash.locator('[data-testid="trash-row"]').filter({ hasText: removed.peer_key })
+  await expect(trashRow).toBeVisible()
+  await trashRow.click()
+  await page.getByTestId('trash-detail-restore').click()
+  await expect(trashRow).toHaveCount(0)
+  await products.getByTestId('quick-filter').first().fill(product.key!)
+  await expect(productRow).toBeVisible()
+  await expect(linkRow).toBeVisible()
 })

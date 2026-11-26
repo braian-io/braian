@@ -2644,6 +2644,8 @@ export interface components {
             peer_id: string;
             peer_key: string;
             peer_type: string;
+            sort_order?: string | null;
+            version: number;
         };
         /** @description The name shown on one side of a link, and the key used later in an attribute path. */
         LinkLabel: {
