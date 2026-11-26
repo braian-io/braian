@@ -148,7 +148,7 @@ import { StateNote } from './states'
 import { classSections } from './class-sections'
 import { LinkSections } from './link-section'
 import { DetailMeta } from './detail-meta'
-import { splitDetailKeys } from './detail-fields'
+import { applicableDetailKeys, splitDetailKeys } from './detail-fields'
 import { DetailFieldDraftHost, type DetailFieldDraftHandle } from './detail-field-draft'
 import { DetailNumberMeasureField } from './detail-number-measure-field'
 import { beginLinkDrag, dispatchLinkDrop, endLinkDrag, linkDragActive, linkDragContains, linkDragLabel, linkDragMime, linkDragObjects, linkDragPayload, linkDropDecision, readLinkDrag, setLinkDragHint } from './link-drag'
@@ -3520,7 +3520,19 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       .map((item) => String(item.key ?? ''))
       .filter(Boolean)
     : []
-  const valueKeys = [...new Set([...Object.keys(values), ...typeAttributeKeys, ...proposalKeys, ...fileKeys])]
+  const applicableKeys = applicableDetailKeys(
+    defs.data,
+    String(object.data?.type ?? ''),
+    object.data?.groups,
+    uiLanguage,
+  )
+  const valueKeys = [...new Set([
+    ...Object.keys(values),
+    ...applicableKeys,
+    ...typeAttributeKeys,
+    ...proposalKeys,
+    ...fileKeys,
+  ])]
   const { primaryKeys, moreKeys } = splitDetailKeys(defs.data, valueKeys)
   const visibleKeys = showMoreFields ? [...primaryKeys, ...moreKeys] : primaryKeys
   const owners = provenance.data?.owners ?? {}

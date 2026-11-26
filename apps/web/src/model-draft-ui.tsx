@@ -32,6 +32,7 @@ import { registerModelDefinitions } from './model-selection'
 import { flushModelTableDraftToStaged } from './model-table-draft'
 import { StateNote } from './states'
 import { beginOwnModelSave, endOwnModelSave } from './model-revision-watch'
+import { commitModelOperation } from './model-commit'
 
 export type DraftSaveGate = 'idle' | 'direct' | 'confirm' | 'blocked'
 
@@ -408,6 +409,7 @@ export function ModelDraftHost() {
   }
   const cancelReview = () => {
     reviewToken.current += 1
+    if (typeof window !== 'undefined') window.dispatchEvent(new Event('braian-structures-review-cancel'))
     setReview(false)
     setReviewCreated([])
     setReviewLoading(false)
@@ -755,6 +757,7 @@ function ReviewLoadingDialog({ onCancel }: { onCancel: () => void }) {
 }
 
 function CreateDialog({ kind, onClose }: { kind: DialogKind; onClose: () => void }) {
+  const queryClient = useQueryClient()
   const [label, setLabel] = useState('')
   const [extra, setExtra] = useState('')
   const [fromType, setFromType] = useState('')
@@ -785,16 +788,19 @@ function CreateDialog({ kind, onClose }: { kind: DialogKind; onClose: () => void
     if (!toType && entities[0]) setToType(entities[0])
   }, [kind, fromType, toType, entities])
   const title = kind === 'link' ? copy.newLinkType : kind === 'type' ? copy.newType : kind === 'list' ? copy.newValueList : kind === 'family' ? copy.newUnitFamily : copy.newTree
+  const saving = useRef(false)
   const submit = () => {
+    if (saving.current) return
     const name = label.trim()
     const key = attributeKey(name)
     if (!key) return
+    saving.current = true
     const side = attributeKey(name)
     if (kind === 'link') setModelFocus({ kind: 'type', key })
     const forward = fromLabel.trim() || name
     const reverse = toLabel.trim() || name
     const work = kind === 'link'
-      ? stageModel('model.create_link_type', {
+      ? commitModelOperation(queryClient, 'model.create_link_type', {
           key,
           label: name,
           from_types: [fromType],
@@ -808,9 +814,9 @@ function CreateDialog({ kind, onClose }: { kind: DialogKind; onClose: () => void
           attributes: [],
         })
       : kind === 'type'
-      ? stageModel('model.create_type', { key, label: name })
+      ? commitModelOperation(queryClient, 'model.create_type', { key, label: name })
       : kind === 'list'
-        ? stageModel('model.create_value_list', {
+        ? commitModelOperation(queryClient, 'model.create_value_list', {
             key,
             label: name,
             options: extra.split(',').map((item) => item.trim()).filter(Boolean).map((item) => ({
@@ -819,7 +825,7 @@ function CreateDialog({ kind, onClose }: { kind: DialogKind; onClose: () => void
             })),
           })
         : kind === 'family'
-          ? stageModel('model.create_unit_family', {
+          ? commitModelOperation(queryClient, 'model.create_unit_family', {
               key,
               dimension: name,
               base_unit: extra.trim() || key,
@@ -829,6 +835,8 @@ function CreateDialog({ kind, onClose }: { kind: DialogKind; onClose: () => void
     void work.then(() => onClose()).catch((reason: unknown) => {
       const message = writeErrorMessage(reason)
       if (message) setError(message)
+    }).finally(() => {
+      saving.current = false
     })
   }
   return (

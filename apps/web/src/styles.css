@@ -3689,6 +3689,21 @@ button.primary[aria-disabled='true'] {
   font-size: var(--text-xs, 11px);
   line-height: 1.2;
 }
+.cell-save-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  font-size: var(--text-xs, 11px);
+  line-height: 1.2;
+}
+.cell-save-note[data-state='saved'] {
+  color: var(--ok, #2e7d32);
+}
+.cell-save-note[data-state='saving'] {
+  color: var(--muted, #5c6570);
+}
 .standard-grid-cell .standard-cell-select-trigger,
 .standard-grid-cell .standard-cell-select-trigger.select-trigger {
   width: 100%;

@@ -50,20 +50,11 @@ async function createOwnAttribute(
   await expect(table.locator(`[data-key="${key}"]`)).toBeVisible()
 }
 
-async function saveAttributeTableThroughReview(page: Page) {
+async function expectAttributeCreatesCommitted(page: Page) {
   const table = page.getByTestId('attribute-table')
-  await expect(table.getByTestId('review-and-save')).toBeVisible()
-  const staged = page.waitForResponse((response) =>
-    response.url().includes('/v1/model/draft/steps') && response.request().method() === 'POST')
-  const saved = page.waitForResponse((response) =>
-    response.url().includes('/v1/model/draft/save') && response.request().method() === 'POST')
-  await table.getByTestId('review-and-save').click()
-  const dialog = page.getByTestId('review-dialog')
-  await expect(dialog).toBeVisible()
-  await dialog.getByRole('button', { name: 'Save' }).click()
-  expect((await staged).ok()).toBeTruthy()
-  expect((await saved).ok()).toBeTruthy()
-  await expect(dialog).toHaveCount(0)
+  await expect(table.getByTestId('review-and-save')).toHaveCount(0)
+  await expect(page.getByTestId('review-dialog')).toHaveCount(0)
+  await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
 }
 
 type Definitions = {
@@ -121,11 +112,11 @@ test.describe('row 47 ordering', () => {
     const secondId = await rows.nth(1).getAttribute('data-row-id')
     if (!firstId || !secondId) throw new Error('missing value list rows')
     await rows.first().focus()
+    const reordered = page.waitForResponse((response) =>
+      response.url().includes('/v1/model/commit') && response.request().method() === 'POST')
     await page.keyboard.press('Alt+ArrowDown')
-    await expect(values.getByTestId('review-and-save')).toBeVisible()
-    await values.getByTestId('review-and-save').click()
-    await expect(page.getByTestId('review-dialog')).toBeVisible()
-    await page.getByTestId('review-dialog').getByRole('button', { name: 'Save' }).click()
+    expect((await reordered).ok()).toBeTruthy()
+    await expect(values.getByTestId('review-and-save')).toHaveCount(0)
     await expect(page.getByTestId('review-dialog')).toHaveCount(0)
 
     const defs = (await (await page.request.get('/v1/definitions')).json()) as {
@@ -153,7 +144,7 @@ test.describe('row 47 ordering', () => {
     let table = await openGroupYoghurtAttributes(page)
     await createOwnAttribute(page, table, firstKey)
     await createOwnAttribute(page, table, secondKey)
-    await saveAttributeTableThroughReview(page)
+    await expectAttributeCreatesCommitted(page)
 
     table = await openGroupYoghurtAttributes(page)
     const movable = table.locator('[data-row-id]:not([data-readonly="true"])')
@@ -163,9 +154,12 @@ test.describe('row 47 ordering', () => {
     if (!firstId || !secondId) throw new Error('missing movable group attribute rows')
 
     await movable.first().focus()
+    const reordered = page.waitForResponse((response) =>
+      response.url().includes('/v1/model/commit') && response.request().method() === 'POST')
     await page.keyboard.press('Alt+ArrowDown')
-    await expect(table.getByTestId('review-and-save')).toBeVisible()
-    await saveAttributeTableThroughReview(page)
+    expect((await reordered).ok()).toBeTruthy()
+    await expect(table.getByTestId('review-and-save')).toHaveCount(0)
+    await expect(page.getByTestId('review-dialog')).toHaveCount(0)
 
     const defs = (await (await page.request.get('/v1/definitions')).json()) as Definitions
     const keys = groupOwnAttributeKeys(defs, 'food', 'yoghurt')

@@ -4679,6 +4679,59 @@ async fn a_person_saves_a_model_draft_and_an_agent_gets_a_proposal() {
 }
 
 #[tokio::test]
+async fn a_cell_commit_writes_one_revision_and_keeps_the_draft() {
+    let (db, app) = app().await;
+    let principal = db
+        .store()
+        .principal_by_handle("ada")
+        .await
+        .unwrap()
+        .expect("ada");
+    db.store()
+        .attach_user(principal, "ada@example.com", "x", "admin", "Ada")
+        .await
+        .unwrap();
+
+    let (status, _, before) = call(&app, "GET", "/v1/definitions", Some(HUMAN), &[], None).await;
+    assert_eq!(status, StatusCode::OK, "{before}");
+    let base = before["model_revision"].as_u64().unwrap();
+
+    let (status, _, saved) = call(
+        &app,
+        "POST",
+        "/v1/model/commit",
+        Some(HUMAN),
+        &[("content-type", "application/json")],
+        Some(&format!(
+            r#"{{"base_revision":{base},"steps":[{{"op":"create_value_list","key":"cell_commit_list","label":"Cell"}}]}}"#
+        )),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{saved}");
+    assert_eq!(saved["applied"], true);
+    assert_eq!(saved["model_revision"], base + 1);
+
+    let (status, _, draft) = call(&app, "GET", "/v1/model/draft", Some(HUMAN), &[], None).await;
+    assert_eq!(status, StatusCode::OK, "{draft}");
+    assert_eq!(draft["count"], 0);
+    assert_eq!(draft["conflict"], false);
+
+    let (status, _, conflict) = call(
+        &app,
+        "POST",
+        "/v1/model/commit",
+        Some(HUMAN),
+        &[("content-type", "application/json")],
+        Some(&format!(
+            r#"{{"base_revision":{base},"operation":"model.create_value_list","args":{{"key":"other_list","label":"Other"}}}}"#
+        )),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{conflict}");
+    assert_eq!(conflict["code"], "draft_conflict");
+}
+
+#[tokio::test]
 async fn attribute_definitions_list_usage_and_a_draft_step() {
     let (db, app) = app().await;
     let principal = db

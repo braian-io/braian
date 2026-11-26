@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, textValue, type Json } from './api'
 import { CreateDialog, requireText } from './create-dialog'
 import { copy, uiLanguage } from './i18n'
 import { attributeKey, objectTypes } from './model-view'
-import { onDraftChange, setModelFocus, stageModel, stageModelSteps } from './model-stage'
+import { onDraftChange, setModelFocus } from './model-stage'
+import { commitModelOperation, commitModelSteps, dropSavedDraftRow, type ModelStep } from './model-commit'
 import { buildLinkTypeCreateSteps, buildLinkTypeUpdateSteps } from './link-type-table-steps'
 import {
   clearStoredLinkTypesTableDraft,
@@ -22,7 +23,6 @@ import { getModelSelection, subscribeModelSelection } from './model-selection'
 import { tryChooseModelSelection } from './model-table-draft'
 import { clearPendingModelType, OPEN_MODEL_TYPE, peekPendingModelType } from './model-type-open'
 import { StateNote } from './states'
-import { valueListOptionSteps } from './value-list-table-steps'
 
 type TypeRow = {
   id: string
@@ -73,8 +73,8 @@ function useModelDefs() {
   return { stored, defs: preview ?? stored.data, draft }
 }
 
-async function reviewDraft() {
-  window.dispatchEvent(new Event('braian-review-save'))
+function rememberSaved<T>(setDraftRows: (value: Record<string, T> | ((current: Record<string, T>) => Record<string, T>)) => void, row: T & { id: string }) {
+  setDraftRows((current) => dropSavedDraftRow(current, row.id, row))
 }
 
 
@@ -85,6 +85,7 @@ function useActiveRowId() {
 }
 
 export function ObjectTypesTable() {
+  const queryClient = useQueryClient()
   const { stored, defs } = useModelDefs()
   const [filter, setFilter] = useState('')
   const { activeRowId, setActiveRowId } = useActiveRowId()
@@ -196,28 +197,17 @@ export function ObjectTypesTable() {
         tryChooseModelSelection({ kind: 'type', typeKey: row.key })
         setModelFocus({ kind: 'type', key: row.key })
       }}
-      onReviewAndSave={async () => {
-        for (const row of Object.values(draftRows)) {
-          const existing = rows.some((item) => item.id === row.id)
-          if (!existing) {
-            await stageModel('model.create_type', {
-              key: row.key || row.singular.toLowerCase().replace(/\s+/g, '_'),
-              singular: row.singular,
-              plural: row.plural || row.singular,
-              language: uiLanguage,
-            })
-          } else {
-            await stageModel('model.update_type', {
-              key: row.id,
-              singular: row.singular,
-              plural: row.plural,
-              language: uiLanguage,
-              ...(row.key !== row.id ? { new_key: row.key } : {}),
-            })
-          }
-        }
-        setDraftRows({})
-        await reviewDraft()
+      saveCell={async (row) => {
+        const existing = rows.some((item) => item.id === row.id)
+        if (!existing) return
+        await commitModelOperation(queryClient, 'model.update_type', {
+          key: row.id,
+          singular: row.singular,
+          plural: row.plural,
+          language: uiLanguage,
+          ...(row.key !== row.id ? { new_key: row.key } : {}),
+        })
+        rememberSaved(setDraftRows, row)
       }}
     />
     <CreateDialog
@@ -239,7 +229,7 @@ export function ObjectTypesTable() {
         const singular = requireText(singularName)
         const key = attributeKey(typeKey || singular)
         if (!key) throw new Error(copy.validation)
-        await stageModel('model.create_type', {
+        await commitModelOperation(queryClient, 'model.create_type', {
           key,
           label: singular,
           singular,
@@ -284,8 +274,16 @@ export function LinkTypesTable({ draftScope }: { draftScope?: ModelTableDraftSco
     [],
   )
 
+  const hydratedDraft = useRef('')
   useEffect(() => {
     if (!draftScope?.userId || !draftScope.workspaceId) return
+    const scope = `${draftScope.userId}:${draftScope.workspaceId}`
+    // Hydrate once. Repeating this on every definitions refetch put a save
+    // that had just landed back into the table, which opened the leave dialog
+    // over the next cell edit.
+    if (hydratedDraft.current === scope) return
+    if (serverRows.length === 0) return
+    hydratedDraft.current = scope
     const storedDraft = readStoredLinkTypesTableDraft(draftScope.userId, draftScope.workspaceId)
     if (!storedDraft) return
     const { draftRows: restored } = restoreLinkTypesTableDraft(storedDraft, serverRows)
@@ -319,35 +317,27 @@ export function LinkTypesTable({ draftScope }: { draftScope?: ModelTableDraftSco
       clearStoredLinkTypesTableDraft(draftScope.userId, draftScope.workspaceId)
     }
   }, [draftScope?.userId, draftScope?.workspaceId])
-  const flushLinkTypesDraft = useCallback(async () => {
-    const steps: Array<{ op: string } & Record<string, unknown>> = []
-    for (const row of Object.values(draftRows)) {
-      const server = serverRows.find((item) => item.id === row.id)
-      if (!server) {
-        steps.push(...buildLinkTypeCreateSteps(row))
-        continue
-      }
-      steps.push(...buildLinkTypeUpdateSteps(server, row))
-    }
-    if (steps.length > 0) await stageModelSteps(steps)
-    discardDraft()
-    await queryClient.invalidateQueries({ queryKey: ['model-draft'] })
-  }, [discardDraft, draftRows, queryClient, serverRows])
+  const saveLinkRow = useCallback(async (row: LinkTypeRow) => {
+    const server = serverRows.find((item) => item.id === row.id)
+    const steps: ModelStep[] = server ? buildLinkTypeUpdateSteps(server, row) : buildLinkTypeCreateSteps(row)
+    if (steps.length === 0) return
+    await commitModelSteps(queryClient, steps)
+    rememberSaved(setDraftRows, row)
+  }, [queryClient, serverRows])
 
   const reviewDraftRows = useCallback(async () => {
-    await flushLinkTypesDraft()
-    await reviewDraft()
-  }, [flushLinkTypesDraft])
+    for (const row of Object.values(draftRows)) await saveLinkRow(row)
+  }, [draftRows, saveLinkRow])
 
   useEffect(() => {
     registerModelTableDraft({
       dirty,
       discard: discardDraft,
       review: reviewDraftRows,
-      flushToDraft: flushLinkTypesDraft,
+      flushToDraft: reviewDraftRows,
     })
     return () => registerModelTableDraft(null)
-  }, [dirty, discardDraft, flushLinkTypesDraft, reviewDraftRows])
+  }, [dirty, discardDraft, reviewDraftRows])
 
   useEffect(() => {
     if (!pendingKey) return
@@ -465,7 +455,7 @@ export function LinkTypesTable({ draftScope }: { draftScope?: ModelTableDraftSco
         tryChooseModelSelection({ kind: 'type', typeKey: row.key })
         setModelFocus({ kind: 'type', key: row.key })
       }}
-      onReviewAndSave={reviewDraftRows}
+      saveCell={(row) => saveLinkRow(row)}
     />
     <CreateDialog
       open={createOpen}
@@ -506,7 +496,7 @@ export function LinkTypesTable({ draftScope }: { draftScope?: ModelTableDraftSco
         }
         const steps = buildLinkTypeCreateSteps(row)
         if (steps.length === 0) throw new Error(copy.validation)
-        await stageModelSteps(steps)
+        await commitModelSteps(queryClient, steps)
         setPendingKey(key)
       }}
     />
@@ -515,6 +505,7 @@ export function LinkTypesTable({ draftScope }: { draftScope?: ModelTableDraftSco
 }
 
 export function ValueListsTable({ onOpenList }: { onOpenList?: (key: string) => void }) {
+  const queryClient = useQueryClient()
   const { stored, defs } = useModelDefs()
   const [filter, setFilter] = useState('')
   const { activeRowId, setActiveRowId } = useActiveRowId()
@@ -602,25 +593,16 @@ export function ValueListsTable({ onOpenList }: { onOpenList?: (key: string) => 
         onOpenList?.(row.key)
         window.dispatchEvent(new CustomEvent('braian-open-value-list', { detail: { key: row.key } }))
       }}
-      onReviewAndSave={async () => {
-        for (const row of Object.values(draftRows)) {
-          const existing = rows.some((item) => item.id === row.id)
-          if (!existing) {
-            await stageModel('model.create_value_list', {
-              key: row.key || row.label.toLowerCase().replace(/\s+/g, '_'),
-              label: row.label,
-              language: uiLanguage,
-            })
-          } else {
-            await stageModel('model.update_value_list', {
-              key: row.id,
-              label: row.label,
-              language: uiLanguage,
-            })
-          }
-        }
-        setDraftRows({})
-        await reviewDraft()
+      saveCell={async (row) => {
+        const existing = rows.some((item) => item.id === row.id)
+        if (!existing) return
+        await commitModelOperation(queryClient, 'model.update_value_list', {
+          key: row.id,
+          label: row.label,
+          language: uiLanguage,
+          ...(row.key !== row.id ? { new_key: row.key } : {}),
+        })
+        rememberSaved(setDraftRows, row)
       }}
     />
     <CreateDialog
@@ -640,7 +622,7 @@ export function ValueListsTable({ onOpenList }: { onOpenList?: (key: string) => 
         const label = requireText(listName)
         const key = attributeKey(listKeyField || label)
         if (!key) throw new Error(copy.validation)
-        await stageModel('model.create_value_list', { key, label, language: uiLanguage })
+        await commitModelOperation(queryClient, 'model.create_value_list', { key, label, language: uiLanguage })
         setPendingKey(key)
       }}
     />
@@ -649,6 +631,7 @@ export function ValueListsTable({ onOpenList }: { onOpenList?: (key: string) => 
 }
 
 export function ValueListValuesTable({ listKey }: { listKey: string }) {
+  const queryClient = useQueryClient()
   const { stored, defs } = useModelDefs()
   const [filter, setFilter] = useState('')
   const { activeRowId, setActiveRowId } = useActiveRowId()
@@ -714,11 +697,23 @@ export function ValueListValuesTable({ listKey }: { listKey: string }) {
         optionCode: row?.code || undefined,
       })}
       reorderable
-      onReviewAndSave={async () => {
-        const steps = valueListOptionSteps(listKey, rows, draftRows, uiLanguage)
-        if (steps.length > 0) await stageModelSteps(steps)
+      saveCell={async (row) => {
+        const options = rows.map((item) => item.id === row.id ? { code: row.code, label: row.label } : { code: item.code, label: item.label })
+        if (!rows.some((item) => item.id === row.id)) return
+        await commitModelOperation(queryClient, 'model.update_value_list', {
+          key: listKey,
+          language: uiLanguage,
+          options,
+        })
+        rememberSaved(setDraftRows, row)
+      }}
+      onReorder={async (ordered) => {
+        await commitModelOperation(queryClient, 'model.update_value_list', {
+          key: listKey,
+          language: uiLanguage,
+          options: ordered.map((item) => ({ code: item.code, label: item.label })),
+        })
         setDraftRows({})
-        await reviewDraft()
       }}
     />
     <CreateDialog
@@ -738,8 +733,9 @@ export function ValueListValuesTable({ listKey }: { listKey: string }) {
         const label = requireText(optionName)
         const code = attributeKey(optionCode || label)
         if (!code) throw new Error(copy.validation)
-        await stageModel('model.update_value_list', {
+        await commitModelOperation(queryClient, 'model.update_value_list', {
           key: listKey,
+          language: uiLanguage,
           options: [...rows.map((row) => ({ code: row.code, label: row.label })), { code, label }],
         })
         setPendingKey(code)
@@ -750,6 +746,7 @@ export function ValueListValuesTable({ listKey }: { listKey: string }) {
 }
 
 export function UnitsTable() {
+  const queryClient = useQueryClient()
   const { stored, defs } = useModelDefs()
   const [filter, setFilter] = useState('')
   const { activeRowId, setActiveRowId } = useActiveRowId()
@@ -902,54 +899,20 @@ export function UnitsTable() {
         familyKey: row?.family || undefined,
         unitCode: row?.code || undefined,
       })}
-      onReviewAndSave={async () => {
-        const knownFamilies = new Set(
-          ((defs?.unit_families as Json[]) ?? []).map((item) => String(item.key ?? '')),
-        )
-        for (const row of Object.values(draftRows)) {
-          const existing = rows.some((item) => item.id === row.id)
-          if (!existing) {
-            const hasFamily = knownFamilies.has(row.familyKey)
-            if (!hasFamily && row.familyKey) {
-              await stageModel('model.create_unit_family', {
-                key: row.familyKey,
-                base_unit: row.code || row.familyKey,
-                units: row.code
-                  ? [{
-                      code: row.code,
-                      factor: row.factor || '1',
-                      offset: row.offset || '0',
-                      symbol: row.symbol || row.code,
-                      label: row.label,
-                    }]
-                  : [],
-              })
-              knownFamilies.add(row.familyKey)
-            } else if (row.code) {
-              await stageModel('model.add_unit', {
-                unit_family: row.familyKey,
-                code: row.code,
-                factor: row.factor || '1',
-                offset: row.offset || '0',
-                symbol: row.symbol || row.code,
-                label: row.label,
-              })
-            }
-          } else if (row.code) {
-            const unit = row.id.split(':').pop()
-            await stageModel('model.update_unit', {
-              unit_family: row.familyKey,
-              unit,
-              factor: row.factor,
-              offset: row.offset,
-              symbol: row.symbol,
-              label: row.label,
-              ...(row.code !== unit ? { new_code: row.code } : {}),
-            })
-          }
-        }
-        setDraftRows({})
-        await reviewDraft()
+      saveCell={async (row) => {
+        const existing = rows.some((item) => item.id === row.id)
+        if (!existing || !row.code) return
+        const unit = row.id.split(':').pop()
+        await commitModelOperation(queryClient, 'model.update_unit', {
+          unit_family: row.familyKey,
+          unit,
+          factor: row.factor,
+          offset: row.offset,
+          symbol: row.symbol,
+          label: row.label,
+          ...(row.code !== unit ? { new_code: row.code } : {}),
+        })
+        rememberSaved(setDraftRows, row)
       }}
     />
     <CreateDialog
@@ -985,14 +948,14 @@ export function UnitsTable() {
         }
         const hasFamily = ((defs?.unit_families as Json[]) ?? []).some((item) => String(item.key) === family)
         if (!hasFamily) {
-          await stageModel('model.create_unit_family', {
+          await commitModelOperation(queryClient, 'model.create_unit_family', {
             key: family,
             dimension: family,
             base_unit: code,
             units: [unit],
           })
         } else {
-          await stageModel('model.add_unit', {
+          await commitModelOperation(queryClient, 'model.add_unit', {
             unit_family: family,
             ...unit,
           })

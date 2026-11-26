@@ -26,7 +26,7 @@ async function openProductAttributes(page: Page) {
   return table
 }
 
-test('turning off Show by default saves with one Save and no confirm', async ({ page }) => {
+test('turning off Show by default saves when the cell closes, with no Save and no confirm', async ({ page }) => {
   test.setTimeout(180_000)
   await login(page)
   const table = await openProductAttributes(page)
@@ -34,19 +34,14 @@ test('turning off Show by default saves with one Save and no confirm', async ({ 
   const row = table.locator('[data-key="description"]')
   const checkbox = row.getByRole('checkbox', { name: 'Show by default' })
   await expect(checkbox).toBeChecked()
+  const saved = page.waitForResponse((response) =>
+    response.url().includes('/v1/model/commit') && response.request().method() === 'POST')
   await checkbox.click()
   await expect(checkbox).not.toBeChecked()
-
-  const save = table.getByTestId('review-and-save')
-  await expect(save).toHaveText('Save')
-  const staged = page.waitForResponse((response) =>
-    response.url().includes('/v1/model/draft/steps') && response.request().method() === 'POST')
-  const saved = page.waitForResponse((response) =>
-    response.url().includes('/v1/model/draft/save') && response.request().method() === 'POST')
-  await save.click()
-  expect((await staged).ok()).toBeTruthy()
   expect((await saved).ok()).toBeTruthy()
+  await expect(table.getByTestId('review-and-save')).toHaveCount(0)
   await expect(page.getByTestId('review-dialog')).toHaveCount(0)
+  await expect(page.getByTestId('review-loading')).toHaveCount(0)
   await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
 
   // Absent means shown. The API omits show_by_default when it is true.
@@ -65,14 +60,11 @@ test('turning off Show by default saves with one Save and no confirm', async ({ 
   await reloaded.getByTestId('quick-filter').fill('description')
   await expect(reloaded.locator('[data-key="description"]').getByRole('checkbox', { name: 'Show by default' })).not.toBeChecked()
 
+  const restore = page.waitForResponse((response) =>
+    response.url().includes('/v1/model/commit') && response.request().method() === 'POST')
   await reloaded.locator('[data-key="description"]').getByRole('checkbox', { name: 'Show by default' }).click()
-  const restoreStage = page.waitForResponse((response) =>
-    response.url().includes('/v1/model/draft/steps') && response.request().method() === 'POST')
-  const restored = page.waitForResponse((response) =>
-    response.url().includes('/v1/model/draft/save') && response.request().method() === 'POST')
-  await reloaded.getByTestId('review-and-save').click()
-  expect((await restoreStage).ok()).toBeTruthy()
-  expect((await restored).ok()).toBeTruthy()
+  expect((await restore).ok()).toBeTruthy()
+  await expect(reloaded.getByTestId('review-and-save')).toHaveCount(0)
   await expect(page.getByTestId('review-dialog')).toHaveCount(0)
   await expect.poll(shown).toBe(true)
   await page.reload()
@@ -101,8 +93,7 @@ test('removing an attribute asks once, and a blocked group removal does not appl
   await table.getByTestId('quick-filter').fill(key)
   await table.getByTestId(`attr-menu-${key}`).click()
   await page.getByRole('menuitem', { name: 'Remove from this type' }).click()
-  await expect(table.getByTestId('review-and-save')).toBeVisible()
-  await table.getByTestId('review-and-save').click()
+  await expect(table.getByTestId('review-and-save')).toHaveCount(0)
   const dialog = page.getByTestId('review-dialog')
   await expect(dialog).toBeVisible()
   await expect(page.getByTestId('unsaved-changes')).toBeVisible()

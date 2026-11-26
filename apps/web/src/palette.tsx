@@ -1385,6 +1385,21 @@ export function CommandPalette({
       event.preventDefault()
       event.stopPropagation()
     }
+    // Typing highlights a row in a layout effect. Enter can arrive first.
+    // Run the same row that highlight would, instead of leaving the palette open.
+    if (event.key === 'Enter' && mode === 'list' && active == null && query.trim() && stack.length === 0) {
+      const pick = resolveActiveAfterQuery(rows, query)
+      const item = pick == null ? undefined : rows[pick]
+      if (item && !item.disabled) {
+        event.preventDefault()
+        event.stopPropagation()
+        if (parseOpenStructureChoice(item.sourceId ?? item.id)) {
+          openStructurePlacementRef.current = event.ctrlKey || event.metaKey ? 'right' : 'center'
+        }
+        run(item)
+      }
+      return
+    }
     if (effect.type === 'caret' || effect.type === 'none') return
     event.preventDefault()
     event.stopPropagation()

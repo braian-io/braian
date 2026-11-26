@@ -16,6 +16,9 @@ async function command(page: Page, title: string) {
   await expect(palette).toBeVisible()
   await palette.fill(title)
   await page.keyboard.press('Enter')
+  // The command has to dismiss the palette. A create dialog stays open until
+  // its commit returns, and the next shortcut must not land in that dialog.
+  await expect(palette).toBeHidden()
 }
 
 async function modelCreateCommand(page: Page, title: string) {
@@ -122,16 +125,12 @@ test('type attribute rule columns stage, save, and restore (row 47)', async ({ p
   await page.getByRole('option', { name: 'row47_colors' }).click()
   await create.getByTestId('create-object').click()
   const colorRow = attributes.locator('[data-key="row47_color"]')
-  await colorRow.getByRole('checkbox', { name: 'Multiple' }).click()
-
   const saved = page.waitForResponse((response) =>
-    response.url().includes('/v1/model/draft/save') && response.request().method() === 'POST')
-  await attributes.getByTestId('review-and-save').click()
-  const review = page.getByTestId('review-dialog')
-  if (await review.isVisible()) {
-    await review.getByRole('button', { name: 'Save' }).click()
-  }
+    response.url().includes('/v1/model/commit') && response.request().method() === 'POST')
+  await colorRow.getByRole('checkbox', { name: 'Multiple' }).click()
   expect((await saved).ok()).toBeTruthy()
+  await expect(attributes.getByTestId('review-and-save')).toHaveCount(0)
+  await expect(page.getByTestId('review-dialog')).toHaveCount(0)
   await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
 
   await expect.poll(() => attributeKind(page, 'row47_note')).toMatchObject({
@@ -159,8 +158,11 @@ test('type attribute rule columns stage, save, and restore (row 47)', async ({ p
   await countReloaded.locator('[data-column="max"]').dblclick()
   const maxEditor = countReloaded.getByTestId('standard-cell-editor')
   await maxEditor.fill('')
+  const cleared = page.waitForResponse((response) =>
+    response.url().includes('/v1/model/commit') && response.request().method() === 'POST')
   await maxEditor.press('Enter')
-  await reloaded.getByTestId('review-and-save').click()
+  expect((await cleared).ok()).toBeTruthy()
+  await expect(reloaded.getByTestId('review-and-save')).toHaveCount(0)
   await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
   await expect.poll(async () => (await attributeKind(page, 'row47_count')).kind?.max).toBeUndefined()
 

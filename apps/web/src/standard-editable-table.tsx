@@ -26,7 +26,7 @@ import { Checkbox } from './components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select'
 import { StandardTableChrome } from './standard-table'
 import { copy } from './i18n'
-import { reportWriteError } from './write-error'
+import { reportWriteError, writeErrorMessage } from './write-error'
 import { StateNote } from './states'
 
 export type StandardColumnType = 'text' | 'number' | 'boolean' | 'date' | 'datetime' | 'enum' | 'readonly'
@@ -72,10 +72,17 @@ export type StandardEditableTableProps<T extends { id: string }> = {
   /** Plus control. Create UI lives in the caller (a dialog), not an inline draft row. */
   onNewRow?: () => void
   newRowLabel?: string
-  /** Persist all drafts (same as Ctrl+S). */
+  /** Persist all drafts (same as Ctrl+S). Omitted when `saveCell` writes each edit. */
   onReviewAndSave?: () => void | Promise<void>
   /** When set, controls the Save button instead of local draft rows alone. */
   reviewVisible?: boolean
+  /**
+   * Save this cell as soon as it commits (Enter, blur, Tab, checkbox, enum).
+   * The table hides its Save button and shows a short saved or error note on the cell.
+   */
+  saveCell?: (row: T, columnId: string) => Promise<void>
+  /** Save a new row order as soon as the drag or move finishes. */
+  onReorder?: (ordered: T[]) => Promise<void>
   /** Called when a row is activated (click / Enter on non-edit). */
   onActivateRow?: (row: T) => void
   /**
@@ -231,6 +238,8 @@ export function StandardEditableTable<T extends { id: string }>({
   newRowLabel = copy.newRow,
   onReviewAndSave,
   reviewVisible: reviewVisibleProp,
+  saveCell,
+  onReorder,
   onActivateRow,
   activeRowId: activeRowIdProp,
   filterValue,
@@ -257,13 +266,55 @@ export function StandardEditableTable<T extends { id: string }>({
   const [editing, setEditing] = useState<EditCell | null>(null)
   const [editValue, setEditValue] = useState('')
   const [editError, setEditError] = useState('')
+  const [cellSave, setCellSave] = useState<Record<string, { state: 'saving' | 'saved' | 'error'; message?: string }>>({})
+  const saveTimers = useRef<Record<string, number>>({})
+  const savesInFlight = useRef(new Map<string, number>())
+  // The last value sent for a row, kept until `rows` shows it. A toggle back
+  // in the gap after the request resolves still has to be committed.
+  const lastSent = useRef(new Map<string, T>())
   const [internalActiveRowId, setInternalActiveRowId] = useState<string | null>(null)
   const [reorderOrder, setReorderOrder] = useState<string[] | null>(null)
   const inputRef = useRef<HTMLInputElement | HTMLSelectElement | null>(null)
   const gridRef = useRef<HTMLDivElement | null>(null)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
   const dirty = Object.keys(draftRows).length > 0
-  const reviewVisible = reviewVisibleProp ?? dirty
+  const autosave = Boolean(saveCell)
+  const reviewVisible = autosave ? false : (reviewVisibleProp ?? dirty)
+  const cellKey = (rowId: string, columnId: string) => `${rowId}:${columnId}`
+  const noteSave = (rowId: string, columnId: string, state: 'saving' | 'saved' | 'error', message?: string) => {
+    const key = cellKey(rowId, columnId)
+    const timer = saveTimers.current[key]
+    if (timer) window.clearTimeout(timer)
+    delete saveTimers.current[key]
+    setCellSave((current) => ({ ...current, [key]: { state, message } }))
+    if (state === 'saved') {
+      saveTimers.current[key] = window.setTimeout(() => {
+        setCellSave((current) => {
+          if (current[key]?.state !== 'saved') return current
+          const next = { ...current }
+          delete next[key]
+          return next
+        })
+      }, 1600)
+    }
+  }
+  const runSave = (row: T, columnId: string) => {
+    if (!saveCell) return
+    lastSent.current.set(row.id, row)
+    savesInFlight.current.set(row.id, (savesInFlight.current.get(row.id) ?? 0) + 1)
+    noteSave(row.id, columnId, 'saving')
+    void saveCell(row, columnId).then(() => {
+      noteSave(row.id, columnId, 'saved')
+    }).catch((reason: unknown) => {
+      noteSave(row.id, columnId, 'error', writeErrorMessage(reason) ?? copy.validation)
+      const sent = lastSent.current.get(row.id)
+      if (sent && sameRow(sent, row)) lastSent.current.delete(row.id)
+    }).finally(() => {
+      const left = (savesInFlight.current.get(row.id) ?? 1) - 1
+      if (left <= 0) savesInFlight.current.delete(row.id)
+      else savesInFlight.current.set(row.id, left)
+    })
+  }
   const controlled = activeRowIdProp !== undefined
   const activeRowId = controlled ? activeRowIdProp : internalActiveRowId
   const canReorder = Boolean(reorderable && onDraftRowsChange)
@@ -334,22 +385,43 @@ export function StandardEditableTable<T extends { id: string }>({
     left.id === right.id
     && columns.every((column) => sameCellValue(column.read(left)) === sameCellValue(column.read(right)))
 
+  useEffect(() => {
+    for (const [id, sent] of lastSent.current) {
+      const base = rows.find((row) => row.id === id)
+      if (base && sameRow(base, sent)) lastSent.current.delete(id)
+    }
+  }, [rows, columns])
+
   const patchRow = useCallback(
-    (rowId: string, next: T) => {
-      if (!onDraftRowsChange) return
+    (rowId: string, next: T, columnId = '') => {
+      if (!onDraftRowsChange && !saveCell) return
       const base = rows.find((row) => row.id === rowId)
       if (base && sameRow(next, base)) {
-        if (!(rowId in draftRows)) return
-        const without = { ...draftRows }
-        delete without[rowId]
-        onDraftRowsChange(keepRowOrder(without))
+        // The value is back where the server was when this render started.
+        // A save of the opposite value may still be in flight, or already
+        // resolved while `rows` still shows the old value. Dropping the
+        // follow-up would let that save land and leave the cell on the value
+        // the person just toggled away from.
+        const sent = lastSent.current.get(rowId)
+        const sentDiffers = Boolean(sent && !sameRow(sent, next))
+        if (columnId && (sentDiffers || (savesInFlight.current.get(rowId) ?? 0) > 0)) {
+          if (onDraftRowsChange) onDraftRowsChange(keepRowOrder({ ...draftRows, [rowId]: next }))
+          runSave(next, columnId)
+          return
+        }
+        if (onDraftRowsChange && rowId in draftRows) {
+          const without = { ...draftRows }
+          delete without[rowId]
+          onDraftRowsChange(keepRowOrder(without))
+        }
         return
       }
-      onDraftRowsChange(keepRowOrder({ ...draftRows, [rowId]: next }))
+      if (onDraftRowsChange) onDraftRowsChange(keepRowOrder({ ...draftRows, [rowId]: next }))
+      if (columnId) runSave(next, columnId)
     },
-    // sameRow reads the current columns/rows; both change with the data.
+    // sameRow and runSave read the latest columns and save handler.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [draftRows, onDraftRowsChange, rows, columns],
+    [draftRows, onDraftRowsChange, rows, columns, saveCell],
   )
 
   const rowReadOnly = (row: T) => Boolean(rowFlags?.(row)?.readOnly)
@@ -375,7 +447,7 @@ export function StandardEditableTable<T extends { id: string }>({
     return index < 0 ? -1 : reorderSlots.indexOf(index)
   }
 
-  const applyOrder = (next: T[]) => {
+  const applyOrder = (next: T[], movedId: string) => {
     if (!onDraftRowsChange) return
     const nextDrafts: Record<string, T> = {}
     for (const row of next) nextDrafts[row.id] = draftRows[row.id] ?? row
@@ -383,6 +455,13 @@ export function StandardEditableTable<T extends { id: string }>({
     Object.defineProperty(nextDrafts, ROW_ORDER_KEY, { value: ids, enumerable: false, configurable: true })
     setReorderOrder(ids)
     onDraftRowsChange(nextDrafts)
+    if (!onReorder || !movedId) return
+    noteSave(movedId, 'order', 'saving')
+    void onReorder(next).then(() => {
+      noteSave(movedId, 'order', 'saved')
+    }).catch((reason: unknown) => {
+      noteSave(movedId, 'order', 'error', writeErrorMessage(reason) ?? copy.validation)
+    })
   }
 
   const moveToSlot = (row: T, targetSlot: number) => {
@@ -397,7 +476,7 @@ export function StandardEditableTable<T extends { id: string }>({
     reorderSlots.forEach((index, position) => {
       next[index] = nextMovable[position]
     })
-    applyOrder(next)
+    applyOrder(next, row.id)
   }
 
   const moveRow = (row: T, delta: number) => {
@@ -454,7 +533,7 @@ export function StandardEditableTable<T extends { id: string }>({
     setEditing(null)
     setEditError('')
     const next = column.write(row, editValue)
-    patchRow(row.id, next)
+    patchRow(row.id, next, column.id)
   }
 
   const cancelEdit = () => {
@@ -651,6 +730,29 @@ export function StandardEditableTable<T extends { id: string }>({
       ]
         .filter(Boolean)
         .join(' ')
+      const directSave = cellSave[cellKey(row.id, column.id)]
+      const orderSave = columns[0]?.id === column.id ? cellSave[cellKey(row.id, 'order')] : undefined
+      const saveNote = directSave ?? orderSave
+      const rowHasSaveNote = columns.some((item) => cellSave[cellKey(row.id, item.id)])
+        || cellSave[cellKey(row.id, 'order')] !== undefined
+      const restoredUnsaved = !saveNote
+        && !rowHasSaveNote
+        && autosave
+        && columns[0]?.id === column.id
+        && Boolean(draftRows[row.id])
+        && rows.some((item) => item.id === row.id)
+      const retrySave = () => {
+        if (orderSave?.state === 'error' && onReorder) {
+          noteSave(row.id, 'order', 'saving')
+          void onReorder(merged).then(() => {
+            noteSave(row.id, 'order', 'saved')
+          }).catch((reason: unknown) => {
+            noteSave(row.id, 'order', 'error', writeErrorMessage(reason) ?? copy.validation)
+          })
+          return
+        }
+        runSave(row, column.id)
+      }
       return (
         <div
           key={column.id}
@@ -671,7 +773,7 @@ export function StandardEditableTable<T extends { id: string }>({
                     setEditValue(value)
                     setEditError('')
                     if (!column.write) return
-                    patchRow(row.id, column.write(row, value))
+                    patchRow(row.id, column.write(row, value), column.id)
                     setEditing(null)
                   }}
                 >
@@ -733,7 +835,7 @@ export function StandardEditableTable<T extends { id: string }>({
                   const next = event.target.checked ? 'true' : 'false'
                   setEditValue(next)
                   if (!column.write) return
-                  patchRow(row.id, column.write(row, next))
+                  patchRow(row.id, column.write(row, next), column.id)
                   setEditing(null)
                 }}
                 onKeyDown={(event) => {
@@ -795,7 +897,7 @@ export function StandardEditableTable<T extends { id: string }>({
               }}
               onCheckedChange={(value) => {
                 if (!column.write || !editableBool) return
-                patchRow(row.id, column.write(row, value === true ? 'true' : 'false'))
+                patchRow(row.id, column.write(row, value === true ? 'true' : 'false'), column.id)
               }}
             />
           ) : column.display ? (
@@ -805,6 +907,20 @@ export function StandardEditableTable<T extends { id: string }>({
           ) : (
             <span data-testid={cellTestId}>{readText || (column.display ? '' : '—')}</span>
           )}
+          {saveNote?.state === 'saving' ? (
+            <span className="cell-save-note" data-testid="cell-save-state" data-state="saving">{copy.saving}</span>
+          ) : null}
+          {saveNote?.state === 'saved' ? (
+            <span className="cell-save-note" data-testid="cell-save-state" data-state="saved">{copy.saved}</span>
+          ) : null}
+          {saveNote?.state === 'error' || restoredUnsaved ? (
+            <span className="cell-save-note" data-testid="cell-save-state" data-state="error">
+              <span className="cell-edit-error" role="alert">{saveNote?.message || copy.validation}</span>
+              <Button type="button" variant="ghost" data-testid="cell-save-retry" onClick={(event) => { event.stopPropagation(); retrySave() }}>
+                {copy.agentRetry}
+              </Button>
+            </span>
+          ) : null}
         </div>
       )
     })

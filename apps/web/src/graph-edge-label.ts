@@ -76,6 +76,12 @@ function score(
   return total
 }
 
+function offsetsUpTo(max: number): number[] {
+  const values = [0]
+  for (let step = 1; step <= max; step += 1) values.push(step, -step)
+  return values
+}
+
 export function placeEdgeLabel(
   from: Point,
   control: Point,
@@ -84,17 +90,22 @@ export function placeEdgeLabel(
   nodes: EdgeLabelNode[],
   placed: EdgeLabelBox[] = [],
   avoid: EdgeLabelBox[] = [],
+  // The short search is the resting placement. A selected edge that still
+  // collides inside a cluster asks for a wider one so the label is painted.
+  maxOffset = 3,
 ): Point {
   const maxRadius = nodes.reduce((max, node) => Math.max(max, node.radius), 0)
   const offsetStep = Math.max(size.height / 2 + 6, maxRadius + size.height / 2 + 4)
+  const offsets = maxOffset <= 3 ? CANDIDATE_OFFSETS : offsetsUpTo(maxOffset)
+  const ts = maxOffset <= 3 ? CANDIDATE_TS : [...CANDIDATE_TS, 0.28, 0.84, 0.92, 0.2]
   let best = curvePoint(from, control, to, DEFAULT_T)
   let bestScore = score(best, size, nodes, placed, avoid)
-  for (const t of CANDIDATE_TS) {
+  for (const t of ts) {
     const point = curvePoint(from, control, to, t)
     const tangent = curveTangent(from, control, to, t)
     const length = Math.hypot(tangent.x, tangent.y) || 1
     const normal = { x: -tangent.y / length, y: tangent.x / length }
-    for (const offset of CANDIDATE_OFFSETS) {
+    for (const offset of offsets) {
       const candidate = {
         x: point.x + normal.x * offset * offsetStep,
         y: point.y + normal.y * offset * offsetStep,
@@ -103,6 +114,7 @@ export function placeEdgeLabel(
       if (candidateScore < bestScore) {
         best = candidate
         bestScore = candidateScore
+        if (bestScore === 0) return best
       }
     }
   }

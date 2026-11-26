@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { useState } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { StandardEditableTable, type StandardColumn } from './standard-editable-table'
@@ -45,6 +46,66 @@ describe('standard editable table', () => {
     fireEvent.click(screen.getByTestId('table-add-row'))
     expect(onNewRow).toHaveBeenCalledTimes(1)
     expect(screen.queryByTestId('standard-cell-editor')).toBeNull()
+  })
+
+  it('saves a closed cell without a table Save button', async () => {
+    const saveCell = vi.fn(() => Promise.resolve())
+    const onDraft = vi.fn()
+    render(
+      <StandardEditableTable
+        columns={columns}
+        rows={[{ id: '1', name: 'Colour', kind: 'text' }]}
+        draftRows={{}}
+        onDraftRowsChange={onDraft}
+        onReviewAndSave={() => undefined}
+        saveCell={saveCell}
+        editable
+      />,
+    )
+    const row = screen.getByTestId('standard-grid-row')
+    fireEvent.keyDown(row, { key: 'Enter' })
+    const editor = screen.getByTestId('standard-cell-editor') as HTMLInputElement
+    fireEvent.change(editor, { target: { value: 'Shade' } })
+    fireEvent.keyDown(editor, { key: 'Enter' })
+    await waitFor(() => expect(saveCell).toHaveBeenCalled())
+    expect(screen.queryByTestId('review-and-save')).toBeNull()
+    await waitFor(() => expect(screen.getByTestId('cell-save-state').getAttribute('data-state')).toBe('saved'))
+  })
+
+  it('shows a failed save on the edited cell only', async () => {
+    function Host() {
+      const [drafts, setDrafts] = useState<Record<string, Row>>({})
+      return (
+        <StandardEditableTable
+          columns={[
+            columns[0]!,
+            {
+              id: 'note',
+              header: 'Note',
+              editable: true,
+              read: (row) => row.kind,
+              write: (row, value) => ({ ...row, kind: value }),
+            },
+          ]}
+          rows={[{ id: '1', name: 'Colour', kind: 'text' }]}
+          draftRows={drafts}
+          onDraftRowsChange={setDrafts}
+          saveCell={() => Promise.reject(new Error('the model moved'))}
+          editable
+        />
+      )
+    }
+    const { container } = render(<Host />)
+    const note = container.querySelector('[data-row-id="1"] [data-column="note"]') as HTMLElement
+    fireEvent.doubleClick(note)
+    const editor = screen.getByTestId('standard-cell-editor') as HTMLInputElement
+    fireEvent.change(editor, { target: { value: 'changed' } })
+    fireEvent.keyDown(editor, { key: 'Enter' })
+    await waitFor(() => expect(screen.getAllByTestId('cell-save-state')).toHaveLength(1))
+    const state = within(note).getByTestId('cell-save-state')
+    expect(state.getAttribute('data-state')).toBe('error')
+    expect(state.textContent).toContain('the model moved')
+    expect(container.querySelector('[data-column="name"]')?.querySelector('[data-testid="cell-save-state"]')).toBeNull()
   })
 
   it('shows Review and save when drafts exist and runs the save handler', () => {
@@ -648,5 +709,94 @@ describe('semantic no-op drafts', () => {
     )
     fireEvent.click(screen.getByTestId('active-checkbox'))
     expect(onDraft.mock.calls.at(-1)?.[0]).toEqual({})
+  })
+
+  it('saves a checkbox that toggles back while the first save is in flight', async () => {
+    type BoolRow = { id: string; active: boolean }
+    const boolColumns: Array<StandardColumn<BoolRow>> = [{
+      id: 'active',
+      header: 'Active',
+      type: 'boolean',
+      display: 'checkbox',
+      cellTestId: () => 'active-checkbox',
+      read: (row) => row.active,
+      write: (row, value) => ({ ...row, active: value === 'true' }),
+    }]
+    let release: () => void = () => {}
+    const first = new Promise<void>((resolve) => { release = resolve })
+    const saveCell = vi.fn((row: BoolRow) => (row.active ? first : Promise.resolve()))
+    const onDraft = vi.fn()
+    const base = { id: '1', active: false }
+    const { rerender } = render(
+      <StandardEditableTable
+        columns={boolColumns}
+        rows={[base]}
+        draftRows={{}}
+        onDraftRowsChange={onDraft}
+        saveCell={saveCell}
+        editable
+      />,
+    )
+    fireEvent.click(screen.getByTestId('active-checkbox'))
+    await waitFor(() => expect(saveCell).toHaveBeenCalledTimes(1))
+    expect(saveCell.mock.calls[0]?.[0].active).toBe(true)
+    const drafted = onDraft.mock.calls.at(-1)?.[0] as Record<string, BoolRow>
+    rerender(
+      <StandardEditableTable
+        columns={boolColumns}
+        rows={[base]}
+        draftRows={drafted}
+        onDraftRowsChange={onDraft}
+        saveCell={saveCell}
+        editable
+      />,
+    )
+    fireEvent.click(screen.getByTestId('active-checkbox'))
+    await waitFor(() => expect(saveCell).toHaveBeenCalledTimes(2))
+    expect(saveCell.mock.calls[1]?.[0].active).toBe(false)
+    release()
+  })
+
+  it('saves a checkbox toggled back after the first save resolves and before rows catch up', async () => {
+    type BoolRow = { id: string; active: boolean }
+    const boolColumns: Array<StandardColumn<BoolRow>> = [{
+      id: 'active',
+      header: 'Active',
+      type: 'boolean',
+      display: 'checkbox',
+      cellTestId: () => 'active-checkbox',
+      read: (row) => row.active,
+      write: (row, value) => ({ ...row, active: value === 'true' }),
+    }]
+    const saveCell = vi.fn((_row: BoolRow) => Promise.resolve())
+    const onDraft = vi.fn()
+    const base = { id: '1', active: false }
+    const { rerender } = render(
+      <StandardEditableTable
+        columns={boolColumns}
+        rows={[base]}
+        draftRows={{}}
+        onDraftRowsChange={onDraft}
+        saveCell={saveCell}
+        editable
+      />,
+    )
+    fireEvent.click(screen.getByTestId('active-checkbox'))
+    await waitFor(() => expect(saveCell).toHaveBeenCalledTimes(1))
+    const drafted = onDraft.mock.calls.at(-1)?.[0] as Record<string, BoolRow>
+    expect(drafted['1']?.active).toBe(true)
+    rerender(
+      <StandardEditableTable
+        columns={boolColumns}
+        rows={[base]}
+        draftRows={drafted}
+        onDraftRowsChange={onDraft}
+        saveCell={saveCell}
+        editable
+      />,
+    )
+    fireEvent.click(screen.getByTestId('active-checkbox'))
+    await waitFor(() => expect(saveCell).toHaveBeenCalledTimes(2))
+    expect(saveCell.mock.calls[1]?.[0].active).toBe(false)
   })
 })

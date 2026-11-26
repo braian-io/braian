@@ -67,11 +67,6 @@ async function readDraftStorage(page: Page, selectionKey: string) {
   return page.evaluate((storageKey) => localStorage.getItem(storageKey), key)
 }
 
-async function expectDraftDirty(page: Page, table: ReturnType<Page['getByTestId']>) {
-  await expect(table.getByTestId('review-and-save')).toBeVisible()
-  await expect(await readDraftStorage(page, 'product')).not.toBeNull()
-}
-
 test.describe('type attributes draft persist (row 421)', () => {
   test.afterEach(async ({ page }) => {
     try {
@@ -81,7 +76,7 @@ test.describe('type attributes draft persist (row 421)', () => {
     }
   })
 
-  test('create attribute, reload, draft row remains and Save applies it', async ({ page }) => {
+  test('create attribute saves when the dialog is confirmed and survives reload', async ({ page }) => {
     test.setTimeout(180_000)
     const key = `row421_${Date.now().toString().slice(-6)}`
     await login(page)
@@ -90,27 +85,25 @@ test.describe('type attributes draft persist (row 421)', () => {
     const create = page.getByTestId('create-dialog')
     await expect(create).toBeVisible()
     await create.getByTestId('new-name').fill(key)
-    await create.getByTestId('create-object').click()
-    await expect(table.locator(`[data-key="${key}"]`)).toHaveAttribute('data-draft', 'true')
-    await expect(table.getByTestId('review-and-save')).toBeVisible()
-    await page.reload()
-    await expect(page.getByTestId('workspace')).toBeVisible()
-    await expect(page.getByTestId('model-table-leave-dialog')).toHaveCount(0)
-    const reloaded = await openTypeAttributes(page, 'product')
-    await expect(reloaded.locator(`[data-key="${key}"]`)).toHaveAttribute('data-draft', 'true')
-    await expect(reloaded.getByTestId('review-and-save')).toBeVisible()
-    const staged = page.waitForResponse((response) =>
-      response.url().includes('/v1/model/draft/steps') && response.request().method() === 'POST')
     const saved = page.waitForResponse((response) =>
-      response.url().includes('/v1/model/draft/save') && response.request().method() === 'POST')
-    await reloaded.getByTestId('review-and-save').click()
-    expect((await staged).ok()).toBeTruthy()
+      response.url().includes('/v1/model/commit') && response.request().method() === 'POST')
+    await create.getByTestId('create-object').click()
     expect((await saved).ok()).toBeTruthy()
+    await expect(table.locator(`[data-key="${key}"]`)).toBeVisible()
+    await expect(table.locator(`[data-key="${key}"]`)).not.toHaveAttribute('data-draft', 'true')
+    await expect(table.getByTestId('review-and-save')).toHaveCount(0)
     await expect(page.getByTestId('review-dialog')).toHaveCount(0)
     const body = (await (await page.request.get('/v1/definitions')).json()) as {
       attributes?: Array<{ key?: string }>
     }
     expect(body.attributes?.some((item) => item.key === key)).toBe(true)
+    await page.reload()
+    await expect(page.getByTestId('workspace')).toBeVisible()
+    await expect(page.getByTestId('model-table-leave-dialog')).toHaveCount(0)
+    const reloaded = await openTypeAttributes(page, 'product')
+    await expect(reloaded.locator(`[data-key="${key}"]`)).toBeVisible()
+    await expect(reloaded.locator(`[data-key="${key}"]`)).not.toHaveAttribute('data-draft', 'true')
+    await expect(reloaded.getByTestId('review-and-save')).toHaveCount(0)
   })
 
   test('leave dialog Cancel keeps the draft across Escape, Close, and reload', async ({ page }) => {
@@ -119,31 +112,23 @@ test.describe('type attributes draft persist (row 421)', () => {
     const table = await openTypeAttributes(page, 'product')
     const checkbox = table.locator('[data-key="description"]').getByRole('checkbox', { name: 'Searchable' })
     const before = await checkbox.isChecked()
+    const saved = page.waitForResponse((response) =>
+      response.url().includes('/v1/model/commit') && response.request().method() === 'POST')
     await checkbox.click()
-    await expectDraftDirty(page, table)
-    const dialog = page.getByTestId('model-table-leave-dialog')
+    expect((await saved).ok()).toBeTruthy()
+    await expect(table.getByTestId('review-and-save')).toHaveCount(0)
+    await expect.poll(async () => readDraftStorage(page, 'product')).toBeNull()
 
     await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
-    await expect(dialog).toBeVisible()
-    await page.keyboard.press('Escape')
-    await expect(dialog).toHaveCount(0)
-    await expectDraftDirty(page, table)
-
-    await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
-    await expect(dialog).toBeVisible()
-    await dialog.getByRole('button', { name: 'Close' }).click()
-    await expect(dialog).toHaveCount(0)
-    await expectDraftDirty(page, table)
+    await expect(page.getByTestId('model-table-leave-dialog')).toHaveCount(0)
+    await expect(page.locator('nav.tabs .tab.active', { hasText: /^Products/ })).toBeVisible()
 
     await page.reload()
     await expect(page.getByTestId('workspace')).toBeVisible()
     const reloaded = await openTypeAttributes(page, 'product')
     await expect(reloaded.locator('[data-key="description"]').getByRole('checkbox', { name: 'Searchable' })).toBeChecked({ checked: !before })
-    await expectDraftDirty(page, reloaded)
-
-    await reloaded.locator('[data-key="description"]').getByRole('checkbox', { name: 'Searchable' }).click()
     await expect(reloaded.getByTestId('review-and-save')).toHaveCount(0)
-    await expect.poll(async () => readDraftStorage(page, 'product')).toBeNull()
+    await stageAndSave(page, [{ op: 'update_attribute', key: 'description', searchable: before }])
   })
 
   test('leave dialog Save applies the edit, navigates, and clears local draft', async ({ page }) => {
@@ -153,24 +138,15 @@ test.describe('type attributes draft persist (row 421)', () => {
     const before = await readDefinitions(page)
     const searchableBefore = Boolean(before.attributes?.find((item) => item.key === 'description')?.index?.searchable)
 
-    await table.locator('[data-key="description"]').getByRole('checkbox', { name: 'Searchable' }).click()
-    await expectDraftDirty(page, table)
-    const dialog = page.getByTestId('model-table-leave-dialog')
-    const staged = page.waitForResponse((response) =>
-      response.url().includes('/v1/model/draft/steps') && response.request().method() === 'POST')
     const saved = page.waitForResponse((response) =>
-      response.url().includes('/v1/model/draft/save') && response.request().method() === 'POST')
+      response.url().includes('/v1/model/commit') && response.request().method() === 'POST')
+    await table.locator('[data-key="description"]').getByRole('checkbox', { name: 'Searchable' }).click()
+    expect((await saved).ok()).toBeTruthy()
+    await expect(table.getByTestId('review-and-save')).toHaveCount(0)
 
     await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
-    await expect(dialog).toBeVisible()
-    await dialog.getByTestId('model-table-leave-review').click()
-    expect((await staged).ok()).toBeTruthy()
-    const review = page.getByTestId('review-dialog')
-    if (await review.count()) {
-      await review.getByTestId('confirm-review').click()
-    }
-    expect((await saved).ok()).toBeTruthy()
-    await expect(dialog).toHaveCount(0)
+    await expect(page.getByTestId('model-table-leave-dialog')).toHaveCount(0)
+    await expect(page.getByTestId('review-dialog')).toHaveCount(0)
     await expect(page.locator('nav.tabs .tab.active', { hasText: /^Products/ })).toBeVisible()
     await expect.poll(async () => readDraftStorage(page, 'product')).toBeNull()
 
@@ -188,26 +164,27 @@ test.describe('type attributes draft persist (row 421)', () => {
     const table = await openTypeAttributes(page, 'product')
     const checkbox = table.locator('[data-key="brand"]').getByRole('checkbox', { name: 'Searchable' })
     const before = await checkbox.isChecked()
+    const saved = page.waitForResponse((response) =>
+      response.url().includes('/v1/model/commit') && response.request().method() === 'POST')
     await checkbox.click()
-    await expectDraftDirty(page, table)
-    const dialog = page.getByTestId('model-table-leave-dialog')
+    expect((await saved).ok()).toBeTruthy()
+    await expect(table.getByTestId('review-and-save')).toHaveCount(0)
 
     await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
-    await expect(dialog).toBeVisible()
-    await dialog.getByTestId('model-table-leave-discard').click()
-    await expect(dialog).toHaveCount(0)
+    await expect(page.getByTestId('model-table-leave-dialog')).toHaveCount(0)
     await expect(page.locator('nav.tabs .tab.active', { hasText: /^Products/ })).toBeVisible()
     await expect.poll(async () => readDraftStorage(page, 'product')).toBeNull()
 
     await page.reload()
     await expect(page.getByTestId('workspace')).toBeVisible()
     const reloaded = await openTypeAttributes(page, 'product')
-    await expect(reloaded.locator('[data-key="brand"]').getByRole('checkbox', { name: 'Searchable' })).toBeChecked({ checked: before })
+    await expect(reloaded.locator('[data-key="brand"]').getByRole('checkbox', { name: 'Searchable' })).toBeChecked({ checked: !before })
     await expect(reloaded.getByTestId('review-and-save')).toHaveCount(0)
     await expect(await readDraftStorage(page, 'product')).toBeNull()
+    await stageAndSave(page, [{ op: 'update_attribute', key: 'brand', searchable: before }])
   })
 
-  test('trim toast when a create-row draft key already exists on the server', async ({ page }) => {
+  test('a confirmed create is stored, so reload does not restore a local draft', async ({ page }) => {
     test.setTimeout(180_000)
     const key = `row421trim_${Date.now().toString().slice(-6)}`
     await login(page)
@@ -216,21 +193,17 @@ test.describe('type attributes draft persist (row 421)', () => {
     const create = page.getByTestId('create-dialog')
     await expect(create).toBeVisible()
     await create.getByTestId('new-name').fill(key)
+    const saved = page.waitForResponse((response) =>
+      response.url().includes('/v1/model/commit') && response.request().method() === 'POST')
     await create.getByTestId('create-object').click()
-    await expect(table.locator(`[data-key="${key}"]`)).toHaveAttribute('data-draft', 'true')
-    await expect(await readDraftStorage(page, 'product')).not.toBeNull()
-
-    await stageAndSave(page, [
-      { op: 'create_attribute', key, label: `Server ${key}`, kind: 'text' },
-      { op: 'attach_attribute', attribute: key, type_key: 'product' },
-    ])
+    expect((await saved).ok()).toBeTruthy()
+    await expect(table.locator(`[data-key="${key}"]`)).not.toHaveAttribute('data-draft', 'true')
+    await expect.poll(async () => readDraftStorage(page, 'product')).toBeNull()
 
     await page.reload()
     await expect(page.getByTestId('workspace')).toBeVisible()
     const reloaded = await openTypeAttributes(page, 'product')
-    await expect(page.getByTestId('model-pane-notice')).toContainText(
-      'Some unsaved table edits were dropped because the model changed.',
-    )
+    await expect(page.getByTestId('model-pane-notice')).toHaveCount(0)
     await expect(page.locator('[data-sonner-toast]')).toHaveCount(0)
     await expect(reloaded.locator(`[data-key="${key}"]`)).toHaveCount(1)
     await expect(reloaded.locator(`[data-key="${key}"]`)).not.toHaveAttribute('data-draft', 'true')
@@ -248,8 +221,21 @@ test.describe('type attributes draft persist (row 421)', () => {
       return event.defaultPrevented
     })
     expect(await warns()).toBe(false)
+    await page.route('**/v1/model/commit', async (route) => {
+      await route.fulfill({
+        status: 409,
+        contentType: 'application/problem+json',
+        body: JSON.stringify({ code: 'draft_conflict', detail: 'the model moved' }),
+      })
+    })
     await table.locator('[data-key="brand"]').getByRole('checkbox', { name: 'Searchable' }).click()
     await expect.poll(warns).toBe(true)
+    await expect(table.getByTestId('review-and-save')).toHaveCount(0)
+    const brand = table.locator('[data-key="brand"]')
+    await expect(brand.getByTestId('cell-save-state')).toHaveCount(1)
+    await expect(brand.locator('[data-column="searchable"]').getByTestId('cell-save-state')).toHaveAttribute('data-state', 'error')
+    await expect(brand.locator('[data-column="searchable"]').getByTestId('cell-save-state')).toContainText('the model moved')
+    await page.unroute('**/v1/model/commit')
     await table.locator('[data-key="brand"]').getByRole('checkbox', { name: 'Searchable' }).click()
     await expect.poll(warns).toBe(false)
   })
