@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { api, textValue, type Json } from './api'
-import { LINK_FEEDBACK_EVENT, type LinkFeedbackDetail } from './link-feedback'
+import { LINK_FEEDBACK_EVENT, pendingLinkFeedback, type LinkFeedbackDetail } from './link-feedback'
 import { Button } from './components/ui/button'
 import { Dialog, DialogContent, DialogDescription } from './components/ui/dialog'
 import { formatCount } from './format'
@@ -73,6 +73,38 @@ export function LinkSections({
   const [request, setRequest] = useState<LinkAddRequest | null>(null)
   const [dropKey, setDropKey] = useState<string | null>(null)
   const [denyKey, setDenyKey] = useState<string | null>(null)
+  const [confirm, setConfirm] = useState<Removal | null>(null)
+  const [confirmError, setConfirmError] = useState('')
+  const [sectionHints, setSectionHints] = useState<Record<string, string>>({})
+  const [justLinkedPeers, setJustLinkedPeers] = useState<Set<string>>(() => new Set())
+  const feedbackTimers = useRef<number[]>([])
+  const sections = useMemo(() => sectionsFor(defs, typeKey, links), [defs, typeKey, links])
+  const applyLinkFeedback = (detail: LinkFeedbackDetail) => {
+    if (detail.sectionObjectId !== objectId) return
+    if (detail.hint) {
+      const sectionKey = detail.linkType && detail.direction ? `${detail.linkType}:${detail.direction}` : 'default'
+      setSectionHints((current) => ({ ...current, [sectionKey]: detail.hint! }))
+      const timer = window.setTimeout(() => {
+        setSectionHints((current) => {
+          const next = { ...current }
+          if (next[sectionKey] === detail.hint) delete next[sectionKey]
+          return next
+        })
+      }, 6000)
+      feedbackTimers.current.push(timer)
+    }
+    if (detail.peerKeys.length > 0) {
+      setJustLinkedPeers((current) => new Set([...current, ...detail.peerKeys]))
+      const timer = window.setTimeout(() => {
+        setJustLinkedPeers((current) => {
+          const next = new Set(current)
+          for (const key of detail.peerKeys) next.delete(key)
+          return next
+        })
+      }, 6000)
+      feedbackTimers.current.push(timer)
+    }
+  }
   useEffect(() => {
     const clear = () => {
       setDropKey(null)
@@ -84,30 +116,8 @@ export function LinkSections({
   useEffect(() => {
     const onFeedback = (event: Event) => {
       const detail = (event as CustomEvent<LinkFeedbackDetail>).detail
-      if (!detail || detail.sectionObjectId !== objectId) return
-      if (detail.hint) {
-        const sectionKey = detail.linkType && detail.direction ? `${detail.linkType}:${detail.direction}` : 'default'
-        setSectionHints((current) => ({ ...current, [sectionKey]: detail.hint! }))
-        const timer = window.setTimeout(() => {
-          setSectionHints((current) => {
-            const next = { ...current }
-            if (next[sectionKey] === detail.hint) delete next[sectionKey]
-            return next
-          })
-        }, 6000)
-        feedbackTimers.current.push(timer)
-      }
-      if (detail.peerKeys.length > 0) {
-        setJustLinkedPeers((current) => new Set([...current, ...detail.peerKeys]))
-        const timer = window.setTimeout(() => {
-          setJustLinkedPeers((current) => {
-            const next = new Set(current)
-            for (const key of detail.peerKeys) next.delete(key)
-            return next
-          })
-        }, 6000)
-        feedbackTimers.current.push(timer)
-      }
+      if (!detail) return
+      applyLinkFeedback(detail)
     }
     window.addEventListener(LINK_FEEDBACK_EVENT, onFeedback)
     return () => {
@@ -116,13 +126,11 @@ export function LinkSections({
       feedbackTimers.current = []
     }
   }, [objectId])
+  useEffect(() => {
+    const detail = pendingLinkFeedback(objectId)
+    if (detail) applyLinkFeedback(detail)
+  }, [objectId, links, bodyLoading])
   const opener = useRef<HTMLElement | null>(null)
-  const [confirm, setConfirm] = useState<Removal | null>(null)
-  const [confirmError, setConfirmError] = useState('')
-  const [sectionHints, setSectionHints] = useState<Record<string, string>>({})
-  const [justLinkedPeers, setJustLinkedPeers] = useState<Set<string>>(() => new Set())
-  const feedbackTimers = useRef<number[]>([])
-  const sections = useMemo(() => sectionsFor(defs, typeKey, links), [defs, typeKey, links])
   const onOpenRef = useRef(onOpen)
   onOpenRef.current = onOpen
   const sectionsRef = useRef(sections)

@@ -13,8 +13,22 @@ export type LinkFeedbackDetail = {
 
 export const LINK_FEEDBACK_EVENT = 'braian-link-feedback'
 
+const PENDING_MS = 12_000
+const pendingByObject = new Map<string, { detail: LinkFeedbackDetail; expires: number }>()
+
+export function pendingLinkFeedback(objectId: string): LinkFeedbackDetail | null {
+  const row = pendingByObject.get(objectId)
+  if (!row) return null
+  if (row.expires < Date.now()) {
+    pendingByObject.delete(objectId)
+    return null
+  }
+  return row.detail
+}
+
 export function publishLinkFeedback(detail: LinkFeedbackDetail) {
   if (typeof window === 'undefined') return
+  pendingByObject.set(detail.sectionObjectId, { detail, expires: Date.now() + PENDING_MS })
   window.dispatchEvent(new CustomEvent<LinkFeedbackDetail>(LINK_FEEDBACK_EVENT, { detail }))
   for (const id of detail.tableObjectIds ?? []) flashObject(id)
 }

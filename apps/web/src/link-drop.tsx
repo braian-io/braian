@@ -105,16 +105,17 @@ export function LinkDropHost() {
         }
         return result
       }}
-      onReplaced={() => {
+      onReplaced={(request) => {
         refresh()
-        const sectionObjectId = drop.preferred?.direction
-          ? drop.source.id
-          : drop.targets[0]?.id ?? drop.source.id
+        const sectionObjectId = linkSectionObjectId(drop, { from_id: request.fromId, to_id: request.toId })
+        const peerKeys = drop.targets
+          .map((item) => item.key || item.name || item.id)
+          .concat(drop.source.key || drop.source.name || drop.source.id)
         publishLinkFeedback({
           sectionObjectId,
-          linkType: drop.preferred?.linkType,
+          linkType: request.type,
           direction: drop.preferred?.direction,
-          peerKeys: drop.targets.map((item) => item.key || item.name || item.id),
+          peerKeys,
           hint: copy.linkReplaced,
           tableObjectIds: [drop.source.id, ...drop.targets.map((item) => item.id)],
         })
