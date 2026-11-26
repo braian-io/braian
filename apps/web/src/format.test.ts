@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatConvertedMeasure, formatConvertedNumber, formatCount, formatMeasure, formatMeasureEditNumber, formatMeasureStorageNumber, formatTimestamp, formatUnitCode, parseDecimalInput } from './format'
+import { formatConvertedMeasure, formatConvertedNumber, formatCount, formatMeasure, formatMeasureEditNumber, formatMeasureStorageNumber, formatTimestamp, formatUnitCode, normalizeDecimalInput, parseDecimalInput } from './format'
 
 describe('format', () => {
   it('rounds converted numbers for display', () => {
@@ -33,6 +33,9 @@ describe('format', () => {
     expect(parseDecimalInput('2,000')).toBe(2)
     expect(parseDecimalInput('2\u00A0000')).toBe(2000)
     expect(parseDecimalInput('abc')).toBeNull()
+    expect(normalizeDecimalInput('0,5555555555555555555555555556')).toBe('0.5555555555555555555555555556')
+    expect(normalizeDecimalInput('-17,777777777777777777777777778')).toBe('-17.777777777777777777777777778')
+    expect(normalizeDecimalInput('abc')).toBeNull()
     expect(formatMeasureStorageNumber(418.40000000000003)).toBe('418.4')
     expect(formatMeasureEditNumber(2000)).toBe('2000')
     expect(formatMeasureEditNumber(0.125)).toBe('0.125')

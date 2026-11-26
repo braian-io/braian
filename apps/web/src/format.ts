@@ -28,7 +28,12 @@ export function formatConvertedNumber(value: number): string {
 /** Thousands: ASCII space, NBSP, narrow NBSP. Commas are always decimal when alone. */
 const GROUPING_SPACE = /[\s\u00A0\u202F]/g
 
-export function parseDecimalInput(text: string): number | null {
+/**
+ * Decimal text for storage. Accepts a decimal comma (`1,5`) and grouping.
+ * The result uses a dot and is not rounded through a float. Null when the
+ * text is empty or not a number.
+ */
+export function normalizeDecimalInput(text: string): string | null {
   const trimmed = text.trim()
   if (!trimmed) return null
   let normalized = trimmed.replace(GROUPING_SPACE, '')
@@ -49,6 +54,12 @@ export function parseDecimalInput(text: string): number | null {
     normalized = `${head}${normalized.slice(lastDot)}`
   }
   if (!/^-?\d+(\.\d+)?$/.test(normalized)) return null
+  return normalized
+}
+
+export function parseDecimalInput(text: string): number | null {
+  const normalized = normalizeDecimalInput(text)
+  if (normalized == null) return null
   const value = Number(normalized)
   return Number.isFinite(value) ? value : null
 }

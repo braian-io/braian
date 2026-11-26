@@ -41,6 +41,13 @@ export type StandardColumn<T> = {
   editable?: boolean
   /** Options for enum columns. */
   options?: Array<{ value: string; label: string }>
+  /** Per-row enum options. Used instead of `options` while that row is edited. */
+  optionsFor?: (row: T) => Array<{ value: string; label: string }>
+  /**
+   * Replaces the whole draft map. Used when one edit changes sibling rows,
+   * such as marking a different base unit.
+   */
+  rewriteDraft?: (drafts: Record<string, T>, rows: T[], row: T, value: string) => Record<string, T>
   /** When true, enum cells edit with the themed Select instead of a native select. */
   enumSelect?: boolean
   /** Return an error message to keep the value in the editor; nothing is staged until it passes. */
@@ -662,7 +669,7 @@ export function StandardEditableTable<T extends { id: string }>({
           onDoubleClick={() => beginEdit(row, column)}
         >
           {isEditing ? (
-            column.type === 'enum' && column.options && column.enumSelect ? (
+            column.type === 'enum' && (column.optionsFor || column.options) && column.enumSelect ? (
               <div className="standard-cell-editor-stack">
                 <Select
                   value={editValue || undefined}
@@ -682,14 +689,14 @@ export function StandardEditableTable<T extends { id: string }>({
                     <SelectValue placeholder={copy.noValue} />
                   </SelectTrigger>
                   <SelectContent>
-                    {column.options.map((option) => (
+                    {(column.optionsFor?.(row) ?? column.options ?? []).map((option) => (
                       <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 {editError ? <span className="cell-edit-error">{editError}</span> : null}
               </div>
-            ) : column.type === 'enum' && column.options ? (
+            ) : column.type === 'enum' && (column.optionsFor || column.options) ? (
               <div className="standard-cell-editor-stack">
                 <select
                   ref={(node) => {
@@ -712,7 +719,7 @@ export function StandardEditableTable<T extends { id: string }>({
                     }
                   }}
                 >
-                  {column.options.map((option) => (
+                  {(column.optionsFor?.(row) ?? column.options ?? []).map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
                     </option>
@@ -793,8 +800,14 @@ export function StandardEditableTable<T extends { id: string }>({
                 moveEdit(row, column, event.shiftKey ? -1 : 1)
               }}
               onCheckedChange={(value) => {
-                if (!column.write || !editableBool) return
-                patchRow(row.id, column.write(row, value === true ? 'true' : 'false'))
+                if (!editableBool) return
+                const text = value === true ? 'true' : 'false'
+                if (column.rewriteDraft && onDraftRowsChange) {
+                  onDraftRowsChange(keepRowOrder(column.rewriteDraft(draftRows, rows, row, text)))
+                  return
+                }
+                if (!column.write) return
+                patchRow(row.id, column.write(row, text))
               }}
             />
           ) : column.display ? (

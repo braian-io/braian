@@ -6,6 +6,7 @@ pub(crate) async fn startup(store: &Store) -> anyhow::Result<()> {
     store.ensure_system_principal().await?;
     store.upgrade_standard_attributes().await?;
     store.upgrade_object_refs().await?;
+    store.upgrade_temperature_family().await?;
     store.fail_abandoned_agent_runs().await?;
     Ok(())
 }
@@ -361,6 +362,112 @@ mod tests {
             .unwrap()
             .get(0);
         assert_eq!(kept, "done");
+    }
+
+    #[tokio::test]
+    async fn startup_adds_temperature_and_completes_a_partial_family() {
+        use braian_model::DefinitionSet;
+        use braian_store::{Actor, BatchKind, Error, SYSTEM_PRINCIPAL};
+
+        let actor = Actor {
+            actor: SYSTEM_PRINCIPAL,
+            on_behalf_of: None,
+            kind: BatchKind::Bulk,
+            source: "test".into(),
+        };
+
+        let empty = TestDb::create().await;
+        startup(empty.store()).await.unwrap();
+        assert!(matches!(
+            empty.store().definition_set().await,
+            Err(Error::NoDefinitions)
+        ));
+
+        let partial: DefinitionSet = serde_json::from_value(json!({
+            "model_revision": 1,
+            "languages": ["en"],
+            "unit_families": [{
+                "id": "018f0000-0000-7000-8000-000000000099",
+                "key": "temperature",
+                "base_unit": "C",
+                "units": [{ "code": "C", "factor": "1", "symbol": "C" }]
+            }],
+            "attributes": [],
+            "types": [],
+            "structures": []
+        }))
+        .unwrap();
+        empty
+            .store()
+            .put_definitions(&actor, &partial)
+            .await
+            .unwrap();
+        startup(empty.store()).await.unwrap();
+        let merged = empty.store().definition_set().await.unwrap();
+        assert_eq!(merged.model_revision, 2);
+        let family = merged
+            .unit_families
+            .iter()
+            .find(|item| item.key == "temperature")
+            .expect("temperature");
+        assert_eq!(
+            family.id.as_uuid().to_string(),
+            "018f0000-0000-7000-8000-000000000099"
+        );
+        assert_eq!(family.units.len(), 3);
+        assert_eq!(
+            family
+                .units
+                .iter()
+                .find(|unit| unit.code == "C")
+                .unwrap()
+                .symbol,
+            "°C"
+        );
+        assert!(family.units.iter().any(|unit| unit.code == "F"));
+        assert!(family.units.iter().any(|unit| unit.code == "K"));
+        startup(empty.store()).await.unwrap();
+        assert_eq!(
+            empty.store().definition_set().await.unwrap().model_revision,
+            2
+        );
+
+        let fresh = TestDb::create().await;
+        startup(fresh.store()).await.unwrap();
+        let mass: DefinitionSet = serde_json::from_value(json!({
+            "model_revision": 1,
+            "languages": ["en"],
+            "unit_families": [{
+                "id": "018f0000-0000-7000-8000-000000000010",
+                "key": "mass",
+                "base_unit": "g",
+                "units": [{ "code": "g", "factor": "1", "symbol": "g" }]
+            }],
+            "attributes": [],
+            "types": [],
+            "structures": []
+        }))
+        .unwrap();
+        fresh.store().put_definitions(&actor, &mass).await.unwrap();
+        startup(fresh.store()).await.unwrap();
+        let added = fresh.store().definition_set().await.unwrap();
+        assert_eq!(added.model_revision, 2);
+        let temperature = added
+            .unit_families
+            .iter()
+            .find(|item| item.key == "temperature")
+            .expect("temperature");
+        assert_eq!(
+            temperature.id.as_uuid().to_string(),
+            "018f0000-0000-7000-8000-000000000015"
+        );
+        assert_eq!(temperature.base_unit, "C");
+        assert_eq!(temperature.units.len(), 3);
+        startup(fresh.store()).await.unwrap();
+        assert_eq!(
+            fresh.store().definition_set().await.unwrap().model_revision,
+            2
+        );
     }
 
     async fn connect(url: &str) -> tokio_postgres::Client {

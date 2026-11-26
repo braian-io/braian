@@ -12,6 +12,7 @@ import {
   attributeKey,
   attributeRows,
   objectTypes,
+  unitFamilyThenDefault,
   type AttributeRow,
   type ModelSelection,
 } from './model-view'
@@ -157,6 +158,11 @@ function ruleColumnApplies(columnId: string, kind: string) {
 
 const decimalPattern = /^-?\d+(\.\d+)?$/
 const positiveIntegerPattern = /^[1-9]\d*$/
+
+function unitCodes(defs: Json | undefined, familyKey: string) {
+  const family = ((defs?.unit_families as Json[]) ?? []).find((item) => String(item.key ?? '') === familyKey)
+  return new Set(((family?.units as Json[]) ?? []).map((unit) => String(unit.code ?? '')))
+}
 
 function validateDecimal(value: string) {
   const trimmed = value.trim()
@@ -721,18 +727,22 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
       id: 'unit',
       header: copy.unitFamilies,
       truncate: true,
-      width: 120,
+      width: 168,
       type: 'enum',
       editable: true,
       options: [{ value: 'none', label: copy.noUnit }, ...families.map((family) => ({ value: family, label: family }))],
       read: (row) => row.unit || 'none',
-      write: (row, value) => ({
-        ...row,
-        unit: value === 'none' ? '' : value,
-        defaultUnit: value === 'none' ? '' : row.defaultUnit,
-      }),
+      write: (row, value) => {
+        const unit = value === 'none' ? '' : value
+        const codes = unitCodes(defs, unit)
+        return {
+          ...row,
+          unit,
+          defaultUnit: unit && codes.has(row.defaultUnit) ? row.defaultUnit : '',
+        }
+      },
       hideCell: (row) => row.kind !== 'number' && row.kind !== 'range',
-      display: (row) => row.unit || '—',
+      display: (row) => unitFamilyThenDefault(defs, row.unit, row.defaultUnit),
     },
     {
       id: 'defaultUnit',
@@ -741,14 +751,17 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
       width: 120,
       type: 'enum',
       editable: true,
-      options: [
+      optionsFor: (row) => [
         { value: '', label: '—' },
-        ...((defs?.unit_families as Json[]) ?? []).flatMap((family) =>
-          ((family.units as Json[]) ?? []).map((unit) => ({
-            value: String(unit.code ?? ''),
-            label: `${String(family.key ?? '')} · ${String(unit.symbol ?? unit.code ?? '')}`,
-          })),
-        ),
+        ...((defs?.unit_families as Json[]) ?? [])
+          .filter((family) => String(family.key ?? '') === row.unit)
+          .flatMap((family) =>
+            ((family.units as Json[]) ?? []).map((unit) => {
+              const code = String(unit.code ?? '')
+              const symbol = String(unit.symbol ?? '').trim()
+              return { value: code, label: symbol && symbol !== code ? `${symbol} ${code}` : code }
+            }),
+          ),
       ],
       read: (row) => row.defaultUnit,
       write: (row, value) => ({ ...row, defaultUnit: value }),

@@ -2217,6 +2217,17 @@ mod tests {
                 .iter()
                 .any(|family| family.key == "energy")
         );
+        let temperature = defs
+            .unit_families
+            .iter()
+            .find(|family| family.key == "temperature")
+            .expect("temperature");
+        assert_eq!(temperature.base_unit, "C");
+        assert!(temperature.units.iter().any(|unit| unit.code == "C"));
+        assert!(temperature.units.iter().any(|unit| unit.code == "F"));
+        assert!(temperature.units.iter().any(|unit| unit.code == "K"));
+        let mut completed = defs.clone();
+        assert!(!braian_model::ensure_temperature_family(&mut completed));
         assert!(defs.value_lists.iter().any(|list| list.key == "allergens"));
         assert!(defs.value_lists.iter().all(|list| {
             list.key

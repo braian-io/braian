@@ -21,6 +21,7 @@ mod review;
 pub mod standard;
 pub mod structure;
 pub mod system_view_columns;
+mod temperature;
 mod type_workspace;
 
 pub use consequence::{
@@ -78,5 +79,6 @@ pub use system_view_columns::{
     SYSTEM_VIEW_COLUMNS, SystemViewColumn, ensure_system_view_columns, is_system_view_column,
     system_view_columns_json,
 };
+pub use temperature::ensure_temperature_family;
 pub use type_workspace::type_share_token;
 pub use uuid::Uuid;

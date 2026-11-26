@@ -23,6 +23,7 @@ import { tryChooseModelSelection } from './model-table-draft'
 import { clearPendingModelType, OPEN_MODEL_TYPE, peekPendingModelType } from './model-type-open'
 import { StateNote } from './states'
 import { valueListOptionSteps } from './value-list-table-steps'
+import { normalizeUnitNumber, unitNumberError, unitSaveSteps } from './unit-table-steps'
 
 type TypeRow = {
   id: string
@@ -758,6 +759,9 @@ export function UnitsTable() {
   const [familyName, setFamilyName] = useState('')
   const [unitCode, setUnitCode] = useState('')
   const [factor, setFactor] = useState('1')
+  const [offset, setOffset] = useState('0')
+  const [symbol, setSymbol] = useState('')
+  const [unitLabel, setUnitLabel] = useState('')
   const [pendingId, setPendingId] = useState<string | null>(null)
   const rows = useMemo<UnitRow[]>(() => {
     const out: UnitRow[] = []
@@ -822,8 +826,8 @@ export function UnitsTable() {
       write: (row, value) => ({ ...row, code: value }),
     },
     {
-      id: 'label',
-      header: copy.name,
+      id: 'labels',
+      header: copy.labels,
       editable: true,
       read: (row) => row.label,
       write: (row, value) => ({ ...row, label: value }),
@@ -838,27 +842,57 @@ export function UnitsTable() {
     {
       id: 'factor',
       header: copy.factor,
-      type: 'number',
+      type: 'text',
       editable: true,
+      validate: (value) => unitNumberError(value, 'factor'),
       read: (row) => row.factor,
-      write: (row, value) => ({ ...row, factor: value }),
-      display: (row) => (row.isBase ? '1' : row.factor),
+      write: (row, value) => ({ ...row, factor: normalizeUnitNumber(value, '1') }),
     },
     {
       id: 'offset',
       header: copy.offset,
-      type: 'number',
+      type: 'text',
       editable: true,
+      validate: (value) => unitNumberError(value, 'offset'),
       read: (row) => row.offset,
-      write: (row, value) => ({ ...row, offset: value }),
-      display: (row) => (row.isBase ? '0' : row.offset),
+      write: (row, value) => ({ ...row, offset: normalizeUnitNumber(value, '0') }),
     },
     {
       id: 'isBase',
       header: copy.baseUnit,
-      type: 'readonly',
-      editable: false,
-      read: (row) => (row.isBase ? copy.baseUnit : ''),
+      type: 'boolean',
+      editable: true,
+      display: 'checkbox',
+      read: (row) => row.isBase,
+      write: (row, value) => ({ ...row, isBase: value === 'true', ...(value === 'true' ? { factor: '1', offset: '0' } : {}) }),
+      rewriteDraft: (drafts, stored, row, value) => {
+        const next = { ...drafts }
+        const live = (item: UnitRow) => next[item.id] ?? item
+        if (value !== 'true') {
+          const current = { ...live(row), isBase: true }
+          const original = stored.find((item) => item.id === row.id)
+          const unchanged = original
+            && original.isBase === current.isBase
+            && original.code === current.code
+            && original.factor === current.factor
+            && original.offset === current.offset
+            && original.symbol === current.symbol
+            && original.label === current.label
+          if (unchanged) delete next[row.id]
+          else next[row.id] = current
+          return next
+        }
+        for (const item of stored) {
+          if (item.familyKey !== row.familyKey) continue
+          const current = live(item)
+          if (item.id === row.id) next[item.id] = { ...current, isBase: true, factor: '1', offset: '0' }
+          else if (current.isBase) next[item.id] = { ...current, isBase: false }
+        }
+        if (!stored.some((item) => item.id === row.id)) {
+          next[row.id] = { ...live(row), isBase: true, factor: '1', offset: '0' }
+        }
+        return next
+      },
     },
   ]
 
@@ -877,6 +911,9 @@ export function UnitsTable() {
         setFamilyName('')
         setUnitCode('')
         setFactor('1')
+        setOffset('0')
+        setSymbol('')
+        setUnitLabel('')
         setCreateOpen(true)
       }}
       newRowLabel={copy.newUnit}
@@ -897,47 +934,8 @@ export function UnitsTable() {
         unitCode: row?.code || undefined,
       })}
       onReviewAndSave={async () => {
-        for (const row of Object.values(draftRows)) {
-          const existing = rows.some((item) => item.id === row.id)
-          if (!existing) {
-            const hasFamily = ((defs?.unit_families as Json[]) ?? []).some((item) => String(item.key) === row.family)
-            if (!hasFamily && row.familyKey) {
-              await stageModel('model.create_unit_family', {
-                key: row.familyKey,
-                base_unit: row.code || row.familyKey,
-                units: row.code
-                  ? [{
-                      code: row.code,
-                      factor: row.factor || '1',
-                      offset: row.offset || '0',
-                      symbol: row.symbol || row.code,
-                      label: row.label,
-                    }]
-                  : [],
-              })
-            } else if (row.code) {
-              await stageModel('model.add_unit', {
-                unit_family: row.familyKey,
-                code: row.code,
-                factor: row.factor || '1',
-                offset: row.offset || '0',
-                symbol: row.symbol || row.code,
-                label: row.label,
-              })
-            }
-          } else if (row.code) {
-            const unit = row.id.split(':').pop()
-            await stageModel('model.update_unit', {
-              unit_family: row.familyKey,
-              unit,
-              factor: row.factor,
-              offset: row.offset,
-              symbol: row.symbol,
-              label: row.label,
-              ...(row.code !== unit ? { new_code: row.code } : {}),
-            })
-          }
-        }
+        const steps = unitSaveSteps(rows, draftRows)
+        for (const step of steps) await stageModel(step.name, step.args)
         setDraftRows({})
         await reviewDraft()
       }}
@@ -945,34 +943,49 @@ export function UnitsTable() {
     <CreateDialog
       open={createOpen}
       title={copy.newUnit}
-      description={copy.createNameHint}
+      description={copy.newUnitHint}
       fields={[
         { id: 'family', label: copy.unitFamilies, value: familyName, testId: 'new-name', autoFocus: true },
         { id: 'code', label: copy.unit, value: unitCode, testId: 'new-key' },
         { id: 'factor', label: copy.factor, value: factor, testId: 'new-factor' },
+        { id: 'offset', label: copy.offset, value: offset, testId: 'new-offset' },
+        { id: 'symbol', label: copy.symbol, value: symbol, testId: 'new-symbol' },
+        { id: 'labels', label: copy.labels, value: unitLabel, testId: 'new-labels' },
       ]}
       onField={(id, value) => {
         if (id === 'family') setFamilyName(value)
         else if (id === 'code') setUnitCode(value)
-        else setFactor(value)
+        else if (id === 'factor') setFactor(value)
+        else if (id === 'offset') setOffset(value)
+        else if (id === 'symbol') setSymbol(value)
+        else setUnitLabel(value)
       }}
       onClose={() => setCreateOpen(false)}
       onSubmit={async () => {
         const family = requireText(familyName)
         const code = unitCode.trim() || family
+        const factorError = unitNumberError(factor, 'factor')
+        const offsetError = unitNumberError(offset, 'offset')
+        if (factorError || offsetError) throw new Error(factorError || offsetError)
+        const unit = {
+          code,
+          factor: normalizeUnitNumber(factor, '1'),
+          offset: normalizeUnitNumber(offset, '0'),
+          symbol: symbol.trim() || code,
+          label: unitLabel.trim(),
+        }
         const hasFamily = ((defs?.unit_families as Json[]) ?? []).some((item) => String(item.key) === family)
         if (!hasFamily) {
           await stageModel('model.create_unit_family', {
             key: family,
             dimension: family,
             base_unit: code,
-            units: [{ code, factor: factor.trim() || '1' }],
+            units: [unit],
           })
         } else {
           await stageModel('model.add_unit', {
             unit_family: family,
-            code,
-            factor: factor.trim() || '1',
+            ...unit,
           })
         }
         setPendingId(`${family}:${code}`)

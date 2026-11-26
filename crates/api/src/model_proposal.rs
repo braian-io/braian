@@ -979,16 +979,16 @@ pub(crate) fn changes_from(
                     .iter_mut()
                     .find(|item| item.code == unit)
                     .ok_or_else(|| bad(format!("unknown unit {unit}")))?;
-                if let Some(factor) = optional_str(args, "factor") {
+                if let Some(factor) = present_str(args, "factor") {
                     row.factor = factor;
                 }
-                if let Some(offset) = optional_str(args, "offset") {
+                if let Some(offset) = present_str(args, "offset") {
                     row.offset = offset;
                 }
-                if let Some(symbol) = optional_str(args, "symbol") {
+                if let Some(symbol) = present_str(args, "symbol") {
                     row.symbol = symbol;
                 }
-                if let Some(label) = optional_str(args, "label") {
+                if let Some(label) = present_str(args, "label") {
                     row.label = label;
                 }
                 if let Some(code) = optional_str(args, "new_code") {
@@ -1206,6 +1206,11 @@ fn unit_specs(args: &Value) -> Vec<braian_model::UnitSpec> {
 
 fn text_arg(args: &Value) -> &str {
     args.get("text").and_then(Value::as_str).unwrap_or("")
+}
+
+/// A present string, including `""`, so a cleared label or symbol is stored.
+fn present_str(args: &Value, key: &str) -> Option<String> {
+    args.get(key).and_then(Value::as_str).map(str::to_owned)
 }
 
 fn optional_str(args: &Value, key: &str) -> Option<String> {

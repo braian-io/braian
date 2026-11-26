@@ -237,6 +237,15 @@ async fn post_steps(
         .as_ref()
         .map(|row| row.draft.clone())
         .unwrap_or_else(|| ModelDraft::new(current));
+    let stored = state.store.definition_set().await.map_err(store_status)?;
+    // Operations such as add_unit read the current family. A family created
+    // earlier in this draft is not in the stored model yet.
+    let previewed = if draft.steps.is_empty() || draft.conflicts(current) {
+        None
+    } else {
+        Some(preview(&stored, &draft.steps).map_err(model_status)?.0)
+    };
+    let interpreted = previewed.as_ref().unwrap_or(&stored);
     let mut steps = body.steps;
     if body.remove.is_none()
         && let Some(name) = body.operation.as_deref()
@@ -248,9 +257,12 @@ async fn post_steps(
                 "delete from the dialog; it is not collected in the draft",
             ));
         }
-        let defs = state.store.definition_set().await.map_err(store_status)?;
         let args = body.args.unwrap_or(Value::Null);
-        steps.extend(crate::model_proposal::changes_from(name, &args, &defs)?);
+        steps.extend(crate::model_proposal::changes_from(
+            name,
+            &args,
+            interpreted,
+        )?);
     }
     if draft.conflicts(current) && (body.remove.is_some() || !steps.is_empty()) {
         return Err(conflict_problem(draft.base_revision, current));

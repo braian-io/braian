@@ -3,7 +3,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::Duration;
 
-use braian_model::{AttributeId, DefinitionSet, GroupId, Object, ObjectId, StructureId, TypeId};
+use braian_model::{
+    AttributeId, DefinitionSet, GroupId, Object, ObjectId, StructureId, TypeId,
+    ensure_temperature_family,
+};
 use futures::StreamExt;
 use serde_json::{Map, Value};
 use tokio_postgres::Transaction;
@@ -697,6 +700,46 @@ impl Store {
             &[],
         )
         .await?;
+        tx.commit().await?;
+        self.remember(Arc::new(CachedDefs::from_groups(defs, groups)))
+            .await;
+        Ok(true)
+    }
+
+    /// Adds the Celsius temperature family, or completes one that only has Celsius.
+    ///
+    /// A second call finds nothing to add. Search is not rebuilt: no stored value
+    /// changes until an attribute uses the family.
+    pub async fn upgrade_temperature_family(&self) -> Result<bool, Error> {
+        let mut client = self.checkout().await?;
+        let tx = client.transaction().await?;
+        let row = tx
+            .query_opt(
+                "SELECT model_revision, definitions FROM definition_revisions WHERE catalog_id = braian_catalog() ORDER BY model_revision DESC LIMIT 1 FOR UPDATE",
+                &[],
+            )
+            .await?;
+        let Some(row) = row else {
+            return Ok(false);
+        };
+        let revision: i64 = row.get(0);
+        let document: Value = row.get(1);
+        let mut defs: DefinitionSet = serde_json::from_value(document)
+            .map_err(|error| Error::Definitions(error.to_string()))?;
+        if !ensure_temperature_family(&mut defs) {
+            return Ok(false);
+        }
+        defs.model_revision = u64::try_from(revision)
+            .map_err(|_| Error::Data("definition revision does not fit".into()))?
+            + 1;
+        let actor_id = upsert_system_principal(&tx).await?;
+        let actor = Actor {
+            actor: actor_id,
+            on_behalf_of: None,
+            kind: crate::ids::BatchKind::Bulk,
+            source: "temperature-family".into(),
+        };
+        let (_receipt, groups) = self.write_definitions_in(&tx, &actor, &defs).await?;
         tx.commit().await?;
         self.remember(Arc::new(CachedDefs::from_groups(defs, groups)))
             .await;

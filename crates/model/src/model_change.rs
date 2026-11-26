@@ -2719,8 +2719,14 @@ fn create_unit_family(
 ) -> Result<(), ApplyError> {
     let key = key.trim();
     crate::refs::check_new_key(key)?;
-    if defs.unit_families.iter().any(|item| eq_key(&item.key, key)) {
-        return Ok(());
+    if let Some(index) = defs
+        .unit_families
+        .iter()
+        .position(|item| eq_key(&item.key, key))
+    {
+        // A second create in the same draft must add the new units. Replaying
+        // the same units is a no-op, so the step stays idempotent.
+        return append_missing_units(defs, index, units);
     }
     let base_unit = base_unit.trim();
     reject_empty_base(base_unit)?;
@@ -2734,6 +2740,31 @@ fn create_unit_family(
         base_unit: base_unit.to_owned(),
         units: unit_specs(defs, base_unit, units)?,
     });
+    Ok(())
+}
+
+fn append_missing_units(
+    defs: &mut DefinitionSet,
+    index: usize,
+    units: &[UnitSpec],
+) -> Result<(), ApplyError> {
+    let known = defs.unit_families[index]
+        .units
+        .iter()
+        .map(|unit| unit.code.to_ascii_lowercase())
+        .collect::<BTreeSet<_>>();
+    let mut added = Vec::new();
+    for spec in units {
+        let code = spec.code.trim();
+        if code.is_empty() || known.contains(&code.to_ascii_lowercase()) {
+            continue;
+        }
+        added.push(unit_from_spec(defs, code, spec)?);
+    }
+    if added.is_empty() {
+        return Ok(());
+    }
+    defs.unit_families[index].units.extend(added);
     Ok(())
 }
 
@@ -4322,5 +4353,54 @@ mod tests {
         });
         let loaded: Attribute = serde_json::from_value(legacy).expect("legacy attribute");
         assert_eq!(loaded.description, None);
+    }
+
+    #[test]
+    fn a_second_create_unit_family_adds_only_the_new_unit() {
+        let mut defs = base();
+        let first = ModelChange::CreateUnitFamily {
+            key: "temperature".into(),
+            dimension: Some("temperature".into()),
+            base_unit: "C".into(),
+            units: vec![UnitSpec {
+                code: "C".into(),
+                factor: "1".into(),
+                offset: "0".into(),
+                symbol: "°C".into(),
+                label: "Celsius".into(),
+            }],
+        };
+        apply_all(&mut defs, &[first]).expect("create");
+        let second = ModelChange::CreateUnitFamily {
+            key: "temperature".into(),
+            dimension: Some("temperature".into()),
+            base_unit: "C".into(),
+            units: vec![UnitSpec {
+                code: "F".into(),
+                factor: "0.5".into(),
+                offset: "-17".into(),
+                symbol: "°F".into(),
+                label: "Fahrenheit".into(),
+            }],
+        };
+        apply_all(&mut defs, std::slice::from_ref(&second)).expect("add fahrenheit");
+        apply_all(&mut defs, std::slice::from_ref(&second)).expect("replay");
+        let family = defs
+            .unit_families
+            .iter()
+            .find(|item| item.key == "temperature")
+            .expect("temperature");
+        assert_eq!(family.base_unit, "C");
+        assert_eq!(family.units.len(), 2);
+        let fahrenheit = family
+            .units
+            .iter()
+            .find(|unit| unit.code == "F")
+            .expect("F");
+        assert_eq!(fahrenheit.symbol, "°F");
+        assert_eq!(
+            fahrenheit.labels.values().next().map(String::as_str),
+            Some("Fahrenheit")
+        );
     }
 }

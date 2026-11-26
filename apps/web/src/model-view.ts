@@ -70,6 +70,18 @@ type ClassRecord = {
   attributes: string[]
 }
 
+/** Type attributes Unit cell: the family, then the default unit when one is set. */
+export function unitFamilyThenDefault(defs: Json | undefined, familyKey: string, defaultUnit: string) {
+  const family = familyKey.trim()
+  if (!family) return '—'
+  const code = defaultUnit.trim()
+  if (!code) return family
+  const match = ((defs?.unit_families as Json[] | undefined) ?? []).find((item) => String(item.key ?? '') === family)
+  const unit = ((match?.units as Json[] | undefined) ?? []).find((item) => String(item.code ?? '') === code)
+  const symbol = String(unit?.symbol ?? '').trim()
+  return `${family} · ${symbol || code}`
+}
+
 export function attributeKey(name: string) {
   return name
     .trim()

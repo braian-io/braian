@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { attributeConflict, attributeRows, effectiveFields } from './model-view'
+import { attributeConflict, attributeRows, effectiveFields, unitFamilyThenDefault } from './model-view'
 import type { Json } from './api'
 
 const defs: Json = {
@@ -96,5 +96,23 @@ describe('effective attributes', () => {
     expect(attributeConflict(defs, 'weight', 'number', 'length')).toBe(true)
     expect(attributeConflict(defs, 'weight', 'number', 'mass')).toBe(false)
     expect(attributeConflict(defs, 'span', 'number', 'length')).toBe(false)
+  })
+
+  it('shows the family, then the default unit symbol', () => {
+    const model = {
+      unit_families: [
+        {
+          key: 'temperature',
+          units: [
+            { code: 'C', symbol: '°C' },
+            { code: 'F', symbol: '°F' },
+          ],
+        },
+      ],
+    }
+    expect(unitFamilyThenDefault(model, '', '')).toBe('—')
+    expect(unitFamilyThenDefault(model, 'temperature', '')).toBe('temperature')
+    expect(unitFamilyThenDefault(model, 'temperature', 'C')).toBe('temperature · °C')
+    expect(unitFamilyThenDefault(model, 'mass', 'g')).toBe('mass · g')
   })
 })
