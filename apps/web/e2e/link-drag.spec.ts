@@ -155,7 +155,7 @@ test('a partial multi-drop names the failure and does not create the saved link 
   await page.getByTestId('link-create-confirm').click()
   await expect(dialog.getByTestId('link-create-error')).toContainText('Linked 1 of 2')
   await expect(dialog.getByTestId('link-create-error')).toContainText('allows one link')
-  await product.click()
+  await page.locator('[data-view-type="object_detail"]').first().click()
   await expect(page.getByTestId('link-row').filter({ hasText: 'ART-COFFEE-250' })).toBeVisible()
   const firstSaved = posted[0] ?? ''
   const failed = posted[1] ?? ''
