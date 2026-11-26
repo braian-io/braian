@@ -7545,8 +7545,7 @@ pub(crate) struct StateBody {
     /// RFC3339 `updated_at` this edit was based on.
     /// JSON `null` means the client saw no saved layout.
     /// Omit the field for a last-write-wins save.
-    /// `Option`'s own deserializer treats JSON null as absent, so a present
-    /// null is wrapped back into `Some(None)` before the outer option sees it.
+    // `Option` reads JSON null as absent. The helper wraps a present null as `Some(None)`.
     #[serde(default, deserialize_with = "deserialize_present_option")]
     #[schema(value_type = Option<String>)]
     expected_updated_at: Option<Option<String>>,
