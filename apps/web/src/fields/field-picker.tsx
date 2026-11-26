@@ -16,6 +16,8 @@ export type PickerRow = {
   id: string
   title: string
   subtitle?: string
+  /** Muted group path when the field comes from a structure group. */
+  path?: string
   /** Opens a deeper level (qualifier, language, unit). */
   drill?: boolean
   checked?: boolean
@@ -186,7 +188,8 @@ export function FieldPicker({
               >
                 <span className="hit-copy">
                   <span className="hit-title">{row.title}</span>
-                  {row.subtitle ? <small>{row.subtitle}</small> : null}
+                  {row.subtitle ? <small className="hit-type">{row.subtitle}</small> : null}
+                  {row.path ? <small className="hit-path">{row.path}</small> : null}
                 </span>
                 {row.input === 'radio' ? (
                   <span

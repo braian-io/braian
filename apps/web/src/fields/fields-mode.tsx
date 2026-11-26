@@ -11,6 +11,7 @@ import {
   type QualifierStep,
 } from './qualifiers'
 import { makeViewColumn, withReplacedQualifier, type ViewColumn } from './columns'
+import { fieldHaystack } from './field-search'
 
 export type PeerPickOption = {
   id: string
@@ -70,15 +71,11 @@ type Row = {
   id: string
   title: string
   subtitle: string
+  path?: string
   drill?: boolean
   checked?: boolean
   input?: 'checkbox' | 'radio'
   run: () => void
-}
-
-/** Search text for a field, including the group source when it comes from a structure. */
-function fieldHaystack(field: FieldDef): string {
-  return `${field.name} ${field.typeLabel} ${field.source ?? ''}`.toLowerCase()
 }
 
 type Props = {
@@ -380,7 +377,8 @@ export function FieldsMode({ open, columns, fields: catalog, onClose, onToggleCo
           return {
             id: field.id,
             title: field.name,
-            subtitle: choice || field.source || field.typeLabel,
+            subtitle: choice || field.typeLabel,
+            path: choice ? undefined : field.source,
             drill,
             checked,
             run: () => activateField(field, top),
