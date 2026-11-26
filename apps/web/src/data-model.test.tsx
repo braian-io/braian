@@ -294,10 +294,16 @@ describe('type attributes table', () => {
     render(<Host />)
     const trees = await screen.findByTestId('allowed-trees')
     const checkbox = within(trees).getByRole('checkbox', { name: 'Food' }) as HTMLInputElement
-    fireEvent.click(checkbox)
-    fireEvent.click(checkbox)
-    await new Promise((resolve) => window.setTimeout(resolve, 500))
-    expect(stageModel).not.toHaveBeenCalled()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      fireEvent.click(checkbox)
+      fireEvent.click(checkbox)
+      expect(vi.getTimerCount()).toBe(0)
+      await vi.advanceTimersByTimeAsync(400)
+      expect(stageModel).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
     expect(requestReview).not.toHaveBeenCalled()
     expect(checkbox.checked).toBe(false)
   })
