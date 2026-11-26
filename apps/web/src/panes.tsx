@@ -285,6 +285,8 @@ export function ObjectTable({
   const [moving, setMoving] = useState<string | null>(null)
   const [massConfirm, setMassConfirm] = useState(false)
   const [flashId, setFlashId] = useState('')
+  const [tableSaveError, setTableSaveError] = useState('')
+  const [filterSetupError, setFilterSetupError] = useState('')
   const [editingCell, setEditingCell] = useState<{ rowId: string; columnId: string } | null>(null)
   const [editingDraft, setEditingDraft] = useState('')
   const [editingMeasureDraft, setEditingMeasureDraft] = useState<MeasureEditDraft | null>(null)
@@ -574,7 +576,8 @@ export function ObjectTable({
           views: views.map((item) => (String(item.id) === view.id ? { ...item, state: prevState } : item)),
         })
       }
-      reportWriteError(reason)
+      const message = writeErrorMessage(reason) ?? copy.saveFailed
+      setFilterSetupError(message)
       throw reason
     }
   }, [explicitAll, workspace.id, workspace.locked, view, queryClient])
@@ -2220,10 +2223,14 @@ export function ObjectTable({
           })
           void runDraftSave(plan, queryClient, viewingAgentRunId() ?? '').then((reason) => {
             if (isDraftSaveInFlight(reason)) return
-            if (reason) reportWriteError(new Error(reason))
-            else session.push(copy.saved)
+            if (reason) setTableSaveError(reason)
+            else {
+              setTableSaveError('')
+              session.push(copy.saved)
+            }
           })
         }}
+        saveError={tableSaveError}
         onDiscard={() => {
           void runDraftDiscard({
             objectIds: [...visibleIds],
@@ -2232,7 +2239,7 @@ export function ObjectTable({
             principal: me.data?.kind === 'agent' ? 'agent' : 'human',
             viaAgent: false,
           }).then((reason) => {
-            if (reason) reportWriteError(new Error(reason))
+            if (reason) setTableSaveError(reason)
             void queryClient.invalidateQueries({ queryKey: ['proposals'] })
             void queryClient.invalidateQueries({ queryKey: ['proposal'] })
           })
@@ -2293,8 +2300,14 @@ export function ObjectTable({
           assortments={selectionRows}
           groupFilterApplies={groupFilterApplies}
           onBeforeGroupAssortment={peerSource ? undefined : enableGroupAssortmentFilter}
+          onFilterSetupCleared={() => setFilterSetupError('')}
           defs={defs.data}
         />
+        {filterSetupError ? (
+          <span className="error" role="alert" data-testid="filter-setup-error" title={filterSetupError}>
+            {filterSetupError}
+          </span>
+        ) : null}
       </div>
       {pathFilters.length > 0 ? (
         <div className="toolbar path-filter-chips" data-testid="path-filter-chips">
@@ -2822,6 +2835,7 @@ function TableFilters({
   assortments,
   groupFilterApplies,
   onBeforeGroupAssortment,
+  onFilterSetupCleared,
   defs,
 }: {
   groupBy: string
@@ -2839,6 +2853,7 @@ function TableFilters({
   assortments: Json[]
   groupFilterApplies: boolean
   onBeforeGroupAssortment?: () => void | Promise<void>
+  onFilterSetupCleared?: () => void
   defs?: Json
 }) {
   const clear = () => {
@@ -2884,6 +2899,7 @@ function TableFilters({
     }
     setFilter('')
     setActiveSelectionId(String(item.id ?? ''))
+    onFilterSetupCleared?.()
     if (emptyManual) {
       setSelectionFilter(EMPTY_MANUAL_FILTER)
       setGroup(null)

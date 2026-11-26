@@ -133,7 +133,7 @@ test.describe('demo 196 link field errors and replace', () => {
       await expect(replace).toBeEnabled()
       await replace.click()
       await expect(dialog).toBeHidden()
-      await expect(page.locator('[data-sonner-toast]').filter({ hasText: 'Replaced the existing link' })).toBeVisible()
+      await expect(page.getByTestId('inline-action-notice')).toContainText('Replaced the existing link')
       expect(await productPeers(page, article.id)).toEqual([b.id])
 
       // K3: a first link with a numeric Sort order still saves and keeps Undo.
@@ -148,11 +148,11 @@ test.describe('demo 196 link field errors and replace', () => {
       await first.getByTestId('link-field-sort_order').fill('3')
       await first.getByTestId('link-create-confirm').click()
       await expect(first).toBeHidden()
-      const saved = page.locator('[data-sonner-toast]').filter({ hasText: 'Linked 1 article' })
+      const saved = page.getByTestId('inline-action-notice').filter({ hasText: 'Linked 1 article' })
       await expect(saved).toBeVisible()
-      await expect(saved.getByRole('button', { name: 'Undo' })).toBeVisible()
+      await expect(page.getByTestId('inline-action-notice-undo')).toBeVisible()
       expect(await productPeers(page, secondArticle.id)).toEqual([a.id])
-      await saved.getByRole('button', { name: 'Undo' }).click()
+      await page.getByTestId('inline-action-notice-undo').click()
       await expect.poll(async () => productPeers(page, secondArticle.id)).toEqual([])
       await page.screenshot({ path: testInfo.outputPath('row196-first-link-undo.png') })
     } finally {

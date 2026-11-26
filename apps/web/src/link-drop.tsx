@@ -1,7 +1,5 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check } from 'lucide-react'
-import { toast } from 'sonner'
 import { api, type Json } from './api'
 import { copy } from './i18n'
 import { linkCountNoun, linkEndLabel, type LinkHit } from './link-choices'
@@ -9,6 +7,7 @@ import { LinkCreateDialog, type LinkEndpoint } from './link-create-dialog'
 import { dispatchLinkDrop, type LinkDropDetail } from './link-drag'
 import { LinkObjectPicker } from './link-object-picker'
 import { type CreatedLink, type LinkSubmitResult, type LinkWrite, submitLinks, undoCreatedLinks } from './link-write'
+import { publishInlineNotice } from './inline-notice'
 import { reportWriteError } from './write-error'
 
 export { dispatchLinkDrop }
@@ -49,10 +48,14 @@ export function LinkDropHost() {
       refresh()
       if (result.kept.length > 0) {
         const names = result.kept.map((link) => link.label).filter(Boolean).join(', ')
-        toast(copy.undoKept
-          .replace('{done}', String(result.undone.length))
-          .replace('{total}', String(links.length))
-          .replace('{name}', names || result.kept.map((link) => link.id).join(', ')), { duration: 8000 })
+        publishInlineNotice({
+          message: copy.undoKept
+            .replace('{done}', String(result.undone.length))
+            .replace('{total}', String(links.length))
+            .replace('{name}', names || result.kept.map((link) => link.id).join(', ')),
+          error: true,
+          duration: 8000,
+        })
       }
       if (result.failed.length > 0) reportWriteError(new Error(result.failed[0]?.message || copy.validation))
     })
@@ -64,10 +67,10 @@ export function LinkDropHost() {
     const message = result.outcome === 'proposed'
       ? copy.linkedFiled.replace('{linked}', String(saved.length)).replace('{filed}', String(result.filed))
       : linkedMessage(detail.source, detail.targets, saved.length, defs.data)
-    toast(message, {
+    publishInlineNotice({
+      message,
       duration: 8000,
-      icon: <Check size={16} />,
-      action: { label: copy.undo, onClick: () => undo(saved) },
+      undo: { label: copy.undo, onClick: () => undo(saved) },
     })
   }
   if (picking && !drop) {
@@ -111,7 +114,7 @@ export function LinkDropHost() {
       }}
       onReplaced={() => {
         refresh()
-        toast(copy.linkReplaced)
+        publishInlineNotice({ message: copy.linkReplaced })
       }}
     />
   )

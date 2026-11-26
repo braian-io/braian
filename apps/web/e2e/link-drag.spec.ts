@@ -37,7 +37,7 @@ test('dragging one row onto another table creates the link', async ({ page }) =>
   await shot(page, 'link-drag-dialog-dark.png')
   await page.getByTestId('link-create-confirm').click()
   await expect(dialog).toBeHidden()
-  const notice = page.locator('[data-sonner-toast]').filter({ hasText: 'Linked 1 article' })
+  const notice = page.getByTestId('inline-action-notice').filter({ hasText: 'Linked 1 article' })
   await expect(notice).toBeVisible()
   await expect.poll(async () => {
     const box = await notice.boundingBox()
@@ -48,7 +48,7 @@ test('dragging one row onto another table creates the link', async ({ page }) =>
   await product.click()
   await expect(page.getByTestId('object-detail')).toContainText('PROD-COFFEE')
   await expect(page.getByTestId('link-row').filter({ hasText: 'ART-OAT-1L' })).toBeVisible()
-  await notice.getByRole('button', { name: 'Undo' }).click()
+  await page.getByTestId('inline-action-notice-undo').click()
   await expect(page.getByTestId('link-row').filter({ hasText: 'ART-OAT-1L' })).toHaveCount(0)
 })
 
@@ -144,7 +144,7 @@ test('a partial multi-drop names the failure and does not create the saved link 
   await page.getByTestId('link-create-confirm').click()
   await expect(dialog.getByTestId('link-create-error')).toContainText('Linked 1 of 2')
   await expect(dialog.getByTestId('link-create-error')).toContainText('allows one link')
-  await expect(page.locator('[data-sonner-toast]').filter({ hasText: 'Linked 1 article' })).toBeVisible()
+  await expect(page.getByTestId('inline-action-notice')).toContainText('Linked 1 article')
   const firstSaved = posted[0] ?? ''
   const failed = posted[1] ?? ''
   expect(firstSaved).not.toBe('')
@@ -204,7 +204,7 @@ test('a full cardinality offers replace and retargets the existing link', async 
   await expect(dialog.getByTestId('link-replace')).toBeVisible()
   await dialog.getByTestId('link-replace').click()
   await expect(dialog).toBeHidden()
-  await expect(page.locator('[data-sonner-toast]').filter({ hasText: 'Replaced the existing link' })).toBeVisible()
+  await expect(page.getByTestId('inline-action-notice')).toContainText('Replaced the existing link')
   const after = await productLinks(page, articleId)
   expect(after).toHaveLength(1)
   expect(after[0]?.peer_id).toBe(targetId)
@@ -221,7 +221,7 @@ test('undo keeps a link that changed after it was created', async ({ page }) => 
   await expect(dialog).toBeVisible()
   await page.getByTestId('link-create-confirm').click()
   await expect(dialog).toBeHidden()
-  const notice = page.locator('[data-sonner-toast]').filter({ hasText: 'Linked 1 article' })
+  const notice = page.getByTestId('inline-action-notice').filter({ hasText: 'Linked 1 article' })
   await expect(notice).toBeVisible()
   const productId = ((await product.getAttribute('id')) ?? '').replace(/^object-row-/, '')
   const loaded = await page.request.get(`/v1/objects/${productId}`)
@@ -240,8 +240,8 @@ test('undo keeps a link that changed after it was created', async ({ page }) => 
     data: { values: { sort_order: { value: '9' } } },
   })
   expect(patched.ok(), `patch link ${patched.status()} ${await patched.text()}`).toBeTruthy()
-  await notice.getByRole('button', { name: 'Undo' }).click()
-  const kept = page.locator('[data-sonner-toast]').filter({ hasText: 'changed since, kept' })
+  await page.getByTestId('inline-action-notice-undo').click()
+  const kept = page.getByTestId('inline-action-notice').filter({ hasText: 'changed since, kept' })
   await expect(kept).toContainText('Undid 0 of 1')
   await expect(kept).toContainText('ART-OAT-1L')
   await product.click()
@@ -306,7 +306,7 @@ test('the light theme shows the drag highlight, dialogs, and toast', async ({ pa
   await expect(page.getByTestId('link-ends')).toContainText('ART-CHED-400')
   await shot(page, 'link-drag-dialog-light.png')
   await page.getByTestId('link-create-confirm').click()
-  const lightToast = page.locator('[data-sonner-toast]').filter({ hasText: 'Linked 1 article' })
+  const lightToast = page.getByTestId('inline-action-notice').filter({ hasText: 'Linked 1 article' })
   await expect(lightToast).toBeVisible()
   await expect.poll(async () => {
     const box = await lightToast.boundingBox()
@@ -314,7 +314,7 @@ test('the light theme shows the drag highlight, dialogs, and toast', async ({ pa
     return box.y >= 0 && box.y + box.height <= 890 ? 1 : box.y
   }).toBe(1)
   await shot(page, 'link-drag-toast-light.png')
-  await page.locator('[data-sonner-toast]').getByRole('button', { name: 'Undo' }).click()
+  await page.getByTestId('inline-action-notice-undo').click()
 
   const articles = mainTable(page, 'Articles')
   await unlink(page, articles, 'ART-COFFEE-250', 'product_articles')

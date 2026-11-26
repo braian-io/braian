@@ -44,7 +44,7 @@ import {
 import { valueListLabel } from './value-list-table-steps'
 import { registerModelTableDraft, tryChooseModelSelection } from './model-table-draft'
 import { buildAttributeCreateSteps, buildAttributeUpdateSteps } from './attribute-table-steps'
-import { toast } from 'sonner'
+import { publishInlineNotice } from './inline-notice'
 import { CreateDialog, requireText } from './create-dialog'
 import { onAttributeAction, type AttributeAction } from './attribute-actions'
 import { writeErrorMessage } from './write-error'
@@ -300,9 +300,11 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
     setTypeHeaderPatch(restored.typeHeader ?? {})
     setPendingDetach(new Set(restored.pendingDetach))
     setPendingDelete(new Set(restored.pendingDelete))
-    if (restored.trimmed) toast.message(copy.modelTableDraftRestoreTrimmed)
+    if (restored.trimmed) publishInlineNotice({ message: copy.modelTableDraftRestoreTrimmed })
     for (const dropped of restored.droppedFields) {
-      toast.message(copy.modelTableDraftRestoreFieldDropped(dropped.attributeKey, dropped.field))
+      publishInlineNotice({
+        message: copy.modelTableDraftRestoreFieldDropped(dropped.attributeKey, dropped.field),
+      })
     }
   }, [selectionKey, draftScope?.userId, draftScope?.workspaceId, selection, defs])
 
@@ -587,8 +589,9 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
     const onStorage = (event: StorageEvent) => {
       if (event.storageArea !== localStorage || event.key !== storageKey || !event.newValue) return
       if (!tableDirty()) return
-      toast.message(copy.modelTableDraftRemoteChanged, {
-        action: {
+      publishInlineNotice({
+        message: copy.modelTableDraftRemoteChanged,
+        undo: {
           label: copy.loadRemoteDraft,
           onClick: () => {
             const stored = readModelTableDraftForKey(draftScope.userId, draftScope.workspaceId, selectionKey)
@@ -599,7 +602,7 @@ function AttributesTable({ defs, draftScope }: { defs: Json | undefined; draftSc
             setTypeHeaderPatch(restored.typeHeader ?? {})
             setPendingDetach(new Set(restored.pendingDetach))
             setPendingDelete(new Set(restored.pendingDelete))
-            if (restored.trimmed) toast.message(copy.modelTableDraftRestoreTrimmed)
+            if (restored.trimmed) publishInlineNotice({ message: copy.modelTableDraftRestoreTrimmed })
           },
         },
       })

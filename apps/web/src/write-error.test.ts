@@ -1,15 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { toast } from 'sonner'
 import { ApiError } from './api'
 import { copy } from './i18n'
+import { resetWriteStatus, writeStatus } from './write-status'
 import { errorCodeFromBody, fieldErrorsFromErrorBody, messageFromErrorBody, reportWriteError, writeErrorMessage } from './write-error'
 
-vi.mock('sonner', () => ({
-  toast: { error: vi.fn() },
-}))
-
 afterEach(() => {
-  vi.mocked(toast.error).mockClear()
+  resetWriteStatus()
 })
 
 describe('messageFromErrorBody', () => {
@@ -67,15 +63,15 @@ describe('writeErrorMessage', () => {
 })
 
 describe('reportWriteError', () => {
-  it('toasts the server message', () => {
+  it('records the server message on the write status', () => {
     const error = new ApiError(422, 'Unprocessable Entity', { detail: 'the write failed validation' })
     expect(reportWriteError(error)).toBe('the write failed validation')
-    expect(toast.error).toHaveBeenCalledWith('the write failed validation')
+    expect(writeStatus().error).toBe('the write failed validation')
   })
 
-  it('does not toast an aborted request or an expected 404', () => {
+  it('does not record an aborted request or an expected 404', () => {
     expect(reportWriteError(new DOMException('aborted', 'AbortError'))).toBeNull()
     expect(reportWriteError(new ApiError(404, 'Not Found', { detail: 'gone' }), { ignoreStatus: [404] })).toBeNull()
-    expect(toast.error).not.toHaveBeenCalled()
+    expect(writeStatus().error).toBeNull()
   })
 })

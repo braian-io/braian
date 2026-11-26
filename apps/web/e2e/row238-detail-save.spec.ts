@@ -165,7 +165,8 @@ test('a failed Save in the table reports the error and keeps Save available for 
 
       const save = table.getByTestId('review-and-save')
       await save.click()
-      await expect(page.locator('[data-sonner-toast]')).toContainText(FAILURE)
+      await expect(page.getByTestId('draft-save-error')).toContainText(FAILURE)
+      await expect(page.locator('[data-sonner-toast]')).toHaveCount(0)
       await expect(nameCell).toContainText(original)
       await expect(nameCell.getByTestId('cell-diff')).toContainText(edited)
       // A server failure is a toast, not a validation block. Retry stays open.

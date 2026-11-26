@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { toast } from 'sonner'
 import { api, jsonRecord } from '../api'
+import { publishInlineNotice } from '../inline-notice'
+import { writeErrorMessage } from '../write-error'
 import { Button } from '../components/ui/button'
 import { Dialog, DialogContent, DialogTitle } from '../components/ui/dialog'
 import { copy } from '../i18n'
@@ -302,6 +303,8 @@ function Steps({ phase }: { phase: ReturnType<typeof getImportSnapshot>['phase']
 }
 
 function Mapping() {
+  const [footerNotice, setFooterNotice] = useState('')
+  const [footerError, setFooterError] = useState(false)
   const snap = useSyncExternalStore(subscribeImport, getImportSnapshot, getImportSnapshot)
   const session = snap.session!
   const targets = session.targets ?? []
@@ -436,6 +439,15 @@ function Mapping() {
         })}
       </ul>
       <footer className="import-actions">
+        {footerNotice ? (
+          <p
+            className={footerError ? 'error' : 'inline-hint'}
+            role="status"
+            data-testid="import-inline-notice"
+          >
+            {footerNotice}
+          </p>
+        ) : null}
         <Button
           type="button"
           variant="default"
@@ -444,7 +456,17 @@ function Mapping() {
           onClick={() => {
             const name = window.prompt(copy.importSaveMappingAs, session.file_name.replace(/\.[^.]+$/, ''))
             if (!name?.trim()) return
-            void saveImportMapping(name.trim()).then(() => toast(copy.importMappingSaved)).catch((error: unknown) => toast(error instanceof Error ? error.message : copy.saveFailed))
+            void saveImportMapping(name.trim())
+              .then(() => {
+                setFooterError(false)
+                setFooterNotice(copy.importMappingSaved)
+                window.setTimeout(() => setFooterNotice(''), 5000)
+              })
+              .catch((error: unknown) => {
+                const message = writeErrorMessage(error) ?? copy.saveFailed
+                setFooterError(true)
+                setFooterNotice(message)
+              })
           }}
         >
           {copy.importSaveMappingAs}
@@ -454,7 +476,11 @@ function Mapping() {
           variant="primary"
           data-testid="import-approve"
           disabled={waiting && !session.proposal || mappedLines(snap.columns).length === 0 || !snap.typeKey}
-          onClick={() => void approveImport().catch((error: unknown) => toast(error instanceof Error ? error.message : copy.importApproveFailed))}
+          onClick={() => void approveImport().catch((error: unknown) => {
+            const message = writeErrorMessage(error) ?? copy.importApproveFailed
+            setFooterError(true)
+            setFooterNotice(message)
+          })}
         >
           {copy.importNext}
         </Button>
@@ -464,6 +490,8 @@ function Mapping() {
 }
 
 function Preview() {
+  const [footerNotice, setFooterNotice] = useState('')
+  const [footerError, setFooterError] = useState(false)
   const snap = useSyncExternalStore(subscribeImport, getImportSnapshot, getImportSnapshot)
   const session = snap.session!
   const counters = session.counters ?? {}
@@ -562,6 +590,15 @@ function Preview() {
       </div>
       )}
       <footer className="import-actions">
+        {footerNotice ? (
+          <p
+            className={footerError ? 'error' : 'inline-hint'}
+            role="status"
+            data-testid="import-inline-notice"
+          >
+            {footerNotice}
+          </p>
+        ) : null}
         <div className="import-actions-start">
           <Button type="button" variant="ghost" onClick={backToMapping}>{copy.importBack}</Button>
           {failed > 0 ? (
@@ -585,7 +622,11 @@ function Preview() {
               data-testid="import-save"
               disabled={fixture || session.status !== 'previewed'}
               onClick={() => {
-                void saveImport(excluded).catch((error: unknown) => toast(error instanceof Error ? error.message : copy.saveFailed))
+                void saveImport(excluded).catch((error: unknown) => {
+                  const message = writeErrorMessage(error) ?? copy.saveFailed
+                  setFooterError(true)
+                  setFooterNotice(message)
+                })
               }}
             >
               {saveLabel(failed, changes)}

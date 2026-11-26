@@ -6,11 +6,13 @@ import { api } from './api'
 import { copy } from './i18n'
 import { LinkSections } from './link-section'
 
-const mocks = vi.hoisted(() => ({
-  toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn(), message: vi.fn() }),
-}))
+const inlineNotices = vi.hoisted(() => [] as Array<{ message: string; undo?: { label: string; onClick: () => void } }>)
 
-vi.mock('sonner', () => ({ toast: mocks.toast }))
+vi.mock('./inline-notice', () => ({
+  publishInlineNotice: (detail: { message: string; undo?: { label: string; onClick: () => void } }) => {
+    inlineNotices.push(detail)
+  },
+}))
 
 const defs = {
   types: [
@@ -84,6 +86,7 @@ const post = vi.spyOn(api, 'post')
 
 beforeEach(() => {
   vi.clearAllMocks()
+  inlineNotices.splice(0, inlineNotices.length)
   del.mockResolvedValue({} as never)
   post.mockResolvedValue({} as never)
 })
@@ -93,7 +96,7 @@ afterEach(() => {
 })
 
 describe('LinkSections removal', () => {
-  it('toasts Undo after removing a link without values and recreates it with its sort order', async () => {
+  it('shows inline Undo after removing a link without values and recreates it with its sort order', async () => {
     renderLinks(link({ sort_order: '3' }))
 
     await removeFocusedLink()
@@ -101,16 +104,13 @@ describe('LinkSections removal', () => {
     await waitFor(() => {
       expect(del).toHaveBeenCalledWith('/v1/links/{id}', { params: { path: { id: 'link-1' } } })
     })
-    await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
-    const [message, options] = mocks.toast.mock.calls[0] as [
-      string,
-      { action: { label: string; onClick: () => void } },
-    ]
-    expect(message).toBe('Link removed')
-    expect(options.action.label).toBe('Undo')
+    await waitFor(() => expect(inlineNotices.length).toBe(1))
+    const notice = inlineNotices[0]!
+    expect(notice.message).toBe('Link removed')
+    expect(notice.undo?.label).toBe('Undo')
 
     await act(async () => {
-      options.action.onClick()
+      notice.undo?.onClick()
     })
 
     await waitFor(() => expect(post).toHaveBeenCalledTimes(1))
@@ -181,14 +181,11 @@ describe('LinkSections removal', () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['history', 'object-1'] })
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['history', 'peer-1'] })
 
-    const [, options] = mocks.toast.mock.calls[0] as [
-      string,
-      { action: { label: string; onClick: () => void } },
-    ]
+    const notice = inlineNotices[0]!
     invalidate.mockClear()
 
     await act(async () => {
-      options.action.onClick()
+      notice.undo?.onClick()
     })
 
     await waitFor(() => expect(post).toHaveBeenCalledTimes(1))

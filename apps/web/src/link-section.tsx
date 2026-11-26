@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Check } from 'lucide-react'
-import { toast } from 'sonner'
 import { api, textValue, type Json } from './api'
+import { publishInlineNotice } from './inline-notice'
 import { Button } from './components/ui/button'
 import { Dialog, DialogContent, DialogDescription } from './components/ui/dialog'
 import { formatCount } from './format'
@@ -124,8 +123,9 @@ export function LinkSections({
     }
     void api.delete('/v1/links/{id}', { params: { path: { id: removal.id } } }).then(() => {
       refresh(removal.peerId)
-      toast(copy.linkRemoved, {
-        action: { label: copy.undo, onClick: () => recreate(removal) },
+      publishInlineNotice({
+        message: copy.linkRemoved,
+        undo: { label: copy.undo, onClick: () => recreate(removal) },
       })
     }).catch((reason: unknown) => {
       reportWriteError(reason)
@@ -138,8 +138,9 @@ export function LinkSections({
       setConfirm(null)
       setConfirmError('')
       refresh(removal.peerId)
-      toast(copy.linkRemoved, {
-        action: { label: copy.undo, onClick: () => recreate(removal) },
+      publishInlineNotice({
+        message: copy.linkRemoved,
+        undo: { label: copy.undo, onClick: () => recreate(removal) },
       })
     }).catch((reason: unknown) => {
       const message = writeErrorMessage(reason)

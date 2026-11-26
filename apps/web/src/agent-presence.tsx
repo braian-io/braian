@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Button } from './components/ui/button'
+import { publishInlineNotice } from './inline-notice'
 import {
   agentNoticeEvent,
   agentNoticeText,
@@ -22,19 +23,33 @@ type AgentPresenceProps = {
 
 function showAgentNotices(notices: AgentNotice[], onReview: (run: AgentRunSummary) => void) {
   for (const notice of notices) {
-    const show = notice.failed ? toast.error : toast
     const run = notice.run
-    show(notice.text, {
-      id: notice.id,
+    const open = () => {
+      if (run) onReview(run)
+      else requestOpenAgentsTable()
+    }
+    if (notice.failed) {
+      toast.error(notice.text, {
+        id: notice.id,
+        duration: 20000,
+        className: 'agent-notice-toast',
+        action: { label: notice.actionLabel, onClick: open },
+      })
+      continue
+    }
+    if (run?.status === 'waiting') {
+      toast(notice.text, {
+        id: notice.id,
+        duration: 20000,
+        className: 'agent-notice-toast',
+        action: { label: notice.actionLabel, onClick: open },
+      })
+      continue
+    }
+    publishInlineNotice({
+      message: notice.text,
       duration: 20000,
-      className: 'agent-notice-toast',
-      action: {
-        label: notice.actionLabel,
-        onClick: () => {
-          if (run) onReview(run)
-          else requestOpenAgentsTable()
-        },
-      },
+      undo: { label: notice.actionLabel, onClick: open },
     })
   }
 }

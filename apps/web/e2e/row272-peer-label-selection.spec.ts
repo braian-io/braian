@@ -190,7 +190,8 @@ test.describe('peer-linked label selections (Notion row 272)', () => {
       const cheese = products.getByTestId('assortment').filter({ hasText: 'Cheese' })
       failViewSave = true
       await cheese.click()
-      await expect(page.locator('[data-sonner-toast]')).toContainText('save failed', { timeout: 30_000 })
+      await expect(page.getByTestId('filter-setup-error')).toContainText('save failed', { timeout: 30_000 })
+      await expect(page.locator('[data-sonner-toast]')).toHaveCount(0)
       await expect(cheese).not.toHaveClass(/\bon\b/)
       await expect(products.getByTestId('view-source-label')).toContainText('Food')
     } finally {
