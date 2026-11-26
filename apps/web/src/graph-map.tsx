@@ -1007,7 +1007,10 @@ export function GraphMap({
             placedEdgeLabels,
             // A selected or hovered label is never dropped to spare a caption:
             // it wins the space and the caption beneath it is hidden below.
+            // The wider search is only for that label, so a crowded cluster
+            // still names every edge of the node that is selected or hovered.
             activeEndpoint ? [] : captionObstacles,
+            activeEndpoint ? 16 : 3,
           )
           const box: EdgeLabelBox = { x: mid.x - boxW / 2, y: mid.y - boxH / 2, width: boxW, height: boxH }
           // Hide the lower-priority label instead of stacking it on a neighbour.
