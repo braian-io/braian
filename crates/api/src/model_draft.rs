@@ -248,9 +248,16 @@ async fn post_steps(
                 "delete from the dialog; it is not collected in the draft",
             ));
         }
-        let defs = state.store.definition_set().await.map_err(store_status)?;
+        let stored = state.store.definition_set().await.map_err(store_status)?;
+        // add_unit and update_unit copy the family from these definitions.
+        // A family created earlier in this draft is not in the saved revision yet.
+        let planning = if draft.conflicts(current) {
+            stored
+        } else {
+            planning_defs(&stored, &draft.steps)?
+        };
         let args = body.args.unwrap_or(Value::Null);
-        steps.extend(crate::model_proposal::changes_from(name, &args, &defs)?);
+        steps.extend(crate::model_proposal::changes_from(name, &args, &planning)?);
     }
     if draft.conflicts(current) && (body.remove.is_some() || !steps.is_empty()) {
         return Err(conflict_problem(draft.base_revision, current));
@@ -361,6 +368,15 @@ async fn save_draft(
             .map_err(store_status)?;
     }
     Ok(Json(saved))
+}
+
+fn planning_defs(defs: &DefinitionSet, steps: &[ModelChange]) -> Result<DefinitionSet, Problem> {
+    if steps.is_empty() {
+        return Ok(defs.clone());
+    }
+    preview(defs, steps)
+        .map(|(after, _)| after)
+        .map_err(model_status)
 }
 
 fn conflict_problem(base: u64, current: u64) -> Problem {

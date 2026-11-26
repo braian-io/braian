@@ -6327,3 +6327,94 @@ async fn a_master_discard_cannot_reach_a_source_catalog_proposal() {
     assert_eq!(discarded["status"], "discarded", "{discarded}");
     assert_eq!(discarded["rows"][0]["status"], "rejected", "{discarded}");
 }
+
+#[tokio::test]
+async fn a_new_unit_family_in_the_draft_can_gain_another_unit() {
+    let (db, app) = app().await;
+    let principal = db
+        .store()
+        .principal_by_handle("ada")
+        .await
+        .unwrap()
+        .expect("ada");
+    db.store()
+        .attach_user(principal, "ada@example.com", "x", "admin", "Ada")
+        .await
+        .unwrap();
+
+    let (status, _, created) = call(
+        &app,
+        "POST",
+        "/v1/model/draft/steps",
+        Some(HUMAN),
+        &[("content-type", "application/json")],
+        Some(
+            r#"{"operation":"model.create_unit_family","args":{"key":"temperature","dimension":"temperature","base_unit":"C","units":[{"code":"C","factor":"1","offset":"0","symbol":"°C","label":"Celsius"}]}}"#,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    assert!(
+        created["definitions"]["unit_families"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|family| family["key"] == "temperature"),
+        "{created}"
+    );
+
+    let (status, _, added) = call(
+        &app,
+        "POST",
+        "/v1/model/draft/steps",
+        Some(HUMAN),
+        &[("content-type", "application/json")],
+        Some(
+            r#"{"operation":"model.add_unit","args":{"unit_family":"temperature","code":"F","factor":"5/9","offset":"-160/9","symbol":"°F","label":"Fahrenheit"}}"#,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{added}");
+    let family = added["definitions"]["unit_families"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|family| family["key"] == "temperature")
+        .expect("temperature in the draft");
+    let codes: Vec<&str> = family["units"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|unit| unit["code"].as_str().unwrap())
+        .collect();
+    assert_eq!(codes, ["C", "F"], "{family}");
+
+    let (status, _, saved) = call(
+        &app,
+        "POST",
+        "/v1/model/draft/save",
+        Some(HUMAN),
+        &[("content-type", "application/json")],
+        Some("{}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{saved}");
+
+    let (status, _, defs) = call(&app, "GET", "/v1/definitions", Some(HUMAN), &[], None).await;
+    assert_eq!(status, StatusCode::OK, "{defs}");
+    let stored = defs["unit_families"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|family| family["key"] == "temperature")
+        .expect("temperature saved");
+    assert_eq!(stored["base_unit"], "C");
+    assert!(
+        stored["units"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|unit| unit["code"] == "F" && unit["symbol"] == "°F"),
+        "{stored}"
+    );
+}
