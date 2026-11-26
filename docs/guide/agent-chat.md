@@ -38,11 +38,12 @@ The agent pane is a conversation:
   type — Products for a product — and leaves Detail
   open on that same object. The same action is on the object in Detail and on
   a proposal row.
-- The proposal then shows up as a **draft**: Pending, then **Discard** or
-  **Save**. Save from the table or from Detail writes that draft. The table,
-  the API and History then show the saved object. **Discard** throws the draft
-  away. There is no separate Approve or Reject step. A change you type yourself
-  keeps its Discard/Save bar in the pane where you made it.
+- The proposal then shows up as a **draft**: Pending, then one **Discard** /
+  **Save** bar. While Detail is open on that object the bar is in Detail. When
+  Detail is not open on it, the bar is in the table. **Save** writes the draft.
+  The table, the API and History then show the saved object. **Discard** throws
+  the draft away. There is no separate Approve or Reject step. A change you
+  type yourself keeps that same single bar in the pane where you made it.
 
 Follow-up messages stay in the **same run**, so you can continue with context
 (for example adjusting another field on the same product).

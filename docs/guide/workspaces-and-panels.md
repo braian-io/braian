@@ -238,8 +238,8 @@ the change stream; there is no manual refresh.
 An object table and a Detail view share the unsaved cells, so an edit made in one
 view is visible in the other. The Save/Discard bar appears only in the pane where
 the edit was made. The other pane may mark the row, and it does not show a second
-Save. A proposal is a draft too (Pending, then Discard or Save). Save in the
-table or in Detail writes it.
+Save. A proposal is a draft too (Pending, then Discard or Save). Its bar is in
+Detail while Detail is open on that object, and in the table otherwise.
 
 A Save that fails on the server or in transport is shown as an error. It is not a
 field-validation error, so the draft stays valid and Save is still available: fix the

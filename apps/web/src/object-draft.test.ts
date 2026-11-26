@@ -11,6 +11,7 @@ import {
   objectDraftSnapshot,
   overlayValues,
   paintObjectCell,
+  proposalCellsForTableBar,
   resetObjectDrafts,
   reviewCapabilities,
   stageObjectCell,
@@ -20,6 +21,17 @@ import { modelStepKeys, proposalMemberships, reviewCells, unmappedProposals } fr
 
 beforeEach(() => {
   resetObjectDrafts()
+})
+
+describe('proposal bar', () => {
+  it('keeps a proposal on the table until Detail is open on that object', () => {
+    const cells = [{ objectId: 'product' }, { objectId: 'other' }]
+    expect(proposalCellsForTableBar(cells, null)).toEqual({ bar: cells, elsewhere: [] })
+    expect(proposalCellsForTableBar(cells, 'product')).toEqual({
+      bar: [{ objectId: 'other' }],
+      elsewhere: ['product'],
+    })
+  })
 })
 
 describe('shared object draft', () => {

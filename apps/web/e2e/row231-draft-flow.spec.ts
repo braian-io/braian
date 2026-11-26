@@ -1,7 +1,7 @@
 // Row 231. Open in the table follows the object's type and keeps Detail.
 // Opening the agent does not reorder existing tabs. Reload restores Detail
-// and History from the address. The proposal has one Discard/Save bar in Detail
-// and one in the table. A typed edit stays in the pane that made it (row 57).
+// and History from the address. A proposal shows one Discard/Save bar, in Detail
+// while Detail is open on that object.
 import { expect, test, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
 import { agentSessionView, mainTable, resetProductsLayout } from './ui'
@@ -169,15 +169,15 @@ test('open in the table keeps the product, the tab order, and one Save bar', asy
     await expect(detail).toBeVisible()
     await expect(detail).toContainText(key)
     await expect(detail.getByTestId('pending-field')).toBeVisible({ timeout: 30_000 })
-    // A proposal is reviewed from the table and from Detail. Each pane has one bar.
     await expect(detail.getByTestId('object-draft-bar')).toHaveCount(1)
-    await expect(mainTable(page).getByTestId('object-draft-bar')).toHaveCount(1)
-    await expect(page.getByTestId('object-draft-bar')).toHaveCount(2)
+    await expect(mainTable(page).getByTestId('object-draft-bar')).toHaveCount(0)
+    await expect(page.getByTestId('object-draft-bar')).toHaveCount(1)
+    await expect(page.getByTestId('review-and-save')).toHaveCount(1)
     await detail.getByTestId('open-draft-in-table').click()
     await expect(focused).toContainText('Products')
     await expect(detail).toContainText(key)
-    await expect(detail.getByTestId('object-draft-bar')).toHaveCount(1)
-    await expect(mainTable(page).getByTestId('object-draft-bar')).toHaveCount(1)
+    await expect(page.getByTestId('object-draft-bar')).toHaveCount(1)
+    await expect(mainTable(page).getByTestId('object-draft-bar')).toHaveCount(0)
 
     await page.reload()
     await expect(page.getByTestId('object-detail')).toContainText(name, { timeout: 30_000 })
