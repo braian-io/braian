@@ -248,16 +248,17 @@ fn operations() -> Vec<(HttpMethod, &'static str, Operation)> {
             "Shared workspace",
             true,
         ),
-        call(
+        finish(
             HttpMethod::Post,
             "/v1/views",
             "save_view",
-            "Create or update a view, including table state",
+            "Create or update a view. State merges per top-level key.",
             vec![],
             Some("ViewBody"),
-            Some("IdBody"),
-            "200",
-            "Saved view id",
+            vec![
+                json("200", "Saved view id and updated_at", "SavedView"),
+                problem("409", "The view changed since expected_updated_at"),
+            ],
             true,
         ),
         call(

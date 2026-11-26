@@ -84,6 +84,42 @@ pub enum WorkspaceStateWrite {
     Stale,
 }
 
+/// Result of saving a view. `Stale` means the client's `expected_updated_at` lost the race.
+#[derive(Debug)]
+pub enum ViewWrite {
+    Saved(DateTime<Utc>),
+    Stale,
+}
+
+/// Compare an RFC3339 `updated_at` with the stored clock.
+///
+/// Done in process on purpose. Binding the text as `timestamptz` makes Postgres
+/// expect a binary timestamp, and the string the client sent then fails to serialize.
+pub fn same_updated_at(expected: Option<&str>, stored: DateTime<Utc>) -> bool {
+    expected
+        .and_then(|raw| DateTime::parse_from_rfc3339(raw).ok())
+        .is_some_and(|stamp| {
+            stamp.with_timezone(&Utc).timestamp_micros() == stored.timestamp_micros()
+        })
+}
+
+/// Replace top-level keys from `patch`. A JSON null removes that key.
+/// Keys absent from `patch` stay as stored. A non-object patch changes nothing.
+pub fn merge_view_state(current: &Value, patch: &Value) -> Value {
+    let mut merged = current.as_object().cloned().unwrap_or_default();
+    let Some(patch) = patch.as_object() else {
+        return Value::Object(merged);
+    };
+    for (key, value) in patch {
+        if value.is_null() {
+            merged.remove(key);
+        } else {
+            merged.insert(key.clone(), value.clone());
+        }
+    }
+    Value::Object(merged)
+}
+
 impl Store {
     pub async fn model_draft(
         &self,
@@ -557,7 +593,7 @@ impl Store {
         let mut body = workspace_json(&row);
         let views = client
             .query(
-                "SELECT id, type_key, title, pane, position, state FROM views
+                "SELECT id, type_key, title, pane, position, state, updated_at FROM views
                  WHERE workspace_id = $1 AND deleted_at IS NULL ORDER BY pane, position",
                 &[&id],
             )
@@ -572,6 +608,7 @@ impl Store {
                     "pane": view.get::<_, String>("pane"),
                     "position": view.get::<_, i32>("position"),
                     "state": view.get::<_, Value>("state"),
+                    "updated_at": view.get::<_, DateTime<Utc>>("updated_at").to_rfc3339(),
                 })
             })
             .collect::<Vec<_>>();
@@ -716,12 +753,7 @@ impl Store {
                 // Compare in process. Casting the parameter to timestamptz makes
                 // Postgres expect a binary timestamp, and the text the client sent
                 // then fails to serialize.
-                let matches = expected_updated_at
-                    .as_deref()
-                    .and_then(|raw| DateTime::parse_from_rfc3339(raw).ok())
-                    .is_some_and(|stamp| {
-                        stamp.with_timezone(&Utc).timestamp_micros() == stored.timestamp_micros()
-                    });
+                let matches = same_updated_at(expected_updated_at.as_deref(), stored);
                 if !matches {
                     WorkspaceStateWrite::Stale
                 } else {
@@ -872,11 +904,11 @@ impl Store {
         let client = self.checkout().await?;
         client
             .execute(
-                "INSERT INTO views (id, workspace_id, type_key, title, pane, position, state)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7)
+                "INSERT INTO views (id, workspace_id, type_key, title, pane, position, state, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, now())
                  ON CONFLICT (id) DO UPDATE SET workspace_id = EXCLUDED.workspace_id,
                    title = EXCLUDED.title, pane = EXCLUDED.pane, position = EXCLUDED.position,
-                   state = EXCLUDED.state, type_key = EXCLUDED.type_key",
+                   state = EXCLUDED.state, type_key = EXCLUDED.type_key, updated_at = now()",
                 &[
                     &id,
                     &workspace_id,
@@ -889,6 +921,84 @@ impl Store {
             )
             .await?;
         Ok(())
+    }
+
+    /// Merge `patch` into the stored view state and bump `updated_at`.
+    ///
+    /// Absent `expected_updated_at` merges without a version check.
+    /// `Some(None)` means the client saw no row. A present timestamp must match
+    /// the stored clock; otherwise the write is [`ViewWrite::Stale`] and nothing changes.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn merge_view(
+        &self,
+        id: Uuid,
+        workspace_id: Uuid,
+        type_key: &str,
+        title: &str,
+        pane: &str,
+        position: i32,
+        patch: &Value,
+        expected_updated_at: Option<Option<String>>,
+    ) -> Result<ViewWrite, Error> {
+        let mut client = self.checkout().await?;
+        let tx = client.transaction().await?;
+        let mut expected = expected_updated_at;
+        let mut attempts = 0;
+        let write = loop {
+            attempts += 1;
+            if attempts > 2 {
+                break ViewWrite::Stale;
+            }
+            let current = tx
+                .query_opt(
+                    "SELECT state, updated_at FROM views WHERE id = $1 FOR UPDATE",
+                    &[&id],
+                )
+                .await?;
+            if let Some(row) = current {
+                break apply_view_merge(
+                    &tx,
+                    id,
+                    workspace_id,
+                    type_key,
+                    title,
+                    pane,
+                    position,
+                    patch,
+                    expected,
+                    &row,
+                )
+                .await?;
+            }
+            let initial = merge_view_state(&json!({}), patch);
+            let inserted = tx
+                .query_opt(
+                    "INSERT INTO views (id, workspace_id, type_key, title, pane, position, state, updated_at)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+                     ON CONFLICT (id) DO NOTHING
+                     RETURNING updated_at",
+                    &[
+                        &id,
+                        &workspace_id,
+                        &type_key,
+                        &title,
+                        &pane,
+                        &position,
+                        &initial,
+                    ],
+                )
+                .await?;
+            if let Some(row) = inserted {
+                break ViewWrite::Saved(row.get(0));
+            }
+            // The row appeared between the lock and the insert.
+            if expected.is_some() {
+                break ViewWrite::Stale;
+            }
+            expected = None;
+        };
+        tx.commit().await?;
+        Ok(write)
     }
 
     /// Stored view document, without the seed template.
@@ -908,7 +1018,7 @@ impl Store {
         let client = self.checkout().await?;
         client
             .execute(
-                "UPDATE views SET state = $2 WHERE id = $1 AND deleted_at IS NULL",
+                "UPDATE views SET state = $2, updated_at = now() WHERE id = $1 AND deleted_at IS NULL",
                 &[&id, state],
             )
             .await?;
@@ -2730,14 +2840,79 @@ fn job_json(row: &tokio_postgres::Row) -> Value {
     })
 }
 
+#[allow(clippy::too_many_arguments)]
+async fn apply_view_merge(
+    tx: &impl deadpool_postgres::GenericClient,
+    id: Uuid,
+    workspace_id: Uuid,
+    type_key: &str,
+    title: &str,
+    pane: &str,
+    position: i32,
+    patch: &Value,
+    expected_updated_at: Option<Option<String>>,
+    row: &tokio_postgres::Row,
+) -> Result<ViewWrite, Error> {
+    let stored_state: Value = row.get(0);
+    let stored_at: DateTime<Utc> = row.get(1);
+    if let Some(expected) = expected_updated_at
+        && !same_updated_at(expected.as_deref(), stored_at)
+    {
+        return Ok(ViewWrite::Stale);
+    }
+    let merged = merge_view_state(&stored_state, patch);
+    let updated = tx
+        .query_one(
+            "UPDATE views
+             SET workspace_id = $2, type_key = $3, title = $4, pane = $5, position = $6,
+                 state = $7, updated_at = now()
+             WHERE id = $1
+             RETURNING updated_at",
+            &[
+                &id,
+                &workspace_id,
+                &type_key,
+                &title,
+                &pane,
+                &position,
+                &merged,
+            ],
+        )
+        .await?;
+    Ok(ViewWrite::Saved(updated.get(0)))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::like_contains;
+    use chrono::{DateTime, Utc};
+    use serde_json::json;
+
+    use super::{like_contains, merge_view_state, same_updated_at};
 
     #[test]
     fn key_search_escapes_like_metacharacters() {
         assert_eq!(like_contains("tent"), "%tent%");
         assert_eq!(like_contains("100%_"), "%100\\%\\_%");
         assert_eq!(like_contains("a\\b"), "%a\\\\b%");
+    }
+
+    #[test]
+    fn view_state_merge_replaces_sent_keys_and_drops_null() {
+        let merged = merge_view_state(
+            &json!({"alpha": 1, "beta": {"n": 1}, "gamma": true}),
+            &json!({"beta": {"n": 2}, "gamma": null, "delta": 4}),
+        );
+        assert_eq!(merged, json!({"alpha": 1, "beta": {"n": 2}, "delta": 4}));
+    }
+
+    #[test]
+    fn updated_at_matches_by_microsecond() {
+        let stored = DateTime::parse_from_rfc3339("2026-11-26T10:00:00.123456Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        assert!(same_updated_at(Some("2026-11-26T10:00:00.123456Z"), stored));
+        assert!(!same_updated_at(None, stored));
+        assert!(!same_updated_at(Some("not-a-timestamp"), stored));
+        assert!(!same_updated_at(Some("2026-11-26T10:00:00Z"), stored));
     }
 }

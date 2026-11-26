@@ -125,6 +125,7 @@ use utoipa::OpenApi;
         crate::http_schema::JsonValue,
         crate::http_schema::ModelStep,
         crate::http_schema::IdBody,
+        crate::http_schema::SavedView,
         crate::http_schema::SessionUser,
         crate::http_schema::CreatedToken,
         crate::http_schema::OperationInfo,

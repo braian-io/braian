@@ -3,9 +3,11 @@ import { flushSync } from 'react-dom'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { History as HistoryIcon, Trash2 } from 'lucide-react'
-import { api, catalogName, failureLines, freeObject, jsonRecord, recordNumber, recordTitle, searchQuery, textValue, type Json } from './api'
+import { ApiError, api, catalogName, failureLines, freeObject, jsonRecord, recordNumber, recordTitle, searchQuery, textValue, type Json } from './api'
 import { AutoResizeTextarea } from './auto-resize-textarea'
 import { messageFromErrorBody, reportWriteError, writeErrorMessage } from './write-error'
+import { acknowledgeWriteError } from './write-status'
+import { saveVersionedViewKeys, saveViewChange, viewStateRecord, type ViewState } from './view-state-save'
 import { catalogKeyOf, inCatalog, workspaceCatalogRef } from './catalog-scope'
 import { useCatalogIdToKey } from './catalog-list'
 import { CreateDialog, requireText, type CreateDialogField } from './create-dialog'
@@ -65,7 +67,7 @@ import { EMPTY_CELL } from './fields/qualifiers'
 import { columnPrefsHasOverride, fetchColumnPrefs, isHopPath, orderHiddenToDocument, ensureSystemColumns,
   prefsToOrderHidden, saveColumnPrefsKeepalive, type ColumnPrefsDocument, type SystemViewColumn } from './column-prefs'
 import { columnPrefsMutationKey, columnPrefsQueryKey, resetColumnPrefs, useSaveColumnPrefs } from './column-prefs-mutation'
-import { createTablePrefsSaver, type TablePrefsSnapshot } from './table-prefs-save'
+import { createTablePrefsSaver, tablePrefsBody, type TablePrefsSnapshot } from './table-prefs-save'
 import { readPathFromDoc, summarizePathValues } from './path-cell'
 import { cellPathValues, fetchPathValues } from './path-values'
 import { applyObjectWrite, currentSearchWaitSeq, reconcileObjectWrite } from './object-write'
@@ -187,6 +189,7 @@ export type PanesView = {
   pane?: string
   position?: number
   state: Json
+  updated_at?: string | null
 }
 
 export type PanesWorkspace = {
@@ -369,17 +372,48 @@ export function ObjectTable({
     view,
     workspaceId: workspace.id,
     table: { sort, groupBy, sizes },
+    updatedAt: view.updated_at,
   })
   latestTableSave.current = {
     view,
     workspaceId: workspace.id,
     table: { sort, groupBy, sizes },
+    updatedAt: view.updated_at,
   }
   const tableSaver = useRef<ReturnType<typeof createTablePrefsSaver> | null>(null)
   if (!tableSaver.current) {
-    tableSaver.current = createTablePrefsSaver((body, signal) =>
-      api.post('/v1/views', { body, signal }),
-    )
+    tableSaver.current = createTablePrefsSaver(async (body, signal) => {
+      const post = (patch: ViewState, expected: string | null | undefined) =>
+        api.post('/v1/views', {
+          body: {
+            id: body.id,
+            workspace_id: body.workspace_id,
+            type: body.type,
+            title: body.title,
+            pane: body.pane,
+            position: body.position,
+            state: freeObject(patch),
+            ...(expected !== undefined ? { expected_updated_at: expected } : {}),
+          },
+          signal,
+        })
+      if (body.expected_updated_at === undefined) return post(viewStateRecord(body.state), undefined)
+      return saveVersionedViewKeys({
+        baseUpdatedAt: body.expected_updated_at,
+        pending: viewStateRecord(body.state),
+        latestPending: () => viewStateRecord(tablePrefsBody(latestTableSave.current).state),
+        post,
+        refetch: async () => {
+          const snapshot = latestTableSave.current
+          const fresh = await api.get('/v1/workspaces/{id}', { params: { path: { id: snapshot.workspaceId } } })
+          const found = fresh.views?.find((item) => item.id === snapshot.view.id)
+          if (found?.updated_at) latestTableSave.current = { ...latestTableSave.current, updatedAt: found.updated_at }
+          return { state: viewStateRecord(found?.state), updated_at: found?.updated_at ?? null }
+        },
+        isConflict: (error) => error instanceof ApiError && error.status === 409,
+        onConflict: () => acknowledgeWriteError(409),
+      })
+    })
   }
 
   useEffect(() => {
@@ -555,15 +589,6 @@ export function ObjectTable({
     if (!explicitAll || workspace.locked) return
     const prevState = view.state
     const nextState = clearExplicitAllSource(view.state)
-    const body = {
-      id: view.id,
-      workspace_id: workspace.id,
-      type: view.type,
-      title: view.title,
-      pane: view.pane ?? 'center',
-      position: view.position ?? 0,
-      state: freeObject(nextState),
-    }
     const surface = queryClient.getQueryData<Json>(['workspace', workspace.id])
     if (surface && typeof surface === 'object' && !Array.isArray(surface)) {
       const views = (surface.views as Json[] | undefined) ?? []
@@ -573,7 +598,36 @@ export function ObjectTable({
       })
     }
     try {
-      await api.post('/v1/views', { body })
+      await saveViewChange({
+        id: view.id,
+        workspaceId: workspace.id,
+        type: view.type,
+        title: view.title,
+        pane: view.pane ?? 'center',
+        position: view.position ?? 0,
+        baseState: viewStateRecord(prevState),
+        nextState: viewStateRecord(nextState),
+        updatedAt: view.updated_at,
+        post: (body) => api.post('/v1/views', {
+          body: {
+            id: body.id,
+            workspace_id: body.workspace_id,
+            type: body.type,
+            title: body.title,
+            pane: body.pane,
+            position: body.position,
+            state: freeObject(body.state),
+            ...(body.expected_updated_at !== undefined ? { expected_updated_at: body.expected_updated_at } : {}),
+          },
+        }),
+        refetch: async () => {
+          const fresh = await api.get('/v1/workspaces/{id}', { params: { path: { id: workspace.id } } })
+          const found = fresh.views?.find((item) => item.id === view.id)
+          return { state: viewStateRecord(found?.state), updated_at: found?.updated_at ?? null }
+        },
+        isConflict: (error) => error instanceof ApiError && error.status === 409,
+        onConflict: () => acknowledgeWriteError(409),
+      })
     } catch (reason) {
       if (surface && typeof surface === 'object' && !Array.isArray(surface)) {
         const views = (surface.views as Json[] | undefined) ?? []

@@ -1670,7 +1670,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Create or update a view, including table state */
+        /** Create or update a view. State merges per top-level key. */
         post: operations["save_view"];
         delete?: never;
         options?: never;
@@ -3104,6 +3104,13 @@ export interface components {
             type: string;
             updated_at: string;
         };
+        /** @description `POST /v1/views` receipt. `updated_at` is the clock the next write must send back. */
+        SavedView: {
+            /** Format: uuid */
+            id: string;
+            /** @description RFC3339 time of this save. Send it back as `expected_updated_at`. */
+            updated_at: string;
+        };
         SearchGroup: {
             /** Format: int32 */
             found: number;
@@ -3333,6 +3340,12 @@ export interface components {
             };
         };
         ViewBody: {
+            /**
+             * @description RFC3339 `updated_at` this edit was based on.
+             *     JSON `null` means the client saw no saved view.
+             *     Omit the field to merge per key without a version check.
+             */
+            expected_updated_at?: string | null;
             /** Format: uuid */
             id?: string | null;
             pane?: string | null;
@@ -3418,6 +3431,8 @@ export interface components {
             state: components["schemas"]["FreeObject"];
             title: string;
             type: string;
+            /** @description RFC3339 time of the last saved view state. */
+            updated_at: string;
         };
     };
     responses: never;
@@ -8051,17 +8066,26 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Saved view id */
+            /** @description Saved view id and updated_at */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["IdBody"];
+                    "application/json": components["schemas"]["SavedView"];
                 };
             };
             /** @description Missing or unknown token */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The view changed since expected_updated_at */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
