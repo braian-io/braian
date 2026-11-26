@@ -8,7 +8,7 @@ export const GUIDE_PAGES = [
     path: '/docs/',
     title: 'Braian guide',
     nav: 'Overview',
-    description: 'A user guide to the Braian web app: getting started, workspaces, object types, data sources, graph, deleting and shortcuts.',
+    description: 'A user guide to the Braian web app: workspaces, the data model, sources, selections, the agent, graph and Trash.',
   },
   {
     source: 'getting-started.md',
@@ -24,7 +24,7 @@ export const GUIDE_PAGES = [
     path: '/docs/workspaces-and-panels/',
     title: 'Workspaces and panels',
     nav: 'Workspaces and panels',
-    description: 'Switch workspaces, arrange panes and view tabs, and save the layout in Braian.',
+    description: 'Switch workspaces, arrange panes, choose fields, and save with one Save bar in Braian.',
   },
   {
     source: 'object-types-and-relations.md',
@@ -32,7 +32,7 @@ export const GUIDE_PAGES = [
     path: '/docs/object-types-and-relations/',
     title: 'Object types and relations',
     nav: 'Object types and relations',
-    description: 'Build structures, object types, attributes, and link types in Braian.',
+    description: 'Build object types, attributes, value lists, units and link types in Braian.',
   },
   {
     source: 'data-sources.md',
@@ -53,10 +53,10 @@ export const GUIDE_PAGES = [
   {
     source: 'agent-chat.md',
     slug: 'agent-chat',
-    path: '/docs/agent-chat',
+    path: '/docs/agent-chat/',
     title: 'Agent chat',
     nav: 'Agent chat',
-    description: 'Open the docked agent chat with Ctrl+J, follow up in one session, and review drafts in the table.',
+    description: 'Open the docked agent pane with Ctrl+J, follow up in one session, and save drafts from one Save bar.',
   },
   {
     source: 'deleting-and-restore.md',
@@ -64,7 +64,7 @@ export const GUIDE_PAGES = [
     path: '/docs/deleting-and-restore/',
     title: 'Deleting and restore',
     nav: 'Deleting and restore',
-    description: 'Delete objects from four entry points, confirm the counts, and restore from Trash in Braian.',
+    description: 'Delete objects from four entry points, confirm the counts, restore from Trash, or delete permanently.',
   },
   {
     source: 'graph.md',
@@ -72,7 +72,7 @@ export const GUIDE_PAGES = [
     path: '/docs/graph/',
     title: 'Graph',
     nav: 'Graph',
-    description: 'Read the Braian object graph and model graph: pinning, fit, re-layout, node menus and the camera.',
+    description: 'Read the Braian object graph and model graph: pinning, fit, re-layout, labels and the camera.',
   },
   {
     source: 'feedback.md',

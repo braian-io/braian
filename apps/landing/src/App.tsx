@@ -301,7 +301,7 @@ function Architecture() {
       />
       <figure className="sheet flow" aria-labelledby="architecture-title">
         <p className="sr-only">
-          The UI, the agent in Ctrl+K, the API and MCP clients write through one shared operation
+          The UI, the agent, the API and MCP clients write through one shared operation
           registry into Postgres, which holds the object model and the change log. The indexer
           leases interactive and bulk lanes from that log and imports into Typesense. Search loops
           back to the UI. LISTEN on braian_changes drives live updates over server-sent events to

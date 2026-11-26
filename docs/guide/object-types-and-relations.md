@@ -135,8 +135,10 @@ silently.
 
 Language tags are stored as given: `sv` and `sv-SE` are different values. Value lists
 have stable option codes with labels per language. A unit belongs to a unit family
-with a base unit and a factor; the stored number keeps the entered unit, and the index
-normalizes to the base unit for filters and sorting.
+with a base unit. Conversion is an affine map, `base = value * factor + offset`, so a
+family can be a simple factor (length, mass) or temperature (Celsius, Fahrenheit,
+Kelvin). The stored number keeps the entered unit, and the index normalizes to the
+base unit for filters and sorting.
 
 ## Relations
 

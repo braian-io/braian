@@ -76,7 +76,7 @@ closes when any agent view is open (wherever focus is), or reopens the last sess
 focuses the follow-up box. With no prior session it opens the palette in Ask AI mode.
 
 Inside an **open** command palette, `Ctrl+J` asks the agent with the current query
-instead of toggling the dock. See [Agent chat](/docs/agent-chat) for follow-up keys:
+instead of toggling the dock. See [Agent chat](/docs/agent-chat/) for follow-up keys:
 `Enter` sends, `Shift+Enter` adds a line, and `Esc` in the follow-up box returns focus
 to the pane on the left without clearing your draft.
 

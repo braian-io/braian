@@ -72,5 +72,5 @@ object.
 
 ## Related
 
-- [Object types and relations](/docs/object-types-and-relations)
-- [Command palette and shortcuts](/docs/command-palette-and-shortcuts)
+- [Object types and relations](/docs/object-types-and-relations/)
+- [Command palette and shortcuts](/docs/command-palette-and-shortcuts/)
