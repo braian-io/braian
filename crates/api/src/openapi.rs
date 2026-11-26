@@ -242,6 +242,7 @@ use utoipa::OpenApi;
         crate::import::RemapBody,
         crate::import::ApplySavedBody,
         crate::import::ColumnBody,
+        crate::model_draft::CommitBody,
         crate::model_draft::DraftBody,
         crate::model_draft::SaveBody,
         crate::feedback::FeedbackBody,

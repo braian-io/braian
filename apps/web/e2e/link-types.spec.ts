@@ -28,15 +28,6 @@ async function command(page: Page, title: string) {
   await page.keyboard.press('Enter')
 }
 
-async function saveModelDraft(page: Page) {
-  await page.keyboard.press('Control+S')
-  const review = page.getByTestId('review-dialog')
-  if (await review.isVisible()) {
-    await page.getByTestId('confirm-review').click()
-  }
-  await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
-}
-
 async function ensureNoteAttribute(page: Page) {
   const defs = (await (await page.request.get('/v1/definitions')).json()) as { attributes?: Array<{ key?: string }> }
   if (defs.attributes?.some((item) => item.key === 'note')) return
@@ -76,10 +67,10 @@ test('pairs with links two cheeses from the keyboard and the link type can be de
   await page.getByTestId('link-type-from-label').fill('Pairs with')
   await page.getByTestId('link-type-to-label').fill('Pairs with')
   await page.getByTestId('model-dialog-save').click()
-  await expect(page.getByTestId('unsaved-changes')).toBeVisible()
-  await page.keyboard.press('Control+S')
-  await expect(page.getByTestId('review-dialog')).toHaveCount(0)
+  await expect(page.getByTestId('model-dialog')).toHaveCount(0)
   await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
+  await expect(page.getByTestId('review-dialog')).toHaveCount(0)
+  await expect(page.getByTestId('review-loading')).toHaveCount(0)
   const linkTypeRow = page.getByTestId('link-types-table').locator('[data-row-id="pairs_with"]')
   await page.locator('.pane-tab', { hasText: 'Link types' }).first().click()
   await expect(linkTypeRow).toBeVisible()
@@ -92,7 +83,8 @@ test('pairs with links two cheeses from the keyboard and the link type can be de
   await create.getByTestId('new-name').fill('Note')
   await create.getByTestId('create-object').click()
   await expect(attributes.locator('[data-key="note"]')).toBeVisible()
-  await saveModelDraft(page)
+  await expect(attributes.getByTestId('review-and-save')).toHaveCount(0)
+  await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
 
   const productsTab = page.locator('nav.tabs').getByRole('button', { name: /^Products/ })
   await productsTab.click()

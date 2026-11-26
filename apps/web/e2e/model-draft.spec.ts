@@ -59,12 +59,16 @@ test('a type is built in a draft, saved, and deleted from the keyboard', async (
   await command(page, 'New type')
   await page.getByTestId('model-dialog-name').fill('Recipe')
   await page.getByTestId('model-dialog-save').click()
-  await expect(page.getByTestId('unsaved-changes')).toBeVisible()
+  await expect(page.getByTestId('model-dialog')).toHaveCount(0)
+  await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
+  await expect(page.getByTestId('review-dialog')).toHaveCount(0)
 
   await command(page, 'New value list')
   await page.getByTestId('model-dialog-name').fill('Difficulty')
   await page.getByTestId('model-dialog-options').fill('Easy, Hard')
   await page.getByTestId('model-dialog-save').click()
+  await expect(page.getByTestId('model-dialog')).toHaveCount(0)
+  await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
 
   const { attributes } = await openTypeAttributes(page, 'recipe')
 
@@ -99,12 +103,9 @@ test('a type is built in a draft, saved, and deleted from the keyboard', async (
   await maxEditor.press('Enter')
   await expect(servings.locator('[data-column="max"]')).toContainText('12')
 
-  await expect(page.getByTestId('unsaved-changes')).toContainText('unsaved')
-  const saved = page.waitForResponse((response) =>
-    response.url().includes('/v1/model/draft/save') && response.request().method() === 'POST')
-  await attributes.getByTestId('review-and-save').click()
-  expect((await saved).ok()).toBeTruthy()
+  await expect(attributes.getByTestId('review-and-save')).toHaveCount(0)
   await expect(page.getByTestId('review-dialog')).toHaveCount(0)
+  await expect(page.getByTestId('review-loading')).toHaveCount(0)
   await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
 
   const types = await openObjectTypes(page)

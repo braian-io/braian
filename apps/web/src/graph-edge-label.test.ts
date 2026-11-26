@@ -94,6 +94,16 @@ describe('edge label placement', () => {
     expect(covered).toBe(false)
   })
 
+  it('finds a clear slot past a cluster when the short search is blocked', () => {
+    const nodes: EdgeLabelNode[] = []
+    for (let x = 40; x <= 180; x += 16) {
+      for (let y = -72; y <= 72; y += 16) nodes.push({ x, y, radius: 12 })
+    }
+    const point = placeEdgeLabel(from, control, to, size, nodes, [], [], 12)
+    const box = labelBox(point)
+    for (const node of nodes) expect(distanceToBox(node, box)).toBeGreaterThanOrEqual(node.radius)
+  })
+
   it('moves away from a node caption covering the default mid', () => {
     const defaultPoint = curvePoint(from, control, to, 0.68)
     const caption = { x: defaultPoint.x - 40, y: defaultPoint.y - 8, width: 80, height: 16 }
@@ -131,7 +141,7 @@ describe('edge label placement', () => {
     // Covers every candidate, including the further offsets added so a dense
     // cluster can still step clear. A gap here would make the aside slot legal.
     for (let x = -160; x <= 360; x += 4) {
-      for (let y = -180; y <= 180; y += 4) nodes.push({ x, y, radius: 2 })
+      for (let y = -280; y <= 280; y += 4) nodes.push({ x, y, radius: 2 })
     }
     const placement = placeEdgeLabelWithFallback({
       from,

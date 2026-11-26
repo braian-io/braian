@@ -37,17 +37,15 @@ test('deleting a new object type removes its workspace tab immediately and after
     await create.getByTestId('new-name').fill(singular)
     await create.getByTestId('new-plural').fill(plural)
     await create.getByTestId('new-key').fill(key)
-    await create.getByTestId('create-object').click()
-    await expect(create).toHaveCount(0)
-    await expect(page.getByTestId('unsaved-changes')).toBeVisible()
-
-    const saved = page.waitForResponse(
-      (response) => response.url().includes('/v1/model/draft/save') && response.request().method() === 'POST',
+    const created = page.waitForResponse(
+      (response) => response.url().includes('/v1/model/commit') && response.request().method() === 'POST',
     )
-    await page.getByTestId('review-save').click()
-    expect((await saved).ok()).toBeTruthy()
-    await expect(page.getByTestId('review-dialog')).toHaveCount(0)
+    await create.getByTestId('create-object').click()
+    expect((await created).ok()).toBeTruthy()
+    await expect(create).toHaveCount(0)
     await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
+    await expect(page.getByTestId('review-dialog')).toHaveCount(0)
+    await expect(page.getByTestId('review-and-save')).toHaveCount(0)
 
     const workspaceTab = page.locator('nav.tabs').getByRole('button', { name: new RegExp(`^${plural}`) })
     await expect(workspaceTab).toBeVisible({ timeout: 60_000 })

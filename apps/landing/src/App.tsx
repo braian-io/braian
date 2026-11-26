@@ -42,6 +42,14 @@ export function App() {
               </a>
             ))}
           </nav>
+          <nav className="section-nav section-nav-mobile" aria-label="Sections">
+            <a className="nav-link" href="#top">
+              Home
+            </a>
+            <a className="nav-link" href={docsUrl}>
+              Docs
+            </a>
+          </nav>
           <div className="spacer" />
           <Button type="button" variant="ghost" className="theme-toggle" data-theme-toggle aria-label="Switch color theme">
             <span className="when-dark">Light</span>
@@ -191,7 +199,7 @@ function Agent() {
       <div className="agent-board">
         <figure className="agent-stage">
           <AgentPanel />
-          <figcaption className="caption">Demo catalog</figcaption>
+          <figcaption className="caption">Illustration: agent session</figcaption>
         </figure>
         <DisclosureList items={agent.points} idPrefix="agent" columns="side" />
       </div>
@@ -293,7 +301,7 @@ function Architecture() {
       />
       <figure className="sheet flow" aria-labelledby="architecture-title">
         <p className="sr-only">
-          The UI, the agent in Ctrl+K, the API and MCP clients write through one shared operation
+          The UI, the agent, the API and MCP clients write through one shared operation
           registry into Postgres, which holds the object model and the change log. The indexer
           leases interactive and bulk lanes from that log and imports into Typesense. Search loops
           back to the UI. LISTEN on braian_changes drives live updates over server-sent events to

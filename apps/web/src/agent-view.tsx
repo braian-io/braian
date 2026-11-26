@@ -83,6 +83,14 @@ function statusLabel(status: string): string {
   return agentStatusLabel(status, 'tab')
 }
 
+function proposalLinkLabel(proposal: AgentProposal | undefined): string {
+  if (!proposal) return ''
+  const patch = proposal.patch
+  const op = patch && typeof patch === 'object' && 'op' in patch ? String(patch.op) : ''
+  if ((op === 'add_members' || op === 'remove_members') && proposal.title.trim()) return proposal.title
+  return proposal.object_key || ''
+}
+
 function proposalForMessage(message: AgentMessage, proposals: AgentProposal[]): AgentProposal | undefined {
   const id = message.body.proposal_id
   if (!id) return undefined
@@ -138,7 +146,7 @@ function chatLines(data: AgentRunDetail): Array<{ key: string; kind: string; nod
         message.body.proposal_id ? proposalsById.get(message.body.proposal_id) : undefined
       )
       const hint = String(message.body.text ?? '').trim()
-      const objectLabel = proposal?.object_key || copy.openDraftInTable
+      const objectLabel = proposalLinkLabel(proposal) || copy.openDraftInTable
       lines.push({
         key: message.id,
         kind: 'proposal',

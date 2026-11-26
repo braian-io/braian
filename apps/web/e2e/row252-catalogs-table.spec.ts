@@ -34,29 +34,17 @@ async function expectInCatalogPicker(page: Page, label: string) {
   await expect(page.getByTestId('catalog-selector-menu')).toHaveCount(0)
 }
 
-async function saveDraft(page: Page, table: ReturnType<Page['getByTestId']>) {
-  const tableSave = table.getByTestId('review-and-save')
-  if (await tableSave.isVisible().catch(() => false)) {
-    await tableSave.click()
-  } else {
-    const barSave = page.getByTestId('review-save')
-    await expect(barSave).toBeVisible({ timeout: 30_000 })
-    await barSave.click()
-  }
-  const dialog = page.getByTestId('review-dialog')
-  if (await dialog.count()) {
-    await dialog.getByTestId('confirm-review').click()
-    await expect(dialog).toHaveCount(0)
-  }
-  await expect(page.getByTestId('unsaved-changes')).toHaveCount(0, { timeout: 60_000 })
-}
-
 async function editCell(page: Page, table: Locator, row: Locator, columnId: 'key' | 'name', value: string) {
   await row.locator(`[data-column="${columnId}"]`).dblclick()
   const editor = table.getByTestId('standard-cell-editor')
   await expect(editor).toBeVisible()
   await editor.fill(value)
+  const saved = page.waitForResponse((response) =>
+    response.url().includes('/v1/model/commit') && response.request().method() === 'POST')
   await page.keyboard.press('Enter')
+  expect((await saved).ok()).toBeTruthy()
+  await expect(table.getByTestId('review-and-save')).toHaveCount(0)
+  await expect(page.getByTestId('review-dialog')).toHaveCount(0)
 }
 
 async function deleteCatalog(page: Page, key: string) {
@@ -87,7 +75,6 @@ test('catalogs table creates, renames and deletes a source catalog', async ({ pa
     await command(page, 'Rename catalog')
     await editCell(page, table, row, 'name', createdName)
 
-    await saveDraft(page, table)
     await expect.poll(async () => {
       const catalogs = (await (await page.request.get('/v1/catalogs')).json()) as Array<{ key?: string }>
       return catalogs.some((entry) => entry.key === key)
@@ -98,7 +85,6 @@ test('catalogs table creates, renames and deletes a source catalog', async ({ pa
     await row.click()
     await command(page, 'Rename catalog')
     await editCell(page, table, row, 'name', renamed)
-    await saveDraft(page, table)
     await expect(row).toContainText(renamed)
     await expectInCatalogPicker(page, renamed)
 

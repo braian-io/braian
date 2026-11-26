@@ -422,6 +422,29 @@ async fn execute_run(state: &AppState, identity: &Identity, run_id: Uuid) -> Res
             .map_err(|error| error.to_string())?;
         return Ok(());
     }
+    // A structured membership sentence is resolved here when no model is
+    // connected, through the same proposal the membership tools file.
+    if model_unavailable()
+        && let Some(request) = parse_member_request(&prompt)
+    {
+        file_member_request(state, identity, run_id, request)
+            .await
+            .map_err(|problem| problem.detail)?;
+        if !state
+            .store
+            .agent_run_is_working(run_id)
+            .await
+            .map_err(|error| error.to_string())?
+        {
+            return Ok(());
+        }
+        state
+            .store
+            .finish_agent_run_if_working(run_id, "done", None)
+            .await
+            .map_err(|error| error.to_string())?;
+        return Ok(());
+    }
     // An unambiguous catalog rename is resolved here, with or without a model.
     // The same patch_object proposal path files it. A name that matches no
     // object is conclusive only when no model is connected; otherwise the
@@ -1606,6 +1629,98 @@ fn model_messages(stored: &[braian_store::AgentMessageRow]) -> Vec<Value> {
         .collect()
 }
 
+struct MemberRequest {
+    add: bool,
+    selection: Uuid,
+    object_ids: Vec<Uuid>,
+}
+
+/// `add <uuid>[,<uuid>...] to selection <uuid>` or the remove form.
+/// Only the exact sentence is handled, so a real model still sees ordinary language.
+fn parse_member_request(prompt: &str) -> Option<MemberRequest> {
+    let lower = prompt.trim().to_lowercase();
+    let (add, rest) = if let Some(rest) = lower.strip_prefix("add ") {
+        (true, rest)
+    } else if let Some(rest) = lower.strip_prefix("remove ") {
+        (false, rest)
+    } else {
+        return None;
+    };
+    let marker = if add {
+        " to selection "
+    } else {
+        " from selection "
+    };
+    let (ids_part, selection_part) = rest.split_once(marker)?;
+    if ids_part.is_empty() || selection_part.is_empty() {
+        return None;
+    }
+    let selection = Uuid::parse_str(selection_part.trim()).ok()?;
+    let mut object_ids = Vec::new();
+    for part in ids_part.split(',') {
+        let id = Uuid::parse_str(part.trim()).ok()?;
+        if !object_ids.contains(&id) {
+            object_ids.push(id);
+        }
+    }
+    if object_ids.is_empty() {
+        return None;
+    }
+    Some(MemberRequest {
+        add,
+        selection,
+        object_ids,
+    })
+}
+
+async fn file_member_request(
+    state: &AppState,
+    identity: &Identity,
+    run_id: Uuid,
+    request: MemberRequest,
+) -> Result<(), Problem> {
+    let name = if request.add {
+        "assortment.add_members"
+    } else {
+        "assortment.remove_members"
+    };
+    let result = run_operation(
+        state,
+        identity,
+        name,
+        &json!({
+            "id": request.selection,
+            "object_ids": request.object_ids,
+        }),
+        true,
+    )
+    .await?;
+    let Some(proposal_id) = result
+        .get("proposal_id")
+        .and_then(Value::as_str)
+        .and_then(|text| Uuid::parse_str(text).ok())
+    else {
+        say(
+            state,
+            run_id,
+            "I could not file the proposal. I did not change the selection.",
+        )
+        .await?;
+        return Ok(());
+    };
+    state
+        .store
+        .attach_proposal_to_run(proposal_id, run_id)
+        .await
+        .map_err(store_status)?;
+    state
+        .store
+        .append_agent_message(run_id, "proposal", &json!({ "proposal_id": proposal_id }))
+        .await
+        .map_err(store_status)?;
+    Ok(())
+}
+
 fn selection_target(context: &Value) -> Option<(Uuid, String, Option<i64>)> {
     let item = context.get("selection")?.as_array()?.first()?;
     let id = Uuid::parse_str(item.get("id")?.as_str()?).ok()?;
@@ -1835,10 +1950,28 @@ fn display_value(value: &Value) -> String {
 #[cfg(test)]
 mod session_tests {
     use super::{
-        display_title_fallback, parse_rename, rename_target, session_choice, session_document,
-        unmatched_name_reaches_the_model,
+        display_title_fallback, parse_member_request, parse_rename, rename_target, session_choice,
+        session_document, unmatched_name_reaches_the_model,
     };
     use serde_json::json;
+
+    #[test]
+    fn a_membership_sentence_names_the_selection_and_the_products() {
+        let selection = "018f1000-0000-7000-8000-0000000000aa";
+        let first = "018f1000-0000-7000-8000-0000000000bb";
+        let second = "018f1000-0000-7000-8000-0000000000cc";
+        let add = parse_member_request(&format!("Add {first}, {second} to selection {selection}"))
+            .expect("add");
+        assert!(add.add);
+        assert_eq!(add.selection.to_string(), selection);
+        assert_eq!(add.object_ids.len(), 2);
+        let remove = parse_member_request(&format!("remove {first} from selection {selection}"))
+            .expect("remove");
+        assert!(!remove.add);
+        assert_eq!(remove.object_ids.len(), 1);
+        assert!(parse_member_request("add the cheese to the summer selection").is_none());
+        assert!(parse_member_request("rename Cheddar to Blue").is_none());
+    }
 
     #[test]
     fn a_direct_rename_names_the_new_value_without_a_question() {

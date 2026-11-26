@@ -870,6 +870,20 @@ fn registry() -> &'static [Operation] {
             params: &[],
         },
         Operation {
+            name: "assortment.add_members",
+            title: "Add objects to a selection",
+            permission: Role::Editor,
+            needs_approval: true,
+            params: &[],
+        },
+        Operation {
+            name: "assortment.remove_members",
+            title: "Remove objects from a selection",
+            permission: Role::Editor,
+            needs_approval: true,
+            params: &[],
+        },
+        Operation {
             name: "model.set_parent",
             title: "Set group parent",
             permission: Role::Editor,
@@ -1179,7 +1193,9 @@ fn exposed_to_agent(op: &Operation) -> bool {
 /// True when the operation removes data or a definition that data hangs on.
 pub(crate) fn operation_deletes(name: &str) -> bool {
     // A personal column-prefs reset only drops the caller's own UI state.
-    if name == "delete_view_column_prefs" {
+    // Removing a product from a manual selection files a proposal. The product
+    // and the selection stay.
+    if name == "delete_view_column_prefs" || name == "assortment.remove_members" {
         return false;
     }
     name.split(['.', '_'])
@@ -2192,6 +2208,7 @@ fn agent_system_prompt(context: &Value, _latest: &str) -> String {
         serde_json::to_string(&compact_ui_context(context)).unwrap_or_else(|_| "{}".to_owned());
     format!(
         "You are the Braian agent. You always act for the signed-in person. Write changes must become proposals, not direct writes. \
+To add or remove products in a manual selection, call assortment_add_members or assortment_remove_members with the selection id and object_ids. That files a proposal. Do not refuse the change and do not apply it yourself. \
 Answer in the same language as the person's latest message, whatever it is. Never refuse or stall because of language. \
 For a clear edit, such as renaming the selected object, call propose_change immediately with the fields to change. Put a display name in values.name as a language map in the data language from the snapshot, unless the person names another language. Do not change number, key, or id unless the person asked to change that identifier. Proposals are already approved in the UI, so never ask whether you should create one or wait for permission. \
 Call ask_person only when a real decision is missing, such as which of several ambiguous fields to use. Do not guess and do not use it to confirm an obvious action. \
@@ -3958,13 +3975,19 @@ async fn load_manual_selection(state: &AppState, id: Uuid) -> Result<Value, Prob
     Ok(row)
 }
 
+struct ChosenMembers {
+    ids: Vec<Uuid>,
+    /// Display name, then the business key when it differs. Request order.
+    labels: Vec<String>,
+}
+
 /// Keeps the first occurrence of each id and rejects anything that is missing,
 /// deleted, or a different type than the selection.
 async fn live_member_ids(
     state: &AppState,
     type_id: Uuid,
     object_ids: &[Uuid],
-) -> Result<Vec<Uuid>, Problem> {
+) -> Result<ChosenMembers, Problem> {
     if object_ids.is_empty() {
         return Err(choose_objects());
     }
@@ -3987,7 +4010,8 @@ async fn live_member_ids(
             "object not found",
         ));
     }
-    for object in &stored {
+    let mut by_id = BTreeMap::new();
+    for object in stored {
         if object.deleted_at.is_some() {
             return Err(Problem::new(
                 StatusCode::UNPROCESSABLE_ENTITY,
@@ -4002,8 +4026,107 @@ async fn live_member_ids(
                 "an object must belong to the selection's type",
             ));
         }
+        by_id.insert(object.object.id.as_uuid(), object);
     }
-    Ok(unique)
+    let cached = state.models.get(&state.store).await.ok();
+    let mut labels = Vec::with_capacity(unique.len());
+    for id in &unique {
+        let Some(object) = by_id.get(id) else {
+            return Err(Problem::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "assortment",
+                "object not found",
+            ));
+        };
+        labels.push(match &cached {
+            Some(cached) => member_label(&cached.model, object),
+            None => member_label_fallback(object),
+        });
+    }
+    Ok(ChosenMembers {
+        ids: unique,
+        labels,
+    })
+}
+
+fn member_label(
+    model: &braian_rules::CompiledModel,
+    stored: &braian_store::StoredObject,
+) -> String {
+    let wire = values_to_wire(model, &[], &stored.object.values, true);
+    let name = wire.get("name").and_then(preferred_text);
+    member_label_from(name.as_deref(), &stored.key, stored.object.id.as_uuid())
+}
+
+fn member_label_fallback(stored: &braian_store::StoredObject) -> String {
+    member_label_from(None, &stored.key, stored.object.id.as_uuid())
+}
+
+fn member_label_from(name: Option<&str>, key: &str, id: Uuid) -> String {
+    let key = key.trim();
+    match (name.filter(|text| !text.is_empty()), key.is_empty()) {
+        (Some(name), false) if key != name => format!("{name} ({key})"),
+        (Some(name), _) => name.to_owned(),
+        (None, false) => key.to_owned(),
+        (None, true) => id.to_string(),
+    }
+}
+
+fn preferred_text(value: &Value) -> Option<String> {
+    if let Some(text) = value
+        .as_str()
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+    {
+        return Some(text.to_owned());
+    }
+    let map = value.as_object()?;
+    for key in ["en", "en-GB", "en-US", "sv", "de"] {
+        if let Some(text) = map
+            .get(key)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+        {
+            return Some(text.to_owned());
+        }
+    }
+    map.values().find_map(|item| {
+        item.as_str()
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+            .map(str::to_owned)
+    })
+}
+
+fn join_member_labels(labels: &[String]) -> String {
+    match labels {
+        [] => "the chosen products".to_owned(),
+        [one] => one.clone(),
+        [one, two] => format!("{one} and {two}"),
+        many => {
+            let last = many.last().map(String::as_str).unwrap_or("");
+            format!("{} and {last}", many[..many.len() - 1].join(", "))
+        }
+    }
+}
+
+fn selection_name(row: &Value) -> String {
+    row.get("name")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .unwrap_or("selection")
+        .to_owned()
+}
+
+fn member_change_title(add: bool, selection: &str, labels: &[String]) -> String {
+    let products = join_member_labels(labels);
+    if add {
+        format!("Add {products} to selection {selection}")
+    } else {
+        format!("Remove {products} from selection {selection}")
+    }
 }
 
 async fn member_ids_json(state: &AppState, id: Uuid) -> Result<Json<Value>, Problem> {
@@ -4023,26 +4146,8 @@ async fn add_assortment_members(
     Auth(identity): Auth,
     Path(id): Path<Uuid>,
     Json(body): Json<AssortmentMembersBody>,
-) -> Result<Json<Value>, Problem> {
-    require(&identity, Role::Editor)?;
-    crate::auth::require_commit(&identity)?;
-    let row = load_manual_selection(&state, id).await?;
-    let type_id = selection_type_id(&row)?;
-    let object_ids = live_member_ids(&state, type_id, &body.object_ids).await?;
-    state
-        .store
-        .add_assortment_members(id, &object_ids)
-        .await
-        .map_err(store_status)?;
-    let query = row.get("query").cloned().unwrap_or_else(|| json!({}));
-    if !is_hand_only(&query) {
-        state
-            .store
-            .update_assortment_query(id, &json!({ "hand": true }))
-            .await
-            .map_err(store_status)?;
-    }
-    member_ids_json(&state, id).await
+) -> Result<Response, Problem> {
+    change_assortment_members(&state, &identity, id, &body.object_ids, true).await
 }
 
 async fn remove_assortment_members(
@@ -4050,18 +4155,145 @@ async fn remove_assortment_members(
     Auth(identity): Auth,
     Path(id): Path<Uuid>,
     Json(body): Json<AssortmentMembersBody>,
-) -> Result<Json<Value>, Problem> {
-    require(&identity, Role::Editor)?;
-    crate::auth::require_commit(&identity)?;
-    let row = load_manual_selection(&state, id).await?;
+) -> Result<Response, Problem> {
+    change_assortment_members(&state, &identity, id, &body.object_ids, false).await
+}
+
+/// A person changes the selection immediately. An agent or import files the
+/// same proposal the agent tools use, and the selection stays as it is.
+async fn change_assortment_members(
+    state: &AppState,
+    identity: &Identity,
+    id: Uuid,
+    object_ids: &[Uuid],
+    add: bool,
+) -> Result<Response, Problem> {
+    require(identity, Role::Editor)?;
+    if !identity.may_commit() {
+        let filed = propose_assortment_members(state, identity, id, object_ids, add).await?;
+        return Ok((StatusCode::ACCEPTED, Json(filed)).into_response());
+    }
+    let row = load_manual_selection(state, id).await?;
     let type_id = selection_type_id(&row)?;
-    let object_ids = live_member_ids(&state, type_id, &body.object_ids).await?;
+    let chosen = live_member_ids(state, type_id, object_ids).await?;
+    if add {
+        state
+            .store
+            .add_assortment_members(id, &chosen.ids)
+            .await
+            .map_err(store_status)?;
+        let query = row.get("query").cloned().unwrap_or_else(|| json!({}));
+        if !is_hand_only(&query) {
+            state
+                .store
+                .update_assortment_query(id, &json!({ "hand": true }))
+                .await
+                .map_err(store_status)?;
+        }
+    } else {
+        state
+            .store
+            .remove_assortment_members(id, &chosen.ids)
+            .await
+            .map_err(store_status)?;
+    }
+    Ok(member_ids_json(state, id).await?.into_response())
+}
+
+fn member_object_ids(args: &Value) -> Result<Vec<Uuid>, Problem> {
+    let Some(value) = args.get("object_ids") else {
+        return Err(choose_objects());
+    };
+    let mut ids = Vec::new();
+    match value {
+        Value::Array(items) => {
+            for item in items {
+                let text = item.as_str().ok_or_else(|| {
+                    Problem::new(
+                        StatusCode::BAD_REQUEST,
+                        "assortment",
+                        "object_ids must be ids",
+                    )
+                })?;
+                ids.push(Uuid::parse_str(text).map_err(|_| {
+                    Problem::new(StatusCode::BAD_REQUEST, "invalid_id", text.to_owned())
+                })?);
+            }
+        }
+        Value::String(text) => {
+            ids.push(
+                Uuid::parse_str(text.trim()).map_err(|_| {
+                    Problem::new(StatusCode::BAD_REQUEST, "invalid_id", text.clone())
+                })?,
+            );
+        }
+        _ => {
+            return Err(Problem::new(
+                StatusCode::BAD_REQUEST,
+                "assortment",
+                "object_ids must be ids",
+            ));
+        }
+    }
+    if ids.is_empty() {
+        return Err(choose_objects());
+    }
+    Ok(ids)
+}
+
+/// Files one pending membership proposal. Nothing in the selection changes.
+async fn propose_assortment_members(
+    state: &AppState,
+    identity: &Identity,
+    id: Uuid,
+    object_ids: &[Uuid],
+    add: bool,
+) -> Result<Value, Problem> {
+    let row = load_manual_selection(state, id).await?;
+    let type_id = selection_type_id(&row)?;
+    let chosen = live_member_ids(state, type_id, object_ids).await?;
+    let name = selection_name(&row);
+    let title = member_change_title(add, &name, &chosen.labels);
+    let proposal_id = Uuid::now_v7();
+    let source = crate::auth::suggestion_source(identity.kind);
+    let proposal_row = ProposalRow {
+        id: Uuid::now_v7(),
+        object_id: None,
+        object_key: Some(title.clone()),
+        type_key: Some("assortment".into()),
+        base_version: None,
+        patch: json!({
+            "op": if add { "add_members" } else { "remove_members" },
+            "id": id,
+            "name": name,
+            "object_ids": chosen.ids,
+            "labels": chosen.labels,
+            "summary": title,
+        }),
+        status: "pending".into(),
+        conflict: false,
+        position: 0,
+    };
     state
         .store
-        .remove_assortment_members(id, &object_ids)
+        .create_proposal(
+            proposal_id,
+            &title,
+            source,
+            identity.actor.actor,
+            identity.actor.on_behalf_of,
+            false,
+            &[proposal_row],
+        )
         .await
         .map_err(store_status)?;
-    member_ids_json(&state, id).await
+    Ok(json!({
+        "proposal_id": proposal_id,
+        "id": proposal_id,
+        "needs_approval": true,
+        "source": source,
+        "title": title,
+    }))
 }
 
 async fn propose_assortment(
@@ -4255,6 +4487,9 @@ async fn apply_assortment_row(
 ) -> Result<Option<i64>, Problem> {
     let patch = row.get("patch").cloned().unwrap_or(json!({}));
     let op = patch.get("op").and_then(Value::as_str).unwrap_or("save");
+    if op == "add_members" || op == "remove_members" {
+        return apply_assortment_members(state, identity, proposal_id, row_id, &patch, claim).await;
+    }
     if op == "delete" {
         let id = patch
             .get("id")
@@ -4331,6 +4566,46 @@ async fn apply_assortment_row(
             name: name.to_owned(),
             kind: kind.to_owned(),
             query,
+        },
+        claim,
+    )
+    .await?;
+    Ok(receipt.map(|receipt| receipt.last_seq))
+}
+
+/// Accept writes the membership once. A second accept finds the row already
+/// decided and does not insert again. `ON CONFLICT DO NOTHING` covers a retry
+/// that reaches the insert.
+async fn apply_assortment_members(
+    state: &AppState,
+    identity: &Identity,
+    proposal_id: Uuid,
+    row_id: Uuid,
+    patch: &Value,
+    claim: Uuid,
+) -> Result<Option<i64>, Problem> {
+    let id = patch
+        .get("id")
+        .and_then(Value::as_str)
+        .and_then(|value| Uuid::parse_str(value).ok())
+        .ok_or_else(|| Problem::new(StatusCode::BAD_REQUEST, "assortment", "missing id"))?;
+    let add = patch.get("op").and_then(Value::as_str) != Some("remove_members");
+    let object_ids = member_object_ids(&json!({
+        "object_ids": patch.get("object_ids").cloned().unwrap_or(Value::Null)
+    }))?;
+    let row = load_manual_selection(state, id).await?;
+    let type_id = selection_type_id(&row)?;
+    let chosen = live_member_ids(state, type_id, &object_ids).await?;
+    let receipt = finish_row(
+        state,
+        identity,
+        proposal_id,
+        row_id,
+        "accepted",
+        ProposalWrite::AssortmentMembers {
+            id,
+            add,
+            object_ids: chosen.ids,
         },
         claim,
     )
@@ -7532,6 +7807,16 @@ async fn propose_operation(
         "assortment.save" => propose_assortment(state, identity, args).await,
         "assortment.update" => propose_assortment_update(state, identity, args).await,
         "assortment.delete" => propose_assortment_delete(state, identity, args).await,
+        "assortment.add_members" => {
+            let id = uuid_arg(args, "id")?;
+            let object_ids = member_object_ids(args)?;
+            propose_assortment_members(state, identity, id, &object_ids, true).await
+        }
+        "assortment.remove_members" => {
+            let id = uuid_arg(args, "id")?;
+            let object_ids = member_object_ids(args)?;
+            propose_assortment_members(state, identity, id, &object_ids, false).await
+        }
         "move_to_group" => {
             let structure = args.get("structure").and_then(Value::as_str).unwrap_or("");
             let group = args.get("group").cloned().unwrap_or(Value::Null);

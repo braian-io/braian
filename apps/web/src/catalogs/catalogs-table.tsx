@@ -6,6 +6,7 @@ import { selectedCatalogRow, setCatalogSelection } from '../catalog-selection'
 import { copy } from '../i18n'
 import { registerCommandRunner } from '../command-registry'
 import { onDraftChange, requestReview, stageModelSteps } from '../model-stage'
+import { commitModelSteps } from '../model-commit'
 import { publishProposal } from '../proposal-bus'
 import { reportWriteError } from '../write-error'
 import { StateNote } from '../states'
@@ -274,35 +275,23 @@ export function CatalogsTable() {
         })}
         editRequest={editRequest}
         onEditRequestHandled={() => setEditRequest(null)}
-        onReviewAndSave={async () => {
+        saveCell={async (row) => {
           setMessage(null)
-          const steps: Array<{ op: string } & Record<string, unknown>> = []
-          for (const row of Object.values(draftRows)) {
+          if (isNew(row)) {
+            const key = row.key.trim() || attributeKey(row.name)
+            if (!key) return
+            await commitModelSteps(queryClient, [upsertStep({ ...row, key, name: row.name.trim() || key })])
+          } else {
             const stored = rows.find((item) => item.id === row.id)
-            if (isNew(row)) {
-              const key = row.key.trim() || attributeKey(row.name)
-              if (!key) {
-                setMessage({ text: copy.validation, tone: 'error' })
-                return
-              }
-              steps.push(upsertStep({ ...row, key, name: row.name.trim() || key }))
-              continue
-            }
-            if (!stored) continue
-            if (row.key !== stored.key) {
-              setMessage({ text: copy.catalogKeyLocked, tone: 'error' })
-              return
-            }
-            steps.push(upsertStep(row))
+            if (!stored) return
+            if (row.key !== stored.key) throw new Error(copy.catalogKeyLocked)
+            await commitModelSteps(queryClient, [upsertStep(row)])
           }
-          if (steps.length === 0) return
-          try {
-            await stageModelSteps(steps)
-            setDraftRows({})
-            await requestReview()
-          } catch (reason: unknown) {
-            reportWriteError(reason)
-          }
+          setDraftRows((current) => {
+            const next = { ...current }
+            delete next[row.id]
+            return next
+          })
         }}
       />
     </div>

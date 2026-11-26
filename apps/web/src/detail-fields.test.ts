@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Json } from './api'
-import { splitDetailKeys } from './detail-fields'
+import { applicableDetailKeys, splitDetailKeys } from './detail-fields'
 
 const defs: Json = {
   attributes: [
@@ -21,5 +21,24 @@ describe('detail fields', () => {
     const { primaryKeys, moreKeys } = splitDetailKeys(defs, ['name', 'status'])
     expect(primaryKeys).toEqual(['name', 'status'])
     expect(moreKeys).toEqual([])
+  })
+
+  it('includes an ancestor group attribute that has no stored value', () => {
+    const model: Json = {
+      attributes: [
+        { id: 'name', key: 'name', labels: { en: 'Name' }, kind: { type: 'text' } },
+        { id: 'fat', key: 'fat_content', labels: { en: 'Fat content' }, kind: { type: 'number' } },
+      ],
+      types: [{ key: 'product', attributes: ['name'] }],
+      structures: [{
+        key: 'food',
+        groups: [
+          { id: 'dairy', key: 'dairy', attributes: ['fat'] },
+          { id: 'milk', key: 'milk', parent: 'dairy', attributes: [] },
+        ],
+        classes: [],
+      }],
+    }
+    expect(applicableDetailKeys(model, 'product', { food: 'milk' })).toEqual(['name', 'fat_content'])
   })
 })

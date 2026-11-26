@@ -53,6 +53,24 @@ pub struct SaveBody {
     pub confirm_name: Option<String>,
 }
 
+/// One model revision, applied immediately. Does not read or write the person's draft.
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct CommitBody {
+    /// Revision the edit was made against. A newer model is a conflict.
+    pub base_revision: u64,
+    #[serde(default)]
+    #[schema(value_type = Vec<crate::http_schema::ModelStep>)]
+    pub steps: Vec<ModelChange>,
+    /// Registry operation, converted the same way as a draft step.
+    #[serde(default)]
+    pub operation: Option<String>,
+    #[serde(default)]
+    #[schema(value_type = Option<crate::http_schema::FreeObject>)]
+    pub args: Option<Value>,
+    #[serde(default)]
+    pub confirm_name: Option<String>,
+}
+
 pub fn routes() -> axum::Router<AppState> {
     use axum::routing::{get, post};
     axum::Router::new()
@@ -60,6 +78,7 @@ pub fn routes() -> axum::Router<AppState> {
         .route("/v1/model/draft/steps", post(post_steps))
         .route("/v1/model/draft/rebase", post(rebase_draft))
         .route("/v1/model/draft/save", post(save_draft))
+        .route("/v1/model/commit", post(commit_model))
         .route(
             "/v1/value-lists",
             get(list_value_lists).post(post_value_list),
@@ -416,6 +435,46 @@ async fn save_draft(
             .await
             .map_err(store_status)?;
     }
+    Ok(Json(saved))
+}
+
+async fn commit_model(
+    State(state): State<AppState>,
+    Auth(identity): Auth,
+    Json(body): Json<CommitBody>,
+) -> Result<Json<Value>, Problem> {
+    let _user_id = require_person(&state, &identity).await?;
+    let current = state
+        .store
+        .model_revision()
+        .await
+        .map_err(store_status)?
+        .unwrap_or(0);
+    if body.base_revision != current {
+        return Err(conflict_problem(body.base_revision, current));
+    }
+    let mut steps = body.steps;
+    if let Some(name) = body.operation.as_deref() {
+        if name.contains("delete") {
+            return Err(Problem::new(
+                StatusCode::BAD_REQUEST,
+                "commit",
+                "delete from the dialog; it is not committed as a cell edit",
+            ));
+        }
+        let defs = state.store.definition_set().await.map_err(store_status)?;
+        let args = body.args.unwrap_or(Value::Null);
+        steps.extend(crate::model_proposal::changes_from(name, &args, &defs)?);
+    }
+    if steps.is_empty() {
+        return Err(Problem::new(
+            StatusCode::BAD_REQUEST,
+            "empty_commit",
+            "the commit has no steps",
+        ));
+    }
+    let actor = user_actor(&identity);
+    let saved = commit_steps(&state, &actor, &steps, false, body.confirm_name.as_deref()).await?;
     Ok(Json(saved))
 }
 

@@ -100,10 +100,14 @@ test('row307 new family from the unit dialog filters across an offset', async ({
   const editor = page.getByTestId('standard-cell-editor')
   await expect(editor).toBeVisible()
   await editor.fill('Fahrenheit scale')
+  const committed = page.waitForResponse((response) =>
+    response.url().includes('/v1/model/commit') && response.request().method() === 'POST')
   await editor.press('Enter')
-  await expect(table.getByTestId('review-and-save')).toBeVisible()
-  await table.getByTestId('review-and-save').click()
-  await expect(page.getByTestId('unsaved-changes')).toHaveCount(0, { timeout: 30_000 })
+  const response = await committed
+  expect(response.ok(), await response.text()).toBeTruthy()
+  await expect(table.getByTestId('review-and-save')).toHaveCount(0)
+  await expect(page.getByTestId('unsaved-changes')).toHaveCount(0)
+  await expect(fahrenheit.locator('[data-column="labels"]')).toContainText('Fahrenheit scale')
 
   const defsAfterUnits = (await (await page.request.get('/v1/definitions')).json()) as {
     unit_families?: Array<{ key?: string; units?: Array<{ code?: string; symbol?: string; labels?: { en?: string } }> }>

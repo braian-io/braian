@@ -2,8 +2,16 @@ import { attributeKey } from './model-view'
 import type { LinkTypeRow } from './link-type-view'
 
 function sideKeys(row: LinkTypeRow) {
-  const fromKey = attributeKey(row.fromLabel) || `${row.key}_from`
-  const toKey = attributeKey(row.toLabel) || `${row.key}_to`
+  const fallback = row.key.trim() || 'link'
+  let fromKey = attributeKey(row.fromLabel) || `${fallback}_from`
+  let toKey = attributeKey(row.toLabel) || `${fallback}_to`
+  // A name-only create copies the same label onto both sides. The server
+  // rejects a link type whose side keys are equal, so the keys have to differ
+  // even when the labels match.
+  if (fromKey.toLowerCase() === toKey.toLowerCase()) {
+    fromKey = `${fromKey}_from`
+    toKey = `${toKey}_to`
+  }
   return { fromKey, toKey }
 }
 

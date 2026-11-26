@@ -67,8 +67,14 @@ test.describe('type attributes draft patch persist (row 422)', () => {
     const brandSearchable = Boolean(brandBefore?.index?.searchable)
     const brandFilterable = Boolean(brandBefore?.index?.filterable)
 
+    const saved = page.waitForResponse((response) =>
+      response.url().includes('/v1/model/commit') && response.request().method() === 'POST')
     await table.locator('[data-key="brand"]').getByRole('checkbox', { name: 'Searchable' }).click()
-    await expect(table.getByTestId('review-and-save')).toBeVisible()
+    const commitBody = (await saved).request().postDataJSON() as { steps?: Array<Record<string, unknown>> }
+    const update = commitBody.steps?.find((step) => step.op === 'update_attribute' && step.key === 'brand')
+    expect(update?.searchable).toBe(!brandSearchable)
+    expect(update?.filterable).toBeUndefined()
+    await expect(table.getByTestId('review-and-save')).toHaveCount(0)
 
     await stageAndSave(page, [
       { op: 'update_attribute', key: 'brand', filterable: !brandFilterable },
@@ -77,18 +83,8 @@ test.describe('type attributes draft patch persist (row 422)', () => {
     await page.reload()
     await expect(page.getByTestId('workspace')).toBeVisible()
     const reloaded = await openTypeAttributes(page, 'product')
-    await expect(reloaded.getByTestId('review-and-save')).toBeVisible()
-
-    const staged = page.waitForResponse((response) =>
-      response.url().includes('/v1/model/draft/steps') && response.request().method() === 'POST')
-    const saved = page.waitForResponse((response) =>
-      response.url().includes('/v1/model/draft/save') && response.request().method() === 'POST')
-    await reloaded.getByTestId('review-and-save').click()
-    const stageBody = (await staged).request().postDataJSON() as { steps?: Array<Record<string, unknown>> }
-    const update = stageBody.steps?.find((step) => step.op === 'update_attribute' && step.key === 'brand')
-    expect(update?.searchable).toBe(!brandSearchable)
-    expect(update?.filterable).toBeUndefined()
-    expect((await saved).ok()).toBeTruthy()
+    await expect(reloaded.getByTestId('review-and-save')).toHaveCount(0)
+    await expect(page.getByTestId('model-table-leave-dialog')).toHaveCount(0)
 
     await expect.poll(async () => {
       const body = await readDefinitions(page)
@@ -99,7 +95,12 @@ test.describe('type attributes draft patch persist (row 422)', () => {
       }
     }).toEqual({ searchable: !brandSearchable, filterable: !brandFilterable })
 
-    await stageAndSave(page, [{ op: 'update_attribute', key: 'brand', searchable: brandSearchable }])
+    await stageAndSave(page, [{
+      op: 'update_attribute',
+      key: 'brand',
+      searchable: brandSearchable,
+      filterable: brandFilterable,
+    }])
   })
 
   test('reload drops a drafted field changed on the server and shows a notice', async ({ page }) => {
@@ -109,8 +110,17 @@ test.describe('type attributes draft patch persist (row 422)', () => {
     const before = await readDefinitions(page)
     const brandSearchable = Boolean(before.attributes?.find((item) => item.key === 'brand')?.index?.searchable)
 
+    await page.route('**/v1/model/commit', async (route) => {
+      await route.fulfill({
+        status: 409,
+        contentType: 'application/problem+json',
+        body: JSON.stringify({ code: 'draft_conflict', detail: 'the model moved' }),
+      })
+    })
     await table.locator('[data-key="brand"]').getByRole('checkbox', { name: 'Searchable' }).click()
-    await expect(table.getByTestId('review-and-save')).toBeVisible()
+    await expect(table.locator('[data-key="brand"]').getByTestId('cell-save-state')).toHaveAttribute('data-state', 'error')
+    await expect(table.getByTestId('review-and-save')).toHaveCount(0)
+    await page.unroute('**/v1/model/commit')
 
     // Same field updated on the server away from the stored base triggers a conflict drop.
     await stageAndSave(page, [{ op: 'update_attribute', key: 'brand', searchable: !brandSearchable }])

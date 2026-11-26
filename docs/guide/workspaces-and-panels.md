@@ -80,7 +80,7 @@ tab) for layout commands:
 | `Maximize` | Let the focused view fill the workspace |
 | `Close view` | Close the focused view |
 | `Add view` | Choose a view for this pane |
-| `Select source` | Choose what an object table lists; see [Data sources](/docs/data-sources) |
+| `Select source` | Choose what an object table lists; see [Data sources](/docs/data-sources/) |
 
 You can also drag a view tab onto another pane or tab strip. Drop zones read `Dock
 left`, `Dock right`, `Dock top`, `Dock bottom`, and `Add as tab`. Dragging a divider
@@ -294,9 +294,12 @@ Action labels and muted labels stay readable in both themes:
   that stays at or above 4.5:1 on both the surface and the panel backgrounds.
 
 The rules apply to the visible labels, not only to token values: hovering Save,
-Discard, Delete, or Discard all must not lower the contrast below 4.5:1.
+Discard, Delete, or Discard all must not lower the contrast below 4.5:1. The Detail
+delete icon uses the lighter danger text token at rest and, in the light theme, the
+filled danger hover colour on its tinted hover background so the composited contrast
+stays at or above 4.5:1.
 
 ## Related
 
-- [Data sources](/docs/data-sources)
-- [Command palette and shortcuts](/docs/command-palette-and-shortcuts)
+- [Data sources](/docs/data-sources/)
+- [Command palette and shortcuts](/docs/command-palette-and-shortcuts/)

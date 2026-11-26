@@ -1304,9 +1304,9 @@ export function GraphMap({
           const widthText = context.measureText(link.label).width
           const boxW = widthText + 12
           const boxH = 16
-          // Prefer a slot clear of shown names. An active label that cannot
-          // find one still paints (the caption yields below) instead of
-          // disappearing to spare Food or Product.
+          // Prefer a slot clear of shown names. An active label searches wider
+          // (the same reach main uses) and still paints when every slot is
+          // taken, instead of disappearing to spare Food or Product.
           const namedCaptionObstacles: EdgeLabelBox[] = captionBoxes
             .filter(
               (box) =>

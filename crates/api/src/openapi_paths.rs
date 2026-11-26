@@ -367,28 +367,42 @@ fn operations() -> Vec<(HttpMethod, &'static str, Operation)> {
             "Selection members",
             true,
         ),
-        call(
+        finish(
             HttpMethod::Post,
             "/v1/assortments/{id}/members",
             "add_assortment_members",
-            "Add objects to a manual selection. A dynamic selection is rejected.",
+            "Add objects to a manual selection. A dynamic selection is rejected. An agent or import files a proposal and changes nothing.",
             vec![path_uuid("id", "Selection id")],
             Some("AssortmentMembersBody"),
-            Some("AssortmentMemberIds"),
-            "200",
-            "Objects now in the selection",
+            vec![
+                json("200", "Objects now in the selection", "AssortmentMemberIds"),
+                json(
+                    "202",
+                    "Filed as a suggestion. An agent or import does not change the selection.",
+                    "Suggestion",
+                ),
+            ],
             true,
         ),
-        call(
+        finish(
             HttpMethod::Delete,
             "/v1/assortments/{id}/members",
             "remove_assortment_members",
-            "Remove objects from a manual selection. A dynamic selection is rejected.",
+            "Remove objects from a manual selection. A dynamic selection is rejected. An agent or import files a proposal and changes nothing.",
             vec![path_uuid("id", "Selection id")],
             Some("AssortmentMembersBody"),
-            Some("AssortmentMemberIds"),
-            "200",
-            "Objects still in the selection",
+            vec![
+                json(
+                    "200",
+                    "Objects still in the selection",
+                    "AssortmentMemberIds",
+                ),
+                json(
+                    "202",
+                    "Filed as a suggestion. An agent or import does not change the selection.",
+                    "Suggestion",
+                ),
+            ],
             true,
         ),
         call(
@@ -969,6 +983,18 @@ fn operations() -> Vec<(HttpMethod, &'static str, Operation)> {
             Some("ModelSaveResult"),
             "200",
             "Dry run or applied revision",
+        ),
+        call(
+            HttpMethod::Post,
+            "/v1/model/commit",
+            "commit_model",
+            "Apply model steps as one revision without using the draft",
+            vec![],
+            Some("CommitBody"),
+            Some("ModelSaveResult"),
+            "200",
+            "Applied revision",
+            true,
         ),
     ]
 }

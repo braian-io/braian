@@ -10,6 +10,7 @@ import { copy } from './i18n'
 import { CreateDialog, requireText } from './create-dialog'
 import { attributeKey } from './model-view'
 import { onDraftChange, requestReview, setModelFocus, stageModel } from './model-stage'
+import { commitModelOperation, dropSavedDraftRow } from './model-commit'
 import { registerCommandRunner } from './command-registry'
 import { writeErrorMessage } from './write-error'
 import { StateNote } from './states'
@@ -133,7 +134,9 @@ export function AttributeDefinitions() {
     }
     if (action === 'delete') {
       if (row.standard) return
-      void stage('model.delete_attribute', { attribute: row.key })
+      void stage('model.delete_attribute', { attribute: row.key }).then((ok) => {
+        if (ok) requestReview()
+      })
     }
   }
 
@@ -298,43 +301,38 @@ export function AttributeDefinitions() {
             </select>
           </div>
         }
-        onReviewAndSave={async () => {
-          for (const row of Object.values(draftRows)) {
-            const isNew = row.id.startsWith('new-') || !rows.some((item) => item.id === row.id)
-            if (isNew) {
-              const key = row.key.trim() || attributeKey(row.label)
-              if (!key || !row.label.trim()) continue
-              const created = await stage('model.create_attribute', {
-                key,
-                label: row.label.trim(),
-                kind: row.kind,
-                ...(row.description.trim() ? { description: row.description.trim() } : {}),
-              })
-              if (!created) return
-              continue
-            }
-            const original = rows.find((item) => item.id === row.id)
-            if (!original) continue
-            if (row.label.trim() && row.label !== original.label) {
-              const renamed = await stage('model.rename_attribute', { attribute: original.key, label: row.label.trim() })
-              if (!renamed) return
-            }
-            if (!row.standard && row.key.trim() && row.key !== original.key) {
-              const renamed = await stage('model.rename_attribute_key', { key: original.key, new_key: row.key.trim() })
-              if (!renamed) return
-            }
-            const desc = row.description.trim()
-            const prev = original.description.trim()
-            if (desc !== prev) {
-              const updated = await stage('model.update_attribute', {
-                key: original.key,
-                ...(desc ? { description: desc } : { clear_description: true }),
-              })
-              if (!updated) return
-            }
+        saveCell={async (row) => {
+          const isNew = row.id.startsWith('new-') || !rows.some((item) => item.id === row.id)
+          if (isNew) {
+            const key = row.key.trim() || attributeKey(row.label)
+            if (!key || !row.label.trim()) return
+            await commitModelOperation(queryClient, 'model.create_attribute', {
+              key,
+              label: row.label.trim(),
+              kind: row.kind,
+              ...(row.description.trim() ? { description: row.description.trim() } : {}),
+            })
+            setDraftRows((current) => dropSavedDraftRow(current, row.id, row))
+            return
           }
-          setDraftRows({})
-          requestReview()
+          const original = rows.find((item) => item.id === row.id)
+          if (!original) return
+          if (row.label.trim() && row.label !== original.label) {
+            await commitModelOperation(queryClient, 'model.rename_attribute', { attribute: original.key, label: row.label.trim() })
+          }
+          const keyNow = !row.standard && row.key.trim() && row.key !== original.key ? row.key.trim() : original.key
+          if (keyNow !== original.key) {
+            await commitModelOperation(queryClient, 'model.rename_attribute_key', { key: original.key, new_key: keyNow })
+          }
+          const desc = row.description.trim()
+          const prev = original.description.trim()
+          if (desc !== prev) {
+            await commitModelOperation(queryClient, 'model.update_attribute', {
+              key: keyNow,
+              ...(desc ? { description: desc } : { clear_description: true }),
+            })
+          }
+          setDraftRows((current) => dropSavedDraftRow(current, row.id, row))
         }}
       />
       <CreateDialog
@@ -362,9 +360,8 @@ export function AttributeDefinitions() {
           const label = requireText(createName)
           const key = attributeKey(createKey || label)
           if (!key) throw new Error(copy.validation)
-          await stageModel('model.create_attribute', { key, label, kind: createKind })
+          await commitModelOperation(queryClient, 'model.create_attribute', { key, label, kind: createKind })
           setPendingKey(key)
-          void queryClient.invalidateQueries({ queryKey: ['model-draft'] })
         }}
       />
       {message ? <p className="error">{message}</p> : null}
@@ -377,10 +374,11 @@ export function AttributeDefinitions() {
           onPick={(place) => {
             const attribute = dialog.attribute
             const run = place.kind === 'type'
-              ? stage('model.attach_attribute', { attribute, type: place.key })
-              : stage('model.attach_attribute', { attribute, structure: place.structure, group: place.key })
-            void run.then((ok) => {
-              if (ok) setDialog(null)
+              ? commitModelOperation(queryClient, 'model.attach_attribute', { attribute, type: place.key })
+              : commitModelOperation(queryClient, 'model.attach_attribute', { attribute, structure: place.structure, group: place.key })
+            void run.then(() => setDialog(null)).catch((reason: unknown) => {
+              const text = writeErrorMessage(reason)
+              if (text) setMessage(text)
             })
           }}
         />

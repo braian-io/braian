@@ -54,6 +54,7 @@ test.describe('model reload banner (row 309)', () => {
     const plural = `Products ${stamp}`
     let contextA: Awaited<ReturnType<Browser['newContext']>> | null = null
     let contextB: Awaited<ReturnType<Browser['newContext']>> | null = null
+    let searchableBefore = true
     try {
       contextA = await browser.newContext()
       contextB = await browser.newContext()
@@ -65,8 +66,13 @@ test.describe('model reload banner (row 309)', () => {
       const tableB = await openTypeAttributes(pageB, 'product')
       const searchable = tableB.locator('[data-key="description"]').getByRole('checkbox', { name: 'Searchable' })
       const before = await searchable.isChecked()
+      searchableBefore = before
+      const committed = pageB.waitForResponse((response) =>
+        response.url().includes('/v1/model/commit') && response.request().method() === 'POST')
       await searchable.click()
-      await expect(tableB.getByTestId('review-and-save')).toBeVisible()
+      expect((await committed).ok()).toBeTruthy()
+      await expect(tableB.getByTestId('review-and-save')).toHaveCount(0)
+      await expect(pageB.getByTestId('model-reload-banner')).toHaveCount(0)
 
       await openDataModel(pageA)
       await stageAndSaveUi(pageA, 'model.update_type', { key: 'product', language: 'en', plural })
@@ -86,7 +92,7 @@ test.describe('model reload banner (row 309)', () => {
 
       const tableAfter = pageB.getByTestId('attribute-table')
       await expect(tableAfter).toBeVisible({ timeout: 30_000 })
-      await expect(tableAfter.getByTestId('review-and-save')).toBeVisible()
+      await expect(tableAfter.getByTestId('review-and-save')).toHaveCount(0)
       const searchableAfter = tableAfter.locator('[data-key="description"]').getByRole('checkbox', { name: 'Searchable' })
       await expect(searchableAfter).toBeChecked({ checked: !before })
     } finally {
@@ -97,6 +103,10 @@ test.describe('model reload banner (row 309)', () => {
         await page.request.delete('/v1/model/draft').catch(() => {})
         await page.request.post('/v1/model/draft/steps', {
           data: { operation: 'model.update_type', args: { key: 'product', language: 'en', plural: 'Products' } },
+        }).catch(() => {})
+        await page.request.post('/v1/model/draft/save', { data: {} }).catch(() => {})
+        await page.request.post('/v1/model/draft/steps', {
+          data: { steps: [{ op: 'update_attribute', key: 'description', searchable: searchableBefore }] },
         }).catch(() => {})
         await page.request.post('/v1/model/draft/save', { data: {} }).catch(() => {})
         await cleanup.close()

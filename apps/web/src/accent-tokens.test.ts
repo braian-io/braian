@@ -149,3 +149,33 @@ describe('row 240 contrast', () => {
     expect(css).toMatch(/\.head \.cell\.column-header-cell \.column-header-btn \{\s*color:\s*var\(--muted\)/)
   })
 })
+
+describe('row 284 detail trash icon hover', () => {
+  const dark = css.slice(css.indexOf(':root {'), css.indexOf(":root[data-theme='light']"))
+  const light = css.slice(css.indexOf(":root[data-theme='light']"))
+
+  function dangerWash(block: string, surfaceName: string) {
+    const danger = parseHex(token(block, '--danger'))
+    const surface = { ...parseHex(token(block, surfaceName)), a: 1 }
+    return blend({ ...danger, a: 0.18 }, surface)
+  }
+
+  it('reaches 4.5:1 on the composited hover wash in both themes', () => {
+    expect(css).toMatch(
+      /:root\[data-theme='light'\] \.icon-btn\.icon-danger:hover[\s\S]*color:\s*var\(--danger-button-hover\)/,
+    )
+    for (const [name, block, hoverColor, surfaces] of [
+      ['dark', dark, token(dark, '--danger'), ['--panel'] as const],
+      ['light', light, token(light, '--danger-button-hover'), ['--panel', '--surface'] as const],
+    ] as const) {
+      const text = { ...parseHex(hoverColor), a: 1 }
+      for (const surfaceName of surfaces) {
+        const wash = dangerWash(block, surfaceName)
+        expect(
+          contrast(luminance(text), luminance(wash)),
+          `${name} ${surfaceName}`,
+        ).toBeGreaterThanOrEqual(4.5)
+      }
+    }
+  })
+})

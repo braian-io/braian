@@ -50,7 +50,7 @@ types; link types are described under relations.
 
 Create an entity type from the `Object types` table with `New type`, or press `Ctrl+K`
 and choose `New type`. The dialog asks for `Singular`, `Plural`, and `Key`, and saves
-with `Save`. The table lists `Singular`, `Plural`, and `Key`. Selecting a row selects
+when you confirm it. The table lists `Singular`, `Plural`, and `Key`. Selecting a row selects
 that type's attributes in `Type attributes`.
 
 An object type has an id, a key, labels, a singular and plural name, a key attribute,
@@ -83,14 +83,17 @@ The attribute types offered in the UI are:
 - `File`
 
 The table lets you edit the name, key, type, unit, required flag, show-by-default
-flag, languages, and searchable flag. Drag a row or use Alt+ArrowUp/Down (and the
-move controls) to change attribute order; the new order is staged until you save.
+flag, languages, and searchable flag. A cell saves when it closes. The cell shows
+`Saved` or the error with a retry. Drag a row or use Alt+ArrowUp/Down (and the
+move controls) to change attribute order; the new order saves immediately.
 Group attributes use the same reordering. Value-list options in **List values** use
-the same pattern and stage an `update_value_list` step with the ordered options.
+the same pattern and save an `update_value_list` step with the ordered options.
 
-The type name, key and **Allowed trees** checkboxes in the Type attributes header
-follow the same local table draft as the attribute rows, so they are discarded,
-restored and saved together and covered by the leave dialog.
+The type name and key in the Type attributes header save when the field loses focus.
+**Allowed trees** opens the review dialog on the click, because changing the trees
+is a reviewed model change. A failed cell save stays in the cell. Switching away
+while that failed edit is still local opens a dialog with `Save`, `Discard`, and
+`Cancel`.
 
 Extra columns carry the attribute rules:
 `Multiple`, `Filterable`, and `Sortable`; for numbers `Min`, `Max`, and
@@ -111,22 +114,20 @@ include `Add to type…`, `Add to group…`, `Rename…`, `Rename key…`, and `
 `Name`, `Key`, `Unit family`, `Unit`, and `Factor`. The `List values` view shows the
 values of the selected value list.
 
-Most type, attribute, link, value-list, and unit edits are collected in a draft. The
-model bar shows `N unsaved changes` with `Save` and `Discard draft`. Press `Ctrl+S` to
-open the save review for the draft.
+Cell edits and create dialogs for types, attributes, links, value lists, and units
+save immediately. The model bar still shows `N unsaved changes` with `Save` and
+`Discard draft` for reviewed changes such as deletes and allowed trees. Press `Ctrl+S`
+to open the save review for that draft.
 
-Edits in the type-attributes table are also kept in the browser (per user and workspace)
-until you save or discard them. Only fields you actually changed are restored after a
-reload; if the model changed on the server in the meantime, conflicting fields are
-dropped with a notice instead of overwriting the newer values. A trimmed local draft
-(such as a create row whose key now exists on the server) shows a short toast when it
-is restored.
+A cell edit that failed to save is kept in the browser (per user and workspace).
+Only fields you actually changed are restored after a reload; if the model changed
+on the server in the meantime, conflicting fields are dropped with a notice instead
+of overwriting the newer values.
 
-In that table, `Save` stages the pending attribute edits the same way as elsewhere in
-the model workspace and opens the review flow when one is needed. While the table draft
-is dirty, closing or reloading the browser tab triggers the browser's unsaved-changes
-warning. Switching to another type or workspace opens a dialog with `Save`, `Discard`,
-and `Cancel`; `Escape` or the close control dismiss the dialog and keep the draft.
+While that failed edit is still local, closing or reloading the browser tab triggers
+the browser's unsaved-changes warning. Switching to another type or workspace opens
+a dialog with `Save`, `Discard`, and `Cancel`; `Escape` or the close control dismiss
+the dialog and keep the edit. `Save` retries the commit.
 The same guard applies when you open the Review workspace, switch workspace from an
 agent command, or land on a neighbour workspace after deleting the current one.
 If another browser tab writes the same draft key while this tab still has unsaved
@@ -135,8 +136,10 @@ silently.
 
 Language tags are stored as given: `sv` and `sv-SE` are different values. Value lists
 have stable option codes with labels per language. A unit belongs to a unit family
-with a base unit and a factor; the stored number keeps the entered unit, and the index
-normalizes to the base unit for filters and sorting.
+with a base unit. Conversion is an affine map, `base = value * factor + offset`, so a
+family can be a simple factor (length, mass) or temperature (Celsius, Fahrenheit,
+Kelvin). The stored number keeps the entered unit, and the index normalizes to the
+base unit for filters and sorting.
 
 ## Relations
 
@@ -207,11 +210,11 @@ person saves; the agent can propose model changes but cannot delete definitions.
   or enter many objects.
 - Use groups for shared fields that should apply across types.
 - Use a value list for fixed choices and a unit family for measures.
-- Open [Data sources](/docs/data-sources) next to learn how a table follows another
+- Open [Data sources](/docs/data-sources/) next to learn how a table follows another
   table through a link type.
 
 ## Related
 
-- [Data sources](/docs/data-sources)
-- [Graph](/docs/graph)
-- [Deleting and restore](/docs/deleting-and-restore)
+- [Data sources](/docs/data-sources/)
+- [Graph](/docs/graph/)
+- [Deleting and restore](/docs/deleting-and-restore/)
