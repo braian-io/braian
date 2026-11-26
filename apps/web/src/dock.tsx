@@ -88,6 +88,7 @@ export function WorkspaceDock({
   const agentViewSet = new Set(agentViews)
   const [drag, setDrag] = useState<Drag | null>(null)
   const dragRef = useRef<Drag | null>(null)
+  const objectTypesTabFocusRef = useRef(false)
   // View chrome menus open through the shared command registry.
 
   const commit = (next: LayoutDoc) => {
@@ -95,7 +96,9 @@ export function WorkspaceDock({
       docRef.current = next
       changeRef.current(next)
     }
-    if (layoutLeavesTypeAttributes(viewsRef.current, docRef.current, next)) {
+    const objectTypesTabFocus = objectTypesTabFocusRef.current
+    objectTypesTabFocusRef.current = false
+    if (layoutLeavesTypeAttributes(viewsRef.current, docRef.current, next, { objectTypesTabFocus })) {
       tryModelTableLeave(apply)
       return
     }
@@ -182,6 +185,9 @@ export function WorkspaceDock({
     },
     onDrag: setDrag,
     renderView,
+    markObjectTypesTabFocus: () => {
+      objectTypesTabFocusRef.current = true
+    },
   }
 
   return (
@@ -250,6 +256,7 @@ type Frame = {
   onDrag: (drag: Drag | null) => void
   renderView: (view: DockView) => ReactNode
   agentViews: Set<string>
+  markObjectTypesTabFocus: () => void
   /** Pixel width of the structure tree measured before this dock opened. */
   agentTreePin: TreePin | null
 }
@@ -629,6 +636,8 @@ function Pane({ frame, leaf }: { frame: Frame; leaf: Leaf }) {
                           return
                         }
                         if (frame.docRef.current.zoom) return
+                        const opening = frame.viewList.find((view) => view.id === id)
+                        if (opening?.type === 'object_types') frame.markObjectTypesTabFocus()
                         frame.commit(activateDoc(frame.docRef.current, id))
                         if (pendingActive.current) window.clearTimeout(pendingActive.current.timer)
                         const timer = window.setTimeout(() => {

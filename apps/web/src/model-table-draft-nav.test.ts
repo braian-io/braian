@@ -24,7 +24,23 @@ describe('model table layout guard', () => {
     const layout = splitPair('horizontal', 0.5, tabGroup(['types']), tabGroup(['attrs']))
     const before = { id: 'ws', title: 'Data model', layout, focus: 'attrs' }
     const after = { ...before, focus: 'types' }
-    expect(layoutLeavesTypeAttributes(views, before, after)).toBe(true)
+    expect(layoutLeavesTypeAttributes(views, before, after, { objectTypesTabFocus: true })).toBe(true)
+  })
+
+  it('defers Object types row focus to model selection leave', () => {
+    registerModelTableDraft({
+      dirty: () => true,
+      discard: () => undefined,
+      review: async () => undefined,
+    })
+    const views = [
+      { id: 'attrs', type: 'data_model', state: { mode: 'classes' }, title: 'Type attributes' },
+      { id: 'types', type: 'object_types', title: 'Object types' },
+    ]
+    const layout = splitPair('horizontal', 0.5, tabGroup(['types']), tabGroup(['attrs']))
+    const before = { id: 'ws', title: 'Data model', layout, focus: 'attrs' }
+    const after = { ...before, focus: 'types' }
+    expect(layoutLeavesTypeAttributes(views, before, after)).toBe(false)
   })
 
   it('requires a guard when the Type attributes tab unmounts', () => {

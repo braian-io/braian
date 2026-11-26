@@ -39,17 +39,27 @@ export function shownLayoutViewIds(doc: LayoutDoc): string[] {
   return shown
 }
 
+export type LayoutLeavesTypeAttributesOptions = {
+  /** User opened a pane tab; Object types focus counts as leaving Type attributes. */
+  objectTypesTabFocus?: boolean
+}
+
 export function layoutLeavesTypeAttributes(
   dockViews: DockView[],
   before: LayoutDoc,
   after: LayoutDoc,
+  options?: LayoutLeavesTypeAttributesOptions,
 ): boolean {
   if (!modelTableDraftDirty()) return false
   const attributeViews = new Set(dockViews.filter(isTypeAttributesDockView).map((view) => view.id))
   if (attributeViews.size === 0) return false
   const beforeFocus = before.focus
-  if (beforeFocus && attributeViews.has(beforeFocus) && after.focus !== beforeFocus) {
-    return true
+  const afterFocus = after.focus
+  if (beforeFocus && attributeViews.has(beforeFocus) && afterFocus && afterFocus !== beforeFocus) {
+    const afterView = dockViews.find((view) => view.id === afterFocus)
+    if (afterView?.type !== 'object_types' || options?.objectTypesTabFocus) {
+      return true
+    }
   }
   const beforeShown = shownLayoutViewIds(before).filter((id) => attributeViews.has(id))
   if (beforeShown.length === 0) return false
