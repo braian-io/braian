@@ -37,7 +37,7 @@ async function textAnchor(locator: Locator): Promise<TextBox> {
         ? el
         : el.querySelector('span, input, button') ?? el
     const range = document.createRange()
-  if (target instanceof HTMLInputElement && target.type !== 'checkbox') {
+    if (target instanceof HTMLInputElement && target.type !== 'checkbox') {
       const box = target.getBoundingClientRect()
       return { left: box.left, cy: box.top + box.height / 2 }
     }
@@ -87,6 +87,8 @@ test.describe('data model inline edit geometry', () => {
       await setTheme(page, theme)
 
       const { tab: unitsTab, table: unitsTable } = await openDataModelTab(page, 'Units', 'units-table')
+      const header = page.locator('section.pane.focused .pane-tabs').first()
+      await assertTabInsideHeader(unitsTab, header, `Units active tab ${theme}`)
       const unitRow = unitsTable.locator('[data-testid="standard-grid-row"]').first()
       await unitRow.click()
       const symbolCell = unitRow.locator('[data-column="symbol"]')
@@ -112,6 +114,7 @@ test.describe('data model inline edit geometry', () => {
       await page.keyboard.press('Escape')
 
       const { tab: linkTab, table: linkTable } = await openDataModelTab(page, 'Link types', 'link-types-table')
+      await assertTabInsideHeader(linkTab, header, `Link types active tab ${theme}`)
       const linkRow = linkTable.locator('[data-testid="standard-grid-row"]').first()
       await linkRow.click()
       const cardinalityCell = linkRow.locator('[data-column="fromCardinality"]')
@@ -125,13 +128,6 @@ test.describe('data model inline edit geometry', () => {
       await saveShot(page, `link-type-dropdown-edit-${theme}.png`)
       await page.keyboard.press('Escape')
 
-      const focusedPane = page.locator('section.pane.focused').first()
-      const header = focusedPane.locator('.pane-tabs').first()
-      await expect(header).toBeVisible()
-      await assertTabInsideHeader(unitsTab, header, `Units tab ${theme}`)
-      await assertTabInsideHeader(linkTab, header, `Link types tab ${theme}`)
-      const activeTab = focusedPane.locator('.pane-tab.active').first()
-      await assertTabInsideHeader(activeTab, header, `active tab ${theme}`)
       await saveShot(page, `pane-tab-active-${theme}.png`)
 
       expect(symbolBefore.left).toBeGreaterThan(0)
