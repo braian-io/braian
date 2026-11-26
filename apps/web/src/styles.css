@@ -2304,6 +2304,12 @@ canvas.graph.panning { cursor: grabbing; }
 .hit.disabled:hover, .hit[data-disabled='true']:hover { background: transparent; }
 .hit.ask { z-index: 1; background: var(--raised); border-top: 1px solid var(--border); flex: none; }
 .hit small { display: block; color: var(--muted); font-size: var(--text-sm); font-weight: 400; }
+.hit .hit-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.25;
+}
 .hit .hit-title { font-size: var(--text-base); }
 .hit kbd, .menu kbd { margin-left: auto; }
 .palette .hit.ask:not(.on) { color: var(--text-2); }

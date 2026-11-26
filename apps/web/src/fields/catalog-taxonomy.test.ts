@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { fieldCatalogForType, type DefsJson } from './catalog'
+import { fieldCatalogForType, groupSourcePath, type DefsJson } from './catalog'
 
 function attribute(id: string, key: string, label: string, kind: Record<string, unknown> = { type: 'text' }) {
   return { id, key, labels: { en: label }, kind }
@@ -100,14 +100,19 @@ describe('attributesForType taxonomy walk', () => {
     ])
   })
 
-  it('labels group and class fields with the group display name, never the type list', () => {
+  it('labels group and class fields with the full group path under the structure root', () => {
     const fields = byId('one')
+    const structure = defs.structures[0]
+    const groups = structure.groups
     expect(fields.get('own_key')?.source).toBeUndefined()
-    expect(fields.get('group_parent')?.source).toBe('Parent group')
-    expect(fields.get('group_child')?.source).toBe('Child group')
-    expect(fields.get('group_class')?.source).toBe('Parent group')
-    expect(fields.get('class_parent')?.source).toBe('Parent group')
-    expect(fields.get('class_child')?.source).toBe('Child group')
+    expect(fields.get('group_parent')?.source).toBe('Food › Parent group')
+    expect(fields.get('group_child')?.source).toBe('Food › Parent group › Child group')
+    expect(fields.get('group_class')?.source).toBe('Food › Parent group')
+    expect(fields.get('class_parent')?.source).toBe('Food › Parent group')
+    expect(fields.get('class_child')?.source).toBe('Food › Parent group › Child group')
+    const child = groups.find((group) => group.key === 'child')
+    expect(child).toBeTruthy()
+    expect(groupSourcePath(structure, groups, child!)).toBe('Food › Parent group › Child group')
   })
 
   it('skips structures the type does not allow', () => {
@@ -145,11 +150,11 @@ describe('demo food tree', () => {
     }
   })
 
-  it('offers nested group attributes and their group names on Product', () => {
+  it('offers nested group attributes with full paths on Product', () => {
     const fields = new Map(fieldCatalogForType(demo, 'product').map((field) => [field.id, field]))
-    expect(fields.get('fat_content')?.source).toBe('Dairy & eggs')
-    expect(fields.get('caffeine')?.source).toBe('Coffee & tea')
-    expect(fields.get('cocoa_content')?.source).toBe('Chocolate')
+    expect(fields.get('fat_content')?.source).toBe('Food › Dairy & eggs')
+    expect(fields.get('caffeine')?.source).toBe('Food › Beverages › Coffee & tea')
+    expect(fields.get('cocoa_content')?.source).toBe('Food › Snacks & sweets › Chocolate')
   })
 
   it('does not leak food structure groups into a type that allows no structure', () => {
