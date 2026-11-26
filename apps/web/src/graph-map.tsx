@@ -97,6 +97,9 @@ const NO_GRAPH: Json = {}
 // far shorter than post-settle content growth (add-link, expand), which must
 // never refit an untouched camera.
 const SHEET_QUIET_MS = 160
+// createFitScheduler applies on the next frame and again at 120ms and 320ms.
+// The camera is idle only after that last pass.
+const CAMERA_IDLE_AFTER_MS = 360
 
 /**
  * Object, model-type, attribute value and structure nodes can open their own
@@ -585,6 +588,8 @@ export function GraphMap({
   // False while an open bottom sheet is still settling; the first-fit baseline
   // must not freeze on a mid-transition height (Event D flips this to true).
   const sheetStableRef = useRef(false)
+  const cameraIdleTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const markCameraBusyRef = useRef<() => void>(() => {})
   const placementRef = useRef<DetailPlacement>('hidden')
   const sheetRef = useRef<SheetMode>('compact')
   const pendingNamesRef = useRef('')
@@ -949,6 +954,7 @@ export function GraphMap({
       }
       lastFrame = next
       draw(true)
+      markCameraBusyRef.current()
     }
 
     const screenOf = (x: number, y: number) => ({
@@ -1512,6 +1518,7 @@ export function GraphMap({
       transform.y = camera.y
       lastFrame = frame
       draw(true)
+      markCameraBusyRef.current()
       if (!initialSettledRef.current && initialLoadSettled()) releaseSettledHold()
       scheduleInitialSettle()
       return true
@@ -1834,6 +1841,7 @@ export function GraphMap({
       alive = false
       if (settleTimer !== undefined) clearTimeout(settleTimer)
       if (settleHoldTimer !== undefined) clearTimeout(settleHoldTimer)
+      if (cameraIdleTimerRef.current !== undefined) clearTimeout(cameraIdleTimerRef.current)
       sim.on('tick', null)
       sim.on('end', null)
       sim.stop()
@@ -2107,7 +2115,25 @@ export function GraphMap({
     }
     apiRef.current.fit()
   }
+  // A fit or remap restarts this. It clears only after the scheduler's last
+  // pass, and stays set while an open bottom sheet has not settled, so a
+  // later measured frame cannot land after the flag has gone idle.
+  markCameraBusyRef.current = () => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    canvas.dataset.cameraBusy = 'true'
+    if (cameraIdleTimerRef.current !== undefined) clearTimeout(cameraIdleTimerRef.current)
+    cameraIdleTimerRef.current = setTimeout(() => {
+      cameraIdleTimerRef.current = undefined
+      const node = canvasRef.current
+      if (!node) return
+      const sheetExpected = placementRef.current === 'sheet'
+      if (sheetExpected && !sheetStableRef.current) return
+      node.dataset.cameraBusy = 'false'
+    }, CAMERA_IDLE_AFTER_MS)
+  }
   requestSystemFitRef.current = (event) => {
+    markCameraBusyRef.current()
     // The settled bottom-sheet box and narrow full-size toggle must fit on the
     // same turn; the debounced scheduler can be too late for Playwright.
     const narrowSheet = deferInitialFitForSheet(
@@ -2204,10 +2230,11 @@ export function GraphMap({
       if (!node || node.dataset.settling !== 'true') return
       node.dataset.settled = 'true'
       node.dataset.settling = 'false'
-    }, 360)
+    }, CAMERA_IDLE_AFTER_MS)
     if (closing && narrowSheet && !movedRef.current) {
       sheetStableRef.current = false
       chromeMeasuredRef.current = false
+      markCameraBusyRef.current()
       const finish = () => {
         if (movedRef.current) return
         if (!paneSettleRef.current.settled) {
@@ -2254,6 +2281,7 @@ export function GraphMap({
       // previous stable box, and wait for this sheet to settle. The `sheet`
       // request below is scheduled async, so it reads the reset flag.
       sheetStableRef.current = false
+      markCameraBusyRef.current()
       // The first box is only the settled sheet once the load's names and
       // captions are ready: a late name reflow can pass through a short quiet
       // window between two otherwise identical layouts. Only then may the box
@@ -2523,6 +2551,7 @@ export function GraphMap({
               ref={canvasRef}
               className="graph"
               data-testid="graph"
+              data-camera-busy="true"
               role="img"
               aria-label={copy.graph}
               tabIndex={0}

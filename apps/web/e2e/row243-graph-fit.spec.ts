@@ -112,6 +112,27 @@ async function waitGraph(page: Page) {
   await expect.poll(async () => canvas.getAttribute('data-settling'), { timeout: 60_000 }).not.toBe('true')
 }
 
+async function waitCameraStill(page: Page) {
+  const canvas = graphCanvas(page)
+  let previous: string | null = null
+  await expect
+    .poll(async () => {
+      const zoom = await canvas.getAttribute('data-zoom')
+      const settling = await canvas.getAttribute('data-settling')
+      const busy = await canvas.getAttribute('data-camera-busy')
+      const still =
+        previous !== null &&
+        zoom !== null &&
+        zoom !== '' &&
+        zoom === previous &&
+        settling !== 'true' &&
+        busy !== 'true'
+      previous = zoom
+      return still
+    })
+    .toBe(true)
+}
+
 async function openGraph(page: Page, title: string, key: string) {
   await page.locator('nav.tabs').getByRole('button', { name: new RegExp(`^${title}`) }).click()
   const pane = paneWithTab(page, title)
@@ -130,7 +151,7 @@ async function openGraph(page: Page, title: string, key: string) {
   await page.mouse.move(4, 4)
   await expect(page.getByTestId('graph-inspector')).toBeVisible()
   await expect.poll(async () => (await labelBoxes(page)).length, { timeout: 30_000 }).toBeGreaterThan(0)
-  await page.waitForTimeout(700)
+  await waitCameraStill(page)
 }
 
 async function loadNarrowArticles(page: Page) {
@@ -149,7 +170,7 @@ async function zoomOut(page: Page, times = 3) {
   for (let index = 0; index < times; index += 1) await page.mouse.wheel(0, 300)
   await page.mouse.move(4, 4)
   await waitGraph(page)
-  await page.waitForTimeout(400)
+  await waitCameraStill(page)
 }
 
 /**
@@ -229,7 +250,6 @@ function findLabel(labels: LabelBox[], match: (text: string) => boolean) {
 }
 
 test('a real reload and leaving full size fit every caption in a 230 px pane with the card open', async ({ page }) => {
-  test.setTimeout(300_000)
   await login(page)
   await loadNarrowArticles(page)
 
@@ -259,7 +279,7 @@ test('a real reload and leaving full size fit every caption in a 230 px pane wit
   await page.getByRole('button', { name: 'Open full size', exact: true }).click()
   await expect(page.getByTestId('graph-full')).toBeVisible()
   await waitGraph(page)
-  await page.waitForTimeout(700)
+  await waitCameraStill(page)
   const full = await expectLabelsInside(page, 'full size with an untouched camera')
   expect(full.frame.right - full.frame.left, 'full size has a much larger frame').toBeGreaterThan(stage.width * 2)
   const fullFood = findLabel(full.labels, (text) => text === 'Food')
@@ -270,7 +290,7 @@ test('a real reload and leaving full size fit every caption in a 230 px pane wit
   await expect(page.getByTestId('graph-full')).toHaveCount(0)
   await page.mouse.move(4, 4)
   await waitGraph(page)
-  await page.waitForTimeout(700)
+  await waitCameraStill(page)
   await expect(page.getByTestId('graph-inspector')).toHaveAttribute('data-placement', 'sheet')
   const closed = await expectLabelsInside(page, 'after Close full size')
   const closedDark = findLabel(closed.labels, (text) => /Dark chocolate/i.test(text))
@@ -284,7 +304,6 @@ test('a real reload and leaving full size fit every caption in a 230 px pane wit
 })
 
 test('a user zoom is remapped into full size instead of being parked in the corner', async ({ page }) => {
-  test.setTimeout(300_000)
   await login(page)
   await loadNarrowArticles(page)
 
@@ -300,7 +319,7 @@ test('a user zoom is remapped into full size instead of being parked in the corn
   await page.getByRole('button', { name: 'Open full size', exact: true }).click()
   await expect(page.getByTestId('graph-full')).toBeVisible()
   await waitGraph(page)
-  await page.waitForTimeout(700)
+  await waitCameraStill(page)
   expect(await previewZoom(page), 'full size keeps the user zoom').toBeCloseTo(userZoom, 2)
   const full = await expectLabelsInside(page, 'full size after a user zoom')
   const fullFood = findLabel(full.labels, (text) => text === 'Food')
@@ -321,7 +340,7 @@ test('a user zoom is remapped into full size instead of being parked in the corn
   await page.getByRole('button', { name: 'Close full size', exact: true }).click()
   await expect(page.getByTestId('graph-full')).toHaveCount(0)
   await waitGraph(page)
-  await page.waitForTimeout(700)
+  await waitCameraStill(page)
   expect(await previewZoom(page), 'closing full size keeps the user zoom').toBeCloseTo(userZoom, 2)
   await expectLabelsInside(page, 'pane labels after closing full size with a user zoom')
   await shot(page, 'r243-step7-user-zoom-after-close')
