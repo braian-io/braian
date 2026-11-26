@@ -135,7 +135,10 @@ export const copy = {
   createNameHint: 'Enter a name.',
   newListValue: 'New value',
   newUnit: 'New unit',
+  newUnitHint:
+    'Add a unit to a family. A new family name creates the family, and this unit is its base (factor 1, offset 0).',
   factor: 'Factor',
+  labels: 'Labels',
   offset: 'Offset',
   symbol: 'Symbol',
   defaultUnit: 'Default unit',

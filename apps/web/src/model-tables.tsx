@@ -758,6 +758,9 @@ export function UnitsTable() {
   const [familyName, setFamilyName] = useState('')
   const [unitCode, setUnitCode] = useState('')
   const [factor, setFactor] = useState('1')
+  const [offset, setOffset] = useState('0')
+  const [symbol, setSymbol] = useState('')
+  const [unitLabel, setUnitLabel] = useState('')
   const [pendingId, setPendingId] = useState<string | null>(null)
   const rows = useMemo<UnitRow[]>(() => {
     const out: UnitRow[] = []
@@ -776,7 +779,7 @@ export function UnitsTable() {
           factor: String(unit.factor ?? '1'),
           offset: String(unit.offset ?? '0'),
           symbol: String(unit.symbol ?? code),
-          label: textValue(unit.labels as Json, uiLanguage) || code,
+          label: textValue(unit.labels as Json, uiLanguage),
           isBase: code === baseUnit,
         })
       }
@@ -822,8 +825,8 @@ export function UnitsTable() {
       write: (row, value) => ({ ...row, code: value }),
     },
     {
-      id: 'label',
-      header: copy.name,
+      id: 'labels',
+      header: copy.labels,
       editable: true,
       read: (row) => row.label,
       write: (row, value) => ({ ...row, label: value }),
@@ -877,6 +880,9 @@ export function UnitsTable() {
         setFamilyName('')
         setUnitCode('')
         setFactor('1')
+        setOffset('0')
+        setSymbol('')
+        setUnitLabel('')
         setCreateOpen(true)
       }}
       newRowLabel={copy.newUnit}
@@ -897,10 +903,13 @@ export function UnitsTable() {
         unitCode: row?.code || undefined,
       })}
       onReviewAndSave={async () => {
+        const knownFamilies = new Set(
+          ((defs?.unit_families as Json[]) ?? []).map((item) => String(item.key ?? '')),
+        )
         for (const row of Object.values(draftRows)) {
           const existing = rows.some((item) => item.id === row.id)
           if (!existing) {
-            const hasFamily = ((defs?.unit_families as Json[]) ?? []).some((item) => String(item.key) === row.family)
+            const hasFamily = knownFamilies.has(row.familyKey)
             if (!hasFamily && row.familyKey) {
               await stageModel('model.create_unit_family', {
                 key: row.familyKey,
@@ -915,6 +924,7 @@ export function UnitsTable() {
                     }]
                   : [],
               })
+              knownFamilies.add(row.familyKey)
             } else if (row.code) {
               await stageModel('model.add_unit', {
                 unit_family: row.familyKey,
@@ -945,34 +955,46 @@ export function UnitsTable() {
     <CreateDialog
       open={createOpen}
       title={copy.newUnit}
-      description={copy.createNameHint}
+      description={copy.newUnitHint}
       fields={[
         { id: 'family', label: copy.unitFamilies, value: familyName, testId: 'new-name', autoFocus: true },
         { id: 'code', label: copy.unit, value: unitCode, testId: 'new-key' },
+        { id: 'symbol', label: copy.symbol, value: symbol, testId: 'new-symbol' },
         { id: 'factor', label: copy.factor, value: factor, testId: 'new-factor' },
+        { id: 'offset', label: copy.offset, value: offset, testId: 'new-offset' },
+        { id: 'labels', label: copy.labels, value: unitLabel, testId: 'new-labels' },
       ]}
       onField={(id, value) => {
         if (id === 'family') setFamilyName(value)
         else if (id === 'code') setUnitCode(value)
-        else setFactor(value)
+        else if (id === 'symbol') setSymbol(value)
+        else if (id === 'factor') setFactor(value)
+        else if (id === 'offset') setOffset(value)
+        else setUnitLabel(value)
       }}
       onClose={() => setCreateOpen(false)}
       onSubmit={async () => {
         const family = requireText(familyName)
         const code = unitCode.trim() || family
+        const unit = {
+          code,
+          factor: factor.trim() || '1',
+          offset: offset.trim() || '0',
+          symbol: symbol.trim(),
+          label: unitLabel.trim(),
+        }
         const hasFamily = ((defs?.unit_families as Json[]) ?? []).some((item) => String(item.key) === family)
         if (!hasFamily) {
           await stageModel('model.create_unit_family', {
             key: family,
             dimension: family,
             base_unit: code,
-            units: [{ code, factor: factor.trim() || '1' }],
+            units: [unit],
           })
         } else {
           await stageModel('model.add_unit', {
             unit_family: family,
-            code,
-            factor: factor.trim() || '1',
+            ...unit,
           })
         }
         setPendingId(`${family}:${code}`)
