@@ -80,7 +80,7 @@ tab) for layout commands:
 | `Maximize` | Let the focused view fill the workspace |
 | `Close view` | Close the focused view |
 | `Add view` | Choose a view for this pane |
-| `Select source` | Choose what an object table lists; see [Data sources](/docs/data-sources) |
+| `Select source` | Choose what an object table lists; see [Data sources](/docs/data-sources/) |
 
 You can also drag a view tab onto another pane or tab strip. Drop zones read `Dock
 left`, `Dock right`, `Dock top`, `Dock bottom`, and `Add as tab`. Dragging a divider
@@ -298,5 +298,5 @@ Discard, Delete, or Discard all must not lower the contrast below 4.5:1.
 
 ## Related
 
-- [Data sources](/docs/data-sources)
-- [Command palette and shortcuts](/docs/command-palette-and-shortcuts)
+- [Data sources](/docs/data-sources/)
+- [Command palette and shortcuts](/docs/command-palette-and-shortcuts/)

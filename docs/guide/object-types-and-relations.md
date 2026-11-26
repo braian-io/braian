@@ -135,8 +135,10 @@ silently.
 
 Language tags are stored as given: `sv` and `sv-SE` are different values. Value lists
 have stable option codes with labels per language. A unit belongs to a unit family
-with a base unit and a factor; the stored number keeps the entered unit, and the index
-normalizes to the base unit for filters and sorting.
+with a base unit. Conversion is an affine map, `base = value * factor + offset`, so a
+family can be a simple factor (length, mass) or temperature (Celsius, Fahrenheit,
+Kelvin). The stored number keeps the entered unit, and the index normalizes to the
+base unit for filters and sorting.
 
 ## Relations
 
@@ -207,11 +209,11 @@ person saves; the agent can propose model changes but cannot delete definitions.
   or enter many objects.
 - Use groups for shared fields that should apply across types.
 - Use a value list for fixed choices and a unit family for measures.
-- Open [Data sources](/docs/data-sources) next to learn how a table follows another
+- Open [Data sources](/docs/data-sources/) next to learn how a table follows another
   table through a link type.
 
 ## Related
 
-- [Data sources](/docs/data-sources)
-- [Graph](/docs/graph)
-- [Deleting and restore](/docs/deleting-and-restore)
+- [Data sources](/docs/data-sources/)
+- [Graph](/docs/graph/)
+- [Deleting and restore](/docs/deleting-and-restore/)
