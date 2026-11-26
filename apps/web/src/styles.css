@@ -1351,6 +1351,7 @@ button.filter-chip:hover:not(.on) {
   box-shadow: inset 3px 0 0 var(--accent);
 }
 .row.picked { box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 55%, transparent); }
+.row[data-draft-elsewhere='true'] { outline: 1px solid color-mix(in srgb, var(--accent) 50%, transparent); outline-offset: -1px; }
 .row:hover:not(.selected) { background: var(--hover); }
 /* Draft is signalled by the save bar. An amber fill behind a field would read as a second focus state. */
 .draft-user { background: transparent; border-radius: 0; }

@@ -190,7 +190,7 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
   const showSourceChip = Boolean(body?.source)
     && String(body?.source) !== 'user'
     && !isRollback
-  const confirmLabel = isRollback ? copy.rollback : destructiveIntent ? copy.delete : copy.confirm
+  const confirmLabel = isRollback ? copy.rollback : destructiveIntent ? copy.delete : copy.save
   const confirmTestId = isRollback ? 'confirm-restore' : destructiveIntent ? 'confirm-delete' : 'confirm-model'
   useEffect(() => {
     if (!id || !isRollback || proposal.isPending || proposal.isError) return
@@ -254,7 +254,7 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
         // A delete is done when the type/structure disappears. Leaving a
         // timestamped "Confirm" line in the activity footer reads as if the
         // removal is still waiting for something.
-        if (!destructiveIntent) session.push(copy.confirm)
+        if (!destructiveIntent) session.push(copy.saved)
         void queryClient.invalidateQueries({ queryKey: ['definitions'] })
         if (operation === 'model.delete_type') {
           void queryClient.invalidateQueries({ queryKey: ['workspaces'] })

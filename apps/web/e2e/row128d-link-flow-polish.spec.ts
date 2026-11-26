@@ -156,7 +156,7 @@ async function expectWideDialog(page: Page, dialog: Locator) {
   expect(await dialog.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
   const ends = dialog.getByTestId('link-ends')
   expect(await ends.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
-  for (const name of ['Cancel', 'Confirm']) {
+  for (const name of ['Cancel', 'Save']) {
     const button = dialog.getByRole('button', { name, exact: true })
     await expect(button).toBeVisible()
     const buttonBox = await button.boundingBox()
