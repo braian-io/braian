@@ -126,6 +126,7 @@ test('Tab reaches closed Save all and Discard all and keys do not change the pro
     const accepted = await page.request.post(`/v1/proposals/${proposalId}/accept`, { data: {} })
     expect(accepted.ok(), await accepted.text()).toBeTruthy()
     const review = await openProposal(page, proposalId)
+    await expect(review.getByTestId('save-all')).toHaveAttribute('aria-disabled', 'true')
     await tabTo(page, 'save-all')
     await expectExplained(page, 'save-all', ACCEPTED)
     const proposalBefore = proposalSnapshot(await (await page.request.get(`/v1/proposals/${proposalId}`)).json())

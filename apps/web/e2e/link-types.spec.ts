@@ -265,4 +265,5 @@ test('removing a link updates the peer list at once and Trash restore brings the
   await productRow.click()
   await expect(detail).toBeVisible()
   await expect(detail.getByTestId('link-row').filter({ hasText: removed.peer_key }).first()).toBeVisible()
+  await page.locator('[data-view-type="object_detail"]').first().click()
 })

@@ -60,6 +60,7 @@ test('dragging one row onto another table creates the link', async ({ page }) =>
   await product.click()
   await expect(page.getByTestId('object-detail')).toContainText('PROD-COFFEE')
   await expect(linkRow).toBeVisible()
+  await page.locator('[data-view-type="object_detail"]').first().click()
 })
 
 test('dragging several selected rows creates one link each', async ({ page }) => {
