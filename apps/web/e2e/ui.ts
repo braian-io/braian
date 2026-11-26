@@ -69,22 +69,39 @@ export async function closeAllAgentTabs(page: Page) {
   }
 }
 
+const PRODUCTS_SHARE_TOKEN = 'braian-type-product'
+
+/** Panes that host a Products (or named type) object table — not dock tabs. */
+export function productsTablePanes(page: Page, title = 'Products'): Locator {
+  return page.locator('section.pane').filter({
+    has: page.locator('.pane-tab[data-view-type="object_table"]', { hasText: title }),
+  })
+}
+
 export async function resetProductsLayout(page: Page, title = 'Products') {
   await closeAllAgentTabs(page).catch(() => undefined)
   await page.getByTestId('discard-draft').first().click({ timeout: 2_000 }).catch(() => undefined)
   await page.evaluate(() => sessionStorage.setItem('braian.layout.suppressFlush', '1'))
   const listed = await page.request.get('/v1/workspaces')
-  const body = (await listed.json()) as { workspaces: Array<{ id: string; name: string }> }
-  const workspace = body.workspaces.find((item) => item.name === title)
+  expect(listed.ok()).toBeTruthy()
+  const body = (await listed.json()) as {
+    workspaces: Array<{ id: string; name: string; share_token?: string | null }>
+  }
+  const workspace = body.workspaces.find(
+    (item) => item.share_token === PRODUCTS_SHARE_TOKEN || item.name === title,
+  )
+  if (!workspace) throw new Error(`missing canonical ${title} workspace`)
   const me = await page.request.get('/v1/me')
   const userId = ((await me.json()) as { user_id?: string }).user_id
-  if (userId && workspace) {
+  if (userId) {
     await page.evaluate((key) => localStorage.removeItem(key), `braian.layout.${userId}.default.${workspace.id}`)
-    await page.request.delete(`/v1/workspaces/${workspace.id}/state?environment=default`)
   }
+  const deleted = await page.request.delete(`/v1/workspaces/${workspace.id}/state?environment=default`)
+  expect(deleted.ok() || deleted.status() === 204).toBeTruthy()
   await page.reload()
-  await expect(page.locator('nav.tabs')).toBeVisible({ timeout: 60_000 })
+  await expect(page.getByTestId('dock')).toBeVisible({ timeout: 60_000 })
   await page.evaluate(() => sessionStorage.removeItem('braian.layout.suppressFlush'))
+  await expect(productsTablePanes(page, title)).toHaveCount(1, { timeout: 60_000 })
   await showProductsInner(page, title)
 }
 

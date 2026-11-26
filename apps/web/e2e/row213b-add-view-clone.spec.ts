@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { demoCredentials } from './demo'
+import { productsTablePanes, resetProductsLayout } from './ui'
 
 // K3: Add view -> Products view always clones into a new pane on the right.
 // This spec starts from the non-empty demo-like layout and adds a closed
@@ -10,7 +11,7 @@ import { demoCredentials } from './demo'
 const shots = join(dirname(fileURLToPath(import.meta.url)), '..', 'test-results', 'row213b-shots')
 mkdirSync(shots, { recursive: true })
 
-const PRODUCTS_TOKEN = 'braian-type-product'
+const PRODUCTS_SHARE_TOKEN = 'braian-type-product'
 
 type ViewRow = { id: string; type: string; title: string; state?: Record<string, unknown> }
 type WorkspaceDetail = { id: string; views: ViewRow[] }
@@ -22,41 +23,15 @@ async function login(page: Page) {
   await page.getByTestId('password').fill(demo.password)
   await page.getByRole('button', { name: 'Sign in' }).click()
   await expect(page.getByTestId('dock')).toBeVisible({ timeout: 60_000 })
-  await expect(page.locator('.pane-tab[data-view-type="object_table"]', { hasText: 'Products' }).first()).toBeVisible({ timeout: 60_000 })
-}
-
-async function resetProductsLayout(page: Page) {
-  await page.evaluate(() => sessionStorage.setItem('braian.layout.suppressFlush', '1'))
-  const listed = await page.request.get('/v1/workspaces')
-  expect(listed.ok()).toBeTruthy()
-  const body = (await listed.json()) as { workspaces: Array<{ id: string; share_token?: string | null }> }
-  const row = body.workspaces.find((item) => item.share_token === PRODUCTS_TOKEN)
-  if (!row) throw new Error('missing canonical Products workspace')
-  const me = await page.request.get('/v1/me')
-  const userId = ((await me.json()) as { user_id?: string }).user_id
-  if (userId) {
-    await page.evaluate((key) => localStorage.removeItem(key), `braian.layout.${userId}.default.${row.id}`)
-  }
-  const deleted = await page.request.delete(`/v1/workspaces/${row.id}/state?environment=default`)
-  expect(deleted.ok() || deleted.status() === 204).toBeTruthy()
-  await page.reload()
-  await expect(page.getByTestId('dock')).toBeVisible({ timeout: 60_000 })
-  await page.evaluate(() => sessionStorage.removeItem('braian.layout.suppressFlush'))
 }
 
 async function productsWorkspace(page: Page): Promise<WorkspaceDetail> {
   const listed = await page.request.get('/v1/workspaces')
   const body = (await listed.json()) as { workspaces: Array<{ id: string; share_token?: string | null }> }
-  const row = body.workspaces.find((item) => item.share_token === PRODUCTS_TOKEN)
+  const row = body.workspaces.find((item) => item.share_token === PRODUCTS_SHARE_TOKEN)
   if (!row) throw new Error('missing canonical Products workspace')
   const full = await page.request.get(`/v1/workspaces/${row.id}`)
   return (await full.json()) as WorkspaceDetail
-}
-
-function productPanes(page: Page): Locator {
-  return page.locator('section.pane').filter({
-    has: page.locator('.pane-tab[data-view-type="object_table"]', { hasText: 'Products' }),
-  })
 }
 
 function treePane(page: Page): Locator {
@@ -101,20 +76,20 @@ test('Add view clones Products into a new pane right of the open table despite a
   test.setTimeout(180_000)
   await login(page)
   await resetProductsLayout(page)
-
+  try {
   const [originalId] = await openProductTabIds(page)
   if (!originalId) throw new Error('missing open Products table')
   await expect(treePane(page).getByTestId('structure-tree')).toBeVisible()
-  await expect(productPanes(page)).toHaveCount(1)
+  await expect(productsTablePanes(page)).toHaveCount(1)
 
   // Create a second Products table, close it, and leave the view in the catalog.
   await addProductsView(page)
-  await expect(productPanes(page)).toHaveCount(2, { timeout: 30_000 })
+  await expect(productsTablePanes(page)).toHaveCount(2, { timeout: 30_000 })
   const cloneId = (await openProductTabIds(page)).find((id) => id !== originalId)
   if (!cloneId) throw new Error('missing cloned Products table')
   await page.screenshot({ path: `${shots}/row213b-01-clone-open.png` })
   await closeTab(page, cloneId)
-  await expect(productPanes(page)).toHaveCount(1)
+  await expect(productsTablePanes(page)).toHaveCount(1)
   const closed = (await productsWorkspace(page)).views.find((view) => view.id === cloneId)
   expect(closed, 'closing a tab must keep the view in the catalog').toBeTruthy()
   await page.screenshot({ path: `${shots}/row213b-02-clone-closed.png` })
@@ -129,7 +104,7 @@ test('Add view clones Products into a new pane right of the open table despite a
   const graphViews = await graphPane.getAttribute('data-views')
 
   await addProductsView(page)
-  const panes = productPanes(page)
+  const panes = productsTablePanes(page)
   await expect(panes).toHaveCount(2, { timeout: 30_000 })
 
   const openIds = await openProductTabIds(page)
@@ -163,17 +138,20 @@ test('Add view clones Products into a new pane right of the open table despite a
   await page.screenshot({ path: `${shots}/row213b-03-new-pane-right.png` })
 
   await closeTab(page, newId)
-  await expect(productPanes(page)).toHaveCount(1)
-  await expect(productPanes(page).getByTestId('object-row').first()).toBeVisible()
+  await expect(productsTablePanes(page)).toHaveCount(1)
+  await expect(productsTablePanes(page).getByTestId('object-row').first()).toBeVisible()
   await expect(tree.getByTestId('structure-tree')).toBeVisible()
   await page.screenshot({ path: `${shots}/row213b-04-copy-closed-again.png` })
+  } finally {
+    await resetProductsLayout(page)
+  }
 })
 
 test('Add view with no open Products table creates a new view instead of reopening the closed one', async ({ page }) => {
   test.setTimeout(180_000)
   await login(page)
   await resetProductsLayout(page)
-
+  try {
   const [originalId] = await openProductTabIds(page)
   if (!originalId) throw new Error('missing open Products table')
   const closedIds = new Set<string>()
@@ -185,7 +163,7 @@ test('Add view with no open Products table creates a new view instead of reopeni
       await closeTab(page, id)
     }
   }
-  await expect(productPanes(page)).toHaveCount(0)
+  await expect(productsTablePanes(page)).toHaveCount(0)
   const closedBefore = await productsWorkspace(page)
   expect(closedBefore.views.some((view) => view.id === originalId)).toBeTruthy()
   expect(closedIds.size).toBeGreaterThan(0)
@@ -197,7 +175,7 @@ test('Add view with no open Products table creates a new view instead of reopeni
   await page.screenshot({ path: `${shots}/row213b-05-no-open-products.png` })
 
   await addProductsView(page)
-  await expect(productPanes(page)).toHaveCount(1, { timeout: 30_000 })
+  await expect(productsTablePanes(page)).toHaveCount(1, { timeout: 30_000 })
   const [newId] = await openProductTabIds(page)
   if (!newId) throw new Error('missing new Products table')
   expect(closedIds.has(newId), 'must not reopen a closed view').toBe(false)
@@ -215,5 +193,7 @@ test('Add view with no open Products table creates a new view instead of reopeni
   await page.screenshot({ path: `${shots}/row213b-06-new-pane-without-open-table.png` })
 
   await closeTab(page, newId)
-  await resetProductsLayout(page)
+  } finally {
+    await resetProductsLayout(page)
+  }
 })
