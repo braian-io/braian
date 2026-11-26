@@ -2645,6 +2645,7 @@ export interface components {
             peer_key: string;
             peer_type: string;
             sort_order?: string | null;
+            /** Format: int64 */
             version: number;
         };
         /** @description The name shown on one side of a link, and the key used later in an attribute path. */
