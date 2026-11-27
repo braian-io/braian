@@ -17,6 +17,10 @@ const subtitles: Record<string, string> = {
   'layout:move_view_down': 'Move the focused view down',
   'layout:zoom': 'Show only the focused pane',
   'layout:close_view': 'Close the focused view',
+  'layout:split-left': 'Pull the view out to the left',
+  'layout:split-right': 'Pull the view out to the right',
+  'layout:split-top': 'Pull the view out above',
+  'layout:split-bottom': 'Pull the view out below',
 }
 
 const titleOverrides: Record<string, (target: CommandTarget) => string> = {

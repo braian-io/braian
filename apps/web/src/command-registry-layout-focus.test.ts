@@ -17,13 +17,10 @@ describe('layout focus commands in the registry (Notion 107 slice 3)', () => {
     }
   })
 
-  it('lists focus commands on the dock-view menu', () => {
-    const ids = commandsForContext('dock-view', {}).map((command) => command.id)
-    expect(ids).toEqual(expect.arrayContaining([
-      'layout:focus:left',
-      'layout:focus:right',
-      'layout:focus:up',
-      'layout:focus:down',
-    ]))
+  it('keeps focus commands out of the dock-view menu (palette only)', () => {
+    const ids = commandsForContext('dock-view', { viewId: 'v1', viewType: 'object_table' }).map((command) => command.id)
+    for (const id of ['layout:focus:left', 'layout:focus:right', 'layout:focus:up', 'layout:focus:down']) {
+      expect(ids).not.toContain(id)
+    }
   })
 })
