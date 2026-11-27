@@ -1,3 +1,4 @@
+import { registerCommandRunner } from './command-registry'
 import type { Json } from './api'
 import { attributeByKey } from './index-fields'
 import { isHopPath } from './column-prefs'
@@ -5,6 +6,36 @@ import { parseColumnId } from './fields/columns'
 import { optionLabel, typeLabel } from './chips'
 import { readPathFromDoc, summarizePathValues } from './path-cell'
 import { cellPathValues, type PathValuesResponse } from './path-values'
+
+export const REQUEST_TABLE_COPY = 'braian:request-table-copy'
+
+export type TableCopyRequest = { viewId: string; ids: string[] }
+
+let commandRegistered = false
+
+/** Dispatch so the matching object table builds TSV (workspace may host several tables). */
+export function requestTableCopyText(viewId: string, ids: string[]) {
+  const unique = [...new Set(ids.filter(Boolean))]
+  if (!viewId || unique.length === 0 || typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent<TableCopyRequest>(REQUEST_TABLE_COPY, {
+    detail: { viewId, ids: unique },
+  }))
+}
+
+export function ensureTableCopyCommandRunner(): void {
+  if (commandRegistered || typeof window === 'undefined') return
+  commandRegistered = true
+  registerCommandRunner('table:copy-text', (target) => {
+    const viewId = String(target.viewId ?? '')
+    const rows = Array.isArray(target.objects) ? target.objects : []
+    const ids = rows
+      .map((row) => (row && typeof row === 'object' ? String((row as Record<string, unknown>).id ?? '') : ''))
+      .filter(Boolean)
+    if (ids.length === 0 && target.objectId) ids.push(String(target.objectId))
+    if (!viewId || ids.length === 0) return
+    requestTableCopyText(viewId, ids)
+  })
+}
 
 export type TableCopyRow = {
   id: string

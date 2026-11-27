@@ -124,7 +124,7 @@ import { copy, uiLanguage } from './i18n'
 import { openSharedContextMenu, prefersNativeContextMenu } from './shared-context-menu'
 import { buildRowContextMenu } from './row-context-menu'
 import { OBJECTS_DELETED, requestDeleteObjects, type ObjectsDeletedDetail } from './delete-objects'
-import { buildTableCopyTsv } from './table-copy-tsv'
+import { buildTableCopyTsv, ensureTableCopyCommandRunner, REQUEST_TABLE_COPY, type TableCopyRequest } from './table-copy-tsv'
 import { StandardTableChrome } from './standard-table'
 import { StandardEditableTable, type StandardColumn } from './standard-editable-table'
 import { registerCommandRunner, runCommand } from './command-registry'
@@ -345,6 +345,7 @@ export function ObjectTable({
   const prefsSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   /** Unsaved local column-pref edits in this tab (shell.tsx dirtyRef pattern). */
   const prefsDirtyRef = useRef(false)
+  const copyTableTextImpl = useRef<(ids?: string[]) => void>(() => undefined)
   useEffect(() => {
     const onDeleted = (event: Event) => {
       const detail = (event as CustomEvent<ObjectsDeletedDetail>).detail
@@ -1346,7 +1347,6 @@ export function ObjectTable({
   }, [])
 
   const followRowImpl = useRef<(row: ObjRow, index: number, fetch: 'immediate' | 'debounced') => void>(() => undefined)
-  const copyTableTextImpl = useRef<(ids?: string[]) => void>(() => undefined)
 
   const applySelection = (row: ObjRow, index: number, anchor: number, extend: boolean) => {
     if (!extend) {
@@ -1647,6 +1647,13 @@ export function ObjectTable({
   }
 
   useEffect(() => {
+    ensureTableCopyCommandRunner()
+    const onCopy = (event: Event) => {
+      const detail = (event as CustomEvent<TableCopyRequest>).detail
+      if (!detail || detail.viewId !== view.id) return
+      copyTableTextImpl.current(detail.ids)
+    }
+    window.addEventListener(REQUEST_TABLE_COPY, onCopy)
     const stops = [
       registerCommandRunner('object:open', (target) => {
         if (!target.objectId) return
@@ -1691,16 +1698,11 @@ export function ObjectTable({
         if (objects.length < 2) return
         window.dispatchEvent(new CustomEvent('braian-link-pick', { detail: { objects } }))
       }),
-      registerCommandRunner('table:copy-text', (target) => {
-        const objects = Array.isArray(target.objects) ? target.objects : []
-        const ids = objects
-          .map((row) => (row && typeof row === 'object' ? String((row as Record<string, unknown>).id ?? '') : ''))
-          .filter(Boolean)
-        if (ids.length === 0) return
-        copyTableTextImpl.current(ids)
-      }),
     ]
-    return () => stops.forEach((stop) => stop())
+    return () => {
+      window.removeEventListener(REQUEST_TABLE_COPY, onCopy)
+      stops.forEach((stop) => stop())
+    }
   })
 
 
