@@ -193,7 +193,7 @@ test.describe('tree group filters the products table', () => {
       await expectNamedProduct(productsDairy, 'Semi-skimmed milk 18', true)
       await expectNamedProduct(productsDairy, SEED_JUICE_PRODUCT_NAME, false)
 
-      await treeDairy.getByRole('treeitem', { name: 'Food', exact: true }).click()
+      await treeDairy.getByTestId('structure-root').click()
       await expect(productsDairy.getByTestId('view-source-label')).toContainText('Food › Food', { timeout: 30_000 })
       await expectNamedProduct(productsDairy, 'Mature cheddar', true)
       await expectNamedProduct(productsDairy, SEED_JUICE_PRODUCT_NAME, true)

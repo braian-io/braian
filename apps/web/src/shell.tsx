@@ -3426,8 +3426,8 @@ export function StructureTree({ session, view }: { session: Session; view: View 
           <div key={structureKey}>
             <button
               type="button"
-              role="treeitem"
-              aria-selected={session.group === `${structureKey}:${structureKey}`}
+              data-testid="structure-root"
+              aria-pressed={session.group === `${structureKey}:${structureKey}`}
               className={session.group === `${structureKey}:${structureKey}` ? 'tree-row on' : 'tree-row'}
               onClick={() => selectGroup(structureKey, structureKey)}
             >
