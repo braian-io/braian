@@ -1060,11 +1060,13 @@ export function ObjectTable({
     } else if (keepRestored) {
       restoredMark.current = null
     }
-    // Search, path, label, selection chips, and a non-peer group filter drop
-    // the mark. A peer tree node is already handled above and must keep a
-    // restored row when the node filter first arrives.
+    // The search box clears on the typed value, not the debounced query.
+    // A click in the 120ms before the query commits must keep its rows.
+    // Path, label, and selection chips, and a non-peer group, drop the mark
+    // too. A peer tree node is already handled above and must keep a restored
+    // row when the node filter first arrives.
     const userFilterScope = [
-      queryText,
+      filter,
       labelFilter,
       selectionFilter,
       pathFilters.join('\n'),
@@ -1111,7 +1113,7 @@ export function ObjectTable({
     const activeId = !dropped && active >= 0 ? (rowAt(active)?.id ?? '') : ''
     const hintCount = activeId && activeId === (session.objectId ?? '') ? publishedIds.length : 0
     publishSelectionHint(view.id, activeId, hintCount)
-  }, [active, chipContext.activeGroup, labelFilter, pathFilters, peerFilter, peerScope, peerSource, queryText, selected, selectionFilter, session, sort, view.id, knownStamp, filterBy])
+  }, [active, chipContext.activeGroup, filter, labelFilter, pathFilters, peerFilter, peerScope, peerSource, queryText, selected, selectionFilter, session, sort, view.id, knownStamp, filterBy])
 
   const pathList = attributePaths.data?.paths ?? []
   const columnFor = (id: string) => {

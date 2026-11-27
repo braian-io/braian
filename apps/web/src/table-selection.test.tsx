@@ -348,6 +348,11 @@ describe('table row selection', () => {
     await waitFor(() => expect(screen.queryByTestId('table-selection-bar')).toBeNull())
     expect(rows().every((row) => row.getAttribute('aria-selected') === 'false')).toBe(true)
 
+    fireEvent.click(rows()[0]!)
+    await waitFor(() => expect(selectedIds()).toEqual(['object-row-id-0']))
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    expect(readSelection('table').map((row) => row.id)).toEqual(['id-0'])
+
     fireEvent.change(screen.getByTestId('quick-filter'), { target: { value: '' } })
     await waitFor(() => expect(screen.getAllByTestId('object-row')).toHaveLength(tableRows.length))
     fireEvent.click(rows()[0]!)
