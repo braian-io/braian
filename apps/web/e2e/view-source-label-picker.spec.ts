@@ -60,38 +60,29 @@ async function choosePaletteHit(page: Page, palette: Locator, title: string) {
 }
 
 test.describe('view source label opens Select source', () => {
-  test('label picker switches between Food and All Products', async ({ page }) => {
-    test.setTimeout(180_000)
+  test.describe.configure({ mode: 'serial' })
+
+  test('keyboard opens Select source from the label and Esc returns focus', async ({ page }) => {
+    test.setTimeout(120_000)
     await login(page)
 
     const workspaceId = crypto.randomUUID()
-    const treeId = crypto.randomUUID()
     const productsId = crypto.randomUUID()
-    const name = `Label picker ${workspaceId.slice(0, 8)}`
-    const layout = {
-      type: 'split',
-      dir: 'horizontal',
-      ratios: [0.22, 0.78],
-      children: [
-        { type: 'tabs', views: [treeId], active: 0 },
-        { type: 'tabs', views: [productsId], active: 0 },
-      ],
-    }
+    const name = `Label keys ${workspaceId.slice(0, 8)}`
     const created = await page.request.post('/v1/workspaces', {
       data: {
         id: workspaceId,
         name,
         locked: false,
-        share_token: `label-picker-${workspaceId.slice(0, 8)}`,
-        layout,
+        share_token: `label-keys-${workspaceId.slice(0, 8)}`,
+        layout: { type: 'tabs', views: [productsId], active: 0 },
       },
     })
-    expect(created.ok(), `create workspace ${created.status()}`).toBeTruthy()
-
-    for (const view of [
-      { id: treeId, type: 'structure_tree', title: 'Food', pane: 'left', position: 0, state: { expanded: ['dairy'], structure_key: 'food' } },
-      {
+    expect(created.ok()).toBeTruthy()
+    const response = await page.request.post('/v1/views', {
+      data: {
         id: productsId,
+        workspace_id: workspaceId,
         type: 'object_table',
         title: 'Products',
         pane: 'center',
@@ -104,39 +95,30 @@ test.describe('view source label opens Select source', () => {
           source: { kind: 'all' },
         },
       },
-    ]) {
-      const response = await page.request.post('/v1/views', {
-        data: { ...view, workspace_id: workspaceId },
-      })
-      expect(response.ok(), `create view ${view.type} ${response.status()}`).toBeTruthy()
-    }
+    })
+    expect(response.ok()).toBeTruthy()
 
     try {
       await page.reload()
       await page.locator('nav.tabs').getByRole('button', { name: new RegExp(name) }).click()
       const products = pane(page, productsId)
-      const tree = pane(page, treeId)
-      await Promise.all([
-        expect(products.getByTestId('object-table').first()).toBeVisible({ timeout: 60_000 }),
-        expect(tree.getByTestId('structure-tree')).toBeVisible({ timeout: 60_000 }),
-      ])
-
-      let palette = await openSourcePickerFromLabel(page, products)
-      await choosePaletteHit(page, palette, 'Products from Food')
-      await expect(products.getByTestId('view-source-label')).toContainText('Food', { timeout: 30_000 })
-
-      palette = await openSourcePickerFromLabel(page, products)
-      await choosePaletteHit(page, palette, 'All Products')
-      await expect(products.getByTestId('view-source-label')).toHaveText('All Products', { timeout: 30_000 })
-      await tree.getByRole('treeitem').filter({ hasText: 'Milk' }).first().click()
-      await expect(products.getByTestId('view-source-label')).toHaveText('All Products', { timeout: 30_000 })
+      await expect(products.getByTestId('object-table').first()).toBeVisible({ timeout: 60_000 })
+      const label = products.getByTestId('view-source-label')
+      await label.focus()
+      await page.keyboard.press('Enter')
+      await expect(page.getByTestId('command-palette')).toBeVisible()
+      await page.keyboard.press('Escape')
+      await expect(page.getByTestId('command-palette')).toHaveCount(0)
+      await expect
+        .poll(async () => label.evaluate((el) => document.activeElement === el), { timeout: 10_000 })
+        .toBe(true)
     } finally {
       await page.request.delete(`/v1/workspaces/${workspaceId}`)
     }
   })
 
   test('Food tree source survives reload', async ({ page }) => {
-    test.setTimeout(120_000)
+    test.setTimeout(180_000)
     await login(page)
 
     const workspaceId = crypto.randomUUID()
@@ -203,34 +185,52 @@ test.describe('view source label opens Select source', () => {
       await page.reload()
       await page.locator('nav.tabs').getByRole('button', { name: new RegExp(name) }).click()
       const productsReloaded = pane(page, productsId)
+      const treeReloaded = pane(page, treeId)
       await expect(productsReloaded.getByTestId('view-source-label')).toContainText('Food › Milk', { timeout: 30_000 })
       await waitForSourceState(page, workspaceId, productsId, { kind: 'peer', viewId: treeId, selection: 'node' })
+
+      let palette = await openSourcePickerFromLabel(page, productsReloaded)
+      await choosePaletteHit(page, palette, 'All Products')
+      await expect(productsReloaded.getByTestId('view-source-label')).toHaveText('All Products', { timeout: 30_000 })
+      await treeReloaded.getByRole('treeitem').filter({ hasText: 'Milk' }).first().click()
+      await expect(productsReloaded.getByTestId('view-source-label')).toHaveText('All Products', { timeout: 30_000 })
     } finally {
       await page.request.delete(`/v1/workspaces/${workspaceId}`)
     }
   })
 
-  test('keyboard opens Select source from the label and Esc returns focus', async ({ page }) => {
-    test.setTimeout(120_000)
+  test('label picker links Products to Food tree', async ({ page }) => {
+    test.setTimeout(180_000)
     await login(page)
 
     const workspaceId = crypto.randomUUID()
+    const treeId = crypto.randomUUID()
     const productsId = crypto.randomUUID()
-    const name = `Label keys ${workspaceId.slice(0, 8)}`
+    const name = `Label picker ${workspaceId.slice(0, 8)}`
+    const layout = {
+      type: 'split',
+      dir: 'horizontal',
+      ratios: [0.22, 0.78],
+      children: [
+        { type: 'tabs', views: [treeId], active: 0 },
+        { type: 'tabs', views: [productsId], active: 0 },
+      ],
+    }
     const created = await page.request.post('/v1/workspaces', {
       data: {
         id: workspaceId,
         name,
         locked: false,
-        share_token: `label-keys-${workspaceId.slice(0, 8)}`,
-        layout: { type: 'tabs', views: [productsId], active: 0 },
+        share_token: `label-picker-${workspaceId.slice(0, 8)}`,
+        layout,
       },
     })
-    expect(created.ok()).toBeTruthy()
-    const response = await page.request.post('/v1/views', {
-      data: {
+    expect(created.ok(), `create workspace ${created.status()}`).toBeTruthy()
+
+    for (const view of [
+      { id: treeId, type: 'structure_tree', title: 'Food', pane: 'left', position: 0, state: { expanded: ['dairy'], structure_key: 'food' } },
+      {
         id: productsId,
-        workspace_id: workspaceId,
         type: 'object_table',
         title: 'Products',
         pane: 'center',
@@ -243,23 +243,28 @@ test.describe('view source label opens Select source', () => {
           source: { kind: 'all' },
         },
       },
-    })
-    expect(response.ok()).toBeTruthy()
+    ]) {
+      const response = await page.request.post('/v1/views', {
+        data: { ...view, workspace_id: workspaceId },
+      })
+      expect(response.ok(), `create view ${view.type} ${response.status()}`).toBeTruthy()
+    }
 
     try {
       await page.reload()
       await page.locator('nav.tabs').getByRole('button', { name: new RegExp(name) }).click()
       const products = pane(page, productsId)
-      await expect(products.getByTestId('object-table').first()).toBeVisible({ timeout: 60_000 })
-      const label = products.getByTestId('view-source-label')
-      await label.focus()
-      await page.keyboard.press('Enter')
-      await expect(page.getByTestId('command-palette')).toBeVisible()
-      await page.keyboard.press('Escape')
-      await expect(page.getByTestId('command-palette')).toHaveCount(0)
-      await expect
-        .poll(async () => label.evaluate((el) => document.activeElement === el), { timeout: 10_000 })
-        .toBe(true)
+      const tree = pane(page, treeId)
+      await Promise.all([
+        expect(products.getByTestId('object-table').first()).toBeVisible({ timeout: 45_000 }),
+        expect(tree.getByTestId('structure-tree')).toBeVisible({ timeout: 45_000 }),
+      ])
+
+      const palette = await openSourcePickerFromLabel(page, products)
+      await choosePaletteHit(page, palette, 'Products from Food')
+      await expect(products.getByTestId('view-source-label')).toContainText('Food', { timeout: 30_000 })
+      await tree.getByRole('treeitem').filter({ hasText: 'Milk' }).first().click()
+      await expect(products.getByTestId('view-source-label')).toContainText('Food › Milk', { timeout: 30_000 })
     } finally {
       await page.request.delete(`/v1/workspaces/${workspaceId}`)
     }
