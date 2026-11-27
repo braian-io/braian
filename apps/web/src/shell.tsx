@@ -288,9 +288,11 @@ export function Shell() {
     const opener = sourceLabelOpenerRef.current
     if (!opener) return
     sourceLabelOpenerRef.current = null
-    window.setTimeout(() => {
-      if (opener.isConnected) opener.focus()
-    }, 0)
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        if (opener.isConnected) opener.focus()
+      })
+    })
   }, [paletteMode])
   useEffect(() => {
     const close = () => setPaletteMode(null)

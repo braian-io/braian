@@ -701,24 +701,17 @@ function Pane({ frame, leaf }: { frame: Frame; leaf: Leaf }) {
           const label = meta?.sourceLabel
           if (!label || !activeId || meta?.type !== 'object_table' || !frame.onSourceLabelPick) return null
           return (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="pane-source pane-source-btn"
-                  data-testid="view-source-label"
-                  aria-label={copy.changeSource}
-                  onClick={(event) => frame.onSourceLabelPick?.(activeId, event.currentTarget)}
-                >
-                  {label}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <span>{copy.changeSource}</span>
-                <span>{label}</span>
-              </TooltipContent>
-            </Tooltip>
+            <Button
+              type="button"
+              variant="ghost"
+              className="pane-source pane-source-btn"
+              data-testid="view-source-label"
+              aria-label={copy.changeSource}
+              title={`${copy.changeSource} — ${label}`}
+              onClick={(event) => frame.onSourceLabelPick?.(activeId, event.currentTarget)}
+            >
+              {label}
+            </Button>
           )
         })()}
         <div className="pane-chrome">
