@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
-import { Maximize2, Minimize2, MoreHorizontal, X } from 'lucide-react'
+import { Lock, LockOpen, Maximize2, Minimize2, MoreHorizontal, X } from 'lucide-react'
 import { ViewGlyph } from './chips'
 import { Button } from './components/ui/button'
 import { Kbd } from './components/ui/kbd'
@@ -36,6 +36,7 @@ export type DockView = {
   type: string
   state?: { catalog?: string; prompt?: string }
   sourceLabel?: string
+  sourceLocked?: boolean
   prompt?: string
 }
 
@@ -60,6 +61,7 @@ export function WorkspaceDock({
   renderView,
   onAddView,
   onSourceLabelPick,
+  onToggleSourceLock,
   agentViews = [],
 }: {
   doc: LayoutDoc
@@ -68,6 +70,7 @@ export function WorkspaceDock({
   renderView: (view: DockView) => ReactNode
   onAddView: (target: string) => void
   onSourceLabelPick?: (viewId: string) => void
+  onToggleSourceLock?: (viewId: string) => void
   /** View ids an agent is working in. The pane picks up one left-edge marker. */
   agentViews?: string[]
 }) {
@@ -170,6 +173,7 @@ export function WorkspaceDock({
     run,
     onAddView,
     onSourceLabelPick,
+    onToggleSourceLock,
     onMenu: ({ x, y, view }) => {
       const viewType = viewList.find((item) => item.id === view)?.type ?? ''
       openSharedContextMenu({
@@ -248,6 +252,7 @@ type Frame = {
   run: (name: string, args?: Record<string, unknown>) => void
   onAddView: (target: string) => void
   onSourceLabelPick?: (viewId: string) => void
+  onToggleSourceLock?: (viewId: string) => void
   onMenu: (menu: { x: number; y: number; view: string }) => void
   onDrag: (drag: Drag | null) => void
   renderView: (view: DockView) => ReactNode
@@ -700,18 +705,35 @@ function Pane({ frame, leaf }: { frame: Frame; leaf: Leaf }) {
           const meta = frame.viewList.find((view) => view.id === activeId)
           const label = meta?.sourceLabel
           if (!label || !activeId || meta?.type !== 'object_table' || !frame.onSourceLabelPick) return null
+          const locked = Boolean(meta.sourceLocked)
           return (
-            <Button
-              type="button"
-              variant="ghost"
-              className="pane-source pane-source-btn"
-              data-testid="view-source-label"
-              aria-label={copy.changeSource}
-              title={`${copy.changeSource} — ${label}`}
-              onClick={() => frame.onSourceLabelPick?.(activeId)}
-            >
-              {label}
-            </Button>
+            <div className="pane-source-wrap">
+              <Button
+                type="button"
+                variant="ghost"
+                className="pane-source pane-source-btn"
+                data-testid="view-source-label"
+                aria-label={copy.changeSource}
+                title={`${copy.changeSource} — ${label}`}
+                onClick={() => frame.onSourceLabelPick?.(activeId)}
+              >
+                {label}
+              </Button>
+              {frame.onToggleSourceLock ? (
+                <Button
+                  type="button"
+                  variant="icon"
+                  className="pane-source-lock"
+                  data-testid="view-source-lock"
+                  aria-label={locked ? copy.unlockViewSource : copy.lockViewSource}
+                  aria-pressed={locked}
+                  title={locked ? copy.unlockViewSource : copy.lockViewSource}
+                  onClick={() => frame.onToggleSourceLock?.(activeId)}
+                >
+                  {locked ? <Lock size={14} aria-hidden="true" /> : <LockOpen size={14} aria-hidden="true" />}
+                </Button>
+              ) : null}
+            </div>
           )
         })()}
         <div className="pane-chrome">

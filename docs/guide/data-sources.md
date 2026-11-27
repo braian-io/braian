@@ -78,12 +78,26 @@ type. It never falls back to every row silently. The palette uses the same empty
 A choice that would close a follow chain is still listed but disabled, with the reason
 `Would create a cycle (… follows …)`.
 
+## Locking a view
+
+Use the lock control beside the source label in the pane header, or `Ctrl+K` and
+**Lock view** / **Unlock view** on the focused object table. While locked, the table
+keeps its current peer filter and header label even when the source view changes — tree
+clicks and row selection in another table no longer update it. Automatic retargeting
+(when a structure tree is added, or **Show {type}** from a tree node) skips locked
+tables and opens another view when no unlocked table exists.
+
+Changing the source manually with **Select source** still works and clears the lock.
+
+Lock state and a snapshot of the peer selection are saved on the view.
+
 ## Persistence
 
 The selected source is saved on the view, so it survives a reload. A row-based peer is
 restored with the same rows. A structure-tree source restores the same tree and group,
 but the selected node itself is not part of the readable URL, so after a reload the
-view can show its `Select a row…` state until you select the node again.
+view can show its `Select a row…` state until you select the node again. A locked view
+also restores its frozen peer selection from view state.
 
 ## Catalogs
 

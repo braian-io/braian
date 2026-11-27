@@ -73,7 +73,7 @@ import {
   typeOfView,
   typeViewPaletteItems,
 } from './type-labels'
-import { linkedTypeLinks, peerSourceOf } from './view-source'
+import { isSourceLocked, linkedTypeLinks, peerSourceOf } from './view-source'
 import { resolveColumnMoveTarget } from './column-move'
 import { dispatchUi } from './ui-bus'
 import {
@@ -1746,6 +1746,9 @@ function buildCatalog(
       target: {
         feedbackEnabled,
         ...(trashActive ? { trashKind: trashActive.kind, trashLabel: trashActive.name } : {}),
+        ...(focused?.type === 'object_table'
+          ? { viewId: focused.id, viewType: focused.type, sourceLocked: isSourceLocked(focused.state) }
+          : {}),
       },
     }),
     ...registryLayoutFocusPaletteRows(),

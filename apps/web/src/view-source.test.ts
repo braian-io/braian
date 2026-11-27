@@ -17,6 +17,10 @@ import {
   peerSourceLabel,
   peerSourceOf,
   viewSourceLabel,
+  withSourceLock,
+  isSourceLocked,
+  sourcePinOf,
+  stripSourceLock,
   wouldCreateCycle,
 } from './view-source'
 import { copy } from './i18n'
@@ -53,6 +57,26 @@ describe('view source (Notion 103 PR 1)', () => {
   it('detects object_table', () => {
     expect(isObjectTableView({ type: 'object_table' })).toBe(true)
     expect(isObjectTableView({ type: 'graph' })).toBe(false)
+  })
+})
+
+describe('source lock', () => {
+  it('persists lock state and a frozen pin', () => {
+    const locked = withSourceLock({}, true, { selection: 'node', structureKey: 'food', groupKey: 'cheese', caption: 'Cheese' })
+    expect(isSourceLocked(locked)).toBe(true)
+    expect(sourcePinOf(locked)).toEqual({ selection: 'node', structureKey: 'food', groupKey: 'cheese', caption: 'Cheese' })
+  })
+
+  it('clears the lock when the user changes source manually', () => {
+    const locked = withSourceLock({ columns: ['name'] }, true, { selection: 'row', ids: ['p1'] })
+    const next = applyPeerSource(locked, 'tree', 'node')
+    expect(isSourceLocked(next)).toBe(false)
+    expect(sourcePinOf(next)).toBeNull()
+    expect((next as { columns?: string[] }).columns).toEqual(['name'])
+  })
+
+  it('stripSourceLock removes only lock keys', () => {
+    expect(stripSourceLock(withSourceLock({ sort: 'number' }, true, { selection: 'row', ids: ['a'] }))).toEqual({ sort: 'number' })
   })
 })
 

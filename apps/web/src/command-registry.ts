@@ -571,6 +571,16 @@ export const registryCommands: RegistryCommand[] = [
     when: (target) => !target.viewType || target.viewType === 'object_table',
   },
   {
+    id: 'view:source-lock',
+    title: (target) => (target.sourceLocked ? copy.unlockViewSource : copy.lockViewSource),
+    contexts: ['dock-view'],
+    group: 'views',
+    palette: true,
+    menu: false,
+    keywords: ['lock', 'unlock', 'source', 'peer', 'follow', 'view'],
+    when: (target) => !target.viewType || target.viewType === 'object_table',
+  },
+  {
     id: 'layout:zoom',
     title: (target) => (target.paneZoomed ? copy.restore : copy.maximize),
     contexts: ['dock-view'],

@@ -1,6 +1,6 @@
 import type { Json } from './api'
 import { typeOfView, type TypeName } from './type-labels'
-import { isExplicitAllSource, peerSourceOf } from './view-source'
+import { isExplicitAllSource, isSourceLocked, peerSourceOf } from './view-source'
 
 export type LinkableView = {
   id: string
@@ -41,6 +41,7 @@ export function objectTablesToAutoLinkToTree(
   const targets: string[] = []
   for (const view of tableViews) {
     if (view.type !== 'object_table' || !open.has(view.id)) continue
+    if (isSourceLocked(view.state)) continue
     const bound = typeOfView(view, types)
     if (!bound || !typeAcceptsStructureTree(bound, defs)) continue
     const peer = peerSourceOf(view.state)

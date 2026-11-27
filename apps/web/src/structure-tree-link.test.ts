@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { objectTablesToAutoLinkToTree, typeAcceptsStructureTree } from './structure-tree-link'
 import type { TypeName } from './type-labels'
-import { applyPeerSource, applyTypeSource } from './view-source'
+import { applyPeerSource, applyTypeSource, withSourceLock } from './view-source'
 
 const product: TypeName = {
   id: 't-product',
@@ -85,6 +85,27 @@ describe('objectTablesToAutoLinkToTree', () => {
 
   it('does nothing when the tree is not open', () => {
     expect(objectTablesToAutoLinkToTree(treeId, views, [product], [productsId], defs)).toEqual([])
+  })
+
+  it('skips locked open tables', () => {
+    const lockedProducts = {
+      id: productsId,
+      type: 'object_table',
+      title: 'Products locked',
+      state: withSourceLock(
+        applyTypeSource({ object_type: product.id, type_key: product.key }, product),
+        true,
+        { selection: 'node', structureKey: 'food', groupKey: 'milk', caption: 'Milk' },
+      ),
+    }
+    const ids = objectTablesToAutoLinkToTree(
+      treeId,
+      views.map((view) => (view.id === productsId ? lockedProducts : view)),
+      [product, article],
+      [treeId, productsId],
+      defs,
+    )
+    expect(ids).toEqual([])
   })
 
   it('links a table with no source when the tree was already open, and leaves explicit All', () => {
