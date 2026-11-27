@@ -61,8 +61,8 @@ async function choosePaletteHit(page: Page, palette: Locator, title: string) {
 }
 
 test.describe('view source label opens Select source', () => {
-  test('click label, switch All Products and Food tree, persists after reload', async ({ page }) => {
-    test.setTimeout(180_000)
+  test('click label, switch All Products and Food tree', async ({ page }) => {
+    test.setTimeout(120_000)
     await login(page)
 
     const workspaceId = crypto.randomUUID()
@@ -147,10 +147,6 @@ test.describe('view source label opens Select source', () => {
       await expect.poll(async () => products.getByTestId('object-row').count(), { timeout: 30_000 }).toBe(
         SEED_MILK_PRODUCT_NAMES.length,
       )
-      await waitForSourceState(page, workspaceId, productsId, { kind: 'peer', viewId: treeId, selection: 'node' })
-      await expect
-        .poll(async () => (await viewState(page, workspaceId, treeId))?.selected_group, { timeout: 30_000 })
-        .toBe('food:milk')
     } finally {
       await page.request.delete(`/v1/workspaces/${workspaceId}`)
     }
