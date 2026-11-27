@@ -42,9 +42,14 @@ The active row carries a `Current` chip.
 
 When you add a structure tree to the workspace — **Open view**, **Add view**, or a
 future Open structure command — any open object table whose type can use that tree
-is linked to it automatically, even if the table was on **All {type}**. The pane
-header then shows `All {type} · {tree} › {node}`. Click the header once to return
-to **All {type}**; that choice stays until another structure tree is added to the
+is linked to it automatically, even if the table was on **All {type}**. A layout
+that already contains the tree, including the default Products workspace, does the
+same on open for tables that have no source yet. An explicit **All {type}** in
+that layout stays All until a tree is added. The pane header shows
+`All {type} · {tree}` before a group is chosen (the table still lists the whole
+type) and `All {type} · {tree} › {group}` after. The chosen group is saved on the
+tree view, so a reload keeps the filter. Click the header once to return to
+**All {type}**; that choice stays until another structure tree is added to the
 layout. Selection chips in the filter bar light up only when their filter is really
 applied to the table (on **All {type}**, a tree-side group selection does not
 highlight a matching assortment chip). A **group** chip on a table in explicit

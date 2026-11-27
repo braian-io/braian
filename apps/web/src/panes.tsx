@@ -114,7 +114,7 @@ import { useOpenObjectProposals } from './use-open-proposals'
 import { shouldHoldTablePaint, shouldRefreshTableSnapshot } from './table-live-paint'
 import { searchPeerArticles, type PeerPickOption } from './peer-search'
 import { linkedPeerIds } from './peer-source'
-import { clearExplicitAllSource, isExplicitAllSource, peerEmptyState, peerIdsFilter, peerNodeFilter, peerSourceOf } from './view-source'
+import { clearExplicitAllSource, isExplicitAllSource, peerEmptyState, peerIdsFilter, peerSourceOf, structurePeerFilter } from './view-source'
 import { FieldDiff } from './field-diff-view'
 import { proposeInAgentSession } from './agent-runs'
 import { viewingAgentRunId } from './agent-session'
@@ -574,9 +574,12 @@ export function ObjectTable({
     enabled: Boolean(catalogReady && typeKey && peerSource?.selection === 'row' && peerRows.length > 0),
     staleTime: 5_000,
   })
+  // A structure-tree peer with no node yet lists the whole type. A chosen node
+  // filters to that placed group. A row peer with no row stays empty.
+  const nodeAwaitingGroup = peerSource?.selection === 'node' && !peerNode
   const peerFilter = peerSource
     ? peerSource.selection === 'node'
-      ? (peerNode ? peerNodeFilter(peerNode) : peerIdsFilter([]))
+      ? structurePeerFilter(peerNode)
       : (peerIds.isSuccess ? peerIdsFilter(peerIds.data) : peerIdsFilter([]))
     : ''
   const handPicked = selectionFilter.startsWith('id:=[') || selectionFilter === EMPTY_MANUAL_FILTER
@@ -914,7 +917,7 @@ export function ObjectTable({
   const peerLinkedCount = peerSource?.selection === 'node'
     ? (probe.isSuccess && !probe.isFetching ? found : null)
     : (peerIds.isSuccess ? peerIds.data.length : null)
-  const peerEmpty = peerEmptyState({
+  const peerEmpty = nodeAwaitingGroup ? null : peerEmptyState({
     source: peerSource,
     sourceView: peerSourceView,
     targetType: bound,

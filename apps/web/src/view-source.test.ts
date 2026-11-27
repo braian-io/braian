@@ -11,6 +11,7 @@ import {
   peerEmptyState,
   peerIdsFilter,
   peerNodeFilter,
+  structurePeerFilter,
   peerSourceLabel,
   peerSourceOf,
   viewSourceLabel,
@@ -148,6 +149,8 @@ describe('peer source (Notion 103 PR 2)', () => {
 
   it('builds node and linked-id filters', () => {
     expect(peerNodeFilter({ structureKey: 'food', groupKey: 'cheese' })).toBe('groups:=food:cheese')
+    expect(structurePeerFilter(null)).toBe('')
+    expect(structurePeerFilter({ structureKey: 'food', groupKey: 'cheese' })).toBe('groups:=food:cheese')
     expect(peerIdsFilter([])).toBe('id:=__no_peer__')
     expect(peerIdsFilter(['a', 'b'])).toBe('id:=[`a`,`b`]')
   })

@@ -106,3 +106,11 @@ export function resolveStructureOpenTarget(
     ?? views.find((view) => PLACEMENT_ANCHOR_TYPES.has(view.type))
   return anchor?.id ?? focus
 }
+
+/** Group last chosen in a structure tree, stored as `structureKey:groupKey`. */
+export function treeSelectedGroup(state: Json | undefined): { structureKey: string; groupKey: string } | null {
+  const raw = String(state?.selected_group ?? '').trim()
+  const split = raw.indexOf(':')
+  if (split <= 0 || split >= raw.length - 1) return null
+  return { structureKey: raw.slice(0, split), groupKey: raw.slice(split + 1) }
+}

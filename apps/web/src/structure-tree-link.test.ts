@@ -86,4 +86,16 @@ describe('objectTablesToAutoLinkToTree', () => {
   it('does nothing when the tree is not open', () => {
     expect(objectTablesToAutoLinkToTree(treeId, views, [product], [productsId], defs)).toEqual([])
   })
+
+  it('links a table with no source when the tree was already open, and leaves explicit All', () => {
+    const ids = objectTablesToAutoLinkToTree(
+      treeId,
+      views,
+      [product, article],
+      [treeId, productsId, articlesId, 'tbl-linked'],
+      defs,
+      { explicitAll: false },
+    )
+    expect(ids).toEqual([articlesId])
+  })
 })

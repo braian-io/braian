@@ -108,7 +108,14 @@ describe('type workspaces', () => {
       'history',
       'class_attributes',
     ])
-    expect(articles?.views[2]?.state).toMatchObject({ type_key: 'article', object_type: '201' })
+    const articleIds = (articles?.views ?? []).map((_, index) => `view-${index}`)
+    const articleState = articles?.views[2]?.state
+    expect(typeof articleState).toBe('function')
+    expect(typeof articleState === 'function' ? articleState(articleIds) : articleState).toMatchObject({
+      type_key: 'article',
+      object_type: '201',
+      source: { kind: 'peer', viewId: articleIds[0], selection: 'node' },
+    })
     expect(articles?.views[0]?.title).toBe('Food')
     expect(articles?.views[0]?.state).toEqual({ structure_key: 'food' })
     const suppliers = templates[2]

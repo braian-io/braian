@@ -172,7 +172,7 @@ test('Ctrl+K Switch catalog opens straight into the catalog list', async ({ page
   await page.locator('nav.tabs').getByRole('button', { name: /Products/ }).click()
   await mainTable(page).click({ position: { x: 24, y: 24 } })
   const label = page.locator('.pane.focused').getByTestId('view-source-label')
-  await expect(label).toHaveText('All Products')
+  await expect(label).toHaveText('All Products · Food')
   await waitForCatalogs(page)
   await page.keyboard.press('Control+K')
   const palette = page.getByTestId('command-palette')
@@ -188,7 +188,7 @@ test('Ctrl+K Switch catalog opens straight into the catalog list', async ({ page
   await palette.getByRole('option', { name: /SAP ERP/ }).click()
   await overrideSave
   // A focused view gets an override; the header picker stays workspace-global.
-  await expect(label).toHaveText('All Products · SAP ERP')
+  await expect(label).toHaveText('All Products · Food · SAP ERP')
   await expect(page.getByTestId('catalog-selector')).toContainText(/Master catalog/i)
 })
 

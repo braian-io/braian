@@ -57,7 +57,7 @@ test('Ctrl+K Switch catalog sets the focused view catalog', async ({ page }) => 
 
   const label = page.locator('.pane.focused').getByTestId('view-source-label')
   const selector = page.getByTestId('catalog-selector')
-  await expect(label).toHaveText('All Products')
+  await expect(label).toHaveText('All Products · Food')
   await expect(selector).toContainText(/Master catalog/i)
   await waitForCatalogs(page)
 
@@ -72,7 +72,7 @@ test('Ctrl+K Switch catalog sets the focused view catalog', async ({ page }) => 
   await palette.getByRole('option', { name: /SAP ERP/ }).click()
   await overrideSave
 
-  await expect(label).toHaveText('All Products · SAP ERP')
+  await expect(label).toHaveText('All Products · Food · SAP ERP')
   await expect(selector).toContainText(/Master catalog/i)
   await page.screenshot({ path: 'test-results/117-switch-catalog-view.png' })
 

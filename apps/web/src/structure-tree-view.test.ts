@@ -6,6 +6,7 @@ import {
   structureTreeViewNeedsBackfill,
   structureTreeViewState,
   structureTreeViewTitle,
+  treeSelectedGroup,
 } from './structure-tree-view'
 
 const defs = {
@@ -59,6 +60,15 @@ describe('structure tree view helpers', () => {
       structure_key: 'food',
       structure_id: 's-food',
     })
+  })
+
+  it('reads a saved tree selection and ignores a bare token', () => {
+    expect(treeSelectedGroup({ selected_group: 'food:cheese', expanded: ['dairy'] })).toEqual({
+      structureKey: 'food',
+      groupKey: 'cheese',
+    })
+    expect(treeSelectedGroup({ selected_group: 'cheese' })).toBeNull()
+    expect(treeSelectedGroup({})).toBeNull()
   })
 
   it('avoids Detail as the center placement anchor', () => {

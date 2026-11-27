@@ -140,6 +140,18 @@ export function peerNodeFilter(node: { structureKey: string; groupKey: string })
   return `groups:=${node.structureKey}:${node.groupKey}`
 }
 
+/**
+ * Filter for a structure-tree peer. With no node yet the table lists the whole
+ * type (the Products workspace opens that way). A chosen node filters to the
+ * exact placed group, the same clause as {@link peerNodeFilter}.
+ */
+export function structurePeerFilter(
+  node: { structureKey: string; groupKey: string } | null,
+): string {
+  if (!node?.structureKey || !node.groupKey) return ''
+  return peerNodeFilter(node)
+}
+
 /** Typesense filter for the linked peers of one or more selected rows. */
 export function peerIdsFilter(ids: string[]): string {
   if (ids.length === 0) return 'id:=__no_peer__'

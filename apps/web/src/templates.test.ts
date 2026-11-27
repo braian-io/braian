@@ -119,8 +119,16 @@ describe('typeWorkspaceTemplate peer table', () => {
       'history',
       'class_attributes',
     ])
-    expect(template.views[3]?.title).toBe('Articles')
     const ids = template.views.map((_, index) => `view-${index}`)
+    const main = template.views[2]?.state
+    expect(typeof main).toBe('function')
+    const mainResolved = typeof main === 'function' ? main(ids) : main
+    expect(mainResolved).toMatchObject({
+      object_type: '200',
+      type_key: 'product',
+      source: { kind: 'peer', viewId: ids[0], selection: 'node' },
+    })
+    expect(template.views[3]?.title).toBe('Articles')
     const state = template.views[3]?.state
     expect(typeof state).toBe('function')
     const resolved = typeof state === 'function' ? state(ids) : state
