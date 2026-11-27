@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
 import { mainTable } from './ui'
 
@@ -41,12 +41,35 @@ async function createProduct(page: Page, number: string): Promise<Created> {
   return await response.json() as Created
 }
 
+async function visibleColumns(table: Locator) {
+  return table.locator('.head [data-testid^="col-"]').evaluateAll((nodes) =>
+    nodes.map((node) => ({
+      id: (node.getAttribute('data-testid') ?? '').slice('col-'.length),
+      label: (node.textContent ?? '').trim(),
+    })),
+  )
+}
+
+async function expectedTsv(table: Locator, list: Locator, indexes: number[]) {
+  const columns = await visibleColumns(table)
+  const header = columns.map((column) => column.label).join('\t')
+  const lines = [header]
+  for (const index of indexes) {
+    const cells = await Promise.all(columns.map(async (column) =>
+      (await list.nth(index).locator(`[data-column="${column.id}"]`).innerText()).trim(),
+    ))
+    lines.push(cells.join('\t'))
+  }
+  return `${lines.join('\n')}\n`
+}
+
 test('multi-delete from the bar can cancel or confirm and clears the selection', async ({ page }) => {
   test.setTimeout(180_000)
+  await openProducts(page)
   const stamp = Date.now().toString().slice(-7)
   const first = await createProduct(page, `R327B-A-${stamp}`)
   const second = await createProduct(page, `R327B-B-${stamp}`)
-  const table = await openProducts(page)
+  const table = products(page)
   const filter = table.getByTestId('quick-filter')
   await filter.fill(`R327B-`)
   await expect(rows(page)).toHaveCount(2, { timeout: 60_000 })
@@ -80,23 +103,14 @@ test('copy as table text from the bar and row menu writes TSV', async ({ page })
   await list.nth(2).click({ modifiers: ['Shift'] })
   await expect(table.getByTestId('table-selection-bar')).toBeVisible()
 
-  const names = await Promise.all([0, 1, 2].map(async (index) =>
-    (await list.nth(index).locator('[data-column="name"]').innerText()).trim(),
-  ))
-  const numbers = await Promise.all([0, 1, 2].map(async (index) =>
-    (await list.nth(index).locator('[data-column="number"]').innerText()).trim(),
-  ))
+  const expected = await expectedTsv(table, list, [0, 1, 2])
 
   await table.getByTestId('table-selection-copy').click()
   const barCopy = await page.evaluate(() => navigator.clipboard.readText())
-  expect(barCopy.split('\n')[0]).toContain('Number')
-  expect(barCopy.split('\n')[0]).toContain('Name')
-  expect(barCopy).toBe(
-    `${barCopy.split('\n')[0]}\n${numbers[0]}\t${names[0]}\n${numbers[1]}\t${names[1]}\n${numbers[2]}\t${names[2]}\n`,
-  )
+  expect(barCopy).toBe(expected)
 
   await list.nth(1).click({ button: 'right' })
   await page.getByRole('menuitem', { name: 'Copy as table text' }).click()
   const menuCopy = await page.evaluate(() => navigator.clipboard.readText())
-  expect(menuCopy).toBe(barCopy)
+  expect(menuCopy).toBe(expected)
 })
