@@ -65,8 +65,10 @@ test('agent keyboard shortcuts', async ({ page }) => {
     await expect(view).toHaveCount(0)
 
     await page.keyboard.press('Control+j')
-    await expect(agent(page)).toBeVisible()
-    await expect(agent(page).getByTestId('agent-follow-up')).toHaveValue(draftText)
+    const reopened = agent(page)
+    await expect(reopened).toBeVisible()
+    await expect(reopened.getByTestId('agent-follow-up')).toHaveValue('')
+    await expect(reopened.getByTestId('agent-follow-up')).toBeFocused()
 
     await products.getByTestId('object-row').first().click()
     await expect(agent(page)).toBeVisible()
@@ -74,8 +76,14 @@ test('agent keyboard shortcuts', async ({ page }) => {
     await expect(agent(page)).toHaveCount(0)
 
     await page.keyboard.press('Control+j')
-    await expect(agent(page).getByTestId('agent-follow-up')).toHaveValue(draftText)
+    const composePane = agent(page)
+    await expect(composePane.getByTestId('agent-follow-up')).toHaveValue('')
+    await expect(composePane.getByTestId('agent-chat-user').filter({ hasText: prompt })).toHaveCount(0)
 
+    await page.keyboard.press('Control+j')
+    await expect(agent(page)).toHaveCount(0)
+
+    await openAgentAsk(page, prompt)
     const afterLink = agent(page)
     await expect(afterLink.getByTestId('agent-status')).toHaveAttribute('data-status', 'done', { timeout: 60_000 })
     const result = afterLink.getByTestId('agent-result-link').first()
@@ -85,8 +93,8 @@ test('agent keyboard shortcuts', async ({ page }) => {
     await page.keyboard.press('Control+j')
     await expect(agent(page)).toHaveCount(0)
 
-    const reopened = await ensureAgentOpen(page)
-    const input = reopened.getByTestId('agent-follow-up')
+    const typingPane = await ensureAgentOpen(page)
+    const input = typingPane.getByTestId('agent-follow-up')
     await input.fill('line one')
     await input.press('Shift+Enter')
     await input.type('line two')
@@ -103,23 +111,25 @@ test('agent keyboard shortcuts', async ({ page }) => {
     const follow = `follow ${Date.now().toString().slice(-4)}`
     await input.fill(follow)
     await input.press('Enter')
-    await expect(reopened.getByTestId('agent-chat-user').filter({ hasText: follow })).toBeVisible({ timeout: 30_000 })
+    await expect(typingPane.getByTestId('agent-chat-user').filter({ hasText: follow })).toBeVisible({ timeout: 30_000 })
     await expect(input).toHaveValue('')
 
     const slowPrompt = `follow again ${Date.now().toString().slice(-4)}`
     await input.fill(slowPrompt)
-    const send = reopened.getByTestId('agent-send')
+    const send = typingPane.getByTestId('agent-send')
     await expect(send).toHaveAccessibleName('Send')
     await expect(send).toHaveText('')
     await input.press('Enter')
     await expect(send).toBeDisabled()
-    await expect(reopened.getByTestId('agent-status')).toHaveAttribute('data-status', 'done', { timeout: 60_000 })
-    await expect(reopened.getByTestId('agent-chat-user').filter({ hasText: slowPrompt })).toBeVisible()
+    await expect(typingPane.getByTestId('agent-status')).toHaveAttribute('data-status', 'done', { timeout: 60_000 })
+    await expect(typingPane.getByTestId('agent-chat-user').filter({ hasText: slowPrompt })).toBeVisible()
 
     await page.keyboard.press('Control+j')
     await expect(agent(page)).toHaveCount(0)
     await page.keyboard.press('Control+j')
-    await expect(agent(page).getByTestId('agent-chat-user').filter({ hasText: follow })).toBeVisible()
+    const afterCompose = agent(page)
+    await expect(afterCompose.getByTestId('agent-follow-up')).toBeFocused()
+    await expect(afterCompose.getByTestId('agent-chat-user').filter({ hasText: follow })).toHaveCount(0)
   } finally {
     await cleanupDrafts(page)
   }

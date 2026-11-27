@@ -36,7 +36,7 @@ export const shortcuts: Shortcut[] = [
     id: 'palette.ai',
     chord: 'Ctrl+J',
     scopes: ['app'],
-    description: 'Toggle the agent chat pane (or ask from the palette)',
+    description: 'Close the agent pane, or open a new empty compose thread (ask from the palette when it is open)',
     commandId: 'agent:open',
     hotkeys: ['ctrl+j', 'meta+j'],
   },
