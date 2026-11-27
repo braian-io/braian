@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { objectKeyFromValues } from './url-public'
 import { urlObjectTypeKey, useReadableUrl } from './use-readable-url'
@@ -121,6 +121,7 @@ import {
   structureTreeViewNeedsBackfill,
   structureTreeViewState,
   structureTreeViewTitle,
+  treeSelectedGroup,
 } from './structure-tree-view'
 import { useDetailFollow } from './detail-follow'
 import { MASTER_CATALOG_ID } from './catalog-ref'
@@ -162,6 +163,9 @@ import {
 } from './panes'
 
 type View = { id: string; type: string; title: string; pane?: string; position?: number; state: Json; updated_at?: string | null }
+
+/** StructureTree saves the chosen group without taking the view saver as a prop. */
+let persistTreeSelection: (view: View, structureKey: string, groupKey: string) => void = () => {}
 type ListedWorkspace = { id: string; name: string; locked?: boolean; share_token?: string | null; layout?: Json | null; owner_id?: string }
 type Workspace = { id: string; name: string; locked: boolean; share_token?: string | null; layout: Json; owner_id?: string; catalog?: { catalogId?: string } | null; views?: View[] | null }
 
@@ -351,10 +355,12 @@ export function Shell() {
   const restoredAgents = useRef<string | null>(null)
   const applyViewTypeSourceRef = useRef<(typeId: string, viewId?: string) => Promise<void>>(async () => undefined)
   const applyViewPeerSourceRef = useRef<(peerViewId: string, viewId?: string, linkType?: string) => Promise<void>>(async () => undefined)
-  const autoLinkStructureTreeRef = useRef<(treeViewId: string) => Promise<void>>(async () => undefined)
+  const autoLinkStructureTreeRef = useRef<(treeViewId: string, explicitAll?: boolean) => Promise<void>>(async () => undefined)
   const openLayoutViewsRef = useRef<string[]>([])
+  const linkedOpenTreesRef = useRef(false)
   useEffect(() => {
     openLayoutViewsRef.current = []
+    linkedOpenTreesRef.current = false
   }, [workspaceId])
   useEffect(() => {
     if (!doc) return
@@ -535,6 +541,21 @@ export function Shell() {
     },
     enabled: Boolean(workspaceId),
   })
+  useEffect(() => {
+    if (!doc || !workspace.data || workspace.data.id !== workspaceId || !defs.data) return
+    if (linkedOpenTreesRef.current) return
+    const views = viewRows(workspace.data.views)
+    const open = layoutViews(doc.layout)
+    const viewIds = new Set(views.map((view) => view.id))
+    // The previous workspace's layout is still on screen when this workspace's
+    // views arrive. Wait until the open panes belong to this workspace.
+    if (open.length > 0 && open.every((id) => !viewIds.has(id))) return
+    const trees = open.filter((id) => views.find((view) => view.id === id)?.type === 'structure_tree')
+    // Views can arrive after the layout. Wait so the default Products tree is linked.
+    if (trees.length === 0 && views.length === 0) return
+    linkedOpenTreesRef.current = true
+    for (const treeId of trees) void autoLinkStructureTreeRef.current(treeId, false)
+  }, [doc, workspace.data, workspaceId, defs.data])
   const { settled: objectFetchSettled } = useObjectLand(objectId)
   const openedPreview = queryClient.getQueryData(['object', objectId])
   const opened = useQuery<Json, Error>({
@@ -928,6 +949,29 @@ export function Shell() {
         queryClient.setQueryData(['workspace', surface.id], next)
       },
     })
+  }
+  persistTreeSelection = (view, structureKey, groupKey) => {
+    const surfaceNow = workspaceRef.current
+    if (!surfaceNow || surfaceNow.locked || !viewKeySaver.current) return
+    const token = `${structureKey}:${groupKey}`
+    const views = viewRows(surfaceNow.views).map((item) => (
+      item.id === view.id ? { ...item, state: { ...item.state, selected_group: token } } : item
+    ))
+    const next = { ...surfaceNow, views }
+    workspaceRef.current = next
+    queryClient.setQueryData(['workspace', surfaceNow.id], next)
+    viewKeySaver.current.schedule(
+      {
+        id: view.id,
+        workspaceId: surfaceNow.id,
+        type: view.type,
+        title: view.title,
+        pane: view.pane,
+        position: view.position,
+        updatedAt: view.updated_at,
+      },
+      { selected_group: token },
+    )
   }
 
   useEffect(() => {
@@ -2166,7 +2210,7 @@ export function Shell() {
     }
   }
 
-  autoLinkStructureTreeRef.current = async (treeViewId: string) => {
+  autoLinkStructureTreeRef.current = async (treeViewId: string, explicitAll = true) => {
     try {
       const surfaceNow = workspaceRef.current
       const docNow = docRef.current
@@ -2175,7 +2219,7 @@ export function Shell() {
       const types = typeNames(defs)
       const openIds = layoutViews(docNow.layout)
       const views = viewRows(surfaceNow.views)
-      const targets = objectTablesToAutoLinkToTree(treeViewId, views, types, openIds, defs)
+      const targets = objectTablesToAutoLinkToTree(treeViewId, views, types, openIds, defs, { explicitAll })
       for (const targetId of targets) {
         await applyViewPeerSourceRef.current(treeViewId, targetId)
       }
@@ -3186,6 +3230,23 @@ export function StructureTree({ session, view }: { session: Session; view: View 
     if (!activeRow) return
     document.getElementById(treeRowDomId(activeRow.structureKey, activeRow.key))?.scrollIntoView({ block: 'nearest' })
   }, [session.group, entries.length])
+  const restoredTreeSelection = useRef('')
+  useLayoutEffect(() => {
+    const selected = treeSelectedGroup(view.state)
+    if (!selected) return
+    const token = `${selected.structureKey}:${selected.groupKey}`
+    const mark = `${view.id}:${token}`
+    if (restoredTreeSelection.current === mark) return
+    restoredTreeSelection.current = mark
+    const structure = ((defs.data?.structures as Json[] | undefined) ?? [])
+      .find((item) => String(item.key) === selected.structureKey || String(item.id) === selected.structureKey)
+    publishTreeNode(view.id, {
+      structureId: String(structure?.id ?? view.state?.structure_id ?? ''),
+      structureKey: selected.structureKey,
+      groupKey: selected.groupKey,
+    })
+    if (session.group !== token) session.setGroup(token)
+  }, [view.id, view.state, defs.data, session])
   useEffect(() => {
     if (!session.group) return
     const [structureKey, groupKey] = session.group.split(':')
@@ -3214,10 +3275,22 @@ export function StructureTree({ session, view }: { session: Session; view: View 
     window.addEventListener('pointerdown', close)
     return () => window.removeEventListener('pointerdown', close)
   }, [editing])
+  const selectGroup = (structureKey: string, groupKey: string) => {
+    const structure = ((defs.data?.structures as Json[] | undefined) ?? [])
+      .find((item) => String(item.key) === structureKey || String(item.id) === structureKey)
+    const token = `${structureKey}:${groupKey}`
+    publishTreeNode(view.id, {
+      structureId: String(structure?.id ?? view.state?.structure_id ?? ''),
+      structureKey,
+      groupKey,
+    })
+    persistTreeSelection(view, structureKey, groupKey)
+    session.setGroup(token)
+  }
   const choose = (index: number) => {
     const row = entries[index]
     if (!row) return
-    session.setGroup(`${row.structureKey}:${row.key}`)
+    selectGroup(row.structureKey, row.key)
   }
   const propose = async (name: string, args: Json) => {
     setMenu(null)
@@ -3286,7 +3359,7 @@ export function StructureTree({ session, view }: { session: Session; view: View 
     })
   }
   const openMenu = (row: TreeEntry, x: number, y: number) => {
-    session.setGroup(`${row.structureKey}:${row.key}`)
+    selectGroup(row.structureKey, row.key)
     if (row.key === 'unplaced') {
       setMenu(null)
       return
@@ -3355,7 +3428,15 @@ export function StructureTree({ session, view }: { session: Session; view: View 
         const rows = entries.filter((row) => row.structureKey === structureKey)
         return (
           <div key={structureKey}>
-            <strong>{structureCaption(structureKey, defs.data, structureKey)}</strong>
+            <button
+              type="button"
+              data-testid="structure-root"
+              aria-pressed={session.group === `${structureKey}:${structureKey}`}
+              className={session.group === `${structureKey}:${structureKey}` ? 'tree-row on' : 'tree-row'}
+              onClick={() => selectGroup(structureKey, structureKey)}
+            >
+              {structureCaption(structureKey, defs.data, structureKey)}
+            </button>
             {rows.map((row) => {
               const selected = session.group === `${structureKey}:${row.key}`
               const Icon = row.kids ? (row.open ? FolderOpen : Folder) : File
@@ -3371,7 +3452,7 @@ export function StructureTree({ session, view }: { session: Session; view: View 
                     draggable
                     className={dropId === row.id ? 'tree-row drop' : selected ? 'tree-row on' : 'tree-row'}
                     style={{ paddingLeft: 8 + row.depth * 16 }}
-                    onClick={() => session.setGroup(`${structureKey}:${row.key}`)}
+                    onClick={() => selectGroup(structureKey, row.key)}
                     onContextMenu={(event) => {
                       if (prefersNativeContextMenu(event.target)) return
                       event.preventDefault()
@@ -3464,7 +3545,7 @@ export function StructureTree({ session, view }: { session: Session; view: View 
           style={{ left: menu.x, top: menu.y }}
           onPointerDown={(event) => event.stopPropagation()}
         >
-          <Button type="button" variant="default" onClick={() => { session.setGroup(`${menu.row.structureKey}:${menu.row.key}`); setMenu(null) }}>{copy.open}</Button>
+          <Button type="button" variant="default" onClick={() => { selectGroup(menu.row.structureKey, menu.row.key); setMenu(null) }}>{copy.open}</Button>
           <Button type="button" variant="default" onClick={() => startEdit(menu.row, 'rename')}>{copy.rename}<kbd>F2</kbd></Button>
           <Button type="button" variant="default" onClick={() => startEdit(menu.row, 'key')}>{copy.renameKey}</Button>
           <Button type="button" variant="default" onClick={() => startEdit(menu.row, 'child')}>{copy.addChild}<kbd>Ins</kbd></Button>

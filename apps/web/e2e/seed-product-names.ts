@@ -14,3 +14,9 @@ export const SEED_MILK_PRODUCT_NAMES = [
   'Skimmed milk 35',
   'Buttermilk 52',
 ] as const
+
+/**
+ * Product index 20 at seed count 250 (6 suppliers, then products).
+ * leaf_for(20) is juice, outside Dairy & eggs.
+ */
+export const SEED_JUICE_PRODUCT_NAME = 'Organic Apple juice 21'

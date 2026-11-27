@@ -224,6 +224,30 @@ describe('planSelectionApply', () => {
     expect(turnedOff).toEqual({ action: 'clear' })
   })
 
+  it('pins a group-only chip on a structure-node peer', () => {
+    const plan = planSelectionApply({
+      item: cheeseAssortment,
+      ctx: idle(false, 'food:milk'),
+      mode: 'node',
+      locked: false,
+    })
+    expect(plan.action).toBe('apply')
+    if (plan.action !== 'apply') return
+    expect(plan.patch.localGroup).toBe('food:cheese')
+    expect(plan.patch.globalGroup).toBeUndefined()
+    const ctx = selectionChipContext({
+      sessionGroup: 'food:milk',
+      activeLabelFilter: plan.patch.labelFilter,
+      activeSelectionFilter: plan.patch.selectionFilter,
+      activeSelectionId: plan.patch.selectionId,
+      activeFilter: plan.patch.filter,
+      sessionGroupApplies: false,
+      localGroup: plan.patch.localGroup,
+      defs: undefined,
+    })
+    expect(assortmentChipActive(cheeseAssortment, ctx)).toBe(true)
+  })
+
   it('keeps group-only peer inert and leaves explicit All before a global group', () => {
     expect(planSelectionApply({
       item: cheeseAssortment,

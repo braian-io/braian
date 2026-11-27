@@ -10,7 +10,10 @@ import {
   linkedTypeLinks,
   peerEmptyState,
   peerIdsFilter,
+  groupSubtreeTokens,
+  groupsClause,
   peerNodeFilter,
+  structurePeerFilter,
   peerSourceLabel,
   peerSourceOf,
   viewSourceLabel,
@@ -148,8 +151,31 @@ describe('peer source (Notion 103 PR 2)', () => {
 
   it('builds node and linked-id filters', () => {
     expect(peerNodeFilter({ structureKey: 'food', groupKey: 'cheese' })).toBe('groups:=food:cheese')
+    expect(structurePeerFilter(null)).toBe('')
+    expect(structurePeerFilter({ structureKey: 'food', groupKey: 'cheese' })).toBe('groups:=food:cheese')
     expect(peerIdsFilter([])).toBe('id:=__no_peer__')
     expect(peerIdsFilter(['a', 'b'])).toBe('id:=[`a`,`b`]')
+  })
+
+  it('includes descendant groups and the whole structure', () => {
+    const defs = {
+      structures: [{
+        key: 'food',
+        groups: [
+          { id: 'd', key: 'dairy' },
+          { id: 'c', key: 'cheese', parent: 'd' },
+          { id: 'm', key: 'milk', parent: 'd' },
+          { id: 'j', key: 'juice' },
+        ],
+      }],
+    }
+    expect(groupSubtreeTokens('food', 'cheese', defs)).toEqual(['food:cheese'])
+    expect(groupSubtreeTokens('food', 'dairy', defs)).toEqual(['food:dairy', 'food:cheese', 'food:milk'])
+    expect(groupSubtreeTokens('food', 'food', defs)).toEqual(['food:dairy', 'food:cheese', 'food:milk', 'food:juice'])
+    expect(groupsClause(['food:cheese'])).toBe('groups:=food:cheese')
+    expect(structurePeerFilter({ structureKey: 'food', groupKey: 'dairy' }, defs)).toBe(
+      'groups:=[`food:dairy`,`food:cheese`,`food:milk`]',
+    )
   })
 
   it('lists both link directions but never a link type as a source', () => {

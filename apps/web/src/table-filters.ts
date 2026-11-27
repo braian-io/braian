@@ -61,7 +61,7 @@ export function assortmentChipActive(item: Json, ctx: AssortmentChipContext): bo
   return false
 }
 
-export type SelectionApplyMode = 'follow' | 'peer' | 'explicit-all'
+export type SelectionApplyMode = 'follow' | 'peer' | 'node' | 'explicit-all'
 
 export type SelectionPatch = {
   /** Table search box. A dynamic selection can carry the saved `q`. */
@@ -138,6 +138,8 @@ export function planSelectionApply(input: {
     }
   }
   const groupOnly = isGroupOnlyManualSelection(parts.query)
+  // A row peer's rows come from another table, so a group chip cannot change them.
+  // A structure-node peer is this table's own group filter: pin the group locally.
   if (groupOnly && input.mode === 'peer') return { action: 'ignore' }
   if (groupOnly && input.mode === 'explicit-all') {
     if (input.locked) return { action: 'ignore' }

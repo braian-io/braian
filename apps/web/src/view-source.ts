@@ -135,9 +135,86 @@ export function peerEmptyState(input: {
   return null
 }
 
-/** Typesense filter for a tree node in another view. */
+/** Typesense filter for one placed group, with no descendants. */
 export function peerNodeFilter(node: { structureKey: string; groupKey: string }): string {
   return `groups:=${node.structureKey}:${node.groupKey}`
+}
+
+type GroupRow = { id?: unknown; key?: unknown; parent?: unknown }
+
+function structureGroups(structureKey: string, defs?: Json): { key: string; groups: GroupRow[] } | null {
+  const structures = (defs?.structures as Json[] | undefined) ?? []
+  const structure = structures.find((item) => String(item.key ?? '') === structureKey || String(item.id ?? '') === structureKey)
+  if (!structure) return null
+  return {
+    key: String(structure.key ?? structureKey),
+    groups: ((structure.groups as Json[] | undefined) ?? []) as GroupRow[],
+  }
+}
+
+/** The group plus every group under it, as `structure:group` tokens. */
+export function groupSubtreeTokens(structureKey: string, groupKey: string, defs?: Json): string[] {
+  const bound = structureGroups(structureKey, defs)
+  if (!bound || groupKey === 'unplaced') return [`${bound?.key ?? structureKey}:${groupKey}`]
+  const { key, groups } = bound
+  const children = new Map<string, GroupRow[]>()
+  for (const group of groups) {
+    const parent = String(group.parent ?? '')
+    if (!parent) continue
+    const list = children.get(parent) ?? []
+    list.push(group)
+    children.set(parent, list)
+  }
+  const seen = new Set<string>()
+  const out: string[] = []
+  const walk = (group: GroupRow) => {
+    const id = String(group.id ?? '')
+    const groupToken = String(group.key ?? '')
+    const mark = id || groupToken
+    if (!groupToken || !mark || seen.has(mark)) return
+    seen.add(mark)
+    out.push(`${key}:${groupToken}`)
+    const kids = [
+      ...(id ? children.get(id) ?? [] : []),
+      ...(groupToken && groupToken !== id ? children.get(groupToken) ?? [] : []),
+    ]
+    for (const child of kids) walk(child)
+  }
+  const root = groups.find((group) => String(group.key ?? '') === groupKey || String(group.id ?? '') === groupKey)
+  if (root) {
+    walk(root)
+    return out
+  }
+  // The structure title is the parent of every group in that tree.
+  if (groupKey === key || groupKey === structureKey) {
+    for (const group of groups) {
+      if (!group.parent) walk(group)
+    }
+    for (const group of groups) walk(group)
+    if (out.length > 0) return out
+  }
+  return [`${key}:${groupKey}`]
+}
+
+/** One Typesense `groups` clause. Several tokens match any of them. */
+export function groupsClause(tokens: string[]): string {
+  const unique = [...new Set(tokens.filter(Boolean))]
+  if (unique.length === 0) return ''
+  if (unique.length === 1) return `groups:=${unique[0]}`
+  return `groups:=[${unique.map((token) => `\`${token}\``).join(',')}]`
+}
+
+/**
+ * Filter for a structure-tree peer. With no node yet the table lists the whole
+ * type (the Products workspace opens that way). A chosen node includes that
+ * group and every group under it.
+ */
+export function structurePeerFilter(
+  node: { structureKey: string; groupKey: string } | null,
+  defs?: Json,
+): string {
+  if (!node?.structureKey || !node.groupKey) return ''
+  return groupsClause(groupSubtreeTokens(node.structureKey, node.groupKey, defs))
 }
 
 /** Typesense filter for the linked peers of one or more selected rows. */

@@ -64,7 +64,15 @@ export function typeWorkspaceTemplate(type: TypeName, defs?: Json): WorkspaceTem
     {
       type: 'object_table',
       title: type.plural,
-      state: { ...TABLE_STATE, object_type: type.id, type_key: type.key },
+      // The tree is view 0. The main table follows its selected group.
+      state: tree
+        ? (ids: string[]) => ({
+            ...TABLE_STATE,
+            object_type: type.id,
+            type_key: type.key,
+            source: { kind: 'peer', viewId: ids[0], selection: 'node' },
+          })
+        : { ...TABLE_STATE, object_type: type.id, type_key: type.key },
     },
     ...(linked
       ? [{

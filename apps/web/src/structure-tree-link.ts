@@ -1,6 +1,6 @@
 import type { Json } from './api'
 import { typeOfView, type TypeName } from './type-labels'
-import { peerSourceOf } from './view-source'
+import { isExplicitAllSource, peerSourceOf } from './view-source'
 
 export type LinkableView = {
   id: string
@@ -25,6 +25,8 @@ export function typeAcceptsStructureTree(type: TypeName, defs: Json | undefined)
 /**
  * Object tables that should follow a structure tree when it enters the layout.
  * Skips tables already peer-linked (row or another tree); relinking the same tree is a no-op.
+ * `explicitAll: false` is for a tree that was already in the layout: an explicit
+ * All stays All until the user adds a tree.
  */
 export function objectTablesToAutoLinkToTree(
   treeViewId: string,
@@ -32,6 +34,7 @@ export function objectTablesToAutoLinkToTree(
   types: TypeName[],
   openViewIds: string[],
   defs: Json | undefined,
+  options?: { explicitAll?: boolean },
 ): string[] {
   const open = new Set(openViewIds)
   if (!open.has(treeViewId)) return []
@@ -45,6 +48,7 @@ export function objectTablesToAutoLinkToTree(
       if (peer.viewId === treeViewId && peer.selection === 'node') continue
       continue
     }
+    if (options?.explicitAll === false && isExplicitAllSource(view.state)) continue
     targets.push(view.id)
   }
   return targets

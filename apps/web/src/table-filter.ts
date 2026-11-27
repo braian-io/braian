@@ -1,5 +1,6 @@
 import { groupKeyOf, typeKeyOf } from './assortment-filter'
 import type { Json } from './api'
+import { groupsClause, groupSubtreeTokens } from './view-source'
 
 /** Search filter for an object table.
  *
@@ -10,7 +11,13 @@ import type { Json } from './api'
 export function objectTableFilter(typeKey: string, group: string | null, defs?: Json): string {
   const parts: string[] = []
   if (typeKey) parts.push(`type_key:=${typeKeyOf(typeKey, defs)}`)
-  if (group) parts.push(`groups:=${groupKeyOf(group, defs)}`)
+  if (group) {
+    const token = groupKeyOf(group, defs)
+    const split = token.indexOf(':')
+    parts.push(split > 0
+      ? groupsClause(groupSubtreeTokens(token.slice(0, split), token.slice(split + 1), defs))
+      : `groups:=${token}`)
+  }
   return parts.join(' && ')
 }
 

@@ -762,6 +762,36 @@ async fn save_seed_assortment(
     Ok(())
 }
 
+/// Products workspace table → Food tree, Articles workspace table → Food tree.
+fn seeded_structure_tree(view_id: &str) -> Option<&'static str> {
+    match view_id {
+        "018f2000-0000-7000-8000-000000000302" => Some("018f2000-0000-7000-8000-000000000301"),
+        "018f2000-0000-7000-8000-000000000306" => Some("018f2000-0000-7000-8000-000000000501"),
+        _ => None,
+    }
+}
+
+/// Point a seeded type table at its structure tree. Missing and explicit All
+/// become a node peer. An existing row peer is not rewritten.
+fn ensure_structure_tree_source(state: &mut Value, tree_id: &str) -> bool {
+    let Some(object) = state.as_object_mut() else {
+        return false;
+    };
+    let desired = json!({ "kind": "peer", "viewId": tree_id, "selection": "node" });
+    match object.get("source") {
+        None | Some(Value::Null) => {
+            object.insert("source".into(), desired);
+            true
+        }
+        Some(source) if source.get("kind").and_then(|kind| kind.as_str()) == Some("all") => {
+            object.insert("source".into(), desired);
+            true
+        }
+        Some(source) if source == &desired => false,
+        Some(_) => false,
+    }
+}
+
 async fn save_views(store: &Store, defs: &DefinitionSet) -> anyhow::Result<()> {
     let views = [
         (
@@ -825,7 +855,7 @@ async fn save_views(store: &Store, defs: &DefinitionSet) -> anyhow::Result<()> {
             "Products",
             "center",
             0,
-            json!({"columns": ["number", "name", "brand", "nutriscore", "status"], "sort": "number", "object_type": "018f0000-0000-7000-8000-000000000200", "type_key": "product"}),
+            json!({"columns": ["number", "name", "brand", "nutriscore", "status"], "sort": "number", "object_type": "018f0000-0000-7000-8000-000000000200", "type_key": "product", "source": {"kind": "peer", "viewId": "018f2000-0000-7000-8000-000000000301", "selection": "node"}}),
         ),
         (
             "018f2000-0000-7000-8000-000000000310",
@@ -906,7 +936,7 @@ async fn save_views(store: &Store, defs: &DefinitionSet) -> anyhow::Result<()> {
             "Articles",
             "center",
             1,
-            json!({"columns": ["number", "name", "gtin", "storage", "status"], "sort": "number", "object_type": "018f0000-0000-7000-8000-000000000201", "type_key": "article"}),
+            json!({"columns": ["number", "name", "gtin", "storage", "status"], "sort": "number", "object_type": "018f0000-0000-7000-8000-000000000201", "type_key": "article", "source": {"kind": "peer", "viewId": "018f2000-0000-7000-8000-000000000501", "selection": "node"}}),
         ),
         (
             "018f2000-0000-7000-8000-000000000510",
@@ -1086,6 +1116,13 @@ async fn save_views(store: &Store, defs: &DefinitionSet) -> anyhow::Result<()> {
         if let Some(stored) = store.view_state(id).await? {
             let mut repaired = stored.clone();
             braian_model::translate_view_state(&mut repaired, defs);
+            // The seeded Products and Articles tables follow their Food tree.
+            // A database created before that link, or one whose source was saved
+            // as All, does not react to the tree. A row peer (Articles from
+            // Products) is left as stored.
+            if let Some(tree) = seeded_structure_tree(&id.to_string()) {
+                ensure_structure_tree_source(&mut repaired, tree);
+            }
             if repaired != stored {
                 store.update_view_state(id, &repaired).await?;
             }
@@ -1105,6 +1142,36 @@ async fn save_views(store: &Store, defs: &DefinitionSet) -> anyhow::Result<()> {
             .await?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod structure_tree_source_tests {
+    use super::ensure_structure_tree_source;
+    use serde_json::{Value, json};
+
+    #[test]
+    fn fills_a_missing_source_replaces_all_and_keeps_a_row_peer() {
+        let tree = "018f2000-0000-7000-8000-000000000301";
+        let mut missing = json!({ "type_key": "product" });
+        assert!(ensure_structure_tree_source(&mut missing, tree));
+        assert_eq!(missing["source"]["selection"], "node");
+        assert_eq!(missing["source"]["viewId"], tree);
+        assert!(!ensure_structure_tree_source(&mut missing, tree));
+
+        let mut all = json!({ "source": { "kind": "all" }, "columns": ["name"] });
+        assert!(ensure_structure_tree_source(&mut all, tree));
+        assert_eq!(all["columns"][0], "name");
+        assert_eq!(all["source"]["kind"], "peer");
+
+        let mut row = json!({
+            "source": { "kind": "peer", "viewId": "other", "selection": "row" }
+        });
+        assert!(!ensure_structure_tree_source(&mut row, tree));
+        assert_eq!(row["source"]["selection"], "row");
+
+        let mut not_object = Value::String("nope".into());
+        assert!(!ensure_structure_tree_source(&mut not_object, tree));
+    }
 }
 
 fn synthetic_id(index: u32) -> ObjectId {

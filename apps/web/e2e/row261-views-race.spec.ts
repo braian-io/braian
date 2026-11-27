@@ -91,5 +91,5 @@ test('rapid catalog switches keep the last view override after reload', async ({
   }, { workspaceId: PRODUCTS_WORKSPACE_ID, viewId: PRODUCTS_VIEW_ID })
 
   expect(stored).toEqual({ ok: true, override: MASTER_CATALOG_ID })
-  await expect(page.locator('.pane.focused').getByTestId('view-source-label')).toHaveText('All Products')
+  await expect(page.locator('.pane.focused').getByTestId('view-source-label')).toHaveText('All Products · Food')
 })
