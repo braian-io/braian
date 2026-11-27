@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ObjectDetail, ObjectTable, type PanesSession } from './panes'
 import { SharedContextMenuHost } from './shared-context-menu'
 import { OPEN_DELETE_OBJECTS } from './delete-objects'
-import { publishTreeNode, readSelection, resetUiContext } from './ui-context'
+import { publishMarked, publishTreeNode, readSelection, resetUiContext } from './ui-context'
 
 const { scrollToIndex } = vi.hoisted(() => ({ scrollToIndex: vi.fn() }))
 
@@ -252,6 +252,7 @@ describe('table row selection', () => {
   })
 
   it('shows the action bar only for more than one row, deletes that selection, and clears it', async () => {
+    publishMarked('id-2', 'article')
     render(<Harness />)
     await waitFor(() => expect(screen.getAllByTestId('object-row')).toHaveLength(tableRows.length))
     const deleted: string[][] = []

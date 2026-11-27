@@ -1014,10 +1014,17 @@ export function ObjectTable({
   // Set when this mount adopted the URL object, so the tree node arriving
   // (empty filter → group filter) does not drop that restored row.
   const restoredMark = useRef<string | null>(null)
+  // Adopt once. A later empty selection is a clear (X, filter, or the last
+  // toggle), and must not snap the open object back into the table.
+  const adoptedMark = useRef(false)
   useEffect(() => {
-    if (!adoptsMarkedObject) return
-    if (selected.length > 0) return
+    if (adoptedMark.current || !adoptsMarkedObject) return
+    if (selected.length > 0) {
+      adoptedMark.current = true
+      return
+    }
     if (!markedForTable || !markedSelection) return
+    adoptedMark.current = true
     restoredMark.current = markedSelection.id
     setSelected([markedSelection.id])
     setActive(locateRef.current(markedSelection.id))
