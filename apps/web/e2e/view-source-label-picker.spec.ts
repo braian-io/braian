@@ -61,7 +61,7 @@ test.describe('view source label opens Select source', () => {
     expect(created.ok(), `create workspace ${created.status()}`).toBeTruthy()
 
     for (const view of [
-      { id: treeId, type: 'structure_tree', title: 'Food', pane: 'left', position: 0, state: { expanded: ['dairy'] } },
+      { id: treeId, type: 'structure_tree', title: 'Food', pane: 'left', position: 0, state: { expanded: ['dairy'], structure_key: 'food' } },
       {
         id: productsId,
         type: 'object_table',
@@ -124,10 +124,55 @@ test.describe('view source label opens Select source', () => {
       await expect(productsReloaded.getByTestId('view-source-label')).toContainText('Food › Milk', { timeout: 30_000 })
       await treeReloaded.getByRole('treeitem').filter({ hasText: 'Cheese' }).first().click()
       await expect(productsReloaded.getByTestId('view-source-label')).toContainText('Food › Cheese', { timeout: 30_000 })
+    } finally {
+      await page.request.delete(`/v1/workspaces/${workspaceId}`)
+    }
+  })
 
-      const label = productsReloaded.getByTestId('view-source-label')
+  test('keyboard opens Select source from the label and Esc returns focus', async ({ page }) => {
+    test.setTimeout(120_000)
+    await login(page)
+
+    const workspaceId = crypto.randomUUID()
+    const productsId = crypto.randomUUID()
+    const name = `Label keys ${workspaceId.slice(0, 8)}`
+    const created = await page.request.post('/v1/workspaces', {
+      data: {
+        id: workspaceId,
+        name,
+        locked: false,
+        share_token: `label-keys-${workspaceId.slice(0, 8)}`,
+        layout: { type: 'tabs', views: [productsId], active: 0 },
+      },
+    })
+    expect(created.ok()).toBeTruthy()
+    const response = await page.request.post('/v1/views', {
+      data: {
+        id: productsId,
+        workspace_id: workspaceId,
+        type: 'object_table',
+        title: 'Products',
+        pane: 'center',
+        position: 0,
+        state: {
+          columns: ['number', 'name', 'status'],
+          sort: 'number',
+          object_type: PRODUCT_TYPE_ID,
+          type_key: 'product',
+          source: { kind: 'all' },
+        },
+      },
+    })
+    expect(response.ok()).toBeTruthy()
+
+    try {
+      await page.reload()
+      await page.locator('nav.tabs').getByRole('button', { name: new RegExp(name) }).click()
+      const products = pane(page, productsId)
+      await expect(products.getByTestId('object-table').first()).toBeVisible({ timeout: 60_000 })
+      const label = products.getByTestId('view-source-label')
       await label.focus()
-      await page.keyboard.press(' ')
+      await page.keyboard.press('Enter')
       await expect(page.getByTestId('command-palette')).toBeVisible()
       await page.keyboard.press('Escape')
       await expect(page.getByTestId('command-palette')).toHaveCount(0)

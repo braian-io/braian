@@ -275,7 +275,7 @@ export function Shell() {
   const [paletteEpoch, setPaletteEpoch] = useState(0)
   const [fieldsEditColumnId, setFieldsEditColumnId] = useState<string | null>(null)
   const fieldsOpenerRef = useRef<HTMLElement | null>(null)
-  const sourceLabelPickerViewIdRef = useRef<string | null>(null)
+  const sourceLabelPickerOpenRef = useRef(false)
   useEffect(() => {
     setAiMode(paletteMode === 'ai')
     return () => setAiMode(false)
@@ -2835,7 +2835,7 @@ export function Shell() {
             })}
             onChange={commitDoc}
             onSourceLabelPick={(viewId) => {
-              sourceLabelPickerViewIdRef.current = viewId
+              sourceLabelPickerOpenRef.current = true
               void runCommand('view:select-source', { viewId })
             }}
             agentViews={agentViews}
@@ -2946,8 +2946,8 @@ export function Shell() {
             setPaletteStartSwitchCatalog(false)
             const opener = fieldsOpenerRef.current
             fieldsOpenerRef.current = null
-            const sourceLabelViewId = sourceLabelPickerViewIdRef.current
-            sourceLabelPickerViewIdRef.current = null
+            const restoreSourceLabel = sourceLabelPickerOpenRef.current
+            sourceLabelPickerOpenRef.current = false
             if (paletteModeRef.current === 'fields' && opener) {
               // A backdrop mousedown tears the overlay down before the click lands
               // on the page underneath; restore after that click or it steals focus.
@@ -2956,11 +2956,9 @@ export function Shell() {
               }, 0)
             }
             setPaletteMode(null)
-            if (sourceLabelViewId) {
+            if (restoreSourceLabel) {
               window.setTimeout(() => {
-                document.querySelector<HTMLButtonElement>(
-                  `[data-pane="${sourceLabelViewId}"] [data-testid="view-source-label"]`,
-                )?.focus()
+                document.querySelector<HTMLButtonElement>('.pane.focused [data-testid="view-source-label"]')?.focus()
               }, 0)
             }
           }}
