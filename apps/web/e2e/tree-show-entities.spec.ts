@@ -112,7 +112,8 @@ test.describe('structure tree Show entity type', () => {
       await expect(menu.getByRole('button', { name: 'Show Products' })).toBeVisible()
       await expect(menu.getByRole('button', { name: /^Rename/ })).toHaveCount(0)
       await menu.getByRole('button', { name: 'Show Products' }).click()
-      await expect(products.getByTestId('view-source-label')).toContainText('Food › Food', { timeout: 30_000 })
+      await expect(products.getByTestId('view-source-label')).toContainText('Food', { timeout: 30_000 })
+      await expect(products.getByTestId('view-source-label')).not.toContainText('Food › Food')
     } finally {
       await page.request.delete(`/v1/workspaces/${workspaceId}`)
     }
