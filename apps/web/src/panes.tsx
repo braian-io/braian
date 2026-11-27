@@ -2,7 +2,7 @@ import { isValidElement, useMemo, useEffect, useLayoutEffect, useCallback, useRe
 import { flushSync } from 'react-dom'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { History as HistoryIcon, RotateCcw, Table2, Trash2 } from 'lucide-react'
+import { History as HistoryIcon, RotateCcw, Table2, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { ApiError, api, catalogName, failureLines, freeObject, jsonRecord, recordNumber, recordTitle, searchQuery, textValue, type Json } from './api'
 import { messageFromErrorBody, reportWriteError, writeErrorMessage } from './write-error'
@@ -171,10 +171,12 @@ import {
   publishColumns,
   publishColumnPrefsOverride,
   publishSelection,
+  publishSelectionHint,
   publishTable,
   readMarkedSelection,
   readSelection,
   readTreeNode,
+  selectionHintForObject,
   subscribeUiSelections,
 } from './ui-context'
 
@@ -285,6 +287,13 @@ export function ObjectTable({
   const [order, setOrder] = useState<string[]>([])
   const [sizes, setSizes] = useState<Record<string, number>>(initial.sizes)
   const [selected, setSelected] = useState<string[]>([])
+  const [selectAllOffer, setSelectAllOffer] = useState(false)
+  /** Index the next Shift+click / Shift+Arrow range starts from. */
+  const anchorIndex = useRef(-1)
+  const selectAllGen = useRef(0)
+  /** Create sets the search to the new number and must keep that row selected. */
+  const keepSelectionRef = useRef<string | null>(null)
+  const userFilterScopeRef = useRef<string | null>(null)
   const [linkDropId, setLinkDropId] = useState<string | null>(null)
   useEffect(() => {
     const clear = () => setLinkDropId(null)
@@ -944,6 +953,7 @@ export function ObjectTable({
     linkedCount: peerLinkedCount,
   })
   const listCount = groupBy ? groupedRows.length : found
+  const matchCount = groupBy ? groups.reduce((sum, group) => sum + group.found, 0) : found
   const rowAt = (index: number) => (groupBy ? groupedRows[index] : byIndex.get(index))
   const activeRow = active >= 0 ? rowAt(active) : undefined
   virtualizerRef.current = virtualizer
@@ -1035,10 +1045,40 @@ export function ObjectTable({
     }
     if (scopeChanged && !keepRestored) {
       restoredMark.current = null
+      anchorIndex.current = -1
+      selectAllGen.current += 1
+      setSelectAllOffer(false)
       setSelected([])
       setActive(-1)
     } else if (keepRestored) {
       restoredMark.current = null
+    }
+    // Search, path, label, selection chips, and a non-peer group filter drop
+    // the mark. A peer tree node is already handled above and must keep a
+    // restored row when the node filter first arrives.
+    const userFilterScope = [
+      queryText,
+      labelFilter,
+      selectionFilter,
+      pathFilters.join('\n'),
+      peerSource ? '' : (chipContext.activeGroup ?? ''),
+    ].join('\0')
+    const filterChanged = userFilterScopeRef.current !== null && userFilterScopeRef.current !== userFilterScope
+    userFilterScopeRef.current = userFilterScope
+    const keepId = filterChanged ? keepSelectionRef.current : null
+    if (filterChanged) keepSelectionRef.current = null
+    const dropForFilter = filterChanged && !keepId
+    if (dropForFilter) {
+      anchorIndex.current = -1
+      selectAllGen.current += 1
+      setSelectAllOffer(false)
+      setSelected([])
+      setActive(-1)
+    } else if (filterChanged && keepId) {
+      const at = locateRef.current(keepId)
+      anchorIndex.current = at
+      setSelected([keepId])
+      if (at >= 0) setActive(at)
     }
     const known = [...rowsRef.current.values()]
     const described = (id: string) => {
@@ -1048,17 +1088,23 @@ export function ObjectTable({
         : { id, key: '', name: '', type: '', version: '' }
     }
     // Publish committed selections. Detail and peer panes follow `selected`.
-    const publishedIds = scopeChanged && !keepRestored
+    const publishedIds = (scopeChanged && !keepRestored) || dropForFilter
       ? []
-      : selected.length > 0
-        ? selected
-        : keepRestored && restoredId
-          ? [restoredId]
-          : []
+      : filterChanged && keepId
+        ? [keepId]
+        : selected.length > 0
+          ? selected
+          : keepRestored && restoredId
+            ? [restoredId]
+            : []
     const marked = publishedIds.map(described)
     publishTable(view.id, [queryText, filterBy].filter(Boolean).join(' '), sort, filterBy, queryText)
     publishSelection(view.id, marked)
-  }, [peerFilter, peerScope, peerSource, selected, queryText, filterBy, sort, view.id, knownStamp])
+    const dropped = (scopeChanged && !keepRestored) || dropForFilter
+    const activeId = !dropped && active >= 0 ? (rowAt(active)?.id ?? '') : ''
+    const hintCount = activeId && activeId === (session.objectId ?? '') ? publishedIds.length : 0
+    publishSelectionHint(view.id, activeId, hintCount)
+  }, [active, chipContext.activeGroup, labelFilter, pathFilters, peerFilter, peerScope, peerSource, queryText, selected, selectionFilter, session, sort, view.id, knownStamp, filterBy])
 
   const pathList = attributePaths.data?.paths ?? []
   const columnFor = (id: string) => {
@@ -1211,6 +1257,7 @@ export function ObjectTable({
       session.setObjectId(id)
       setSelected([id])
       const index = locateRef.current(id)
+      anchorIndex.current = index
       if (index >= 0) setActive(index)
     }
     if (event.name === 'ui.select_rows' && Array.isArray(args.ids)) setSelected(args.ids.map(String))
@@ -1282,6 +1329,7 @@ export function ObjectTable({
 
   const applySelection = (row: ObjRow, index: number, anchor: number, extend: boolean) => {
     if (!extend) {
+      anchorIndex.current = index
       setSelected([row.id])
       followRowImpl.current(row, index, 'immediate')
       return
@@ -1337,8 +1385,11 @@ export function ObjectTable({
       return
     }
     pendingFollowIndex.current = null
-    if (extend) applySelection(row, clamped, active, extend)
-    else {
+    if (extend) {
+      if (anchorIndex.current < 0) anchorIndex.current = active >= 0 ? active : clamped
+      applySelection(row, clamped, anchorIndex.current, true)
+    } else {
+      anchorIndex.current = clamped
       setSelected([row.id])
       if (row.id !== session.objectId) followRowImpl.current(row, clamped, 'debounced')
     }
@@ -1404,13 +1455,36 @@ export function ObjectTable({
   const onRowClick = (index: number, event: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean }) => {
     focusGrid()
     setActive(index)
+    setSelectAllOffer(false)
     const row = rowAt(index)
     if (!row) return
-    if (event.shiftKey) setSelected((current) => (current.includes(row.id) ? current : [...current, row.id]))
-    else if (event.metaKey || event.ctrlKey) {
+    if (event.shiftKey) {
+      if (anchorIndex.current < 0) anchorIndex.current = index
+      applySelection(row, index, anchorIndex.current, true)
+      return
+    }
+    if (event.metaKey || event.ctrlKey) {
       setSelected((current) => (current.includes(row.id) ? current.filter((id) => id !== row.id) : [...current, row.id]))
-    } else setSelected([row.id])
+      followRowImpl.current(row, index, 'immediate')
+      return
+    }
+    anchorIndex.current = index
+    setSelected([row.id])
     followRowImpl.current(row, index, 'immediate')
+  }
+
+  const onRowCheck = (index: number, event: { shiftKey: boolean }) => {
+    focusGrid()
+    setSelectAllOffer(false)
+    const row = rowAt(index)
+    if (!row) return
+    if (event.shiftKey) {
+      setActive(index)
+      if (anchorIndex.current < 0) anchorIndex.current = index
+      applySelection(row, index, anchorIndex.current, true)
+      return
+    }
+    setSelected((current) => (current.includes(row.id) ? current.filter((id) => id !== row.id) : [...current, row.id]))
   }
 
   const onRowMenu = (index: number, x: number, y: number, column: string) => {
@@ -1440,10 +1514,7 @@ export function ObjectTable({
         manualSelectionId: activeManualSelectionId || undefined,
         viewId: view.id,
         columnPrefsOverride: hasColumnOverride,
-        objects: chosen.flatMap((id) => {
-          const item = known.get(id)
-          return item ? [item] : []
-        }),
+        objects: chosen.map((id) => known.get(id) ?? { id, typeKey: row.type || '', name: '', key: '' }),
       },
       selectedCount: chosen.length,
     })
@@ -1516,6 +1587,44 @@ export function ObjectTable({
   }
 
 
+  const listQueryRef = useRef({ q: queryText, filter: filterBy, sort: sortBy })
+  listQueryRef.current = { q: queryText, filter: filterBy, sort: sortBy }
+  const loadedSelectionIds = () => {
+    if (groupBy) return groupedRows.map((row) => row.id)
+    return [...byIndex.entries()].sort((left, right) => left[0] - right[0]).map(([, row]) => row.id)
+  }
+  const selectAllMatching = async () => {
+    const gen = selectAllGen.current + 1
+    selectAllGen.current = gen
+    const query = listQueryRef.current
+    const ids: string[] = []
+    const seen = new Set<string>()
+    let page = 1
+    let total = Number.POSITIVE_INFINITY
+    while (page < 500 && ids.length < total) {
+      const body = await loadPage(query.q, query.filter, query.sort, '', page)
+      if (selectAllGen.current !== gen) return
+      total = Number(body.found ?? ids.length)
+      const hits = (body.hits as Json[] | undefined) ?? []
+      let added = 0
+      for (const hit of hits) {
+        const record = hit as Json
+        const doc = (record.document as Json) ?? record
+        const id = String(doc.id ?? '')
+        if (!id || seen.has(id)) continue
+        seen.add(id)
+        ids.push(id)
+        added += 1
+      }
+      if (added === 0) break
+      page += 1
+    }
+    if (selectAllGen.current !== gen) return
+    if (ids.length === 0) return
+    setSelected(ids)
+    setSelectAllOffer(false)
+  }
+
   useEffect(() => {
     const stops = [
       registerCommandRunner('object:open', (target) => {
@@ -1523,6 +1632,7 @@ export function ObjectTable({
         const id = String(target.objectId)
         const index = locateRef.current(id)
         if (index >= 0) {
+          anchorIndex.current = index
           setActive(index)
           setSelected([id])
         }
@@ -1537,9 +1647,8 @@ export function ObjectTable({
       registerCommandRunner('object:move-group', (target) => {
         if (target.objectId) setMoving(String(target.objectId))
       }),
-      registerCommandRunner('table:select', (target) => {
-        if (!target.objectId) return
-        setSelected((current) => current.includes(String(target.objectId)) ? current : [...current, String(target.objectId)])
+      registerCommandRunner('table:select', () => {
+        void selectAllMatching()
       }),
       registerCommandRunner('table:mass-edit', () => { setMassConfirm(true) }),
       registerCommandRunner('table:filter-by', () => setPicker('filter')),
@@ -1584,6 +1693,14 @@ export function ObjectTable({
     if (event.key === 'Delete' && !event.ctrlKey && !event.altKey && !event.metaKey && selected.length > 0) {
       event.preventDefault()
       requestDeleteObjects(selected)
+      return
+    }
+    if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'a') {
+      const ids = loadedSelectionIds()
+      if (ids.length === 0) return
+      event.preventDefault()
+      setSelected(ids)
+      setSelectAllOffer(true)
       return
     }
     if (event.ctrlKey || event.altKey || event.metaKey) return
@@ -1758,6 +1875,7 @@ export function ObjectTable({
     const row = rowAt(index)
     if (!row) return
     pendingFollowIndex.current = null
+    anchorIndex.current = index
     setSelected([row.id])
     followRowImpl.current(row, index, 'debounced')
   }, [knownStamp, groupedRows.length, found])
@@ -2487,6 +2605,7 @@ export function ObjectTable({
         onOpenChange={setCreateOpen}
         onCreated={(created) => {
           session.setObjectId(created.id)
+          keepSelectionRef.current = created.id
           setSelected([created.id])
           setFilter(created.number)
           setQueryText(created.number)
@@ -2554,11 +2673,24 @@ export function ObjectTable({
           </div>
         </div>
       ) : (
+      <>
+      {selectAllOffer && matchCount > 0 ? (
+        <div className="table-select-all" data-testid="select-all-banner">
+          <button
+            type="button"
+            data-testid="select-all-matching"
+            onClick={() => { void selectAllMatching() }}
+          >
+            {copy.selectAllMatching.replace('{count}', formatCount(matchCount))}
+          </button>
+        </div>
+      ) : null}
       <div
         className="grid"
         ref={parent}
         tabIndex={0}
         role="grid"
+        data-has-selection={selected.length > 0 ? 'true' : 'false'}
         aria-activedescendant={activeRow ? objectRowId(activeRow.id) : undefined}
         onKeyDown={onTableKey}
         onContextMenu={(event) => {
@@ -2571,6 +2703,7 @@ export function ObjectTable({
         <DndContext sensors={columnSensors} collisionDetection={closestCenter} onDragEnd={onColumnDragEnd}>
           <SortableContext items={shown} strategy={horizontalListSortingStrategy}>
             <div className="head">
+              <div className="cell row-check-head" aria-hidden="true" />
               {shown.map((id) => {
                 const column = columnFor(id)
                 const width = resolvedWidths[id] ?? sizes[id] ?? column.size
@@ -2653,6 +2786,7 @@ export function ObjectTable({
                         activeColumn={active === rowIndex ? cellColumn : ''}
                         onColumn={activateColumn}
                         onActivate={onRowClick}
+                        onCheck={onRowCheck}
                         onMenu={onRowMenu}
                         onCellDoubleClick={(row, column) => {
                           beginCellEdit(row, column)
@@ -2693,6 +2827,7 @@ export function ObjectTable({
                   activeColumn={active === item.index ? cellColumn : ''}
                   onColumn={activateColumn}
                   onActivate={onRowClick}
+                  onCheck={onRowCheck}
                   onMenu={onRowMenu}
                   onCellDoubleClick={(row, column) => {
                     beginCellEdit(row, column)
@@ -2740,6 +2875,40 @@ export function ObjectTable({
           />
         ) : null}
       </div>
+      {selected.length > 1 ? (
+        <div className="table-selection-bar" data-testid="table-selection-bar" role="status">
+          <span className="table-selection-count" data-testid="table-selection-count">
+            {copy.nSelected.replace('{count}', formatCount(selected.length))}
+          </span>
+          <Button
+            type="button"
+            variant="icon"
+            size="icon"
+            className="icon-danger"
+            data-testid="table-selection-delete"
+            aria-label={copy.delete}
+            onClick={() => requestDeleteObjects(selected)}
+          >
+            <Trash2 aria-hidden="true" size={14} />
+          </Button>
+          <Button
+            type="button"
+            variant="icon"
+            size="icon"
+            data-testid="table-selection-clear"
+            aria-label={copy.clearSelection}
+            onClick={() => {
+              selectAllGen.current += 1
+              anchorIndex.current = -1
+              setSelectAllOffer(false)
+              setSelected([])
+            }}
+          >
+            <X aria-hidden="true" size={14} />
+          </Button>
+        </div>
+      ) : null}
+      </>
       )}
       {/* Fields › lives in the Ctrl+K palette */}
       {picker === 'filter' || picker === 'export' ? (
@@ -2916,6 +3085,7 @@ function Row({
   active,
   activeColumn,
   onActivate,
+  onCheck,
   onColumn,
   onMenu,
   onFocusGrid,
@@ -2938,6 +3108,7 @@ function Row({
   active: boolean
   activeColumn: string
   onActivate: (index: number, event: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean }) => void
+  onCheck?: (index: number, event: { shiftKey: boolean }) => void
   onColumn: (column: string) => void
   onMenu: (index: number, x: number, y: number, column: string) => void
   onFocusGrid: () => void
@@ -3012,6 +3183,29 @@ function Row({
         onMenu(index, event.clientX, box.bottom, columnOf(event.target))
       }}
     >
+      <div
+        className="cell row-check"
+        onClick={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          onCheck?.(index, event)
+        }}
+      >
+        <input
+          type="checkbox"
+          className="row-checkbox"
+          data-testid="row-checkbox"
+          tabIndex={-1}
+          checked={isSelected}
+          aria-label={copy.selectRow}
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            onCheck?.(index, event)
+          }}
+          onChange={() => undefined}
+        />
+      </div>
       {shown.map((id) => {
         const width = sizes[id] ?? 160
         const content = cell(row, id)
@@ -3275,6 +3469,11 @@ export function ClassAttributes({ session }: { session: PanesSession }) {
 }
 
 export function ObjectDetail({ session }: { session: PanesSession }) {
+  const selectionHint = useSyncExternalStore(
+    subscribeUiSelections,
+    () => selectionHintForObject(session.objectId),
+    () => 0,
+  )
   const queryClient = useQueryClient()
   const objectId = session.objectId ?? ''
   const { settled: objectFetchSettled } = useObjectLand(session.objectId)
@@ -3835,6 +4034,11 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
             <div className="detail-title">
               <strong title={name || number}>{name || number}</strong>
               {number ? <span className="detail-id">{number}</span> : null}
+              {selectionHint > 1 ? (
+                <span className="detail-selection-hint" data-testid="detail-selection-hint">
+                  {copy.nSelected.replace('{count}', formatCount(selectionHint))}
+                </span>
+              ) : null}
             </div>
             <div className="detail-title-actions">
               {allowDeleted ? (
