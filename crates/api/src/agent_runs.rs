@@ -47,13 +47,6 @@ async fn create_run(
 ) -> Result<Json<AgentRunDetail>, Problem> {
     require_viewer(&identity)?;
     let prompt = latest_user_text(&body.messages);
-    if prompt.is_empty() {
-        return Err(Problem::new(
-            StatusCode::BAD_REQUEST,
-            "empty_prompt",
-            "say what the agent should do",
-        ));
-    }
     let id = Uuid::now_v7();
     let user_id = resolve_user_id(&state, &identity).await?;
     let context = if body.context.is_null() {
@@ -61,6 +54,21 @@ async fn create_run(
     } else {
         body.context.clone()
     };
+    if prompt.is_empty() {
+        state
+            .store
+            .insert_agent_run_compose(&braian_store::NewAgentRun {
+                id,
+                user_id,
+                principal_id: identity.actor.actor.as_uuid(),
+                workspace_id: body.workspace_id,
+                title: display_title_fallback(""),
+                context: context.clone(),
+            })
+            .await
+            .map_err(store_status)?;
+        return Ok(Json(load_detail(&state, &identity, id).await?));
+    }
     state
         .store
         .insert_agent_run(&braian_store::NewAgentRun {

@@ -7,7 +7,7 @@ Generated from `apps/web/src/shortcuts.ts`. Do not edit by hand — run `node ap
 | Chord | Action |
 | --- | --- |
 | Ctrl+K | Open the command palette |
-| Ctrl+J | Toggle the agent chat pane (or ask from the palette) |
+| Ctrl+J | Close the agent pane, or open a new empty compose thread (ask from the palette when it is open) |
 | Ctrl+S | Save review drafts |
 | Ctrl+Shift+B | Send feedback |
 | F1 | Show keyboard shortcuts |

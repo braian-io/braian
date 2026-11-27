@@ -543,6 +543,23 @@ async fn a_run_waits_for_a_decision_and_resume_continues_it() {
 }
 
 #[tokio::test]
+async fn an_empty_messages_body_starts_a_compose_run() {
+    let (_db, app) = app().await;
+    let (status, created) = call(
+        &app,
+        "POST",
+        "/v1/agent/runs",
+        Some(r#"{"messages":[],"context":{"focused":"products"}}"#),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    assert_eq!(created["status"], "waiting");
+    assert_eq!(created["messages"].as_array().map(Vec::len), Some(0));
+    assert!(created.get("first_message").is_none_or(Value::is_null));
+}
+
+#[tokio::test]
 async fn the_agent_starts_in_a_hidden_session_unless_it_needs_the_screen() {
     let (_db, app) = app().await;
     let body = r#"{"messages":[{"role":"user","content":"hold the run in your own session"}],"context":{"focused":"products","panes":[{"id":"products","type":"object_table","title":"Products"},{"id":"detail","type":"object_detail","title":"Detail"}]}}"#;

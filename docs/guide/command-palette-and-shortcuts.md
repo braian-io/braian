@@ -71,9 +71,9 @@ offers `Open`, `Open to the right`, and `Copy id`. For a view or workspace, it o
 
 ## Agent chat
 
-With the command palette **closed**, `Ctrl+J` **toggles** the docked agent pane: it
-closes when any agent view is open (wherever focus is), or reopens the last session and
-focuses the follow-up box. With no prior session it opens the palette in Ask AI mode.
+With the command palette **closed**, `Ctrl+J` closes any open agent pane (wherever
+focus is), or opens a **new empty compose thread** in the dock and focuses the follow-up
+box. An existing empty compose thread is reused instead of creating a duplicate.
 
 Inside an **open** command palette, `Ctrl+J` asks the agent with the current query
 instead of toggling the dock. See [Agent chat](/docs/agent-chat/) for follow-up keys:
@@ -108,7 +108,7 @@ shortcut. See [Feedback](/docs/feedback/).
 | Chord | Action |
 | --- | --- |
 | `Ctrl+K` | Open the command palette |
-| `Ctrl+J` | Toggle the agent chat pane (or ask from the palette) |
+| `Ctrl+J` | Close the agent pane, or open a new empty compose thread (ask from the palette when it is open) |
 | `Ctrl+S` | Save review drafts |
 | `Ctrl+Shift+B` | Send feedback (when the operator enables it) |
 | `F1` | Show keyboard shortcuts |

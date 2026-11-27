@@ -60,6 +60,8 @@ test.describe('palette query focus ring', () => {
     test(`${theme}: Ask AI query shows one ring on the container`, async ({ page }) => {
       await login(page)
       await setTheme(page, theme)
+      await page.keyboard.press('Control+k')
+      await expect(page.getByTestId('command-palette')).toBeVisible()
       await page.keyboard.press('Control+j')
       await expect(page.getByTestId('ai-badge')).toBeVisible()
       await expectQueryInputHasNoRing(page)

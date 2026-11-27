@@ -115,6 +115,28 @@ impl Store {
         Ok(())
     }
 
+    /// Empty compose pane: waiting for the first message, no model task yet.
+    pub async fn insert_agent_run_compose(&self, run: &NewAgentRun) -> Result<(), Error> {
+        let client = self.checkout().await?;
+        client
+            .execute(
+                "INSERT INTO agent_runs
+                    (id, user_id, principal_id, workspace_id, title, status, context,
+                     hidden, session_kind, finished_at)
+                 VALUES ($1, $2, $3, $4, $5, 'waiting', $6, false, 'own', NULL)",
+                &[
+                    &run.id,
+                    &run.user_id,
+                    &run.principal_id,
+                    &run.workspace_id,
+                    &run.title,
+                    &run.context,
+                ],
+            )
+            .await?;
+        Ok(())
+    }
+
     pub async fn agent_run_for(
         &self,
         id: Uuid,

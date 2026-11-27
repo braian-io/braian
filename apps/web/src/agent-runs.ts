@@ -67,6 +67,13 @@ async function parse(response: Response): Promise<Json> {
   return body
 }
 
+export async function composeAgentRun(input: {
+  context: UiContextSnapshot
+  workspace_id?: string | null
+}): Promise<AgentRunDetail> {
+  return createAgentRun({ messages: [], context: input.context, workspace_id: input.workspace_id })
+}
+
 export async function createAgentRun(input: {
   messages: Array<{ role: string; content: string }>
   context: UiContextSnapshot

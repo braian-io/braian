@@ -71,7 +71,8 @@ import { prepareFeedbackCapture, type FeedbackCapture } from './feedback'
 import { AgentPresence } from './agent-presence'
 import { AgentView } from './agent-view'
 import { AgentsTable } from './agents-table'
-import { agentDockTabSessionLabel, agentRunPrompt, agentRunsForWorkspace, agentRunsToRestoreInLayout, backToMySessionEvent, listAgentRuns, openAgentEvent, openAgentsTableEvent, patchAgentRun, requestBackToMySession, showAgentSessionEvent, takeOverAgentRun, type AgentMessage, type AgentRunSummary } from './agent-runs'
+import { pickEmptyComposeRun } from './agent-compose'
+import { agentDockTabSessionLabel, agentRunPrompt, agentRunsForWorkspace, agentRunsToRestoreInLayout, backToMySessionEvent, composeAgentRun, fetchAgentRun, listAgentRuns, openAgentEvent, openAgentsTableEvent, patchAgentRun, requestBackToMySession, showAgentSessionEvent, takeOverAgentRun, type AgentMessage, type AgentRunSummary } from './agent-runs'
 import { agentSessionLayout, controllingAgentRuns, holdLayoutFlush, layoutFlushHeld, layoutSaveBlocked, agentMarkerViewIds, setViewingAgentRun, subscribeViewingAgent, viewingAgentRunId } from './agent-session'
 import { CommandPalette } from './palette'
 import { focusAfterMenuTab } from './menu-keyboard'
@@ -345,6 +346,7 @@ export function Shell() {
   const openTypeViewRef = useRef<(typeId: string) => void>(() => {})
   const openStructureViewRef = useRef<(structureKey: string, placement?: { zone: 'center' | 'right'; target?: string }) => void>(() => {})
   const openAgentRunRef = useRef<(run: { id: string; title: string; view_id?: string | null; tab_open?: boolean; messages?: AgentMessage[] }) => void>(() => {})
+  const openComposeAgentRef = useRef<() => void>(() => {})
   const openAgentsTableRef = useRef<() => void>(() => {})
   const openTrashTableRef = useRef<() => void>(() => {})
   const openImportMappingsRef = useRef<() => void>(() => {})
@@ -672,13 +674,9 @@ export function Shell() {
             }
             return
           }
-          if (decision.kind === 'reopen-hidden') {
-            const view = rows.find((item) => item.id === decision.viewId)
-            const runId = view ? agentRunIdFromView(rows, view.id) : ''
-            if (view && runId) {
-              openAgentRunRef.current({ id: runId, title: view.title, view_id: view.id, tab_open: true })
-              return
-            }
+          if (decision.kind === 'open-compose') {
+            openComposeAgentRef.current()
+            return
           }
         }
         setPaletteMode('ai')
@@ -2268,6 +2266,56 @@ export function Shell() {
     } catch (reason) {
       reportWriteError(reason)
     }
+  }
+
+  openComposeAgentRef.current = () => {
+    void (async () => {
+      const surfaceNow = workspaceRef.current
+      const docNow = docRef.current
+      if (!surfaceNow || !docNow) {
+        setFieldsEditColumnId(null)
+        setPaletteStartAddView(false)
+        setPaletteSourceTargetViewId(null)
+        setPaletteStartNewFromTemplate(false)
+        setPaletteMode('ai')
+        setPaletteEpoch((value) => value + 1)
+        return
+      }
+      let runs = queryClient.getQueryData<AgentRunSummary[]>(['agent-runs'])
+      if (!runs) {
+        try {
+          runs = await listAgentRuns()
+          queryClient.setQueryData(['agent-runs'], runs)
+        } catch (reason: unknown) {
+          reportWriteError(reason)
+          runs = []
+        }
+      }
+      const views = viewRows(surfaceNow.views)
+      const picked = pickEmptyComposeRun(
+        runs,
+        surfaceNow.id,
+        views,
+        layoutViews(docNow.layout),
+      )
+      try {
+        const detail = picked
+          ? await fetchAgentRun(picked.id)
+          : await composeAgentRun({ context: readUiContext(), workspace_id: surfaceNow.id })
+        queryClient.setQueryData(['agent-run', detail.id], detail)
+        queryClient.setQueryData<AgentRunSummary[] | undefined>(['agent-runs'], (current) => {
+          const base = current ?? []
+          const index = base.findIndex((item) => item.id === detail.id)
+          if (index < 0) return [detail, ...base]
+          const next = [...base]
+          next[index] = { ...next[index], ...detail }
+          return next
+        })
+        openAgentRunRef.current({ ...detail, tab_open: true })
+      } catch (reason: unknown) {
+        reportWriteError(reason)
+      }
+    })()
   }
 
   openAgentRunRef.current = (run) => {

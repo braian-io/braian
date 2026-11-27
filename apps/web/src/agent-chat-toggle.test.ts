@@ -18,15 +18,8 @@ describe('decideAgentToggle', () => {
     })
   })
 
-  it('reopens the most recent hidden agent session when nothing is open', () => {
-    expect(decideAgentToggle(['products'], agents)).toEqual({
-      kind: 'reopen-hidden',
-      viewId: 'a2',
-      title: 'Agent two',
-    })
-  })
-
-  it('opens the palette in AI mode when no agent views exist', () => {
-    expect(decideAgentToggle(['products'], [])).toEqual({ kind: 'palette-ai' })
+  it('opens a compose thread when no agent pane is open', () => {
+    expect(decideAgentToggle(['products'], agents)).toEqual({ kind: 'open-compose' })
+    expect(decideAgentToggle(['products'], [])).toEqual({ kind: 'open-compose' })
   })
 })

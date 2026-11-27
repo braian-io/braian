@@ -50,17 +50,20 @@ Follow-up messages stay in the **same run**, so you can continue with context
 
 ## Toggle the pane
 
-**Ctrl+J** is a **toggle** while the command palette is closed:
+**Ctrl+J** while the command palette is closed:
 
 - If **any** agent pane is open in the layout, **Ctrl+J closes it** — whether
   focus is in the follow-up box, on the Agent tab, or on Products, Detail, or
   another view (including narrow viewports such as 1280×800).
-- If the pane is closed, **Ctrl+J** reopens the last agent session in the dock
-  and focuses the follow-up input. With no prior session, it opens the palette in
-  Ask AI mode so you can type a new question.
+- If the pane is closed, **Ctrl+J** opens a **new empty compose thread** in the
+  dock and focuses the follow-up input. If you already have an empty compose
+  thread from an earlier **Ctrl+J**, that one is reopened instead of creating a
+  duplicate. Older sessions stay in **Agents ›** and the agents table; they are
+  not deleted.
 
 Unsent text in the follow-up box is **kept for this browser tab** when you close
-the pane with **Ctrl+J** and restored when you open it again.
+the pane with **Ctrl+J**; that draft belongs to that specific run. A later
+**Ctrl+J** that starts a new compose thread starts with an empty input.
 
 ## Escape in the follow-up box
 
