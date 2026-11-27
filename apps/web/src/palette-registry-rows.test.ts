@@ -43,6 +43,50 @@ function coreRows(theme: 'dark' | 'light') {
 function layoutDockPaletteRows() {
   return [
     {
+      id: 'layout:zoom',
+      group: 'views',
+      title: copy.maximize,
+      subtitle: 'Show only the focused pane',
+      kbd: zoomChord,
+      shortcut: zoomChord,
+    },
+    {
+      id: 'layout:close_view',
+      group: 'views',
+      title: copy.closeView,
+      subtitle: 'Close the focused view',
+      kbd: closeViewChord,
+      shortcut: closeViewChord,
+    },
+    {
+      id: 'layout:split-left',
+      group: 'views',
+      title: copy.splitLeft,
+      subtitle: 'Pull the view out to the left',
+      keywords: ['split', 'layout', 'pane', 'left'],
+    },
+    {
+      id: 'layout:split-right',
+      group: 'views',
+      title: copy.splitRight,
+      subtitle: 'Pull the view out to the right',
+      keywords: ['split', 'layout', 'pane', 'right'],
+    },
+    {
+      id: 'layout:split-top',
+      group: 'views',
+      title: copy.splitTop,
+      subtitle: 'Pull the view out above',
+      keywords: ['split', 'layout', 'pane', 'above', 'top'],
+    },
+    {
+      id: 'layout:split-bottom',
+      group: 'views',
+      title: copy.splitBottom,
+      subtitle: 'Pull the view out below',
+      keywords: ['split', 'layout', 'pane', 'below', 'bottom'],
+    },
+    {
       id: 'layout:move_view_left',
       group: 'views',
       title: copy.moveLeft,
@@ -73,22 +117,6 @@ function layoutDockPaletteRows() {
       subtitle: 'Move the focused view down',
       kbd: moveDownChord,
       shortcut: moveDownChord,
-    },
-    {
-      id: 'layout:zoom',
-      group: 'views',
-      title: copy.maximize,
-      subtitle: 'Show only the focused pane',
-      kbd: zoomChord,
-      shortcut: zoomChord,
-    },
-    {
-      id: 'layout:close_view',
-      group: 'views',
-      title: copy.closeView,
-      subtitle: 'Close the focused view',
-      kbd: closeViewChord,
-      shortcut: closeViewChord,
     },
   ]
 }
@@ -197,6 +225,20 @@ describe('layout move/zoom/close palette rows from registry', () => {
     expect(rows.find((row) => row.id === 'layout:close_view')).toMatchObject({
       title: copy.closeView,
       kbd: chordForCommand('layout:close_view'),
+    })
+  })
+
+  it('exposes split layout commands via palette:true', () => {
+    const rows = registryPaletteRows({ theme: 'dark' })
+    expect(rows.map((row) => row.id)).toEqual(expect.arrayContaining([
+      'layout:split-left',
+      'layout:split-right',
+      'layout:split-top',
+      'layout:split-bottom',
+    ]))
+    expect(rows.find((row) => row.id === 'layout:split-right')).toMatchObject({
+      title: copy.splitRight,
+      subtitle: 'Pull the view out to the right',
     })
   })
 })

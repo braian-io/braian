@@ -180,7 +180,7 @@ export function WorkspaceDock({
         context: 'dock-view',
         x,
         y,
-        target: { viewId: view, viewType },
+        target: { viewId: view, viewType, paneZoomed: doc.zoom === view },
       })
     },
     onDrag: setDrag,

@@ -71,18 +71,17 @@ copy into an existing neighbour pane. Closed views stay closed, and you do not n
 ## Arrange the layout
 
 Use the `View menu` (the button with three dots on a pane, or a right-click on a view
-tab) for layout commands:
+tab) for view actions:
 
 | Command | Effect |
 | --- | --- |
-| `Split left`, `Split right`, `Split above`, `Split below` | Pull the view out to that side |
-| `Move left`, `Move right`, `Move up`, `Move down` | Move the focused view |
-| `Maximize` | Let the focused view fill the workspace |
-| `Close view` | Close the focused view |
 | `Add view` | Choose a view for this pane |
 | `Select source` | Choose what an object table lists; see [Data sources](/docs/data-sources/) |
+| `Maximize` / `Restore` | Let the focused view fill the workspace, or restore the layout |
+| `Close view` | Close the focused view |
 
-You can also drag a view tab onto another pane or tab strip. Drop zones read `Dock
+`Split`, `Move`, and `Focus pane` commands live in **Ctrl+K** (with shortcuts where
+listed below). You can also drag a view tab onto another pane or tab strip. Drop zones read `Dock
 left`, `Dock right`, `Dock top`, `Dock bottom`, and `Add as tab`. Dragging a divider
 between panes resizes them.
 

@@ -26,6 +26,7 @@ const debugBinary = `${root}/target/debug/braian${process.platform === 'win32' ?
 const specs = [
   'e2e/smoke.spec.ts',
   'e2e/drag.spec.ts',
+  'e2e/dock-view-menu.spec.ts',
   'e2e/layout.spec.ts',
   'e2e/focus-styles.spec.ts',
   'e2e/design-polish-low-rows.spec.ts',
@@ -264,6 +265,7 @@ function shardIndex(count) {
 const measuredSeconds = {
   'e2e/smoke.spec.ts': 11,
   'e2e/drag.spec.ts': 35,
+  'e2e/dock-view-menu.spec.ts': 18,
   'e2e/layout.spec.ts': 78,
   'e2e/focus-styles.spec.ts': 55,
   'e2e/design-polish-low-rows.spec.ts': 15,
