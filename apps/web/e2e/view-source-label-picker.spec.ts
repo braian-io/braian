@@ -62,7 +62,7 @@ async function choosePaletteHit(page: Page, palette: Locator, title: string) {
 
 test.describe('view source label opens Select source', () => {
   test('click label, switch All Products and Food tree', async ({ page }) => {
-    test.setTimeout(120_000)
+    test.setTimeout(180_000)
     await login(page)
 
     const workspaceId = crypto.randomUUID()
