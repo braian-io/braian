@@ -51,6 +51,7 @@ test('history is a compact timeline of the fields that changed', async ({ page }
   await expect(created.getByTestId('field-diff')).toHaveCount(0)
   await page.screenshot({ path: `${shots}/timeline-dark.png` })
 
+  await expect(first.getByTestId('rollback')).toHaveAttribute('aria-label', 'Restore this version')
   await first.click()
   await expect(first.getByTestId('view-as-of')).toBeVisible()
   await expect(first.getByTestId('rollback')).toBeVisible()

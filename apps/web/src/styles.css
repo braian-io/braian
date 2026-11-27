@@ -2469,6 +2469,23 @@ canvas.graph.panning { cursor: grabbing; }
   overflow-wrap: anywhere;
 }
 .diff-arrow { color: var(--muted); }
+.diff-value-expand {
+  margin-left: var(--space-1);
+  padding: 0 var(--space-0_5);
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.history-restore {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.history-line:has(.history-restore) time { margin-left: var(--space-1_5); }
 .lang-chip {
   display: inline-flex;
   margin-right: var(--space-1);
