@@ -361,7 +361,7 @@ const measuredSeconds = {
   'e2e/row219-menu-tab-focus.spec.ts': 12,
   'e2e/new-version-status.spec.ts': 4,
   'e2e/view-source-type.spec.ts': 5,
-  'e2e/view-source-label-picker.spec.ts': 10,
+  'e2e/view-source-label-picker.spec.ts': 12,
   'e2e/peer-source.spec.ts': 6,
   'e2e/peer-source-empty.spec.ts': 7,
   'e2e/peer-source-chain.spec.ts': 5,
