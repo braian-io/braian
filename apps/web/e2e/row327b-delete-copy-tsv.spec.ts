@@ -45,7 +45,7 @@ async function visibleColumns(table: Locator) {
   return table.locator('.head [data-testid^="col-"]').evaluateAll((nodes) =>
     nodes.map((node) => ({
       id: (node.getAttribute('data-testid') ?? '').slice('col-'.length),
-      label: (node.textContent ?? '').trim(),
+      label: (node.textContent ?? '').trim().replace(/\s*↑\s*$/, '').replace(/\s*↓\s*$/, ''),
     })),
   )
 }
