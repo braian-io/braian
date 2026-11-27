@@ -2309,7 +2309,21 @@ canvas.graph.panning { cursor: grabbing; }
   line-height: 18px;
   white-space: nowrap;
 }
-.palette-list { display: grid; gap: 0; max-height: min(52vh, 440px); overflow: auto; }
+.palette-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  max-height: min(52vh, 440px);
+  overflow: auto;
+}
+[cmdk-list-sizer] { flex: none; min-height: min-content; }
+[data-picker-mode] .hit {
+  height: auto;
+  min-height: 44px;
+  align-items: center;
+  padding-block: var(--space-1_5);
+}
+[data-picker-mode] .hit .hit-copy { overflow: visible; }
 .palette-heading {
   padding: var(--space-2_5) var(--space-2_5) var(--space-1);
   font-size: var(--text-sm);
