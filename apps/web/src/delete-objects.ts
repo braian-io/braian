@@ -1,8 +1,16 @@
 import type { Json } from './api'
 
 export const OPEN_DELETE_OBJECTS = 'braian:open-delete-objects'
+export const OBJECTS_DELETED = 'braian:objects-deleted'
 
 export type DeleteObjectRequest = { ids: string[] }
+export type ObjectsDeletedDetail = { ids: string[] }
+
+export function notifyObjectsDeleted(ids: string[]) {
+  const unique = [...new Set(ids.filter(Boolean))]
+  if (unique.length === 0 || typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent<ObjectsDeletedDetail>(OBJECTS_DELETED, { detail: { ids: unique } }))
+}
 
 /** One confirm dialog and one host, whichever surface asked for the delete. */
 export function requestDeleteObjects(ids: string[]) {

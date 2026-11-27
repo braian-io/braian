@@ -2,7 +2,7 @@ import { isValidElement, useMemo, useEffect, useLayoutEffect, useCallback, useRe
 import { flushSync } from 'react-dom'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { History as HistoryIcon, RotateCcw, Table2, Trash2, X } from 'lucide-react'
+import { ClipboardCopy, History as HistoryIcon, RotateCcw, Table2, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { ApiError, api, catalogName, failureLines, freeObject, jsonRecord, recordNumber, recordTitle, searchQuery, textValue, type Json } from './api'
 import { messageFromErrorBody, reportWriteError, writeErrorMessage } from './write-error'
@@ -69,7 +69,7 @@ import { columnPrefsHasOverride, fetchColumnPrefs, isHopPath, orderHiddenToDocum
 import { columnPrefsMutationKey, columnPrefsQueryKey, resetColumnPrefs, useSaveColumnPrefs } from './column-prefs-mutation'
 import { createTablePrefsSaver, tablePrefsBody, type TablePrefsSnapshot } from './table-prefs-save'
 import { readPathFromDoc, summarizePathValues } from './path-cell'
-import { cellPathValues, fetchPathValues } from './path-values'
+import { cellPathValues, fetchPathValues, type PathValuesResponse } from './path-values'
 import { applyObjectWrite, currentSearchWaitSeq, reconcileObjectWrite } from './object-write'
 import { clearObjectGone, markObjectGone, objectFetchQueryOptions, objectGone, objectQueryGone } from './object-gone'
 import {
@@ -123,7 +123,8 @@ import { viewingAgentRunId } from './agent-session'
 import { copy, uiLanguage } from './i18n'
 import { openSharedContextMenu, prefersNativeContextMenu } from './shared-context-menu'
 import { buildRowContextMenu } from './row-context-menu'
-import { requestDeleteObjects } from './delete-objects'
+import { OBJECTS_DELETED, requestDeleteObjects, type ObjectsDeletedDetail } from './delete-objects'
+import { buildTableCopyTsv } from './table-copy-tsv'
 import { StandardTableChrome } from './standard-table'
 import { StandardEditableTable, type StandardColumn } from './standard-editable-table'
 import { registerCommandRunner, runCommand } from './command-registry'
@@ -344,6 +345,16 @@ export function ObjectTable({
   const prefsSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   /** Unsaved local column-pref edits in this tab (shell.tsx dirtyRef pattern). */
   const prefsDirtyRef = useRef(false)
+  useEffect(() => {
+    const onDeleted = (event: Event) => {
+      const detail = (event as CustomEvent<ObjectsDeletedDetail>).detail
+      const gone = new Set((detail?.ids ?? []).filter(Boolean))
+      if (gone.size === 0) return
+      setSelected((current) => current.filter((id) => !gone.has(id)))
+    }
+    window.addEventListener(OBJECTS_DELETED, onDeleted)
+    return () => window.removeEventListener(OBJECTS_DELETED, onDeleted)
+  }, [])
   const prefsSaveGen = useRef(0)
   const me = useQuery({ queryKey: ['me'], queryFn: () => api.get('/v1/me'), retry: false })
   const prefsMutation = useSaveColumnPrefs(view.id, me.data?.user_id ?? '')
@@ -1335,6 +1346,7 @@ export function ObjectTable({
   }, [])
 
   const followRowImpl = useRef<(row: ObjRow, index: number, fetch: 'immediate' | 'debounced') => void>(() => undefined)
+  const copyTableTextImpl = useRef<(ids?: string[]) => void>(() => undefined)
 
   const applySelection = (row: ObjRow, index: number, anchor: number, extend: boolean) => {
     if (!extend) {
@@ -1679,6 +1691,14 @@ export function ObjectTable({
         if (objects.length < 2) return
         window.dispatchEvent(new CustomEvent('braian-link-pick', { detail: { objects } }))
       }),
+      registerCommandRunner('table:copy-text', (target) => {
+        const objects = Array.isArray(target.objects) ? target.objects : []
+        const ids = objects
+          .map((row) => (row && typeof row === 'object' ? String((row as Record<string, unknown>).id ?? '') : ''))
+          .filter(Boolean)
+        if (ids.length === 0) return
+        copyTableTextImpl.current(ids)
+      }),
     ]
     return () => stops.forEach((stop) => stop())
   })
@@ -1895,6 +1915,23 @@ export function ObjectTable({
       return summarizePathValues(values).text
     }
     return readPathFromDoc(row.doc, defs.data, apiPath)
+  }
+  copyTableTextImpl.current = (ids) => {
+    const chosen = ids ?? selected
+    if (chosen.length === 0) return
+    const rowsInOrder = groupBy
+      ? groupedRows
+      : [...byIndex.entries()].sort((left, right) => left[0] - right[0]).map(([, row]) => row)
+    const text = buildTableCopyTsv({
+      columns: shown,
+      headers: shown.map((id) => columnHeader(id)),
+      rowsInOrder,
+      selectedIds: chosen,
+      defs: defs.data,
+      pathValues: pathValues.data as PathValuesResponse | undefined,
+      language: uiLanguage,
+    })
+    void navigator.clipboard?.writeText(text)
   }
 
   const commitCellEdit = (row: ObjRow, columnId: string, nextText: string) => {
@@ -2889,6 +2926,16 @@ export function ObjectTable({
           <span className="table-selection-count" data-testid="table-selection-count">
             {copy.nSelected.replace('{count}', formatCount(selected.length))}
           </span>
+          <Button
+            type="button"
+            variant="icon"
+            size="icon"
+            data-testid="table-selection-copy"
+            aria-label={copy.copyAsTableText}
+            onClick={() => copyTableTextImpl.current()}
+          >
+            <ClipboardCopy aria-hidden="true" size={14} />
+          </Button>
           <Button
             type="button"
             variant="icon"

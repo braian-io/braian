@@ -280,6 +280,7 @@ export const copy = {
   rename: 'Rename',
   deleteGroup: 'Delete',
   deleteMenu: 'Delete…',
+  copyAsTableText: 'Copy as table text',
   deleteObjectTitle: 'Delete objects',
   deleteObjectDescription: 'The objects move to Trash. Links removed with them can be restored from Trash.',
   deleteObjectCounting: 'Counting objects and links…',
