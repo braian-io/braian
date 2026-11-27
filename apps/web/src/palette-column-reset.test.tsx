@@ -34,6 +34,7 @@ function PaletteHost({ focusViewId }: { focusViewId?: string | null }) {
       openWorkspace: () => undefined,
       openTypeView: () => undefined,
       openStructureView: () => undefined,
+      showEntityTypeFromTree: () => undefined,
     }),
     [],
   )

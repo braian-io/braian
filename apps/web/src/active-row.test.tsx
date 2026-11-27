@@ -126,6 +126,7 @@ function TreeHarness() {
       openWorkspace: () => undefined,
       openTypeView: () => undefined,
       openStructureView: () => undefined,
+      showEntityTypeFromTree: () => undefined,
       workspaceId: null,
       userId: '',
     }),

@@ -115,6 +115,7 @@ import {
   viewSourceLabel,
 } from './view-source'
 import { objectTablesToAutoLinkToTree } from './structure-tree-link'
+import { entityTypesForStructure, showEntityTypeMenuLabel } from './structure-tree-show'
 import {
   findStructureTreeView,
   mergeStructureTreeViewState,
@@ -205,6 +206,7 @@ type Session = {
   openWorkspace: (id: string) => void
   openTypeView: (typeId: string) => void
   openStructureView: (structureKey: string, placement?: { zone: 'center' | 'right'; target?: string }) => void
+  showEntityTypeFromTree: (typeId: string, treeViewId: string) => void
   workspaceId: string | null
   userId: string
 }
@@ -345,6 +347,7 @@ export function Shell() {
   const applyRef = useRef<(name: string, args: Record<string, unknown>) => void>(() => {})
   const openTypeViewRef = useRef<(typeId: string) => void>(() => {})
   const openStructureViewRef = useRef<(structureKey: string, placement?: { zone: 'center' | 'right'; target?: string }) => void>(() => {})
+  const showEntityTypeFromTreeRef = useRef<(typeId: string, treeViewId: string) => Promise<void>>(async () => undefined)
   const openAgentRunRef = useRef<(run: { id: string; title: string; view_id?: string | null; tab_open?: boolean; messages?: AgentMessage[] }) => void>(() => {})
   const openComposeAgentRef = useRef<() => void>(() => {})
   const openAgentsTableRef = useRef<() => void>(() => {})
@@ -1910,6 +1913,9 @@ export function Shell() {
     openWorkspace: requestWorkspaceChange,
     openTypeView: (typeId) => openTypeViewRef.current(typeId),
     openStructureView: (structureKey, placement) => openStructureViewRef.current(structureKey, placement),
+    showEntityTypeFromTree: (typeId, treeViewId) => {
+      void showEntityTypeFromTreeRef.current(typeId, treeViewId)
+    },
     workspaceId,
     userId,
   }
@@ -2203,6 +2209,104 @@ export function Shell() {
     }
     workspaceRef.current = nextSurface
     queryClient.setQueryData(['workspace', surfaceNow.id], nextSurface)
+    } catch (reason) {
+      reportWriteError(reason)
+    }
+  }
+
+  showEntityTypeFromTreeRef.current = async (typeId: string, treeViewId: string) => {
+    try {
+      const surfaceNow = workspaceRef.current
+      const docNow = docRef.current
+      if (!surfaceNow || surfaceNow.locked || !docNow) return
+      const defs = queryClient.getQueryData<Json>(['definitions'])
+      const types = typeNames(defs)
+      const type = types.find((item) => item.id === typeId)
+      if (!type || type.kind === 'link') return
+      const tree = viewRows(surfaceNow.views).find((view) => view.id === treeViewId)
+      if (!tree || tree.type !== 'structure_tree') return
+
+      let views: View[] = viewRows(surfaceNow.views)
+      const openIds = layoutViews(docNow.layout)
+      const openMatch = objectTableViewForType(views, type, openIds)
+      const patchSurface = (nextViews: View[]) => {
+        const nextSurface = {
+          ...surfaceNow,
+          views: nextViews.map((item) => ({
+            ...item,
+            pane: item.pane ?? 'center',
+            position: item.position ?? 0,
+            state: freeObject(item.state),
+          })),
+        }
+        workspaceRef.current = nextSurface
+        queryClient.setQueryData(['workspace', surfaceNow.id], nextSurface)
+      }
+      const focusView = (viewId: string) => {
+        const current = docRef.current
+        if (!current) return
+        const result = applyLayoutCommand(current, 'ui.open_view', { id: viewId }, {
+          views: views.map((item) => ({ id: item.id, title: item.title, type: item.type })),
+          canonical: canonicalRef.current,
+          place: placeOverride.current,
+        })
+        if (result.handled && result.doc !== current) commitDoc(result.doc)
+      }
+
+      if (openMatch) {
+        const nextState = applyPeerSource(openMatch.state, tree.id, 'node')
+        await mergeViewRef.current(openMatch, surfaceNow.id, nextState)
+        const updated: View = { ...openMatch, state: freeObject(nextState) }
+        views = views.map((item) => (item.id === updated.id ? updated : item))
+        patchSurface(views)
+        focusView(updated.id)
+        return
+      }
+
+      const template = objectTableTemplateForType(views, type)
+      const id = crypto.randomUUID()
+      const created: View = template
+        ? cloneObjectTableView(template, id, views.length)
+        : {
+            id,
+            type: 'object_table',
+            title: type.plural,
+            pane: 'center',
+            position: views.length,
+            state: freeObject({
+              object_type: type.id,
+              type_key: type.key,
+              columns: ['number', 'name', 'type', 'status'],
+              sort: 'number',
+            }),
+          }
+      const nextState = applyPeerSource(created.state, tree.id, 'node')
+      created.state = freeObject(nextState)
+      await api.post('/v1/views', {
+        body: {
+          id: created.id,
+          workspace_id: surfaceNow.id,
+          type: created.type,
+          title: created.title,
+          pane: 'center',
+          position: views.length,
+          state: freeObject(created.state),
+        },
+      })
+      views = [...views, created]
+      patchSurface(views)
+      const current = docRef.current
+      if (!current) return
+      const result = applyLayoutCommand(current, 'ui.open_view', {
+        id: created.id,
+        zone: 'right',
+        target: treeViewId,
+      }, {
+        views: views.map((item) => ({ id: item.id, title: item.title, type: item.type })),
+        canonical: canonicalRef.current,
+        place: placeOverride.current,
+      })
+      if (result.handled && result.doc !== current) commitDoc(result.doc)
     } catch (reason) {
       reportWriteError(reason)
     }
@@ -3425,6 +3529,20 @@ export function StructureTree({ session, view }: { session: Session; view: View 
       parent: group.parent ? String(group.parent) : null,
     }))
   }
+  const typeCatalog = typeNames(defs.data)
+  const entityTypesForRow = (row: TreeEntry) => {
+    const structure = structures.find((item) => String(item.key) === row.structureKey)
+    const structureId = String(structure?.id ?? row.structureKey)
+    return entityTypesForStructure(row.structureKey, structureId, typeCatalog)
+  }
+  const openMenuAt = (row: TreeEntry, x: number, y: number) => {
+    openMenu(row, x, y)
+  }
+  const openContextMenuForTarget = (target: EventTarget | null, row: TreeEntry) => {
+    if (!(target instanceof Element)) return
+    const box = target.getBoundingClientRect()
+    openMenuAt(row, box.left + Math.min(box.width, 48), box.top + box.height / 2)
+  }
   return (
     <div
       className="tree"
@@ -3455,6 +3573,33 @@ export function StructureTree({ session, view }: { session: Session; view: View 
           void propose('model.delete_group', { structure: activeRow.structureKey, group: activeRow.key })
           return
         }
+        if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+          event.preventDefault()
+          if (activeRow) {
+            const target = document.getElementById(treeRowDomId(activeRow.structureKey, activeRow.key))
+            if (target) openContextMenuForTarget(target, activeRow)
+            return
+          }
+          for (const structure of structures) {
+            const structureKey = String(structure.key)
+            if (session.group !== `${structureKey}:${structureKey}`) continue
+            const target = document.querySelector<HTMLElement>(`[data-testid="structure-root"][data-structure-key="${structureKey}"]`)
+            if (target) {
+              openContextMenuForTarget(target, {
+                structureKey,
+                key: structureKey,
+                id: `${structureKey}:root`,
+                parentKey: null,
+                depth: -1,
+                kids: true,
+                open: true,
+                count: 0,
+              })
+            }
+            return
+          }
+          return
+        }
         if (!['ArrowDown', 'ArrowUp', 'Home', 'End', 'Enter'].includes(event.key)) return
         event.preventDefault()
         event.stopPropagation()
@@ -3479,9 +3624,28 @@ export function StructureTree({ session, view }: { session: Session; view: View 
             <button
               type="button"
               data-testid="structure-root"
+              data-structure-key={structureKey}
               aria-pressed={session.group === `${structureKey}:${structureKey}`}
               className={session.group === `${structureKey}:${structureKey}` ? 'tree-row on' : 'tree-row'}
               onClick={() => selectGroup(structureKey, structureKey)}
+              onContextMenu={(event) => {
+                if (prefersNativeContextMenu(event.target)) return
+                event.preventDefault()
+                openMenuAt(
+                  {
+                    structureKey,
+                    key: structureKey,
+                    id: `${structureKey}:root`,
+                    parentKey: null,
+                    depth: -1,
+                    kids: true,
+                    open: true,
+                    count: 0,
+                  },
+                  event.clientX,
+                  event.clientY,
+                )
+              }}
             >
               {structureCaption(structureKey, defs.data, structureKey)}
             </button>
@@ -3594,6 +3758,21 @@ export function StructureTree({ session, view }: { session: Session; view: View 
           onPointerDown={(event) => event.stopPropagation()}
         >
           <Button type="button" variant="default" onClick={() => { selectGroup(menu.row.structureKey, menu.row.key); setMenu(null) }}>{copy.open}</Button>
+          {entityTypesForRow(menu.row).map((type) => (
+            <Button
+              key={type.id}
+              type="button"
+              variant="default"
+              onClick={() => {
+                session.showEntityTypeFromTree(type.id, view.id)
+                setMenu(null)
+              }}
+            >
+              {showEntityTypeMenuLabel(type)}
+            </Button>
+          ))}
+          {menu.row.key === menu.row.structureKey ? null : (
+            <>
           <Button type="button" variant="default" onClick={() => startEdit(menu.row, 'rename')}>{copy.rename}<kbd>F2</kbd></Button>
           <Button type="button" variant="default" onClick={() => startEdit(menu.row, 'key')}>{copy.renameKey}</Button>
           <Button type="button" variant="default" onClick={() => startEdit(menu.row, 'child')}>{copy.addChild}<kbd>Ins</kbd></Button>
@@ -3610,6 +3789,8 @@ export function StructureTree({ session, view }: { session: Session; view: View 
             {copy.duplicate}
           </Button>
           <Button type="button" variant="default" className="danger" onClick={() => void propose('model.delete_group', { structure: menu.row.structureKey, group: menu.row.key })}>{copy.deleteMenu}<kbd>Del</kbd></Button>
+            </>
+          )}
         </div>
       ) : null}
     </div>

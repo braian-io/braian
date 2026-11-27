@@ -116,6 +116,7 @@ function PaletteHost({
       openWorkspace: () => undefined,
       openTypeView: () => undefined,
       openStructureView: () => undefined,
+      showEntityTypeFromTree: () => undefined,
     }),
     [],
   )
