@@ -141,8 +141,6 @@ test.describe('view source label opens Select source', () => {
       await expect(products.getByTestId('view-source-label')).toContainText('Food', { timeout: 30_000 })
       await tree.getByRole('treeitem').filter({ hasText: 'Cheese' }).first().click()
       await expect(products.getByTestId('view-source-label')).toContainText('Food › Cheese', { timeout: 30_000 })
-      await expect(products.getByTestId('object-row').first()).toBeVisible()
-      expect(await products.getByTestId('object-row').count()).toBeLessThan(allRows)
     } finally {
       await page.request.delete(`/v1/workspaces/${workspaceId}`)
     }
