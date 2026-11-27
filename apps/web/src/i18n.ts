@@ -423,6 +423,7 @@ export const copy = {
   selectRowIn: 'Select a row in {view}',
   sourceMissing: 'Source no longer exists',
   showAll: 'Show all',
+  showEntityType: 'Show {type}',
   fromSourceLabel: '{type} from {source}',
   fromSourceViaLabel: '{type} from {source} via {linkType}',
   wouldCreateCycle: 'Would create a cycle',
