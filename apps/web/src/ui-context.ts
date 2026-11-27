@@ -42,6 +42,7 @@ const columnPrefsOverrides = new Map<string, boolean>()
 const activeColumns = new Map<string, string>()
 let lastActiveColumnViewId: string | null = null
 const selections = new Map<string, SelectedObject[]>()
+const selectionHints = new Map<string, { objectId: string; count: number }>()
 const enriched = new Map<string, SelectedObject>()
 
 /** Selected tree node in one view, used as a live peer source (Notion 103 PR 2). */
@@ -89,6 +90,7 @@ export function resetUiContext() {
   activeColumns.clear()
   lastActiveColumnViewId = null
   selections.clear()
+  selectionHints.clear()
   enriched.clear()
   treeNodes.clear()
   trashActive = null
@@ -170,6 +172,24 @@ export function publishSelection(viewId: string, rows: SelectedObject[]) {
   if (previous && sameSelection(previous, rows)) return
   selections.set(viewId, rows)
   bumpSelection()
+}
+
+/** Detail hint for one table: the open object and how many rows that table has marked. */
+export function publishSelectionHint(viewId: string, objectId: string, count: number) {
+  const previous = selectionHints.get(viewId)
+  if (previous && previous.objectId === objectId && previous.count === count) return
+  selectionHints.set(viewId, { objectId, count })
+  bumpSelection()
+}
+
+/** Largest marked set whose active row is this object. */
+export function selectionHintForObject(objectId: string | null | undefined): number {
+  if (!objectId) return 0
+  let count = 0
+  for (const hint of selectionHints.values()) {
+    if (hint.objectId === objectId && hint.count > count) count = hint.count
+  }
+  return count
 }
 
 export function publishTreeNode(viewId: string, node: TreeNodeSelection) {

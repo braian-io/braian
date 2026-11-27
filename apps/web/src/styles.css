@@ -1350,6 +1350,65 @@ button.filter-chip:hover:not(.on) {
   font-size: var(--text-md);
 }
 .row, .head { display: flex; align-items: center; min-width: max-content; flex: none; }
+.row-check,
+.row-check-head {
+  flex: none;
+  width: 28px;
+  min-width: 28px;
+  max-width: 28px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.row-checkbox {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  opacity: 0;
+  accent-color: var(--accent);
+}
+.row-check { pointer-events: none; }
+.row:hover .row-check,
+.grid[data-has-selection='true'] .row-check { pointer-events: auto; }
+.row:hover .row-checkbox,
+.grid[data-has-selection='true'] .row-checkbox { opacity: 1; }
+.table-select-all {
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 var(--space-2);
+  color: var(--text-2);
+  font-size: var(--text-md);
+}
+.table-select-all button {
+  height: auto;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+.table-select-all button:hover { background: none; color: var(--accent-hover); }
+.table-selection-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  min-height: 32px;
+  padding: 0 var(--space-2);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: var(--text-md);
+}
+.table-selection-count {
+  margin-right: auto;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
 .head {
   position: sticky;
   top: 0;
@@ -1589,6 +1648,12 @@ button.filter-chip:hover:not(.on) {
   color: var(--danger-button-hover);
 }
 .detail-title { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; flex-wrap: wrap; }
+.detail-selection-hint {
+  flex-basis: 100%;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  line-height: 1.3;
+}
 .detail-title strong { font-size: var(--text-2xl); font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
 .detail-id { flex: none; color: var(--muted); font-size: var(--text-md); font-variant-numeric: tabular-nums; }
 .detail-meta { margin: 0; color: var(--muted); font-size: var(--text-md); font-variant-numeric: tabular-nums; }
