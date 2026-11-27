@@ -1250,6 +1250,30 @@ fn operation_for_tool(tool: &str) -> Option<&'static str> {
 /// JSON Schema for one operation. Empty params stay open so existing callers
 /// can still pass the arguments the handler already accepts.
 fn tool_parameters(op: &Operation) -> Value {
+    if op.name == "assortment.add_members" || op.name == "assortment.remove_members" {
+        let verb = if op.name == "assortment.add_members" {
+            "Add"
+        } else {
+            "Remove"
+        };
+        return json!({
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "description": "Selection id, or the selection's unique name."
+                },
+                "object_ids": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Object ids, or each object's unique name or key."
+                }
+            },
+            "required": ["id", "object_ids"],
+            "additionalProperties": false,
+            "description": format!("{verb} objects on a manual selection. This files a proposal.")
+        });
+    }
     if op.params.is_empty() {
         return json!({
             "type": "object",
@@ -1605,126 +1629,372 @@ pub(crate) async fn drive_agent(
         "content": agent_system_prompt(&context, &latest)
     })];
     messages.extend(incoming);
-    let client = reqwest::Client::new();
     let url = openai_responses_url();
-    let types = configured_types(state).await;
-    let payload = match post_openai(
-        &client,
-        &url,
-        &key,
-        &responses_body(&model, &messages, &types),
+    drive_agent_model(
+        state,
+        identity,
+        &context,
+        messages,
+        tx,
+        ModelTarget {
+            url: &url,
+            key: &key,
+            model: &model,
+        },
     )
-    .await
-    {
+    .await;
+}
+
+struct ModelTarget<'a> {
+    url: &'a str,
+    key: &'a str,
+    model: &'a str,
+}
+
+/// How many model rounds one person message may take. A membership change is
+/// a lookup, then a proposal, then a sentence. Stopping after the first tool
+/// round drops the proposal and leaves the follow-up with no `output_text`.
+const AGENT_TOOL_ROUNDS: usize = 6;
+
+struct ToolNote {
+    result: Value,
+}
+
+/// Talks to the Responses API until the model writes a message or the tool
+/// budget is spent. `url` and `key` are arguments so a test can point them at
+/// a stand-in without changing process environment.
+async fn drive_agent_model(
+    state: &AppState,
+    identity: &Identity,
+    context: &Value,
+    messages: Vec<Value>,
+    tx: &tokio::sync::mpsc::UnboundedSender<Value>,
+    target: ModelTarget<'_>,
+) {
+    let client = reqwest::Client::new();
+    let ModelTarget { url, key, model } = target;
+    let types = configured_types(state).await;
+    let mut last_request = responses_body(model, &messages, &types);
+    let mut payload = match post_openai(&client, url, key, &last_request).await {
         Ok(payload) => payload,
         Err(problem) => {
             let _ = tx.send(json!({ "type": "error", "text": problem.detail }));
             return;
         }
     };
-    let calls = function_calls(&payload);
-    let mut outputs = Vec::new();
-    for call in &calls {
-        if call.name == "ask_person" {
-            let args: Value = serde_json::from_str(&call.arguments).unwrap_or(json!({}));
-            let question = args
-                .get("question")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|text| !text.is_empty())
-                .unwrap_or("I need a decision before I continue.");
-            let _ = tx.send(json!({ "type": "question", "text": question }));
+    let mut notes = Vec::new();
+    let mut reply = String::new();
+    let mut nudged = false;
+    let mut starved_retried = false;
+    for _round in 0..AGENT_TOOL_ROUNDS {
+        // Reasoning tokens count against max_output_tokens. A response that
+        // stops there has neither a message nor a usable function call, so
+        // output_text is empty. Retry that request once with room for both.
+        if response_is_token_starved(&payload) && !starved_retried {
+            starved_retried = true;
+            last_request["max_output_tokens"] = json!(16_384);
+            match post_openai(&client, url, key, &last_request).await {
+                Ok(next) => {
+                    payload = next;
+                    continue;
+                }
+                Err(problem) => {
+                    tracing::error!(detail = %problem.detail, "openai output retry failed");
+                    if reply.is_empty() {
+                        reply = problem.detail;
+                    }
+                    break;
+                }
+            }
+        }
+        starved_retried = false;
+        let calls = function_calls(&payload);
+        let text = reply_text(&payload);
+        if !text.is_empty() {
+            reply = text;
+        }
+        if calls.is_empty() {
+            if !reply.is_empty() || notes.is_empty() || nudged {
+                break;
+            }
+            // Tools finished and the model sent only a reasoning item. Ask
+            // once for the sentence the person should read.
+            let Some(id) = payload.get("id").and_then(Value::as_str) else {
+                break;
+            };
+            nudged = true;
+            last_request = json!({
+                "model": model,
+                "previous_response_id": id,
+                "input": [{
+                    "role": "user",
+                    "content": "Reply with one short message about what you proposed or what failed. Do not call a tool."
+                }],
+                "reasoning": { "effort": "none" },
+                "max_output_tokens": 2048
+            });
+            match post_openai(&client, url, key, &last_request).await {
+                Ok(next) => {
+                    payload = next;
+                    continue;
+                }
+                Err(problem) => {
+                    tracing::error!(detail = %problem.detail, "openai final message failed");
+                    if reply.is_empty() {
+                        reply = problem.detail;
+                    }
+                    break;
+                }
+            }
+        }
+        let mut outputs = Vec::new();
+        let mut stop_for_person = false;
+        for call in &calls {
+            if call.name == "ask_person" {
+                let args: Value = serde_json::from_str(&call.arguments).unwrap_or(json!({}));
+                let question = args
+                    .get("question")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|text| !text.is_empty())
+                    .unwrap_or("I need a decision before I continue.");
+                let _ = tx.send(json!({ "type": "question", "text": question }));
+                stop_for_person = true;
+                break;
+            }
+            let note = execute_agent_call(state, identity, context, tx, call).await;
+            if !call.call_id.is_empty() {
+                outputs.push(json!({
+                    "type": "function_call_output",
+                    "call_id": call.call_id,
+                    "output": note.result.to_string(),
+                }));
+            }
+            notes.push(note);
+        }
+        if stop_for_person {
             return;
         }
-        let operation = operation_for_tool(&call.name).unwrap_or(call.name.as_str());
-        let args: Value = serde_json::from_str(&call.arguments).unwrap_or(json!({}));
-        let step_id = if call.call_id.is_empty() {
-            operation.to_owned()
-        } else {
-            call.call_id.clone()
-        };
-        let _ = tx.send(json!({
-            "type": "step",
-            "id": step_id,
-            "op": operation,
-            "args": args,
-            "state": "run"
-        }));
-        let call_args = if call.name == "propose_change" {
-            proposal_target_args(
-                selection_args(operation, &args, &context),
-                &context,
-                &defined_languages(state).await,
-            )
-        } else {
-            selection_args(operation, &args, &context)
-        };
-        let result = if let Some(value) = context_tool_result(operation, &call_args, Some(&context))
-        {
-            value
-        } else {
-            run_operation(state, identity, operation, &call_args, true)
-                .await
-                .unwrap_or_else(|problem| json!({ "error": problem.detail, "code": problem.code }))
-        };
-        let _ = tx.send(json!({ "type": "tool", "name": operation, "result": result }));
-        let proposed = result.get("proposal_id").is_some()
-            || result.get("needs_approval").and_then(Value::as_bool) == Some(true)
-            || result.get("id").is_some() && result.get("rows").is_some();
-        if proposed {
-            let _ = tx.send(json!({ "type": "proposal", "proposal": result }));
+        if outputs.is_empty() {
+            break;
         }
-        let _ = tx.send(json!({
-            "type": "step",
-            "id": step_id,
-            "op": operation,
-            "state": "done"
-        }));
-        if !call.call_id.is_empty() {
-            outputs.push(json!({
-                "type": "function_call_output",
-                "call_id": call.call_id,
-                "output": result.to_string(),
-            }));
-        }
-    }
-    let mut reply = reply_text(&payload);
-    if !outputs.is_empty()
-        && let Some(id) = payload.get("id").and_then(Value::as_str)
-    {
-        let follow_up = json!({
-            "model": model,
-            "previous_response_id": id,
-            "input": outputs,
-            // A follow-up after a tool call must offer the same proposal
-            // tools. Without them the model can only say the action is
-            // unavailable, even though the first request had it.
-            "tools": agent_tools(&types),
-            "reasoning": { "effort": "none" },
-        });
-        match post_openai(&client, &url, &key, &follow_up).await {
+        let follow_up = model_follow_up(model, &payload, &outputs, &types);
+        match post_openai(&client, url, key, &follow_up).await {
             Ok(next) => {
-                let text = reply_text(&next);
-                if !text.is_empty() {
-                    reply = text;
-                }
+                last_request = follow_up;
+                payload = next;
             }
             Err(problem) => {
                 tracing::error!(detail = %problem.detail, "openai follow-up failed");
-                if reply.is_empty() {
-                    reply = problem.detail;
+                // previous_response_id keeps reasoning items only while the
+                // response is stored. When that round-trip is rejected, send
+                // the reasoning item and the function call with the tool output.
+                let replay = model_replay(model, &messages, &payload, &outputs, &types);
+                match post_openai(&client, url, key, &replay).await {
+                    Ok(next) => {
+                        last_request = replay;
+                        payload = next;
+                    }
+                    Err(again) => {
+                        tracing::error!(detail = %again.detail, "openai reasoning replay failed");
+                        if reply.is_empty() {
+                            reply = problem.detail;
+                        }
+                        break;
+                    }
                 }
             }
         }
     }
     if reply.is_empty() {
-        reply = if calls.is_empty() {
-            "The model replied without text.".into()
-        } else {
-            "The agent ran tools but the model returned no text.".into()
-        };
+        reply = agent_tool_summary(&notes);
+        if !notes.is_empty() {
+            tracing::warn!(
+                tools = notes.len(),
+                "agent summarized a run the model left without text"
+            );
+        }
     }
     let _ = tx.send(json!({ "type": "answer", "text": reply, "available": true }));
+}
+
+async fn execute_agent_call(
+    state: &AppState,
+    identity: &Identity,
+    context: &Value,
+    tx: &tokio::sync::mpsc::UnboundedSender<Value>,
+    call: &FunctionCall,
+) -> ToolNote {
+    let operation = operation_for_tool(&call.name).unwrap_or(call.name.as_str());
+    let args: Value = serde_json::from_str(&call.arguments).unwrap_or(json!({}));
+    let step_id = if call.call_id.is_empty() {
+        operation.to_owned()
+    } else {
+        call.call_id.clone()
+    };
+    let _ = tx.send(json!({
+        "type": "step",
+        "id": step_id,
+        "op": operation,
+        "args": args,
+        "state": "run"
+    }));
+    let call_args = if call.name == "propose_change" {
+        proposal_target_args(
+            selection_args(operation, &args, context),
+            context,
+            &defined_languages(state).await,
+        )
+    } else {
+        selection_args(operation, &args, context)
+    };
+    let result = if let Some(value) = context_tool_result(operation, &call_args, Some(context)) {
+        value
+    } else {
+        run_operation(state, identity, operation, &call_args, true)
+            .await
+            .unwrap_or_else(|problem| json!({ "error": problem.detail, "code": problem.code }))
+    };
+    let _ = tx.send(json!({ "type": "tool", "name": operation, "result": result }));
+    let proposed = result.get("proposal_id").is_some()
+        || result.get("needs_approval").and_then(Value::as_bool) == Some(true)
+        || result.get("id").is_some() && result.get("rows").is_some();
+    if proposed {
+        let _ = tx.send(json!({ "type": "proposal", "proposal": result }));
+    }
+    let _ = tx.send(json!({
+        "type": "step",
+        "id": step_id,
+        "op": operation,
+        "state": "done"
+    }));
+    ToolNote { result }
+}
+
+/// A follow-up after a tool call must offer the same proposal tools. Without
+/// them the model can only say the action is unavailable.
+fn model_follow_up(
+    model: &str,
+    payload: &Value,
+    outputs: &[Value],
+    types: &[braian_model::ObjectType],
+) -> Value {
+    if let Some(id) = payload
+        .get("id")
+        .and_then(Value::as_str)
+        .filter(|id| !id.is_empty())
+    {
+        return json!({
+            "model": model,
+            "previous_response_id": id,
+            "input": outputs,
+            "tools": agent_tools(types),
+            "reasoning": { "effort": "none" },
+        });
+    }
+    json!({
+        "model": model,
+        "input": continuation_items(payload.get("output"), outputs),
+        "tools": agent_tools(types),
+        "reasoning": { "effort": "none" },
+    })
+}
+
+/// Stateless round-trip: the reasoning item that produced the function call
+/// has to travel with the tool output, in that order.
+fn model_replay(
+    model: &str,
+    messages: &[Value],
+    payload: &Value,
+    outputs: &[Value],
+    types: &[braian_model::ObjectType],
+) -> Value {
+    let mut input = messages.to_vec();
+    input.extend(continuation_items(payload.get("output"), outputs));
+    json!({
+        "model": model,
+        "input": input,
+        "tools": agent_tools(types),
+        "reasoning": { "effort": "none" },
+    })
+}
+
+fn continuation_items(output: Option<&Value>, outputs: &[Value]) -> Vec<Value> {
+    let mut input = Vec::new();
+    if let Some(items) = output.and_then(Value::as_array) {
+        for item in items {
+            let kind = item.get("type").and_then(Value::as_str);
+            if matches!(
+                kind,
+                Some("reasoning") | Some("function_call") | Some("message")
+            ) {
+                input.push(item.clone());
+            }
+        }
+    }
+    input.extend(outputs.iter().cloned());
+    input
+}
+
+fn response_is_token_starved(payload: &Value) -> bool {
+    if payload.get("status").and_then(Value::as_str) != Some("incomplete") {
+        return false;
+    }
+    if payload
+        .pointer("/incomplete_details/reason")
+        .and_then(Value::as_str)
+        != Some("max_output_tokens")
+    {
+        return false;
+    }
+    if !reply_text(payload).is_empty() {
+        return false;
+    }
+    let calls = function_calls(payload);
+    calls.is_empty()
+        || calls
+            .iter()
+            .any(|call| serde_json::from_str::<Value>(&call.arguments).is_err())
+}
+
+fn agent_tool_summary(notes: &[ToolNote]) -> String {
+    if notes.is_empty() {
+        return "The model replied without text.".into();
+    }
+    let mut proposals = Vec::new();
+    let mut failures = Vec::new();
+    for note in notes {
+        if let Some(error) = note
+            .result
+            .get("error")
+            .and_then(Value::as_str)
+            .filter(|text| !text.is_empty())
+        {
+            failures.push(clip(error, 240));
+            continue;
+        }
+        let proposed = note.result.get("proposal_id").is_some()
+            || note.result.get("needs_approval").and_then(Value::as_bool) == Some(true);
+        if proposed {
+            let title = note
+                .result
+                .get("title")
+                .and_then(Value::as_str)
+                .filter(|text| !text.is_empty())
+                .unwrap_or("a change");
+            proposals.push(title.to_owned());
+        }
+    }
+    if !proposals.is_empty() {
+        return format!(
+            "I filed {} for you to approve. Nothing changes until you approve it.",
+            proposals.join("; ")
+        );
+    }
+    if !failures.is_empty() {
+        return format!("I could not complete that. {}", failures.join(" "));
+    }
+    "I ran the tools, but I did not file a proposal.".into()
 }
 
 fn openai_responses_url() -> String {
@@ -1837,13 +2107,19 @@ fn function_calls(payload: &Value) -> Vec<FunctionCall> {
             call_id: item
                 .get("call_id")
                 .and_then(Value::as_str)
+                .filter(|id| !id.is_empty())
+                .or_else(|| {
+                    item.get("id")
+                        .and_then(Value::as_str)
+                        .filter(|id| !id.is_empty())
+                })
                 .unwrap_or_default()
                 .to_owned(),
-            arguments: item
-                .get("arguments")
-                .and_then(Value::as_str)
-                .unwrap_or("{}")
-                .to_owned(),
+            arguments: match item.get("arguments") {
+                Some(Value::String(text)) => text.clone(),
+                Some(value) if !value.is_null() => value.to_string(),
+                _ => "{}".to_owned(),
+            },
         })
         .collect()
 }
@@ -2208,7 +2484,7 @@ fn agent_system_prompt(context: &Value, _latest: &str) -> String {
         serde_json::to_string(&compact_ui_context(context)).unwrap_or_else(|_| "{}".to_owned());
     format!(
         "You are the Braian agent. You always act for the signed-in person. Write changes must become proposals, not direct writes. \
-To add or remove products in a manual selection, call assortment_add_members or assortment_remove_members with the selection id and object_ids. That files a proposal. Do not refuse the change and do not apply it yourself. \
+To add or remove products in a manual selection, call assortment_add_members or assortment_remove_members. Pass id as the selection id or its unique name, and object_ids as object ids or each object's unique name or key. The server resolves a unique name and files a proposal. Do not refuse the change and do not apply it yourself. If a tool result has an error, tell the person what was not found. \
 Answer in the same language as the person's latest message, whatever it is. Never refuse or stall because of language. \
 For a clear edit, such as renaming the selected object, call propose_change immediately with the fields to change. Put a display name in values.name as a language map in the data language from the snapshot, unless the person names another language. Do not change number, key, or id unless the person asked to change that identifier. Proposals are already approved in the UI, so never ask whether you should create one or wait for permission. \
 Call ask_person only when a real decision is missing, such as which of several ambiguous fields to use. Do not guess and do not use it to confirm an obvious action. \
@@ -4239,6 +4515,202 @@ fn member_object_ids(args: &Value) -> Result<Vec<Uuid>, Problem> {
         return Err(choose_objects());
     }
     Ok(ids)
+}
+
+fn clean_token(text: &str) -> String {
+    text.trim()
+        .trim_matches(|character| matches!(character, '"' | '\'' | '“' | '”'))
+        .trim()
+        .to_owned()
+}
+
+fn selection_token(args: &Value) -> Result<String, Problem> {
+    for key in ["id", "selection", "selection_id"] {
+        if let Some(token) = args
+            .get(key)
+            .and_then(Value::as_str)
+            .map(clean_token)
+            .filter(|token| !token.is_empty())
+        {
+            return Ok(token);
+        }
+    }
+    Err(Problem::new(
+        StatusCode::BAD_REQUEST,
+        "missing_id",
+        "Name the selection by id or by its unique name.",
+    ))
+}
+
+fn member_tokens(args: &Value) -> Result<Vec<String>, Problem> {
+    let Some(value) = args.get("object_ids") else {
+        return Err(choose_objects());
+    };
+    let mut tokens = Vec::new();
+    match value {
+        Value::Array(items) => {
+            for item in items {
+                let text = match item {
+                    Value::String(text) => text.clone(),
+                    Value::Number(number) => number.to_string(),
+                    _ => {
+                        return Err(Problem::new(
+                            StatusCode::BAD_REQUEST,
+                            "assortment",
+                            "object_ids must be ids or names",
+                        ));
+                    }
+                };
+                for part in text.split(',') {
+                    let token = clean_token(part);
+                    if !token.is_empty() {
+                        tokens.push(token);
+                    }
+                }
+            }
+        }
+        Value::String(text) => {
+            for part in text.split(',') {
+                let token = clean_token(part);
+                if !token.is_empty() {
+                    tokens.push(token);
+                }
+            }
+        }
+        _ => {
+            return Err(Problem::new(
+                StatusCode::BAD_REQUEST,
+                "assortment",
+                "object_ids must be ids or names",
+            ));
+        }
+    }
+    if tokens.is_empty() {
+        return Err(choose_objects());
+    }
+    Ok(tokens)
+}
+
+async fn name_attribute_id_strings(state: &AppState) -> Vec<String> {
+    let Ok(cached) = state.models.get(&state.store).await else {
+        return Vec::new();
+    };
+    let mut ids = Vec::new();
+    let standard = braian_model::name_id().as_uuid().to_string();
+    if cached
+        .defs
+        .attributes
+        .iter()
+        .any(|attribute| attribute.id.as_uuid().to_string() == standard)
+    {
+        ids.push(standard);
+    }
+    for attribute in &cached.defs.attributes {
+        if attribute.key == "name" {
+            let text = attribute.id.as_uuid().to_string();
+            if !ids.contains(&text) {
+                ids.push(text);
+            }
+        }
+    }
+    ids
+}
+
+async fn resolve_selection_id(state: &AppState, token: &str) -> Result<Uuid, Problem> {
+    if let Ok(id) = Uuid::parse_str(token) {
+        return Ok(id);
+    }
+    let rows = state
+        .store
+        .list_assortments(None)
+        .await
+        .map_err(store_status)?;
+    let needle = token.to_lowercase();
+    let matches: Vec<&Value> = rows
+        .iter()
+        .filter(|row| {
+            row.get("name")
+                .and_then(Value::as_str)
+                .is_some_and(|name| name.trim().to_lowercase() == needle)
+        })
+        .collect();
+    match matches.as_slice() {
+        [one] => one
+            .get("id")
+            .and_then(Value::as_str)
+            .and_then(|value| Uuid::parse_str(value).ok())
+            .ok_or_else(|| Problem::new(StatusCode::NOT_FOUND, "not_found", "selection not found")),
+        [] => Err(Problem::new(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            format!("No selection named \"{token}\"."),
+        )),
+        many => {
+            let names = many
+                .iter()
+                .filter_map(|row| row.get("name").and_then(Value::as_str))
+                .take(8)
+                .collect::<Vec<_>>()
+                .join(", ");
+            Err(Problem::new(
+                StatusCode::BAD_REQUEST,
+                "ambiguous_selection",
+                format!("Several selections match \"{token}\": {names}."),
+            ))
+        }
+    }
+}
+
+async fn resolve_member_token(
+    state: &AppState,
+    type_id: Uuid,
+    token: &str,
+) -> Result<Uuid, Problem> {
+    if let Ok(id) = Uuid::parse_str(token) {
+        return Ok(id);
+    }
+    let attribute_ids = name_attribute_id_strings(state).await;
+    let rows = state
+        .store
+        .objects_matching_label(token, &attribute_ids, Some(&[type_id]), 9)
+        .await
+        .map_err(store_status)?;
+    match rows.as_slice() {
+        [one] => Ok(one.0),
+        [] => Err(Problem::new(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            format!("No object named \"{token}\"."),
+        )),
+        many => {
+            let keys = many
+                .iter()
+                .map(|(_, key, _, _)| key.as_str())
+                .take(8)
+                .collect::<Vec<_>>()
+                .join(", ");
+            Err(Problem::new(
+                StatusCode::BAD_REQUEST,
+                "ambiguous_object",
+                format!("Several objects match \"{token}\": {keys}."),
+            ))
+        }
+    }
+}
+
+/// A membership tool accepts ids. A unique selection name or object name or
+/// key resolves to the same id, so the model does not have to look them up
+/// before it can file the proposal.
+async fn resolve_member_args(state: &AppState, args: &Value) -> Result<(Uuid, Vec<Uuid>), Problem> {
+    let selection_id = resolve_selection_id(state, &selection_token(args)?).await?;
+    let row = load_manual_selection(state, selection_id).await?;
+    let type_id = selection_type_id(&row)?;
+    let tokens = member_tokens(args)?;
+    let mut ids = Vec::with_capacity(tokens.len());
+    for token in tokens {
+        ids.push(resolve_member_token(state, type_id, &token).await?);
+    }
+    Ok((selection_id, ids))
 }
 
 /// Files one pending membership proposal. Nothing in the selection changes.
@@ -7808,13 +8280,11 @@ async fn propose_operation(
         "assortment.update" => propose_assortment_update(state, identity, args).await,
         "assortment.delete" => propose_assortment_delete(state, identity, args).await,
         "assortment.add_members" => {
-            let id = uuid_arg(args, "id")?;
-            let object_ids = member_object_ids(args)?;
+            let (id, object_ids) = resolve_member_args(state, args).await?;
             propose_assortment_members(state, identity, id, &object_ids, true).await
         }
         "assortment.remove_members" => {
-            let id = uuid_arg(args, "id")?;
-            let object_ids = member_object_ids(args)?;
+            let (id, object_ids) = resolve_member_args(state, args).await?;
             propose_assortment_members(state, identity, id, &object_ids, false).await
         }
         "move_to_group" => {
@@ -8269,7 +8739,7 @@ mod tests {
 
     use axum::extract::Json;
     use axum::routing::post;
-    use tokio::net::TcpListener;
+    use tokio::net::{TcpListener, TcpStream};
 
     use super::*;
 
@@ -9483,5 +9953,571 @@ mod tests {
             }
         }
         Err(last.expect("attempt"))
+    }
+
+    fn load_test_env() {
+        if std::env::var_os("BRAIAN_TEST_DATABASE_URL").is_some() {
+            return;
+        }
+        let Ok(text) = std::fs::read_to_string(".env") else {
+            return;
+        };
+        for line in text.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let Some((key, value)) = line.split_once('=') else {
+                continue;
+            };
+            if std::env::var_os(key).is_none() {
+                unsafe { std::env::set_var(key, value.trim_matches('"')) };
+            }
+        }
+    }
+
+    async fn wait_until_listening(address: std::net::SocketAddr) {
+        for _ in 0..40 {
+            if TcpStream::connect(address).await.is_ok() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        panic!("model stand-in did not listen on {address}");
+    }
+
+    fn output_for(body: &Value, call_id: &str) -> bool {
+        body.get("input")
+            .and_then(Value::as_array)
+            .is_some_and(|items| {
+                items.iter().any(|item| {
+                    item.get("type").and_then(Value::as_str) == Some("function_call_output")
+                        && item.get("call_id").and_then(Value::as_str) == Some(call_id)
+                })
+            })
+    }
+
+    fn reasoning_only(id: &str) -> Value {
+        json!({
+            "id": id,
+            "status": "completed",
+            "output_text": "",
+            "output": [{ "type": "reasoning", "id": format!("rs_{id}"), "summary": [] }]
+        })
+    }
+
+    #[test]
+    fn a_reasoning_item_is_not_assistant_text() {
+        let payload = json!({
+            "output_text": "",
+            "output": [{ "type": "reasoning", "id": "rs_1", "summary": [] }]
+        });
+        assert!(reply_text(&payload).is_empty(), "{}", reply_text(&payload));
+        assert!(response_is_token_starved(&json!({
+            "status": "incomplete",
+            "incomplete_details": { "reason": "max_output_tokens" },
+            "output": [{ "type": "reasoning", "summary": [] }, {
+                "type": "function_call",
+                "name": "list_assortments",
+                "call_id": "call_1",
+                "arguments": "{\"q\":"
+            }]
+        })));
+        assert!(!response_is_token_starved(&json!({
+            "status": "completed",
+            "output_text": "Done",
+            "output": [{ "type": "message", "content": [{ "type": "output_text", "text": "Done" }] }]
+        })));
+    }
+
+    #[test]
+    fn function_call_arguments_may_be_an_object_and_the_call_id_may_be_the_item_id() {
+        let payload = json!({
+            "output": [{
+                "type": "function_call",
+                "name": "assortment_add_members",
+                "id": "fc_1",
+                "arguments": { "id": "Cheese active", "object_ids": ["Skyr 428", "Feta 240"] }
+            }]
+        });
+        let calls = function_calls(&payload);
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].call_id, "fc_1");
+        assert!(
+            calls[0].arguments.contains("Cheese active"),
+            "{}",
+            calls[0].arguments
+        );
+        assert!(
+            calls[0].arguments.contains("Feta 240"),
+            "{}",
+            calls[0].arguments
+        );
+    }
+
+    #[test]
+    fn continuation_keeps_the_reasoning_item_ahead_of_the_tool_output() {
+        let output = json!([
+            { "type": "reasoning", "id": "rs_1" },
+            {
+                "type": "function_call",
+                "call_id": "call_1",
+                "name": "list_assortments",
+                "arguments": "{}"
+            }
+        ]);
+        let outputs = vec![json!({
+            "type": "function_call_output",
+            "call_id": "call_1",
+            "output": "{}"
+        })];
+        let items = continuation_items(Some(&output), &outputs);
+        assert_eq!(items[0]["type"], "reasoning");
+        assert_eq!(items[1]["type"], "function_call");
+        assert_eq!(items[2]["type"], "function_call_output");
+        let summary = agent_tool_summary(&[ToolNote {
+            result: json!({ "error": "No object named \"Skyr 428\"." }),
+        }]);
+        assert!(
+            summary.contains("No object named \"Skyr 428\"."),
+            "{summary}"
+        );
+        assert!(!summary.contains("returned no text"), "{summary}");
+        let filed = agent_tool_summary(&[ToolNote {
+            result: json!({
+                "proposal_id": "018f1000-0000-7000-8000-0000000000aa",
+                "needs_approval": true,
+                "title": "Add Skyr 428 and Feta 240 to selection Cheese active"
+            }),
+        }]);
+        assert!(filed.contains("Add Skyr 428 and Feta 240"), "{filed}");
+        assert!(
+            filed.contains("Nothing changes until you approve"),
+            "{filed}"
+        );
+    }
+
+    #[test]
+    fn membership_tools_accept_a_unique_name() {
+        let add = tool_parameters(find_op("assortment.add_members").expect("add"));
+        assert_eq!(add["required"], json!(["id", "object_ids"]));
+        assert!(
+            add["properties"]["id"]["description"]
+                .as_str()
+                .unwrap_or("")
+                .contains("unique name"),
+            "{add}"
+        );
+        assert_eq!(add["properties"]["object_ids"]["type"], "array");
+        let prompt = agent_system_prompt(&json!({}), "");
+        assert!(prompt.contains("unique name"), "{prompt}");
+        assert!(prompt.contains("what was not found"), "{prompt}");
+    }
+
+    struct NamedSelection {
+        db: braian_store::testing::TestDb,
+        state: AppState,
+        human: Identity,
+        selection: Uuid,
+    }
+
+    async fn named_selection() -> NamedSelection {
+        load_test_env();
+        let db = braian_store::testing::TestDb::create().await;
+        let identities =
+            crate::identities(db.store(), "ada:human:token-ada;bot:agent@ada:token-bot")
+                .await
+                .expect("identities");
+        let human = identities
+            .iter()
+            .find(|identity| identity.handle == "ada")
+            .expect("human")
+            .clone();
+        let state = AppState::new(db.store().clone(), identities, None);
+        let defs: braian_model::DefinitionSet =
+            serde_json::from_str(include_str!("../../../testdata/rules/definitions.json"))
+                .expect("defs");
+        state
+            .store
+            .put_definitions(&human.actor, &defs)
+            .await
+            .expect("definitions");
+        state.models.invalidate().await;
+        let owner = state
+            .store
+            .attach_user(human.actor.actor, "ada@example.com", "x", "admin", "Ada")
+            .await
+            .expect("user");
+        for (sku, name) in [("SKY-428", "Skyr 428"), ("FET-240", "Feta 240")] {
+            run_operation(
+                &state,
+                &human,
+                "create_object",
+                &json!({
+                    "type": "item",
+                    "values": { "sku": sku, "name": { "sv": name }, "active": true }
+                }),
+                false,
+            )
+            .await
+            .unwrap_or_else(|problem| panic!("create {sku}: {problem:?}"));
+        }
+        let selection = Uuid::now_v7();
+        let type_id = Uuid::parse_str("018f0000-0000-7000-8000-000000000200").expect("item");
+        state
+            .store
+            .save_assortment(
+                selection,
+                owner,
+                type_id,
+                "Cheese active",
+                "manual",
+                &json!({}),
+            )
+            .await
+            .expect("selection");
+        NamedSelection {
+            db,
+            state,
+            human,
+            selection,
+        }
+    }
+
+    async fn collect_agent(fixture: &NamedSelection, url: &str, prompt: &str) -> Vec<Value> {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        drive_agent_model(
+            &fixture.state,
+            &fixture.human,
+            &json!({}),
+            vec![json!({ "role": "user", "content": prompt })],
+            &tx,
+            ModelTarget {
+                url,
+                key: "test-key",
+                model: "gpt-6-luna",
+            },
+        )
+        .await;
+        drop(tx);
+        let mut events = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            events.push(event);
+        }
+        events
+    }
+
+    #[tokio::test]
+    async fn named_products_are_proposed_after_a_second_tool_round() {
+        let fixture = named_selection().await;
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let captured = Arc::clone(&seen);
+        let app = axum::Router::new().route(
+            "/v1/responses",
+            post(move |Json(body): Json<Value>| {
+                let captured = Arc::clone(&captured);
+                async move {
+                    captured.lock().expect("lock").push(body.clone());
+                    let response = if body.get("tools").is_none() {
+                        json!({
+                            "id": "resp_text",
+                            "status": "completed",
+                            "output_text": "I proposed adding Skyr 428 and Feta 240. Approve it when you are ready.",
+                            "output": [{
+                                "type": "message",
+                                "content": [{
+                                    "type": "output_text",
+                                    "text": "I proposed adding Skyr 428 and Feta 240. Approve it when you are ready."
+                                }]
+                            }]
+                        })
+                    } else if output_for(&body, "call_2") {
+                        reasoning_only("resp_3")
+                    } else if output_for(&body, "call_1") {
+                        json!({
+                            "id": "resp_2",
+                            "status": "completed",
+                            "output_text": "",
+                            "output": [
+                                { "type": "reasoning", "id": "rs_2", "summary": [] },
+                                {
+                                    "type": "function_call",
+                                    "name": "assortment_add_members",
+                                    "call_id": "call_2",
+                                    "arguments": "{\"id\":\"Cheese active\",\"object_ids\":[\"Skyr 428\",\"Feta 240\"]}"
+                                }
+                            ]
+                        })
+                    } else {
+                        json!({
+                            "id": "resp_1",
+                            "status": "completed",
+                            "output_text": "",
+                            "output": [
+                                { "type": "reasoning", "id": "rs_1", "summary": [] },
+                                {
+                                    "type": "function_call",
+                                    "name": "list_assortments",
+                                    "call_id": "call_1",
+                                    "arguments": "{}"
+                                }
+                            ]
+                        })
+                    };
+                    Json(response)
+                }
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("addr");
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve");
+        });
+        wait_until_listening(address).await;
+        let events = collect_agent(
+            &fixture,
+            &format!("http://{address}/v1/responses"),
+            "Add Skyr 428 and Feta 240 to the selection Cheese active",
+        )
+        .await;
+        let answer = events
+            .iter()
+            .find(|event| event["type"] == "answer")
+            .expect("answer");
+        let text = answer["text"].as_str().unwrap_or("");
+        assert!(text.contains("Approve it when you are ready"), "{text}");
+        assert!(!text.contains("returned no text"), "{text}");
+        assert!(
+            events.iter().any(|event| event["type"] == "proposal"),
+            "{events:?}"
+        );
+        let members = fixture
+            .state
+            .store
+            .assortment_member_ids(fixture.selection)
+            .await
+            .expect("members");
+        assert!(members.is_empty(), "{members:?}");
+        let bodies = seen.lock().expect("lock").clone();
+        assert!(
+            bodies.iter().any(|body| output_for(body, "call_2")),
+            "the proposal tool result must go back to the model: {bodies:?}"
+        );
+        assert!(
+            bodies
+                .iter()
+                .any(|body| body.get("previous_response_id").is_some()),
+            "{bodies:?}"
+        );
+        let _ = fixture.db;
+    }
+
+    #[tokio::test]
+    async fn a_missing_product_is_reported_when_the_model_sends_no_text() {
+        let fixture = named_selection().await;
+        let app = axum::Router::new().route(
+            "/v1/responses",
+            post(|Json(body): Json<Value>| async move {
+                let response = if body.get("tools").is_none() || output_for(&body, "call_miss") {
+                    reasoning_only("resp_empty")
+                } else {
+                    json!({
+                        "id": "resp_1",
+                        "status": "completed",
+                        "output_text": "",
+                        "output": [{
+                            "type": "function_call",
+                            "name": "assortment_add_members",
+                            "call_id": "call_miss",
+                            "arguments": "{\"id\":\"Cheese active\",\"object_ids\":[\"No Such\"]}"
+                        }]
+                    })
+                };
+                Json(response)
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("addr");
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve");
+        });
+        wait_until_listening(address).await;
+        let events = collect_agent(
+            &fixture,
+            &format!("http://{address}/v1/responses"),
+            "Add No Such to selection Cheese active",
+        )
+        .await;
+        let answer = events
+            .iter()
+            .find(|event| event["type"] == "answer")
+            .expect("answer");
+        let text = answer["text"].as_str().unwrap_or("");
+        assert!(text.contains("No object named \"No Such\"."), "{text}");
+        assert!(!text.contains("returned no text"), "{text}");
+        assert!(
+            events.iter().all(|event| event["type"] != "proposal"),
+            "{events:?}"
+        );
+        let members = fixture
+            .state
+            .store
+            .assortment_member_ids(fixture.selection)
+            .await
+            .expect("members");
+        assert!(members.is_empty(), "{members:?}");
+        let _ = fixture.db;
+    }
+
+    #[tokio::test]
+    async fn a_rejected_reasoning_round_trip_is_replayed_with_the_reasoning_item() {
+        let fixture = named_selection().await;
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let captured = Arc::clone(&seen);
+        let app = axum::Router::new().route(
+            "/v1/responses",
+            post(move |Json(body): Json<Value>| {
+                let captured = Arc::clone(&captured);
+                async move {
+                    captured.lock().expect("lock").push(body.clone());
+                    let replayed = body.get("input").and_then(Value::as_array).is_some_and(|items| {
+                        items.iter().any(|item| item.get("type").and_then(Value::as_str) == Some("reasoning"))
+                            && items.iter().any(|item| {
+                                item.get("type").and_then(Value::as_str) == Some("function_call_output")
+                            })
+                    });
+                    if body.get("previous_response_id").is_some() {
+                        return (
+                            StatusCode::BAD_REQUEST,
+                            Json(json!({
+                                "error": { "message": "The reasoning item was not included" }
+                            })),
+                        )
+                            .into_response();
+                    }
+                    if replayed {
+                        return Json(json!({
+                            "id": "resp_text",
+                            "status": "completed",
+                            "output_text": "I listed the selections.",
+                            "output": [{
+                                "type": "message",
+                                "content": [{ "type": "output_text", "text": "I listed the selections." }]
+                            }]
+                        }))
+                        .into_response();
+                    }
+                    Json(json!({
+                        "id": "resp_1",
+                        "status": "completed",
+                        "output_text": "",
+                        "output": [
+                            { "type": "reasoning", "id": "rs_1", "summary": [] },
+                            {
+                                "type": "function_call",
+                                "name": "list_assortments",
+                                "call_id": "call_1",
+                                "arguments": "{}"
+                            }
+                        ]
+                    }))
+                    .into_response()
+                }
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("addr");
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve");
+        });
+        wait_until_listening(address).await;
+        let events = collect_agent(
+            &fixture,
+            &format!("http://{address}/v1/responses"),
+            "Which selections are there?",
+        )
+        .await;
+        let answer = events
+            .iter()
+            .find(|event| event["type"] == "answer")
+            .expect("answer");
+        let text = answer["text"].as_str().unwrap_or("");
+        assert_eq!(text, "I listed the selections.");
+        let bodies = seen.lock().expect("lock").clone();
+        assert!(
+            bodies.iter().any(|body| {
+                body.get("input")
+                    .and_then(Value::as_array)
+                    .is_some_and(|items| {
+                        items.iter().any(|item| {
+                            item.get("type").and_then(Value::as_str) == Some("reasoning")
+                        })
+                    })
+            }),
+            "the replay must carry the reasoning item: {bodies:?}"
+        );
+        let _ = fixture.db;
+    }
+
+    #[tokio::test]
+    async fn an_empty_response_after_the_token_ceiling_is_retried() {
+        let fixture = named_selection().await;
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let captured = Arc::clone(&seen);
+        let app = axum::Router::new().route(
+            "/v1/responses",
+            post(move |Json(body): Json<Value>| {
+                let captured = Arc::clone(&captured);
+                async move {
+                    captured.lock().expect("lock").push(body.clone());
+                    let response = if body.get("max_output_tokens").and_then(Value::as_u64) == Some(16_384)
+                    {
+                        json!({
+                            "id": "resp_text",
+                            "status": "completed",
+                            "output_text": "There are two cheeses.",
+                            "output": [{
+                                "type": "message",
+                                "content": [{ "type": "output_text", "text": "There are two cheeses." }]
+                            }]
+                        })
+                    } else {
+                        json!({
+                            "id": "resp_starved",
+                            "status": "incomplete",
+                            "incomplete_details": { "reason": "max_output_tokens" },
+                            "output_text": "",
+                            "output": [{ "type": "reasoning", "id": "rs_starved", "summary": [] }]
+                        })
+                    };
+                    Json(response)
+                }
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("addr");
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve");
+        });
+        wait_until_listening(address).await;
+        let events = collect_agent(
+            &fixture,
+            &format!("http://{address}/v1/responses"),
+            "How many cheeses are in Cheese active?",
+        )
+        .await;
+        let answer = events
+            .iter()
+            .find(|event| event["type"] == "answer")
+            .expect("answer");
+        assert_eq!(answer["text"], "There are two cheeses.");
+        let bodies = seen.lock().expect("lock").clone();
+        assert!(
+            bodies
+                .iter()
+                .any(|body| body.get("max_output_tokens").and_then(Value::as_u64) == Some(16_384)),
+            "{bodies:?}"
+        );
+        let _ = fixture.db;
     }
 }

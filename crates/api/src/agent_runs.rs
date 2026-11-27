@@ -1631,46 +1631,121 @@ fn model_messages(stored: &[braian_store::AgentMessageRow]) -> Vec<Value> {
 
 struct MemberRequest {
     add: bool,
-    selection: Uuid,
-    object_ids: Vec<Uuid>,
+    selection: String,
+    objects: Vec<String>,
 }
 
-/// `add <uuid>[,<uuid>...] to selection <uuid>` or the remove form.
-/// Only the exact sentence is handled, so a real model still sees ordinary language.
+/// `add <names> to selection <name>` or the remove form, including the Swedish
+/// wording the agent tab receives. A sentence that is not this shape still
+/// goes to the model. Names are resolved by the membership tools.
 fn parse_member_request(prompt: &str) -> Option<MemberRequest> {
-    let lower = prompt.trim().to_lowercase();
-    let (add, rest) = if let Some(rest) = lower.strip_prefix("add ") {
-        (true, rest)
-    } else if let Some(rest) = lower.strip_prefix("remove ") {
-        (false, rest)
-    } else {
-        return None;
-    };
-    let marker = if add {
-        " to selection "
-    } else {
-        " from selection "
-    };
-    let (ids_part, selection_part) = rest.split_once(marker)?;
-    if ids_part.is_empty() || selection_part.is_empty() {
+    let trimmed = prompt.trim().trim_end_matches(['.', '!', '…']);
+    let lower = trimmed.to_lowercase();
+    if lower.len() != trimmed.len() {
         return None;
     }
-    let selection = Uuid::parse_str(selection_part.trim()).ok()?;
-    let mut object_ids = Vec::new();
-    for part in ids_part.split(',') {
-        let id = Uuid::parse_str(part.trim()).ok()?;
-        if !object_ids.contains(&id) {
-            object_ids.push(id);
-        }
-    }
-    if object_ids.is_empty() {
+    let (add, rest) = member_prefix(&lower, trimmed)?;
+    let (objects_part, selection_part) = split_member_marker(rest, add)?;
+    let objects = split_member_names(objects_part);
+    let selection = trim_member_name(selection_part);
+    if objects.is_empty() || selection.is_empty() {
         return None;
     }
     Some(MemberRequest {
         add,
         selection,
-        object_ids,
+        objects,
     })
+}
+
+// english-check: allow
+fn member_prefix<'a>(lower: &str, original: &'a str) -> Option<(bool, &'a str)> {
+    for (prefix, add) in [
+        ("lägg till ", true),
+        ("add ", true),
+        ("ta bort ", false),
+        ("remove ", false),
+    ] {
+        if let Some(rest) = lower.strip_prefix(prefix) {
+            return Some((add, &original[original.len() - rest.len()..]));
+        }
+    }
+    None
+}
+
+fn split_member_marker(rest: &str, add: bool) -> Option<(&str, &str)> {
+    let lower = rest.to_lowercase();
+    if lower.len() != rest.len() {
+        return None;
+    }
+    let markers: &[&str] = if add {
+        &[" to selection ", " i selektionen ", " till selektionen "]
+    } else {
+        &[" from selection ", " från selektionen ", " ur selektionen "]
+    };
+    let mut found: Option<(usize, &str)> = None;
+    for marker in markers {
+        if let Some(at) = lower.find(marker) {
+            if found.is_some() {
+                return None;
+            }
+            found = Some((at, marker));
+        }
+    }
+    let (at, marker) = found?;
+    if !rest.is_char_boundary(at) || !rest.is_char_boundary(at + marker.len()) {
+        return None;
+    }
+    let objects = &rest[..at];
+    let selection = &rest[at + marker.len()..];
+    if objects.trim().is_empty() || selection.trim().is_empty() {
+        return None;
+    }
+    Some((objects, selection))
+}
+// english-check: end
+
+fn split_member_names(text: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    for piece in text.split(',') {
+        names.extend(split_member_and(piece.trim()));
+    }
+    let mut unique = Vec::new();
+    for name in names {
+        let name = trim_member_name(&name);
+        if !name.is_empty() && !unique.iter().any(|seen: &String| seen == &name) {
+            unique.push(name);
+        }
+    }
+    unique
+}
+
+fn split_member_and(text: &str) -> Vec<String> {
+    let lower = text.to_lowercase();
+    if lower.len() != text.len() {
+        return vec![text.to_owned()];
+    }
+    for marker in [" och ", " and "] {
+        if let Some(at) = lower.find(marker) {
+            let mut names = split_member_and(&text[..at]);
+            names.extend(split_member_and(&text[at + marker.len()..]));
+            return names;
+        }
+    }
+    vec![text.to_owned()]
+}
+
+fn trim_member_name(text: &str) -> String {
+    text.trim()
+        .trim_matches(|character: char| {
+            character.is_whitespace()
+                || matches!(
+                    character,
+                    '"' | '\'' | '“' | '”' | '‘' | '’' | '.' | '!' | '?'
+                )
+        })
+        .trim()
+        .to_owned()
 }
 
 async fn file_member_request(
@@ -1684,17 +1759,29 @@ async fn file_member_request(
     } else {
         "assortment.remove_members"
     };
-    let result = run_operation(
+    let result = match run_operation(
         state,
         identity,
         name,
         &json!({
             "id": request.selection,
-            "object_ids": request.object_ids,
+            "object_ids": request.objects,
         }),
         true,
     )
-    .await?;
+    .await
+    {
+        Ok(value) => value,
+        Err(problem) => {
+            say(
+                state,
+                run_id,
+                &format!("I could not change the selection. {}", problem.detail),
+            )
+            .await?;
+            return Ok(());
+        }
+    };
     let Some(proposal_id) = result
         .get("proposal_id")
         .and_then(Value::as_str)
@@ -1718,6 +1805,17 @@ async fn file_member_request(
         .append_agent_message(run_id, "proposal", &json!({ "proposal_id": proposal_id }))
         .await
         .map_err(store_status)?;
+    let title = result
+        .get("title")
+        .and_then(Value::as_str)
+        .filter(|text| !text.is_empty())
+        .unwrap_or("the change");
+    say(
+        state,
+        run_id,
+        &format!("I proposed {title}. Nothing changes until you approve it."),
+    )
+    .await?;
     Ok(())
 }
 
@@ -1963,14 +2061,30 @@ mod session_tests {
         let add = parse_member_request(&format!("Add {first}, {second} to selection {selection}"))
             .expect("add");
         assert!(add.add);
-        assert_eq!(add.selection.to_string(), selection);
-        assert_eq!(add.object_ids.len(), 2);
+        assert_eq!(add.selection, selection);
+        assert_eq!(add.objects, vec![first.to_owned(), second.to_owned()]);
         let remove = parse_member_request(&format!("remove {first} from selection {selection}"))
             .expect("remove");
         assert!(!remove.add);
-        assert_eq!(remove.object_ids.len(), 1);
+        assert_eq!(remove.objects, vec![first.to_owned()]);
         assert!(parse_member_request("add the cheese to the summer selection").is_none());
         assert!(parse_member_request("rename Cheddar to Blue").is_none());
+        // english-check: allow
+        let named =
+            parse_member_request("Lägg till Skyr 428 och Feta 240 i selektionen Cheese active")
+                .expect("swedish");
+        assert!(named.add);
+        assert_eq!(
+            named.objects,
+            vec!["Skyr 428".to_owned(), "Feta 240".to_owned()]
+        );
+        assert_eq!(named.selection, "Cheese active");
+        let gone = parse_member_request("Ta bort Feta 240 från selektionen Cheese active")
+            .expect("remove by name");
+        assert!(!gone.add);
+        assert_eq!(gone.objects, vec!["Feta 240".to_owned()]);
+        assert_eq!(gone.selection, "Cheese active");
+        // english-check: end
     }
 
     #[test]
