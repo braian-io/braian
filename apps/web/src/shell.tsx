@@ -49,7 +49,7 @@ import {
 } from './open-type-view-queue'
 import { copy } from './i18n'
 import { agentDockShare, applyLayoutCommand, findTabs, focusView, migrateLayout, views as layoutViews, type LayoutDoc, type Place } from './layout'
-import { cloneObjectTableView, draftTypeRef, objectTableForTypeToken, objectTableTemplateForType, objectTableViewForType } from './open-type-view'
+import { cloneObjectTableView, draftTypeRef, objectTableForTypeToken, objectTableTemplateForType, objectTableViewForPeerRetarget, objectTableViewForType } from './open-type-view'
 import { ConsequenceHost } from './consequence'
 import { ModelDraftHost } from './model-draft-ui'
 import { ModelTableBeforeUnload } from './model-table-beforeunload'
@@ -109,10 +109,14 @@ import { commandPlaceholder, displayViewTitle, migrateSavedWorkspace, singularOf
 import {
   applyPeerSource,
   applyTypeSource,
+  buildSourcePin,
   defaultPeerLinkType,
+  isSourceLocked,
   peerSourceLabel,
   peerSourceOf,
+  sourcePinOf,
   viewSourceLabel,
+  withSourceLock,
 } from './view-source'
 import { objectTablesToAutoLinkToTree } from './structure-tree-link'
 import { entityTypesForStructure, showEntityTypeMenuLabel } from './structure-tree-show'
@@ -361,6 +365,7 @@ export function Shell() {
   const restoredAgents = useRef<string | null>(null)
   const applyViewTypeSourceRef = useRef<(typeId: string, viewId?: string) => Promise<void>>(async () => undefined)
   const applyViewPeerSourceRef = useRef<(peerViewId: string, viewId?: string, linkType?: string) => Promise<void>>(async () => undefined)
+  const toggleViewSourceLockRef = useRef<(viewId?: string) => Promise<void>>(async () => undefined)
   const autoLinkStructureTreeRef = useRef<(treeViewId: string, explicitAll?: boolean) => Promise<void>>(async () => undefined)
   const openLayoutViewsRef = useRef<string[]>([])
   const linkedOpenTreesRef = useRef(false)
@@ -735,6 +740,10 @@ export function Shell() {
         setPaletteSourceTargetViewId(null)
         setPaletteStartAddView(true)
         setPaletteMode('list')
+      }),
+      registerCommandRunner('view:source-lock', (target) => {
+        const viewId = typeof target.viewId === 'string' ? target.viewId : undefined
+        void toggleViewSourceLockRef.current(viewId)
       }),
       registerCommandRunner('view:select-source', (target) => {
         const typeId = typeof target.typeId === 'string' ? target.typeId : typeof target.typeKey === 'string' ? target.typeKey : ''
@@ -2178,14 +2187,20 @@ export function Shell() {
     const source = viewRows(surface.views).find((item) => item.id === peer.viewId)
     if (!source) return ''
     const title = displayViewTitle(source, typeCatalog, openTypeKey)
+    const pin = isSourceLocked(view.state) ? sourcePinOf(view.state) : null
+    if (pin?.caption) return peerSourceLabel(title, pin.caption)
     if (source.type === 'structure_tree') {
-      const node = readTreeNode(peer.viewId)
+      const node = pin?.selection === 'node'
+        ? { structureKey: pin.structureKey, groupKey: pin.groupKey }
+        : readTreeNode(peer.viewId)
       return peerSourceLabel(title, node ? structureCaption(node.groupKey, defs.data, node.structureKey) : '')
     }
     if (source.type !== 'object_table') return ''
     const bound = typeOfView(source, typeCatalog)
     if (!bound || bound.kind === 'link') return ''
-    const rows = readSelection(peer.viewId)
+    const rows = pin?.selection === 'row'
+      ? pin.ids.map((id) => ({ id, key: id, name: '', type: '' }))
+      : readSelection(peer.viewId)
     const label = rows.map((row) => row.key || row.name || row.id).filter(Boolean).slice(0, 3).join(', ')
     return peerSourceLabel(title, label)
   }
@@ -2236,7 +2251,7 @@ export function Shell() {
 
       let views: View[] = viewRows(surfaceNow.views)
       const openIds = layoutViews(docNow.layout)
-      const openMatch = objectTableViewForType(views, type, openIds)
+      const openMatch = objectTableViewForPeerRetarget(views, type, openIds)
       const patchSurface = (nextViews: View[]) => {
         const nextSurface = {
           ...surfaceNow,
@@ -2338,6 +2353,55 @@ export function Shell() {
     }
   }
 
+  toggleViewSourceLockRef.current = async (viewId?: string) => {
+    try {
+      const surfaceNow = workspaceRef.current
+      if (!surfaceNow || surfaceNow.locked) return
+      const focus = viewId || docRef.current?.focus
+      const views: View[] = viewRows(surfaceNow.views)
+      const view = views.find((item) => item.id === focus && item.type === 'object_table')
+        ?? views.find((item) => item.id === viewId && item.type === 'object_table')
+      if (!view) return
+      const locked = isSourceLocked(view.state)
+      let nextState: Json
+      if (locked) {
+        nextState = withSourceLock(view.state, false, null)
+      } else {
+        const peer = peerSourceOf(view.state)
+        let pin = sourcePinOf(view.state)
+        if (peer && !pin) {
+          const source = views.find((item) => item.id === peer.viewId)
+          if (source?.type === 'structure_tree') {
+            const node = readTreeNode(peer.viewId)
+            const caption = node ? structureCaption(node.groupKey, defs.data, node.structureKey) : ''
+            pin = buildSourcePin(peer, node, [], caption)
+          } else if (source?.type === 'object_table') {
+            const rows = readSelection(peer.viewId)
+            const caption = rows.map((row) => row.key || row.name || row.id).filter(Boolean).slice(0, 3).join(', ')
+            pin = buildSourcePin(peer, null, rows, caption)
+          }
+        }
+        nextState = withSourceLock(view.state, true, pin)
+      }
+      const updated: View = { ...view, state: freeObject(nextState) }
+      await mergeViewRef.current(view, surfaceNow.id, nextState)
+      const nextViews = views.map((item) => (item.id === updated.id ? updated : item))
+      const nextSurface = {
+        ...surfaceNow,
+        views: nextViews.map((item) => ({
+          ...item,
+          pane: item.pane ?? 'center',
+          position: item.position ?? 0,
+          state: freeObject(item.state),
+        })),
+      }
+      workspaceRef.current = nextSurface
+      queryClient.setQueryData(['workspace', surfaceNow.id], nextSurface)
+    } catch (reason) {
+      reportWriteError(reason)
+    }
+  }
+
   applyViewPeerSourceRef.current = async (peerViewId: string, viewId?: string, linkType?: string) => {
     try {
     const surfaceNow = workspaceRef.current
@@ -2346,10 +2410,14 @@ export function Shell() {
     const types = typeNames(defs)
     const focus = viewId || docRef.current?.focus
     let views: View[] = viewRows(surfaceNow.views)
-    const target = views.find((view) => view.id === focus && view.type === 'object_table')
-      ?? views.find((view) => view.type === 'object_table')
+    const target = (viewId
+      ? views.find((view) => view.id === viewId && view.type === 'object_table')
+      : undefined)
+      ?? (views.find((view) => view.id === focus && view.type === 'object_table')
+        ?? views.find((view) => view.type === 'object_table'))
     const source = views.find((view) => view.id === peerViewId)
     if (!target || !source || source.id === target.id) return
+    if (isSourceLocked(target.state)) return
     if (source.type !== 'object_table' && source.type !== 'structure_tree') return
     const sourceBound = source.type === 'object_table' ? typeOfView(source, types) : undefined
     // Link types are not records (#153): never accept one as a source.
@@ -2990,12 +3058,16 @@ export function Shell() {
                 title: view.type === 'agent' ? copy.agent : displayViewTitle(view, typeCatalog, openTypeKey),
                 prompt,
                 sourceLabel: viewSourceLabel(view, typeCatalog, workspaceCatalogRef(surface), catalogNamesById, peerLabelFor(view)),
+                sourceLocked: view.type === 'object_table' && isSourceLocked(view.state),
               }
             })}
             onChange={commitDoc}
             onSourceLabelPick={(viewId) => {
               sourceLabelPickerOpenRef.current = true
               void runCommand('view:select-source', { viewId })
+            }}
+            onToggleSourceLock={(viewId) => {
+              void toggleViewSourceLockRef.current(viewId)
             }}
             agentViews={agentViews}
             renderView={(item) => {

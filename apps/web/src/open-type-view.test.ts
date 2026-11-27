@@ -4,9 +4,11 @@ import {
   draftTypeRef,
   objectTableForTypeToken,
   objectTableTemplateForType,
+  objectTableViewForPeerRetarget,
   objectTableViewForType,
   type TypeViewRow,
 } from './open-type-view'
+import { withSourceLock } from './view-source'
 
 const product = { id: 'type-product', key: 'product' }
 
@@ -26,6 +28,14 @@ describe('openTypeView helpers', () => {
     const closed = view({ id: 'v-closed' })
     expect(objectTableViewForType([closed, open], product, ['v-open'])?.id).toBe('v-open')
     expect(objectTableViewForType([open, closed], product, [])).toBeUndefined()
+  })
+
+  it('skips a locked open table for peer retargeting', () => {
+    const locked = view({
+      state: withSourceLock(view().state, true, { selection: 'node', structureKey: 'food', groupKey: 'milk' }),
+    })
+    expect(objectTableViewForPeerRetarget([locked], product, ['v-products'])).toBeUndefined()
+    expect(objectTableViewForType([locked], product, ['v-products'])?.id).toBe('v-products')
   })
 
   it('returns the open table when every match is already in the layout', () => {

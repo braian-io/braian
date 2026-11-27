@@ -737,6 +737,30 @@ textarea { min-height: 64px; width: 100%; height: auto; padding: var(--space-1_5
 .merge-picker input { width: 100%; }
 .merge-picker .ref-menu p { margin: var(--space-1) var(--space-1_5); color: var(--muted); font-size: var(--text-md); }
 .field.locked .control { opacity: 0.75; }
+.pane-source-wrap {
+  display: flex;
+  align-items: center;
+  gap: var(--space-0_5);
+  flex: 0 1 auto;
+  max-width: min(200px, 38%);
+  min-width: 0;
+  margin-left: var(--space-2);
+  margin-right: var(--space-1);
+  align-self: center;
+}
+.pane-source-wrap .pane-source {
+  margin-left: 0;
+  margin-right: 0;
+  max-width: 100%;
+}
+.pane-source-lock {
+  flex: none;
+  opacity: 0.85;
+}
+.pane-source-lock[aria-pressed='true'] {
+  opacity: 1;
+  color: var(--text);
+}
 .pane-source {
   flex: 0 1 auto;
   max-width: min(160px, 32%);

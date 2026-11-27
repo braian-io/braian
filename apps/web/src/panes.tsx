@@ -116,7 +116,7 @@ import { useOpenObjectProposals } from './use-open-proposals'
 import { shouldHoldTablePaint, shouldRefreshTableSnapshot } from './table-live-paint'
 import { searchPeerArticles, type PeerPickOption } from './peer-search'
 import { linkedPeerIds } from './peer-source'
-import { clearExplicitAllSource, isExplicitAllSource, peerEmptyState, peerIdsFilter, peerSourceOf, structurePeerFilter } from './view-source'
+import { clearExplicitAllSource, isExplicitAllSource, isSourceLocked, peerEmptyState, peerIdsFilter, peerSourceOf, sourcePinOf, structurePeerFilter } from './view-source'
 import { FieldDiff } from './field-diff-view'
 import { proposeInAgentSession } from './agent-runs'
 import { viewingAgentRunId } from './agent-session'
@@ -533,6 +533,8 @@ export function ObjectTable({
   // A peer source replaces the global group filter: the view follows the other
   // view's row/node, not whatever group happens to be selected in the tree.
   const peerSource = peerSourceOf(view.state)
+  const sourceLocked = isSourceLocked(view.state)
+  const sourcePin = sourceLocked ? sourcePinOf(view.state) : null
   const explicitAll = isExplicitAllSource(view.state)
   const groupFilterApplies = !peerSource && !explicitAll
   const peerKey = peerSource ? `${peerSource.viewId}:${peerSource.selection}:${peerSource.linkType ?? ''}` : ''
@@ -558,11 +560,18 @@ export function ObjectTable({
       : livePeerRows.filter((row) => !row.type || row.type === peerSourceTypeId || row.type === peerSourceTypeKey)),
     [livePeerRows, peerSourceTypeId, peerSourceTypeKey],
   )
-  const peerNode = useSyncExternalStore(
+  const livePeerNode = useSyncExternalStore(
     subscribeUiSelections,
     () => (peerSource?.selection === 'node' ? readTreeNode(peerSource.viewId) : null),
     () => (peerSource?.selection === 'node' ? readTreeNode(peerSource.viewId) : null),
   )
+  const pinnedPeerNode = sourcePin?.selection === 'node'
+    ? { structureKey: sourcePin.structureKey, groupKey: sourcePin.groupKey }
+    : null
+  const peerNode = sourceLocked ? pinnedPeerNode : livePeerNode
+  const effectivePeerRows = sourcePin?.selection === 'row'
+    ? sourcePin.ids.map((id) => ({ id, key: '', name: '', type: '' }))
+    : peerRows
   const peerIds = useQuery({
     queryKey: [
       'peer-links',
@@ -570,13 +579,14 @@ export function ObjectTable({
       peerSource?.viewId ?? '',
       typeKey,
       peerSource?.linkType ?? '',
-      peerRows.map((row) => row.id).join(','),
+      effectivePeerRows.map((row) => row.id).join(','),
+      sourceLocked ? 'locked' : 'live',
     ],
     queryFn: () => inCatalog(
       catalogKey,
-      () => linkedPeerIds(peerRows.map((row) => row.id), typeKey, peerSource?.linkType),
+      () => linkedPeerIds(effectivePeerRows.map((row) => row.id), typeKey, peerSource?.linkType),
     ),
-    enabled: Boolean(catalogReady && typeKey && peerSource?.selection === 'row' && peerRows.length > 0),
+    enabled: Boolean(catalogReady && typeKey && peerSource?.selection === 'row' && effectivePeerRows.length > 0),
     staleTime: 5_000,
   })
   // A structure-tree peer with no node yet lists the whole type. A chosen node
@@ -917,10 +927,11 @@ export function ObjectTable({
   }))
   const groupedRows = groups.flatMap((group) => group.hits)
   // A peer source with nothing to follow shows an empty state, never every row.
-  const peerSelectionLabel = peerSource?.selection === 'node'
-    ? (peerNode ? structureCaption(peerNode.groupKey, defs.data, peerNode.structureKey) || peerNode.groupKey : '')
-    : peerRows.map((row) => row.key || row.name || row.id).filter(Boolean).slice(0, 3).join(', ')
-  const peerHasSelection = peerSource?.selection === 'node' ? Boolean(peerNode) : peerRows.length > 0
+  const peerSelectionLabel = sourcePin?.caption
+    ?? (peerSource?.selection === 'node'
+      ? (peerNode ? structureCaption(peerNode.groupKey, defs.data, peerNode.structureKey) || peerNode.groupKey : '')
+      : effectivePeerRows.map((row) => row.key || row.name || row.id).filter(Boolean).slice(0, 3).join(', '))
+  const peerHasSelection = peerSource?.selection === 'node' ? Boolean(peerNode) : effectivePeerRows.length > 0
   const peerLinkedCount = peerSource?.selection === 'node'
     ? (probe.isSuccess && !probe.isFetching ? found : null)
     : (peerIds.isSuccess ? peerIds.data.length : null)

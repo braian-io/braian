@@ -6,10 +6,76 @@ import { typeOfView, type TypeName } from './type-labels'
 export type PeerSelection = 'row' | 'node'
 export type PeerSourceRef = { kind: 'peer'; viewId: string; selection: PeerSelection; linkType?: string }
 
+export type SourcePin =
+  | { selection: 'node'; structureKey: string; groupKey: string; caption?: string }
+  | { selection: 'row'; ids: string[]; caption?: string }
+
+function stateRecord(state: Json | undefined): Record<string, unknown> {
+  if (!state || typeof state !== 'object' || Array.isArray(state)) return {}
+  return { ...(state as Record<string, unknown>) }
+}
+
+/** Drop a source lock and any frozen peer selection snapshot. */
+export function stripSourceLock(state: Json | undefined): Json {
+  const next = stateRecord(state)
+  delete next.sourceLocked
+  delete next.sourcePin
+  return next
+}
+
+/** True when automatic peer retargeting and live follow are paused for this view. */
+export function isSourceLocked(state: Json | undefined): boolean {
+  return stateRecord(state).sourceLocked === true
+}
+
+/** Frozen peer selection used while `sourceLocked` is true. */
+export function sourcePinOf(state: Json | undefined): SourcePin | null {
+  const raw = stateRecord(state).sourcePin
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const record = raw as Record<string, unknown>
+  if (record.selection === 'node') {
+    const structureKey = typeof record.structureKey === 'string' ? record.structureKey : ''
+    const groupKey = typeof record.groupKey === 'string' ? record.groupKey : ''
+    if (!structureKey || !groupKey) return null
+    const caption = typeof record.caption === 'string' ? record.caption : undefined
+    return { selection: 'node', structureKey, groupKey, ...(caption ? { caption } : {}) }
+  }
+  if (record.selection === 'row') {
+    const ids = Array.isArray(record.ids) ? record.ids.map(String).filter(Boolean) : []
+    if (ids.length === 0) return null
+    const caption = typeof record.caption === 'string' ? record.caption : undefined
+    return { selection: 'row', ids, ...(caption ? { caption } : {}) }
+  }
+  return null
+}
+
+export function withSourceLock(state: Json | undefined, locked: boolean, pin: SourcePin | null): Json {
+  const next = stripSourceLock(state)
+  if (!locked) return next
+  return { ...next, sourceLocked: true, ...(pin ? { sourcePin: pin } : {}) }
+}
+
+/** Snapshot the live peer selection when the user locks the view. */
+export function buildSourcePin(
+  peer: PeerSourceRef,
+  node: { structureKey: string; groupKey: string } | null,
+  rows: Array<{ id: string }>,
+  caption: string,
+): SourcePin | null {
+  if (peer.selection === 'node') {
+    if (!node?.structureKey || !node.groupKey) return null
+    return { selection: 'node', structureKey: node.structureKey, groupKey: node.groupKey, caption }
+  }
+  const ids = rows.map((row) => row.id).filter(Boolean)
+  if (ids.length === 0) return null
+  return { selection: 'row', ids, caption }
+}
+
 /** Persist "all objects of a type" on an object_table view (Notion 103 PR 1). */
 export function applyTypeSource(state: Json | undefined, type: TypeName): Json {
+  const base = stripSourceLock(state)
   return {
-    ...(state ?? {}),
+    ...base,
     object_type: type.id,
     type_key: type.key,
     source: { kind: 'all' },
@@ -41,8 +107,9 @@ export function applyPeerSource(
   selection: PeerSelection,
   linkType?: string,
 ): Json {
+  const base = stripSourceLock(state)
   return {
-    ...(state ?? {}),
+    ...base,
     source: {
       kind: 'peer',
       viewId,

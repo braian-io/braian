@@ -420,6 +420,8 @@ export const copy = {
   dataSource: 'Data source',
   selectSource: 'Select source',
   changeSource: 'Change source',
+  lockViewSource: 'Lock view',
+  unlockViewSource: 'Unlock view',
   current: 'Current',
   shown: 'Shown',
   notSelected: 'Not selected',

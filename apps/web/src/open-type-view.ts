@@ -1,4 +1,5 @@
 import { freeObject, type Json } from './api'
+import { isSourceLocked } from './view-source'
 
 export type TypeViewRow = {
   id: string
@@ -29,6 +30,20 @@ export function objectTableViewForType(
   openIds: string[],
 ): TypeViewRow | undefined {
   return views.find((view) => isObjectTableViewFor(view, type) && openIds.includes(view.id))
+}
+
+/**
+ * Open object table for retargeting (Show products, tree auto-link). Locked views
+ * are skipped so a new table can be opened instead.
+ */
+export function objectTableViewForPeerRetarget(
+  views: TypeViewRow[],
+  type: ObjectTypeRef,
+  openIds: string[],
+): TypeViewRow | undefined {
+  const match = objectTableViewForType(views, type, openIds)
+  if (match && isSourceLocked(match.state)) return undefined
+  return match
 }
 
 /**

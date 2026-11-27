@@ -40,6 +40,16 @@ function coreRows(theme: 'dark' | 'light') {
   ]
 }
 
+function lockViewRow() {
+  return {
+    id: 'view:source-lock',
+    group: 'views' as const,
+    title: copy.lockViewSource,
+    subtitle: '',
+    keywords: ['lock', 'unlock', 'source', 'peer', 'follow', 'view'],
+  }
+}
+
 function layoutDockPaletteRows() {
   return [
     {
@@ -122,7 +132,7 @@ function layoutDockPaletteRows() {
 }
 
 function baseRows(theme: 'dark' | 'light') {
-  return [...coreRows(theme), ...layoutDockPaletteRows()]
+  return [...coreRows(theme), lockViewRow(), ...layoutDockPaletteRows()]
 }
 
 const reloadRow = {
@@ -152,6 +162,7 @@ describe('palette rows from registry commands', () => {
     expect(registryPaletteRows({ theme: 'dark' })).toEqual([
       ...coreRows('dark'),
       reloadRow,
+      lockViewRow(),
       ...layoutDockPaletteRows(),
     ])
   })
