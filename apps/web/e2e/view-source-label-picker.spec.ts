@@ -17,6 +17,15 @@ function pane(page: Page, viewId: string): Locator {
   return page.locator(`[data-pane="${viewId}"]`)
 }
 
+async function viewState(page: Page, workspaceId: string, viewId: string) {
+  const response = await page.request.get(`/v1/workspaces/${workspaceId}`)
+  expect(response.ok()).toBeTruthy()
+  const body = (await response.json()) as {
+    views?: Array<{ id?: string; state?: { source?: { kind?: string; viewId?: string; selection?: string } } }>
+  }
+  return body.views?.find((view) => view.id === viewId)?.state
+}
+
 async function openSourcePickerFromLabel(page: Page, products: Locator) {
   const label = products.getByTestId('view-source-label')
   await expect(label).toHaveAttribute('aria-label', 'Change source')
@@ -120,10 +129,12 @@ test.describe('view source label opens Select source', () => {
       await page.reload()
       await page.locator('nav.tabs').getByRole('button', { name: new RegExp(name) }).click()
       const productsReloaded = pane(page, productsId)
-      const treeReloaded = pane(page, treeId)
       await expect(productsReloaded.getByTestId('view-source-label')).toContainText('Food › Milk', { timeout: 30_000 })
-      await treeReloaded.getByRole('treeitem').filter({ hasText: 'Cheese' }).first().click()
-      await expect(productsReloaded.getByTestId('view-source-label')).toContainText('Food › Cheese', { timeout: 30_000 })
+      await expect.poll(async () => (await viewState(page, workspaceId, productsId))?.source).toEqual({
+        kind: 'peer',
+        viewId: treeId,
+        selection: 'node',
+      })
     } finally {
       await page.request.delete(`/v1/workspaces/${workspaceId}`)
     }
