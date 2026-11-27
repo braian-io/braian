@@ -65,7 +65,11 @@ test('Detail Name save never paints an intermediate value', async ({ page }) => 
     const editor = nameField.locator('.control input').first()
     await expect(editor).toHaveValue(original)
     await editor.fill(edited)
+    await expect(title).toHaveText(original)
+    await editor.blur()
     await expect(title).toHaveText(edited)
+    await expect(detail.getByTestId('review-and-save')).toHaveCount(0)
+    await expect(detail.getByTestId('object-draft-bar')).toHaveCount(0)
 
     await page.evaluate(({ rowId }) => {
       const titleNode = document.querySelector('.detail-title strong')
@@ -84,8 +88,6 @@ test('Detail Name save never paints an intermediate value', async ({ page }) => 
       watch(cellNode, seen.cell)
     }, { rowId })
 
-    await detail.getByTestId('review-and-save').click()
-    await expect(detail.getByTestId('review-and-save')).toHaveCount(0)
     await expect(title).toHaveText(edited)
     await expect
       .poll(async () => (await stableRow.locator('[data-column="name"]').first().textContent())?.trim() ?? '', {

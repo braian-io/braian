@@ -134,6 +134,28 @@ export function discardObjectDraft(objectId: string): void {
   emit({ ...state, cells: state.cells.filter((cell) => cell.objectId !== objectId) })
 }
 
+/** Drop one attribute's open cells. A language limits the drop to that slot. */
+export function discardObjectAttribute(objectId: string, attribute: string, language?: string): void {
+  const cells = state.cells.filter((cell) => {
+    if (cell.objectId !== objectId || cell.attribute !== attribute) return true
+    if (language != null && (cell.language ?? '') !== language) return true
+    return false
+  })
+  if (cells.length === state.cells.length) return
+  emit({ ...state, cells })
+}
+
+/** Server values plus a save the read has not caught up to. Open drafts are left out. */
+export function savedOverlayValues(objectId: string, serverValues: Json, serverVersion: number): Json {
+  const committed = state.committed[objectId]
+  const held = committed && serverVersion < committed.version ? committed.values : {}
+  const values: Json = { ...serverValues }
+  for (const [key, value] of Object.entries(held)) {
+    values[key] = mergeAttribute(values[key], value) as Json[string]
+  }
+  return values
+}
+
 /** Drop only the cells in an exact snapshot, leaving edits made during an await. */
 export function discardSubmittedCells(submitted: ObjectDraftCell[]): void {
   if (submitted.length === 0) return

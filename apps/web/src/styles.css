@@ -1596,11 +1596,25 @@ button.filter-chip:hover:not(.on) {
   border-radius: 0;
   box-shadow: none;
 }
-.field-card input:hover:not(:focus-visible),
-.field-card textarea:hover:not(:focus-visible),
+.field-card input:hover:not(:focus-visible):not([readonly]),
+.field-card textarea:hover:not(:focus-visible):not([readonly]),
 .field-card .select-trigger:hover:not(:focus-visible) {
   border-bottom-color: var(--accent);
 }
+.field-card input[readonly],
+.field-card textarea[readonly] {
+  border-bottom-color: transparent;
+  cursor: default;
+}
+.detail-field-status {
+  display: block;
+  flex: 1 0 100%;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  line-height: 1.3;
+}
+.detail-field-status[data-state='error'] { color: var(--danger); }
 /* A detail field already has a bottom rule, so focus recolors that rule instead of adding a ring. */
 .field-card input:focus-visible,
 .field-card textarea:focus-visible,

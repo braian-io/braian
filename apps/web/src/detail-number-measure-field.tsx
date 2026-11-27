@@ -31,11 +31,13 @@ export function DetailNumberMeasureField({
   value,
   units,
   onChange,
+  onRevert,
 }: {
   fieldKey: string
   value: unknown
   units: string[]
   onChange: (value: unknown) => void
+  onRevert?: () => void
 }) {
   const record = (value && typeof value === 'object' ? value : { value }) as MeasureFieldRecord
   const committedText = detailMeasureCommittedText(record)
@@ -111,14 +113,39 @@ export function DetailNumberMeasureField({
           }
           applyCommit(draft, 'blur')
         }}
+        onKeyDown={(event) => {
+          if (event.key !== 'Escape') return
+          event.preventDefault()
+          event.stopPropagation()
+          skipBlurCommitRef.current = true
+          setDraft(committedText)
+          setInvalid(false)
+          onRevert?.()
+          event.currentTarget.blur()
+        }}
       />
+      {invalid ? (
+        <span className="error detail-field-status" role="alert" data-testid="detail-field-status" data-state="error" data-field={fieldKey}>
+          {copy.fieldInvalidNumber}
+        </span>
+      ) : null}
       <UnitSuffix
         units={units}
         value={String(record.unit ?? units[0] ?? '')}
         onChange={(unit) => {
           skipBlurCommitRef.current = true
           setInvalid(false)
-          onChange({ ...record, unit })
+          const drafted = commitDetailMeasureDraft(draftRef.current, recordRef.current, 'blur')
+          if (!drafted.ok) {
+            setInvalid(true)
+            return
+          }
+          if (drafted.kind === 'committed') {
+            onChange({ ...drafted.next, unit })
+            setDraft(drafted.displayText)
+            return
+          }
+          onChange({ ...recordRef.current, unit })
         }}
       />
     </span>

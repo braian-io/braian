@@ -202,6 +202,18 @@ export function subscribeObjectDraftSaving(listener: () => void): () => void {
   return () => savingListeners.delete(listener)
 }
 
+/** Resolves when no draft save is in flight. A quiet store resolves immediately. */
+export function whenDraftSaveIdle(): Promise<void> {
+  if (!saving) return Promise.resolve()
+  return new Promise((resolve) => {
+    const stop = subscribeObjectDraftSaving(() => {
+      if (saving) return
+      stop()
+      resolve()
+    })
+  })
+}
+
 export async function runDraftDiscard(input: {
   objectIds: string[]
   proposals?: IndexedProposalCell[]

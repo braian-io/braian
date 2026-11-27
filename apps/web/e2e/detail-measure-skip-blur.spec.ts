@@ -87,8 +87,9 @@ test.describe('detail measure skip-blur', () => {
       await replaceMeasureInput(valueInput, '2')
       await valueInput.blur()
 
-      await expect(detail.getByTestId('detail-field-control-energy')).toHaveClass(/draft-user/)
-      await expect(detail.getByTestId('object-draft-bar')).toBeVisible()
+      await expect(detail.getByTestId('object-draft-bar')).toHaveCount(0)
+      await expect(detail.getByTestId('review-and-save')).toHaveCount(0)
+      await expect.poll(async () => (await readEnergy(page, objectId))?.value, { timeout: 60_000 }).toBe('2')
     } finally {
       if (objectId) {
         const detail = page.getByTestId('object-detail')
@@ -117,16 +118,16 @@ test.describe('detail measure skip-blur', () => {
           : committed.replace(',', '.') === '1.5'
             ? '1,6'
             : '1,5'
-      await valueInput.fill(next)
-      await valueInput.press('Tab')
-      await expect(detail.getByTestId('object-draft-bar')).toBeVisible()
-
       const activity = page.getByTestId('activity-log')
       const beforeSaved = savedCount(await activity.textContent())
-      await detail.getByTestId('detail-measure-field-energy').getByTestId('detail-measure-value').press('Control+s')
+      await valueInput.fill(next)
+      await valueInput.press('Tab')
+      await expect(detail.getByTestId('object-draft-bar')).toHaveCount(0)
+      await expect(detail.getByTestId('review-and-save')).toHaveCount(0)
 
+      const stored = next.replace(',', '.')
       await expect.poll(async () => savedCount(await activity.textContent()), { timeout: 60_000 }).toBeGreaterThan(beforeSaved)
-      await discardDetailDrafts(detail)
+      await expect.poll(async () => (await readEnergy(page, objectId))?.value, { timeout: 60_000 }).toBe(stored)
     } finally {
       if (objectId) await restoreEnergy(page, objectId, energyBefore)
     }

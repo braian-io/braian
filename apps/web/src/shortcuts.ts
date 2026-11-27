@@ -44,7 +44,7 @@ export const shortcuts: Shortcut[] = [
     id: 'review.save',
     chord: 'Ctrl+S',
     scopes: ['app'],
-    description: 'Save review drafts',
+    description: 'Save review drafts. In Detail, commit the focused field',
     hotkeys: ['ctrl+s', 'meta+s'],
   },
   {

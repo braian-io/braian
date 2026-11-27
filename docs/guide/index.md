@@ -6,7 +6,7 @@ these pages; if a claim is not here, it does not belong there yet. It walks thro
 the daily flows rather than the internals.
 
 - [Getting started](/docs/getting-started/) — run Braian locally, sign in and open the demo workspace.
-- [Workspaces and panels](/docs/workspaces-and-panels/) — tiled views, Select fields, unit display and one Save bar.
+- [Workspaces and panels](/docs/workspaces-and-panels/) — tiled views, Select fields, unit display and Detail autosave.
 - [Object types and relations](/docs/object-types-and-relations/) — object types, attributes, value lists, units and link types.
 - [Data sources](/docs/data-sources/) — table sources, catalogs, imports and saved selections.
 - [Command palette and shortcuts](/docs/command-palette-and-shortcuts/) — Ctrl+K and the keyboard.

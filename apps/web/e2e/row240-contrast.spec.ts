@@ -100,14 +100,30 @@ test('row 240 keeps actions, selected chips and muted labels readable', async ({
   const detail = page.getByTestId('object-detail')
   await expect(detail).toBeVisible()
 
+  const objectId = ((await row.getAttribute('id')) ?? '').replace(/^object-row-/, '')
+  expect(objectId).not.toBe('')
+  const beforeResponse = await page.request.get(`/v1/objects/${objectId}`)
+  expect(beforeResponse.ok(), await beforeResponse.text()).toBeTruthy()
+  const before = (await beforeResponse.json()) as { version?: number; values?: Record<string, unknown> }
+
   const chip = detail.locator('.choice-chip').first()
   await expect(chip).toBeVisible()
   await chip.click()
   await expect(chip).toHaveClass(/\bon\b/)
+  await expect(detail.getByTestId('object-draft-bar')).toHaveCount(0)
 
-  const bar = detail.getByTestId('object-draft-bar')
-  const save = detail.getByTestId('review-and-save')
-  const discard = detail.getByTestId('discard-draft')
+  const nameCell = row.locator('[data-column="name"]').first()
+  const nameText = ((await nameCell.innerText()) ?? '').trim()
+  await nameCell.dblclick()
+  const nameEditor = page.getByTestId('cell-editor-name')
+  await expect(nameEditor).toBeVisible()
+  await nameEditor.fill(`${nameText} contrast`)
+  await nameEditor.press('Enter')
+  await expect(nameEditor).toHaveCount(0)
+
+  const bar = table.getByTestId('object-draft-bar')
+  const save = table.getByTestId('review-and-save')
+  const discard = table.getByTestId('discard-draft')
   const remove = detail.getByTestId('delete-object-detail')
   await expect(bar).toBeVisible()
   await expect(save).toBeEnabled()
@@ -145,6 +161,19 @@ test('row 240 keeps actions, selected chips and muted labels readable', async ({
   await expect(header).toBeVisible()
   await expectReadable(header, 'light table header')
   await attach(testInfo, page.locator('.head:visible').first(), 'row240-light-table-header')
+
+  await discard.click()
+  await expect(table.getByTestId('object-draft-bar')).toHaveCount(0)
+  const versionOf = async () => {
+    const response = await page.request.get(`/v1/objects/${objectId}`)
+    if (!response.ok()) return before.version ?? 0
+    return ((await response.json()) as { version?: number }).version ?? 0
+  }
+  await expect.poll(versionOf, { timeout: 20_000 }).toBeGreaterThan(before.version ?? 0)
+  const afterSelect = await versionOf()
+  await chip.click()
+  await expect(chip).not.toHaveClass(/\bon\b/)
+  await expect.poll(versionOf, { timeout: 20_000 }).toBeGreaterThan(afterSelect)
 
   // Review Discard all shares the danger button. Measure it when an open
   // proposal makes the action live; a closed proposal keeps it disabled.

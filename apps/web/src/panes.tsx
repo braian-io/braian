@@ -5,7 +5,6 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { History as HistoryIcon, RotateCcw, Table2, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ApiError, api, catalogName, failureLines, freeObject, jsonRecord, recordNumber, recordTitle, searchQuery, textValue, type Json } from './api'
-import { AutoResizeTextarea } from './auto-resize-textarea'
 import { messageFromErrorBody, reportWriteError, writeErrorMessage } from './write-error'
 import { acknowledgeWriteError } from './write-status'
 import { saveVersionedViewKeys, saveViewChange, viewStateRecord, type ViewState } from './view-state-save'
@@ -89,6 +88,7 @@ import { scrollObjectTableActiveRow, type ObjectTableRowScrollDirection } from '
 import { clearObjectNavReplace, markObjectNavReplace } from './object-nav-signal'
 import { useObjectLand } from './use-object-land'
 import {
+  discardObjectAttribute,
   discardObjectDraft,
   displayOf,
   draftBaseVersion,
@@ -102,6 +102,7 @@ import {
   proposalCellsForTableBar,
   reviewCapabilities,
   roleCanWrite,
+  savedOverlayValues,
   setDetailDraftOwner,
   stageObjectCell,
   subscribeDetailDraftOwner,
@@ -109,7 +110,7 @@ import {
 } from './object-draft'
 import { CellDiff, ObjectDraftBar, UnmappedDraftLinks } from './object-draft-bar'
 import { getSelectionBarActive, subscribeSelectionDraft } from './selection-draft'
-import { acceptProposal, draftSavePlan, isDraftSaveInFlight, runDraftDiscard, runDraftSave } from './object-draft-save'
+import { acceptProposal, draftSavePlan, isDraftSaveInFlight, runDraftDiscard, runDraftSave, whenDraftSaveIdle } from './object-draft-save'
 import { useObjectDraftSaving } from './use-object-draft-saving'
 import { useOpenObjectProposals } from './use-open-proposals'
 import { shouldHoldTablePaint, shouldRefreshTableSnapshot } from './table-live-paint'
@@ -152,6 +153,8 @@ import { LinkSections } from './link-section'
 import { DetailMeta } from './detail-meta'
 import { applicableDetailKeys, splitDetailKeys } from './detail-fields'
 import { DetailFieldDraftHost, type DetailFieldDraftHandle } from './detail-field-draft'
+import { DetailCommitText } from './detail-commit-text'
+import { validateDetailField } from './detail-field-validate'
 import { DetailNumberMeasureField } from './detail-number-measure-field'
 import { beginLinkDrag, dispatchLinkDrop, endLinkDrag, linkDragActive, linkDragContains, linkDragLabel, linkDragMime, linkDragObjects, linkDragPayload, linkDropDecision, readLinkDrag, setLinkDragHint } from './link-drag'
 import { EMPTY_MANUAL_FILTER, isHandPickedQuery, labelCodes, memberIdFilter, memberIdsOf, publishSelectionLabels, SELECTION_APPLIED_EVENT, selectionKind, selectionMatchesType } from './assortment-filter'
@@ -3313,10 +3316,14 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   const openProposals = useOpenObjectProposals()
   const me = useQuery({ queryKey: ['me'], queryFn: () => api.get('/v1/me'), retry: false })
   const [error, setError] = useState('')
+  const [fieldUi, setFieldUi] = useState<Record<string, { state: 'saving' | 'saved' | 'error'; message: string }>>({})
+  const fieldUiRef = useRef(fieldUi)
+  fieldUiRef.current = fieldUi
   const [flashId, setFlashId] = useState('')
   const [showMoreFields, setShowMoreFields] = useState(false)
   const formRef = useRef<HTMLFormElement | null>(null)
   const fieldDraftRef = useRef<DetailFieldDraftHandle | null>(null)
+  const saveQueue = useRef(Promise.resolve())
   useLayoutEffect(() => {
     const form = formRef.current
     if (!form) return
@@ -3334,8 +3341,23 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   useEffect(() => onFlash(setFlashId), [])
   useEffect(() => {
     setError('')
+    setFieldUi({})
     setShowMoreFields(false)
   }, [session.objectId])
+  useEffect(() => {
+    const saved = Object.entries(fieldUi).filter(([, ui]) => ui.state === 'saved').map(([key]) => key)
+    if (saved.length === 0) return
+    const timer = window.setTimeout(() => {
+      setFieldUi((current) => {
+        const next = { ...current }
+        for (const key of saved) {
+          if (next[key]?.state === 'saved') delete next[key]
+        }
+        return next
+      })
+    }, 1600)
+    return () => window.clearTimeout(timer)
+  }, [fieldUi])
   const detailLoadFailed = Boolean(
     session.objectId
     && objectFetchSettled
@@ -3459,12 +3481,29 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
     }
     return value
   }
+  const liveShown = (key: string): unknown => {
+    const live = overlayValues(objectId, serverValues, serverVersion)
+    let value: unknown = live[key]
+    for (const cell of proposalCells.filter((item) => item.attribute === key)) {
+      if (objectDraftCells(objectId).some((item) =>
+        item.attribute === key && (item.language ?? '') === (cell.language ?? ''))) continue
+      if (cell.language) {
+        const record = languageRecord(value)
+        record[cell.language] = cell.proposed as Json[string]
+        value = record
+      } else {
+        value = cell.proposed
+      }
+    }
+    return value
+  }
   const stageField = (key: string, next: unknown) => {
     if (!editingReady) return
     const attribute = attributes.find((item) => item.key === key)
     const baseVersion = editBaseVersion(objectId, serverVersion)
-    const before = values[key]
-    const shown = fieldDisplayValue(key)
+    const live = overlayValues(objectId, serverValues, serverVersion)
+    const before = live[key]
+    const shown = liveShown(key)
     if (attribute?.language_dependent) {
       const beforeRecord = languageRecord(before)
       const shownRecord = languageRecord(shown)
@@ -3504,6 +3543,92 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       surface: 'detail',
     })
   }
+  const markField = (key: string, next: { state: 'saving' | 'saved' | 'error'; message: string } | null) => {
+    setFieldUi((current) => {
+      const copyUi = { ...current }
+      if (!next) delete copyUi[key]
+      else copyUi[key] = next
+      return copyUi
+    })
+  }
+  const persistDetail = () => {
+    const run = async () => {
+      await whenDraftSaveIdle()
+      if (!editingReady) return ''
+      const planFor = () => draftSavePlan({
+        objectIds: [objectId],
+        serverVersions: { [objectId]: serverVersion },
+        principal: me.data?.kind === 'agent' ? 'agent' : 'human',
+        fileAsProposal: Boolean(viewingAgentRunId()),
+        roleCanWrite: me.data ? roleCanWrite(me.data.role) : true,
+        validationErrors: [],
+        proposals: [],
+        meta: { [objectId]: { key: label, type: String(object.data?.type ?? '') } },
+        scope: [objectId],
+        surface: 'detail',
+      })
+      const writes = (plan: ReturnType<typeof draftSavePlan>) => plan.some((item) => item.kind === 'patch' || item.kind === 'propose')
+      let plan = planFor()
+      if (!writes(plan)) return ''
+      let reason = await runDraftSave(plan, queryClient, viewingAgentRunId() ?? '')
+      if (isDraftSaveInFlight(reason)) {
+        await whenDraftSaveIdle()
+        plan = planFor()
+        if (!writes(plan)) return ''
+        reason = await runDraftSave(plan, queryClient, viewingAgentRunId() ?? '')
+      }
+      if (reason || isDraftSaveInFlight(reason)) return isDraftSaveInFlight(reason) ? '' : reason
+      session.push(`${copy.saved} ${label}`)
+      void queryClient.invalidateQueries({ queryKey: ['proposals'] })
+      void queryClient.invalidateQueries({ queryKey: ['proposal'] })
+      void queryClient.invalidateQueries({ queryKey: ['agent-run'] })
+      return ''
+    }
+    const next = saveQueue.current.then(run, run)
+    saveQueue.current = next.then(() => undefined, () => undefined)
+    return next
+  }
+  const commitField = (key: string, next: unknown): Promise<string> => {
+    if (!editingReady) return Promise.resolve('')
+    const attribute = attributes.find((item) => item.key === key)
+    const current = liveShown(key)
+    if (!sameJson(current, next)) {
+      const kind = (attribute?.kind as Json) ?? {}
+      const problem = validateDetailField({
+        required: Boolean(attribute?.required),
+        kind: {
+          type: String(kind.type ?? 'text'),
+          max_length: typeof kind.max_length === 'number' ? kind.max_length : undefined,
+          integer: kind.integer === true,
+        },
+        multiple: Boolean(attribute?.multiple),
+        languageDependent: Boolean(attribute?.language_dependent),
+        options: optionsFor(lists, String(kind.list ?? '')).map((option) => option.code),
+        previous: current,
+        next,
+      })
+      if (problem) {
+        markField(key, { state: 'error', message: problem })
+        return Promise.resolve(problem)
+      }
+    }
+    const hadError = fieldUiRef.current[key]?.state === 'error'
+    stageField(key, next)
+    const pending = objectDraftCells(objectId, 'detail').some((cell) => cell.attribute === key)
+    if (!pending) {
+      if (hadError) markField(key, null)
+      return Promise.resolve('')
+    }
+    markField(key, { state: 'saving', message: '' })
+    return persistDetail().then((reason) => {
+      if (reason) {
+        markField(key, { state: 'error', message: reason })
+        return reason
+      }
+      markField(key, { state: 'saved', message: '' })
+      return ''
+    })
+  }
   const detailReview = reviewCapabilities({
     principal: me.data?.kind === 'agent' ? 'agent' : 'human',
     viaAgent: false,
@@ -3517,7 +3642,6 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   })
   const save = () => {
     if (!editingReady) return
-    if (!fieldDraftRef.current?.flush()) return
     setError('')
     const plan = draftSavePlan({
       objectIds: [objectId],
@@ -3547,7 +3671,6 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
   const number = recordNumber(values)
   const name = recordTitle(values, uiLanguage)
   const inAgentSession = Boolean(viewingAgentRunId())
-  const dirty = detailCells.length > 0 || proposalCells.length > 0
   const typeDef = ((defs.data?.types as Json[]) ?? []).find((item) => item.key === object.data?.type)
   const typeIds = new Set(((typeDef?.attributes as unknown[]) ?? []).map(String))
   const fileKeys = attributes
@@ -3620,9 +3743,29 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
             options={optionsFor(lists, String(kind.list ?? ''))}
             units={unitsFor(families, String(kind.unit_family ?? ''))}
             readOnly={Boolean(owner) || !editingReady}
-            onChange={(next) => stageField(key, next)}
+            revertValue={savedOverlayValues(objectId, serverValues, serverVersion)[key]}
+            onCommit={(next) => commitField(key, next)}
+            onRevert={() => {
+              discardObjectAttribute(objectId, key)
+              markField(key, null)
+            }}
+            onRevertLanguage={(language) => {
+              discardObjectAttribute(objectId, key, language)
+              markField(key, null)
+            }}
           />
           )}
+          {fieldUi[key] ? (
+            <span
+              className={fieldUi[key].state === 'error' ? 'error detail-field-status' : 'detail-field-status'}
+              data-testid="detail-field-status"
+              data-field={key}
+              data-state={fieldUi[key].state}
+              role={fieldUi[key].state === 'error' ? 'alert' : 'status'}
+            >
+              {fieldUi[key].state === 'saving' ? copy.saving : fieldUi[key].state === 'saved' ? copy.saved : fieldUi[key].message}
+            </span>
+          ) : null}
           {proposalKeyCells.map((cell) => (
             <div key={cell.id} className="pending-field" data-testid="pending-field" data-field={key} data-stale={cell.stale ? 'true' : 'false'}>
               <span className="pending-chip" data-testid={cell.stale ? 'pending-stale' : 'pending-chip'}>{cell.stale ? copy.proposalStale : copy.pending}</span>
@@ -3646,14 +3789,14 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       data-testid="object-detail"
       data-detail-ready={editingReady ? 'true' : 'false'}
       onSubmit={(event) => {
-        // Enter in a Detail field stages nothing and never saves.
         event.preventDefault()
       }}
       onKeyDown={(event) => {
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
           event.preventDefault()
           event.stopPropagation()
-          save()
+          const active = document.activeElement
+          if (active instanceof HTMLElement && event.currentTarget.contains(active)) active.blur()
           return
         }
         if (event.ctrlKey || event.altKey || event.metaKey) return
@@ -3797,9 +3940,9 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
       </div>
       </DetailFieldDraftHost>
       <UnmappedDraftLinks proposals={openProposals.unmapped} />
-      {dirty && !selectionOwnsSave ? (
+      {proposalCells.length > 0 && !selectionOwnsSave ? (
         <ObjectDraftBar
-          count={detailCells.length + (proposalCells.length > 0 ? 1 : 0)}
+          count={proposalCells.length}
           canSave={detailReview.canSave && editingReady}
           canDiscard={detailReview.canDiscard && editingReady}
           saveReason={detailReview.saveReason}
@@ -3871,12 +4014,15 @@ function Editor({
   kind,
   form,
   value,
+  revertValue,
   languageDependent,
   languages,
   multiple,
   options,
   units,
-  onChange,
+  onCommit,
+  onRevert,
+  onRevertLanguage,
   readOnly = false,
 }: {
   fieldKey: string
@@ -3886,9 +4032,12 @@ function Editor({
   languageDependent: boolean
   languages: string[]
   value: unknown
+  revertValue: unknown
   options: Array<{ code: string; label: string }>
   units: string[]
-  onChange: (value: unknown) => void
+  onCommit: (value: unknown) => Promise<string>
+  onRevert: () => void
+  onRevertLanguage: (language: string) => void
   readOnly?: boolean
 }) {
   if (readOnly && !languageDependent) {
@@ -3896,17 +4045,21 @@ function Editor({
   }
   if (languageDependent) {
     const record = value && typeof value === 'object' && !Array.isArray(value) ? (value as Json) : { en: textValue(value) }
+    const saved = revertValue && typeof revertValue === 'object' && !Array.isArray(revertValue) ? (revertValue as Json) : { en: textValue(revertValue) }
     const cards = languages.length > 0 ? languages : ['en']
     return (
       <div className="langs">
         {cards.map((language) => (
           <label key={language} className="lang-row">
             <span className="lang-tag">{language}</span>
-            {form === 'long' ? (
-              <AutoResizeTextarea data-field="true" readOnly={readOnly} value={textValue(record[language])} onChange={(event) => onChange({ ...record, [language]: event.target.value })} />
-            ) : (
-              <input data-field="true" readOnly={readOnly} value={textValue(record[language])} title={textValue(record[language])} onChange={(event) => onChange({ ...record, [language]: event.target.value })} />
-            )}
+            <DetailCommitText
+              value={textValue(record[language])}
+              revertTo={textValue(saved[language])}
+              multiline={form === 'long'}
+              readOnly={readOnly}
+              onCommit={(text) => onCommit({ ...record, [language]: text })}
+              onRevert={() => onRevertLanguage(language)}
+            />
           </label>
         ))}
       </div>
@@ -3917,20 +4070,21 @@ function Editor({
     return (
       <div className="choices">
         {items.map((item) => <span key={item} className="meta-chip">{item}</span>)}
-        <input
-          data-field="true"
+        <DetailCommitText
           value=""
-          placeholder="+"
-          onChange={(event) => {
-            const next = event.target.value.trim()
-            if (next) onChange([...items, next])
+          revertTo=""
+          onCommit={async (text) => {
+            const next = text.trim()
+            if (!next) return ''
+            return onCommit([...items, next])
           }}
+          onRevert={onRevert}
         />
       </div>
     )
   }
-  if (kind === 'object_ref') return <ObjectRefField value={value} onChange={onChange} />
-  if (kind === 'file_ref') return <FileField value={value} onChange={onChange} />
+  if (kind === 'object_ref') return <ObjectRefField value={value} onChange={(next) => { void onCommit(next) }} />
+  if (kind === 'file_ref') return <FileField value={value} onChange={(next) => { void onCommit(next) }} />
   if (kind === 'value_list' && options.length > 0 && multiple) {
     const picked = Array.isArray(value) ? value.map(String) : []
     return (
@@ -3944,7 +4098,7 @@ function Editor({
               variant="ghost"
               className={on ? 'choice-chip on' : 'choice-chip'}
               aria-pressed={on}
-              onClick={() => onChange(on ? picked.filter((code) => code !== option.code) : [...picked, option.code])}
+              onClick={() => { void onCommit(on ? picked.filter((code) => code !== option.code) : [...picked, option.code]) }}
             >
               {option.label}
             </Button>
@@ -3957,7 +4111,7 @@ function Editor({
     const current = textValue(value)
     const currentLabel = options.find((option) => option.code === current)?.label ?? current
     return (
-      <Select value={current || undefined} onValueChange={onChange}>
+      <Select value={current || undefined} onValueChange={(code) => { void onCommit(code) }}>
         <SelectTrigger data-field="true" title={currentLabel}>
           <SelectValue placeholder={EMPTY_CELL} />
         </SelectTrigger>
@@ -3970,25 +4124,49 @@ function Editor({
     )
   }
   if (kind === 'boolean') {
-    return <Switch data-field="true" checked={value === true} onCheckedChange={(checked) => onChange(checked)} />
+    return <Switch data-field="true" checked={value === true} onCheckedChange={(checked) => { void onCommit(checked) }} />
   }
   if (kind === 'range') {
     const record = (value && typeof value === 'object' ? value : {}) as Json
+    const saved = (revertValue && typeof revertValue === 'object' ? revertValue : {}) as Json
     return (
       <span className="measure">
-        <input data-field="true" value={textValue(record.min)} title={textValue(record.min)} onChange={(event) => onChange({ ...record, min: event.target.value })} />
-        <input data-field="true" value={textValue(record.max)} title={textValue(record.max)} onChange={(event) => onChange({ ...record, max: event.target.value })} />
-        <UnitSuffix units={units} value={String(record.unit ?? units[0] ?? '')} onChange={(unit) => onChange({ ...record, unit })} />
+        <DetailCommitText
+          value={textValue(record.min)}
+          revertTo={textValue(saved.min)}
+          onCommit={(text) => onCommit({ ...record, min: text })}
+          onRevert={onRevert}
+        />
+        <DetailCommitText
+          value={textValue(record.max)}
+          revertTo={textValue(saved.max)}
+          onCommit={(text) => onCommit({ ...record, max: text })}
+          onRevert={onRevert}
+        />
+        <UnitSuffix units={units} value={String(record.unit ?? units[0] ?? '')} onChange={(unit) => { void onCommit({ ...record, unit }) }} />
       </span>
     )
   }
   if (kind === 'number') {
-    return <DetailNumberMeasureField fieldKey={fieldKey} value={value} units={units} onChange={onChange} />
+    return (
+      <DetailNumberMeasureField
+        fieldKey={fieldKey}
+        value={value}
+        units={units}
+        onChange={(next) => { void onCommit(next) }}
+        onRevert={onRevert}
+      />
+    )
   }
-  if (form === 'long' || (typeof value === 'string' && value.length > 80)) {
-    return <AutoResizeTextarea data-field="true" value={textValue(value)} onChange={(event) => onChange(event.target.value)} />
-  }
-  return <input data-field="true" value={textValue(value)} title={textValue(value)} onChange={(event) => onChange(event.target.value)} />
+  return (
+    <DetailCommitText
+      value={textValue(value)}
+      revertTo={textValue(revertValue)}
+      multiline={form === 'long' || (typeof value === 'string' && value.length > 80)}
+      onCommit={(text) => onCommit(text)}
+      onRevert={onRevert}
+    />
+  )
 }
 
 function UnitSuffix({ units, value, onChange }: { units: string[]; value: string; onChange: (unit: string) => void }) {

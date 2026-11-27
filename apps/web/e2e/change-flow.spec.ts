@@ -57,7 +57,8 @@ test('a person saves directly and reviews an agent draft field by field', async 
   await expect(numberField).toHaveValue(shown)
   const original = await numberField.inputValue()
   await numberField.fill(`${original}-s`)
-  await page.getByTestId('object-detail').getByTestId('review-and-save').click()
+  await numberField.blur()
+  await expect(page.getByTestId('object-detail').getByTestId('object-draft-bar')).toHaveCount(0)
   await expect(page.getByTestId('confirm-proposal')).toHaveCount(0)
   await expect(page.getByTestId('activity-log')).toContainText('Saved')
 
