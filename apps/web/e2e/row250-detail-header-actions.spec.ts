@@ -1,4 +1,6 @@
-import { expect, test, type Box, type Locator, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
+
+type Box = { x: number; y: number; width: number; height: number }
 import { demoCredentials } from './demo'
 import { mainTable, setTheme, waitDetailReady } from './ui'
 
