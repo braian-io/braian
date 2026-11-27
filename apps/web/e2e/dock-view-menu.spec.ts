@@ -21,7 +21,9 @@ test('dock view menu shows only essential items; split stays in Ctrl+K', async (
   await productsTab.click({ button: 'right' })
   const menu = page.getByTestId('context-menu')
   await expect(menu).toBeVisible()
-  const labels = (await menu.getByRole('menuitem').allInnerTexts()).map((text) => text.replace(/\s+/g, ' ').trim())
+  const labels = await menu.getByRole('menuitem').evaluateAll((nodes) =>
+    nodes.map((node) => (node.querySelector('.menu-label')?.textContent ?? '').trim()),
+  )
   expect(labels).toEqual(['Add view', 'Select source', 'Maximize', 'Close view'])
 
   const beforeSplit = await leaves(page)
