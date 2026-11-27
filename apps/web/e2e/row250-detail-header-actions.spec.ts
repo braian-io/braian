@@ -60,16 +60,22 @@ async function assertHeaderActions(page: Page, detail: Locator) {
   await expectTooltip(page, open, 'Open in the table')
   await expectTooltip(page, remove, 'Delete')
 
-  await open.focus()
-  await expect(open).toBeFocused()
-  const openFocus = await open.evaluate((node) => {
-    const style = getComputedStyle(node)
-    return style.outlineStyle !== 'none' && Number.parseFloat(style.outlineWidth) > 0
-  })
-  expect(openFocus, 'open action shows keyboard focus').toBeTruthy()
+  await open.click()
+  await page.keyboard.press('Tab')
+  await expect(remove).toBeFocused()
+  await expect.poll(async () =>
+    remove.evaluate((node) => (node as HTMLElement).matches(':focus-visible')),
+  ).toBe(true)
 
-  await remove.focus()
-  await remove.press('Enter')
+  await page.keyboard.press('Shift+Tab')
+  await expect(open).toBeFocused()
+  await expect.poll(async () =>
+    open.evaluate((node) => (node as HTMLElement).matches(':focus-visible')),
+  ).toBe(true)
+
+  await page.keyboard.press('Tab')
+  await expect(remove).toBeFocused()
+  await page.keyboard.press('Enter')
   const dialog = page.getByTestId('delete-object-dialog')
   await expect(dialog).toBeVisible()
   await page.getByTestId('cancel-delete-object').click()
