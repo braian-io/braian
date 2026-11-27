@@ -104,7 +104,7 @@ async function fileProposal(page: Page, id: string, version: number, name: strin
   return body.proposal_id!
 }
 
-test('a Detail edit shows one Save, commits on that click, and survives reload', async ({ page }) => {
+test('a Detail edit commits on blur, survives reload, and writes history', async ({ page }) => {
   test.setTimeout(120_000)
   const key = `ROW57-${stamp}`
   const original = `Hazelnut ${stamp}`
@@ -118,21 +118,16 @@ test('a Detail edit shows one Save, commits on that click, and survives reload',
     const editor = detailName(page, detail)
     await expect(editor).toHaveValue(original)
     await editor.fill(edited)
-    const detailSave = detail.getByTestId('review-and-save')
-    await expect(detailSave).toBeVisible()
-    await expect(detailSave).toHaveText('Save')
-    await expect(detail.getByTestId('discard-draft')).toBeVisible()
-    await expect(detail.getByTestId('object-draft-bar')).toContainText('1 unsaved change')
-    await expect(detail.getByTestId('object-draft-bar')).not.toContainText('1 unsaved changes')
+    await expect(detail.getByTestId('review-and-save')).toHaveCount(0)
+    await expect(detail.getByTestId('object-draft-bar')).toHaveCount(0)
     await expect(mainTable(page).getByTestId('review-and-save')).toHaveCount(0)
     await expect(mainTable(page).getByTestId('object-draft-bar')).toHaveCount(0)
-    await expect(page.getByTestId('review-and-save')).toHaveCount(1)
-    await expect(page.locator(`#object-row-${id}`)).toHaveAttribute('data-draft-elsewhere', 'true')
     await expectNoConfirm(page)
 
-    await detailSave.click()
+    await editor.blur()
     await expectNoConfirm(page)
     await expect(detail.getByTestId('object-draft-bar')).toHaveCount(0)
+    await expect(detail.getByTestId('review-and-save')).toHaveCount(0)
     await expect(page.getByTestId('activity-log')).toContainText('Saved')
     await expect.poll(async () => (await objectName(page, id)).values?.name?.en ?? '', { timeout: 20_000 }).toBe(edited)
 

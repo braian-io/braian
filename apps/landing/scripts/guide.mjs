@@ -24,7 +24,7 @@ export const GUIDE_PAGES = [
     path: '/docs/workspaces-and-panels/',
     title: 'Workspaces and panels',
     nav: 'Workspaces and panels',
-    description: 'Switch workspaces, arrange panes, choose fields, and save with one Save bar in Braian.',
+    description: 'Switch workspaces, arrange panes, choose fields, and autosave Detail fields in Braian.',
   },
   {
     source: 'object-types-and-relations.md',

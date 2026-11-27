@@ -83,7 +83,12 @@ export function LinkInlineCell({
           }
         }}
       />
-      {error ? <span className="error link-inline-error" role="alert">{error}</span> : null}
+      {saving ? (
+        <span className="detail-field-status" data-testid="detail-field-status" data-state="saving">{copy.saving}</span>
+      ) : null}
+      {error ? (
+        <span className="error link-inline-error detail-field-status" role="alert" data-testid="detail-field-status" data-state="error">{error}</span>
+      ) : null}
     </label>
   )
 }

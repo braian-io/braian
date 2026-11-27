@@ -46,7 +46,8 @@ test('history restore applies immediately with inline diff and no dialog', async
     original = await nummer.inputValue()
     const next = `${original}-inline`
     await nummer.fill(next)
-    await page.getByTestId('object-detail').getByTestId('review-and-save').click()
+    await nummer.blur()
+    await expect(page.getByTestId('object-detail').getByTestId('review-and-save')).toHaveCount(0)
     await expect(page.getByTestId('activity-log')).toContainText('Saved')
 
     await page.getByRole('button', { name: 'History' }).click()

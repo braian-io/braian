@@ -279,7 +279,9 @@ describe('Detail save', () => {
       .getAllByDisplayValue('Old')
       .find((node) => !(node as HTMLInputElement).readOnly) as HTMLInputElement
     fireEvent.change(editor, { target: { value: 'New' } })
-    expect(title.textContent).toBe('New')
+    expect(title.textContent).toBe('Old')
+    fireEvent.blur(editor)
+    await waitFor(() => expect(title.textContent).toBe('New'))
 
     const seen: string[] = [title.textContent ?? '']
     const observer = new MutationObserver(() => {
@@ -288,7 +290,7 @@ describe('Detail save', () => {
     })
     observer.observe(title, { childList: true, subtree: true, characterData: true })
 
-    fireEvent.click(screen.getByTestId('review-and-save'))
+    expect(screen.queryByTestId('review-and-save')).toBeNull()
     await waitFor(() => expect(mock.methods.patch).toHaveBeenCalled())
     await waitFor(() => expect(title.textContent).toBe('New'))
 
@@ -331,8 +333,9 @@ describe('Detail drafting', () => {
     const editor = (await screen.findAllByDisplayValue('Old'))
       .find((node) => !(node as HTMLInputElement).readOnly) as HTMLInputElement
     fireEvent.change(editor, { target: { value: 'Human draft' } })
+    fireEvent.blur(editor)
     const control = editor.closest('.control') as HTMLElement
-    expect(control.className).toContain('draft-user')
+    await waitFor(() => expect(control.className).toContain('draft-user'))
     expect(within(control).getByDisplayValue('Human draft')).toBeTruthy()
   })
 
@@ -349,8 +352,10 @@ describe('Detail drafting', () => {
     const editor = (await screen.findAllByDisplayValue('Gammalt'))
       .find((node) => !(node as HTMLInputElement).readOnly) as HTMLInputElement
     fireEvent.change(editor, { target: { value: 'Nytt' } })
+    expect(getObjectDraftSnapshot().cells).toHaveLength(0)
+    fireEvent.blur(editor)
+    await waitFor(() => expect(getObjectDraftSnapshot().cells).toHaveLength(1))
     const cells = getObjectDraftSnapshot().cells
-    expect(cells).toHaveLength(1)
     expect(cells[0]).toMatchObject({ attribute: 'name', language: 'sv', proposedText: 'Nytt' })
     expect(cells[0]?.value).toBe('Nytt')
   })
@@ -379,12 +384,34 @@ describe('Detail drafting', () => {
     const editor = (await screen.findAllByDisplayValue('Gammalt'))
       .find((node) => !(node as HTMLInputElement).readOnly) as HTMLInputElement
     fireEvent.change(editor, { target: { value: 'Nytt' } })
+    fireEvent.blur(editor)
+    await waitFor(() => expect(getObjectDraftSnapshot().cells).toHaveLength(1))
     const cells = getObjectDraftSnapshot().cells
-    expect(cells).toHaveLength(1)
     expect(cells[0]).toMatchObject({ attribute: 'name', language: 'sv', proposedText: 'Nytt' })
   })
 
-  it('does not save when Enter submits the Detail form', async () => {
+  it('commits a single-line field on Enter and ignores the form submit', async () => {
+    mock.methods.get.mockImplementation((path: string) => {
+      if (path === '/v1/objects/{id}') return Promise.resolve(object)
+      if (path === '/v1/definitions') return Promise.resolve(definitions)
+      if (path === '/v1/proposals') return Promise.resolve({ proposals: [] })
+      return Promise.resolve({})
+    })
+    mock.methods.patch.mockImplementation(() => Promise.resolve({ ...object, version: 4, values: { number: 'ART-1', name: { en: 'New' } } }))
+    render(<Host proposalId={null} />)
+    const form = await screen.findByTestId('object-detail')
+    const editor = (await screen.findAllByDisplayValue('Old'))
+      .find((node) => !(node as HTMLInputElement).readOnly) as HTMLInputElement
+    fireEvent.change(editor, { target: { value: 'New' } })
+    fireEvent.keyDown(editor, { key: 'Enter' })
+    fireEvent.submit(form)
+    await waitFor(() => expect(mock.methods.patch).toHaveBeenCalledTimes(1))
+    expect(mock.methods.patch.mock.calls[0]?.[1]).toMatchObject({
+      body: { values: { name: { en: 'New' } } },
+    })
+  })
+
+  it('Escape restores the saved text and does not write', async () => {
     mock.methods.get.mockImplementation((path: string) => {
       if (path === '/v1/objects/{id}') return Promise.resolve(object)
       if (path === '/v1/definitions') return Promise.resolve(definitions)
@@ -392,11 +419,36 @@ describe('Detail drafting', () => {
       return Promise.resolve({})
     })
     render(<Host proposalId={null} />)
-    const form = await screen.findByTestId('object-detail')
     const editor = (await screen.findAllByDisplayValue('Old'))
       .find((node) => !(node as HTMLInputElement).readOnly) as HTMLInputElement
-    fireEvent.keyDown(editor, { key: 'Enter' })
-    fireEvent.submit(form)
+    fireEvent.change(editor, { target: { value: 'Nope' } })
+    fireEvent.keyDown(editor, { key: 'Escape' })
+    expect(editor.value).toBe('Old')
+    fireEvent.blur(editor)
+    expect(mock.methods.patch).not.toHaveBeenCalled()
+    expect(getObjectDraftSnapshot().cells).toHaveLength(0)
+  })
+
+  it('keeps an invalid required value and does not write it', async () => {
+    const requiredDefinitions: Json = {
+      ...definitions,
+      attributes: [{ ...((definitions.attributes as Json[])[0] ?? {}), required: true }],
+    }
+    mock.methods.get.mockImplementation((path: string) => {
+      if (path === '/v1/objects/{id}') return Promise.resolve(object)
+      if (path === '/v1/definitions') return Promise.resolve(requiredDefinitions)
+      if (path === '/v1/proposals') return Promise.resolve({ proposals: [] })
+      return Promise.resolve({})
+    })
+    render(<Host proposalId={null} />)
+    const editor = (await screen.findAllByDisplayValue('Old'))
+      .find((node) => !(node as HTMLInputElement).readOnly) as HTMLInputElement
+    fireEvent.change(editor, { target: { value: ' ' } })
+    fireEvent.blur(editor)
+    const status = await screen.findByTestId('detail-field-status')
+    expect(status.getAttribute('data-state')).toBe('error')
+    expect(status.textContent).toBe('Required')
+    expect(editor.value).toBe(' ')
     expect(mock.methods.patch).not.toHaveBeenCalled()
   })
 })

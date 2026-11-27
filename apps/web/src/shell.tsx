@@ -1507,7 +1507,14 @@ export function Shell() {
       }
       void runCommand('agent:open')
     },
-    saveReview: () => window.dispatchEvent(new Event('braian-review-save')),
+    saveReview: () => {
+      const active = document.activeElement
+      if (active instanceof HTMLElement && active.closest('[data-testid="object-detail"]')) {
+        active.blur()
+        return
+      }
+      window.dispatchEvent(new Event('braian-review-save'))
+    },
     openFeedback: feedbackEnabled ? openFeedback : undefined,
     openHelp: () => setHelp(true),
     closeHelp: () => {

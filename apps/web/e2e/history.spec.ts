@@ -26,7 +26,8 @@ test('history is a compact timeline of the fields that changed', async ({ page }
   const original = await nummer.inputValue()
   const next = `${original}-h`
   await nummer.fill(next)
-  await page.getByTestId('object-detail').getByTestId('review-and-save').click()
+  await nummer.blur()
+  await expect(page.getByTestId('object-detail').getByTestId('review-and-save')).toHaveCount(0)
   await expect(page.getByTestId('confirm-proposal')).toHaveCount(0)
   await expect(page.getByTestId('activity-log')).toContainText('Saved')
 

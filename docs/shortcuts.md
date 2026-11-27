@@ -8,7 +8,7 @@ Generated from `apps/web/src/shortcuts.ts`. Do not edit by hand — run `node ap
 | --- | --- |
 | Ctrl+K | Open the command palette |
 | Ctrl+J | Close the agent pane, or open a new empty compose thread (ask from the palette when it is open) |
-| Ctrl+S | Save review drafts |
+| Ctrl+S | Save review drafts. In Detail, commit the focused field |
 | Ctrl+Shift+B | Send feedback |
 | F1 | Show keyboard shortcuts |
 | Escape | Close help and menus |

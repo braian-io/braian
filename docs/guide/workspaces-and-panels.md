@@ -242,22 +242,29 @@ the change stream; there is no manual refresh.
 
 ## Review and save
 
-An object table and a Detail view share the unsaved cells, so an edit made in one
-view is visible in the other. The Save/Discard bar appears only in the pane where
-the edit was made. The other pane may mark the row, and it does not show a second
-Save. A proposal is a draft too (Pending, then Discard or Save). Its bar is in
-Detail while Detail is open on that object, and in the table otherwise.
+Detail saves each field when you leave it. A single-line field also saves on `Enter`.
+`Escape` puts the field back to its saved value and does not write. `Ctrl+S` in Detail
+commits the focused field. The field shows `Saving…`, then `Saved`, or the error on
+that field. An invalid value (required, type, length, or a number that is not a number)
+stays in the field, is not written, and shows the message there. Blur the field again
+to retry a save that failed on the server. Undo a saved edit from History with Restore.
 
-A Save that fails on the server or in transport is shown as an error. It is not a
+An object table still collects cell edits and shows one Save/Discard bar in that table.
+A proposal is a draft too (Pending, then Discard or Save). Its bar is in Detail while
+Detail is open on that object, and in the table otherwise. Detail does not show a Save
+bar for an ordinary field edit.
+
+A table Save that fails on the server or in transport is shown as an error. It is not a
 field-validation error, so the draft stays valid and Save is still available: fix the
 cause and press Save again. The previous error clears when a new save starts, when a
 save succeeds, or when you switch to another object. Real field-validation errors
-still block Save until the value is corrected.
+still block that Save until the value is corrected.
 
-While a save request is in flight, Save reads `Saving…` and both Save and Discard are
-disabled in that pane. A second click cannot run another save, so it never reports
+While a table save request is in flight, Save reads `Saving…` and both Save and Discard
+are disabled in that pane. A second click cannot run another save, so it never reports
 `Saved` when nothing was saved. When the request finishes, the bar returns to Save
-and Discard, or disappears if the draft is gone.
+and Discard, or disappears if the draft is gone. A Detail field shows the same
+`Saving…` state on the field while its own request is in flight.
 
 ## Review proposals
 

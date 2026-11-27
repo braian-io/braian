@@ -109,7 +109,7 @@ shortcut. See [Feedback](/docs/feedback/).
 | --- | --- |
 | `Ctrl+K` | Open the command palette |
 | `Ctrl+J` | Close the agent pane, or open a new empty compose thread (ask from the palette when it is open) |
-| `Ctrl+S` | Save review drafts |
+| `Ctrl+S` | Save review drafts. In Detail, commit the focused field |
 | `Ctrl+Shift+B` | Send feedback (when the operator enables it) |
 | `F1` | Show keyboard shortcuts |
 | `Escape` | Close help and menus |
@@ -144,7 +144,9 @@ Some keys belong to a view rather than to the app:
   `Shift+F10` or the context-menu key opens the row menu. Double-click a
   cell to edit it, and press `/` to focus the quick filter.
 - **Detail.** `↑` and `↓` move between fields, `Home` and `End` jump to the first or
-  last field, `Ctrl+S` saves the object draft, and `Escape` discards it.
+  last field. Leaving a field, or pressing `Enter` in a single-line field, saves that
+  field. `Escape` restores the field's saved value and does not write. `Ctrl+S` commits
+  the focused field. A proposal still uses Save and Discard in Detail.
 - **Structure tree.** `F2` renames, `Insert` adds a child, and `Delete` or `Backspace`
   deletes the selected node.
 - **Model and definition tables.** `Enter` or `F2` edits a cell, `Escape` cancels, `Tab`

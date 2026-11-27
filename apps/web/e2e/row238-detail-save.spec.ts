@@ -114,27 +114,28 @@ test('a failed Save in Detail shows an error and keeps Save available for retry'
     const original = await editor.inputValue()
     const edited = `${original} row238 detail`
     await editor.fill(edited)
-    await expect(detail.getByTestId('object-draft-bar')).toBeVisible()
+    await expect(detail.getByTestId('object-draft-bar')).toHaveCount(0)
+    await expect(detail.getByTestId('review-and-save')).toHaveCount(0)
 
-    const save = detail.getByTestId('review-and-save')
+    const nameField = detail.locator('.field').filter({ has: page.locator('label', { hasText: /^Name$/ }) }).first()
     await page.route(OBJECT_PATCH, failPatchOnce())
     try {
-      await save.click()
-      const error = detail.getByTestId('detail-error')
+      await editor.blur()
+      const error = nameField.getByTestId('detail-field-status')
       await expect(error).toBeVisible()
+      await expect(error).toHaveAttribute('data-state', 'error')
       await expect(error).toContainText(FAILURE)
-      // The failure is a banner, not a field validation error: retry stays open.
-      await expect(save).toHaveText(copy.reviewAndSave)
-      await expect(save).toBeEnabled()
-      await expect(detail.getByTestId('discard-draft')).toBeEnabled()
+      await expect(editor).toHaveValue(edited)
+      await expect(detail.getByTestId('review-and-save')).toHaveCount(0)
       await expect(detail.getByTestId('review-blocked')).toHaveCount(0)
       await page.screenshot({ path: `${shots}/detail-failed-retry-available.png`, fullPage: true })
     } finally {
       await page.unroute(OBJECT_PATCH).catch(() => undefined)
     }
 
-    await save.click()
-    await expect(detail.getByTestId('detail-error')).toHaveCount(0)
+    await editor.focus()
+    await editor.blur()
+    await expect(nameField.getByTestId('detail-field-status')).not.toHaveAttribute('data-state', 'error')
     await expect(detail.getByTestId('object-draft-bar')).toHaveCount(0)
     await expect(detail.locator('.detail-title strong')).toHaveText(edited)
     await expect.poll(() => savedName(page, objectId), { timeout: 20_000 }).toBe(edited)
@@ -199,29 +200,32 @@ test('Detail shows Saving and disables both buttons while a save is in flight', 
     const editor = detailName(page, detail)
     const edited = `${await editor.inputValue()} row238 in flight`
     await editor.fill(edited)
-    const save = detail.getByTestId('review-and-save')
-    const discard = detail.getByTestId('discard-draft')
+    let patches = 0
     await page.route(OBJECT_PATCH, async (route) => {
       if (route.request().method() !== 'PATCH') {
         await route.continue()
         return
       }
+      patches += 1
       await gate
       await route.continue()
     })
 
+    const nameField = detail.locator('.field').filter({ has: page.locator('label', { hasText: /^Name$/ }) }).first()
     const activity = page.getByTestId('activity-log')
     const beforeSaved = savedCount(await activity.textContent())
     try {
-      await save.click()
-      await expect(save).toHaveText(copy.saving)
-      await expect(save).toBeDisabled()
-      await expect(discard).toBeDisabled()
+      await editor.blur()
+      const status = nameField.getByTestId('detail-field-status')
+      await expect(status).toHaveAttribute('data-state', 'saving')
+      await expect(detail.getByTestId('review-and-save')).toHaveCount(0)
+      await expect(detail.getByTestId('object-draft-bar')).toHaveCount(0)
+      await expect.poll(() => patches).toBe(1)
       await page.screenshot({ path: `${shots}/detail-saving-in-flight.png`, fullPage: true })
 
-      // A second press cannot start another save and must never report Saved.
-      await save.evaluate((node) => (node as HTMLButtonElement).click())
-      await page.waitForTimeout(250)
+      await editor.focus()
+      await editor.blur()
+      await expect.poll(() => patches).toBe(1)
       expect(savedCount(await activity.textContent())).toBe(beforeSaved)
     } finally {
       release()
