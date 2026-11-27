@@ -1184,6 +1184,200 @@ async fn a_shared_name_does_not_rename_a_different_type() {
     assert_eq!(note_object["values"]["sku"], "SKU-NOTE", "{note_object}");
 }
 
+#[tokio::test]
+async fn a_named_membership_sentence_files_a_proposal_and_reports_a_miss() {
+    let (db, app) = app().await;
+    let skyr = create_typed(&app, "item", "SKY-428", "Skyr 428").await;
+    let feta = create_typed(&app, "item", "FET-240", "Feta 240").await;
+    let principal = db
+        .store()
+        .principal_by_handle("ada")
+        .await
+        .expect("principal")
+        .expect("ada");
+    let owner = db
+        .store()
+        .attach_user(principal, "ada-members@example.com", "x", "admin", "Ada")
+        .await
+        .expect("user");
+    let selection = uuid::Uuid::now_v7();
+    let type_id = uuid::Uuid::parse_str("018f0000-0000-7000-8000-000000000200").expect("item");
+    db.store()
+        .save_assortment(
+            selection,
+            owner,
+            type_id,
+            "Cheese active",
+            "manual",
+            &json!({}),
+        )
+        .await
+        .expect("selection");
+
+    let add = json!({
+        "messages": [{
+            "role": "user",
+            "content": "Lägg till Skyr 428 och Feta 240 i selektionen Cheese active"
+        }]
+    });
+    let (status, created) = call(&app, "POST", "/v1/agent/runs", Some(&add.to_string()), &[]).await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    let id = created["id"].as_str().unwrap();
+    let finished = until_done(&app, id).await;
+    assert_eq!(finished["status"], "done", "{finished}");
+    let text = message_text(&finished);
+    assert!(
+        text.contains("Nothing changes until you approve"),
+        "{finished}"
+    );
+    assert!(text.contains("Skyr 428"), "{text}");
+    assert!(text.contains("Feta 240"), "{text}");
+    assert!(!text.contains("returned no text"), "{text}");
+    let proposal_id = finished["proposals"]
+        .as_array()
+        .and_then(|rows| rows.first())
+        .and_then(|row| row["id"].as_str())
+        .unwrap_or("")
+        .to_owned();
+    assert!(!proposal_id.is_empty(), "{finished}");
+    let (status, before) = call(
+        &app,
+        "GET",
+        &format!("/v1/assortments/{selection}"),
+        None,
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{before}");
+    assert_eq!(
+        before["member_ids"].as_array().unwrap().len(),
+        0,
+        "{before}"
+    );
+
+    let (status, accepted) = call(
+        &app,
+        "POST",
+        &format!("/v1/proposals/{proposal_id}/accept"),
+        Some("{}"),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{accepted}");
+    let (status, added) = call(
+        &app,
+        "GET",
+        &format!("/v1/assortments/{selection}"),
+        None,
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{added}");
+    let mut members = added["member_ids"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|id| id.as_str())
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    members.sort();
+    let mut expected = vec![skyr, feta];
+    expected.sort();
+    assert_eq!(members, expected, "{added}");
+
+    let remove = json!({
+        "messages": [{
+            "role": "user",
+            "content": "remove Feta 240 from selection Cheese active"
+        }]
+    });
+    let (status, removing) = call(
+        &app,
+        "POST",
+        "/v1/agent/runs",
+        Some(&remove.to_string()),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{removing}");
+    let removed = until_done(&app, removing["id"].as_str().unwrap()).await;
+    assert_eq!(removed["status"], "done", "{removed}");
+    let remove_text = message_text(&removed);
+    assert!(
+        remove_text.contains("Nothing changes until you approve"),
+        "{remove_text}"
+    );
+    assert!(!remove_text.contains("returned no text"), "{remove_text}");
+    let remove_id = removed["proposals"][0]["id"].as_str().unwrap();
+    let (status, still) = call(
+        &app,
+        "GET",
+        &format!("/v1/assortments/{selection}"),
+        None,
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{still}");
+    assert_eq!(still["member_ids"].as_array().unwrap().len(), 2, "{still}");
+    let (status, discarded) = call(
+        &app,
+        "POST",
+        &format!("/v1/proposals/{remove_id}/discard"),
+        Some("{}"),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{discarded}");
+    let (status, kept) = call(
+        &app,
+        "GET",
+        &format!("/v1/assortments/{selection}"),
+        None,
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{kept}");
+    assert_eq!(kept["member_ids"].as_array().unwrap().len(), 2, "{kept}");
+
+    let missing = json!({
+        "messages": [{
+            "role": "user",
+            "content": "add No Such to selection Cheese active"
+        }]
+    });
+    let (status, asking) = call(
+        &app,
+        "POST",
+        "/v1/agent/runs",
+        Some(&missing.to_string()),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{asking}");
+    let missed = until_done(&app, asking["id"].as_str().unwrap()).await;
+    assert_eq!(missed["status"], "done", "{missed}");
+    let missed_text = message_text(&missed);
+    assert!(
+        missed_text.contains("No object named \"No Such\"."),
+        "{missed_text}"
+    );
+    assert!(!missed_text.contains("returned no text"), "{missed_text}");
+    assert!(
+        missed["proposals"].as_array().unwrap().is_empty(),
+        "{missed}"
+    );
+}
+
+fn message_text(detail: &Value) -> String {
+    detail["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|message| message["body"]["text"].as_str())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 async fn create_typed(app: &axum::Router, type_key: &str, sku: &str, name: &str) -> String {
     let body = json!({
         "type": type_key,
