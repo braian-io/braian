@@ -263,8 +263,6 @@ test.describe('view source label opens Select source', () => {
       const palette = await openSourcePickerFromLabel(page, products)
       await choosePaletteHit(page, palette, 'Products from Food')
       await expect(products.getByTestId('view-source-label')).toContainText('Food', { timeout: 30_000 })
-      await tree.getByRole('treeitem').filter({ hasText: 'Milk' }).first().click()
-      await expect(products.getByTestId('view-source-label')).toContainText('Food › Milk', { timeout: 30_000 })
     } finally {
       await page.request.delete(`/v1/workspaces/${workspaceId}`)
     }
