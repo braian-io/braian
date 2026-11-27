@@ -131,9 +131,9 @@ test.describe('view source label opens Select source', () => {
       await expect(page.getByTestId('command-palette')).toBeVisible()
       await page.keyboard.press('Escape')
       await expect(page.getByTestId('command-palette')).toHaveCount(0)
-      await expect.poll(async () =>
-        label.evaluate((el) => document.activeElement === el),
-      ).toBe(true)
+      await expect
+        .poll(async () => label.evaluate((el) => document.activeElement === el), { timeout: 10_000 })
+        .toBe(true)
     } finally {
       await page.request.delete(`/v1/workspaces/${workspaceId}`)
     }

@@ -275,7 +275,7 @@ export function Shell() {
   const [paletteEpoch, setPaletteEpoch] = useState(0)
   const [fieldsEditColumnId, setFieldsEditColumnId] = useState<string | null>(null)
   const fieldsOpenerRef = useRef<HTMLElement | null>(null)
-  const sourceLabelOpenerRef = useRef<HTMLButtonElement | null>(null)
+  const sourceLabelPickerViewIdRef = useRef<string | null>(null)
   useEffect(() => {
     setAiMode(paletteMode === 'ai')
     return () => setAiMode(false)
@@ -2834,8 +2834,8 @@ export function Shell() {
               }
             })}
             onChange={commitDoc}
-            onSourceLabelPick={(viewId, opener) => {
-              sourceLabelOpenerRef.current = opener
+            onSourceLabelPick={(viewId) => {
+              sourceLabelPickerViewIdRef.current = viewId
               void runCommand('view:select-source', { viewId })
             }}
             agentViews={agentViews}
@@ -2946,8 +2946,8 @@ export function Shell() {
             setPaletteStartSwitchCatalog(false)
             const opener = fieldsOpenerRef.current
             fieldsOpenerRef.current = null
-            const sourceLabelOpener = sourceLabelOpenerRef.current
-            sourceLabelOpenerRef.current = null
+            const sourceLabelViewId = sourceLabelPickerViewIdRef.current
+            sourceLabelPickerViewIdRef.current = null
             if (paletteModeRef.current === 'fields' && opener) {
               // A backdrop mousedown tears the overlay down before the click lands
               // on the page underneath; restore after that click or it steals focus.
@@ -2956,8 +2956,12 @@ export function Shell() {
               }, 0)
             }
             setPaletteMode(null)
-            if (sourceLabelOpener?.isConnected) {
-              sourceLabelOpener.focus()
+            if (sourceLabelViewId) {
+              window.setTimeout(() => {
+                document.querySelector<HTMLButtonElement>(
+                  `[data-pane="${sourceLabelViewId}"] [data-testid="view-source-label"]`,
+                )?.focus()
+              }, 0)
             }
           }}
         />

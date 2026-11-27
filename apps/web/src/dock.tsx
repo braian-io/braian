@@ -67,7 +67,7 @@ export function WorkspaceDock({
   onChange: (doc: LayoutDoc) => void
   renderView: (view: DockView) => ReactNode
   onAddView: (target: string) => void
-  onSourceLabelPick?: (viewId: string, opener: HTMLButtonElement) => void
+  onSourceLabelPick?: (viewId: string) => void
   /** View ids an agent is working in. The pane picks up one left-edge marker. */
   agentViews?: string[]
 }) {
@@ -247,7 +247,7 @@ type Frame = {
   commit: (doc: LayoutDoc) => void
   run: (name: string, args?: Record<string, unknown>) => void
   onAddView: (target: string) => void
-  onSourceLabelPick?: (viewId: string, opener: HTMLButtonElement) => void
+  onSourceLabelPick?: (viewId: string) => void
   onMenu: (menu: { x: number; y: number; view: string }) => void
   onDrag: (drag: Drag | null) => void
   renderView: (view: DockView) => ReactNode
@@ -708,7 +708,7 @@ function Pane({ frame, leaf }: { frame: Frame; leaf: Leaf }) {
               data-testid="view-source-label"
               aria-label={copy.changeSource}
               title={`${copy.changeSource} — ${label}`}
-              onClick={(event) => frame.onSourceLabelPick?.(activeId, event.currentTarget)}
+              onClick={() => frame.onSourceLabelPick?.(activeId)}
             >
               {label}
             </Button>
