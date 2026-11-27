@@ -2,7 +2,7 @@ import { isValidElement, useMemo, useEffect, useLayoutEffect, useCallback, useRe
 import { flushSync } from 'react-dom'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { History as HistoryIcon, Trash2 } from 'lucide-react'
+import { History as HistoryIcon, Table2, Trash2 } from 'lucide-react'
 import { ApiError, api, catalogName, failureLines, freeObject, jsonRecord, recordNumber, recordTitle, searchQuery, textValue, type Json } from './api'
 import { AutoResizeTextarea } from './auto-resize-textarea'
 import { messageFromErrorBody, reportWriteError, writeErrorMessage } from './write-error'
@@ -3641,59 +3641,69 @@ export function ObjectDetail({ session }: { session: PanesSession }) {
               <strong title={name || number}>{name || number}</strong>
               {number ? <span className="detail-id">{number}</span> : null}
             </div>
-            <Button
-              type="button"
-              variant="ghost"
-              data-testid="open-draft-in-table"
-              onClick={() => {
-                window.dispatchEvent(new CustomEvent('braian-open-draft', {
-                  detail: {
-                    objectId: session.objectId,
-                    typeKey: String(object.data?.type ?? ''),
-                    viewType: 'object_table',
-                  },
-                }))
-              }}
-            >
-              {copy.openDraftInTable}
-            </Button>
-            {allowDeleted ? (
-              <Button
-                type="button"
-                variant="primary"
-                data-testid="trash-detail-restore"
-                onClick={() => {
-                  void api.post('/v1/trash/{kind}/{id}/undelete', {
-                    params: { path: { kind: 'object', id: objectId } },
-                  }).then(() => {
-                    clearObjectGone(queryClient, objectId)
-                    void queryClient.invalidateQueries()
-                  }).catch((reason: unknown) => reportWriteError(reason))
-                }}
-              >
-                {copy.trashRestore}
-              </Button>
-            ) : inAgentSession ? null : (
-              <TooltipProvider delayDuration={400} disableHoverableContent>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="icon"
-                      size="icon"
-                      className="detail-delete icon-danger"
-                      data-testid="delete-object-detail"
-                      aria-label={copy.delete}
-                      disabled={!editingReady}
-                      onClick={() => requestDeleteObjects([objectId])}
-                    >
-                      <Trash2 aria-hidden="true" size={14} />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>{copy.delete}</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
+            <div className="detail-title-actions">
+              {allowDeleted ? (
+                <Button
+                  type="button"
+                  variant="primary"
+                  data-testid="trash-detail-restore"
+                  onClick={() => {
+                    void api.post('/v1/trash/{kind}/{id}/undelete', {
+                      params: { path: { kind: 'object', id: objectId } },
+                    }).then(() => {
+                      clearObjectGone(queryClient, objectId)
+                      void queryClient.invalidateQueries()
+                    }).catch((reason: unknown) => reportWriteError(reason))
+                  }}
+                >
+                  {copy.trashRestore}
+                </Button>
+              ) : inAgentSession ? null : (
+                <TooltipProvider delayDuration={400} disableHoverableContent>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="icon"
+                        size="icon"
+                        className="detail-open-table"
+                        data-testid="open-draft-in-table"
+                        aria-label={copy.openDraftInTable}
+                        onClick={() => {
+                          window.dispatchEvent(new CustomEvent('braian-open-draft', {
+                            detail: {
+                              objectId: session.objectId,
+                              typeKey: String(object.data?.type ?? ''),
+                              viewType: 'object_table',
+                            },
+                          }))
+                        }}
+                      >
+                        <Table2 aria-hidden="true" size={14} />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>{copy.openDraftInTable}</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="icon"
+                        size="icon"
+                        className="detail-delete icon-danger"
+                        data-testid="delete-object-detail"
+                        aria-label={copy.delete}
+                        disabled={!editingReady}
+                        onClick={() => requestDeleteObjects([objectId])}
+                      >
+                        <Trash2 aria-hidden="true" size={14} />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>{copy.delete}</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+            </div>
           </div>
           {objectPreview ? (
             <p className="detail-section-skeleton" data-testid="detail-meta-skeleton" aria-busy="true" />
