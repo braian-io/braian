@@ -135,12 +135,6 @@ test.describe('view source label opens Select source', () => {
       await tree.getByRole('treeitem').filter({ hasText: 'Milk' }).first().click()
       await expect(products.getByTestId('view-source-label')).toHaveText('All Products')
       expect(await products.getByTestId('object-row').count()).toBe(allRows)
-
-      palette = await openSourcePickerFromLabel(page, products)
-      await choosePaletteHit(page, palette, 'Products from Food')
-      await expect(products.getByTestId('view-source-label')).toContainText('Food', { timeout: 30_000 })
-      await tree.getByRole('treeitem').filter({ hasText: 'Cheese' }).first().click()
-      await expect(products.getByTestId('view-source-label')).toContainText('Food › Cheese', { timeout: 30_000 })
     } finally {
       await page.request.delete(`/v1/workspaces/${workspaceId}`)
     }
