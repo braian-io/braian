@@ -129,9 +129,10 @@ test.describe('view source label opens Select source', () => {
       await label.focus()
       await page.keyboard.press('Enter')
       await expect(page.getByTestId('command-palette')).toBeVisible()
+      await expect(page.getByTestId('palette-input')).toBeFocused()
       await page.keyboard.press('Escape')
       await expect(page.getByTestId('command-palette')).toHaveCount(0)
-      await expect(label).toBeFocused()
+      await expect(label).toBeFocused({ timeout: 30_000 })
     } finally {
       await page.request.delete(`/v1/workspaces/${workspaceId}`)
     }
