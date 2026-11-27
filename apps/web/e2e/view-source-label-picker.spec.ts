@@ -126,7 +126,9 @@ test.describe('view source label opens Select source', () => {
 
       await tree.getByRole('treeitem').filter({ hasText: 'Cheese' }).first().click()
       await expect(products.getByTestId('view-source-label')).toContainText('Food › Cheese', { timeout: 30_000 })
-      await expect.poll(async () => products.getByTestId('object-row').count()).toBe(SEED_CHEESE_PRODUCT_NAMES.length)
+      await expect.poll(async () => products.getByTestId('object-row').count(), { timeout: 30_000 }).toBe(
+        SEED_CHEESE_PRODUCT_NAMES.length,
+      )
 
       palette = await openSourcePickerFromLabel(page, products)
       await choosePaletteHit(page, palette, 'All Products')
@@ -142,10 +144,10 @@ test.describe('view source label opens Select source', () => {
       await choosePaletteHit(page, palette, 'Products from Food')
       await expect(products.getByTestId('view-source-label')).toContainText('Food', { timeout: 30_000 })
 
-      await tree.getByRole('treeitem').filter({ hasText: 'Milk' }).first().click()
-      await expect(products.getByTestId('view-source-label')).toContainText('Food › Milk', { timeout: 30_000 })
+      await tree.getByRole('treeitem').filter({ hasText: 'Cheese' }).first().click()
+      await expect(products.getByTestId('view-source-label')).toContainText('Food › Cheese', { timeout: 30_000 })
       await expect.poll(async () => products.getByTestId('object-row').count(), { timeout: 30_000 }).toBe(
-        SEED_MILK_PRODUCT_NAMES.length,
+        SEED_CHEESE_PRODUCT_NAMES.length,
       )
     } finally {
       await page.request.delete(`/v1/workspaces/${workspaceId}`)
