@@ -542,16 +542,20 @@ export function Shell() {
     enabled: Boolean(workspaceId),
   })
   useEffect(() => {
-    if (!doc || !workspace.data || !defs.data) return
+    if (!doc || !workspace.data || workspace.data.id !== workspaceId || !defs.data) return
     if (linkedOpenTreesRef.current) return
     const views = viewRows(workspace.data.views)
     const open = layoutViews(doc.layout)
+    const viewIds = new Set(views.map((view) => view.id))
+    // The previous workspace's layout is still on screen when this workspace's
+    // views arrive. Wait until the open panes belong to this workspace.
+    if (open.length > 0 && open.every((id) => !viewIds.has(id))) return
     const trees = open.filter((id) => views.find((view) => view.id === id)?.type === 'structure_tree')
     // Views can arrive after the layout. Wait so the default Products tree is linked.
     if (trees.length === 0 && views.length === 0) return
     linkedOpenTreesRef.current = true
     for (const treeId of trees) void autoLinkStructureTreeRef.current(treeId, false)
-  }, [doc, workspace.data, defs.data])
+  }, [doc, workspace.data, workspaceId, defs.data])
   const { settled: objectFetchSettled } = useObjectLand(objectId)
   const openedPreview = queryClient.getQueryData(['object', objectId])
   const opened = useQuery<Json, Error>({
