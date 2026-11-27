@@ -2,7 +2,8 @@ import { isValidElement, useMemo, useEffect, useLayoutEffect, useCallback, useRe
 import { flushSync } from 'react-dom'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { History as HistoryIcon, Table2, Trash2 } from 'lucide-react'
+import { History as HistoryIcon, RotateCcw, Table2, Trash2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { ApiError, api, catalogName, failureLines, freeObject, jsonRecord, recordNumber, recordTitle, searchQuery, textValue, type Json } from './api'
 import { AutoResizeTextarea } from './auto-resize-textarea'
 import { messageFromErrorBody, reportWriteError, writeErrorMessage } from './write-error'
@@ -144,6 +145,7 @@ import { DiscardProposalDialog } from './discard-proposal-dialog'
 import { acceptPendingLine, pendingLines, pendingRowsForObject, rejectPendingRow } from './proposal-focus'
 import { ImportWorkspace } from './import/view'
 import { rollbackTargetSeq } from './history-rollback'
+import { historyRestoreErrorMessage, restoreHistoryVersion } from './history-restore'
 import { StateNote } from './states'
 import { classSections } from './class-sections'
 import { LinkSections } from './link-section'
@@ -4163,6 +4165,7 @@ export function GraphView({ session, view }: { session: PanesSession; view?: Pan
 }
 
 export function HistoryView({ session }: { session: PanesSession }) {
+  const queryClient = useQueryClient()
   const defs = useQuery({ queryKey: ['definitions'], queryFn: () => api.get('/v1/definitions') })
   const changes = useQuery({
     queryKey: ['history', session.objectId],
@@ -4180,22 +4183,28 @@ export function HistoryView({ session }: { session: PanesSession }) {
     enabled: Boolean(session.objectId && current && travel),
   })
   const rollback = useMutation({
-    mutationFn: async (at: number) => {
-      const proposal = await api.post('/v1/objects/{id}/rollback', {
-        params: { path: { id: session.objectId ?? '' } },
-        body: { seq: at },
-      })
-      return { proposal, at }
+    mutationFn: async ({ targetSeq, when }: { targetSeq: number; when: unknown }) => {
+      const objectId = session.objectId ?? ''
+      const result = await restoreHistoryVersion(objectId, targetSeq, defs.data)
+      return { ...result, when }
     },
-    onSuccess: ({ proposal, at }) => {
-      const id = String(proposal.id)
-      // Same as assortment / model proposes: open the review dialog so Save applies it.
-      publishProposal(id, 'rollback', { targetSeq: at })
-      session.setProposalId(id)
-      session.push(copy.proposed)
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: ['definitions'] })
+      void queryClient.invalidateQueries({ queryKey: ['proposals'] })
+      void queryClient.invalidateQueries({ queryKey: ['objects'] })
+      void queryClient.invalidateQueries({ queryKey: ['object'] })
+      void queryClient.invalidateQueries({ queryKey: ['history'] })
+      void queryClient.invalidateQueries({ queryKey: ['path-values'] })
+      void queryClient.invalidateQueries({ queryKey: ['asof'] })
+      if (result.kind === 'empty') {
+        toast(copy.restoreAlreadyMatches)
+        return
+      }
+      toast(copy.restoredVersionFrom.replace('{time}', relativeTime(result.when)))
     },
     onError: (reason: unknown) => {
       reportWriteError(reason)
+      toast.error(historyRestoreErrorMessage(reason))
     },
   })
   const seqs = rows.map((row) => Number(row.seq)).sort((left, right) => left - right)
@@ -4241,6 +4250,7 @@ export function HistoryView({ session }: { session: PanesSession }) {
           </dl>
         </div>
       ) : null}
+      <TooltipProvider delayDuration={400} disableHoverableContent>
       <div className="timeline">
         {changes.isError ? (
           <StateNote
@@ -4267,6 +4277,28 @@ export function HistoryView({ session }: { session: PanesSession }) {
             >
               <header className="history-line">
                 <strong>{historyWho(row)}</strong>
+                {created ? null : (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="icon"
+                        size="icon"
+                        className="history-restore"
+                        data-testid="rollback"
+                        aria-label={copy.restoreThisVersion}
+                        disabled={rollback.isPending}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          rollback.mutate({ targetSeq: rollbackTargetSeq(seqs, at), when: row.at })
+                        }}
+                      >
+                        <RotateCcw size={14} aria-hidden="true" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>{copy.restoreThisVersion}</TooltipContent>
+                  </Tooltip>
+                )}
                 <time dateTime={String(row.at ?? '')}>{relativeTime(row.at)}</time>
               </header>
               {created ? (
@@ -4274,7 +4306,7 @@ export function HistoryView({ session }: { session: PanesSession }) {
                   <li className="history-created">{copy.created}</li>
                 </ul>
               ) : (
-                <FieldDiff lines={diffLines(row.diff, defs.data)} />
+                <FieldDiff lines={diffLines(row.diff, defs.data)} compact />
               )}
               {expanded ? (
                 <div className="history-actions" onClick={(event) => event.stopPropagation()}>
@@ -4289,20 +4321,13 @@ export function HistoryView({ session }: { session: PanesSession }) {
                   >
                     {copy.viewAsItWas}
                   </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    data-testid="rollback"
-                    onClick={() => rollback.mutate(rollbackTargetSeq(seqs, at))}
-                  >
-                    {copy.rollback}
-                  </Button>
                 </div>
               ) : null}
             </article>
           )
         }) : null}
       </div>
+      </TooltipProvider>
     </div>
   )
 }

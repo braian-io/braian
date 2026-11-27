@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, failureLines, type Json } from './api'
+import { ApiError, api, failureLines, type Json } from './api'
 import { Button } from './components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
 import { suggestionLines } from './field-diff'
@@ -11,16 +11,7 @@ import { describeModelSteps } from './model-step-text'
 import { affectedLabel, typeNames } from './type-labels'
 import { onProposal } from './proposal-bus'
 import { inCatalog } from './catalog-scope'
-import {
-  discardRestoreOnDismiss,
-  isRollbackProposal,
-  objectDisplayLabel,
-  restoreAcceptConflictMessage,
-  restoreDiscardFailure,
-  restoreTitle,
-  rollbackTargetSeqFromPatch,
-  versionAtSeq,
-} from './restore-proposal'
+import { isRollbackProposal, restoreAcceptConflictMessage } from './restore-proposal'
 import { StateNote } from './states'
 
 type HostSession = {
@@ -76,18 +67,15 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
   const [id, setId] = useState<string | null>(null)
   const [catalog, setCatalog] = useState<string | undefined>()
   const [operation, setOperation] = useState<string | undefined>()
-  const [rollbackSeq, setRollbackSeq] = useState<number | undefined>()
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const opener = useRef<HTMLElement | null>(null)
-  const confirmRef = useRef<HTMLButtonElement | null>(null)
   const discardPending = useRef(false)
   /** After a failed discard, dismiss without another POST so the draft stays on the server. */
   const dismissWithoutDiscard = useRef(false)
   const dismiss = () => {
     const target = opener.current
     opener.current = null
-    setRollbackSeq(undefined)
     setCatalog(undefined)
     setId(null)
     if (target?.isConnected) queueMicrotask(() => target.focus())
@@ -97,7 +85,6 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
     setError('')
     dismissWithoutDiscard.current = false
     setOperation(proposal.operation)
-    setRollbackSeq(proposal.rollback?.targetSeq)
     setCatalog(proposal.catalog)
     setId(proposal.id)
   }), [])
@@ -115,18 +102,7 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
   const body = proposal.data
   const rows = (body?.rows as Json[] | undefined) ?? []
   const objectRow = rows.find((row) => row.object_id)
-  const objectId = String(objectRow?.object_id ?? '')
   const isRollback = isRollbackProposal(body?.source) || operation === 'rollback'
-  const object = useQuery({
-    queryKey: ['object', objectId, catalog ?? ''],
-    queryFn: () => scope(() => api.get('/v1/objects/{id}', { params: { path: { id: objectId } } })),
-    enabled: Boolean(id) && isRollback && Boolean(objectId),
-  })
-  const history = useQuery({
-    queryKey: ['history', objectId, catalog ?? ''],
-    queryFn: () => scope(() => api.get('/v1/objects/{id}/changes', { params: { path: { id: objectId } } })),
-    enabled: Boolean(id) && isRollback && Boolean(objectId),
-  })
   const consequence = (body?.consequence as Json | undefined) ?? {}
   const modelSteps = rows
     .filter((row) => String(row.type_key ?? '') === 'model' && row.patch && typeof row.patch === 'object')
@@ -141,37 +117,21 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
     : stepTexts.length > 1
       ? copy.reviewChangeTitle
       : String(body?.title ?? copy.dataModel)
-  const targetSeq = rollbackSeq ?? rollbackTargetSeqFromPatch(objectRow?.patch)
-  const historyBody = history.data
-  const changes = Array.isArray(historyBody)
-    ? historyBody
-    : ((historyBody as Json | undefined)?.changes as Json[] | undefined) ?? []
-  const targetVersion = versionAtSeq(changes, targetSeq)
-  const liveValues = (object.data?.values as Json | undefined)
-    ?? (objectRow?.base_values as Json | undefined)
-  const objectLabel = objectDisplayLabel(liveValues, objectRow?.object_key ? String(objectRow.object_key) : undefined)
-  const rollbackTitle = restoreTitle(objectLabel, targetVersion)
   const restoreDiff = isRollback && objectRow
-    ? suggestionLines(liveValues, objectRow.patch, defs.data)
+    ? suggestionLines(objectRow.base_values as Json | undefined, objectRow.patch, defs.data)
     : []
   const restoreEmpty = isRollback && !proposal.isPending && !proposal.isError && restoreDiff.length === 0
-  // The proposal fetch can be slow. Name the operation we already know instead
-  // of showing the generic "Data model" while the counts are unknown.
   const title = proposal.isPending
     ? (operation === 'rollback' ? copy.rollback : loadingTitle(operation))
-    : isRollback
-      ? rollbackTitle
-      : loadedTitle
-  // A single model step is already the title. Do not repeat it under a
-  // "Model diff" label.
+  : isRollback
+    ? String(body?.title ?? copy.rollback)
+    : loadedTitle
   const showDiff = stepTexts.length !== 1 && lines.length > 0
   const warnings = (consequence.warnings as string[] | undefined) ?? []
   const samples = (consequence.samples as Json[] | undefined) ?? []
   const jobs = (consequence.jobs as Json[] | undefined) ?? []
   const errors = (consequence.definition_errors as string[] | undefined) ?? []
   const destructive = consequence.destructive === true
-  // The operation already tells us this is a delete while the proposal loads,
-  // so the danger confirm keeps its Delete label and test id.
   const destructiveIntent = destructive || (proposal.isPending && String(operation ?? '').includes('delete'))
   const detail = (consequence.detail as string[] | undefined) ?? []
   const sentence = String(consequence.sentence ?? '')
@@ -183,8 +143,6 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
   const objects = count('objects')
   const links = count('links')
   const selections = count('selections')
-  // Nothing is removed at all. Say it once instead of "0 values on 0 objects"
-  // followed by "Affected objects: 0".
   const noImpact = values === 0 && objects === 0 && (links ?? 0) === 0 && (selections ?? 0) === 0
   const deleteLines = noImpact ? [copy.noValuesDeleted] : detail
   const unlinkedTypes = typesLosingAllowedTree(defs.data, modelSteps)
@@ -200,21 +158,12 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
     && String(body?.source) !== 'user'
     && !isRollback
   const confirmLabel = isRollback ? copy.rollback : destructiveIntent ? copy.delete : copy.save
-  const confirmTestId = isRollback ? 'confirm-restore' : destructiveIntent ? 'confirm-delete' : 'confirm-model'
-  useEffect(() => {
-    if (!id || !isRollback || proposal.isPending || proposal.isError) return
-    confirmRef.current?.focus()
-  }, [id, isRollback, proposal.isPending, proposal.isError, rollbackTitle, restoreDiff.length])
+  const confirmTestId = destructiveIntent ? 'confirm-delete' : 'confirm-model'
   if (!id) return null
   const close = dismiss
-  const historyRollback = discardRestoreOnDismiss(rollbackSeq)
   const requestClose = () => {
     if (busy) return
-    if (dismissWithoutDiscard.current) {
-      close()
-      return
-    }
-    if (isRollback && historyRollback) discard()
+    if (dismissWithoutDiscard.current) close()
     else close()
   }
   const cancel = () => {
@@ -236,14 +185,13 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
         close()
       })
       .catch((reason: unknown) => {
-        const failure = restoreDiscardFailure(reason)
-        if (failure.close) {
+        if (reason instanceof ApiError && reason.status === 404) {
           void queryClient.invalidateQueries({ queryKey: ['proposals'] })
           close()
           return
         }
         dismissWithoutDiscard.current = true
-        setError(failure.message ?? copy.validation)
+        setError(reason instanceof Error ? reason.message : copy.validation)
       })
       .finally(() => {
         setBusy(false)
@@ -260,9 +208,6 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
           return
         }
         session.setProposalId(id)
-        // A delete is done when the type/structure disappears. Leaving a
-        // timestamped "Confirm" line in the activity footer reads as if the
-        // removal is still waiting for something.
         if (!destructiveIntent) session.push(copy.saved)
         void queryClient.invalidateQueries({ queryKey: ['definitions'] })
         if (operation === 'model.delete_type') {
@@ -293,15 +238,9 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
     }}>
       <DialogContent
         className="consequence"
-        data-testid={isRollback ? 'restore-dialog' : 'consequence'}
+        data-testid="consequence"
         onEscapeKeyDown={(event) => {
           event.stopPropagation()
-          if (!isRollback) return
-          event.preventDefault()
-          requestClose()
-        }}
-        onOpenAutoFocus={(event) => {
-          if (isRollback) event.preventDefault()
         }}
       >
         <div className="toolbar consequence-title">
@@ -373,7 +312,6 @@ export function ConsequenceHost({ session }: { session: HostSession }) {
           <Button type="button" variant="ghost" onClick={cancel} disabled={busy}>{copy.cancel}</Button>
           <Button
             type="button"
-            ref={confirmRef}
             variant={destructiveIntent ? 'danger' : 'primary'}
             data-testid={confirmTestId}
             onClick={confirm}
