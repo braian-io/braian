@@ -2453,7 +2453,7 @@ export function ObjectTable({
       />
       )}
       <UnmappedDraftLinks proposals={openProposals.unmapped} />
-      {peerSource && peerSourceView ? (
+      {peerSource && peerSourceView && !nodeAwaitingGroup ? (
         <p className="table-source" data-testid="peer-linked-to">
           {copy.linkedTo.replace('{source}', displayViewTitle(peerSourceView, names))}
         </p>
