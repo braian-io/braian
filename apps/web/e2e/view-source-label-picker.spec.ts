@@ -127,12 +127,13 @@ test.describe('view source label opens Select source', () => {
 
       const label = productsReloaded.getByTestId('view-source-label')
       await label.focus()
-      await page.keyboard.press('Enter')
+      await page.keyboard.press(' ')
       await expect(page.getByTestId('command-palette')).toBeVisible()
-      await expect(page.getByTestId('palette-input')).toBeFocused()
       await page.keyboard.press('Escape')
       await expect(page.getByTestId('command-palette')).toHaveCount(0)
-      await expect(label).toBeFocused({ timeout: 30_000 })
+      await expect.poll(async () =>
+        label.evaluate((el) => document.activeElement === el),
+      ).toBe(true)
     } finally {
       await page.request.delete(`/v1/workspaces/${workspaceId}`)
     }

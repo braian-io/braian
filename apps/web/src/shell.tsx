@@ -284,17 +284,6 @@ export function Shell() {
     if (paletteMode !== 'fields') fieldsOpenerRef.current = null
   }, [paletteMode])
   useEffect(() => {
-    if (paletteMode) return
-    const opener = sourceLabelOpenerRef.current
-    if (!opener) return
-    sourceLabelOpenerRef.current = null
-    window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => {
-        if (opener.isConnected) opener.focus()
-      })
-    })
-  }, [paletteMode])
-  useEffect(() => {
     const close = () => setPaletteMode(null)
     window.addEventListener('braian-close-palette', close)
     return () => window.removeEventListener('braian-close-palette', close)
@@ -2957,6 +2946,8 @@ export function Shell() {
             setPaletteStartSwitchCatalog(false)
             const opener = fieldsOpenerRef.current
             fieldsOpenerRef.current = null
+            const sourceLabelOpener = sourceLabelOpenerRef.current
+            sourceLabelOpenerRef.current = null
             if (paletteModeRef.current === 'fields' && opener) {
               // A backdrop mousedown tears the overlay down before the click lands
               // on the page underneath; restore after that click or it steals focus.
@@ -2965,6 +2956,9 @@ export function Shell() {
               }, 0)
             }
             setPaletteMode(null)
+            if (sourceLabelOpener?.isConnected) {
+              sourceLabelOpener.focus()
+            }
           }}
         />
       ) : null}
