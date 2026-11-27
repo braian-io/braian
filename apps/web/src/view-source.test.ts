@@ -196,9 +196,16 @@ describe('peer source (Notion 103 PR 2)', () => {
     expect(linkedTypeIds('', defs)).toEqual([])
   })
 
+  it('builds structure-tree peer labels without repeating the tree title', () => {
+    expect(peerSourceLabel('Food', '')).toBe('Food')
+    expect(peerSourceLabel('Food', 'Food')).toBe('Food')
+    expect(peerSourceLabel('Food', 'Cheese')).toBe('Food › Cheese')
+    expect(peerSourceLabel('Food', 'Dairy & eggs')).toBe('Food › Dairy & eggs')
+    expect(peerSourceLabel('Food', 'Food › Dairy & eggs › Milk')).toBe('Food › Dairy & eggs › Milk')
+  })
+
   it('appends the peer label to the header and keeps the catalog suffix', () => {
     expect(peerSourceLabel('Food', 'Cheese')).toBe('Food › Cheese')
-    expect(peerSourceLabel('Food', '')).toBe('Food')
     expect(viewSourceLabel(
       { type: 'object_table', state: { object_type: 't-product', type_key: 'product' } },
       types,

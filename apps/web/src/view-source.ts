@@ -267,7 +267,13 @@ export function defaultPeerLinkType(
 
 /** Header fragment for a peer source: view title plus the live selection. */
 export function peerSourceLabel(viewTitle: string, selectionLabel?: string | null): string {
-  return selectionLabel ? `${viewTitle} › ${selectionLabel}` : viewTitle
+  const title = viewTitle.trim()
+  const selection = (selectionLabel ?? '').trim()
+  if (!selection) return title
+  if (selection === title) return title
+  const prefixed = `${title} › `
+  if (selection.startsWith(prefixed)) return selection
+  return `${title} › ${selection}`
 }
 
 /**
