@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ObjectDetail, ObjectTable, type PanesSession } from './panes'
 import { SharedContextMenuHost } from './shared-context-menu'
-import { OPEN_DELETE_OBJECTS } from './delete-objects'
+import { OBJECTS_DELETED, OPEN_DELETE_OBJECTS } from './delete-objects'
 import { publishMarked, publishTreeNode, readSelection, resetUiContext } from './ui-context'
 
 const { scrollToIndex } = vi.hoisted(() => ({ scrollToIndex: vi.fn() }))
@@ -283,6 +283,17 @@ describe('table row selection', () => {
     expect(selectedIds()).toEqual(['object-row-id-4'])
 
     window.removeEventListener(OPEN_DELETE_OBJECTS, onDelete)
+  })
+
+  it('removes deleted ids from the selection', async () => {
+    render(<Harness />)
+    await waitFor(() => expect(screen.getAllByTestId('object-row')).toHaveLength(tableRows.length))
+    fireEvent.click(rows()[0]!)
+    fireEvent.click(rows()[2]!, { shiftKey: true })
+    await screen.findByTestId('table-selection-bar')
+    window.dispatchEvent(new CustomEvent(OBJECTS_DELETED, { detail: { ids: ['id-0', 'id-1'] } }))
+    await waitFor(() => expect(screen.queryByTestId('table-selection-bar')).toBeNull())
+    expect(selectedIds()).toEqual(['object-row-id-2'])
   })
 
   it('keeps a context-menu selection and deletes every selected id', async () => {

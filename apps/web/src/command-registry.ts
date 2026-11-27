@@ -230,6 +230,15 @@ export const registryCommands: RegistryCommand[] = [
       || (Array.isArray(target.objects) && target.objects.length > 0),
   },
   {
+    id: 'table:copy-text',
+    title: copy.copyAsTableText,
+    contexts: ['row', 'cell'],
+    group: 'object',
+    keywords: ['copy', 'table', 'tsv', 'clipboard', 'excel'],
+    palette: false,
+    when: (target) => Array.isArray(target.objects) && target.objects.length > 0,
+  },
+  {
     id: 'trash:restore',
     title: copy.trashRestore,
     contexts: ['trash', 'object-detail'],

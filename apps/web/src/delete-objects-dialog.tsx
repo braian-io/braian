@@ -7,6 +7,7 @@ import {
   dryRunFrom,
   linkedObjectIds,
   mergeDeleteCounts,
+  notifyObjectsDeleted,
   OPEN_DELETE_OBJECTS,
   type DeleteCounts,
   type DeleteObjectRequest,
@@ -83,10 +84,12 @@ export function DeleteObjectsHost() {
       const deleted = [...request.ids]
       const skip = new Set(deleted)
       let failed = false
+      const removed: string[] = []
       for (const id of deleted) {
         try {
           await api.delete('/v1/objects/{id}', { params: { path: { id } } })
           markObjectGone(queryClient, id)
+          removed.push(id)
         } catch (reason) {
           setError(writeErrorMessage(reason) ?? copy.deleteObjectFailed)
           failed = true
@@ -107,6 +110,7 @@ export function DeleteObjectsHost() {
         queryClient.invalidateQueries({ queryKey: ['links'] }),
       ])
       setBusy(false)
+      if (removed.length > 0) notifyObjectsDeleted(removed)
       if (!failed) {
         setRequest(null)
       }
