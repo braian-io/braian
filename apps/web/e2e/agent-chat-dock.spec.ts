@@ -254,8 +254,10 @@ test('Ctrl+J opens a right agent chat while Products stays visible', async ({ pa
     expect(Math.abs((detailClosed as Box).width - detailBefore.width)).toBeLessThan(8)
 
     await page.keyboard.press('Control+j')
-    await expect(agentPane(page)).toBeVisible()
-    await expect(agentPane(page).getByTestId('agent-chat-user').filter({ hasText: prompt })).toBeVisible()
+    const fresh = agentPane(page)
+    await expect(fresh).toBeVisible()
+    await expect(fresh.getByTestId('agent-chat-user').filter({ hasText: prompt })).toHaveCount(0)
+    await expect(fresh.getByTestId('agent-follow-up')).toBeFocused()
     await expectNoAgentDetailOverlap(page, 360)
   } finally {
     await cleanupDrafts(page)
