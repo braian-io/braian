@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Eye, SendToBack } from 'lucide-react'
+import { Eye, Play, Send, SendToBack } from 'lucide-react'
 import {
   AgentRunError,
   agentDisplayText,
@@ -42,15 +42,19 @@ const focusAgentInputEvent = 'braian-focus-agent-input'
 /** Flat icon action: transparent base, accent-dim hover, tooltip and aria-label. */
 function AgentIconButton({
   label,
+  tooltip = label,
   testId,
   type = 'button',
+  variant = 'icon',
   disabled,
   onClick,
   children,
 }: {
   label: string
+  tooltip?: string
   testId: string
   type?: 'button' | 'submit'
+  variant?: 'icon' | 'primary' | 'ghost'
   disabled?: boolean
   onClick?: () => void
   children: ReactNode
@@ -60,18 +64,19 @@ function AgentIconButton({
       <TooltipTrigger asChild>
         <Button
           type={type}
-          variant="icon"
-          className="agent-action"
+          variant={variant}
+          size="icon"
+          className="agent-action icon-btn"
           data-testid={testId}
           aria-label={label}
-          title={label}
+          title={tooltip}
           disabled={disabled}
           onClick={onClick}
         >
           {children}
         </Button>
       </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
+      <TooltipContent>{tooltip}</TooltipContent>
     </Tooltip>
   )
 }
@@ -356,6 +361,9 @@ export function AgentView({ runId, title: viewTitle }: AgentViewProps) {
   const lastPrompt = [...data.messages].reverse().find((message) => message.kind === 'user')
   const retryPrompt = String(lastPrompt?.body.text ?? data.title)
   const lines = chatLines(data)
+  const canFollow = !working && !follow.isPending && draft.trim() !== ''
+  const sendLabel = waiting ? copy.agentResume : copy.agentSend
+  const sendTooltip = waiting ? copy.agentResumeTooltip : copy.agentSendTooltip
   return (
     <div
       className="agent-view"
@@ -463,16 +471,16 @@ export function AgentView({ runId, title: viewTitle }: AgentViewProps) {
             follow.mutate(content)
           }}
         />
-        <Button
+        <AgentIconButton
           type="submit"
-          variant={!working && !follow.isPending && draft.trim() !== '' ? 'primary' : 'ghost'}
-          className="agent-submit"
-          data-testid={waiting ? 'agent-resume' : 'agent-send'}
+          label={sendLabel}
+          tooltip={sendTooltip}
+          testId={waiting ? 'agent-resume' : 'agent-send'}
+          variant={canFollow ? 'primary' : 'ghost'}
           disabled={working || follow.isPending || draft.trim() === ''}
-          aria-label={waiting ? copy.agentResume : copy.agentSend}
         >
-          {waiting ? copy.agentResume : copy.agentSend}
-        </Button>
+          {waiting ? <Play size={14} aria-hidden="true" /> : <Send size={14} aria-hidden="true" />}
+        </AgentIconButton>
       </form>
     </div>
   )

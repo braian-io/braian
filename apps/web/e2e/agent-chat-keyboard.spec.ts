@@ -116,8 +116,11 @@ test('agent keyboard shortcuts', async ({ page }) => {
 
     const slowPrompt = `follow again ${Date.now().toString().slice(-4)}`
     await input.fill(slowPrompt)
+    const send = typingPane.getByTestId('agent-send')
+    await expect(send).toHaveAccessibleName('Send')
+    await expect(send).toHaveText('')
     await input.press('Enter')
-    await expect(typingPane.getByTestId('agent-send')).toBeDisabled()
+    await expect(send).toBeDisabled()
     await expect(typingPane.getByTestId('agent-status')).toHaveAttribute('data-status', 'done', { timeout: 60_000 })
     await expect(typingPane.getByTestId('agent-chat-user').filter({ hasText: slowPrompt })).toBeVisible()
 

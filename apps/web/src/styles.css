@@ -3376,18 +3376,18 @@ button.tab-x:disabled:hover {
   background: transparent;
   color: var(--muted);
 }
-:root[data-theme='light'] button:not(.tab):not(.pane-tab):not(.pane-tab-open):not(.icon-btn):not(.btn-ghost):not(.btn-accent):not(.btn-danger):not(.primary):not(.avatar-btn):not(.catalog-selector-btn):not(.tab-x):not(.filter-chip):not(.choice-chip):not(.legend-chip):not(.agent-bg-indicator):not(.agent-mode):not(.agent-submit):not(:disabled) {
+:root[data-theme='light'] button:not(.tab):not(.pane-tab):not(.pane-tab-open):not(.icon-btn):not(.btn-ghost):not(.btn-accent):not(.btn-danger):not(.primary):not(.avatar-btn):not(.catalog-selector-btn):not(.tab-x):not(.filter-chip):not(.choice-chip):not(.legend-chip):not(.agent-bg-indicator):not(.agent-mode):not(:disabled) {
   background: #ffffff;
   color: #111827;
   border-color: #d1d5db;
   box-shadow: none;
 }
-:root[data-theme='light'] button:not(.tab):not(.pane-tab):not(.pane-tab-open):not(.icon-btn):not(.btn-ghost):not(.btn-accent):not(.btn-danger):not(.primary):not(.avatar-btn):not(.catalog-selector-btn):not(.tab-x):not(.filter-chip):not(.choice-chip):not(.legend-chip):not(.agent-bg-indicator):not(.agent-mode):not(.agent-submit):not(:disabled):hover {
+:root[data-theme='light'] button:not(.tab):not(.pane-tab):not(.pane-tab-open):not(.icon-btn):not(.btn-ghost):not(.btn-accent):not(.btn-danger):not(.primary):not(.avatar-btn):not(.catalog-selector-btn):not(.tab-x):not(.filter-chip):not(.choice-chip):not(.legend-chip):not(.agent-bg-indicator):not(.agent-mode):not(:disabled):hover {
   background: #f3f4f6;
   color: #111827;
 }
-:root[data-theme='light'] button:not(.tab):not(.pane-tab):not(.pane-tab-open):not(.icon-btn):not(.btn-ghost):not(.btn-accent):not(.btn-danger):not(.primary):not(.avatar-btn):not(.catalog-selector-btn):not(.tab-x):not(.filter-chip):not(.choice-chip):not(.legend-chip):not(.agent-bg-indicator):not(.agent-mode):not(.agent-submit):not(.btn-raised):disabled,
-:root[data-theme='light'] button:not(.tab):not(.pane-tab):not(.pane-tab-open):not(.icon-btn):not(.btn-ghost):not(.btn-accent):not(.btn-danger):not(.primary):not(.avatar-btn):not(.catalog-selector-btn):not(.tab-x):not(.filter-chip):not(.choice-chip):not(.legend-chip):not(.agent-bg-indicator):not(.agent-mode):not(.agent-submit):not(.btn-raised):disabled:hover {
+:root[data-theme='light'] button:not(.tab):not(.pane-tab):not(.pane-tab-open):not(.icon-btn):not(.btn-ghost):not(.btn-accent):not(.btn-danger):not(.primary):not(.avatar-btn):not(.catalog-selector-btn):not(.tab-x):not(.filter-chip):not(.choice-chip):not(.legend-chip):not(.agent-bg-indicator):not(.agent-mode):not(.btn-raised):disabled,
+:root[data-theme='light'] button:not(.tab):not(.pane-tab):not(.pane-tab-open):not(.icon-btn):not(.btn-ghost):not(.btn-accent):not(.btn-danger):not(.primary):not(.avatar-btn):not(.catalog-selector-btn):not(.tab-x):not(.filter-chip):not(.choice-chip):not(.legend-chip):not(.agent-bg-indicator):not(.agent-mode):not(.btn-raised):disabled:hover {
   background: #f3f4f6;
   color: #4b5563;
   border-color: #e5e7eb;
