@@ -127,6 +127,22 @@ describe('reload selection restore', () => {
     expect(row.getAttribute('aria-selected')).toBe('false')
   })
 
+  it('adopts the marked object in a structure-node peer table', async () => {
+    publishMarked(product, 'product')
+    render(
+      <Harness
+        objectId={product}
+        view={{
+          ...productsView,
+          state: { ...productsView.state, source: { kind: 'peer', viewId: 'food-tree', selection: 'node' } },
+        }}
+      />,
+    )
+    const row = await screen.findByTestId('object-row')
+    await waitFor(() => expect(row.getAttribute('aria-selected')).toBe('true'))
+    expect(readSelection('products').map((item) => item.id)).toEqual([product])
+  })
+
   it('does not adopt the marked object in a peer-sourced table', async () => {
     publishMarked(product, 'product')
     render(

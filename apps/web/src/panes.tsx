@@ -583,7 +583,9 @@ export function ObjectTable({
       : (peerIds.isSuccess ? peerIdsFilter(peerIds.data) : peerIdsFilter([]))
     : ''
   const handPicked = selectionFilter.startsWith('id:=[') || selectionFilter === EMPTY_MANUAL_FILTER
-  const selectionMode: SelectionApplyMode = peerSource ? 'peer' : explicitAll ? 'explicit-all' : 'follow'
+  const selectionMode: SelectionApplyMode = peerSource
+    ? peerSource.selection === 'node' ? 'node' : 'peer'
+    : explicitAll ? 'explicit-all' : 'follow'
   const chipContext = selectionChipContext({
     sessionGroup: session.group,
     activeLabelFilter: labelFilter,
@@ -971,8 +973,9 @@ export function ObjectTable({
   // Reload restores the open object from the URL, but a fresh table starts with
   // no row selection, so a peer view that follows it would show its empty state.
   // Adopt the marked object once it belongs to this table's type and the user
-  // has not picked a row here. A peer-sourced table never adopts it: its
-  // selection is its own row, not the object open in detail.
+  // has not picked a row here. A row peer never adopts it: its rows come from
+  // another table. A structure-node peer still lists this type, so the open
+  // product stays selected after reload.
   const markedSelection = readMarkedSelection()
   const markedForTable = Boolean(
     markedSelection
@@ -981,19 +984,45 @@ export function ObjectTable({
     && bound
     && (markedSelection.type === bound.id || markedSelection.type === bound.key),
   )
+  const adoptsMarkedObject = !peerSource || peerSource.selection === 'node'
+  // Set when this mount adopted the URL object, so the tree node arriving
+  // (empty filter → group filter) does not drop that restored row.
+  const restoredMark = useRef<string | null>(null)
   useEffect(() => {
-    if (peerSource) return
+    if (!adoptsMarkedObject) return
     if (selected.length > 0) return
     if (!markedForTable || !markedSelection) return
+    restoredMark.current = markedSelection.id
     setSelected([markedSelection.id])
     setActive(locateRef.current(markedSelection.id))
-  }, [markedForTable, markedSelection, peerSource, selected])
+  }, [adoptsMarkedObject, markedForTable, markedSelection, selected])
   useEffect(() => {
-    const scopeChanged = peerScopeRef.current !== peerScope
+    const previous = peerScopeRef.current
+    const scopeChanged = previous !== peerScope
     peerScopeRef.current = peerScope
-    if (scopeChanged) {
+    const nodeJustResolved = Boolean(
+      scopeChanged
+      && peerSource
+      && peerSource.selection === 'node'
+      && previous === `${peerSource.viewId}:node:${peerSource.linkType ?? ''}:`
+      && peerFilter !== '',
+    )
+    const restoredId = restoredMark.current
+    const keepRestored = Boolean(
+      nodeJustResolved
+      && restoredId
+      && (selected.length === 0 || (selected.length === 1 && selected[0] === restoredId)),
+    )
+    if (keepRestored && restoredId && selected[0] !== restoredId) {
+      setSelected([restoredId])
+      setActive(locateRef.current(restoredId))
+    }
+    if (scopeChanged && !keepRestored) {
+      restoredMark.current = null
       setSelected([])
       setActive(-1)
+    } else if (keepRestored) {
+      restoredMark.current = null
     }
     const known = [...rowsRef.current.values()]
     const described = (id: string) => {
@@ -1003,10 +1032,17 @@ export function ObjectTable({
         : { id, key: '', name: '', type: '', version: '' }
     }
     // Publish committed selections. Detail and peer panes follow `selected`.
-    const marked = scopeChanged ? [] : selected.map(described)
+    const publishedIds = scopeChanged && !keepRestored
+      ? []
+      : selected.length > 0
+        ? selected
+        : keepRestored && restoredId
+          ? [restoredId]
+          : []
+    const marked = publishedIds.map(described)
     publishTable(view.id, [queryText, filterBy].filter(Boolean).join(' '), sort, filterBy, queryText)
     publishSelection(view.id, marked)
-  }, [peerScope, selected, queryText, filterBy, sort, view.id, knownStamp])
+  }, [peerFilter, peerScope, peerSource, selected, queryText, filterBy, sort, view.id, knownStamp])
 
   const pathList = attributePaths.data?.paths ?? []
   const columnFor = (id: string) => {
