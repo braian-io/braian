@@ -419,6 +419,7 @@ export const copy = {
   addView: 'Add view',
   dataSource: 'Data source',
   selectSource: 'Select source',
+  changeSource: 'Change source',
   current: 'Current',
   shown: 'Shown',
   notSelected: 'Not selected',

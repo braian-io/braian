@@ -278,6 +278,7 @@ export function Shell() {
   const [paletteEpoch, setPaletteEpoch] = useState(0)
   const [fieldsEditColumnId, setFieldsEditColumnId] = useState<string | null>(null)
   const fieldsOpenerRef = useRef<HTMLElement | null>(null)
+  const sourceLabelPickerOpenRef = useRef(false)
   useEffect(() => {
     setAiMode(paletteMode === 'ai')
     return () => setAiMode(false)
@@ -2984,25 +2985,17 @@ export function Shell() {
             doc={doc}
             views={viewRows(surface.views).map((view) => {
               const prompt = agentDockTabSessionLabel(view, agentRunList.data)
-              const bound = typeOfView(view, typeCatalog)
-              const peerActive = view.type === 'object_table' && Boolean(peerSourceOf(view.state))
-              const allOfType = bound?.plural ? copy.allOfType.replace('{type}', bound.plural) : ''
               return {
                 ...view,
                 title: view.type === 'agent' ? copy.agent : displayViewTitle(view, typeCatalog, openTypeKey),
                 prompt,
                 sourceLabel: viewSourceLabel(view, typeCatalog, workspaceCatalogRef(surface), catalogNamesById, peerLabelFor(view)),
-                sourceLabelClearable: peerActive,
-                sourceLabelClearAriaLabel: peerActive && allOfType
-                  ? copy.clearViewSource.replace('{label}', allOfType)
-                  : undefined,
               }
             })}
             onChange={commitDoc}
-            onSourceLabelClear={(viewId) => {
-              const view = viewRows(surface.views).find((item) => item.id === viewId)
-              const bound = view ? typeOfView(view, typeCatalog) : undefined
-              if (bound?.id) void applyViewTypeSourceRef.current(bound.id, viewId)
+            onSourceLabelPick={(viewId) => {
+              sourceLabelPickerOpenRef.current = true
+              void runCommand('view:select-source', { viewId })
             }}
             agentViews={agentViews}
             renderView={(item) => {
@@ -3112,6 +3105,8 @@ export function Shell() {
             setPaletteStartSwitchCatalog(false)
             const opener = fieldsOpenerRef.current
             fieldsOpenerRef.current = null
+            const restoreSourceLabel = sourceLabelPickerOpenRef.current
+            sourceLabelPickerOpenRef.current = false
             if (paletteModeRef.current === 'fields' && opener) {
               // A backdrop mousedown tears the overlay down before the click lands
               // on the page underneath; restore after that click or it steals focus.
@@ -3120,6 +3115,11 @@ export function Shell() {
               }, 0)
             }
             setPaletteMode(null)
+            if (restoreSourceLabel) {
+              window.setTimeout(() => {
+                document.querySelector<HTMLButtonElement>('.pane.focused [data-testid="view-source-label"]')?.focus()
+              }, 0)
+            }
           }}
         />
       ) : null}

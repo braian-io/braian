@@ -36,10 +36,6 @@ export type DockView = {
   type: string
   state?: { catalog?: string; prompt?: string }
   sourceLabel?: string
-  /** Peer source is active; one click on the label returns to all-of-type. */
-  sourceLabelClearable?: boolean
-  /** Accessible name for clearing a peer source (destination All …, not the live peer label). */
-  sourceLabelClearAriaLabel?: string
   prompt?: string
 }
 
@@ -63,7 +59,7 @@ export function WorkspaceDock({
   onChange,
   renderView,
   onAddView,
-  onSourceLabelClear,
+  onSourceLabelPick,
   agentViews = [],
 }: {
   doc: LayoutDoc
@@ -71,7 +67,7 @@ export function WorkspaceDock({
   onChange: (doc: LayoutDoc) => void
   renderView: (view: DockView) => ReactNode
   onAddView: (target: string) => void
-  onSourceLabelClear?: (viewId: string) => void
+  onSourceLabelPick?: (viewId: string) => void
   /** View ids an agent is working in. The pane picks up one left-edge marker. */
   agentViews?: string[]
 }) {
@@ -173,7 +169,7 @@ export function WorkspaceDock({
     commit,
     run,
     onAddView,
-    onSourceLabelClear,
+    onSourceLabelPick,
     onMenu: ({ x, y, view }) => {
       const viewType = viewList.find((item) => item.id === view)?.type ?? ''
       openSharedContextMenu({
@@ -251,7 +247,7 @@ type Frame = {
   commit: (doc: LayoutDoc) => void
   run: (name: string, args?: Record<string, unknown>) => void
   onAddView: (target: string) => void
-  onSourceLabelClear?: (viewId: string) => void
+  onSourceLabelPick?: (viewId: string) => void
   onMenu: (menu: { x: number; y: number; view: string }) => void
   onDrag: (drag: Drag | null) => void
   renderView: (view: DockView) => ReactNode
@@ -703,26 +699,19 @@ function Pane({ frame, leaf }: { frame: Frame; leaf: Leaf }) {
         {(() => {
           const meta = frame.viewList.find((view) => view.id === activeId)
           const label = meta?.sourceLabel
-          if (!label || !activeId) return null
-          if (meta?.sourceLabelClearable && frame.onSourceLabelClear) {
-            return (
-              <Button
-                type="button"
-                variant="ghost"
-                className="pane-source"
-                data-testid="view-source-label"
-                title={label}
-                aria-label={meta.sourceLabelClearAriaLabel ?? copy.clearViewSource.replace('{label}', label)}
-                onClick={() => frame.onSourceLabelClear?.(activeId)}
-              >
-                {label}
-              </Button>
-            )
-          }
+          if (!label || !activeId || meta?.type !== 'object_table' || !frame.onSourceLabelPick) return null
           return (
-            <span className="pane-source" data-testid="view-source-label" title={label}>
+            <Button
+              type="button"
+              variant="ghost"
+              className="pane-source pane-source-btn"
+              data-testid="view-source-label"
+              aria-label={copy.changeSource}
+              title={`${copy.changeSource} — ${label}`}
+              onClick={() => frame.onSourceLabelPick?.(activeId)}
+            >
               {label}
-            </span>
+            </Button>
           )
         })()}
         <div className="pane-chrome">

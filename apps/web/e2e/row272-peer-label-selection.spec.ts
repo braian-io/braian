@@ -95,10 +95,7 @@ test.describe('peer-linked label selections (Notion row 272)', () => {
       await expect(articles.getByTestId('peer-linked-to')).toHaveText('Linked to: Products', { timeout: 30_000 })
 
       const peerClear = articles.getByTestId('view-source-label')
-      await expect(peerClear).toHaveAttribute(
-        'aria-label',
-        'Clear data source and show All Articles',
-      )
+      await expect(peerClear).toHaveAttribute('aria-label', 'Change source')
 
       const linkedBefore = await articles.getByTestId('object-row').count()
       expect(linkedBefore).toBeGreaterThan(0)
