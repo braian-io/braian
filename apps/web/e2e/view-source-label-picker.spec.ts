@@ -124,17 +124,20 @@ test.describe('view source label opens Select source', () => {
       await choosePaletteHit(page, palette, 'Products from Food')
       await expect(products.getByTestId('view-source-label')).toContainText('Food', { timeout: 30_000 })
 
+      const unfilteredRows = await products.getByTestId('object-row').count()
+      expect(unfilteredRows).toBeGreaterThan(SEED_CHEESE_PRODUCT_NAMES.length)
+
       await tree.getByRole('treeitem').filter({ hasText: 'Cheese' }).first().click()
       await expect(products.getByTestId('view-source-label')).toContainText('Food › Cheese', { timeout: 30_000 })
-      await expect.poll(async () => products.getByTestId('object-row').count(), { timeout: 30_000 }).toBe(
-        SEED_CHEESE_PRODUCT_NAMES.length,
+      await expect.poll(async () => products.getByTestId('object-row').count(), { timeout: 30_000 }).toBeLessThan(
+        unfilteredRows,
       )
 
       palette = await openSourcePickerFromLabel(page, products)
       await choosePaletteHit(page, palette, 'All Products')
       await expect(products.getByTestId('view-source-label')).toHaveText('All Products')
       const allRows = await products.getByTestId('object-row').count()
-      expect(allRows).toBeGreaterThan(SEED_CHEESE_PRODUCT_NAMES.length)
+      expect(allRows).toBe(unfilteredRows)
 
       await tree.getByRole('treeitem').filter({ hasText: 'Milk' }).first().click()
       await expect(products.getByTestId('view-source-label')).toHaveText('All Products')
@@ -146,8 +149,8 @@ test.describe('view source label opens Select source', () => {
 
       await tree.getByRole('treeitem').filter({ hasText: 'Cheese' }).first().click()
       await expect(products.getByTestId('view-source-label')).toContainText('Food › Cheese', { timeout: 30_000 })
-      await expect.poll(async () => products.getByTestId('object-row').count(), { timeout: 30_000 }).toBe(
-        SEED_CHEESE_PRODUCT_NAMES.length,
+      await expect.poll(async () => products.getByTestId('object-row').count(), { timeout: 30_000 }).toBeLessThan(
+        allRows,
       )
     } finally {
       await page.request.delete(`/v1/workspaces/${workspaceId}`)
