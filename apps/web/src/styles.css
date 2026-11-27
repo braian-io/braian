@@ -1525,15 +1525,20 @@ button.filter-chip:hover:not(.on) {
 .detail-head { display: flex; flex-direction: column; gap: var(--space-1_5); padding: var(--space-0_5) var(--space-0_5) 0; }
 .detail-title-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   flex-wrap: nowrap;
   gap: var(--space-2);
   min-width: 0;
 }
-.detail-title-row > button { flex: none; white-space: nowrap; }
+.detail-title-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+}
+.detail-title-actions > button { flex: none; }
 .detail-form > .draft-bar { position: relative; z-index: 2; flex: 0 0 auto; }
 .detail-title-row .detail-title { flex: 1 1 auto; min-width: 0; }
-.detail-title-row .detail-delete { flex: none; margin-top: var(--space-0_5); }
 .icon-btn.icon-danger:hover,
 .icon-btn.icon-danger:focus-visible {
   background: color-mix(in srgb, var(--danger) 18%, transparent);
