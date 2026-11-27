@@ -575,11 +575,11 @@ export function ObjectTable({
     staleTime: 5_000,
   })
   // A structure-tree peer with no node yet lists the whole type. A chosen node
-  // filters to that placed group. A row peer with no row stays empty.
+  // includes that group and its descendants. A row peer with no row stays empty.
   const nodeAwaitingGroup = peerSource?.selection === 'node' && !peerNode
   const peerFilter = peerSource
     ? peerSource.selection === 'node'
-      ? structurePeerFilter(peerNode)
+      ? structurePeerFilter(peerNode, defs.data)
       : (peerIds.isSuccess ? peerIdsFilter(peerIds.data) : peerIdsFilter([]))
     : ''
   const handPicked = selectionFilter.startsWith('id:=[') || selectionFilter === EMPTY_MANUAL_FILTER

@@ -3424,7 +3424,15 @@ export function StructureTree({ session, view }: { session: Session; view: View 
         const rows = entries.filter((row) => row.structureKey === structureKey)
         return (
           <div key={structureKey}>
-            <strong>{structureCaption(structureKey, defs.data, structureKey)}</strong>
+            <button
+              type="button"
+              role="treeitem"
+              aria-selected={session.group === `${structureKey}:${structureKey}`}
+              className={session.group === `${structureKey}:${structureKey}` ? 'tree-row on' : 'tree-row'}
+              onClick={() => selectGroup(structureKey, structureKey)}
+            >
+              {structureCaption(structureKey, defs.data, structureKey)}
+            </button>
             {rows.map((row) => {
               const selected = session.group === `${structureKey}:${row.key}`
               const Icon = row.kids ? (row.open ? FolderOpen : Folder) : File

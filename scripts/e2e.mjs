@@ -364,7 +364,7 @@ const measuredSeconds = {
   'e2e/select-source-derivable.spec.ts': 15,
   'e2e/source-all-explicit.spec.ts': 6,
   'e2e/row41-structure-tree-auto-link.spec.ts': 8,
-  'e2e/tree-group-table.spec.ts': 40,
+  'e2e/tree-group-table.spec.ts': 70,
   'e2e/row272-peer-label-selection.spec.ts': 14,
   'e2e/row273-cross-table-group-label.spec.ts': 60,
   'e2e/row307-units-v2.spec.ts': 90,

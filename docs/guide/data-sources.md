@@ -37,8 +37,7 @@ The active row carries a `Current` chip.
    products from the selected article. Header shows `Linked to: …`. If several link
    types connect the two types, one row per link type is offered.
 3. **A node in a structure tree.** An open structure tree whose selected group can
-   yield the target type is listed. The table shows the objects placed in that group.
-   The filter is the exact placed group, not the whole subtree.
+   yield the target type is listed.    The table shows the objects placed in that group and in every group under it.
 
 When you add a structure tree to the workspace — **Open view**, **Add view**, or a
 future Open structure command — any open object table whose type can use that tree

@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { demoCredentials } from './demo'
-import { SEED_CHEESE_PRODUCT_NAMES, SEED_MILK_PRODUCT_NAMES } from './seed-product-names'
+import { SEED_CHEESE_PRODUCT_NAMES, SEED_JUICE_PRODUCT_NAME, SEED_MILK_PRODUCT_NAMES } from './seed-product-names'
 
 const PRODUCT_TYPE_ID = '018f0000-0000-7000-8000-000000000200'
 const ARTICLE_TYPE_ID = '018f0000-0000-7000-8000-000000000201'
@@ -19,6 +19,12 @@ async function login(page: Page) {
 
 function pane(page: Page, viewId: string): Locator {
   return page.locator(`[data-pane="${viewId}"]`)
+}
+
+async function expectNamedProduct(table: Locator, name: string, present: boolean) {
+  await table.getByTestId('quick-filter').fill(name)
+  const rows = table.getByTestId('object-row').filter({ hasText: name })
+  await expect(rows).toHaveCount(present ? 1 : 0)
 }
 
 async function viewState(page: Page, workspaceId: string, viewId: string) {
@@ -169,6 +175,28 @@ test.describe('tree group filters the products table', () => {
         viewId: productsId,
         selection: 'row',
       })
+
+      await tree.getByRole('treeitem', { name: 'Dairy & eggs', exact: true }).click()
+      await expect(productsAfter.getByTestId('view-source-label')).toContainText('Food › Dairy & eggs', { timeout: 30_000 })
+      await expectNamedProduct(productsAfter, 'Mature cheddar', true)
+      await expectNamedProduct(productsAfter, 'Semi-skimmed milk 18', true)
+      await expectNamedProduct(productsAfter, SEED_JUICE_PRODUCT_NAME, false)
+      await productsAfter.getByTestId('quick-filter').fill('')
+      await expect.poll(async () => (await viewState(page, workspaceId, treeId))?.selected_group).toBe('food:dairy')
+
+      await page.reload()
+      await page.locator('nav.tabs').getByRole('button', { name: /Tree group/ }).click()
+      const productsDairy = pane(page, productsId)
+      const treeDairy = pane(page, treeId)
+      await expect(productsDairy.getByTestId('view-source-label')).toContainText('Food › Dairy & eggs', { timeout: 30_000 })
+      await expectNamedProduct(productsDairy, 'Mature cheddar', true)
+      await expectNamedProduct(productsDairy, 'Semi-skimmed milk 18', true)
+      await expectNamedProduct(productsDairy, SEED_JUICE_PRODUCT_NAME, false)
+
+      await treeDairy.getByRole('treeitem', { name: 'Food', exact: true }).click()
+      await expect(productsDairy.getByTestId('view-source-label')).toContainText('Food › Food', { timeout: 30_000 })
+      await expectNamedProduct(productsDairy, 'Mature cheddar', true)
+      await expectNamedProduct(productsDairy, SEED_JUICE_PRODUCT_NAME, true)
     } finally {
       await page.request.delete(`/v1/workspaces/${workspaceId}`)
     }
@@ -215,6 +243,23 @@ test.describe('tree group filters the products table', () => {
     for (const productName of SEED_CHEESE_PRODUCT_NAMES) {
       await expect(productsAfter.getByTestId('object-row').filter({ hasText: productName })).toHaveCount(0)
     }
+
+    const treeAfter = pane(page, PRODUCTS_TREE_ID)
+    await treeAfter.getByRole('treeitem', { name: 'Dairy & eggs', exact: true }).click()
+    await expect(productsAfter.getByTestId('view-source-label')).toContainText('Food › Dairy & eggs', { timeout: 30_000 })
+    await expectNamedProduct(productsAfter, 'Mature cheddar', true)
+    await expectNamedProduct(productsAfter, 'Semi-skimmed milk 18', true)
+    await expectNamedProduct(productsAfter, SEED_JUICE_PRODUCT_NAME, false)
+    await productsAfter.getByTestId('quick-filter').fill('')
+    await expect.poll(async () => (await viewState(page, PRODUCTS_WORKSPACE_ID, PRODUCTS_TREE_ID))?.selected_group).toBe('food:dairy')
+
+    await page.reload()
+    await page.locator('nav.tabs').getByRole('button', { name: /^Products/ }).click()
+    const productsDairy = pane(page, PRODUCTS_TABLE_ID)
+    await expect(productsDairy.getByTestId('view-source-label')).toContainText('Food › Dairy & eggs', { timeout: 30_000 })
+    await expectNamedProduct(productsDairy, 'Mature cheddar', true)
+    await expectNamedProduct(productsDairy, 'Semi-skimmed milk 18', true)
+    await expectNamedProduct(productsDairy, SEED_JUICE_PRODUCT_NAME, false)
   })
 })
 
