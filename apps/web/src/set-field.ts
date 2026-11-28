@@ -1,4 +1,5 @@
 import { api, freeObject, textValue, type Json } from './api'
+import { registerCommandRunner, type CommandTarget } from './command-registry'
 import { copy } from './i18n'
 import { effectiveFields } from './model-view'
 import { validateDetailField } from './detail-field-validate'
@@ -254,6 +255,48 @@ export async function commitSetField(input: {
       await input.onSaved?.({ ...saved, id: String(saved.id ?? target.id) }, target.id)
     },
   })
+}
+
+export const REQUEST_SET_FIELD = 'braian:request-set-field'
+
+export type SetFieldRequest = { viewId: string; ids: string[] }
+
+/** The table that owns `viewId` opens Set field. Several object tables share one command. */
+export function requestSetField(viewId: string, ids: string[]) {
+  const unique = [...new Set(ids.filter(Boolean))]
+  const target = globalThis.window
+  if (!viewId || !target) return
+  target.dispatchEvent(new CustomEvent<SetFieldRequest>(REQUEST_SET_FIELD, {
+    detail: { viewId, ids: unique },
+  }))
+}
+
+function idsFromCommandTarget(target: CommandTarget): string[] {
+  const rows = Array.isArray(target.objects) ? target.objects : []
+  const ids = rows
+    .map((row) => (row && typeof row === 'object' ? String((row as { id?: unknown }).id ?? '') : ''))
+    .filter(Boolean)
+  if (ids.length === 0 && target.objectId) ids.push(String(target.objectId))
+  return ids
+}
+
+/** Palette mass-edit has no row target; the focused pane's active tab is the table. */
+export function focusedTableViewId(): string {
+  const tab = globalThis.document?.querySelector('.pane.focused .pane-tab.active')
+  return tab?.getAttribute('data-tab') ?? ''
+}
+
+let setFieldCommandRegistered = false
+
+export function ensureSetFieldCommandRunner(): void {
+  if (setFieldCommandRegistered || !globalThis.window) return
+  setFieldCommandRegistered = true
+  const open = (target: CommandTarget) => {
+    const viewId = String(target.viewId ?? '') || focusedTableViewId()
+    requestSetField(viewId, idsFromCommandTarget(target))
+  }
+  registerCommandRunner('table:set-field', open)
+  registerCommandRunner('table:mass-edit', open)
 }
 
 function unitsFor(defs: Json, familyId: string): string[] {

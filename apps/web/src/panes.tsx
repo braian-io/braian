@@ -38,12 +38,15 @@ import { MetaChip, optionLabel, statusTone, typeLabel } from './chips'
 import { SetFieldFlow } from './set-field-dialog'
 import {
   commitSetField,
+  ensureSetFieldCommandRunner,
   loadSetFieldTargets,
+  REQUEST_SET_FIELD,
   setFieldChoices,
   setFieldFailureMessage,
   setFieldGroups,
   setFieldNoun,
   versionsFromRows,
+  type SetFieldRequest,
 } from './set-field'
 import { Button } from './components/ui/button'
 import { AttributeFieldLabel } from './attribute-field-label'
@@ -1652,6 +1655,13 @@ export function ObjectTable({
       copyTableTextImpl.current(detail.ids)
     }
     window.addEventListener(REQUEST_TABLE_COPY, onCopy)
+    ensureSetFieldCommandRunner()
+    const onSetField = (event: Event) => {
+      const detail = (event as CustomEvent<SetFieldRequest>).detail
+      if (!detail || detail.viewId !== view.id) return
+      openSetField(detail.ids.length > 0 ? detail.ids : selected)
+    }
+    window.addEventListener(REQUEST_SET_FIELD, onSetField)
     const stops = [
       registerCommandRunner('object:open', (target) => {
         if (!target.objectId) return
@@ -1676,14 +1686,6 @@ export function ObjectTable({
       registerCommandRunner('table:select', () => {
         void selectAllMatching()
       }),
-      registerCommandRunner('table:mass-edit', () => { openSetField(selected) }),
-      registerCommandRunner('table:set-field', (target) => {
-        const objects = Array.isArray(target.objects) ? target.objects : []
-        const ids = objects
-          .map((item) => (item && typeof item === 'object' && 'id' in item ? String(item.id) : ''))
-          .filter(Boolean)
-        openSetField(ids.length > 0 ? ids : selected)
-      }),
       registerCommandRunner('table:filter-by', () => setPicker('filter')),
       registerCommandRunner('table:export-columns', () => setPicker('export')),
       registerCommandRunner('table:export', () => { exportVisible() }),
@@ -1706,6 +1708,7 @@ export function ObjectTable({
     ]
     return () => {
       window.removeEventListener(REQUEST_TABLE_COPY, onCopy)
+      window.removeEventListener(REQUEST_SET_FIELD, onSetField)
       stops.forEach((stop) => stop())
     }
   })

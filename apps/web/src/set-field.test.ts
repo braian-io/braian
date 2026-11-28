@@ -1,10 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError, type Json } from './api'
 import { copy } from './i18n'
+import { runCommand } from './command-registry'
 import {
   commitSetField,
   emptySetFieldDraft,
+  ensureSetFieldCommandRunner,
+  focusedTableViewId,
   loadSetFieldTargets,
+  REQUEST_SET_FIELD,
+  requestSetField,
   setFieldChoices,
   setFieldConfirmMessage,
   setFieldFailureMessage,
@@ -17,6 +22,7 @@ import {
   versionsFromRows,
   writeSetField,
   type SetFieldChoice,
+  type SetFieldRequest,
 } from './set-field'
 
 const mock = vi.hoisted(() => ({
@@ -143,6 +149,50 @@ describe('set field plan', () => {
     })
     expect(loaded.targets).toEqual([{ id: 'a', version: 4 }, { id: 'b', version: 2 }])
     expect(loaded.failed).toEqual([{ id: 'c', message: 'missing' }])
+  })
+})
+
+describe('set field command', () => {
+  it('sends the write to the table that owns the selection', () => {
+    const seen: SetFieldRequest[] = []
+    const previousWindow = globalThis.window
+    const previousDocument = globalThis.document
+    globalThis.window = {
+      dispatchEvent(event: Event) {
+        seen.push((event as CustomEvent<SetFieldRequest>).detail)
+        return true
+      },
+    } as unknown as Window & typeof globalThis
+    globalThis.document = {
+      querySelector: (selector: string) => (
+        selector === '.pane.focused .pane-tab.active'
+          ? { getAttribute: () => 'products' }
+          : null
+      ),
+    } as unknown as Document
+    try {
+      ensureSetFieldCommandRunner()
+      runCommand('table:set-field', {
+        viewId: 'products',
+        objects: [{ id: 'a' }, { id: 'a' }, { id: 'b' }],
+      })
+      runCommand('table:set-field', {
+        viewId: 'articles',
+        objects: [{ id: 'article-1' }],
+      })
+      runCommand('table:mass-edit', {})
+      expect(seen).toEqual([
+        { viewId: 'products', ids: ['a', 'b'] },
+        { viewId: 'articles', ids: ['article-1'] },
+        { viewId: 'products', ids: [] },
+      ])
+      expect(focusedTableViewId()).toBe('products')
+      requestSetField('', ['a'])
+      expect(seen).toHaveLength(3)
+    } finally {
+      globalThis.window = previousWindow
+      globalThis.document = previousDocument
+    }
   })
 })
 
