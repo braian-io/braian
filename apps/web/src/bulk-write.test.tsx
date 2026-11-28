@@ -29,4 +29,27 @@ describe('bulk write confirm', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     expect(onConfirm).toHaveBeenCalledTimes(1)
   })
+
+  it('shows a caller-supplied count sentence and still writes only on Save', () => {
+    const onConfirm = vi.fn()
+    const onCancel = vi.fn()
+    render(
+      <BulkWriteConfirm
+        open
+        field="Status"
+        count={12}
+        title="Set field"
+        impact="Set Status on 12 products?"
+        onCancel={onCancel}
+        onConfirm={onConfirm}
+      />,
+    )
+
+    expect(screen.getByRole('heading', { name: 'Set field' })).toBeTruthy()
+    expect(screen.getByTestId('bulk-write-impact').textContent).toBe('Set Status on 12 products?')
+    expect(screen.queryByRole('textbox')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(onConfirm).not.toHaveBeenCalled()
+    expect(onCancel).toHaveBeenCalledTimes(1)
+  })
 })

@@ -93,6 +93,24 @@ describe('row context menu', () => {
     expect(menu('article').titles).not.toContain('Open Product')
   })
 
+  it('offers Set field when the menu has selected rows', () => {
+    const { items } = buildRowContextMenu({
+      context: 'row',
+      defs,
+      rowType: 'product',
+      target: {
+        objectId: 'o1',
+        objects: [
+          { id: 'o1', typeKey: 'product' },
+          { id: 'o2', typeKey: 'product' },
+        ],
+      },
+      selectedCount: 2,
+    })
+    expect(items.map((item) => item.id)).toContain('table:set-field')
+    expect(menu('product').items.map((item) => item.id)).not.toContain('table:set-field')
+  })
+
   it('offers to link the selection when several rows are selected', () => {
     const { items } = buildRowContextMenu({
       context: 'cell',

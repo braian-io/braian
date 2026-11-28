@@ -10,21 +10,26 @@ export function BulkWriteConfirm({
   open,
   field,
   count,
+  impact,
+  title,
   onCancel,
   onConfirm,
 }: {
   open: boolean
   field: string
   count: number
+  /** Replaces the default impact sentence. Plain confirm; the caller does not ask the user to type. */
+  impact?: string
+  title?: string
   onCancel: () => void
   onConfirm: () => void
 }) {
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) onCancel() }}>
       <DialogContent data-testid="bulk-write-confirm">
-        <DialogTitle>{copy.bulkWrite}</DialogTitle>
+        <DialogTitle>{title ?? copy.bulkWrite}</DialogTitle>
         <DialogDescription data-testid="bulk-write-impact">
-          {bulkWriteImpact(field, count)}
+          {impact ?? bulkWriteImpact(field, count)}
         </DialogDescription>
         <div className="dialog-actions">
           <Button type="button" variant="ghost" onClick={onCancel}>{copy.cancel}</Button>
