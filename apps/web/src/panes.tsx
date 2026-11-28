@@ -2,7 +2,7 @@ import { isValidElement, useMemo, useEffect, useLayoutEffect, useCallback, useRe
 import { flushSync } from 'react-dom'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { ClipboardCopy, History as HistoryIcon, RotateCcw, Table2, Trash2, X } from 'lucide-react'
+import { ClipboardCopy, History as HistoryIcon, Pencil, RotateCcw, Table2, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { ApiError, api, catalogName, failureLines, freeObject, jsonRecord, recordNumber, recordTitle, searchQuery, textValue, type Json } from './api'
 import { messageFromErrorBody, reportWriteError, writeErrorMessage } from './write-error'
@@ -35,7 +35,16 @@ import {
 import { MeasureCellEditor } from './measure-cell-editor'
 import { batchGetObjects } from './batch'
 import { MetaChip, optionLabel, statusTone, typeLabel } from './chips'
-import { BulkWriteConfirm } from './bulk-write'
+import { SetFieldFlow } from './set-field-dialog'
+import {
+  commitSetField,
+  loadSetFieldTargets,
+  setFieldChoices,
+  setFieldFailureMessage,
+  setFieldGroups,
+  setFieldNoun,
+  versionsFromRows,
+} from './set-field'
 import { Button } from './components/ui/button'
 import { AttributeFieldLabel } from './attribute-field-label'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './components/ui/tooltip'
@@ -136,6 +145,7 @@ import {
   isGenericObjectTitle,
   newObjectLabel,
   newObjectTitle,
+  pluralOf,
   singularOf,
   typeNames,
   typeOfView,
@@ -311,7 +321,9 @@ export function ObjectTable({
   // The active cell's column, by key. Left and Right move it; the keyboard menu acts on it.
   const [activeColumn, setActiveColumn] = useState('')
   const [moving, setMoving] = useState<string | null>(null)
-  const [massConfirm, setMassConfirm] = useState(false)
+  const [setFieldOpen, setSetFieldOpen] = useState(false)
+  const [setFieldIds, setSetFieldIds] = useState<string[]>([])
+  const [setFieldError, setSetFieldError] = useState('')
   const [flashId, setFlashId] = useState('')
   const [tableSaveError, setTableSaveError] = useState('')
   const [filterSetupError, setFilterSetupError] = useState('')
@@ -1202,26 +1214,12 @@ export function ObjectTable({
         reportWriteError(error)
       })
   }
-  const mass = useMutation({
-    mutationFn: () =>
-      api.post('/v1/operations/{name}', {
-        params: { path: { name: 'mass_edit' } },
-        body: {
-          title: 'Status OK',
-          ids: selected,
-          type: [...byIndex.values()].find((row) => selected.includes(row.id))?.type ?? 'article',
-          values: { status: 'ok' },
-        },
-      }),
-    onSuccess: (result) => {
-      const id = String(jsonRecord(result)?.id ?? '')
-      session.setProposalId(id)
-      session.push(`${copy.proposals} ${id}`)
-    },
-    onError: (reason: unknown) => {
-      reportWriteError(reason)
-    },
-  })
+  const openSetField = (ids: string[]) => {
+    if (ids.length === 0) return
+    setSetFieldIds(ids)
+    setSetFieldError('')
+    setSetFieldOpen(true)
+  }
 
   /**
    * Reset to the type default: drop the personal prefs row and paint defaults
@@ -1678,7 +1676,14 @@ export function ObjectTable({
       registerCommandRunner('table:select', () => {
         void selectAllMatching()
       }),
-      registerCommandRunner('table:mass-edit', () => { setMassConfirm(true) }),
+      registerCommandRunner('table:mass-edit', () => { openSetField(selected) }),
+      registerCommandRunner('table:set-field', (target) => {
+        const objects = Array.isArray(target.objects) ? target.objects : []
+        const ids = objects
+          .map((item) => (item && typeof item === 'object' && 'id' in item ? String(item.id) : ''))
+          .filter(Boolean)
+        openSetField(ids.length > 0 ? ids : selected)
+      }),
       registerCommandRunner('table:filter-by', () => setPicker('filter')),
       registerCommandRunner('table:export-columns', () => setPicker('export')),
       registerCommandRunner('table:export', () => { exportVisible() }),
@@ -2932,6 +2937,16 @@ export function ObjectTable({
             type="button"
             variant="icon"
             size="icon"
+            data-testid="table-selection-set-field"
+            aria-label={copy.setField}
+            onClick={() => openSetField(selected)}
+          >
+            <Pencil aria-hidden="true" size={14} />
+          </Button>
+          <Button
+            type="button"
+            variant="icon"
+            size="icon"
             data-testid="table-selection-copy"
             aria-label={copy.copyAsTableText}
             onClick={() => copyTableTextImpl.current()}
@@ -2965,6 +2980,9 @@ export function ObjectTable({
             <X aria-hidden="true" size={14} />
           </Button>
         </div>
+      ) : null}
+      {setFieldError && !setFieldOpen ? (
+        <p className="error" role="alert" data-testid="set-field-error">{setFieldError}</p>
       ) : null}
       </>
       )}
@@ -3023,14 +3041,34 @@ export function ObjectTable({
           }}
         />
       ) : null}
-      <BulkWriteConfirm
-        open={massConfirm}
-        field="status"
-        count={selected.length}
-        onCancel={() => setMassConfirm(false)}
-        onConfirm={() => {
-          setMassConfirm(false)
-          mass.mutate()
+      <SetFieldFlow
+        open={setFieldOpen}
+        count={setFieldIds.length}
+        choices={setFieldChoices(
+          defs.data,
+          typeKey,
+          uiLanguage,
+          chipContext.groupFilterApplies ? setFieldGroups(chipContext.activeGroup) : [],
+        )}
+        language={uiLanguage}
+        noun={setFieldNoun(pluralOf(defs.data, typeKey, uiLanguage))}
+        onClose={() => setSetFieldOpen(false)}
+        onWrite={async (values) => {
+          const rows = groupBy ? groupedRows : [...byIndex.values()]
+          const loaded = await loadSetFieldTargets(setFieldIds, versionsFromRows(rows), async (id) => {
+            const object = await api.get('/v1/objects/{id}', { params: { path: { id } } })
+            return Number(object.version ?? 0)
+          })
+          const written = await commitSetField({
+            targets: loaded.targets,
+            values,
+            onSaved: async (saved) => {
+              await applyObjectWrite(queryClient, saved)
+            },
+          })
+          const failed = [...loaded.failed, ...written.failed]
+          setSetFieldError(failed.length > 0 ? setFieldFailureMessage(failed, written.applied.length) : '')
+          return { applied: written.applied, failed }
         }}
       />
     </StandardTableChrome>

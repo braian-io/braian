@@ -239,6 +239,15 @@ export const registryCommands: RegistryCommand[] = [
     when: (target) => Array.isArray(target.objects) && target.objects.length > 0,
   },
   {
+    id: 'table:set-field',
+    title: copy.setField,
+    contexts: ['row', 'cell'],
+    group: 'object',
+    keywords: ['set', 'field', 'edit', 'bulk', 'value'],
+    palette: false,
+    when: (target) => Array.isArray(target.objects) && target.objects.length > 0,
+  },
+  {
     id: 'trash:restore',
     title: copy.trashRestore,
     contexts: ['trash', 'object-detail'],
